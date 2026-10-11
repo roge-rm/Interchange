@@ -22,7 +22,7 @@ class GameTest {
             }
         }
         repeat(50) { t ->
-            if (t % 7 == 0) host.request(Command.RaiseLand(0, t % 32, 3))
+            if (t % 7 == 0) host.request(Command.Terraform(0, t % 32, 3, true))
             host.step()
             while (copy.tick < allowed && copy.tick < host.world.tick) {
                 while (waiting.isNotEmpty() && waiting.first().tick <= copy.tick) copy.apply(waiting.removeFirst().command)

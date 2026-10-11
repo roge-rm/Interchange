@@ -9,6 +9,14 @@ sealed interface Command {
     /** The company giving the command. */
     val company: Int
 
-    data class RaiseLand(override val company: Int, val x: Int, val y: Int) : Command
-    data class LowerLand(override val company: Int, val x: Int, val y: Int) : Command
+    /** Raises or lowers the corner ([x], [y]) a step, and the land round it as far as it has to. */
+    data class Terraform(override val company: Int, val x: Int, val y: Int, val up: Boolean) : Command
+
+    /** Lays or lifts a line of track, as [Track.line] makes it. */
+    data class Rail(
+        override val company: Int,
+        val sx: Int, val sy: Int, val ex: Int, val ey: Int,
+        val first: Int,
+        val remove: Boolean,
+    ) : Command
 }

@@ -1,9 +1,13 @@
 package com.rm.interchange.map
 
+import com.rm.interchange.sim.World
+import kotlin.math.floor
+
 /**
  * Where the camera looks from: one of four directions, turned a quarter at a
  * time. View coordinates are the world's turned so that view x runs down to
- * the right on screen and view y down to the left.
+ * the right on screen and view y down to the left. Points are continuous, in
+ * tiles; tile (vx, vy) covers vx to vx + 1.
  */
 class View(val mapWidth: Int, val mapHeight: Int) {
     /** 0 to 3, a quarter turn each. */
@@ -15,7 +19,7 @@ class View(val mapWidth: Int, val mapHeight: Int) {
     var focusY = mapHeight / 2f
 
     /** Half a tile's width on screen, in pixels. A tile is twice as wide as it is tall. */
-    var halfWidth = 32f
+    var halfWidth = 64f
     val halfHeight get() = halfWidth / 2
     /** One step of height on screen. */
     val step get() = halfWidth / 4
@@ -42,38 +46,137 @@ class View(val mapWidth: Int, val mapHeight: Int) {
         else -> vx
     }
 
-    /** The focus in view coordinates. */
-    fun focusViewX() = when (turn) {
-        0 -> focusX
-        1 -> mapHeight - focusY
-        2 -> mapWidth - focusX
-        else -> focusY
+    /** The world corner x of view corner ([vx], [vy]). */
+    fun cornerX(vx: Int, vy: Int) = when (turn) {
+        0 -> vx
+        1 -> vy
+        2 -> mapWidth - vx
+        else -> mapWidth - vy
     }
 
-    fun focusViewY() = when (turn) {
-        0 -> focusY
-        1 -> focusX
-        2 -> mapHeight - focusY
-        else -> mapWidth - focusX
+    fun cornerY(vx: Int, vy: Int) = when (turn) {
+        0 -> vy
+        1 -> mapHeight - vx
+        2 -> mapHeight - vy
+        else -> vx
     }
+
+    /** A world point in view coordinates. */
+    fun toViewX(x: Float, y: Float) = when (turn) {
+        0 -> x
+        1 -> mapHeight - y
+        2 -> mapWidth - x
+        else -> y
+    }
+
+    fun toViewY(x: Float, y: Float) = when (turn) {
+        0 -> y
+        1 -> x
+        2 -> mapHeight - y
+        else -> mapWidth - x
+    }
+
+    /** A view point in world coordinates. */
+    fun toWorldX(vx: Float, vy: Float) = when (turn) {
+        0 -> vx
+        1 -> vy
+        2 -> mapWidth - vx
+        else -> mapWidth - vy
+    }
+
+    fun toWorldY(vx: Float, vy: Float) = when (turn) {
+        0 -> vy
+        1 -> mapHeight - vx
+        2 -> mapHeight - vy
+        else -> vx
+    }
+
+    fun focusViewX() = toViewX(focusX, focusY)
+    fun focusViewY() = toViewY(focusX, focusY)
+
+    /** Screen position of view point ([vx], [vy]) at height [h], for a screen [w] by [hgt] pixels. */
+    fun screenX(vx: Float, vy: Float, w: Float) = w / 2 + ((vx - vy) - (focusViewX() - focusViewY())) * halfWidth
+    fun screenY(vx: Float, vy: Float, h: Float, hgt: Float) = hgt / 2 + ((vx + vy) - (focusViewX() + focusViewY())) * halfHeight - h * step
 
     /** Moves the focus by a drag of ([dx], [dy]) pixels, so the map follows the finger. */
     fun pan(dx: Float, dy: Float) {
         val a = -dx / halfWidth
         val b = -dy / halfHeight
-        val dvx = (a + b) / 2
-        val dvy = (b - a) / 2
-        when (turn) {
-            0 -> { focusX += dvx; focusY += dvy }
-            1 -> { focusX += dvy; focusY -= dvx }
-            2 -> { focusX -= dvx; focusY -= dvy }
-            else -> { focusX -= dvy; focusY += dvx }
-        }
-        focusX = focusX.coerceIn(0f, mapWidth.toFloat())
-        focusY = focusY.coerceIn(0f, mapHeight.toFloat())
+        val vx = focusViewX() + (a + b) / 2
+        val vy = focusViewY() + (b - a) / 2
+        focusX = toWorldX(vx, vy).coerceIn(0f, mapWidth.toFloat())
+        focusY = toWorldY(vx, vy).coerceIn(0f, mapHeight.toFloat())
     }
 
     fun zoom(by: Float) {
-        halfWidth = (halfWidth * by).coerceIn(4f, 128f)
+        halfWidth = (halfWidth * by).coerceIn(MIN_HALF_WIDTH, MAX_HALF_WIDTH)
     }
+
+    /**
+     * The world point under screen point ([px], [py]), on the land: the
+     * frontmost point whose ground is as high as the line of sight there.
+     * Null off the map.
+     */
+    fun pick(world: World, px: Float, py: Float, w: Float, hgt: Float): Pick? {
+        val a = (px - w / 2) / halfWidth
+        var h = World.MAX_HEIGHT.toFloat()
+        while (h >= 0f) {
+            val b = (py - hgt / 2 + h * step) / halfHeight
+            val vx = focusViewX() + (a + b) / 2
+            val vy = focusViewY() + (b - a) / 2
+            if (vx >= 0 && vy >= 0 && vx < viewWidth && vy < viewHeight) {
+                val x = toWorldX(vx, vy)
+                val y = toWorldY(vx, vy)
+                if (groundHeight(world, x, y) >= h - 0.125f) return Pick(x, y)
+            }
+            h -= 0.125f
+        }
+        return null
+    }
+
+    companion object {
+        const val MIN_HALF_WIDTH = 3f
+        const val MAX_HALF_WIDTH = 96f
+    }
+}
+
+/** A world point picked on the land, in tiles. */
+class Pick(val x: Float, val y: Float) {
+    val tileX get() = floor(x).toInt()
+    val tileY get() = floor(y).toInt()
+    /** Where in its tile, 0 to 1. */
+    val fx get() = x - floor(x)
+    val fy get() = y - floor(y)
+}
+
+/** The ground's height at world point ([x], [y]), from its tile's corners, or the top of its foundation. */
+fun groundHeight(world: World, x: Float, y: Float): Float {
+    val tx = floor(x).toInt().coerceIn(0, world.width - 1)
+    val ty = floor(y).toInt().coerceIn(0, world.height - 1)
+    if (world.hasFoundation(tx, ty)) {
+        return maxOf(world.heightAt(tx, ty), world.heightAt(tx + 1, ty), world.heightAt(tx + 1, ty + 1), world.heightAt(tx, ty + 1)).toFloat()
+    }
+    val fx = (x - tx).coerceIn(0f, 1f)
+    val fy = (y - ty).coerceIn(0f, 1f)
+    val n = world.heightAt(tx, ty)
+    val e = world.heightAt(tx + 1, ty)
+    val s = world.heightAt(tx + 1, ty + 1)
+    val wv = world.heightAt(tx, ty + 1)
+    return (n * (1 - fx) + e * fx) * (1 - fy) + (wv * (1 - fx) + s * fx) * fy
+}
+
+/** Zooms by [by] keeping the point under ([px], [py]) where it is, on a screen [w] by [h]. */
+fun View.zoomAt(by: Float, px: Float, py: Float, w: Float, h: Float) {
+    val a0 = (px - w / 2) / halfWidth
+    val b0 = (py - h / 2) / halfHeight
+    zoom(by)
+    val a1 = (px - w / 2) / halfWidth
+    val b1 = (py - h / 2) / halfHeight
+    // The view point under the finger before, less where it would be now.
+    val dvx = ((a0 + b0) - (a1 + b1)) / 2
+    val dvy = ((b0 - a0) - (b1 - a1)) / 2
+    val vx = focusViewX() + dvx
+    val vy = focusViewY() + dvy
+    focusX = toWorldX(vx, vy).coerceIn(0f, mapWidth.toFloat())
+    focusY = toWorldY(vx, vy).coerceIn(0f, mapHeight.toFloat())
 }

@@ -1,112 +1,133 @@
 package com.rm.interchange.map
 
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.gestures.detectTransformGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.positionChange
 import com.rm.interchange.sim.World
-import kotlin.math.floor
+import kotlin.math.PI
+import kotlin.math.atan2
+
+/** What the map does with a finger, for the tool in use. */
+interface MapInput {
+    /** Whether a one finger drag uses the tool. Otherwise it moves the map. */
+    val drags: Boolean
+    fun tap(at: Pick) {}
+    fun dragStart(at: Pick) {}
+    fun dragTo(at: Pick) {}
+    fun dragEnd() {}
+    fun dragCancel() {}
+}
 
 /**
- * A stand-in for the real renderer: each tile is a diamond raised to its
- * height, with the faces towards the camera showing the drop to the next tile.
- * The real one bakes the land into chunks and draws sprites over it.
+ * The map: chunks from the [Renderer], then whatever the tool in use draws
+ * over them ([overlay]). One finger uses the tool, or moves the map if the
+ * tool doesn't drag. Two fingers move, pinch to zoom and twist to turn the view.
  *
- * [frame] changes whenever the world does, so the canvas draws again.
+ * [frame] is read while drawing, so the canvas draws again when it changes
+ * without the screen around it composing again.
  */
 @Composable
-fun MapView(world: World, view: View, frame: Long, onTap: (x: Int, y: Int) -> Unit, modifier: Modifier = Modifier) {
+fun MapView(
+    world: World,
+    view: View,
+    frame: () -> Long,
+    input: MapInput,
+    modifier: Modifier = Modifier,
+    overlay: (DrawScope.(LandPainter) -> Unit)? = null,
+) {
+    val scope = rememberCoroutineScope()
+    val renderer = remember(world) { Renderer(world, scope) }
+    val currentInput by rememberUpdatedState(input)
     Canvas(
-        modifier
-            .pointerInput(view) {
-                detectTransformGestures { _, pan, zoom, _ ->
-                    view.pan(pan.x, pan.y)
-                    view.zoom(zoom)
+        modifier.pointerInput(world, view) {
+            awaitEachGesture {
+                val down = awaitFirstDown(requireUnconsumed = false)
+                val start = down.position
+                val w = size.width.toFloat()
+                val h = size.height.toFloat()
+                var mode = Mode.Undecided
+                var lastCentre = Offset.Unspecified
+                var lastSpan = 0f
+                var lastAngle = 0f
+                var twist = 0f
+                while (true) {
+                    val event = awaitPointerEvent()
+                    val pressed = event.changes.filter { it.pressed }
+                    if (pressed.isEmpty()) break
+                    if (pressed.size >= 2) {
+                        if (mode == Mode.Using) currentInput.dragCancel()
+                        val a = pressed[0].position
+                        val b = pressed[1].position
+                        val centre = (a + b) / 2f
+                        val span = (a - b).getDistance()
+                        val angle = atan2(b.y - a.y, b.x - a.x)
+                        if (mode == Mode.Two && lastCentre != Offset.Unspecified) {
+                            view.pan(centre.x - lastCentre.x, centre.y - lastCentre.y)
+                            if (lastSpan > 0f && span > 0f) view.zoomAt(span / lastSpan, centre.x, centre.y, w, h)
+                            var turned = angle - lastAngle
+                            if (turned > PI) turned -= (2 * PI).toFloat()
+                            if (turned < -PI) turned += (2 * PI).toFloat()
+                            twist += turned
+                            // A twist past a third of a right angle turns the view a quarter.
+                            if (twist > TWIST) { view.turnBy(-1); twist = 0f }
+                            if (twist < -TWIST) { view.turnBy(1); twist = 0f }
+                        }
+                        mode = Mode.Two
+                        lastCentre = centre
+                        lastSpan = span
+                        lastAngle = angle
+                    } else {
+                        val p = pressed[0]
+                        if (mode == Mode.Two) {
+                            // Down to one finger after two: it moves the map until it lifts.
+                            mode = Mode.Moving
+                        } else if (mode == Mode.Undecided && (p.position - start).getDistance() > viewConfiguration.touchSlop) {
+                            if (currentInput.drags) {
+                                val at = view.pick(world, start.x, start.y, w, h)
+                                if (at != null) {
+                                    mode = Mode.Using
+                                    currentInput.dragStart(at)
+                                } else mode = Mode.Moving
+                            } else mode = Mode.Moving
+                        }
+                        when (mode) {
+                            Mode.Using -> view.pick(world, p.position.x, p.position.y, w, h)?.let { currentInput.dragTo(it) }
+                            Mode.Moving -> p.positionChange().let { view.pan(it.x, it.y) }
+                            else -> {}
+                        }
+                    }
+                    event.changes.forEach { it.consume() }
+                }
+                when (mode) {
+                    Mode.Undecided -> view.pick(world, start.x, start.y, w, h)?.let { currentInput.tap(it) }
+                    Mode.Using -> currentInput.dragEnd()
+                    else -> {}
                 }
             }
-            .pointerInput(view) {
-                detectTapGestures { p -> pick(world, view, p, size.width / 2f, size.height / 2f)?.let { onTap(it.first, it.second) } }
-            },
+        },
     ) {
-        frame.hashCode()
-        drawLand(world, view)
+        renderer.revision.intValue
+        frame()
+        with(renderer) { draw(view) }
+        overlay?.let { draw ->
+            val painter = LandPainter(world, view, view.halfWidth)
+            painter.originX = view.screenX(0f, 0f, size.width)
+            painter.originY = view.screenY(0f, 0f, 0f, size.height)
+            draw(painter)
+        }
     }
 }
 
-private fun DrawScope.drawLand(world: World, view: View) {
-    val hw = view.halfWidth
-    val hh = view.halfHeight
-    val ox = size.width / 2 - (view.focusViewX() - view.focusViewY()) * hw
-    val oy = size.height / 2 - (view.focusViewX() + view.focusViewY()) * hh
-    val top = Path()
-    val face = Path()
-    for (vy in 0 until view.viewHeight) for (vx in 0 until view.viewWidth) {
-        val h = height(world, view, vx, vy)
-        val cx = ox + (vx - vy) * hw
-        val cy = oy + (vx + vy) * hh - h * view.step
-        if (cx < -hw || cx > size.width + hw || cy < -hh * 2 || cy > size.height + hh * 2 + 16 * view.step) continue
-        val water = h <= World.SEA
-        // The faces down to the next tile on the left and on the right, where it's lower.
-        val left = (h - height(world, view, vx, vy + 1)).coerceAtLeast(0) * view.step
-        if (left > 0) {
-            face.reset()
-            face.moveTo(cx - hw, cy)
-            face.lineTo(cx, cy + hh)
-            face.lineTo(cx, cy + hh + left)
-            face.lineTo(cx - hw, cy + left)
-            face.close()
-            drawPath(face, SIDE_LIGHT)
-        }
-        val right = (h - height(world, view, vx + 1, vy)).coerceAtLeast(0) * view.step
-        if (right > 0) {
-            face.reset()
-            face.moveTo(cx, cy + hh)
-            face.lineTo(cx + hw, cy)
-            face.lineTo(cx + hw, cy + right)
-            face.lineTo(cx, cy + hh + right)
-            face.close()
-            drawPath(face, SIDE_DARK)
-        }
-        top.reset()
-        top.moveTo(cx, cy - hh)
-        top.lineTo(cx + hw, cy)
-        top.lineTo(cx, cy + hh)
-        top.lineTo(cx - hw, cy)
-        top.close()
-        drawPath(top, if (water) WATER else GRASS[h.coerceIn(0, GRASS.size - 1)])
-        if (hw >= 12) drawPath(top, OUTLINE, style = androidx.compose.ui.graphics.drawscope.Stroke(1f))
-    }
-}
+private enum class Mode { Undecided, Using, Moving, Two }
 
-/** The height of a view tile, with water flat at sea level and off the map counted as the bottom. */
-private fun height(world: World, view: View, vx: Int, vy: Int): Int {
-    if (vx !in 0 until view.viewWidth || vy !in 0 until view.viewHeight) return 0
-    return world.heightAt(view.worldX(vx, vy), view.worldY(vx, vy)).coerceAtLeast(World.SEA)
-}
-
-/** The world tile under a point on screen, ignoring height for now. */
-private fun pick(world: World, view: View, p: Offset, centreX: Float, centreY: Float): Pair<Int, Int>? {
-    val a = (p.x - centreX) / view.halfWidth
-    val b = (p.y - centreY) / view.halfHeight
-    val vx = floor(view.focusViewX() + (a + b) / 2).toInt()
-    val vy = floor(view.focusViewY() + (b - a) / 2).toInt()
-    if (vx !in 0 until view.viewWidth || vy !in 0 until view.viewHeight) return null
-    val x = view.worldX(vx, vy)
-    val y = view.worldY(vx, vy)
-    return if (world.inside(x, y)) x to y else null
-}
-
-private val WATER = Color(0xFF3E6E8E)
-private val GRASS = Array(16) { h ->
-    val t = h / 15f
-    Color(0.36f + 0.22f * t, 0.52f + 0.08f * t, 0.27f + 0.06f * t)
-}
-private val SIDE_LIGHT = Color(0xFF7A6248)
-private val SIDE_DARK = Color(0xFF5A4634)
-private val OUTLINE = Color(0x22000000)
+private const val TWIST = (PI / 6).toFloat()
