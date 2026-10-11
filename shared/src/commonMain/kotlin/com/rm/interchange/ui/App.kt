@@ -34,7 +34,9 @@ import androidx.compose.ui.graphics.ImageBitmap
 import com.rm.interchange.map.MapInput
 import com.rm.interchange.map.Moving
 import com.rm.interchange.map.trainAt
-import com.rm.interchange.map.rememberSheets
+import com.rm.interchange.map.Sheets
+import com.rm.interchange.map.rememberPackedSheets
+import androidx.compose.runtime.rememberCoroutineScope
 import com.rm.interchange.map.MapView
 import com.rm.interchange.map.Pick
 import com.rm.interchange.map.View
@@ -66,7 +68,9 @@ private fun GameScreen() {
             if (game == null) game = runner.game
         }
     }
-    val sheets by rememberSheets()
+    val packed by rememberPackedSheets()
+    val scope = rememberCoroutineScope()
+    val sheets = remember(packed) { packed?.let { Sheets(it, scope) } }
     val g = game
     val s = sheets
     if (g == null || s == null) {
@@ -77,7 +81,7 @@ private fun GameScreen() {
 }
 
 @Composable
-private fun GameScreen(runner: GameThread, world: World, sheets: List<ImageBitmap>, frame: State<Long>) {
+private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: State<Long>) {
     val c = LocalColors.current
     val view = remember {
         View(world.width, world.height).apply {

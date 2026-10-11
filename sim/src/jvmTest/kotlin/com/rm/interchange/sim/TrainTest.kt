@@ -23,7 +23,7 @@ class TrainTest {
     fun aTrainRunsBetweenTwoStationsAndTurnsAtTheEnd() {
         val w = line()
         assertEquals(2, w.stations.size)
-        w.apply(Command.BuyTrain(0, 0, 0, 2, 3))
+        w.apply(Command.BuyTrain(0, 0, 0, 18, 3))
         val t = w.trains[0]!!
         w.apply(Command.TrainOrder(0, 0, Command.TrainOrder.ORDERS, intArrayOf(0, 1)))
         w.apply(Command.TrainOrder(0, 0, Command.TrainOrder.START_STOP))
@@ -43,8 +43,8 @@ class TrainTest {
             w.apply(Command.Signal(0, x, 10, Track.X, Track.XM))
             w.apply(Command.Signal(0, x, 10, Track.X, Track.XM))
         }
-        w.apply(Command.BuyTrain(0, 0, 0, 2, 2))
-        w.apply(Command.BuyTrain(0, 0, 0, 3, 2))
+        w.apply(Command.BuyTrain(0, 0, 0, 18, 2))
+        w.apply(Command.BuyTrain(0, 0, 0, 22, 2))
         for (id in 0..1) {
             w.apply(Command.TrainOrder(0, id, Command.TrainOrder.ORDERS, intArrayOf(1)))
             w.apply(Command.TrainOrder(0, id, Command.TrainOrder.START_STOP))
@@ -66,7 +66,7 @@ class TrainTest {
         val a = line()
         val b = line()
         for (w in listOf(a, b)) {
-            w.apply(Command.BuyTrain(0, 0, 0, 2, 3))
+            w.apply(Command.BuyTrain(0, 0, 0, 18, 3))
             w.apply(Command.TrainOrder(0, 0, Command.TrainOrder.ORDERS, intArrayOf(0, 1)))
             w.apply(Command.TrainOrder(0, 0, Command.TrainOrder.START_STOP))
             w.run(5_000)
@@ -82,7 +82,7 @@ class TrainTest {
         w.apply(Command.Rail(0, 25, 11, 25, 20, Track.Y, remove = false))
         w.apply(Command.Station(0, 25, 17, 25, 20, Track.Y))
         val third = w.stations.size - 1
-        w.apply(Command.BuyTrain(0, 0, 0, 2, 2))
+        w.apply(Command.BuyTrain(0, 0, 0, 18, 2))
         w.apply(Command.TrainOrder(0, 0, Command.TrainOrder.ORDERS, intArrayOf(third)))
         w.apply(Command.TrainOrder(0, 0, Command.TrainOrder.START_STOP))
         var arrived = false
@@ -103,7 +103,7 @@ class TrainTest {
         w.apply(Command.Depot(0, 2, 10, Track.XP))
         w.apply(Command.Station(0, 3, 10, 6, 10, Track.X))
         w.apply(Command.Station(0, 19, 10, 20, 10, Track.X))
-        w.apply(Command.BuyTrain(0, 0, 0, 2, 3))
+        w.apply(Command.BuyTrain(0, 0, 0, 18, 3))
         w.apply(Command.TrainOrder(0, 0, Command.TrainOrder.ORDERS, intArrayOf(0, 1)))
         w.apply(Command.TrainOrder(0, 0, Command.TrainOrder.START_STOP))
         val t = w.trains[0]!!
@@ -116,7 +116,7 @@ class TrainTest {
             lastDir = stepExit(s)
         }
         assertTrue(turnedAt.size >= 3)
-        // The nose is on the next tile in from the end once it has turned.
-        assertTrue(turnedAt.all { it == 4 || it == 19 }, "turned at $turnedAt")
+        // Once turned, the nose is where the last car was, so within a train's length of either end, never out on the line.
+        assertTrue(turnedAt.all { it <= 7 || it >= 16 }, "turned at $turnedAt")
     }
 }

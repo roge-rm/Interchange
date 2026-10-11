@@ -34,7 +34,7 @@ import kotlin.math.roundToInt
  *
  * Everything but the baking itself runs on the main thread.
  */
-internal class Renderer(private val world: World, private val sheets: List<ImageBitmap>, private val scope: CoroutineScope) {
+internal class Renderer(private val world: World, private val sheets: Sheets, private val scope: CoroutineScope) {
     private class Key(val level: Int, val turn: Int, val cx: Int, val cy: Int) {
         override fun equals(other: Any?) = other is Key && other.level == level && other.turn == turn && other.cx == cx && other.cy == cy
         override fun hashCode() = ((level * 4 + turn) * 8191 + cx) * 8191 + cy
@@ -80,7 +80,9 @@ internal class Renderer(private val world: World, private val sheets: List<Image
         for ((key, _) in wanted.sortedBy { it.second }) {
             if (baking.size >= BAKERS * 2) break
             if (key in baking) continue
-            bake(view, key)
+            // Waits for its level's sheet to be unpacked; asking starts that.
+            val sheet = sheets.get(key.level) ?: continue
+            bake(key, sheet)
         }
         trim()
     }
@@ -172,10 +174,11 @@ internal class Renderer(private val world: World, private val sheets: List<Image
     /** How many times the world under a chunk has changed, from the world's own blocks. */
     private fun versionOf(view: View, level: Int, cx: Int, cy: Int): Int {
         val tiles = chunkTiles(level)
-        val vx0 = cx * tiles
-        val vy0 = cy * tiles
-        val vx1 = min(view.viewWidth, vx0 + tiles) - 1
-        val vy1 = min(view.viewHeight, vy0 + tiles) - 1
+        // The chunk's own tiles and the ring round it it draws too.
+        val vx0 = max(0, cx * tiles - 1)
+        val vy0 = max(0, cy * tiles - 1)
+        val vx1 = min(view.viewWidth, cx * tiles + tiles + 1) - 1
+        val vy1 = min(view.viewHeight, cy * tiles + tiles + 1) - 1
         val x0 = min(view.worldX(vx0, vy0), view.worldX(vx1, vy1)) / World.CHUNK
         val x1 = max(view.worldX(vx0, vy0), view.worldX(vx1, vy1)) / World.CHUNK
         val y0 = min(view.worldY(vx0, vy0), view.worldY(vx1, vy1)) / World.CHUNK
@@ -186,14 +189,14 @@ internal class Renderer(private val world: World, private val sheets: List<Image
         return sum
     }
 
-    private fun bake(view: View, key: Key) {
+    private fun bake(key: Key, sheet: ImageBitmap) {
         // The view as it is now, kept apart so turning while this bakes doesn't change it.
         val bakeView = View(world.width, world.height).also { it.turnBy(key.turn) }
         val version = versionOf(bakeView, key.level, key.cx, key.cy)
         baking += key
         // The scope is the composition's, on the main thread; only the baking goes off it.
         scope.launch {
-            val image = withContext(bakers) { bakeChunk(bakeView, key) }
+            val image = withContext(bakers) { bakeChunk(bakeView, key, sheet) }
             baking -= key
             cache.put(key, Entry(image, version, frame))?.let { bytes -= it.bytes }
             bytes += image.width.toLong() * image.height * 4
@@ -201,19 +204,21 @@ internal class Renderer(private val world: World, private val sheets: List<Image
         }
     }
 
-    private fun bakeChunk(view: View, key: Key): ImageBitmap {
+    private fun bakeChunk(view: View, key: Key, sheet: ImageBitmap): ImageBitmap {
         val hw = LEVELS[key.level]
         val tiles = chunkTiles(key.level)
         val height = chunkHeight(key.level, hw)
         val image = ImageBitmap(CHUNK_PIXELS, height)
-        val painter = LandPainter(world, view, hw, sheets[key.level])
+        val painter = LandPainter(world, view, hw, sheet)
         val vx0 = key.cx * tiles
         val vy0 = key.cy * tiles
         painter.originX = tiles * hw - (vx0 - vy0) * hw
         painter.originY = topPad(hw) - (vx0 + vy0) * hw / 2
+        // A ring of the neighbours' tiles is drawn too, in order with the chunk's own, so where chunks meet both
+        // have the same solid pixels and no seam shows when they're drawn scaled.
         CanvasDrawScope().draw(Density(1f), LayoutDirection.Ltr, Canvas(image), Size(CHUNK_PIXELS.toFloat(), height.toFloat())) {
             with(painter) {
-                for (vy in vy0 until min(vy0 + tiles, view.viewHeight)) for (vx in vx0 until min(vx0 + tiles, view.viewWidth)) tile(vx, vy)
+                for (vy in max(0, vy0 - 1) until min(vy0 + tiles + 1, view.viewHeight)) for (vx in max(0, vx0 - 1) until min(vx0 + tiles + 1, view.viewWidth)) tile(vx, vy)
             }
         }
         return image
@@ -232,7 +237,7 @@ internal class Renderer(private val world: World, private val sheets: List<Image
 
     companion object {
         /** Half a tile's width at each level, sharpest first. */
-        val LEVELS = floatArrayOf(64f, 32f, 16f, 8f, 4f)
+        val LEVELS = floatArrayOf(128f, 64f, 32f, 16f, 8f, 4f)
         const val CHUNK_PIXELS = 1024
         /** Chunks baking at once, leaving cores for the screen and the game. */
         val BAKERS = (Workers.threads - 1).coerceIn(2, 6)
@@ -241,8 +246,8 @@ internal class Renderer(private val world: World, private val sheets: List<Image
 
         fun chunkTiles(level: Int) = (CHUNK_PIXELS / (2 * LEVELS[level])).toInt()
 
-        /** Room above the chunk's diamond for the highest land. */
-        fun topPad(hw: Float) = World.MAX_HEIGHT * hw / 4 + 2
+        /** Room above the chunk's diamond for the highest land and what stands on it: trees, roofs. */
+        fun topPad(hw: Float) = World.MAX_HEIGHT * hw / 4 + 3 * hw + 2
 
         fun chunkHeight(level: Int, hw: Float) = (chunkTiles(level) * hw + topPad(hw) + 2 * hw / 4 + 2).toInt()
 

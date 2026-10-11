@@ -40,7 +40,7 @@ interface MapInput {
 @Composable
 fun MapView(
     world: World,
-    sheets: List<ImageBitmap>,
+    sheets: Sheets,
     view: View,
     frame: () -> Long,
     input: MapInput,
@@ -120,6 +120,7 @@ fun MapView(
         },
     ) {
         renderer.revision.intValue
+        sheets.revision.intValue
         frame()
         with(renderer) { draw(view) }
         moving()?.let { drawMoving(world, view, sheets, it) }

@@ -141,7 +141,7 @@ class View(val mapWidth: Int, val mapHeight: Int) {
 
     companion object {
         const val MIN_HALF_WIDTH = 3f
-        const val MAX_HALF_WIDTH = 96f
+        const val MAX_HALF_WIDTH = 192f
     }
 }
 

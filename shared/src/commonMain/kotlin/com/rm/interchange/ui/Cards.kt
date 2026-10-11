@@ -85,12 +85,13 @@ fun DepotCard(view: WorldView, depot: Int, year: Int, money: Long, send: (Comman
     var count by remember { mutableIntStateOf(3) }
     Card("Depot", onClose, modifier) {
         FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            for (e in engines) Chip("${e.name}, ${e.speed} km/h", e.id == engine) { engine = e.id }
+            for (e in engines) Chip("${e.name} ${e.type}, ${e.speed} km/h", e.id == engine) { engine = e.id }
         }
         FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             for (w in wagons) Chip(w.name, w.id == wagon) { wagon = w.id }
         }
-        val cost = Engines.ALL[engine].cost + Engines.ALL[wagon].cost * count
+        val e = Engines.ALL[engine]
+        val cost = e.cost + (Engines.ALL.getOrNull(e.tender)?.cost ?: 0) + Engines.ALL[wagon].cost * count
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             SquareButton(Glyph.Lower, "Fewer wagons", 32.dp, enabled = count > 0) { count-- }
             Text("$count wagons", color = c.text, fontSize = 13.sp)

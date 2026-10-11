@@ -60,7 +60,7 @@ fun World.view(): WorldView {
     for (t in trains) {
         if (t == null || t.inDepot) continue
         for (c in 0 until t.cars) {
-            val at = t.behind(c * CAR * FIX + CAR * FIX / 2)
+            val at = t.behind(t.carMiddle(c))
             val i = (at shr 32).toInt()
             if (i < 0) continue
             val s = t.steps[i]
@@ -77,7 +77,7 @@ fun World.view(): WorldView {
             cars += ax + (bx - ax) * along
             cars += ay + (by - ay) * along
             cars += heading(Track.edgeX4(b) - Track.edgeX4(a), Track.edgeY4(b) - Track.edgeY4(a)).toFloat()
-            cars += Engines.ALL[if (c == 0) t.engine else t.wagon].sprite.toFloat()
+            cars += Engines.ALL[t.carEngines[c]].sprite.toFloat()
         }
     }
     val trainViews = trains.filterNotNull().map { t ->

@@ -17,5 +17,7 @@ object Prices {
     const val DEPOT = 1_500L
     const val SIGNAL = 200L
     const val CLEAR = 50L
+    /** Clearing a tree to build. */
+    const val TREE = 40L
     const val START_MONEY = 250_000L
 }

@@ -12,6 +12,7 @@ import com.rm.interchange.sim.CORNER_N
 import com.rm.interchange.sim.CORNER_S
 import com.rm.interchange.sim.CORNER_W
 import com.rm.interchange.sim.Track
+import com.rm.interchange.sim.Trees
 import com.rm.interchange.sim.World
 import com.rm.interchange.sim.hasFoundation
 import com.rm.interchange.sim.surfaceHeight
@@ -32,11 +33,8 @@ class LandPainter(private val world: World, private val view: View, private val 
     private val step = halfWidth / 4
     private val path = Path()
 
-    // A cell's size and anchor at this level.
-    private val scale = halfWidth / (Atlas.CELL_W / 2)
-    private val cellW = (Atlas.CELL_W * scale).toInt()
-    private val cellH = (Atlas.CELL_H * scale).toInt()
-    private val anchorY = (Atlas.CELL_H_ANCHOR * scale).toInt()
+    // How many times smaller than level 0 this sheet is.
+    private val shrink = (Atlas.HALF_WIDTH / halfWidth).toInt().coerceAtLeast(1)
 
     /** Where view point 0, 0 at height 0 lands. */
     var originX = 0f
@@ -54,15 +52,35 @@ class LandPainter(private val world: World, private val view: View, private val 
         return if (dy == 0) (if (dx == 0) CORNER_N else CORNER_E) else (if (dx == 0) CORNER_W else CORNER_S)
     }
 
-    /** Draws atlas [cell] with its anchor on view tile ([vx], [vy])'s top corner at height [h]. */
-    private fun DrawScope.sprite(cell: Int, vx: Int, vy: Int, h: Int) {
+    /** Draws atlas sprite [cell] with its anchor at screen point ([ax], [ay]), as many times bigger as [scale]. */
+    private fun DrawScope.place(cell: Int, ax: Float, ay: Float, scale: Float = 1f) {
         val image = sheet ?: return
         if (cell < 0) return
-        val sx = (cell % Atlas.COLUMNS) * cellW
-        val sy = (cell / Atlas.COLUMNS) * cellH
-        val dx = x(vx.toFloat(), vy.toFloat()) - halfWidth
-        val dy = y(vx.toFloat(), vy.toFloat(), h.toFloat()) - anchorY
-        drawImage(image, IntOffset(sx, sy), IntSize(cellW, cellH), IntOffset(dx.toInt(), dy.toInt()), IntSize(cellW, cellH))
+        val r = cell * 6
+        val f = shrink
+        val sx = Atlas.RECTS[r] / f
+        val sy = Atlas.RECTS[r + 1] / f
+        val w = Atlas.RECTS[r + 2] / f
+        val h = Atlas.RECTS[r + 3] / f
+        if (w == 0 || h == 0) return
+        val left = ax + Atlas.RECTS[r + 4] / f * scale
+        val top = ay + Atlas.RECTS[r + 5] / f * scale
+        if (scale == 1f) {
+            drawImage(image, IntOffset(sx, sy), IntSize(w, h), IntOffset(left.toInt(), top.toInt()), IntSize(w, h))
+        } else {
+            val l = left.toInt()
+            val t = top.toInt()
+            drawImage(
+                image, IntOffset(sx, sy), IntSize(w, h), IntOffset(l, t),
+                IntSize((left + w * scale).toInt() - l, (top + h * scale).toInt() - t),
+                filterQuality = androidx.compose.ui.graphics.FilterQuality.Low,
+            )
+        }
+    }
+
+    /** Draws atlas [cell] with its anchor on view tile ([vx], [vy])'s top corner at height [h]. */
+    private fun DrawScope.sprite(cell: Int, vx: Int, vy: Int, h: Int) {
+        place(cell, x(vx.toFloat(), vy.toFloat()), y(vx.toFloat(), vy.toFloat(), h.toFloat()))
     }
 
     /** Draws view tile ([vx], [vy]): the ground, any foundation and track on it, and at the map's front edges the earth under it. */
@@ -89,17 +107,20 @@ class LandPainter(private val world: World, private val view: View, private val 
 
         val base = minOf(minOf(t, r), minOf(b, l))
         val shape = shapeOf(t - base, r - base, b - base, l - base)
-        val water = base == 0 && shape == 0
-        val kind = when {
-            water -> Atlas.WATER
-            base == 0 -> Atlas.SAND
-            else -> Atlas.GRASS0 + variant(wx, wy)
+        val tile = world.index(wx, wy)
+        if (base == 0 && shape == 0) {
+            sprite(Atlas.WATER, vx, vy, 0)
+            return
         }
-        sprite(Atlas.GROUND[kind * 16 + shape], vx, vy, base)
+        val kind = if (base == 0) Atlas.SAND else world.ground[tile].toInt()
+        val look = Atlas.KIND_START[kind] + variant(wx, wy) % Atlas.KIND_LOOKS[kind]
+        sprite(Atlas.GROUND[look * 16 + shape], vx, vy, base)
 
         val pieces = world.trackAt(wx, wy)
-        if (pieces == 0) return
-        val tile = world.index(wx, wy)
+        if (pieces == 0) {
+            trees(wx, wy)
+            return
+        }
         world.depotTiles[tile]?.let { id ->
             val d = world.depots.getOrNull(id) ?: return@let
             sprite(Atlas.TRACK[viewPieceIndex(Track.index(pieces)) * 16], vx, vy, base)
@@ -115,7 +136,7 @@ class LandPainter(private val world: World, private val view: View, private val 
         val sShape = shapeOf(st - sBase, sr - sBase, sb - sBase, sl - sBase)
         if (world.hasFoundation(wx, wy)) {
             sprite(Atlas.WALLS[shape * 16 + shapeOf(st - base, sr - base, sb - base, sl - base)], vx, vy, base)
-            sprite(Atlas.GROUND[(Atlas.GRASS0 + variant(wx, wy)) * 16 + sShape], vx, vy, sBase)
+            sprite(Atlas.GROUND[look * 16 + sShape], vx, vy, sBase)
         }
         if (world.stationTiles.containsKey(tile)) {
             sprite(Atlas.STATION[viewPieceIndex(Track.index(pieces))], vx, vy, sBase)
@@ -127,17 +148,35 @@ class LandPainter(private val world: World, private val view: View, private val 
         }
     }
 
-    /** Draws a vehicle or signal's [cell] with its anchor at screen point ([px], [py]), scaled by [scale] from this level. */
+    /**
+     * Draws a vehicle, tree or signal's [cell] standing at screen point ([px], [py]), as many times bigger than
+     * this level as [scale]. They're drawn as if on a tile whose middle is where they stand.
+     */
     fun DrawScope.spriteAt(cell: Int, px: Float, py: Float, scale: Float) {
-        val image = sheet ?: return
-        if (cell < 0) return
-        val sx = (cell % Atlas.COLUMNS) * cellW
-        val sy = (cell / Atlas.COLUMNS) * cellH
-        val w = (cellW * scale).toInt()
-        val h = (cellH * scale).toInt()
-        val left = (px - cellW / 2 * scale).toInt()
-        val top = (py - Atlas.MID_ANCHOR * this@LandPainter.scale * scale).toInt()
-        drawImage(image, IntOffset(sx, sy), IntSize(cellW, cellH), IntOffset(left, top), IntSize(w, h), filterQuality = androidx.compose.ui.graphics.FilterQuality.None)
+        place(cell, px, py - halfHeight * scale, scale)
+    }
+
+    /** The trees on world tile ([wx], [wy]), each where the tile's own dice put it, the furthest first. */
+    private fun DrawScope.trees(wx: Int, wy: Int) {
+        val packed = world.trees[world.index(wx, wy)].toInt()
+        val n = Trees.count(packed)
+        if (n == 0) return
+        val kind = Trees.kind(packed)
+        val spots = ArrayList<FloatArray>(n)
+        for (k in 0 until n) {
+            val d = dice(wx, wy, k)
+            // Spread out over the middle of the tile so they don't crowd onto the track next door.
+            val tx = wx + 0.22f + (d and 255) / 255f * 0.56f
+            val ty = wy + 0.22f + ((d shr 8) and 255) / 255f * 0.56f
+            val vx = view.toViewX(tx, ty)
+            val vy = view.toViewY(tx, ty)
+            spots += floatArrayOf(vx + vy, vx, vy, groundHeight(world, tx, ty), ((d shr 16) and 255).toFloat())
+        }
+        spots.sortBy { it[0] }
+        for (sp in spots) {
+            val cell = Atlas.TREE[kind * Atlas.TREE_LOOKS + sp[4].toInt() % Atlas.TREE_LOOKS]
+            place(cell, x(sp[1] - 0.5f, sp[2] - 0.5f), y(sp[1] - 0.5f, sp[2] - 0.5f, sp[3]))
+        }
     }
 
     /** A world heading in eighths, as it shows in this view. */
@@ -213,11 +252,14 @@ class LandPainter(private val world: World, private val view: View, private val 
         /** Which view corners stand a step up, as Atlas shapes. */
         fun shapeOf(t: Int, r: Int, b: Int, l: Int) = t or (r shl 1) or (b shl 2) or (l shl 3)
 
-        /** Which of the grass sprites a tile gets, the same in every view. */
-        fun variant(wx: Int, wy: Int): Int {
-            var h = wx * 73856093 xor wy * 19349663
-            h = h xor (h ushr 13)
-            return (h * 0x5bd1e995 ushr 29) and 3
+        /** Which look of its ground a tile gets, the same in every view. */
+        fun variant(wx: Int, wy: Int): Int = dice(wx, wy, 7) and 15
+
+        /** Bits for tile ([wx], [wy]) and [salt] that are the same every time, for placing things on it. */
+        fun dice(wx: Int, wy: Int, salt: Int): Int {
+            var h = wx * 73856093 xor wy * 19349663 xor salt * 83492791
+            h = (h xor (h ushr 13)) * 0x5bd1e995
+            return h xor (h ushr 15)
         }
     }
 }

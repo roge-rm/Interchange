@@ -3,7 +3,8 @@ package com.rm.interchange.sim
 /*
  * Trains and how they move.
  *
- * A train is an engine and its wagons, each [CAR] long, nose to tail. Where it
+ * A train is an engine, its tender if it has one, and its wagons, nose to
+ * tail, each as long as its drawing says. Where it
  * is on the track is a list of steps, from the piece under its last wagon to
  * the piece under its nose, and how far along that last piece the nose is. A
  * step is a tile, the piece the train runs along there and the edge it came
@@ -19,8 +20,6 @@ package com.rm.interchange.sim
 
 const val FIX = 256
 
-/** A wagon's or an engine's length, in sixteenths of a tile. */
-const val CAR = 8
 
 /** Packs a step: [tile], the index of the piece, and the edge come in at. */
 fun step(tile: Int, pieceIndex: Int, entry: Int) = (tile shl 5) or (pieceIndex shl 2) or entry
@@ -40,8 +39,22 @@ class Train(
     var depot: Int,
 ) {
     var name = "Train ${id + 1}"
-    val cars get() = 1 + wagons
-    val length get() = cars * CAR * FIX
+
+    /** What each car is, nose first: the engine, its tender, then the wagons. */
+    val carEngines: IntArray = buildList {
+        add(engine)
+        Engines.ALL[engine].tender.takeIf { it >= 0 }?.let { add(it) }
+        repeat(wagons) { add(wagon) }
+    }.toIntArray()
+    val cars get() = carEngines.size
+    val length = carEngines.sumOf { Engines.ALL[it].length } * FIX
+
+    /** How far behind the nose car [i]'s middle is. */
+    fun carMiddle(i: Int): Int {
+        var d = 0
+        for (k in 0 until i) d += Engines.ALL[carEngines[k]].length
+        return (d * 2 + Engines.ALL[carEngines[i]].length) * FIX / 2
+    }
 
     /** In its depot, off the map. */
     var inDepot = true
@@ -74,7 +87,9 @@ class Train(
     val engineInfo get() = Engines.ALL[engine]
     val wagonInfo get() = Engines.ALL[wagon]
     val maxSpeed get() = engineInfo.speed * 4096 * 16 / 2700
-    val weight get() = engineInfo.weight + wagonInfo.weight * wagons
+    val weight get() = carEngines.sumOf { Engines.ALL[it].weight }
+    /** What it cost new: the engine, its tender and its wagons. */
+    val price get() = carEngines.sumOf { Engines.ALL[it].cost }
 
     /** Where it's heading: a station id, -1 for its depot, or -2 for nowhere. */
     val target: Int get() = when {
@@ -110,12 +125,12 @@ internal fun World.buyTrain(company: Company, c: Command.BuyTrain) {
     val e = Engines.ALL.getOrNull(c.engine) ?: return
     val w = Engines.ALL.getOrNull(c.wagon) ?: return
     val year = Calendar.year(startYear, day)
-    if (!e.pulls || w.pulls || year < e.from || year >= e.until || year < w.from || year >= w.until) return
+    if (!e.pulls || w.pulls || w.isTender || year < e.from || year >= e.until || year < w.from || year >= w.until) return
     if (c.wagons !in 0..MAX_WAGONS) return
-    val cost = e.cost + w.cost * c.wagons
-    if (company.money < cost) return
-    company.money -= cost
-    trains += Train(trains.size, company.id, e.id, w.id, c.wagons, depot.id)
+    val t = Train(trains.size, company.id, e.id, w.id, c.wagons, depot.id)
+    if (company.money < t.price) return
+    company.money -= t.price
+    trains += t
 }
 
 internal fun World.trainCommand(company: Company, c: Command.TrainOrder) {
@@ -144,7 +159,7 @@ internal fun World.trainCommand(company: Company, c: Command.TrainOrder) {
             t.route = null
         }
         Command.TrainOrder.SELL -> if (t.inDepot) {
-            company.money += (t.engineInfo.cost + t.wagonInfo.cost * t.wagons) / 2
+            company.money += t.price / 2
             trains[t.id] = null
         }
     }
@@ -369,7 +384,7 @@ internal fun World.payRunningCosts() {
     for (t in trains) {
         if (t == null || t.inDepot && !t.running) continue
         val c = companies.getOrNull(t.owner) ?: continue
-        val yearly = t.engineInfo.running + t.wagonInfo.running * t.wagons
+        val yearly = t.carEngines.sumOf { Engines.ALL[it].running }
         c.runningOwed += yearly
         c.money -= c.runningOwed / 365
         c.runningOwed %= 365

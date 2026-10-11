@@ -19,6 +19,12 @@ class World(val width: Int, val height: Int, seed: Long, val startYear: Int = 18
 
     val corners = ByteArray((width + 1) * (height + 1))
 
+    /** The kind of ground on each tile, a [Ground] kind. */
+    val ground = ByteArray(width * height)
+
+    /** The trees on each tile, packed by [Trees.pack]. */
+    val trees = ByteArray(width * height)
+
     /** Track pieces on each tile, as [Track] bits. */
     val track = ByteArray(width * height)
 
@@ -47,6 +53,9 @@ class World(val width: Int, val height: Int, seed: Long, val startYear: Int = 18
 
     val rng = Rng(seed)
 
+    /** The seed folded into an int, for per-tile dice that don't draw from [rng]. */
+    internal val seedBits = (seed xor (seed ushr 32)).toInt()
+
     /** Ticks since the game began. */
     var tick = 0L
         private set
@@ -61,6 +70,7 @@ class World(val width: Int, val height: Int, seed: Long, val startYear: Int = 18
 
     init {
         generateLand(this)
+        generateCountry(this)
     }
 
     fun index(x: Int, y: Int) = y * width + x
@@ -135,6 +145,7 @@ class World(val width: Int, val height: Int, seed: Long, val startYear: Int = 18
             for (i in from until from + width) {
                 h = (h xor corners[corner(i - from, y)].toLong()) * 0x100000001b3L
                 h = (h xor track[i].toLong()) * 0x100000001b3L
+                h = (h xor trees[i].toLong()) * 0x100000001b3L
                 h = (h xor owner[i].toLong()) * 0x100000001b3L
             }
             bands[y] = h

@@ -1,6 +1,5 @@
 package com.rm.interchange.map
 
-import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import com.rm.interchange.sim.Track
 import com.rm.interchange.sim.WorldView
@@ -14,10 +13,11 @@ class Moving(val now: WorldView, val before: WorldView?, val between: Float)
  * Draws signals and trains over the map, nearest last. Trains are placed
  * between where they were on the last two ticks, so they glide.
  */
-internal fun DrawScope.drawMoving(world: World, view: View, sheets: List<ImageBitmap>, moving: Moving) {
-    val level = Renderer.levelFor(view.halfWidth)
+internal fun DrawScope.drawMoving(world: World, view: View, sheets: Sheets, moving: Moving) {
+    // The level's sheet, or the nearest one unpacked while it isn't yet.
+    val level = sheets.nearest(Renderer.levelFor(view.halfWidth)) ?: return
     val hw = Renderer.LEVELS[level]
-    val painter = LandPainter(world, view, hw, sheets[level])
+    val painter = LandPainter(world, view, hw, sheets.get(level))
     val scale = view.halfWidth / hw
     // Everything to draw, as depth, x, y and atlas cell.
     val items = ArrayList<FloatArray>()

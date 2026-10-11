@@ -86,7 +86,7 @@ internal fun World.buildStation(company: Company, c: Command.Station) {
     }
     // Platforms on sloping land stand on a foundation, level with the highest corner; their track has to meet any already next door.
     val sloping = tiles.count { !isFlat(it % width, it / width) }
-    val cost = Prices.PLATFORM * tiles.size + Prices.FOUNDATION * sloping
+    val cost = Prices.PLATFORM * tiles.size + Prices.FOUNDATION * sloping + tiles.sumOf { treeCost(it) }
     if (company.money < cost) return
     for (i in tiles) stationTiles[i] = -1
     val fits = tiles.all { i ->
@@ -104,6 +104,7 @@ internal fun World.buildStation(company: Company, c: Command.Station) {
     val s = station ?: Station(stations.size, company.id, stationName(xs.first, ys.first), xs.first, ys.first).also { stations += it }
     company.money -= cost
     for (i in tiles) {
+        clearTrees(i)
         // Any track already there must run the same way, checked above, so the platform's track joins it.
         track[i] = c.axis.toByte()
         owner[i] = company.id.toByte()
@@ -124,8 +125,8 @@ internal fun World.buildDepot(company: Company, c: Command.Depot) {
     if (trackAt(c.x, c.y) != 0 || stationTiles.containsKey(i) || depotTiles.containsKey(i)) return
     val piece = Track.straight(c.edge)
     if (!piecesFit(c.x, c.y, piece)) return
-    if (company.money < Prices.DEPOT) return
-    company.money -= Prices.DEPOT
+    if (company.money < Prices.DEPOT + treeCost(i)) return
+    company.money -= Prices.DEPOT + clearTrees(i)
     val d = Depot(depots.size, company.id, i, c.edge)
     depots += d
     depotTiles[i] = d.id
