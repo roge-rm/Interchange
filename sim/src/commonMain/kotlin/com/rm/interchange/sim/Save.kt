@@ -16,14 +16,14 @@ package com.rm.interchange.sim
  */
 object Save {
     private val MAGIC = "ICHG".encodeToByteArray()
-    const val VERSION = 7
+    const val VERSION = 8
 
     fun write(world: World): ByteArray {
         val w = ByteWriter(world.width * world.height * 6 + 4096)
         with(world) {
             val g = settings
             w.int(g.width); w.int(g.height); w.long(g.seed); w.int(g.startYear); w.int(g.region.ordinal)
-            w.int(g.sea); w.int(g.hills); w.int(g.trees); w.int(g.towns); w.int(g.industries)
+            w.int(g.sea); w.int(g.hills); w.int(g.trees); w.int(g.towns); w.int(g.industries); w.bool(g.inflation)
             w.uvar(roster.packs.size.toLong())
             for (p in roster.packs) { w.string(p.id); w.int(p.version); w.long(p.hash) }
             w.uvar(roster.engines.size.toLong())
@@ -33,7 +33,15 @@ object Save {
             w.long(tick)
             w.long(rng.state)
             w.uvar(companies.size.toLong())
-            for (c in companies) { w.int(c.id); w.string(c.name); w.long(c.money); w.long(c.runningOwed) }
+            for (c in companies) {
+                w.int(c.id); w.string(c.name); w.long(c.money); w.long(c.runningOwed)
+                w.long(c.loan); w.long(c.monthIn); w.long(c.monthOut)
+                for (v in c.thisYear) w.long(v)
+                for (v in c.lastYear) w.long(v)
+                w.uvar(c.history.size.toLong())
+                for (h in c.history) for (v in h) w.long(v)
+            }
+            w.long(costScale); w.long(payScale)
             w.bytes(corners); w.bytes(ground); w.bytes(trees); w.bytes(track); w.bytes(owner)
             w.uvar(stations.size.toLong())
             for (s in stations) {
@@ -121,7 +129,17 @@ object Save {
             tick = r.long()
             rng.state = r.long()
             companies.clear()
-            repeat(r.uvar().toInt()) { companies += Company(r.int(), r.string(), r.long()).also { it.runningOwed = r.long() } }
+            repeat(r.uvar().toInt()) {
+                val c = Company(r.int(), r.string(), r.long()).also { it.runningOwed = r.long() }
+                if (version >= 8) {
+                    c.loan = r.long(); c.monthIn = r.long(); c.monthOut = r.long()
+                    for (k in 0 until Books.COUNT) c.thisYear[k] = r.long()
+                    for (k in 0 until Books.COUNT) c.lastYear[k] = r.long()
+                    repeat(r.uvar().toInt().also { if (it > HISTORY_MONTHS) throw BadData("too long a history") }) { c.history += LongArray(3) { r.long() } }
+                }
+                companies += c
+            }
+            if (version >= 8) { costScale = r.long(); payScale = r.long() }
             fill(corners, r.bytes()); fill(ground, r.bytes()); fill(trees, r.bytes()); fill(track, r.bytes()); fill(owner, r.bytes())
             repeat(r.uvar().toInt()) { id ->
                 if (!r.bool()) { stations += null; return@repeat }
@@ -230,6 +248,7 @@ object Save {
             // Before version 3 there were no towns.
             towns = if (version >= 3) r.int() else 0,
             industries = if (version >= 7) r.int() else 0,
+            inflation = if (version >= 8) r.bool() else false,
         )
         if (settings.width !in 16..4096 || settings.height !in 16..4096) throw BadData("map size out of range")
         return settings

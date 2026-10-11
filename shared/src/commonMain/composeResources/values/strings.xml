@@ -253,4 +253,23 @@
     <string name="wait_less">Wait a day less</string>
     <string name="wait_more">Wait a day more</string>
     <string name="remove_stop">Remove stop</string>
+
+    <!-- Money -->
+    <string name="finances">Finances</string>
+    <string name="money_line">Money: %1$s</string>
+    <string name="loan_line">Loan %1$s of %2$s</string>
+    <string name="borrow">Borrow</string>
+    <string name="repay">Repay</string>
+    <string name="the_books">Accounts</string>
+    <string name="this_year">This year</string>
+    <string name="last_year">Last year</string>
+    <string name="book_income">Fares and freight</string>
+    <string name="book_construction">Construction</string>
+    <string name="book_new_trains">New trains</string>
+    <string name="book_running">Running costs</string>
+    <string name="book_interest">Loan interest</string>
+    <string name="book_sold">Trains sold</string>
+    <string name="book_total">Profit</string>
+    <string name="money_graph">Money, last two years</string>
+    <string name="inflation">Inflation</string>
 </resources>

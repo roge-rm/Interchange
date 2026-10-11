@@ -146,8 +146,9 @@ fun NewGameScreen(packs: List<Pack>, onStart: (NewGame, List<Pack>) -> Unit, onB
     var trees by remember { mutableIntStateOf(2) }
     var towns by remember { mutableIntStateOf(2) }
     var industries by remember { mutableIntStateOf(2) }
+    var inflation by remember { mutableStateOf(true) }
     var off by remember { mutableStateOf(emptySet<String>()) }
-    val settings = NewGame(width, height, seed, year, region, sea, hills, trees, towns, industries)
+    val settings = NewGame(width, height, seed, year, region, sea, hills, trees, towns, industries, inflation)
     val chosen = packs.filter { it.id !in off }
     val clash = remember(chosen) {
         try {
@@ -227,6 +228,10 @@ fun NewGameScreen(packs: List<Pack>, onStart: (NewGame, List<Pack>) -> Unit, onB
         }, {
             StepSlider(stringResource(Res.string.industries), (0..3).toList(), industries, { townNames.getOrElse(it) { "$it" } }) { industries = it }
         })
+        Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            TogglePill(stringResource(Res.string.inflation), inflation, Modifier.weight(1f).fillMaxHeight()) { inflation = it }
+            Box(Modifier.weight(1f))
+        }
         if (packs.isNotEmpty()) {
             Text(stringResource(Res.string.packs), color = c.text, fontSize = 15.sp)
             for (row in packs.chunked(2)) {
@@ -417,5 +422,77 @@ fun MenuWindow(saved: Boolean, onSave: () -> Unit, onLoad: () -> Unit, onNew: ()
         BigButton(stringResource(Res.string.new_game), glyph = Glyph.Plus, onClick = onNew)
         BigButton(stringResource(Res.string.settings), glyph = Glyph.Gear, onClick = onSettings)
         BigButton(stringResource(Res.string.title_screen), glyph = Glyph.Home, onClick = onTitle)
+    }
+}
+
+/** The company's money: its loan, borrowing and repaying, this year's and last year's books and a graph of the last two years. */
+@Composable
+fun FinanceWindow(runner: com.rm.interchange.server.GameThread, onClose: () -> Unit) {
+    val c = LocalColors.current
+    // The game's latest figures, picked up each frame.
+    val company by produceState(runner.view?.company, runner) {
+        while (true) androidx.compose.runtime.withFrameNanos { value = runner.view?.company }
+    }
+    val co = company ?: return
+    Window(stringResource(Res.string.finances), onClose, Glyph.Save) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(Modifier.weight(1f)) {
+                Text(stringResource(Res.string.money_line, money(co.money)), color = if (co.money < 0) c.bad else c.text, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                Text(stringResource(Res.string.loan_line, money(co.loan), money(co.maxLoan)), color = c.textDim, fontSize = 13.sp)
+            }
+            ActionButton(stringResource(Res.string.borrow), enabled = co.loan < co.maxLoan) { runner.request(com.rm.interchange.sim.Command.Loan(0, borrow = true)) }
+            ActionButton(stringResource(Res.string.repay), enabled = co.loan > 0 && co.money >= com.rm.interchange.sim.Prices.LOAN_STEP) { runner.request(com.rm.interchange.sim.Command.Loan(0, borrow = false)) }
+        }
+        Head(stringResource(Res.string.the_books))
+        val rows = listOf(
+            Res.string.book_income to com.rm.interchange.sim.Books.INCOME,
+            Res.string.book_construction to com.rm.interchange.sim.Books.CONSTRUCTION,
+            Res.string.book_new_trains to com.rm.interchange.sim.Books.NEW_TRAINS,
+            Res.string.book_running to com.rm.interchange.sim.Books.RUNNING,
+            Res.string.book_interest to com.rm.interchange.sim.Books.INTEREST,
+            Res.string.book_sold to com.rm.interchange.sim.Books.TRAINS_SOLD,
+        )
+        @Composable
+        fun line(label: String, a: String, b: String, strong: Boolean = false, colour: androidx.compose.ui.graphics.Color = c.text) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(label, color = c.text, fontSize = 13.sp, modifier = Modifier.weight(1f), fontWeight = if (strong) FontWeight.SemiBold else FontWeight.Normal)
+                Text(a, color = colour, fontSize = 13.sp, modifier = Modifier.width(96.dp), textAlign = androidx.compose.ui.text.style.TextAlign.End, fontWeight = if (strong) FontWeight.SemiBold else FontWeight.Normal)
+                Text(b, color = c.textDim, fontSize = 13.sp, modifier = Modifier.width(96.dp), textAlign = androidx.compose.ui.text.style.TextAlign.End)
+            }
+        }
+        line("", stringResource(Res.string.this_year), stringResource(Res.string.last_year), colour = c.textDim)
+        for ((label, k) in rows) line(stringResource(label), money(co.thisYear[k]), money(co.lastYear[k]))
+        val total = co.thisYear.sum()
+        line(stringResource(Res.string.book_total), money(total), money(co.lastYear.sum()), strong = true, colour = if (total < 0) c.bad else c.good)
+        if (co.history.size >= 2) {
+            Head(stringResource(Res.string.money_graph))
+            MoneyGraph(co.history, Modifier.fillMaxWidth().height(120.dp))
+        }
+    }
+}
+
+/** Money at the end of each month as a line, and each month's profit or loss as a bar under it. */
+@Composable
+private fun MoneyGraph(history: List<LongArray>, modifier: Modifier) {
+    val c = LocalColors.current
+    androidx.compose.foundation.Canvas(modifier) {
+        val n = history.size
+        val most = history.maxOf { it[0] }.coerceAtLeast(1)
+        val least = minOf(0L, history.minOf { it[0] })
+        val span = (most - least).toFloat()
+        val step = size.width / (n - 1).coerceAtLeast(1)
+        fun y(v: Long) = size.height * (1f - (v - least) / span)
+        val zero = y(0)
+        drawLine(c.chromeEdge, androidx.compose.ui.geometry.Offset(0f, zero), androidx.compose.ui.geometry.Offset(size.width, zero), 1.dp.toPx())
+        val bars = history.maxOf { kotlin.math.abs(it[1] - it[2]) }.coerceAtLeast(1)
+        for ((k, h) in history.withIndex()) {
+            val p = h[1] - h[2]
+            val bh = size.height * 0.3f * kotlin.math.abs(p) / bars
+            val x = k * step
+            drawRect(if (p >= 0) c.good.copy(alpha = 0.5f) else c.bad.copy(alpha = 0.5f), androidx.compose.ui.geometry.Offset(x - step * 0.3f, if (p >= 0) zero - bh else zero), androidx.compose.ui.geometry.Size(step * 0.6f, bh))
+        }
+        val path = androidx.compose.ui.graphics.Path()
+        for ((k, h) in history.withIndex()) if (k == 0) path.moveTo(0f, y(h[0])) else path.lineTo(k * step, y(h[0]))
+        drawPath(path, c.accent, style = androidx.compose.ui.graphics.drawscope.Stroke(2.dp.toPx()))
     }
 }

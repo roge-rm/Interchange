@@ -129,17 +129,17 @@ internal fun World.buildRail(company: Company, c: Command.Rail) {
         if (stationTiles.containsKey(i) || depotTiles.containsKey(i) || townBuilt(i)) continue
         if (c.remove) {
             if (has and piece == 0 || owner[i].toInt() != company.id || trainOnTile(i)) continue
-            if (company.money < Prices.TRACK_REMOVE) return
-            company.money -= Prices.TRACK_REMOVE
+            if (company.money < price(Prices.TRACK_REMOVE)) return
+            spend(company, Books.CONSTRUCTION, price(Prices.TRACK_REMOVE))
             track[i] = (has and piece.inv()).toByte()
             signals.remove(pieceKey(i, piece))
             if (track[i].toInt() == 0) owner[i] = -1
         } else {
             if (has and piece != 0 || (has != 0 && owner[i].toInt() != company.id)) continue
             if (!piecesFit(x, y, has or piece)) continue
-            val cost = Prices.TRACK + treeCost(i) + if (!needsFoundation(x, y, has) && needsFoundation(x, y, has or piece)) Prices.FOUNDATION else 0
+            val cost = price(Prices.TRACK) + treeCost(i) + if (!needsFoundation(x, y, has) && needsFoundation(x, y, has or piece)) price(Prices.FOUNDATION) else 0
             if (company.money < cost) return
-            company.money -= cost
+            spend(company, Books.CONSTRUCTION, cost)
             fellTrees(company, i)
             track[i] = (has or piece).toByte()
             owner[i] = company.id.toByte()

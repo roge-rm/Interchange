@@ -236,4 +236,23 @@
     <string name="wait_less">Attendre un jour de moins</string>
     <string name="wait_more">Attendre un jour de plus</string>
     <string name="remove_stop">Retirer l'arrêt</string>
+
+    <!-- Argent -->
+    <string name="finances">Finances</string>
+    <string name="money_line">Argent : %1$s</string>
+    <string name="loan_line">Emprunt %1$s sur %2$s</string>
+    <string name="borrow">Emprunter</string>
+    <string name="repay">Rembourser</string>
+    <string name="the_books">Comptes</string>
+    <string name="this_year">Cette année</string>
+    <string name="last_year">L'an dernier</string>
+    <string name="book_income">Voyageurs et marchandises</string>
+    <string name="book_construction">Construction</string>
+    <string name="book_new_trains">Nouveaux trains</string>
+    <string name="book_running">Frais d'exploitation</string>
+    <string name="book_interest">Intérêts</string>
+    <string name="book_sold">Trains vendus</string>
+    <string name="book_total">Bénéfice</string>
+    <string name="money_graph">Argent, deux dernières années</string>
+    <string name="inflation">Inflation</string>
 </resources>

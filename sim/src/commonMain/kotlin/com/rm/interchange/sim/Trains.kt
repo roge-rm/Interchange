@@ -148,8 +148,8 @@ internal fun World.buyTrain(company: Company, c: Command.BuyTrain) {
     if (!e.enabled || !w.enabled || !e.pulls || w.pulls || w.isTender || year < e.from || year >= e.until || year < w.from || year >= w.until) return
     if (c.wagons !in 0..MAX_WAGONS) return
     val t = Train(roster, trains.size, company.id, e.id, w.id, c.wagons, depot.id, if (c.cargo in w.cargoes) c.cargo else -1)
-    if (company.money < t.price) return
-    company.money -= t.price
+    if (company.money < price(t.price)) return
+    spend(company, Books.NEW_TRAINS, price(t.price))
     trains += t
 }
 
@@ -181,7 +181,7 @@ internal fun World.trainCommand(company: Company, c: Command.TrainOrder) {
             t.route = null
         }
         Command.TrainOrder.SELL -> if (t.inDepot) {
-            company.money += t.price / 2
+            earn(company, Books.TRAINS_SOLD, price(t.price) / 2)
             trains[t.id] = null
         }
     }
@@ -423,10 +423,10 @@ internal fun World.payRunningCosts() {
     for (t in trains) {
         if (t == null || t.inDepot && !t.running) continue
         val c = companies.getOrNull(t.owner) ?: continue
-        val yearly = t.carEngines.sumOf { roster[it].running }
+        val yearly = price(t.carEngines.sumOf { roster[it].running })
         c.runningOwed += yearly
         val today = c.runningOwed / 365
-        c.money -= today
+        spend(c, Books.RUNNING, today)
         t.profitThisYear -= today
         c.runningOwed %= 365
     }

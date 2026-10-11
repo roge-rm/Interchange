@@ -51,6 +51,10 @@ class World(val settings: NewGame, val roster: Roster = Roster.BASE, generate: B
     /** Industries, and which stands on each tile, as its id plus one, 0 for none. */
     val industries = ArrayList<Industry>()
     val industryOf = ShortArray(width * height)
+    /** Inflation so far: what costs and fares are now against at the start, in 65536ths. */
+    var costScale = 1L shl 16
+    var payScale = 1L shl 16
+
     /** Recent news for the screen. Not saved; nothing in the game depends on it. */
     val news = ArrayList<News>()
     /** Set when a town grows, so its summary for the screen is made again. Not part of the game. */
@@ -161,6 +165,7 @@ class World(val settings: NewGame, val roster: Roster = Roster.BASE, generate: B
             is Command.Clear -> clearTile(company, command)
             is Command.BuyTrain -> buyTrain(company, command)
             is Command.TrainOrder -> trainCommand(company, command)
+            is Command.Loan -> loanCommand(company, command)
         }
     }
 
@@ -177,11 +182,15 @@ class World(val settings: NewGame, val roster: Roster = Roster.BASE, generate: B
             payRunningCosts()
             passengersDay()
             townsDay()
-            if (Calendar.dayOfMonth(startYear, day) == 1) {
+            if (Calendar.dayOfMonth(startYear, day) == 1 && day > 0) {
+                companiesMonth()
                 passengersMonth()
                 industriesMonth()
             }
-            if (Calendar.newYear(startYear, day)) passengersYear()
+            if (Calendar.newYear(startYear, day) && day > 0) {
+                passengersYear()
+                companiesYear()
+            }
             payments.removeAll { tick - it.tick > PAYMENT_TICKS }
         }
     }
@@ -217,7 +226,8 @@ class World(val settings: NewGame, val roster: Roster = Roster.BASE, generate: B
         // The last row and column of corners, which the rows above leave out.
         for (x in 0..width) mix(heightAt(x, height).toLong())
         for (y in 0 until height) mix(heightAt(width, y).toLong())
-        for (c in companies) mix(c.money)
+        for (c in companies) { mix(c.money); mix(c.loan) }
+        mix(costScale); mix(payScale)
         for (t in towns) { mix(t.population.toLong()); mix(t.growIn.toLong()); mix(t.servedThisMonth.toLong()); for (a in t.approval) mix(a.toLong()) }
         for (ind in industries) { mix(if (ind.closed) 1L else 0L); mix(ind.level.toLong()); mix(ind.brought.toLong()); for (m in ind.made) mix(m.toLong()) }
         for (s in stations) if (s != null) {

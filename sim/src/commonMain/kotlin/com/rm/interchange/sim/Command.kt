@@ -35,6 +35,9 @@ sealed interface Command {
     /** Buys a train in a depot, its wagons set to carry [cargo] if they can, or their first. */
     data class BuyTrain(override val company: Int, val depot: Int, val engine: Int, val wagon: Int, val wagons: Int, val cargo: Int = -1) : Command
 
+    /** Borrows a step more from the bank, or repays one. */
+    data class Loan(override val company: Int, val borrow: Boolean) : Command
+
     /** Tells a train what to do; [stations] only for [ORDERS]. */
     class TrainOrder(override val company: Int, val train: Int, val what: Int, val stations: IntArray = IntArray(0)) : Command {
         companion object {

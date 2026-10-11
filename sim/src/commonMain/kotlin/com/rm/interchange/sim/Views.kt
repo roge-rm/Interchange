@@ -76,6 +76,17 @@ class SignalView(val tile: Int, val piece: Int, val facing: Int, val red: Boolea
 /** A town as the screen shows it: its name over the map at its middle, and how big it is. */
 class TownView(val id: Int, val name: String, val x: Int, val y: Int, val population: Int, val houses: Int)
 
+/** The player's company as the finance window shows it. */
+class CompanyView(
+    val money: Long,
+    val loan: Long,
+    val maxLoan: Long,
+    val thisYear: LongArray,
+    val lastYear: LongArray,
+    /** Money, income and spending at the end of each month, oldest first. */
+    val history: List<LongArray>,
+)
+
 /** Everything the screen draws and lists that moves or changes as the game runs. */
 class WorldView(
     val vehicles: VehicleView,
@@ -86,6 +97,7 @@ class WorldView(
     val towns: List<TownView> = emptyList(),
     val payments: List<Payment> = emptyList(),
     val news: List<News> = emptyList(),
+    val company: CompanyView? = null,
     val tick: Long = 0,
 )
 
@@ -150,7 +162,8 @@ fun World.view(): WorldView {
         townViews = towns.map { TownView(it.id, it.name, it.x, it.y, it.population, it.houses) }
         townsChanged = false
     }
-    return WorldView(VehicleView(tick, cars.toFloatArray()), trainViews, stationViews, signalViews, depotViews, townViews, payments.toList(), news.toList(), tick)
+    return WorldView(VehicleView(tick, cars.toFloatArray()), trainViews, stationViews, signalViews, depotViews, townViews, payments.toList(), news.toList(),
+        companies.firstOrNull()?.let { c -> CompanyView(c.money, c.loan, maxLoan(), c.thisYear.copyOf(), c.lastYear.copyOf(), c.history.map { it.copyOf() }) }, tick)
 }
 
 /** The heading, in eighths from along x towards y, of a step of ([dx], [dy]). */

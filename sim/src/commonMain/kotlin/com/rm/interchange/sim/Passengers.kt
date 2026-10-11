@@ -320,7 +320,7 @@ internal fun World.callAt(t: Train, s: Station, o: Int = 0) {
             val arrived = !transfer && (p.dest == s.id || ((p.dest == -1 || unload) && p.origin != s.id && accepts(s, c)))
             when {
                 arrived && from != null -> {
-                    val full = fare(c, p.count, from, s, days(p))
+                    val full = pay(fare(c, p.count, from, s, days(p)))
                     paid += full
                     // Freight for an industry here goes to it to be made into its own.
                     takerAt(s, c)?.let { ind ->
@@ -335,8 +335,8 @@ internal fun World.callAt(t: Train, s: Station, o: Int = 0) {
                     // Changing here: the leg it's done on this train is this train's, up to what the whole journey will pay.
                     val boarded = stations.getOrNull(p.boarded)
                     val dest = stations.getOrNull(p.dest)
-                    val leg = if (boarded != null && boarded.id != s.id) fare(c, p.count, boarded, s, days(p)) else 0L
-                    val whole = if (from != null && dest != null) fare(c, p.count, from, dest, days(p)) else leg
+                    val leg = if (boarded != null && boarded.id != s.id) pay(fare(c, p.count, boarded, s, days(p))) else 0L
+                    val whole = if (from != null && dest != null) pay(fare(c, p.count, from, dest, days(p))) else leg
                     val credit = minOf(leg, maxOf(0L, whole - p.credit))
                     t.profitThisYear += credit
                     addWaiting(s, c, p.dest, p.origin, p.count, p.since, p.credit + credit)
@@ -348,7 +348,7 @@ internal fun World.callAt(t: Train, s: Station, o: Int = 0) {
         t.cargo[c].addAll(stay)
     }
     if (paid > 0) {
-        company.money += paid
+        earn(company, Books.INCOME, paid)
         payments += Payment(s.tiles.first(), paid, tick)
     }
     if (!Order.has(o, Order.NO_LOAD)) loadAt(t, s)

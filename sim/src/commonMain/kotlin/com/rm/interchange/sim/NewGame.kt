@@ -32,6 +32,8 @@ data class NewGame(
     val trees: Int = 2,
     val towns: Int = 2,
     val industries: Int = 2,
+    /** Costs and fares rising year by year. */
+    val inflation: Boolean = true,
 ) {
     companion object {
         val SIZES = intArrayOf(64, 128, 256, 512, 1024, 2048, 4096)

@@ -132,14 +132,14 @@ internal fun World.terraform(company: Company, cx: Int, cy: Int, up: Boolean) {
             }
         }
     }
-    val cost = Prices.TERRAFORM * changed.size
+    val cost = price(Prices.TERRAFORM) * changed.size
     if (company.money < cost) return
     for (c in changed.keys) {
         val x = c % (width + 1)
         val y = c / (width + 1)
         for (ty in y - 1..y) for (tx in x - 1..x) if (inside(tx, ty) && (track[index(tx, ty)].toInt() != 0 || townBuilt(index(tx, ty)))) return
     }
-    company.money -= cost
+    spend(company, Books.CONSTRUCTION, cost)
     for ((c, h) in changed) {
         corners[c] = h.toByte()
         val x = c % (width + 1)

@@ -16,6 +16,7 @@ object Codec {
     private const val TRAIN_ORDER = 8
     /** A train bought with what its wagons carry. */
     private const val BUY_TRAIN_CARGO = 9
+    private const val LOAN = 10
 
     fun write(w: ByteWriter, c: Command) {
         when (c) {
@@ -26,6 +27,7 @@ object Codec {
             is Command.Signal -> { w.byte(SIGNAL); w.int(c.company); w.int(c.x); w.int(c.y); w.int(c.piece); w.int(c.facing) }
             is Command.Clear -> { w.byte(CLEAR); w.int(c.company); w.int(c.x); w.int(c.y) }
             is Command.BuyTrain -> { w.byte(BUY_TRAIN_CARGO); w.int(c.company); w.int(c.depot); w.int(c.engine); w.int(c.wagon); w.int(c.wagons); w.int(c.cargo) }
+            is Command.Loan -> { w.byte(LOAN); w.int(c.company); w.bool(c.borrow) }
             is Command.TrainOrder -> { w.byte(TRAIN_ORDER); w.int(c.company); w.int(c.train); w.int(c.what); w.ints(c.stations) }
         }
     }
@@ -40,6 +42,7 @@ object Codec {
         BUY_TRAIN -> Command.BuyTrain(r.int(), r.int(), r.int(), r.int(), r.int())
         TRAIN_ORDER -> Command.TrainOrder(r.int(), r.int(), r.int(), r.ints())
         BUY_TRAIN_CARGO -> Command.BuyTrain(r.int(), r.int(), r.int(), r.int(), r.int(), r.int())
+        LOAN -> Command.Loan(r.int(), r.bool())
         else -> throw BadData("no such command: $kind")
     }
 

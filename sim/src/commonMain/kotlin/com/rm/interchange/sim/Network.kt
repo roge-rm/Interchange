@@ -93,7 +93,7 @@ internal fun World.buildStation(company: Company, c: Command.Station) {
     }
     // Platforms on sloping land stand on a foundation, level with the highest corner; their track has to meet any already next door.
     val sloping = tiles.count { !isFlat(it % width, it / width) }
-    val cost = Prices.PLATFORM * tiles.size + Prices.FOUNDATION * sloping + tiles.sumOf { treeCost(it) }
+    val cost = price(Prices.PLATFORM) * tiles.size + price(Prices.FOUNDATION) * sloping + tiles.sumOf { treeCost(it) }
     if (company.money < cost) return
     for (i in tiles) stationTiles[i] = -1
     val fits = tiles.all { i ->
@@ -109,7 +109,7 @@ internal fun World.buildStation(company: Company, c: Command.Station) {
         if (station == null && inside(x, y)) station = stationAt(index(x, y))?.takeIf { it.owner == company.id }
     }
     val s = station ?: Station(stations.size, company.id, stationName(xs.first, ys.first), xs.first, ys.first).also { stations += it }
-    company.money -= cost
+    spend(company, Books.CONSTRUCTION, cost)
     for (i in tiles) {
         fellTrees(company, i)
         // Any track already there must run the same way, checked above, so the platform's track joins it.
@@ -132,8 +132,8 @@ internal fun World.buildDepot(company: Company, c: Command.Depot) {
     if (trackAt(c.x, c.y) != 0 || stationTiles.containsKey(i) || depotTiles.containsKey(i) || townBuilt(i)) return
     val piece = Track.straight(c.edge)
     if (!piecesFit(c.x, c.y, piece)) return
-    if (company.money < Prices.DEPOT + treeCost(i)) return
-    company.money -= Prices.DEPOT + fellTrees(company, i)
+    if (company.money < price(Prices.DEPOT) + treeCost(i)) return
+    spend(company, Books.CONSTRUCTION, price(Prices.DEPOT) + fellTrees(company, i))
     val d = Depot(depots.size, company.id, i, c.edge)
     depots += d
     depotTiles[i] = d.id
@@ -155,8 +155,8 @@ internal fun World.placeSignal(company: Company, c: Command.Signal) {
     val had = signals[key]
     when {
         had == null -> {
-            if (company.money < Prices.SIGNAL) return
-            company.money -= Prices.SIGNAL
+            if (company.money < price(Prices.SIGNAL)) return
+            spend(company, Books.CONSTRUCTION, price(Prices.SIGNAL))
             signals[key] = Signals.pack(c.facing, Signals.TWO_WAY)
         }
         Signals.facing(had) != c.facing -> signals[key] = Signals.pack(c.facing, Signals.kind(had))
@@ -175,8 +175,8 @@ internal fun World.clearTile(company: Company, c: Command.Clear) {
     val i = index(c.x, c.y)
     if (owner[i].toInt() != company.id || trainOnTile(i)) return
     depotAt(i)?.let { d -> if (trains.any { it != null && it.depot == d.id && it.inDepot }) return }
-    if (company.money < Prices.CLEAR) return
-    company.money -= Prices.CLEAR
+    if (company.money < price(Prices.CLEAR)) return
+    spend(company, Books.CONSTRUCTION, price(Prices.CLEAR))
     for (p in Track.PIECES) signals.remove(pieceKey(i, p))
     stationTiles.remove(i)?.let { id ->
         val s = stations[id]!!

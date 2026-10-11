@@ -125,7 +125,7 @@ fun TrainCard(
 /** A depot: buying a train, and the trains in it. */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun DepotCard(view: WorldView, roster: Roster, depot: Int, year: Int, funds: Long, send: (Command) -> Unit, onTrain: (Int) -> Unit, onClose: () -> Unit, modifier: Modifier) {
+fun DepotCard(view: WorldView, roster: Roster, depot: Int, year: Int, funds: Long, price: (Long) -> Long, send: (Command) -> Unit, onTrain: (Int) -> Unit, onClose: () -> Unit, modifier: Modifier) {
     val c = LocalColors.current
     val lang = languageCode()
     val engines = roster.available(year, pulls = true)
@@ -150,7 +150,7 @@ fun DepotCard(view: WorldView, roster: Roster, depot: Int, year: Int, funds: Lon
             }
         }
         val e = roster[engine]
-        val cost = e.cost + (roster.getOrNull(e.tender)?.cost ?: 0) + roster[wagon].cost * count
+        val cost = price(e.cost + (roster.getOrNull(e.tender)?.cost ?: 0) + roster[wagon].cost * count)
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             SquareButton(Glyph.Lower, stringResource(Res.string.fewer_wagons), 32.dp, enabled = count > 0) { count-- }
             Text(stringResource(Res.string.wagons_count, count), color = c.text, fontSize = 13.sp)

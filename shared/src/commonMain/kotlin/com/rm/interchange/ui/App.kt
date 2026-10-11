@@ -58,6 +58,7 @@ import com.rm.interchange.sim.Packs
 import com.rm.interchange.sim.Roster
 import com.rm.interchange.sim.Save
 import com.rm.interchange.sim.Prices
+import com.rm.interchange.sim.price
 import com.rm.interchange.sim.Track
 import com.rm.interchange.sim.PAVED
 import com.rm.interchange.sim.houseOf
@@ -90,7 +91,7 @@ fun App() {
 private enum class Screen { Title, NewGame, Playing }
 
 /** A window open over the screen. */
-private enum class Win { Menu, Load, Settings, Packs, Overlays }
+private enum class Win { Menu, Load, Settings, Packs, Overlays, Finances }
 
 @Composable
 private fun Root(settings: Settings) {
@@ -203,7 +204,7 @@ private fun Root(settings: Settings) {
                 if (r == null || s == null) {
                     Box(Modifier.fillMaxSize().background(LocalColors.current.page))
                 } else {
-                    Playing(r, s, settings, onMenu = { saved = false; window = Win.Menu }, onOverlays = { window = Win.Overlays })
+                    Playing(r, s, settings, onMenu = { saved = false; window = Win.Menu }, onOverlays = { window = Win.Overlays }, onFinances = { window = Win.Finances })
                 }
             }
         }
@@ -247,6 +248,7 @@ private fun Root(settings: Settings) {
                 onClose = { window = null },
             )
             Win.Overlays -> OverlaysWindow(settings) { window = null }
+            Win.Finances -> runner?.let { r -> FinanceWindow(r) { window = null } }
             null -> {}
         }
     }
@@ -254,7 +256,7 @@ private fun Root(settings: Settings) {
 
 /** A game being played: waits for the world to be made, then shows it. */
 @Composable
-private fun Playing(runner: GameThread, sheets: Sheets, settings: Settings, onMenu: () -> Unit, onOverlays: () -> Unit) {
+private fun Playing(runner: GameThread, sheets: Sheets, settings: Settings, onMenu: () -> Unit, onOverlays: () -> Unit, onFinances: () -> Unit) {
     var game by remember(runner) { mutableStateOf<Game?>(null) }
     // Redraws every display frame, and picks up the game once it's made.
     val frame = remember(runner) { mutableLongStateOf(0L) }
@@ -269,11 +271,11 @@ private fun Playing(runner: GameThread, sheets: Sheets, settings: Settings, onMe
         Box(Modifier.fillMaxSize().background(LocalColors.current.page))
         return
     }
-    key(runner) { GameScreen(runner, g.world, sheets, frame, settings, onMenu, onOverlays) }
+    key(runner) { GameScreen(runner, g.world, sheets, frame, settings, onMenu, onOverlays, onFinances) }
 }
 
 @Composable
-private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: State<Long>, settings: Settings, onMenu: () -> Unit, onOverlays: () -> Unit) {
+private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: State<Long>, settings: Settings, onMenu: () -> Unit, onOverlays: () -> Unit, onFinances: () -> Unit) {
     val c = LocalColors.current
     // The drawings of this game's vehicles: the base pack's come with the app, the others from their packs.
     remember(world) {
@@ -428,7 +430,7 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
             settings.grid || settings.heights, onOverlays,
             weekdayDate(day, world.startYear),
             money(money), money < 0,
-            { view.turnBy(-1) }, { view.turnBy(1) },
+            { view.turnBy(-1) }, { view.turnBy(1) }, onFinances,
             compact = layout.compact || layout.narrow,
             twoLines = twoLines,
             cameras = cameras,
@@ -507,7 +509,7 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
                     else TrainCard(wv, world.roster, t, addingStops == t.id, { addingStops = if (addingStops == t.id) null else t.id }, runner::request, { selected = null; addingStops = null }, trayWidth)
                 }
                 is Selection.Depot -> if (wv != null) DepotCard(
-                    wv, world.roster, sel.id, Calendar.year(world.startYear, day), money, runner::request,
+                    wv, world.roster, sel.id, Calendar.year(world.startYear, day), money, { world.price(it) }, runner::request,
                     { selected = Selection.Train(it) }, { selected = null }, trayWidth,
                 )
                 is Selection.Station -> {
@@ -519,12 +521,12 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
             }
             if (tool.group != ToolGroup.Inspect && addingStops == null) {
                 val detail = when (tool) {
-                    Tool.Track -> if (removing) stringResource(Res.string.cost_lift, money(Prices.TRACK_REMOVE)) else stringResource(Res.string.cost_track, money(Prices.TRACK), money(Prices.FOUNDATION))
-                    Tool.Signals -> stringResource(Res.string.cost_signal, money(Prices.SIGNAL))
-                    Tool.Station -> stringResource(Res.string.cost_tile, money(Prices.PLATFORM))
-                    Tool.Depot -> money(Prices.DEPOT)
-                    Tool.Clear -> stringResource(Res.string.cost_tile, money(Prices.CLEAR))
-                    Tool.Raise, Tool.Lower -> stringResource(Res.string.cost_corner, money(Prices.TERRAFORM))
+                    Tool.Track -> if (removing) stringResource(Res.string.cost_lift, money(world.price(Prices.TRACK_REMOVE))) else stringResource(Res.string.cost_track, money(world.price(Prices.TRACK)), money(world.price(Prices.FOUNDATION)))
+                    Tool.Signals -> stringResource(Res.string.cost_signal, money(world.price(Prices.SIGNAL)))
+                    Tool.Station -> stringResource(Res.string.cost_tile, money(world.price(Prices.PLATFORM)))
+                    Tool.Depot -> money(world.price(Prices.DEPOT))
+                    Tool.Clear -> stringResource(Res.string.cost_tile, money(world.price(Prices.CLEAR)))
+                    Tool.Raise, Tool.Lower -> stringResource(Res.string.cost_corner, money(world.price(Prices.TERRAFORM)))
                     else -> null
                 }
                 ToolTray(tool, { tool = it; plan = null; stationPlan = null }, detail, folded, { folded = it }, layout.compact, trayWidth) {

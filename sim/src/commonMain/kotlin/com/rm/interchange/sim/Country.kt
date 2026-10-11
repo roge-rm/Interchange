@@ -134,8 +134,8 @@ internal fun World.clearTrees(i: Int): Long {
     if (n == 0) return 0
     trees[i] = 0
     touched(i % width, i / width)
-    return Prices.TREE * n
+    return price(Prices.TREE) * n
 }
 
 /** What clearing the trees off tile [i] would cost. */
-fun World.treeCost(i: Int): Long = Prices.TREE * Trees.count(trees[i].toInt())
+fun World.treeCost(i: Int): Long = price(Prices.TREE) * Trees.count(trees[i].toInt())
