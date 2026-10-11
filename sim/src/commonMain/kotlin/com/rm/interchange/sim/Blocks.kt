@@ -16,6 +16,11 @@ internal fun World.networkChanged() {
     for (t in trains) t?.route = null
 }
 
+/** Marks the blocks for working out again without touching routes, as when a world has just been loaded. */
+internal fun World.networkChangedKeepingRoutes() {
+    blocksDirty = true
+}
+
 internal fun World.workOutBlocks() {
     blocks.clear()
     var next = 0

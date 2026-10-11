@@ -48,40 +48,136 @@ import com.rm.interchange.sim.Prices
 import com.rm.interchange.sim.Track
 import com.rm.interchange.sim.World
 import kotlin.math.roundToInt
+import androidx.compose.runtime.key
+import com.rm.interchange.platform.Lifecycle
+import com.rm.interchange.res.*
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import org.jetbrains.compose.resources.stringArrayResource
+import org.jetbrains.compose.resources.stringResource
 
 @Composable
 fun App() {
-    CompositionLocalProvider(LocalColors provides DarkColors) { GameScreen() }
+    val settings = remember { Settings.load() }
+    InLanguage(settings.language) {
+        CompositionLocalProvider(LocalColors provides DarkColors) { Root(settings) }
+    }
+}
+
+/** Where the app is: one of its screens, or playing. */
+private sealed interface Screen {
+    data object Title : Screen
+    data object NewGame : Screen
+    data class Load(val back: Screen) : Screen
+    data class Options(val back: Screen) : Screen
+    data object Playing : Screen
 }
 
 @Composable
-private fun GameScreen() {
-    // The game runs on its own thread and makes the world there.
-    val runner = remember { GameThread { World(256, 256, 1) }.also { it.start() } }
-    DisposableEffect(runner) { onDispose { runner.stop() } }
-    var game by remember { mutableStateOf<Game?>(null) }
+private fun Root(settings: Settings) {
+    val scope = rememberCoroutineScope()
+    val packed by rememberPackedSheets()
+    val sheets = remember(packed) { packed?.let { Sheets(it, scope) } }
+    var screen by remember { mutableStateOf<Screen>(Screen.Title) }
+    var runner by remember { mutableStateOf<GameThread?>(null) }
+    var saves by remember { mutableStateOf(SavedGames.list()) }
+    var loadError by remember { mutableStateOf<String?>(null) }
+    val cantLoad = stringResource(Res.string.cant_load, "%s")
+
+    // The game saves itself when the app is put away.
+    DisposableEffect(Unit) {
+        Lifecycle.onHide = { runner?.let { SavedGames.save(it, SavedGames.AUTOSAVE) } }
+        onDispose { Lifecycle.onHide = null }
+    }
+    // Autosave follows the setting while a game runs.
+    LaunchedEffect(runner, settings.autosave) { runner?.autosaveDays = settings.autosaveDays }
+
+    fun play(make: () -> World) {
+        runner?.stop()
+        val r = GameThread(make)
+        r.autosaveDays = settings.autosaveDays
+        r.onAutosave = { bytes -> r.game?.let { SavedGames.writeAutosave(bytes, it.world) } }
+        r.start()
+        runner = r
+        screen = Screen.Playing
+    }
+
+    /** Reads a save off the main thread and plays it, or says why it can't. */
+    fun load(entry: SavedGames.Entry) {
+        scope.launch {
+            val world = withContext(Dispatchers.Default) {
+                try {
+                    Result.success(com.rm.interchange.sim.Save.read(SavedGames.read(entry.name) ?: throw com.rm.interchange.sim.BadData("missing")))
+                } catch (e: com.rm.interchange.sim.BadData) {
+                    Result.failure(e)
+                }
+            }
+            world.onSuccess { w -> loadError = null; play { w } }.onFailure { loadError = cantLoad.replace("%s", it.message ?: "") }
+        }
+    }
+
+    when (val sc = screen) {
+        Screen.Title -> TitleScreen(
+            canContinue = saves.isNotEmpty(),
+            onContinue = { saves.firstOrNull()?.let { load(it) } },
+            onNew = { screen = Screen.NewGame },
+            onLoad = { saves = SavedGames.list(); screen = Screen.Load(Screen.Title) },
+            onSettings = { screen = Screen.Options(Screen.Title) },
+        )
+        Screen.NewGame -> NewGameScreen(onStart = { ng -> play { World(ng) } }, onBack = { screen = Screen.Title })
+        is Screen.Load -> LoadScreen(
+            saves, loadError, onLoad = { load(it) },
+            onDelete = { SavedGames.delete(it.name); saves = SavedGames.list() },
+            onBack = { loadError = null; screen = sc.back },
+        )
+        is Screen.Options -> SettingsScreen(settings, onBack = { screen = sc.back })
+        Screen.Playing -> {
+            val r = runner
+            val s = sheets
+            if (r == null || s == null) {
+                Box(Modifier.fillMaxSize().background(LocalColors.current.page))
+            } else {
+                Playing(r, s, Menu(
+                    save = { done -> SavedGames.save(r) { scope.launch { saves = SavedGames.list(); done() } } },
+                    load = { saves = SavedGames.list(); screen = Screen.Load(Screen.Playing) },
+                    newGame = { screen = Screen.NewGame },
+                    settings = { screen = Screen.Options(Screen.Playing) },
+                    title = {
+                        SavedGames.save(r, SavedGames.AUTOSAVE) { scope.launch { saves = SavedGames.list() } }
+                        screen = Screen.Title
+                    },
+                ))
+            }
+        }
+    }
+}
+
+/** What the in-game menu does, handed down from the top. */
+private class Menu(val save: (done: () -> Unit) -> Unit, val load: () -> Unit, val newGame: () -> Unit, val settings: () -> Unit, val title: () -> Unit)
+
+/** A game being played: waits for the world to be made, then shows it. */
+@Composable
+private fun Playing(runner: GameThread, sheets: Sheets, menu: Menu) {
+    var game by remember(runner) { mutableStateOf<Game?>(null) }
     // Redraws every display frame, and picks up the game once it's made.
-    val frame = remember { mutableLongStateOf(0L) }
+    val frame = remember(runner) { mutableLongStateOf(0L) }
     LaunchedEffect(runner) {
         while (true) withFrameNanos {
             frame.longValue++
             if (game == null) game = runner.game
         }
     }
-    val packed by rememberPackedSheets()
-    val scope = rememberCoroutineScope()
-    val sheets = remember(packed) { packed?.let { Sheets(it, scope) } }
     val g = game
-    val s = sheets
-    if (g == null || s == null) {
+    if (g == null) {
         Box(Modifier.fillMaxSize().background(LocalColors.current.page))
         return
     }
-    GameScreen(runner, g.world, s, frame)
+    key(runner) { GameScreen(runner, g.world, sheets, frame, menu) }
 }
 
 @Composable
-private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: State<Long>) {
+private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: State<Long>, menu: Menu) {
     val c = LocalColors.current
     val view = remember {
         View(world.width, world.height).apply {
@@ -121,6 +217,8 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
     // The train having stops added by tapping stations, if any.
     var addingStops by remember { mutableStateOf<Int?>(null) }
     var mapSize by remember { mutableStateOf(androidx.compose.ui.geometry.Size.Zero) }
+    var menuOpen by remember { mutableStateOf(false) }
+    var saved by remember { mutableStateOf(false) }
 
     fun built() { folded = true }
 
@@ -196,9 +294,10 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
         )
 
         StatusStrip(
+            { menuOpen = !menuOpen; saved = false },
             paused, { paused = !paused; runner.paused = paused }, speed, { speed = (speed + 1) % SPEEDS.size; runner.speed = SPEEDS[speed] },
-            dateText(Calendar.dayOfMonth(day), Calendar.month(day), Calendar.year(world.startYear, day)),
-            moneyText(money), money < 0,
+            date(day, world.startYear),
+            money(money), money < 0,
             { view.turnBy(-1) }, { view.turnBy(1) },
             compact = layout.compact || layout.narrow,
             twoLines = layout.narrow && layout.shape == ScreenShape.Tall,
@@ -240,6 +339,12 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
             verticalArrangement = Arrangement.spacedBy(gap),
         ) {
             val trayWidth = Modifier.widthIn(max = TRAY_WIDTH.dp).fillMaxWidth()
+            if (menuOpen) {
+                MenuCard(
+                    saved, onSave = { menu.save { saved = true } }, onLoad = menu.load, onNew = menu.newGame,
+                    onSettings = menu.settings, onTitle = menu.title, onClose = { menuOpen = false }, modifier = trayWidth,
+                )
+            }
             val wv = worldView.value
             when (val sel = selected) {
                 is Selection.Tile -> InspectCard(world, sel.x, sel.y, { selected = null }, trayWidth)
@@ -261,17 +366,17 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
             }
             if (tool.group != ToolGroup.Inspect && addingStops == null) {
                 val detail = when (tool) {
-                    Tool.Track -> if (removing) "${moneyText(Prices.TRACK_REMOVE)} a piece to lift" else "${moneyText(Prices.TRACK)} a piece, ${moneyText(Prices.FOUNDATION)} more on a slope"
-                    Tool.Signals -> "${moneyText(Prices.SIGNAL)}, tap again to change"
-                    Tool.Station -> "${moneyText(Prices.PLATFORM)} a tile"
-                    Tool.Depot -> moneyText(Prices.DEPOT)
-                    Tool.Clear -> "${moneyText(Prices.CLEAR)} a tile"
-                    Tool.Raise, Tool.Lower -> "${moneyText(Prices.TERRAFORM)} a corner"
+                    Tool.Track -> if (removing) stringResource(Res.string.cost_lift, money(Prices.TRACK_REMOVE)) else stringResource(Res.string.cost_track, money(Prices.TRACK), money(Prices.FOUNDATION))
+                    Tool.Signals -> stringResource(Res.string.cost_signal, money(Prices.SIGNAL))
+                    Tool.Station -> stringResource(Res.string.cost_tile, money(Prices.PLATFORM))
+                    Tool.Depot -> money(Prices.DEPOT)
+                    Tool.Clear -> stringResource(Res.string.cost_tile, money(Prices.CLEAR))
+                    Tool.Raise, Tool.Lower -> stringResource(Res.string.cost_corner, money(Prices.TERRAFORM))
                     else -> null
                 }
                 ToolTray(tool, { tool = it; plan = null; stationPlan = null }, detail, folded, { folded = it }, layout.compact, trayWidth) {
-                    if (tool == Tool.Track) TrayToggle(Glyph.Lift, "Remove track", removing) { removing = !removing }
-                    if (tool == Tool.Station) TrayToggle(Glyph.TurnRight, "Platforms the other way", !stationAlongX) { stationAlongX = !stationAlongX }
+                    if (tool == Tool.Track) TrayToggle(Glyph.Lift, stringResource(Res.string.remove_track), removing) { removing = !removing }
+                    if (tool == Tool.Station) TrayToggle(Glyph.TurnRight, stringResource(Res.string.platforms_other_way), !stationAlongX) { stationAlongX = !stationAlongX }
                 }
             }
             if (!layout.sideTools) ToolBar(tool.group, ::pickGroup, vertical = false, compact = compactTools, modifier = trayWidth)
@@ -292,18 +397,24 @@ private fun moving(runner: GameThread): Moving? = runner.view?.let { Moving(it, 
 
 @Composable
 private fun InspectCard(world: World, x: Int, y: Int, onClose: () -> Unit, modifier: Modifier) {
+    val water = world.isWater(x, y)
+    val t = world.trackAt(x, y)
+    val grounds = stringArrayResource(Res.array.grounds)
+    val pieces = listOf(Track.X to Res.string.piece_x, Track.Y to Res.string.piece_y, Track.N to Res.string.piece_n, Track.E to Res.string.piece_e, Track.S to Res.string.piece_s, Track.W to Res.string.piece_w)
+    val pieceNames = pieces.filter { t and it.first != 0 }.map { stringResource(it.second) }
+    val join = stringResource(Res.string.list_join)
     val lines = buildList {
-        add("Tile $x, $y")
-        if (world.isWater(x, y)) add("Water")
-        else add("Height ${minOf(world.heightAt(x, y), world.heightAt(x + 1, y), world.heightAt(x + 1, y + 1), world.heightAt(x, y + 1))}")
-        val t = world.trackAt(x, y)
+        add(stringResource(Res.string.tile_at, x, y))
+        if (!water) {
+            add(stringResource(Res.string.height_of, minOf(world.heightAt(x, y), world.heightAt(x + 1, y), world.heightAt(x + 1, y + 1), world.heightAt(x, y + 1))))
+            add(grounds.getOrElse(world.ground[world.index(x, y)].toInt()) { "" })
+        }
         if (t != 0) {
-            val names = listOf(Track.X to "along x", Track.Y to "along y", Track.N to "north", Track.E to "east", Track.S to "south", Track.W to "west")
-            add("Track: " + names.filter { t and it.first != 0 }.joinToString { it.second })
-            world.companies.getOrNull(world.owner[world.index(x, y)].toInt())?.let { add("Owned by ${it.name}") }
+            add(stringResource(Res.string.track_pieces, pieceNames.joinToString(join)))
+            if (world.owner[world.index(x, y)].toInt() == 0) add(stringResource(Res.string.owned_by, stringResource(Res.string.company)))
         }
     }
-    InfoCard(if (world.trackAt(x, y) != 0) "Track" else if (world.isWater(x, y)) "Water" else "Land", lines, onClose, modifier)
+    InfoCard(stringResource(if (t != 0) Res.string.kind_track else if (water) Res.string.kind_water else Res.string.kind_land), lines, onClose, modifier)
 }
 
 /** The widest the trays and the bottom tool bar go. */

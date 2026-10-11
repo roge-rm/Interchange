@@ -9,12 +9,15 @@ package com.rm.interchange.sim
 internal fun generateLand(world: World) {
     val w = world.width + 1
     val h = world.height + 1
+    val g = world.settings
     val sum = IntArray(w * h)
-    // Only broad layers: finer ones jitter around each step and leave hardly a flat tile.
+    // Only broad layers: finer ones jitter around each step and leave hardly a flat tile. The Rockies and the
+    // Shield add a finer one, for ridges and for lakes everywhere.
     val layers = ArrayList<Triple<Int, Int, IntArray>>()
     var spacing = 128
     var weight = 16
-    while (spacing >= 16) {
+    val finest = if (g.region == Region.ROCKIES || g.region == Region.SHIELD) 8 else 16
+    while (spacing >= finest) {
         val gw = w / spacing + 2
         val gh = h / spacing + 2
         layers += Triple(spacing, weight, IntArray(gw * gh) { world.rng.below(256) })
@@ -36,18 +39,39 @@ internal fun generateLand(world: World) {
             }
         }
     }
-    // About a third under water: 0 at the 28th percentile, as a tile needs all four corners up to be dry.
+    // The Maritimes have the sea round their edges: the land falls away towards them.
+    if (g.region == Region.MARITIMES) {
+        parallelBands(h) { from, until ->
+            for (y in from until until) for (x in 0 until w) {
+                val edge = minOf(minOf(x, w - 1 - x), minOf(y, h - 1 - y))
+                val reach = minOf(w, h) / 5
+                if (edge < reach) sum[y * w + x] = sum[y * w + x] * edge / reach
+            }
+        }
+    }
+    // As much under water as asked: 0 at that percentile, a tile needing all four corners up to be dry.
     var top = 0
     for (v in sum) if (v > top) top = v
     val counts = IntArray(top + 1)
     for (v in sum) counts[v]++
     var sea = 0
     var below = 0
-    while (sea < top && below + counts[sea] < sum.size * 28 / 100) below += counts[sea++]
+    while (sea < top && below + counts[sea] < sum.size.toLong() * g.sea.coerceIn(0, 80) / 100) below += counts[sea++]
     val max = World.MAX_HEIGHT
+    // How high the highest land goes, by how hilly the map was asked to be and where it is.
+    var peak = when (g.hills) { 0 -> 6; 1 -> 14; 2 -> 19; else -> 24 }
+    when (g.region) {
+        Region.PRAIRIES, Region.NORTH -> peak = minOf(peak, 10)
+        Region.ROCKIES -> peak = maxOf(peak, 22)
+        else -> {}
+    }
+    // Mountain land rises quickly from the shore, f becoming 1 - (1 - f)², so most of it stands high.
+    val raised = g.region == Region.ROCKIES || g.hills >= 3
+    val range = (top - sea).coerceAtLeast(1).toLong()
     parallelBands(sum.size) { from, until ->
         for (i in from until until) {
-            sum[i] = ((sum[i] - sea).coerceAtLeast(0).toLong() * (max * 3 / 4) / (top - sea).coerceAtLeast(1)).toInt()
+            val f = (sum[i] - sea).coerceAtLeast(0).toLong()
+            sum[i] = if (raised) (peak * (2 * f * range - f * f) / (range * range)).toInt() else (f * peak / range).toInt()
         }
     }
     // Each corner no more than a step above any of its eight neighbours, in two sweeps.

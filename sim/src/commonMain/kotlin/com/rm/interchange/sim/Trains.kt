@@ -38,7 +38,8 @@ class Train(
     /** The depot it was bought in, and goes back to. */
     var depot: Int,
 ) {
-    var name = "Train ${id + 1}"
+    /** Its own name, or empty to be called by its number in the screen's language. */
+    var name = ""
 
     /** What each car is, nose first: the engine, its tender, then the wagons. */
     val carEngines: IntArray = buildList {

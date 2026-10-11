@@ -186,11 +186,9 @@ internal fun World.clearTile(company: Company, c: Command.Clear) {
     networkChanged()
 }
 
-/** A name for a station by where it is, until towns come to name them after. */
-private fun World.stationName(x: Int, y: Int): String {
-    val n = stations.size + 1
-    return "Station $n"
-}
+/** A name for a new station: none yet, so the screen calls it by its number in its own language. Towns will name them. */
+@Suppress("UNUSED_PARAMETER")
+private fun World.stationName(x: Int, y: Int): String = ""
 
 /** The most tiles a station's rectangle spans either way in one go. */
 const val MAX_STATION = 16

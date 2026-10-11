@@ -12,7 +12,13 @@ package com.rm.interchange.sim
  * Only the game thread changes the world. Other threads may read it, and see
  * a tick's changes part done; the renderer copes through [chunkVersions].
  */
-class World(val width: Int, val height: Int, seed: Long, val startYear: Int = 1850) {
+class World(val settings: NewGame, generate: Boolean = true) {
+    constructor(width: Int, height: Int, seed: Long, startYear: Int = 1850) : this(NewGame(width, height, seed, startYear))
+
+    val width get() = settings.width
+    val height get() = settings.height
+    val startYear get() = settings.startYear
+
     init {
         require(width % CHUNK == 0 && height % CHUNK == 0) { "Map sides are multiples of $CHUNK" }
     }
@@ -51,14 +57,14 @@ class World(val width: Int, val height: Int, seed: Long, val startYear: Int = 18
     internal val tileTrains = HashMap<Int, Int>()
     internal val blockTrains = HashMap<Int, Int>()
 
-    val rng = Rng(seed)
+    val rng = Rng(settings.seed)
 
     /** The seed folded into an int, for per-tile dice that don't draw from [rng]. */
-    internal val seedBits = (seed xor (seed ushr 32)).toInt()
+    internal val seedBits = (settings.seed xor (settings.seed ushr 32)).toInt()
 
     /** Ticks since the game began. */
     var tick = 0L
-        private set
+        internal set
 
     val day get() = (tick / Calendar.TICKS_PER_DAY).toInt()
 
@@ -69,8 +75,11 @@ class World(val width: Int, val height: Int, seed: Long, val startYear: Int = 18
     val chunkVersions = IntArray((width / CHUNK) * (height / CHUNK))
 
     init {
-        generateLand(this)
-        generateCountry(this)
+        // A loaded game fills these in from its save instead.
+        if (generate) {
+            generateLand(this)
+            generateCountry(this)
+        }
     }
 
     fun index(x: Int, y: Int) = y * width + x

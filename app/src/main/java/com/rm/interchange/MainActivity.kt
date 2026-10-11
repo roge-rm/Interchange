@@ -8,6 +8,9 @@ import androidx.activity.enableEdgeToEdge
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import com.rm.interchange.platform.AndroidFiles
+import com.rm.interchange.platform.Lifecycle
+import com.rm.interchange.platform.files
 import com.rm.interchange.ui.App
 
 class MainActivity : ComponentActivity() {
@@ -21,6 +24,13 @@ class MainActivity : ComponentActivity() {
         val controller = WindowCompat.getInsetsController(window, window.decorView)
         controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
         controller.hide(WindowInsetsCompat.Type.systemBars())
+        files = AndroidFiles(filesDir)
         setContent { App() }
+    }
+
+    /** Put away: the game saves itself. */
+    override fun onStop() {
+        super.onStop()
+        Lifecycle.onHide?.invoke()
     }
 }

@@ -1,5 +1,8 @@
 package com.rm.interchange.ui
 
+import com.rm.interchange.res.*
+import org.jetbrains.compose.resources.stringResource
+import org.jetbrains.compose.resources.stringArrayResource
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -69,6 +72,7 @@ fun SquareButton(glyph: Glyph, description: String, side: Dp, selected: Boolean 
  */
 @Composable
 fun StatusStrip(
+    onMenu: () -> Unit,
     paused: Boolean,
     onPause: () -> Unit,
     speed: Int,
@@ -87,9 +91,10 @@ fun StatusStrip(
     val textSize = if (compact) 13.sp else 15.sp
     val gap = if (compact) 6.dp else 8.dp
     val time = @Composable {
-        SquareButton(if (paused) Glyph.Play else Glyph.Pause, if (paused) "Play" else "Pause", side, selected = paused, onClick = onPause)
+        SquareButton(Glyph.Menu, stringResource(Res.string.menu), side, onClick = onMenu)
+        SquareButton(if (paused) Glyph.Play else Glyph.Pause, stringResource(if (paused) Res.string.play else Res.string.pause), side, selected = paused, onClick = onPause)
         Box(contentAlignment = Alignment.BottomEnd) {
-            SquareButton(Glyph.Speed, "Speed", side, onClick = onSpeed)
+            SquareButton(Glyph.Speed, stringResource(Res.string.speed), side, onClick = onSpeed)
             Text("${SPEEDS[speed]}×", color = c.textDim, fontSize = 9.sp, modifier = Modifier.padding(end = 3.dp))
         }
     }
@@ -98,8 +103,8 @@ fun StatusStrip(
         Text(money, color = if (moneyLow) c.bad else c.text, fontSize = textSize, maxLines = 1)
     }
     val turns = @Composable {
-        SquareButton(Glyph.TurnLeft, "Turn left", side, onClick = onTurnLeft)
-        SquareButton(Glyph.TurnRight, "Turn right", side, onClick = onTurnRight)
+        SquareButton(Glyph.TurnLeft, stringResource(Res.string.turn_left), side, onClick = onTurnLeft)
+        SquareButton(Glyph.TurnRight, stringResource(Res.string.turn_right), side, onClick = onTurnRight)
     }
     ChromeBox(modifier) {
         if (twoLines) {
@@ -156,7 +161,7 @@ private fun GroupButton(group: ToolGroup, selected: Boolean, compact: Boolean, m
     ) {
         GlyphIcon(group.glyph, if (selected) c.onAccent else c.text, Modifier.size(if (compact) 24.dp else 28.dp))
         BasicText(
-            group.title, maxLines = 1,
+            stringResource(group.title), maxLines = 1,
             style = TextStyle(color = if (selected) c.onAccent else c.textDim, textAlign = TextAlign.Center),
             autoSize = TextAutoSize.StepBased(minFontSize = 8.sp, maxFontSize = if (compact) 10.sp else 11.sp),
         )
@@ -188,6 +193,7 @@ fun ToolTray(
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                     for (t in tools) {
                         val on = t == tool
+                        val toolTitle = stringResource(t.title)
                         Column(
                             Modifier
                                 .weight(1f)
@@ -195,14 +201,14 @@ fun ToolTray(
                                 .clip(ButtonShape)
                                 .background(if (on) c.accent else c.button)
                                 .semantics(mergeDescendants = true) { selected = on }
-                                .semantics { contentDescription = t.title }
+                                .semantics { contentDescription = toolTitle }
                                 .clickable(enabled = t.ready, role = Role.Tab) { onTool(t) }
                                 .padding(vertical = 4.dp),
                             horizontalAlignment = Alignment.CenterHorizontally,
                         ) {
                             GlyphIcon(t.glyph, if (on) c.onAccent else c.text, Modifier.size(22.dp))
                             if (!compact) BasicText(
-                                t.title, maxLines = 1,
+                                toolTitle, maxLines = 1,
                                 style = TextStyle(color = if (on) c.onAccent else c.textDim, textAlign = TextAlign.Center),
                                 autoSize = TextAutoSize.StepBased(minFontSize = 7.sp, maxFontSize = 10.sp),
                             )
@@ -215,14 +221,14 @@ fun ToolTray(
                     .fillMaxWidth()
                     .heightIn(min = 36.dp)
                     .clip(ButtonShape)
-                    .clickable(role = Role.Button, onClickLabel = if (folded) "Show tools" else "Hide tools") { onFold(!folded) }
+                    .clickable(role = Role.Button, onClickLabel = stringResource(if (folded) Res.string.show_tools else Res.string.hide_tools)) { onFold(!folded) }
                     .padding(start = 6.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 if (folded) GlyphIcon(tool.glyph, c.text, Modifier.size(24.dp))
                 Column(Modifier.weight(1f)) {
-                    Text(tool.title, color = c.text, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+                    Text(stringResource(tool.title), color = c.text, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
                     detail?.let { Text(it, color = c.textDim, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) }
                 }
                 extras()
@@ -245,23 +251,27 @@ fun InfoCard(title: String, lines: List<String>, onClose: () -> Unit, modifier: 
         Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(title, color = c.text, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
-                SquareButton(Glyph.Remove, "Close", 28.dp, onClick = onClose)
+                SquareButton(Glyph.Remove, stringResource(Res.string.close), 28.dp, onClick = onClose)
             }
             for (l in lines) Text(l, color = c.textDim, fontSize = 13.sp)
         }
     }
 }
 
-/** 250000 as $250,000, and owing as −$861. */
-fun moneyText(amount: Long): String {
-    val digits = kotlin.math.abs(amount).toString()
-    val grouped = digits.reversed().chunked(3).joinToString(",").reversed()
-    return if (amount < 0) "−$$grouped" else "$$grouped"
+/** An amount of money as $250,000, or as the language writes it; owing as −$861. */
+@Composable
+fun money(amount: Long): String =
+    stringResource(if (amount < 0) Res.string.money_owed else Res.string.money, Numbers.grouped(kotlin.math.abs(amount)))
+
+/** Game day [day] of a game starting in [startYear], as 4 Mar 1852 or as the language writes it. */
+@Composable
+fun date(day: Int, startYear: Int): String {
+    val months = stringArrayResource(Res.array.months)
+    return stringResource(
+        Res.string.date, com.rm.interchange.sim.Calendar.dayOfMonth(day),
+        months.getOrElse(com.rm.interchange.sim.Calendar.month(day)) { "" }, com.rm.interchange.sim.Calendar.year(startYear, day),
+    )
 }
-
-private val MONTHS = listOf("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
-
-fun dateText(day: Int, month: Int, year: Int) = "$day ${MONTHS[month]} $year"
 
 /** A pill that's on or off, for picking one of a few things. */
 @Composable
@@ -304,7 +314,7 @@ fun Card(title: String, onClose: () -> Unit, modifier: Modifier = Modifier, cont
         Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(title, color = c.text, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f), maxLines = 1)
-                SquareButton(Glyph.Remove, "Close", 28.dp, onClick = onClose)
+                SquareButton(Glyph.Remove, stringResource(Res.string.close), 28.dp, onClick = onClose)
             }
             content()
         }

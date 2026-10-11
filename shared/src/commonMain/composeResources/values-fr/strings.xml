@@ -1,0 +1,153 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Interchange en français canadien. See values/strings.xml and tools/glossary-fr.md. -->
+    <string name="app_name">Interchange</string>
+
+    <string name="number_group">&#160;</string>
+    <string name="money">%1$s&#160;$</string>
+    <string name="money_owed">−%1$s&#160;$</string>
+    <string-array name="months">
+        <item>janv.</item><item>févr.</item><item>mars</item><item>avr.</item><item>mai</item><item>juin</item>
+        <item>juill.</item><item>août</item><item>sept.</item><item>oct.</item><item>nov.</item><item>déc.</item>
+    </string-array>
+    <string name="date">%1$d %2$s %3$d</string>
+
+    <string name="menu">Menu</string>
+    <string name="play">Jouer</string>
+    <string name="pause">Pause</string>
+    <string name="speed">Vitesse</string>
+    <string name="turn_left">Tourner à gauche</string>
+    <string name="turn_right">Tourner à droite</string>
+
+    <string name="group_inspect">Inspecter</string>
+    <string name="group_rail">Rail</string>
+    <string name="group_road">Route</string>
+    <string name="group_water">Eau</string>
+    <string name="group_air">Aérien</string>
+    <string name="group_land">Terrain</string>
+    <string name="tool_track">Voie</string>
+    <string name="tool_signals">Signaux</string>
+    <string name="tool_station">Gare</string>
+    <string name="tool_depot">Dépôt</string>
+    <string name="tool_bridge">Pont</string>
+    <string name="tool_tunnel">Tunnel</string>
+    <string name="tool_road">Route</string>
+    <string name="tool_stops">Arrêts</string>
+    <string name="tool_garage">Garage</string>
+    <string name="tool_canal">Canal</string>
+    <string name="tool_dock">Quai</string>
+    <string name="tool_shipyard">Chantier</string>
+    <string name="tool_lock">Écluse</string>
+    <string name="tool_airport">Aéroport</string>
+    <string name="tool_hangar">Hangar</string>
+    <string name="tool_raise">Monter</string>
+    <string name="tool_lower">Baisser</string>
+    <string name="tool_level">Niveler</string>
+    <string name="tool_trees">Arbres</string>
+    <string name="tool_clear">Dégager</string>
+    <string name="show_tools">Afficher les outils</string>
+    <string name="hide_tools">Masquer les outils</string>
+    <string name="remove_track">Enlever la voie</string>
+    <string name="platforms_other_way">Quais dans l'autre sens</string>
+
+    <string name="cost_track">%1$s le tronçon, %2$s de plus en pente</string>
+    <string name="cost_lift">%1$s pour enlever un tronçon</string>
+    <string name="cost_signal">%1$s, touchez encore pour changer</string>
+    <string name="cost_tile">%1$s la case</string>
+    <string name="cost_corner">%1$s le coin</string>
+
+    <string name="close">Fermer</string>
+    <string name="tile_at">Case %1$d, %2$d</string>
+    <string name="kind_water">Eau</string>
+    <string name="kind_land">Terrain</string>
+    <string name="kind_track">Voie</string>
+    <string name="height_of">Altitude %1$d</string>
+    <string name="track_pieces">Voie : %1$s</string>
+    <string name="piece_x">en x</string>
+    <string name="piece_y">en y</string>
+    <string name="piece_n">nord</string>
+    <string name="piece_e">est</string>
+    <string name="piece_s">sud</string>
+    <string name="piece_w">ouest</string>
+    <string name="owned_by">À %1$s</string>
+    <string name="list_join">, </string>
+    <string-array name="grounds">
+        <item>Pré</item><item>Prairie</item><item>Forêt</item><item>Roc</item><item>Toundra</item><item>Neige</item>
+    </string-array>
+
+    <string name="train_n">Train %1$d</string>
+    <string name="station_n">Gare %1$d</string>
+    <string name="company">Compagnie</string>
+    <string name="consist">%1$s et %2$d %3$s</string>
+    <string name="waiting_to_leave">Attend de sortir du dépôt</string>
+    <string name="in_depot">Au dépôt</string>
+    <string name="stopped">Arrêté</string>
+    <string name="going_to_depot">Vers le dépôt, %1$d km/h</string>
+    <string name="at_station">À %1$s</string>
+    <string name="lost">Ne trouve pas de chemin</string>
+    <string name="heading_for">Vers %1$s, %2$d km/h</string>
+    <string name="no_stops">Aucun arrêt</string>
+    <string name="add_stops">Ajouter des arrêts</string>
+    <string name="done_adding">Terminé</string>
+    <string name="start">Démarrer</string>
+    <string name="stop">Arrêter</string>
+    <string name="to_depot">Au dépôt</string>
+    <string name="carry_on">Continuer</string>
+    <string name="turn_round">Faire demi-tour</string>
+    <string name="sell">Vendre</string>
+    <string name="depot">Dépôt</string>
+    <string name="engine_speed">%1$s %2$s, %3$d km/h</string>
+    <string name="wagons_count">%1$d wagons</string>
+    <string name="fewer_wagons">Moins de wagons</string>
+    <string name="more_wagons">Plus de wagons</string>
+    <string name="buy_for">Acheter, %1$s</string>
+    <string name="orders">Arrêts</string>
+    <string name="platform_tiles">%1$d cases de quai</string>
+    <string name="no_trains_call">Aucun train ne s'y arrête</string>
+    <string name="show">Voir</string>
+
+    <string name="continue_game">Continuer</string>
+    <string name="new_game">Nouvelle partie</string>
+    <string name="load">Charger</string>
+    <string name="save">Enregistrer</string>
+    <string name="saved">Enregistré</string>
+    <string name="settings">Paramètres</string>
+    <string name="title_screen">Écran titre</string>
+    <string name="back">Retour</string>
+    <string name="autosave">Sauvegarde auto</string>
+    <string name="delete">Supprimer</string>
+    <string name="no_saves">Aucune partie enregistrée</string>
+    <string name="save_line">%1$s · %2$s · %3$d × %4$d %5$s</string>
+    <string name="cant_load">Impossible de charger cette partie : %1$s</string>
+
+    <string name="map_size">Taille de la carte</string>
+    <string name="width">Largeur</string>
+    <string name="height">Hauteur</string>
+    <string name="region">Région</string>
+    <string-array name="regions">
+        <item>Mixte</item><item>Prairies</item><item>Bouclier canadien</item><item>Rocheuses</item><item>Maritimes</item><item>Nord</item>
+    </string-array>
+    <string name="start_year">Année de départ</string>
+    <string name="seed">Graine de la carte</string>
+    <string name="new_seed">Nouvelle graine</string>
+    <string name="sea">Mer</string>
+    <string name="sea_percent">%1$d&#160;%</string>
+    <string name="hills">Relief</string>
+    <string-array name="hill_levels">
+        <item>Plat</item><item>Vallonné</item><item>Accidenté</item><item>Montagneux</item>
+    </string-array>
+    <string name="trees">Arbres</string>
+    <string-array name="tree_levels">
+        <item>Aucun</item><item>Peu</item><item>Normal</item><item>Beaucoup</item>
+    </string-array>
+    <string name="earlier">Plus tôt</string>
+    <string name="later">Plus tard</string>
+    <string name="start_game">Commencer</string>
+
+    <string name="language">Langue</string>
+    <string name="language_phone">Langue du téléphone</string>
+    <string name="autosave_every">Sauvegarde auto</string>
+    <string-array name="autosave_levels">
+        <item>Jamais</item><item>Chaque mois</item><item>Aux trois mois</item><item>Chaque année</item>
+    </string-array>
+</resources>

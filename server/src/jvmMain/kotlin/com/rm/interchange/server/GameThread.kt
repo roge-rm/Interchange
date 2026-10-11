@@ -1,6 +1,7 @@
 package com.rm.interchange.server
 
 import com.rm.interchange.sim.Command
+import com.rm.interchange.sim.Save
 import com.rm.interchange.sim.World
 import com.rm.interchange.sim.WorldView
 import com.rm.interchange.sim.view
@@ -47,6 +48,20 @@ class GameThread(private val make: () -> World) {
         private set
 
     private val incoming = ConcurrentLinkedQueue<Command>()
+    private val tasks = ConcurrentLinkedQueue<(Game) -> Unit>()
+
+    /** Days between autosaves, or 0 for none; and what's done with each, called on the game thread. */
+    @Volatile var autosaveDays = 30
+    @Volatile var onAutosave: ((ByteArray) -> Unit)? = null
+    private var lastAutosaveDay = -1
+
+    /** Runs [task] on the game thread between ticks, where it can read the world whole. */
+    fun onGameThread(task: (Game) -> Unit) {
+        tasks.add(task)
+    }
+
+    /** The world saved, handed to [done] on the game thread. */
+    fun save(done: (ByteArray) -> Unit) = onGameThread { g -> done(Save.write(g.world)) }
     @Volatile private var running = true
 
     private val thread = Thread(::loop, "interchange-game").apply {
@@ -72,11 +87,18 @@ class GameThread(private val make: () -> World) {
         publish(g)
         val tickNanos = 1_000_000_000L / Game.TICKS_PER_SECOND
         var next = System.nanoTime()
+        lastAutosaveDay = g.world.day
         while (running) {
             while (true) g.request(incoming.poll() ?: break)
+            while (true) (tasks.poll() ?: break)(g)
             if (!paused) repeat(speed) {
                 g.step()
                 if (g.world.tick % CHECKSUM_TICKS == 0L) checksum = g.world.checksum()
+            }
+            val every = autosaveDays
+            if (every > 0 && g.world.day - lastAutosaveDay >= every) {
+                lastAutosaveDay = g.world.day
+                onAutosave?.invoke(Save.write(g.world))
             }
             publish(g)
             next += tickNanos

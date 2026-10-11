@@ -18,7 +18,7 @@ enum class Glyph {
     Signal, Station, Depot, Bridge, Tunnel,
     RoadStop, Canal, Dock, Lock, Airport,
     Raise, Lower, Level, Tree, Clear,
-    Pause, Play, Speed, TurnLeft, TurnRight, Remove, Lift,
+    Pause, Play, Speed, TurnLeft, TurnRight, Remove, Lift, Menu,
 }
 
 /** [glyph] drawn in [tint] on a 24 unit square scaled to fit. */
@@ -102,6 +102,7 @@ private class GlyphPen(val scope: DrawScope, val u: Float, val dx: Float, val dy
             Glyph.TurnRight -> { arc(12f, 13f, 7f, 90f, 250f); open(21f, 7f, 19f, 11f, 15f, 9f) }
             Glyph.Remove -> { line(7f, 7f, 17f, 17f); line(17f, 7f, 7f, 17f) }
             Glyph.Lift -> { draw(Glyph.Rail); line(3f, 21f, 21f, 3f, 2.5f) }
+            Glyph.Menu -> { line(5f, 7f, 19f, 7f, 2.5f); line(5f, 12f, 19f, 12f, 2.5f); line(5f, 17f, 19f, 17f, 2.5f) }
         }
     }
 

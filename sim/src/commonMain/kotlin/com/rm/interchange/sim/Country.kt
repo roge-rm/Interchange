@@ -74,17 +74,24 @@ internal fun generateCountry(world: World) {
         val moisture = noise(intArrayOf(64, 32, 16))
         val shield = noise(intArrayOf(32, 16, 8))
         val warmth = noise(intArrayOf(128, 64))
+        // Each region's climate, as a shift in warmth and wetness, and how often the Shield's granite shows.
+        val region = settings.region
+        val warmer = when (region) { Region.PRAIRIES -> 60; Region.SHIELD -> 10; Region.ROCKIES -> 30; Region.MARITIMES -> 50; Region.NORTH -> -90; else -> 0 }
+        val wetter = when (region) { Region.PRAIRIES -> -60; Region.SHIELD -> 40; Region.ROCKIES -> 20; Region.MARITIMES -> 30; Region.NORTH -> -10; else -> 0 }
+        val granite = when (region) { Region.SHIELD -> 170; Region.NORTH -> 190; Region.PRAIRIES -> 250; else -> 205 }
+        // How likely trees are, by the amount asked for, in 256ths of the usual.
+        val treeShare = when (settings.trees) { 0 -> 0; 1 -> 128; 2 -> 256; else -> 384 }
         parallelBands(height) { from, until ->
             for (y in from until until) for (x in 0 until width) {
                 val i = index(x, y)
                 if (isWater(x, y)) continue
                 val high = maxOf(maxOf(heightAt(x, y), heightAt(x + 1, y)), maxOf(heightAt(x + 1, y + 1), heightAt(x, y + 1)))
                 // Warmer to the south, colder with height, with a wander so the bands aren't straight.
-                val t = y * 200 / height + warmth[i] / 4 - high * 9
-                val m = moisture[i]
+                val t = y * 200 / height + warmth[i] / 4 - high * 9 + warmer
+                val m = moisture[i] + wetter
                 val kind = when {
                     high >= 17 -> Ground.SNOW
-                    high >= 13 || shield[i] > 205 -> Ground.ROCK
+                    high >= 13 || shield[i] > granite -> Ground.ROCK
                     t < 25 -> Ground.TUNDRA
                     m < 105 && t > 110 -> Ground.PRAIRIE
                     m > 140 && t < 140 -> Ground.FOREST
@@ -94,6 +101,8 @@ internal fun generateCountry(world: World) {
                 // Nothing grows on the beach.
                 val beach = minOf(minOf(heightAt(x, y), heightAt(x + 1, y)), minOf(heightAt(x + 1, y + 1), heightAt(x, y + 1))) == 0
                 if (beach) continue
+                // Fewer or more trees than usual: a tile only gets its trees if this roll passes.
+                if (dice(x, y, 3) * 256 >= treeShare * 255 + 1) continue
                 val r = dice(x, y, 1)
                 val pick = dice(x, y, 2)
                 val packed = when (kind) {
