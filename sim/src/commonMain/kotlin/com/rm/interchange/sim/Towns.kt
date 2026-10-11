@@ -33,7 +33,51 @@ class Town(
     /** Passengers and mail picked up from its buildings this month and last. */
     var servedThisMonth = 0
     var servedLastMonth = 0
+    /** What it thinks of each company, from -1000 to 1000, by company id; it starts out thinking well of them. */
+    val approval = IntArray(MAX_COMPANIES) { START_APPROVAL }
 }
+
+const val MAX_COMPANIES = 8
+
+/** How far from a town's middle its approval counts: stations within it serve the town, trees felled within it upset it. In tiles. */
+const val TOWN_AREA = 20
+
+/** Approval at or below this and a town won't have a company build stations near it. */
+const val APPROVAL_REFUSES = -200
+
+/** What a felled tree near a town costs a company in its approval. */
+const val TREE_APPROVAL = 5
+
+/** What a town thinks of a company before it's done anything: Good. */
+const val START_APPROVAL = 300
+
+/** Approval's levels, from Appalling to Outstanding: the first level above each of these. */
+val APPROVAL_LEVELS = intArrayOf(-400, -200, 0, 200, 400, 600, 800)
+
+/** Which level, 0 for Appalling to 7 for Outstanding, [approval] is. */
+fun approvalLevel(approval: Int) = APPROVAL_LEVELS.count { approval > it }
+
+/**
+ * A company felling the trees on tile [i] to build: towns within reach think
+ * less of it, by how many trees, though never so little that felling alone
+ * stops it building stations there.
+ */
+internal fun World.fellTrees(company: Company, i: Int): Long {
+    val n = Trees.count(trees[i].toInt())
+    if (n > 0) {
+        val x = i % width
+        val y = i / width
+        for (t in towns) if (maxOf(kotlin.math.abs(t.x - x), kotlin.math.abs(t.y - y)) <= TOWN_AREA / 2) {
+            val a = t.approval[company.id]
+            if (a > APPROVAL_REFUSES + TREE_APPROVAL * 3) t.approval[company.id] = maxOf(APPROVAL_REFUSES + TREE_APPROVAL * 3, a - TREE_APPROVAL * n)
+        }
+    }
+    return clearTrees(i)
+}
+
+/** Whether a town near tile ([x], [y]) thinks too little of [company] to let it build a station there. */
+internal fun World.townRefuses(company: Company, x: Int, y: Int): Boolean =
+    towns.any { t -> maxOf(kotlin.math.abs(t.x - x), kotlin.math.abs(t.y - y)) <= TOWN_AREA && t.approval[company.id] <= APPROVAL_REFUSES }
 
 /** The bit for a road reaching [edge], a [Track] edge. */
 fun roadBit(edge: Int) = 1 shl edge

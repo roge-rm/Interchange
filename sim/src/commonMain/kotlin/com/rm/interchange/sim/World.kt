@@ -204,8 +204,11 @@ class World(val settings: NewGame, val roster: Roster = Roster.BASE, generate: B
         for (x in 0..width) mix(heightAt(x, height).toLong())
         for (y in 0 until height) mix(heightAt(width, y).toLong())
         for (c in companies) mix(c.money)
-        for (t in towns) { mix(t.population.toLong()); mix(t.growIn.toLong()); mix(t.servedThisMonth.toLong()) }
-        for (s in stations) if (s != null) for (c in s.cargo) for (p in c) { mix(p.dest.toLong()); mix(p.count.toLong()); mix(p.credit) }
+        for (t in towns) { mix(t.population.toLong()); mix(t.growIn.toLong()); mix(t.servedThisMonth.toLong()); for (a in t.approval) mix(a.toLong()) }
+        for (s in stations) if (s != null) {
+            for (c in s.cargo) for (p in c) { mix(p.dest.toLong()); mix(p.count.toLong()); mix(p.credit) }
+            for (r in s.rating) mix(r.toLong())
+        }
         for (k in signals.keys.sorted()) mix(k.toLong() * 31 + signals.getValue(k))
         for (k in stationTiles.keys.sorted()) mix(k.toLong() * 31 + stationTiles.getValue(k))
         for (k in depotTiles.keys.sorted()) mix(k.toLong() * 31 + depotTiles.getValue(k))

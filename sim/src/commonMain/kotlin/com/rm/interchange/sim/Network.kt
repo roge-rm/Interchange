@@ -20,6 +20,10 @@ class Station(val id: Int, val owner: Int, var name: String, val signX: Int, val
     val tiles = ArrayList<Int>()
     /** Lots waiting, oldest first, by cargo. */
     val cargo = Array(Cargo.COUNT) { ArrayList<Packet>() }
+    /** How well it serves each cargo, 0 to 255, and when a train last called that could take it and how fast that train goes. */
+    val rating = IntArray(Cargo.COUNT) { START_RATING }
+    val lastCall = LongArray(Cargo.COUNT) { -1 }
+    val lastSpeed = IntArray(Cargo.COUNT)
 }
 
 /** A train depot, open at [edge] of its tile. */
@@ -76,6 +80,7 @@ internal fun World.buildStation(company: Company, c: Command.Station) {
     val xs = minOf(c.x0, c.x1)..maxOf(c.x0, c.x1)
     val ys = minOf(c.y0, c.y1)..maxOf(c.y0, c.y1)
     if (xs.last - xs.first >= MAX_STATION || ys.last - ys.first >= MAX_STATION) return
+    if (townRefuses(company, xs.first, ys.first)) return
     val tiles = ArrayList<Int>()
     for (y in ys) for (x in xs) {
         if (!inside(x, y) || isWater(x, y)) return
@@ -106,7 +111,7 @@ internal fun World.buildStation(company: Company, c: Command.Station) {
     val s = station ?: Station(stations.size, company.id, stationName(xs.first, ys.first), xs.first, ys.first).also { stations += it }
     company.money -= cost
     for (i in tiles) {
-        clearTrees(i)
+        fellTrees(company, i)
         // Any track already there must run the same way, checked above, so the platform's track joins it.
         track[i] = c.axis.toByte()
         owner[i] = company.id.toByte()
@@ -128,7 +133,7 @@ internal fun World.buildDepot(company: Company, c: Command.Depot) {
     val piece = Track.straight(c.edge)
     if (!piecesFit(c.x, c.y, piece)) return
     if (company.money < Prices.DEPOT + treeCost(i)) return
-    company.money -= Prices.DEPOT + clearTrees(i)
+    company.money -= Prices.DEPOT + fellTrees(company, i)
     val d = Depot(depots.size, company.id, i, c.edge)
     depots += d
     depotTiles[i] = d.id

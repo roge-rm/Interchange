@@ -51,14 +51,15 @@ class PassengerTest {
         w.apply(Command.TrainOrder(0, 0, Command.TrainOrder.START_STOP))
         val t = w.trains[0]!!
         assertEquals(120, t.capacity(Cargo.PASSENGERS))
-        val before = w.companies[0].money
         var carried = false
+        var paid = 0L
         repeat(40_000) {
             w.step()
             if (t.load(Cargo.PASSENGERS) > 0) carried = true
+            paid += w.payments.filter { it.tick == w.tick }.sumOf { it.amount }
         }
         assertTrue(carried)
-        assertTrue(t.profitThisYear + t.profitLastYear > 0 || w.companies[0].money > before, "profit ${t.profitThisYear}")
+        assertTrue(paid > 0, "no fares paid")
         assertTrue(w.towns.all { it.servedLastMonth > 0 || it.servedThisMonth > 0 })
     }
 
@@ -134,18 +135,19 @@ class PassengerTest {
         assertEquals(2, w.nextHop(1, 2))
         assertEquals(-1, w.nextHop(2, 0).let { if (it == 1) -1 else it })
         // Some of A's passengers are bound for C.
-        w.run(Calendar.TICKS_PER_DAY * 3)
+        w.run(Calendar.TICKS_PER_DAY * 10)
         assertTrue(w.stations[0]!!.cargo[Cargo.PASSENGERS].any { it.dest == 2 })
         // Watch for them arriving at C: a payment there for passengers who started at A.
         var throughToC = false
-        val before = w.companies[0].money
+        var paidAtC = 0L
         repeat(60_000) {
             val onSecond = w.trains[1]!!.cargo[Cargo.PASSENGERS].any { it.origin == 0 && it.dest == 2 }
             w.step()
             if (onSecond) throughToC = true
+            paidAtC += w.payments.filter { it.tick == w.tick && w.stationTiles[it.tile] == 2 }.sumOf { it.amount }
         }
         assertTrue(throughToC, "nobody from A rode the second train")
-        assertTrue(w.companies[0].money > before)
+        assertTrue(paidAtC > 0, "nothing paid at C")
         // The first train only goes as far as B, but its legs towards C are credited to it.
         assertTrue(w.trains[0]!!.profitThisYear + w.trains[0]!!.profitLastYear > -10_000)
     }
@@ -155,5 +157,47 @@ class PassengerTest {
         val w = line()
         w.run(Calendar.TICKS_PER_DAY * 5)
         assertTrue(w.stations[0]!!.cargo[Cargo.PASSENGERS].all { it.dest == -1 })
+    }
+
+    @Test
+    fun theCalendarKnowsItsWeeksAndHolidays() {
+        // 1 January 1925 was a Thursday, and 1 July 1925 a Wednesday.
+        assertEquals(3, Calendar.weekday(1925, 0))
+        assertEquals(2, Calendar.weekday(1925, 181))
+        assertTrue(Calendar.holiday(1925, 181))
+        assertEquals(0, Calendar.mail(1925, 181))
+        assertEquals(250, Calendar.mail(1925, 340))
+        assertTrue(Calendar.travel(1925, 0) > Calendar.travel(1925, 3))
+    }
+
+    @Test
+    fun ratingsFallWithoutServiceAndRiseWithIt() {
+        val w = line()
+        w.run(Calendar.TICKS_PER_DAY * 60)
+        val idle = w.stations[0]!!.rating[Cargo.PASSENGERS]
+        assertTrue(idle < START_RATING, "rating $idle")
+        w.apply(Command.BuyTrain(0, 0, 2, 18, 3))
+        w.apply(Command.TrainOrder(0, 0, Command.TrainOrder.ORDERS, intArrayOf(0, 1)))
+        w.apply(Command.TrainOrder(0, 0, Command.TrainOrder.START_STOP))
+        w.run(Calendar.TICKS_PER_DAY * 120)
+        assertTrue(w.stations[0]!!.rating[Cargo.PASSENGERS] > idle)
+    }
+
+    @Test
+    fun aTownThatThinksLittleOfACompanyWontHaveItsStations() {
+        val w = line()
+        w.towns[0].approval[0] = APPROVAL_REFUSES
+        w.apply(Command.Station(0, 15, 10, 16, 10, Track.X))
+        assertEquals(2, w.stations.size)
+        assertEquals(0, approvalLevel(-1000))
+        assertEquals(7, approvalLevel(1000))
+    }
+
+    @Test
+    fun fellingTreesAloneNeverStopsAStation() {
+        val w = line()
+        val t = w.towns[0]
+        repeat(200) { w.fellTrees(w.companies[0], w.index(t.x, t.y + 2).also { i -> w.trees[i] = Trees.pack(Trees.MAPLE, 3).toByte() }) }
+        assertTrue(t.approval[0] > APPROVAL_REFUSES)
     }
 }

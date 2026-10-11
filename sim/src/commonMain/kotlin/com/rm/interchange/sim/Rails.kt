@@ -140,7 +140,7 @@ internal fun World.buildRail(company: Company, c: Command.Rail) {
             val cost = Prices.TRACK + treeCost(i) + if (!needsFoundation(x, y, has) && needsFoundation(x, y, has or piece)) Prices.FOUNDATION else 0
             if (company.money < cost) return
             company.money -= cost
-            clearTrees(i)
+            fellTrees(company, i)
             track[i] = (has or piece).toByte()
             owner[i] = company.id.toByte()
             // A tile that now branches can't keep its signals.

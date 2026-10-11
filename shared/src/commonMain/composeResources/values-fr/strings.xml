@@ -188,8 +188,8 @@
     <string name="population">Population : %1$s</string>
 
     <!-- Voyageurs et courrier -->
-    <string name="passengers_waiting">Voyageurs en attente : %1$d</string>
-    <string name="mail_waiting">Courrier en attente : %1$d</string>
+    <string name="passengers_waiting">Voyageurs en attente : %1$d, note %2$d&#160;%</string>
+    <string name="mail_waiting">Courrier en attente : %1$d, note %2$d&#160;%</string>
     <string name="passengers_load">Voyageurs %1$d/%2$d</string>
     <string name="mail_load">Courrier %1$d/%2$d</string>
     <string name="profit_line">Bénéfice cette année %1$s, l'an dernier %2$s</string>
@@ -198,4 +198,15 @@
     <string name="going_to">Destination, voyageurs · courrier</string>
     <string name="anywhere">N'importe où</string>
     <string name="via">%1$s, correspondance à %2$s</string>
+
+    <!-- Notes, réputation et la semaine -->
+    <string name="town_standing">Opinion de votre compagnie : %1$s</string>
+    <string-array name="approval_levels">
+        <item>Épouvantable</item><item>Très mauvaise</item><item>Mauvaise</item><item>Médiocre</item><item>Bonne</item><item>Très bonne</item><item>Excellente</item><item>Exceptionnelle</item>
+    </string-array>
+    <string name="picked_up">Pris en charge le mois dernier : %1$d</string>
+    <string-array name="weekdays">
+        <item>lun.</item><item>mar.</item><item>mer.</item><item>jeu.</item><item>ven.</item><item>sam.</item><item>dim.</item>
+    </string-array>
+    <string name="weekday_date">%1$s %2$s</string>
 </resources>

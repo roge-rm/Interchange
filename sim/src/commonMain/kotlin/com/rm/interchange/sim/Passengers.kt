@@ -50,6 +50,9 @@ const val GIVE_UP_DAYS = 90
 /** What a change of train costs a journey, in tiles of distance, when working out the way. */
 const val CHANGE_COST = 16
 
+/** A new station's rating. */
+const val START_RATING = 175
+
 /** A payment where cargo got off, kept a while for the screen to show rising over the station. */
 class Payment(val tile: Int, val amount: Long, val tick: Long)
 
@@ -184,8 +187,15 @@ internal fun World.passengersDay() {
         m[Cargo.MAIL] += mail
         towns.getOrNull(townOf[tile].toInt())?.let { it.servedThisMonth += passengers + mail }
     }
+    val travel = Calendar.travel(startYear, day)
+    val post = Calendar.mail(startYear, day)
     for (sid in made.keys.sorted()) {
         val s = stations.getOrNull(sid) ?: continue
+        // Busier or quieter by the day, and only the station's rating's share comes to it at all.
+        val m = made.getValue(sid)
+        m[Cargo.PASSENGERS] = m[Cargo.PASSENGERS] * travel / 100
+        m[Cargo.MAIL] = m[Cargo.MAIL] * post / 100
+        for (cg in 0 until Cargo.COUNT) m[cg] = (m[cg] * s.rating[cg] + rng.below(255)) / 255
         // Where it can send to, by weight: people there over distance.
         val reach = nextHops[sid]?.keys?.filter { (stationPeople[it] ?: 0) > 0 }?.sorted().orEmpty()
         val weights = IntArray(reach.size) { i -> ((stationPeople[reach[i]] ?: 0) + 20) * 256 / (stationDistance(sid, reach[i]) + 8) }
@@ -209,9 +219,46 @@ internal fun World.passengersDay() {
     }
     for (s in stations) {
         if (s == null) continue
-        for (cg in 0 until Cargo.COUNT) s.cargo[cg].removeAll { tick - it.since > GIVE_UP_DAYS * Calendar.TICKS_PER_DAY.toLong() }
+        for (cg in 0 until Cargo.COUNT) {
+            s.cargo[cg].removeAll { tick - it.since > GIVE_UP_DAYS * Calendar.TICKS_PER_DAY.toLong() }
+            // The rating creeps towards what the service deserves, a little a day.
+            val target = ratingTarget(s, cg)
+            s.rating[cg] += (target - s.rating[cg]).coerceIn(-RATING_STEP, RATING_STEP)
+        }
     }
 }
+
+/**
+ * What station [s]'s rating for cargo [c] is heading for, 0 to 255: how
+ * recently a train called that could take it, how little is waiting, and how
+ * fast the last such train goes.
+ */
+internal fun World.ratingTarget(s: Station, c: Int): Int {
+    var r = 33
+    val days = if (s.lastCall[c] < 0) Int.MAX_VALUE else ((tick - s.lastCall[c]) / Calendar.TICKS_PER_DAY).toInt()
+    // On OpenTTD's scale: a train every week or so is good service, one every couple of months poor.
+    r += when {
+        days <= 7 -> 95
+        days <= 15 -> 65
+        days <= 30 -> 45
+        days <= 52 -> 25
+        else -> 0
+    }
+    val waiting = s.waiting(c)
+    r += when {
+        waiting <= 100 -> 40
+        waiting <= 300 -> 30
+        waiting <= 600 -> 10
+        waiting <= 1000 -> 0
+        waiting <= 1500 -> -35
+        else -> -90
+    }
+    r += ((s.lastSpeed[c] - 50) / 4).coerceIn(0, 42)
+    return r.coerceIn(0, 255)
+}
+
+/** How far a station's rating moves in a day. */
+const val RATING_STEP = 2
 
 /** Whether station [s] has any building within reach, to take passengers and mail off trains. */
 internal fun World.accepts(s: Station): Boolean {
@@ -266,7 +313,12 @@ internal fun World.callAt(t: Train, s: Station) {
         payments += Payment(s.tiles.first(), paid, tick)
     }
     for (c in 0 until Cargo.COUNT) {
-        var room = t.capacity(c) - t.load(c)
+        val capacity = t.capacity(c)
+        if (capacity > 0) {
+            s.lastCall[c] = tick
+            s.lastSpeed[c] = t.engineInfo.speed
+        }
+        var room = capacity - t.load(c)
         val it = s.cargo[c].iterator()
         while (room > 0 && it.hasNext()) {
             val p = it.next()
@@ -295,11 +347,29 @@ fun fare(c: Int, n: Int, from: Station, to: Station, days: Int): Long {
     return n.toLong() * dist * Cargo.RATE[c] * share / 10_000
 }
 
-/** The first of each month: what towns had picked up last month is what makes them grow. */
+/**
+ * The first of each month: what towns had picked up last month is what makes
+ * them grow, and each company's stations near a town move what it thinks of
+ * the company: up for good ratings, down for poor ones, back towards where
+ * it started for a company with none there.
+ */
 internal fun World.passengersMonth() {
     for (t in towns) {
         t.servedLastMonth = t.servedThisMonth
         t.servedThisMonth = 0
+        for (c in companies) {
+            val near = stations.filter { s -> s != null && s.owner == c.id && maxOf(kotlin.math.abs(s.signX - t.x), kotlin.math.abs(s.signY - t.y)) <= TOWN_AREA }
+            val a = t.approval[c.id]
+            t.approval[c.id] = if (near.isEmpty()) a - (a - START_APPROVAL).coerceIn(-5, 5) else {
+                val percent = near.sumOf { s -> s!!.rating.sum() * 100 / (255 * Cargo.COUNT) } / near.size
+                a + when {
+                    percent >= 70 -> 20
+                    percent >= 50 -> 10
+                    percent >= 30 -> 0
+                    else -> -15
+                }
+            }.coerceIn(-1000, 1000)
+        }
     }
 }
 

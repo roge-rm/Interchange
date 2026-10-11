@@ -142,8 +142,8 @@ fun StationCard(view: WorldView, s: StationView, onTrain: (Int) -> Unit, onClose
     val c = LocalColors.current
     Card(stationName(view, s.id), onClose, modifier) {
         Text(stringResource(Res.string.platform_tiles, s.platforms), color = c.textDim, fontSize = 13.sp)
-        Text(stringResource(Res.string.passengers_waiting, s.waiting[Cargo.PASSENGERS]), color = c.text, fontSize = 13.sp)
-        Text(stringResource(Res.string.mail_waiting, s.waiting[Cargo.MAIL]), color = c.text, fontSize = 13.sp)
+        Text(stringResource(Res.string.passengers_waiting, s.waiting[Cargo.PASSENGERS], s.rating[Cargo.PASSENGERS] * 100 / 255), color = c.text, fontSize = 13.sp)
+        Text(stringResource(Res.string.mail_waiting, s.waiting[Cargo.MAIL], s.rating[Cargo.MAIL] * 100 / 255), color = c.text, fontSize = 13.sp)
         // Where they're going, the most first, and where they'll change on the way.
         if (s.going.isNotEmpty()) Text(stringResource(Res.string.going_to), color = c.textDim, fontSize = 12.sp)
         for (g in s.going.take(GOING_SHOWN)) {

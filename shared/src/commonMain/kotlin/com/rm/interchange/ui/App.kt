@@ -60,6 +60,7 @@ import com.rm.interchange.sim.Prices
 import com.rm.interchange.sim.Track
 import com.rm.interchange.sim.PAVED
 import com.rm.interchange.sim.houseOf
+import com.rm.interchange.sim.approvalLevel
 import com.rm.interchange.map.rememberTownLabels
 import com.rm.interchange.sim.World
 import kotlin.math.roundToInt
@@ -419,7 +420,7 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
             onMenu,
             paused, { paused = !paused; runner.paused = paused }, speed, { speed = (speed + 1) % SPEEDS.size; runner.speed = SPEEDS[speed] },
             settings.grid || settings.heights, onOverlays,
-            date(day, world.startYear),
+            weekdayDate(day, world.startYear),
             money(money), money < 0,
             { view.turnBy(-1) }, { view.turnBy(1) },
             compact = layout.compact || layout.narrow,
@@ -532,6 +533,7 @@ private fun InspectCard(world: World, x: Int, y: Int, onClose: () -> Unit, modif
     val pieces = listOf(Track.X to Res.string.piece_x, Track.Y to Res.string.piece_y, Track.N to Res.string.piece_n, Track.E to Res.string.piece_e, Track.S to Res.string.piece_s, Track.W to Res.string.piece_w)
     val pieceNames = pieces.filter { t and it.first != 0 }.map { stringResource(it.second) }
     val join = stringResource(Res.string.list_join)
+    val levels = stringArrayResource(Res.array.approval_levels)
     val house = world.roster.houses.getOrNull(houseOf(world.house[i].toInt()))
     val road = world.road[i].toInt()
     val town = world.towns.getOrNull(world.townOf[i].toInt())
@@ -548,6 +550,8 @@ private fun InspectCard(world: World, x: Int, y: Int, onClose: () -> Unit, modif
         if (town != null) {
             add(stringResource(Res.string.town_of, town.name))
             add(stringResource(Res.string.population, Numbers.grouped(town.population.toLong())))
+            add(stringResource(Res.string.picked_up, town.servedLastMonth))
+            add(stringResource(Res.string.town_standing, levels.getOrElse(approvalLevel(town.approval[0])) { "" }))
         }
         if (t != 0) {
             add(stringResource(Res.string.track_pieces, pieceNames.joinToString(join)))

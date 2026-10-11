@@ -58,6 +58,8 @@ class StationView(
     val waiting: IntArray = IntArray(Cargo.COUNT),
     /** Where what's waiting is going, the most first. */
     val going: List<GoingView> = emptyList(),
+    /** Its rating for each cargo, 0 to 255. */
+    val rating: IntArray = IntArray(Cargo.COUNT),
 )
 
 /** Passengers and mail waiting at a station for [dest] (-1 for anywhere), changing at [via] on the way or -1 if it's the next stop. */
@@ -129,7 +131,7 @@ fun World.view(): WorldView {
             val hop = if (d >= 0) nextHop(s.id, d) else -1
             GoingView(d, if (hop >= 0 && hop != d) hop else -1, n)
         }
-        StationView(s.id, s.name, s.tiles.size, IntArray(Cargo.COUNT) { s.waiting(it) }, list)
+        StationView(s.id, s.name, s.tiles.size, IntArray(Cargo.COUNT) { s.waiting(it) }, list, s.rating.copyOf())
     }
     val signalViews = signals.entries.sortedBy { it.key }.map { (k, s) ->
         val tile = k / 8

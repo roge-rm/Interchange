@@ -16,7 +16,7 @@ package com.rm.interchange.sim
  */
 object Save {
     private val MAGIC = "ICHG".encodeToByteArray()
-    const val VERSION = 5
+    const val VERSION = 6
 
     fun write(world: World): ByteArray {
         val w = ByteWriter(world.width * world.height * 6 + 4096)
@@ -41,6 +41,7 @@ object Save {
                 if (s == null) continue
                 w.int(s.owner); w.string(s.name); w.int(s.signX); w.int(s.signY); w.ints(s.tiles.toIntArray())
                 writeCargo(w, s.cargo)
+                w.ints(s.rating); for (v in s.lastCall) w.long(v); w.ints(s.lastSpeed)
             }
             w.uvar(depots.size.toLong())
             for (d in depots) {
@@ -66,7 +67,7 @@ object Save {
                 writeCargo(w, t.cargo); w.long(t.profitThisYear); w.long(t.profitLastYear)
             }
             w.uvar(towns.size.toLong())
-            for (t in towns) { w.string(t.name); w.int(t.x); w.int(t.y); w.int(t.grid); w.bool(t.french); w.int(t.population); w.int(t.houses); w.int(t.growIn); w.int(t.servedThisMonth); w.int(t.servedLastMonth) }
+            for (t in towns) { w.string(t.name); w.int(t.x); w.int(t.y); w.int(t.grid); w.bool(t.french); w.int(t.population); w.int(t.houses); w.int(t.growIn); w.int(t.servedThisMonth); w.int(t.servedLastMonth); w.ints(t.approval) }
             w.bytes(road); w.shorts(house); w.shorts(houseYear); w.shorts(townOf)
         }
         val body = Squeeze.pack(w.toByteArray())
@@ -122,6 +123,11 @@ object Save {
                     // Before journeys, what waited could go anywhere.
                     version == 4 -> r.ints().forEachIndexed { c, n -> if (c < Cargo.COUNT && n > 0) s.cargo[c] += Packet(-1, id, n, 0) }
                 }
+                if (version >= 6) {
+                    r.ints().let { a -> a.copyInto(s.rating, endIndex = minOf(a.size, Cargo.COUNT)) }
+                    for (c in 0 until Cargo.COUNT) s.lastCall[c] = r.long()
+                    r.ints().let { a -> a.copyInto(s.lastSpeed, endIndex = minOf(a.size, Cargo.COUNT)) }
+                }
                 stations += s
             }
             repeat(r.uvar().toInt()) { id ->
@@ -157,6 +163,7 @@ object Save {
                     val t = Town(id, r.string(), r.int(), r.int(), r.int(), if (version >= 4) r.bool() else false)
                     t.population = r.int(); t.houses = r.int(); t.growIn = r.int()
                     if (version >= 4) { t.servedThisMonth = r.int(); t.servedLastMonth = r.int() }
+                    if (version >= 6) r.ints().let { a -> a.copyInto(t.approval, endIndex = minOf(a.size, MAX_COMPANIES)) }
                     towns += t
                 }
                 fill(road, r.bytes())

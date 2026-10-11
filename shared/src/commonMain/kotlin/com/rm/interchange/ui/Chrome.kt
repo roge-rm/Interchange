@@ -339,6 +339,13 @@ fun date(day: Int, startYear: Int): String {
     )
 }
 
+/** Game day [day] with its day of the week, as Thu 4 Mar 1852, for the status strip. */
+@Composable
+fun weekdayDate(day: Int, startYear: Int): String {
+    val days = stringArrayResource(Res.array.weekdays)
+    return stringResource(Res.string.weekday_date, days.getOrElse(com.rm.interchange.sim.Calendar.weekday(startYear, day)) { "" }, date(day, startYear))
+}
+
 /** A pill that's on or off, for picking one of a few things. */
 @Composable
 fun Chip(label: String, on: Boolean, enabled: Boolean = true, onClick: () -> Unit) {

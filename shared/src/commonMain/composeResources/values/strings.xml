@@ -205,8 +205,8 @@
     <string name="population">Population: %1$s</string>
 
     <!-- Passengers and mail -->
-    <string name="passengers_waiting">Passengers waiting: %1$d</string>
-    <string name="mail_waiting">Mail waiting: %1$d</string>
+    <string name="passengers_waiting">Passengers waiting: %1$d, rating %2$d%</string>
+    <string name="mail_waiting">Mail waiting: %1$d, rating %2$d%</string>
     <string name="passengers_load">Passengers %1$d/%2$d</string>
     <string name="mail_load">Mail %1$d/%2$d</string>
     <string name="profit_line">Profit this year %1$s, last year %2$s</string>
@@ -215,4 +215,15 @@
     <string name="going_to">Going to, passengers · mail</string>
     <string name="anywhere">Anywhere</string>
     <string name="via">%1$s, changing at %2$s</string>
+
+    <!-- Ratings, approval and the week -->
+    <string name="town_standing">Thinks of your company: %1$s</string>
+    <string-array name="approval_levels">
+        <item>Appalling</item><item>Very poor</item><item>Poor</item><item>Mediocre</item><item>Good</item><item>Very good</item><item>Excellent</item><item>Outstanding</item>
+    </string-array>
+    <string name="picked_up">Picked up last month: %1$d</string>
+    <string-array name="weekdays">
+        <item>Mon</item><item>Tue</item><item>Wed</item><item>Thu</item><item>Fri</item><item>Sat</item><item>Sun</item>
+    </string-array>
+    <string name="weekday_date">%1$s %2$s</string>
 </resources>
