@@ -133,7 +133,6 @@
     <string name="delete">Delete</string>
     <string name="no_saves">No saved games</string>
     <!-- A saved game in the list: its date, its money, its map. -->
-    <string name="save_line">%1$s · %2$s · %3$d × %4$d %5$s</string>
     <string name="cant_load">That save can't be loaded: %1$s</string>
 
     <!-- The new game screen. -->
@@ -166,7 +165,7 @@
     <string name="language_phone">Phone's language</string>
     <string name="autosave_every">Autosave</string>
     <string-array name="autosave_levels">
-        <item>Off</item><item>Every month</item><item>Every three months</item><item>Every year</item>
+        <item>Off</item><item>Monthly</item><item>Every 3 months</item><item>Yearly</item>
     </string-array>
 
     <!-- Content packs -->
@@ -183,4 +182,12 @@
     <string name="cant_add_pack">Can't add this pack: %1$s</string>
     <string name="packs_clash">These packs don't work together: %1$s</string>
     <string name="needs_packs">This game needs packs you haven't got: %1$s</string>
+
+    <!-- Screens and windows -->
+    <string name="load_line">%1$s · %2$d × %3$d · %4$s</string>
+    <string name="autosave_of">Autosave, %1$s</string>
+    <string name="no_preview">Too big to preview</string>
+    <string name="overlays">Overlays</string>
+    <string name="grid">Grid</string>
+    <string name="heights">Heights</string>
 </resources>

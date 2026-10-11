@@ -27,7 +27,7 @@ PERIOD = 4
 SIZE = TEXELS * PERIOD
 
 # Base ramps from dark to light, and blade or detail colours, for each kind, in the order of the game's ground
-# kinds, then beach sand and water.
+# kinds, then beach sand, water, and the bare earth that shows through on slopes.
 KINDS = {
     "meadow": [c("#24451a"), c("#2f5a20"), c("#3b6a26"), c("#4a7a2e"), c("#5a8a36")],
     "prairie": [c("#6e6a38"), c("#827c44"), c("#968e50"), c("#a89e5c"), c("#b8ac68")],
@@ -37,6 +37,7 @@ KINDS = {
     "snow": [c("#c4d0dc"), c("#d4dee8"), c("#e4ebf2"), c("#f0f5f9"), c("#fcfdfe")],
     "sand": [c("#ac9a6a"), c("#bca876"), c("#ccb884"), c("#d8c794"), c("#e6d8aa")],
     "water": [c("#2a5a96"), c("#3062a0"), c("#3669aa"), c("#3e72b4"), c("#4a80c2")],
+    "earth": [c("#4a3626"), c("#594230"), c("#684f39"), c("#775c43"), c("#86694d")],
 }
 
 
@@ -166,6 +167,18 @@ def texture(kind):
             x, y = rng.uniform(0, SIZE), rng.uniform(0, SIZE)
             n = rng.uniform(6, 20)
             w.line(x, y, x + n, y - n, c("#b8a478"))
+    elif kind == "earth":
+        # Pebbles, small cracks and the odd dry tuft clinging on.
+        for _ in range(7000):
+            x, y = rng.uniform(0, SIZE), rng.uniform(0, SIZE)
+            w.dot(x, y, rng.uniform(0.5, 1.6), rng.choice([c("#3a2a1e"), c("#8c7a62"), c("#a08c70"), c("#6e6258"), c("#5a4a3c")]))
+        for _ in range(260):
+            x, y = rng.uniform(0, SIZE), rng.uniform(0, SIZE)
+            for _ in range(rng.randint(2, 5)):
+                nx, ny = x + rng.uniform(-6, 6), y + rng.uniform(-6, 6)
+                w.line(x, y, nx, ny, c("#3a2a1c"))
+                x, y = nx, ny
+        blades(w, rng, 4000, [c("#5e5a34"), c("#6e6a3c"), c("#4e5a2c")], 2, 5, lighter(1.15), clump)
     elif kind == "water":
         for _ in range(1800):
             x, y = rng.uniform(0, SIZE), rng.uniform(0, SIZE)

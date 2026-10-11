@@ -12,11 +12,14 @@ class Settings {
     var language by mutableStateOf("")
     /** Which of [AUTOSAVE_DAYS] autosaves come at. */
     var autosave by mutableIntStateOf(1)
+    /** The tile grid and the bands of height drawn over the map. */
+    var grid by mutableStateOf(false)
+    var heights by mutableStateOf(false)
 
     val autosaveDays get() = AUTOSAVE_DAYS[autosave.coerceIn(0, AUTOSAVE_DAYS.size - 1)]
 
     fun save() {
-        files.write(FILE, "language=$language\nautosave=$autosave\n".encodeToByteArray())
+        files.write(FILE, "language=$language\nautosave=$autosave\ngrid=$grid\nheights=$heights\n".encodeToByteArray())
     }
 
     companion object {
@@ -33,6 +36,8 @@ class Settings {
                 when (k) {
                     "language" -> if (v in LANGUAGES) s.language = v
                     "autosave" -> v.toIntOrNull()?.let { s.autosave = it }
+                    "grid" -> s.grid = v == "true"
+                    "heights" -> s.heights = v == "true"
                 }
             }
             return s

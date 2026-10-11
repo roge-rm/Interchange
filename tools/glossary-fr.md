@@ -25,3 +25,5 @@ stay about as short as the English ones, since they have to fit.
 | Canadian Shield, Rockies, Maritimes, North | Bouclier canadien, Rocheuses, Maritimes, Nord |
 | save, load, autosave | enregistrer, charger, sauvegarde auto |
 | map seed | graine de la carte |
+| overlays, grid, heights | calques, grille, altitudes |
+| pack (content pack), add a pack | pack, ajouter un pack |

@@ -43,7 +43,10 @@ import com.rm.interchange.map.View
 import com.rm.interchange.server.Game
 import com.rm.interchange.server.GameThread
 import com.rm.interchange.map.VehicleSource
+import com.rm.interchange.platform.cameraCutouts
 import com.rm.interchange.platform.picker
+import com.rm.interchange.map.ChunkBaker
+import androidx.compose.ui.platform.LocalDensity
 import com.rm.interchange.sim.BadData
 import com.rm.interchange.sim.BadPack
 import com.rm.interchange.sim.Calendar
@@ -75,21 +78,20 @@ fun App() {
 }
 
 /** Where the app is: one of its screens, or playing. */
-private sealed interface Screen {
-    data object Title : Screen
-    data object NewGame : Screen
-    data class Load(val back: Screen) : Screen
-    data class Options(val back: Screen) : Screen
-    data object Packs : Screen
-    data object Playing : Screen
-}
+private enum class Screen { Title, NewGame, Playing }
+
+/** A window open over the screen. */
+private enum class Win { Menu, Load, Settings, Packs, Overlays }
 
 @Composable
 private fun Root(settings: Settings) {
     val scope = rememberCoroutineScope()
     val packed by rememberPackedSheets()
     val sheets = remember(packed) { packed?.let { Sheets(it, scope) } }
-    var screen by remember { mutableStateOf<Screen>(Screen.Title) }
+    var screen by remember { mutableStateOf(Screen.Title) }
+    var window by remember { mutableStateOf<Win?>(null) }
+    // Saved from the menu since it was opened.
+    var saved by remember { mutableStateOf(false) }
     var runner by remember { mutableStateOf<GameThread?>(null) }
     var saves by remember { mutableStateOf(SavedGames.list()) }
     var loadError by remember { mutableStateOf<String?>(null) }
@@ -123,6 +125,7 @@ private fun Root(settings: Settings) {
         r.start()
         runner = r
         screen = Screen.Playing
+        window = null
     }
 
     /** Reads a save off the main thread, with the packs it needs, and plays it, or says why it can't. */
@@ -163,76 +166,86 @@ private fun Root(settings: Settings) {
         }
     }
 
-    when (val sc = screen) {
-        Screen.Title -> TitleScreen(
-            canContinue = saves.isNotEmpty(),
-            onContinue = { saves.firstOrNull()?.let { load(it) } },
-            onNew = { screen = Screen.NewGame },
-            onLoad = { saves = SavedGames.list(); screen = Screen.Load(Screen.Title) },
-            onPacks = { packMessage = null; screen = Screen.Packs },
-            onSettings = { screen = Screen.Options(Screen.Title) },
-        )
-        Screen.NewGame -> NewGameScreen(
-            packs.orEmpty(),
-            onStart = { ng, chosen ->
-                play {
-                    val roster = Roster.build(listOf(Packs.BASE) + chosen)
-                    InstalledPacks.prepare(roster)
-                    World(ng, roster)
+    Box(Modifier.fillMaxSize()) {
+        when (screen) {
+            Screen.Title -> TitleScreen(
+                continueLine = saves.firstOrNull()?.let { date(it.day, it.startYear) + " · " + saveLine(it) },
+                onContinue = { saves.firstOrNull()?.let { load(it) } },
+                onNew = { screen = Screen.NewGame },
+                onLoad = { saves = SavedGames.list(); window = Win.Load },
+                onPacks = { packMessage = null; window = Win.Packs },
+                onSettings = { window = Win.Settings },
+            )
+            Screen.NewGame -> NewGameScreen(
+                packs.orEmpty(),
+                onStart = { ng, chosen ->
+                    play {
+                        val roster = Roster.build(listOf(Packs.BASE) + chosen)
+                        InstalledPacks.prepare(roster)
+                        World(ng, roster)
+                    }
+                },
+                // Back to the game it was opened from, if there is one.
+                onBack = { screen = if (runner != null) Screen.Playing else Screen.Title },
+            )
+            Screen.Playing -> {
+                val r = runner
+                val s = sheets
+                if (r == null || s == null) {
+                    Box(Modifier.fillMaxSize().background(LocalColors.current.page))
+                } else {
+                    Playing(r, s, settings, onMenu = { saved = false; window = Win.Menu }, onOverlays = { window = Win.Overlays })
                 }
-            },
-            onBack = { screen = Screen.Title },
-        )
-        Screen.Packs -> PacksScreen(
-            packs.orEmpty(), adding, packMessage?.first, packMessage?.second == true,
-            onAdd = ::addPack,
-            onRemove = { p ->
-                scope.launch {
-                    withContext(Dispatchers.Default) { InstalledPacks.remove(p.id) }
-                    packMessage = null
-                    readPacks()
-                }
-            },
-            onBack = { screen = Screen.Title },
-        )
-        is Screen.Load -> LoadScreen(
-            saves, loadError, onLoad = { load(it) },
-            onDelete = { SavedGames.delete(it.name); saves = SavedGames.list() },
-            onBack = { loadError = null; screen = sc.back },
-        )
-        is Screen.Options -> SettingsScreen(settings, onBack = { screen = sc.back })
-        Screen.Playing -> {
-            val r = runner
-            val s = sheets
-            if (r == null || s == null) {
-                Box(Modifier.fillMaxSize().background(LocalColors.current.page))
-            } else {
-                Playing(r, s, Menu(
-                    save = { done -> SavedGames.save(r) { scope.launch { saves = SavedGames.list(); done() } } },
-                    load = { saves = SavedGames.list(); screen = Screen.Load(Screen.Playing) },
-                    newGame = { screen = Screen.NewGame },
-                    settings = { screen = Screen.Options(Screen.Playing) },
-                    // Back to the title screen the game is saved and stopped; Continue loads it again.
-                    title = {
+            }
+        }
+        when (window) {
+            Win.Menu -> MenuWindow(
+                saved,
+                onSave = { runner?.let { r -> SavedGames.save(r) { scope.launch { saves = SavedGames.list(); saved = true } } } },
+                onLoad = { saves = SavedGames.list(); window = Win.Load },
+                onNew = { window = null; screen = Screen.NewGame },
+                onSettings = { window = Win.Settings },
+                // Back to the title screen the game is saved and stopped; Continue loads it again.
+                onTitle = {
+                    runner?.let { r ->
                         SavedGames.save(r, SavedGames.AUTOSAVE) {
                             r.stop()
                             scope.launch { saves = SavedGames.list() }
                         }
-                        runner = null
-                        screen = Screen.Title
-                    },
-                ))
-            }
+                    }
+                    runner = null
+                    window = null
+                    screen = Screen.Title
+                },
+                onClose = { window = null },
+            )
+            Win.Load -> LoadWindow(
+                saves, loadError, onLoad = { load(it) },
+                onDelete = { SavedGames.delete(it.name); saves = SavedGames.list() },
+                onClose = { loadError = null; window = null },
+            )
+            Win.Settings -> SettingsWindow(settings) { window = null }
+            Win.Packs -> PacksWindow(
+                packs.orEmpty(), adding, packMessage?.first, packMessage?.second == true,
+                onAdd = ::addPack,
+                onRemove = { p ->
+                    scope.launch {
+                        withContext(Dispatchers.Default) { InstalledPacks.remove(p.id) }
+                        packMessage = null
+                        readPacks()
+                    }
+                },
+                onClose = { window = null },
+            )
+            Win.Overlays -> OverlaysWindow(settings) { window = null }
+            null -> {}
         }
     }
 }
 
-/** What the in-game menu does, handed down from the top. */
-private class Menu(val save: (done: () -> Unit) -> Unit, val load: () -> Unit, val newGame: () -> Unit, val settings: () -> Unit, val title: () -> Unit)
-
 /** A game being played: waits for the world to be made, then shows it. */
 @Composable
-private fun Playing(runner: GameThread, sheets: Sheets, menu: Menu) {
+private fun Playing(runner: GameThread, sheets: Sheets, settings: Settings, onMenu: () -> Unit, onOverlays: () -> Unit) {
     var game by remember(runner) { mutableStateOf<Game?>(null) }
     // Redraws every display frame, and picks up the game once it's made.
     val frame = remember(runner) { mutableLongStateOf(0L) }
@@ -247,11 +260,11 @@ private fun Playing(runner: GameThread, sheets: Sheets, menu: Menu) {
         Box(Modifier.fillMaxSize().background(LocalColors.current.page))
         return
     }
-    key(runner) { GameScreen(runner, g.world, sheets, frame, menu) }
+    key(runner) { GameScreen(runner, g.world, sheets, frame, settings, onMenu, onOverlays) }
 }
 
 @Composable
-private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: State<Long>, menu: Menu) {
+private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: State<Long>, settings: Settings, onMenu: () -> Unit, onOverlays: () -> Unit) {
     val c = LocalColors.current
     // The drawings of this game's vehicles: the base pack's come with the app, the others from their packs.
     remember(world) {
@@ -298,8 +311,6 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
     // The train having stops added by tapping stations, if any.
     var addingStops by remember { mutableStateOf<Int?>(null) }
     var mapSize by remember { mutableStateOf(androidx.compose.ui.geometry.Size.Zero) }
-    var menuOpen by remember { mutableStateOf(false) }
-    var saved by remember { mutableStateOf(false) }
 
     fun built() { folded = true }
 
@@ -372,21 +383,47 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
             world, sheets, view, { frame.value }, input, { moving(runner) }, Modifier.fillMaxSize(),
             overlay = plan?.let { p -> { painter -> drawTrackPlan(world, painter, p) } }
                 ?: stationPlan?.let { p -> { painter -> drawStationPlan(world, painter, p) } },
+            overlays = (if (settings.grid) ChunkBaker.GRID else 0) or (if (settings.heights) ChunkBaker.HEIGHTS else 0),
         )
 
+        // Every upright phone: one line can't hold the buttons and the readings without crowding them.
+        val twoLines = layout.shape == ScreenShape.Tall && !layout.large
+        // On an upright phone with its camera in the top edge, the strip goes up round it: if each camera is small
+        // enough to leave room for the buttons, and short enough to stay within the strip's first row.
+        val density = LocalDensity.current
+        val windowPx = with(density) { maxWidth.toPx() }
+        val rowPx = with(density) { CAMERA_ROW.dp.toPx() }
+        val deepestPx = with(density) { (CAMERA_ROW + CAMERA_DEEPER).dp.toPx() }
+        val topCameras = cameraCutouts().filter { it.top <= 0f && it.height > 0f }
+        val cameras = if (twoLines && topCameras.isNotEmpty() && topCameras.all { it.width <= windowPx * CAMERA_SHARE && it.bottom <= deepestPx }) {
+            topCameras.map { it.left..it.right }
+        } else emptyList()
+        // A camera deeper than the first row takes the strip down with it, so it still sits level with the row.
+        val cameraDrop = with(density) { if (cameras.isEmpty()) 0.dp else (topCameras.maxOf { it.bottom } - rowPx).coerceAtLeast(0f).toDp() }
         StatusStrip(
-            { menuOpen = !menuOpen; saved = false },
+            onMenu,
             paused, { paused = !paused; runner.paused = paused }, speed, { speed = (speed + 1) % SPEEDS.size; runner.speed = SPEEDS[speed] },
+            settings.grid || settings.heights, onOverlays,
             date(day, world.startYear),
             money(money), money < 0,
             { view.turnBy(-1) }, { view.turnBy(1) },
             compact = layout.compact || layout.narrow,
-            twoLines = layout.narrow && layout.shape == ScreenShape.Tall,
-            modifier = Modifier
-                .align(Alignment.TopCenter)
-                .windowInsetsPadding(safe.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal))
-                .padding(gap)
-                .then(if (layout.narrow && layout.shape == ScreenShape.Tall) Modifier.fillMaxWidth() else Modifier),
+            twoLines = twoLines,
+            cameras = cameras,
+            modifier = if (cameras.isNotEmpty()) {
+                // Up into the band the camera takes, across the screen, the camera sitting on it with the buttons clear of it.
+                Modifier
+                    .align(Alignment.TopCenter)
+                    .windowInsetsPadding(safe.only(WindowInsetsSides.Horizontal))
+                    .padding(start = gap, end = gap, top = CAMERA_GAP.dp + cameraDrop)
+                    .fillMaxWidth()
+            } else {
+                Modifier
+                    .align(Alignment.TopCenter)
+                    .windowInsetsPadding(safe.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal))
+                    .padding(gap)
+                    .then(if (twoLines) Modifier.fillMaxWidth() else Modifier)
+            },
         )
 
         fun pickGroup(g: ToolGroup) {
@@ -420,12 +457,6 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
             verticalArrangement = Arrangement.spacedBy(gap),
         ) {
             val trayWidth = Modifier.widthIn(max = TRAY_WIDTH.dp).fillMaxWidth()
-            if (menuOpen) {
-                MenuCard(
-                    saved, onSave = { menu.save { saved = true } }, onLoad = menu.load, onNew = menu.newGame,
-                    onSettings = menu.settings, onTitle = menu.title, onClose = { menuOpen = false }, modifier = trayWidth,
-                )
-            }
             val wv = worldView.value
             when (val sel = selected) {
                 is Selection.Tile -> InspectCard(world, sel.x, sel.y, { selected = null }, trayWidth)
@@ -500,3 +531,14 @@ private fun InspectCard(world: World, x: Int, y: Int, onClose: () -> Unit, modif
 
 /** The widest the trays and the bottom tool bar go. */
 private const val TRAY_WIDTH = 480
+
+/**
+ * Round a camera in the top edge, in dp: the gap above the strip, the deepest
+ * a camera can reach and still sit within the strip's first row, how much
+ * deeper it can be with the strip moved down to meet it, and the widest it can
+ * be, as a share of the screen, and leave room for the buttons.
+ */
+private const val CAMERA_GAP = 6
+private const val CAMERA_ROW = 54
+private const val CAMERA_DEEPER = 24
+private const val CAMERA_SHARE = 0.3f

@@ -13,9 +13,14 @@ import kotlin.math.sqrt
 
 /**
  * Bakes a chunk of the map into pixels, tile by tile from the back: the
- * ground painted from its kind's texture with the slope's light, ragged where
- * one kind meets another and foamy at the shore, then foundations, track,
- * buildings, trees and the odd boulder or shrub blitted from the static sheet.
+ * ground painted from its kind's texture, ragged where one kind meets another
+ * and foamy at the shore, then foundations, track, buildings, trees and the
+ * odd boulder or shrub blitted from the static sheet.
+ *
+ * So the lie of the land reads at a glance, the ground is lit by its slope,
+ * ridges are lighter and hollows darker than the land round them, and bare
+ * earth shows through on slopes. [overlays] adds a tile grid or bands of
+ * height with contour lines, as [GRID] and [HEIGHTS] bits.
  *
  * A tile owns the pixels whose middles fall in it, so neighbours share their
  * edges exactly and no seam shows. Textures are laid in each tile's view
@@ -30,6 +35,7 @@ internal class ChunkBaker(
     private val sheets: LevelSheets,
     private val width: Int,
     private val height: Int,
+    private val overlays: Int = 0,
 ) {
     private val hw = Renderer.LEVELS[level]
     private val hh = hw / 2
@@ -49,6 +55,22 @@ internal class ChunkBaker(
     fun finish(): IntArray = pixels
 
     private fun cornerHeight(vx: Int, vy: Int) = world.heightAt(view.cornerX(vx, vy), view.cornerY(vx, vy))
+
+    private val reliefs = HashMap<Int, Float>()
+
+    /** How far view corner ([vx], [vy]) stands above the land within [RELIEF] corners of it, in steps; below is negative. */
+    private fun relief(vx: Int, vy: Int): Float = reliefs.getOrPut(vy * (view.viewWidth + 1) + vx) {
+        var sum = 0
+        var n = 0
+        for (dy in -RELIEF..RELIEF) for (dx in -RELIEF..RELIEF) {
+            val x = vx + dx
+            val y = vy + dy
+            if (x < 0 || y < 0 || x > view.viewWidth || y > view.viewHeight) continue
+            sum += cornerHeight(x, y)
+            n++
+        }
+        cornerHeight(vx, vy) - sum.toFloat() / n
+    }
 
     /** The ground kind of view tile ([vx], [vy]) as drawn: water, beach sand, or the land's own. -1 off the map. */
     private fun kindOf(vx: Int, vy: Int): Int {
@@ -152,6 +174,22 @@ internal class ChunkBaker(
         val p2 = if (alongRL) floatArrayOf((r + l - b).toFloat(), (b - l).toFloat(), (b - r).toFloat()) else floatArrayOf(t.toFloat(), (b - l).toFloat(), (l - t).toFloat())
         val f1 = light(p1[1], p1[2])
         val f2 = light(p2[1], p2[2])
+        val sloped1 = p1[1] != 0f || p1[2] != 0f
+        val sloped2 = p2[1] != 0f || p2[2] != 0f
+        // Ridges and hollows, from each corner, spread across the tile; none on the water.
+        val water = kind == Atlas.WATER
+        val rt = if (water) 0f else relief(vx, vy)
+        val rr = if (water) 0f else relief(vx + 1, vy)
+        val rb = if (water) 0f else relief(vx + 1, vy + 1)
+        val rl = if (water) 0f else relief(vx, vy + 1)
+        // What shows through on a slope: earth under plants, rock under snow.
+        val bare = when (kind) {
+            Atlas.MEADOW, Atlas.PRAIRIE, Atlas.FOREST, Atlas.TUNDRA -> Atlas.EARTH
+            Atlas.SNOW -> Atlas.ROCK
+            else -> -1
+        }
+        val grid = overlays and GRID != 0 && hw >= 16
+        val heights = overlays and HEIGHTS != 0 && !water
         val fx = vx.toFloat()
         val fy = vy.toFloat()
         val left = x(fx, fy + 1).toInt() - 1
@@ -178,6 +216,8 @@ internal class ChunkBaker(
                 var u: Float
                 var v: Float
                 var f: Int
+                var p = p1
+                var sloped = sloped1
                 var s = (yRel + step * (p1[0] + (p1[1] - p1[2]) / 2 * d)) / (hh - step * (p1[1] + p1[2]) / 2)
                 u = (s + d) / 2
                 v = (s - d) / 2
@@ -189,6 +229,8 @@ internal class ChunkBaker(
                     u = (s + d) / 2
                     v = (s - d) / 2
                     f = f2
+                    p = p2
+                    sloped = sloped2
                     if (if (alongRL) u + v < 1f else u > v) continue
                 }
                 if (u < 0f || v < 0f || u >= 1f || v >= 1f) continue
@@ -197,6 +239,11 @@ internal class ChunkBaker(
                 val ti = ty * size + tx
                 var texel = sheets.ground[kindBase + ti]
                 val rag = (sheets.ground[ragBase + ti] and 255) / 255f
+                if (sloped && bare >= 0) {
+                    // Patches of it, from the same noise read somewhere else so they don't follow the kinds' edges.
+                    val patch = (sheets.ground[ragBase + ((ty + size / 2) % size) * size + (tx + size / 3) % size] and 255) / 255f
+                    if (patch > BARE_FROM) texel = sheets.ground[bare * size * size + ti]
+                }
                 // Higher ranked ground next door spreads in across the edge with a ragged line; water gets foam at the shore.
                 for (e in 0 until 4) {
                     val other = edges[e]
@@ -209,12 +256,35 @@ internal class ChunkBaker(
                         texel = FOAM
                     }
                 }
-                pixels[py * width + px] = lit(texel, f)
+                val rel = rt * (1f - u) * (1f - v) + rr * u * (1f - v) + rb * u * v + rl * (1f - u) * v
+                var shade = f * (1f + (rel * RELIEF_GAIN).coerceIn(-RELIEF_DARK, RELIEF_LIGHT))
+                if (heights) {
+                    val h = p[0] + p[1] * u + p[2] * v
+                    texel = mix(texel, HEIGHT_COLOURS[(h / HEIGHT_BAND).toInt().coerceIn(0, HEIGHT_COLOURS.size - 1)], 0.55f)
+                    // A contour where a slope crosses a band's edge, about a pixel wide.
+                    if (sloped && h % HEIGHT_BAND < 1.4f / hw) shade *= 0.55f
+                }
+                var out = lit(texel, shade.toInt())
+                // Grid lines light on dark ground and dark on light, so they show on both.
+                if (grid && (u < 1f / hw || v < 1f / hw)) {
+                    val bright = ((out shr 16) and 255) + ((out shr 8) and 255) + (out and 255)
+                    out = if (bright > 380) lit(out, 150) else mix(out, GRID_LIGHT, 0.4f)
+                }
+                pixels[py * width + px] = out
             }
         }
     }
 
-    /** How lit a plane with these slopes is, in 256ths: a little over a quarter of what a real slope would show, as the old sprites were. */
+    /** [a] moved [t] of the way to [b], colour by colour. */
+    private fun mix(a: Int, b: Int, t: Float): Int {
+        fun ch(shift: Int) = (((a shr shift) and 255) * (1f - t) + ((b shr shift) and 255) * t).toInt() shl shift
+        return (0xff shl 24) or ch(16) or ch(8) or ch(0)
+    }
+
+    /**
+     * How lit a plane with these slopes is, in 256ths, flat ground being 256. The light is low and off the
+     * diagonal, so each of the four ways a slope can face gets its own shade.
+     */
     private fun light(gu: Float, gv: Float): Int {
         // The normal of h = gu * u + gv * v, with a step half a tile high.
         val nx = -gu * 0.5f
@@ -223,7 +293,7 @@ internal class ChunkBaker(
         val n = sqrt(nx * nx + ny * ny + nz * nz)
         val d = (nx * LX + ny * LY + nz * LZ) / (n * LL)
         val flat = LZ / LL
-        return ((1f + 0.28f * (d / flat - 1f)).coerceIn(0.84f, 1.12f) * 256).toInt()
+        return ((1f + LIGHT_GAIN * (d / flat - 1f)).coerceIn(LIGHT_LOW, LIGHT_HIGH) * 256).toInt()
     }
 
     private fun lit(texel: Int, f: Int): Int {
@@ -368,11 +438,36 @@ internal class ChunkBaker(
     }
 
     companion object {
-        // Light from the top left of the screen and above, in (u, v, up).
+        // Light from the top left of the screen and above, in (u, v, up), and how strongly slopes take it.
         private const val LX = -1f
-        private const val LY = -0.35f
-        private const val LZ = 1.6f
+        private const val LY = -0.55f
+        private const val LZ = 1.2f
         private val LL = sqrt(LX * LX + LY * LY + LZ * LZ)
+        private const val LIGHT_GAIN = 0.8f
+        private const val LIGHT_LOW = 0.66f
+        private const val LIGHT_HIGH = 1.24f
+
+        /** Corners each way looked at for ridges and hollows, and how much lighter or darker a step above or below makes them. */
+        private const val RELIEF = 3
+        private const val RELIEF_GAIN = 0.07f
+        private const val RELIEF_DARK = 0.2f
+        private const val RELIEF_LIGHT = 0.14f
+
+        /** Where the noise has to be past for bare ground to show on a slope: about a quarter of a slope shows it. */
+        private const val BARE_FROM = 0.64f
+
+        private const val GRID_LIGHT = 0xfff2efe6.toInt()
+
+        /** Overlays, as bits. */
+        const val GRID = 1
+        const val HEIGHTS = 2
+
+        /** Steps of height to each band of the heights overlay, and the bands' colours from sea level up. */
+        private const val HEIGHT_BAND = 2f
+        private val HEIGHT_COLOURS = intArrayOf(
+            0xff2f7a3a.toInt(), 0xff4f9440.toInt(), 0xff7fac4a.toInt(), 0xffb0bc58.toInt(), 0xffd4c062.toInt(), 0xffd8a456.toInt(),
+            0xffc8844a.toInt(), 0xffa86a44.toInt(), 0xff8a5a46.toInt(), 0xff9a8478.toInt(), 0xffc8c0bc.toInt(), 0xfff2f2f6.toInt(),
+        )
 
         private const val FOAM = 0xffe8f0f4.toInt()
         private const val EARTH_LIGHT = 0xff7a6248.toInt()

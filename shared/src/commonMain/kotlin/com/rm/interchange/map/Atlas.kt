@@ -34,8 +34,9 @@ object Atlas {
     const val SNOW = 5
     const val SAND = 6
     const val WATER = 7
+    const val EARTH = 8
     /** The grey noise that makes the edges between kinds ragged, after the kinds on the ground sheet. */
-    const val RAG = 8
+    const val RAG = 9
 
     val STATIC_RECTS = intArrayOf(
         544, 672, 256, 128, -128, 32, 800, 672, 256, 128, -128, 32, 1056, 672, 256, 128, -128, 32, 192, 960, 256, 96, -128, 32,

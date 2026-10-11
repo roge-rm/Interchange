@@ -118,7 +118,6 @@
     <string name="autosave">Sauvegarde auto</string>
     <string name="delete">Supprimer</string>
     <string name="no_saves">Aucune partie enregistrée</string>
-    <string name="save_line">%1$s · %2$s · %3$d × %4$d %5$s</string>
     <string name="cant_load">Impossible de charger cette partie : %1$s</string>
 
     <string name="map_size">Taille de la carte</string>
@@ -149,7 +148,7 @@
     <string name="language_phone">Langue du téléphone</string>
     <string name="autosave_every">Sauvegarde auto</string>
     <string-array name="autosave_levels">
-        <item>Jamais</item><item>Chaque mois</item><item>Aux trois mois</item><item>Chaque année</item>
+        <item>Jamais</item><item>Chaque mois</item><item>Aux 3 mois</item><item>Chaque année</item>
     </string-array>
 
     <!-- Packs de contenu -->
@@ -166,4 +165,12 @@
     <string name="cant_add_pack">Impossible d'ajouter ce pack : %1$s</string>
     <string name="packs_clash">Ces packs ne vont pas ensemble : %1$s</string>
     <string name="needs_packs">Il manque des packs pour cette partie : %1$s</string>
+
+    <!-- Écrans et fenêtres -->
+    <string name="load_line">%1$s · %2$d × %3$d · %4$s</string>
+    <string name="autosave_of">Sauvegarde auto, %1$s</string>
+    <string name="no_preview">Trop grande pour l'aperçu</string>
+    <string name="overlays">Calques</string>
+    <string name="grid">Grille</string>
+    <string name="heights">Altitudes</string>
 </resources>

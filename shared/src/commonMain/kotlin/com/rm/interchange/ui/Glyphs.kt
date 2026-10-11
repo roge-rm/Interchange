@@ -19,6 +19,7 @@ enum class Glyph {
     RoadStop, Canal, Dock, Lock, Airport,
     Raise, Lower, Level, Tree, Clear,
     Pause, Play, Speed, TurnLeft, TurnRight, Remove, Lift, Menu,
+    Save, Folder, Plus, Gear, Home, Package, Layers, Grid, Heights, Renew, Back,
 }
 
 /** [glyph] drawn in [tint] on a 24 unit square scaled to fit. */
@@ -103,6 +104,24 @@ private class GlyphPen(val scope: DrawScope, val u: Float, val dx: Float, val dy
             Glyph.Remove -> { line(7f, 7f, 17f, 17f); line(17f, 7f, 7f, 17f) }
             Glyph.Lift -> { draw(Glyph.Rail); line(3f, 21f, 21f, 3f, 2.5f) }
             Glyph.Menu -> { line(5f, 7f, 19f, 7f, 2.5f); line(5f, 12f, 19f, 12f, 2.5f); line(5f, 17f, 19f, 17f, 2.5f) }
+            Glyph.Save -> { shape(false, 4f, 4f, 17f, 4f, 20f, 7f, 20f, 20f, 4f, 20f); shape(false, 8f, 4f, 8f, 9f, 15f, 9f, 15f, 4f); shape(false, 7f, 13f, 17f, 13f, 17f, 20f, 7f, 20f) }
+            Glyph.Folder -> { shape(false, 3f, 6f, 9f, 6f, 11f, 8f, 21f, 8f, 21f, 19f, 3f, 19f); line(3f, 11f, 21f, 11f, 1.5f) }
+            Glyph.Plus -> { line(12f, 5f, 12f, 19f, 2.5f); line(5f, 12f, 19f, 12f, 2.5f) }
+            Glyph.Gear -> {
+                circle(12f, 12f, 3f)
+                for (k in 0 until 8) {
+                    val a = k * kotlin.math.PI.toFloat() / 4
+                    line(12f + 6f * kotlin.math.cos(a), 12f + 6f * kotlin.math.sin(a), 12f + 9f * kotlin.math.cos(a), 12f + 9f * kotlin.math.sin(a), 2.5f)
+                }
+                circle(12f, 12f, 6f)
+            }
+            Glyph.Home -> { open(3f, 12f, 12f, 4f, 21f, 12f); open(6f, 10f, 6f, 20f, 18f, 20f, 18f, 10f); shape(false, 10f, 20f, 10f, 14f, 14f, 14f, 14f, 20f) }
+            Glyph.Package -> { shape(false, 12f, 3f, 21f, 7.5f, 21f, 16.5f, 12f, 21f, 3f, 16.5f, 3f, 7.5f); open(3f, 7.5f, 12f, 12f, 21f, 7.5f); line(12f, 12f, 12f, 21f); line(7.5f, 5.25f, 16.5f, 9.75f, 1.5f) }
+            Glyph.Layers -> { shape(false, 12f, 4f, 21f, 9f, 12f, 14f, 3f, 9f); open(3f, 13f, 12f, 18f, 21f, 13f); open(3f, 17f, 12f, 22f, 21f, 17f) }
+            Glyph.Grid -> { shape(false, 12f, 3f, 21f, 12f, 12f, 21f, 3f, 12f); line(7.5f, 7.5f, 16.5f, 16.5f, 1.5f); line(16.5f, 7.5f, 7.5f, 16.5f, 1.5f) }
+            Glyph.Heights -> { open(2f, 19f, 8f, 9f, 12f, 14f, 15f, 10f, 22f, 19f); line(4.5f, 15f, 19.5f, 15f, 1.5f); line(6.5f, 12f, 17.5f, 12f, 1.5f) }
+            Glyph.Renew -> { arc(12f, 12f, 7f, 30f, 280f); open(17f, 3f, 19.5f, 8.5f, 14f, 9.5f) }
+            Glyph.Back -> { line(5f, 12f, 19f, 12f, 2.5f); open(11f, 6f, 5f, 12f, 11f, 18f) }
         }
     }
 

@@ -45,6 +45,9 @@ internal class Renderer(private val world: World, private val sheets: Sheets, pr
     }
 
     private val cache = HashMap<Key, Entry>()
+
+    /** The overlays baked in, as [ChunkBaker.GRID] and [ChunkBaker.HEIGHTS] bits. A change bakes every chunk again, the old ones drawn meanwhile. */
+    var overlays = 0
     private val baking = HashSet<Key>()
     private var bytes = 0L
     private var frame = 0L
@@ -186,7 +189,7 @@ internal class Renderer(private val world: World, private val sheets: Sheets, pr
         val across = world.width / World.CHUNK
         var sum = 0
         for (y in y0..y1) for (x in x0..x1) sum += world.chunkVersions[y * across + x]
-        return sum
+        return sum * 4 + overlays
     }
 
     private fun bake(key: Key, sheet: LevelSheets) {
@@ -196,7 +199,8 @@ internal class Renderer(private val world: World, private val sheets: Sheets, pr
         baking += key
         // The scope is the composition's, on the main thread; only the baking goes off it.
         scope.launch {
-            val image = withContext(bakers) { bakeChunk(bakeView, key, sheet) }
+            val o = overlays
+            val image = withContext(bakers) { bakeChunk(bakeView, key, sheet, o) }
             baking -= key
             cache.put(key, Entry(image, version, frame))?.let { bytes -= it.bytes }
             bytes += image.width.toLong() * image.height * 4
@@ -204,11 +208,11 @@ internal class Renderer(private val world: World, private val sheets: Sheets, pr
         }
     }
 
-    private fun bakeChunk(view: View, key: Key, sheet: LevelSheets): ImageBitmap {
+    private fun bakeChunk(view: View, key: Key, sheet: LevelSheets, overlays: Int): ImageBitmap {
         val hw = LEVELS[key.level]
         val tiles = chunkTiles(key.level)
         val height = chunkHeight(key.level, hw)
-        val baker = ChunkBaker(world, view, key.level, sheet, CHUNK_PIXELS, height)
+        val baker = ChunkBaker(world, view, key.level, sheet, CHUNK_PIXELS, height, overlays)
         val vx0 = key.cx * tiles
         val vy0 = key.cy * tiles
         baker.originX = tiles * hw - (vx0 - vy0) * hw

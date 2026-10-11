@@ -47,9 +47,12 @@ fun MapView(
     moving: () -> Moving?,
     modifier: Modifier = Modifier,
     overlay: (DrawScope.(LandPainter) -> Unit)? = null,
+    /** The grid and heights overlays baked into the map, as [ChunkBaker.GRID] and [ChunkBaker.HEIGHTS] bits. */
+    overlays: Int = 0,
 ) {
     val scope = rememberCoroutineScope()
     val renderer = remember(world) { Renderer(world, sheets, scope) }
+    renderer.overlays = overlays
     val currentInput by rememberUpdatedState(input)
     Canvas(
         modifier.pointerInput(world, view) {

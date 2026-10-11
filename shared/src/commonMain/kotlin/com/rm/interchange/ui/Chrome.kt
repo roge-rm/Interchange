@@ -38,6 +38,14 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlin.math.ceil
+import androidx.compose.ui.layout.positionInWindow
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.Layout
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.getValue
 
 private val BarShape = RoundedCornerShape(12.dp)
 private val ButtonShape = RoundedCornerShape(8.dp)
@@ -67,8 +75,10 @@ fun SquareButton(glyph: Glyph, description: String, side: Dp, selected: Boolean 
 }
 
 /**
- * Pause, the speed, the date, the money and turning the view, along the top.
- * On a narrow screen the readings go on a second line.
+ * The menu, pause, the speed and the overlays, the date and the money, and
+ * turning the view, along the top. On an upright phone the readings go on a
+ * second line, and the first row moves along past any [cameras] in the top
+ * edge (stretches across the window, in pixels).
  */
 @Composable
 fun StatusStrip(
@@ -77,6 +87,8 @@ fun StatusStrip(
     onPause: () -> Unit,
     speed: Int,
     onSpeed: () -> Unit,
+    overlaysOn: Boolean,
+    onOverlays: () -> Unit,
     date: String,
     money: String,
     moneyLow: Boolean,
@@ -85,6 +97,7 @@ fun StatusStrip(
     compact: Boolean,
     twoLines: Boolean,
     modifier: Modifier = Modifier,
+    cameras: List<ClosedFloatingPointRange<Float>> = emptyList(),
 ) {
     val c = LocalColors.current
     val side = if (compact) 36.dp else 40.dp
@@ -97,21 +110,26 @@ fun StatusStrip(
             SquareButton(Glyph.Speed, stringResource(Res.string.speed), side, onClick = onSpeed)
             Text("${SPEEDS[speed]}×", color = c.textDim, fontSize = 9.sp, modifier = Modifier.padding(end = 3.dp))
         }
+        SquareButton(Glyph.Layers, stringResource(Res.string.overlays), side, selected = overlaysOn, onClick = onOverlays)
     }
     val readings = @Composable {
         Text(date, color = c.text, fontSize = textSize, fontWeight = FontWeight.SemiBold, maxLines = 1)
         Text(money, color = if (moneyLow) c.bad else c.text, fontSize = textSize, maxLines = 1)
     }
     val turns = @Composable {
-        SquareButton(Glyph.TurnLeft, stringResource(Res.string.turn_left), side, onClick = onTurnLeft)
-        SquareButton(Glyph.TurnRight, stringResource(Res.string.turn_right), side, onClick = onTurnRight)
+        Row(horizontalArrangement = Arrangement.spacedBy(gap)) {
+            SquareButton(Glyph.TurnLeft, stringResource(Res.string.turn_left), side, onClick = onTurnLeft)
+            SquareButton(Glyph.TurnRight, stringResource(Res.string.turn_right), side, onClick = onTurnRight)
+        }
     }
     ChromeBox(modifier) {
         if (twoLines) {
+            // Across the whole width: the buttons on the left and turning on the right, clear of the cameras, then
+            // the date and money spread out under them.
             Column(Modifier.fillMaxWidth().padding(horizontal = 6.dp, vertical = 4.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(gap)) { time() }
-                    Row(horizontalArrangement = Arrangement.spacedBy(gap)) { turns() }
+                ClearOf(cameras, gap, Modifier.fillMaxWidth(), pinLast = true) {
+                    time()
+                    turns()
                 }
                 Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp), horizontalArrangement = Arrangement.SpaceBetween) { readings() }
             }
@@ -122,6 +140,54 @@ fun StatusStrip(
                 turns()
             }
         }
+    }
+}
+
+/**
+ * A row of [content] spaced by [spacing], each moved along past any of the
+ * [cameras] (stretches across the window, in pixels) it would sit over. With
+ * [pinLast], the last one goes at the far end, or as near it as the cameras let it.
+ */
+@Composable
+private fun ClearOf(
+    cameras: List<ClosedFloatingPointRange<Float>>,
+    spacing: Dp,
+    modifier: Modifier = Modifier,
+    pinLast: Boolean = false,
+    content: @Composable () -> Unit,
+) {
+    var left by remember { mutableFloatStateOf(0f) }
+    val sorted = remember(cameras) { cameras.sortedBy { it.start } }
+    Layout(content, modifier.onGloballyPositioned { left = it.positionInWindow().x }) { measurables, constraints ->
+        val placeables = measurables.map { it.measure(constraints.copy(minWidth = 0, minHeight = 0)) }
+        val space = spacing.roundToPx()
+        val xs = IntArray(placeables.size)
+        var x = 0
+        for ((k, pl) in placeables.withIndex()) {
+            for (cam in sorted) {
+                val from = cam.start - left - space
+                val to = cam.endInclusive - left + space
+                if (x < to && x + pl.width > from) x = ceil(to).toInt()
+            }
+            xs[k] = x
+            x += pl.width + space
+        }
+        if (pinLast && placeables.isNotEmpty() && constraints.hasBoundedWidth) {
+            val k = placeables.size - 1
+            val w = placeables[k].width
+            var end = constraints.maxWidth - w
+            // Back from the far end past any camera, but never back over the one before.
+            for (cam in sorted.reversed()) {
+                val from = cam.start - left - space
+                val to = cam.endInclusive - left + space
+                if (end < to && end + w > from) end = (from - w).toInt()
+            }
+            if (end > xs[k]) xs[k] = end
+            x = maxOf(x, xs[k] + w + space)
+        }
+        val width = (if (pinLast && constraints.hasBoundedWidth) constraints.maxWidth else x - space).coerceIn(constraints.minWidth, constraints.maxWidth)
+        val height = placeables.maxOfOrNull { it.height } ?: 0
+        layout(width, height) { placeables.forEachIndexed { k, pl -> pl.place(xs[k], (height - pl.height) / 2) } }
     }
 }
 
