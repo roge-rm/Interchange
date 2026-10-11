@@ -46,18 +46,28 @@ def r_steps(r):
     return r / MODEL_RISE
 
 
-def truck(f, a, r=0.026):
-    """A two-axle truck under a car, at a along it."""
+TRUCK = c("#45474b")
+JOURNAL = c("#6a6c70")
+UNDER = c("#1c1c1e")
+
+
+def truck(f, a, r=0.036):
+    """A two-axle truck under a car, at a along it: wheels behind side frames flush with the car's sides, a journal box at each axle and a bolster across."""
     out = []
-    for s in (-WHEEL_S, WHEEL_S):
-        out += f.box(a - 0.05, a + 0.05, s - 0.004 if s < 0 else s, s if s < 0 else s + 0.004, 0.08, r_steps(r) * 1.7, FRAME, outline=None)
-        for da in (-0.03, 0.03):
-            out += f.wheel(a + da, s + (0.006 if s > 0 else -0.006), r, WHEEL, hub=HUB)
+    rh = r_steps(r)
+    for side in (-1, 1):
+        s_in, s_out = side * 0.111, side * 0.121
+        for da in (-0.045, 0.045):
+            out += f.wheel(a + da, side * 0.104, r, WHEEL, hub=HUB)
+        out += f.box(a - 0.078, a + 0.078, min(s_in, s_out), max(s_in, s_out), rh * 0.7, rh * 2.5, TRUCK)
+        for da in (-0.045, 0.045):
+            out += f.box(a + da - 0.014, a + da + 0.014, min(s_out, s_out + side * 0.005), max(s_out, s_out + side * 0.005), rh * 0.65, rh * 1.45, JOURNAL)
+    out += f.box(a - 0.016, a + 0.016, -0.111, 0.111, rh * 1.9, rh * 2.6, TRUCK, outline=None)
     return out
 
 
 def underframe(f, a0, a1, h0=0.45, h1=0.6):
-    return f.box(a0, a1, -0.1, 0.1, h0, h1, FRAME, outline=None)
+    return f.box(a0, a1, -0.08, 0.08, h0, h1, UNDER, outline=None)
 
 
 # ---- steam ------------------------------------------------------------------------------
@@ -144,7 +154,7 @@ def tender(f, L, colours, coal=True, axles=4, small=False):
     if small:
         for s in (-WHEEL_S, WHEEL_S):
             for a in (a0 + 0.04, a1 - 0.04):
-                out += f.wheel(a, s + (0.006 if s > 0 else -0.006), 0.026, colours[2], hub=HUB)
+                out += f.wheel(a, s + (0.006 if s > 0 else -0.006), 0.034, colours[2], hub=HUB)
     else:
         out += truck(f, a0 + 0.07)
         out += truck(f, a1 - 0.07)
@@ -284,7 +294,7 @@ def caboose(f, L):
     out = underframe(f, a0, a1)
     for s in (-WHEEL_S, WHEEL_S):
         for a in (a0 + 0.05, a1 - 0.05):
-            out += f.wheel(a, s + (0.006 if s > 0 else -0.006), 0.026, WHEEL, hub=HUB)
+            out += f.wheel(a, s + (0.006 if s > 0 else -0.006), 0.034, WHEEL, hub=HUB)
     out += f.box(a0 + 0.035, a1 - 0.035, -0.12, 0.12, 0.6, 1.65, CABOOSE)
     out += f.box(a0 + 0.025, a1 - 0.025, -0.13, 0.13, 1.65, 1.75, ROOF_DARK, top=ROOF)
     out += f.box(-0.045, 0.045, -0.11, 0.11, 1.75, 2.25, CABOOSE)
