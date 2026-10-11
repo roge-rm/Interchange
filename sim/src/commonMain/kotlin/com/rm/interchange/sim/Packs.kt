@@ -38,6 +38,28 @@ class VehicleDef(
     val sprite: String?,
 )
 
+/** A town building as a pack gives it. [zones] are bits of [Zones], from the outskirts in to the centre. */
+class HouseDef(
+    val id: String,
+    val names: Map<String, String>,
+    val from: Int,
+    val until: Int,
+    val residents: Int,
+    val jobs: Int,
+    val zones: Int,
+    val minPopulation: Int,
+    val weight: Int,
+)
+
+/** How far into a town a building stands, as bits, from the outskirts in to the centre. */
+object Zones {
+    const val OUTSKIRTS = 1
+    const val SUBURBS = 2
+    const val INNER = 4
+    const val CENTRE = 8
+    val NAMES = listOf("outskirts", "suburbs", "inner", "centre")
+}
+
 class Pack(
     val id: String,
     val version: Int,
@@ -50,6 +72,7 @@ class Pack(
     /** Vehicles of other packs this one turns off, as pack:id. */
     val disables: List<String>,
     val vehicles: List<VehicleDef>,
+    val houses: List<HouseDef>,
     /** The sprite sheets by name, as PNG. */
     val sprites: Map<String, ByteArray>,
     val hash: Long,
@@ -79,7 +102,9 @@ object Packs {
     private val LANGUAGES = setOf("en", "fr")
 
     /** The game's own vehicles. */
-    val BASE: Pack by lazy { read(mapOf("manifest.json" to BaseData.read("manifest.json"), "vehicles.json" to BaseData.read("vehicles.json")), spritesElsewhere = true) }
+    val BASE: Pack by lazy {
+        read(mapOf("manifest.json" to BaseData.read("manifest.json"), "vehicles.json" to BaseData.read("vehicles.json"), "houses.json" to BaseData.read("houses.json")), spritesElsewhere = true)
+    }
 
     /** A pack from a zip. */
     fun unzip(zip: ByteArray): Pack = read(Zip.read(zip, MAX_FILE, MAX_TOTAL))
@@ -97,6 +122,7 @@ object Packs {
         val problems = ArrayList<String>()
         val manifestBytes = inner["manifest.json"] ?: throw BadPack(listOf("manifest.json is missing"))
         val vehiclesBytes = inner["vehicles.json"] ?: byteArrayOf()
+        val housesBytes = inner["houses.json"] ?: byteArrayOf()
 
         fun json(name: String, bytes: ByteArray): Any? = try {
             Json.parse(bytes.decodeToString())
@@ -173,9 +199,38 @@ object Packs {
                 vehicles += def
             }
         }
+        val houses = ArrayList<HouseDef>()
+        if (housesBytes.isNotEmpty()) {
+            // Town buildings are drawn from the game's own sheets for now, so only the base pack has them.
+            if (!base) problems += "houses.json: town buildings in packs come with a later version of the game"
+            val root = json("houses.json", housesBytes)
+            val list = (root as? Map<*, *>)?.get("houses") as? List<*>
+            if (root != null && list == null) problems += "houses.json should be { \"houses\": [ ... ] }"
+            val seen = HashSet<String>()
+            list?.forEachIndexed { n, h ->
+                val map = h as? Map<*, *> ?: run { problems += "houses.json, building ${n + 1} should be an object { }"; return@forEachIndexed }
+                val f = Fields("houses.json, building ${n + 1}", map, problems)
+                val hid = f.string("id", need = true) ?: ""
+                f.where = "houses.json, \"$hid\""
+                if (!seen.add(hid)) problems += "${f.where}: id is used twice"
+                var zones = 0
+                for (z in f.strings("zones") ?: emptyList()) {
+                    val k = Zones.NAMES.indexOf(z)
+                    if (k < 0) problems += "${f.where}: zone \"$z\" should be outskirts, suburbs, inner or centre" else zones = zones or (1 shl k)
+                }
+                if (zones == 0) problems += "${f.where}: \"zones\" needs at least one zone"
+                houses += HouseDef(
+                    hid, f.words("name", need = true) ?: emptyMap(),
+                    f.int("from", 1700, 2300, need = true) ?: 0, f.int("until", 1700, 2300, need = true) ?: 0,
+                    f.int("residents", 0, 10_000, need = true) ?: 0, f.int("jobs", 0, 10_000, need = true) ?: 0,
+                    zones, f.int("min_population", 0, 10_000_000) ?: 0, f.int("weight", 1, 100) ?: 1,
+                )
+                f.done()
+            }
+        }
         if (problems.isNotEmpty()) throw BadPack(problems)
         val sprites = inner.filterKeys { it.startsWith("sprites/") && it.endsWith(".png") }.mapKeys { it.key.removePrefix("sprites/").removeSuffix(".png") }
-        return Pack(id, version, names, descriptions, author, licence, needs, disables, vehicles, sprites, hash(manifestBytes, vehiclesBytes))
+        return Pack(id, version, names, descriptions, author, licence, needs, disables, vehicles, houses, sprites, hash(manifestBytes, vehiclesBytes, housesBytes))
     }
 
     /** FNV-1a over the data files, so two packs match when their data does. Sprites are left out: they don't change the game. */

@@ -63,6 +63,7 @@ import com.rm.interchange.sim.World
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
+import org.jetbrains.compose.resources.painterResource
 import org.jetbrains.compose.resources.pluralStringResource
 import org.jetbrains.compose.resources.stringArrayResource
 import org.jetbrains.compose.resources.stringResource
@@ -97,10 +98,10 @@ private fun rememberBackdrop(): ImageBitmap? = produceState<ImageBitmap?>(null) 
 fun TitleScreen(continueLine: String?, onContinue: () -> Unit, onNew: () -> Unit, onLoad: () -> Unit, onPacks: () -> Unit, onSettings: () -> Unit) {
     val c = LocalColors.current
     Page(rememberBackdrop()) {
-        Text(
-            stringResource(Res.string.app_name), color = c.text, fontSize = 44.sp, fontWeight = FontWeight.Bold,
-            modifier = Modifier.padding(bottom = 16.dp),
-        )
+        Row(Modifier.padding(bottom = 16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+            Image(painterResource(Res.drawable.app_icon), null, Modifier.size(64.dp).clip(RoundedCornerShape(14.dp)))
+            Text(stringResource(Res.string.app_name), color = c.text, fontSize = 44.sp, fontWeight = FontWeight.Bold)
+        }
         if (continueLine != null) {
             BigButton(stringResource(Res.string.continue_game), primary = true, glyph = Glyph.Play, onClick = onContinue)
             Text(continueLine, color = c.textDim, fontSize = 13.sp, modifier = Modifier.padding(start = 4.dp, bottom = 6.dp))
@@ -141,8 +142,9 @@ fun NewGameScreen(packs: List<Pack>, onStart: (NewGame, List<Pack>) -> Unit, onB
     var sea by remember { mutableIntStateOf(28) }
     var hills by remember { mutableIntStateOf(1) }
     var trees by remember { mutableIntStateOf(2) }
+    var towns by remember { mutableIntStateOf(2) }
     var off by remember { mutableStateOf(emptySet<String>()) }
-    val settings = NewGame(width, height, seed, year, region, sea, hills, trees)
+    val settings = NewGame(width, height, seed, year, region, sea, hills, trees, towns)
     val chosen = packs.filter { it.id !in off }
     val clash = remember(chosen) {
         try {
@@ -195,6 +197,7 @@ fun NewGameScreen(packs: List<Pack>, onStart: (NewGame, List<Pack>) -> Unit, onB
     val regionNames = stringArrayResource(Res.array.regions)
     val hillNames = stringArrayResource(Res.array.hill_levels)
     val treeNames = stringArrayResource(Res.array.tree_levels)
+    val townNames = stringArrayResource(Res.array.town_levels)
     val lang = languageCode()
     val options: @Composable (Boolean) -> Unit = { wide ->
         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -216,6 +219,9 @@ fun NewGameScreen(packs: List<Pack>, onStart: (NewGame, List<Pack>) -> Unit, onB
         }, {
             StepSlider(stringResource(Res.string.trees), (0..3).toList(), trees, { treeNames.getOrElse(it) { "$it" } }) { trees = it }
         })
+        SideBySide(wide, {
+            StepSlider(stringResource(Res.string.towns), (0..3).toList(), towns, { townNames.getOrElse(it) { "$it" } }) { towns = it }
+        }, {})
         if (packs.isNotEmpty()) {
             Text(stringResource(Res.string.packs), color = c.text, fontSize = 15.sp)
             for (row in packs.chunked(2)) {

@@ -27,7 +27,8 @@ PERIOD = 4
 SIZE = TEXELS * PERIOD
 
 # Base ramps from dark to light, and blade or detail colours, for each kind, in the order of the game's ground
-# kinds, then beach sand, water, and the bare earth that shows through on slopes.
+# kinds, then beach sand, water, the bare earth that shows through on slopes, and town roads: dirt, asphalt and
+# concrete pavement.
 KINDS = {
     "meadow": [c("#24451a"), c("#2f5a20"), c("#3b6a26"), c("#4a7a2e"), c("#5a8a36")],
     "prairie": [c("#6e6a38"), c("#827c44"), c("#968e50"), c("#a89e5c"), c("#b8ac68")],
@@ -38,6 +39,9 @@ KINDS = {
     "sand": [c("#ac9a6a"), c("#bca876"), c("#ccb884"), c("#d8c794"), c("#e6d8aa")],
     "water": [c("#2a5a96"), c("#3062a0"), c("#3669aa"), c("#3e72b4"), c("#4a80c2")],
     "earth": [c("#4a3626"), c("#594230"), c("#684f39"), c("#775c43"), c("#86694d")],
+    "dirt": [c("#6a5640"), c("#76614a"), c("#826c54"), c("#8c765c"), c("#968064")],
+    "asphalt": [c("#3a3a3c"), c("#424244"), c("#4a4a4c"), c("#525254"), c("#5a5a5c")],
+    "pavement": [c("#9c978e"), c("#a7a298"), c("#b1aca2"), c("#bab5ab"), c("#c3beb4")],
 }
 
 
@@ -179,6 +183,30 @@ def texture(kind):
                 w.line(x, y, nx, ny, c("#3a2a1c"))
                 x, y = nx, ny
         blades(w, rng, 4000, [c("#5e5a34"), c("#6e6a3c"), c("#4e5a2c")], 2, 5, lighter(1.15), clump)
+    elif kind == "dirt":
+        # Packed earth and gravel worn by wheels and hooves.
+        for _ in range(9000):
+            x, y = rng.uniform(0, SIZE), rng.uniform(0, SIZE)
+            w.dot(x, y, rng.uniform(0.5, 1.4), rng.choice([c("#5a4834"), c("#a08a6c"), c("#8a8478"), c("#6e604e")]))
+    elif kind == "asphalt":
+        # Fine stones in the tar, and the odd patch and crack.
+        for _ in range(14000):
+            x, y = rng.uniform(0, SIZE), rng.uniform(0, SIZE)
+            w.dot(x, y, 0.5, rng.choice([c("#2e2e30"), c("#606064"), c("#6a6a6c"), c("#38383a")]))
+        for _ in range(120):
+            x, y = rng.uniform(0, SIZE), rng.uniform(0, SIZE)
+            for _ in range(rng.randint(2, 4)):
+                nx, ny = x + rng.uniform(-8, 8), y + rng.uniform(-8, 8)
+                w.line(x, y, nx, ny, c("#2a2a2c"))
+                x, y = nx, ny
+    elif kind == "pavement":
+        # Concrete slabs, four to a tile each way, with their joints.
+        for k in range(0, SIZE, TEXELS // 4):
+            w.line(k, 0, k, SIZE, c("#86827a"))
+            w.line(0, k, SIZE, k, c("#86827a"))
+        for _ in range(5000):
+            x, y = rng.uniform(0, SIZE), rng.uniform(0, SIZE)
+            w.dot(x, y, 0.5, rng.choice([c("#8e8a82"), c("#cac6bc")]))
     elif kind == "water":
         for _ in range(1800):
             x, y = rng.uniform(0, SIZE), rng.uniform(0, SIZE)

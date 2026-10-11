@@ -1,10 +1,13 @@
 """Renders trees, platforms, the engine house and signals for tools/gen_tiles.py to pack.
 
-    blender -b --python tools/blender/render_scenery.py -- OUT_DIR
+    blender -b --python tools/blender/render_scenery.py -- OUT_DIR [ONLY]
+
+ONLY, if given, renders just the files whose names start with it.
 
 Files: tree_<kind>_<look>.png, station_<0 along u, 1 along v>.png,
-depot_<edge>.png, signal_<0 clear, 1 stop>.png, each a whole cell at twice the
-sharpest level. A file already there is left alone.
+depot_<edge>.png, signal_<0 clear, 1 stop>.png, house_<kind>_<edge>.png (a town
+building facing that view edge), each a whole cell at twice the sharpest level.
+A file already there is left alone.
 
 Everything but signals comes twice: the thing itself with no shadow, and
 <name>_shadow.png, its shadow alone, so the game can lay shadows over the ground
@@ -16,6 +19,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import bpy  # noqa: E402
 
+import houses  # noqa: E402
 import parts  # noqa: E402
 import rig  # noqa: E402
 import scenery  # noqa: E402
@@ -35,7 +39,12 @@ def shadow_catcher():
     return plane
 
 
-def shot(out, name, build, samples=48, shadow=True, placed=True):
+ONLY = None
+
+
+def shot(out, name, build, samples=48, shadow=True, placed=True, heading=0):
+    if ONLY and not name.startswith(ONLY):
+        return
     shadow_name = name.replace(".png", "_shadow.png")
     if (out / name).exists() and (not shadow or (out / shadow_name).exists()):
         return
@@ -46,7 +55,7 @@ def shot(out, name, build, samples=48, shadow=True, placed=True):
     model = parts.Model(name)
     build(model)
     if placed:
-        model.place(0)
+        model.place(heading)
     if not shadow:
         catcher.hide_render = True
         rig.render(str(out / name))
@@ -62,7 +71,10 @@ def shot(out, name, build, samples=48, shadow=True, placed=True):
 
 
 def main():
-    out = Path(sys.argv[sys.argv.index("--") + 1])
+    global ONLY
+    args = sys.argv[sys.argv.index("--") + 1:]
+    out = Path(args[0])
+    ONLY = args[1] if len(args) > 1 else None
     out.mkdir(parents=True, exist_ok=True)
     for kind in TREES:
         for look in range(3):
@@ -71,6 +83,9 @@ def main():
         shot(out, f"station_{a}.png", lambda m, a=a: scenery.station(m, a == 0))
     for edge in EDGES:
         shot(out, f"depot_{edge}.png", lambda m, edge=edge: scenery.depot(m, edge))
+    for kind in houses.BUILDERS:
+        for edge in EDGES:
+            shot(out, f"house_{kind}_{edge}.png", lambda m, kind=kind: houses.house(m, kind), heading=houses.FACING[edge])
     for red in (0, 1):
         shot(out, f"signal_{red}.png", lambda m, red=red: scenery.signal(m, red == 1), shadow=False)
     for kind in DECOR:

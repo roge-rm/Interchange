@@ -173,4 +173,17 @@
     <string name="overlays">Calques</string>
     <string name="grid">Grille</string>
     <string name="heights">Altitudes</string>
+
+    <!-- Villes -->
+    <string name="towns">Villes</string>
+    <string-array name="town_levels">
+        <item>Aucune</item><item>Peu</item><item>Normal</item><item>Beaucoup</item>
+    </string-array>
+    <string name="dirt_road">Chemin de terre</string>
+    <string name="paved_street">Rue pavée</string>
+    <string name="built_in">Construit en %1$d</string>
+    <string name="residents">Résidents : %1$d</string>
+    <string name="jobs">Emplois : %1$d</string>
+    <string name="town_of">Ville : %1$s</string>
+    <string name="population">Population : %1$s</string>
 </resources>

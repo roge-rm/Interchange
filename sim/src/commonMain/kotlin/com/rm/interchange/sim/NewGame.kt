@@ -19,7 +19,7 @@ enum class Region {
 /**
  * How a new world is made. Map sides are powers of two from 64 to 4096, as in
  * OpenTTD. [sea] is how much of the map is under water, in percent; [hills]
- * from 0 (flat) to 3 (mountainous); [trees] from 0 (none) to 3 (many).
+ * from 0 (flat) to 3 (mountainous); [trees] and [towns] from 0 (none) to 3 (many).
  */
 data class NewGame(
     val width: Int = 256,
@@ -30,6 +30,7 @@ data class NewGame(
     val sea: Int = 28,
     val hills: Int = 1,
     val trees: Int = 2,
+    val towns: Int = 2,
 ) {
     companion object {
         val SIZES = intArrayOf(64, 128, 256, 512, 1024, 2048, 4096)

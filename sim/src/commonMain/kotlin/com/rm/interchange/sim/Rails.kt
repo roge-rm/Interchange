@@ -105,7 +105,8 @@ fun World.planRail(c: Command.Rail): BooleanArray? {
         val i = line[k] / 64
         val piece = line[k] % 64
         val has = trackOf(i)
-        val special = stationTiles.containsKey(i) || depotTiles.containsKey(i)
+        // Town roads and buildings stay put; level crossings come with roads of the player's own.
+        val special = stationTiles.containsKey(i) || depotTiles.containsKey(i) || townBuilt(i)
         val ok = !special && if (c.remove) {
             has and piece != 0 && owner[i].toInt() == c.company
         } else {
@@ -125,7 +126,7 @@ internal fun World.buildRail(company: Company, c: Command.Rail) {
         val y = i / width
         val has = track[i].toInt()
         // Platforms and depots are left for the Clear tool.
-        if (stationTiles.containsKey(i) || depotTiles.containsKey(i)) continue
+        if (stationTiles.containsKey(i) || depotTiles.containsKey(i) || townBuilt(i)) continue
         if (c.remove) {
             if (has and piece == 0 || owner[i].toInt() != company.id || trainOnTile(i)) continue
             if (company.money < Prices.TRACK_REMOVE) return

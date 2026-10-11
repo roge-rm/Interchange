@@ -58,6 +58,9 @@ import com.rm.interchange.sim.Roster
 import com.rm.interchange.sim.Save
 import com.rm.interchange.sim.Prices
 import com.rm.interchange.sim.Track
+import com.rm.interchange.sim.PAVED
+import com.rm.interchange.sim.houseOf
+import com.rm.interchange.map.rememberTownLabels
 import com.rm.interchange.sim.World
 import kotlin.math.roundToInt
 import androidx.compose.runtime.key
@@ -274,8 +277,10 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
         })
     }
     val view = remember {
+        // Over the biggest town, or the dry land nearest the middle if there are none.
         View(world.width, world.height).apply {
-            val i = world.landNearMiddle()
+            val town = world.towns.maxByOrNull { it.population }
+            val i = if (town != null) world.index(town.x, town.y) else world.landNearMiddle()
             focusX = i % world.width + 0.5f
             focusY = i / world.width + 0.5f
         }
@@ -372,6 +377,7 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
         }
     }
 
+    val townLabels = rememberTownLabels(c.chrome, c.text, c.textDim)
     BoxWithConstraints(Modifier.fillMaxSize().background(c.page)) {
         val layout = screenLayout(maxWidth, maxHeight)
         val gap = if (layout.compact) 6.dp else 10.dp
@@ -384,6 +390,7 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
             overlay = plan?.let { p -> { painter -> drawTrackPlan(world, painter, p) } }
                 ?: stationPlan?.let { p -> { painter -> drawStationPlan(world, painter, p) } },
             overlays = (if (settings.grid) ChunkBaker.GRID else 0) or (if (settings.heights) ChunkBaker.HEIGHTS else 0),
+            labels = { with(townLabels) { draw(world, view, worldView.value?.towns.orEmpty()) { Numbers.grouped(it.toLong()) } } },
         )
 
         // Every upright phone: one line can't hold the buttons and the readings without crowding them.
@@ -511,22 +518,42 @@ private fun moving(runner: GameThread): Moving? = runner.view?.let { Moving(it, 
 private fun InspectCard(world: World, x: Int, y: Int, onClose: () -> Unit, modifier: Modifier) {
     val water = world.isWater(x, y)
     val t = world.trackAt(x, y)
+    val i = world.index(x, y)
     val grounds = stringArrayResource(Res.array.grounds)
+    val lang = languageCode()
     val pieces = listOf(Track.X to Res.string.piece_x, Track.Y to Res.string.piece_y, Track.N to Res.string.piece_n, Track.E to Res.string.piece_e, Track.S to Res.string.piece_s, Track.W to Res.string.piece_w)
     val pieceNames = pieces.filter { t and it.first != 0 }.map { stringResource(it.second) }
     val join = stringResource(Res.string.list_join)
+    val house = world.roster.houses.getOrNull(houseOf(world.house[i].toInt()))
+    val road = world.road[i].toInt()
+    val town = world.towns.getOrNull(world.townOf[i].toInt())
     val lines = buildList {
         add(stringResource(Res.string.tile_at, x, y))
-        if (!water) {
+        if (house != null) {
+            add(stringResource(Res.string.built_in, world.houseYear[i].toInt()))
+            if (house.residents > 0) add(stringResource(Res.string.residents, house.residents))
+            if (house.jobs > 0) add(stringResource(Res.string.jobs, house.jobs))
+        } else if (!water) {
             add(stringResource(Res.string.height_of, minOf(world.heightAt(x, y), world.heightAt(x + 1, y), world.heightAt(x + 1, y + 1), world.heightAt(x, y + 1))))
-            add(grounds.getOrElse(world.ground[world.index(x, y)].toInt()) { "" })
+            if (road == 0) add(grounds.getOrElse(world.ground[i].toInt()) { "" })
+        }
+        if (town != null) {
+            add(stringResource(Res.string.town_of, town.name))
+            add(stringResource(Res.string.population, Numbers.grouped(town.population.toLong())))
         }
         if (t != 0) {
             add(stringResource(Res.string.track_pieces, pieceNames.joinToString(join)))
-            if (world.owner[world.index(x, y)].toInt() == 0) add(stringResource(Res.string.owned_by, stringResource(Res.string.company)))
+            if (world.owner[i].toInt() == 0) add(stringResource(Res.string.owned_by, stringResource(Res.string.company)))
         }
     }
-    InfoCard(stringResource(if (t != 0) Res.string.kind_track else if (water) Res.string.kind_water else Res.string.kind_land), lines, onClose, modifier)
+    val title = when {
+        house != null -> house.name(lang)
+        road != 0 -> stringResource(if (road and PAVED != 0) Res.string.paved_street else Res.string.dirt_road)
+        t != 0 -> stringResource(Res.string.kind_track)
+        water -> stringResource(Res.string.kind_water)
+        else -> stringResource(Res.string.kind_land)
+    }
+    InfoCard(title, lines, onClose, modifier)
 }
 
 /** The widest the trays and the bottom tool bar go. */

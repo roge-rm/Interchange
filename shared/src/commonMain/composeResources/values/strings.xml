@@ -190,4 +190,17 @@
     <string name="overlays">Overlays</string>
     <string name="grid">Grid</string>
     <string name="heights">Heights</string>
+
+    <!-- Towns -->
+    <string name="towns">Towns</string>
+    <string-array name="town_levels">
+        <item>None</item><item>Few</item><item>Normal</item><item>Many</item>
+    </string-array>
+    <string name="dirt_road">Dirt road</string>
+    <string name="paved_street">Paved street</string>
+    <string name="built_in">Built in %1$d</string>
+    <string name="residents">Residents: %1$d</string>
+    <string name="jobs">Jobs: %1$d</string>
+    <string name="town_of">Town: %1$s</string>
+    <string name="population">Population: %1$s</string>
 </resources>

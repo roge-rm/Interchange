@@ -5,8 +5,15 @@ import com.rm.interchange.sim.CORNER_N
 import com.rm.interchange.sim.CORNER_S
 import com.rm.interchange.sim.CORNER_W
 import com.rm.interchange.sim.Track
+import com.rm.interchange.sim.PAVED
 import com.rm.interchange.sim.Trees
 import com.rm.interchange.sim.World
+import com.rm.interchange.sim.Zones
+import com.rm.interchange.sim.zoneAt
+import com.rm.interchange.sim.houseFacing
+import com.rm.interchange.sim.houseOf
+import com.rm.interchange.sim.townBuilt
+import kotlin.math.abs
 import com.rm.interchange.sim.hasFoundation
 import com.rm.interchange.sim.surfaceHeight
 import kotlin.math.sqrt
@@ -14,8 +21,9 @@ import kotlin.math.sqrt
 /**
  * Bakes a chunk of the map into pixels, tile by tile from the back: the
  * ground painted from its kind's texture, ragged where one kind meets another
- * and foamy at the shore, then foundations, track, buildings, trees and the
- * odd boulder or shrub blitted from the static sheet.
+ * and foamy at the shore, with town roads painted on it, then foundations,
+ * track, buildings, trees and the odd boulder or shrub blitted from the static
+ * sheet.
  *
  * So the lie of the land reads at a glance, the ground is lit by its slope,
  * ridges are lighter and hollows darker than the land round them, and bare
@@ -97,13 +105,27 @@ internal class ChunkBaker(
         val wy = view.worldY(vx, vy)
         val kind = kindOf(vx, vy)
         val edges = intArrayOf(kindOf(vx, vy - 1), kindOf(vx + 1, vy), kindOf(vx, vy + 1), kindOf(vx - 1, vy))
-        ground(vx, vy, t, r, b, l, kind, edges)
+        // The town road here in view edges, and whether it's paved.
+        val worldRoad = world.road[world.index(wx, wy)].toInt()
+        var road = worldRoad and PAVED
+        if (worldRoad != 0 && downtown(world.index(wx, wy))) road = road or DOWNTOWN
+        for (e in 0 until 4) if (worldRoad and (1 shl e) != 0) road = road or (1 shl viewEdge(e))
+        ground(vx, vy, t, r, b, l, kind, edges, road)
         earthFaces(vx, vy, r, b, l)
 
         val tile = world.index(wx, wy)
         val pieces = world.trackAt(wx, wy)
-        if (pieces == 0) return
         val base = minOf(minOf(t, r), minOf(b, l))
+        // A building on a slope stands on a foundation level with its highest corner, its yard on top.
+        if (world.house[tile].toInt() != 0) {
+            val top = maxOf(maxOf(t, r), maxOf(b, l))
+            if (top != base) {
+                sprite(Atlas.WALLS[shapeOf(t - base, r - base, b - base, l - base) * 16 + 15], vx, vy, base)
+                ground(vx, vy, top, top, top, top, kind, intArrayOf(-1, -1, -1, -1))
+            }
+            return
+        }
+        if (pieces == 0) return
         world.depotTiles[tile]?.let {
             sprite(Atlas.TRACK[viewPieceIndex(Track.index(pieces)) * 16], vx, vy, base)
             return
@@ -140,7 +162,18 @@ internal class ChunkBaker(
         val pieces = world.trackAt(wx, wy)
         val kind = kindOf(vx, vy)
         if (pieces == 0) {
-            if (kind != Atlas.WATER && kind != Atlas.SAND) {
+            val built = world.house[tile].toInt()
+            if (built != 0) {
+                val art = houseArt(houseOf(built))
+                val base = maxOf(maxOf(cornerHeight(vx, vy), cornerHeight(vx + 1, vy)), maxOf(cornerHeight(vx + 1, vy + 1), cornerHeight(vx, vy + 1)))
+                if (art >= 0) sprite((if (shadow) Atlas.HOUSE_SHADOW else Atlas.HOUSE)[art * 4 + viewEdge(houseFacing(built))], vx, vy, base)
+                return
+            }
+            if (world.road[tile].toInt() != 0) {
+                streetTrees(wx, wy, shadow)
+                return
+            }
+            if (kind != Atlas.WATER && kind != Atlas.SAND && !world.townBuilt(tile)) {
                 trees(wx, wy, shadow)
                 decor(wx, wy, kind, shadow)
             }
@@ -166,7 +199,7 @@ internal class ChunkBaker(
      * Paints a tile's top with corner heights [t], [r], [b], [l] (view order) in [kind]'s texture, letting the
      * kinds of its neighbours across each edge ([edges], -1 for none) spread in where they rank higher.
      */
-    private fun ground(vx: Int, vy: Int, t: Int, r: Int, b: Int, l: Int, kind: Int, edges: IntArray) {
+    private fun ground(vx: Int, vy: Int, t: Int, r: Int, b: Int, l: Int, kind: Int, edges: IntArray, road: Int = 0) {
         // Split along whichever diagonal has its ends level, as the slopes are drawn. Each half is a plane
         // h = h0 + gu * u + gv * v over the tile's own u and v.
         val alongRL = r == l
@@ -256,6 +289,7 @@ internal class ChunkBaker(
                         texel = FOAM
                     }
                 }
+                if (road != 0) texel = roadTexel(u, v, road, ti, texel)
                 val rel = rt * (1f - u) * (1f - v) + rr * u * (1f - v) + rb * u * v + rl * (1f - u) * v
                 var shade = f * (1f + (rel * RELIEF_GAIN).coerceIn(-RELIEF_DARK, RELIEF_LIGHT))
                 if (heights) {
@@ -273,6 +307,81 @@ internal class ChunkBaker(
                 pixels[py * width + px] = out
             }
         }
+    }
+
+    /**
+     * What a town road shows at ([u], [v]) on its tile, for road [bits] in view edges, [PAVED] and
+     * [DOWNTOWN], by how far the point is from the road's middle line: the carriageway, then on a paved
+     * road a kerb, a grass boulevard and a sidewalk out to the lot line, or downtown sidewalk all the way
+     * to the shopfronts. A paved straight has a dashed line down it. [ground] is what's there otherwise.
+     */
+    private fun roadTexel(u: Float, v: Float, bits: Int, ti: Int, ground: Int): Int {
+        val paved = bits and PAVED != 0
+        val d = roadDistance(u, v, bits)
+        if (d < CARRIAGEWAY) {
+            if (!paved) return sheets.ground[Atlas.DIRT * size * size + ti]
+            val straightX = bits and 15 == (1 shl Track.XM) or (1 shl Track.XP)
+            val straightY = bits and 15 == (1 shl Track.YM) or (1 shl Track.YP)
+            if ((straightX && abs(v - 0.5f) < LINE && (u * 5f) % 1f < 0.55f) || (straightY && abs(u - 0.5f) < LINE && (v * 5f) % 1f < 0.55f)) return ROAD_LINE
+            return sheets.ground[Atlas.ASPHALT * size * size + ti]
+        }
+        if (!paved) return ground
+        val walk = sheets.ground[Atlas.PAVEMENT * size * size + ti]
+        return when {
+            d < CARRIAGEWAY + KERB -> lit(walk, 190)
+            bits and DOWNTOWN != 0 -> walk
+            d < BOULEVARD -> ground
+            d < SIDEWALK -> walk
+            else -> ground
+        }
+    }
+
+    /** How far ([u], [v]) is from the middle line of a road reaching the view edges in [bits], squarely round its middle. */
+    private fun roadDistance(u: Float, v: Float, bits: Int): Float {
+        val du = abs(u - 0.5f)
+        val dv = abs(v - 0.5f)
+        var d = maxOf(du, dv)
+        if ((u < 0.5f && bits and (1 shl Track.XM) != 0) || (u >= 0.5f && bits and (1 shl Track.XP) != 0)) d = minOf(d, dv)
+        if ((v < 0.5f && bits and (1 shl Track.YM) != 0) || (v >= 0.5f && bits and (1 shl Track.YP) != 0)) d = minOf(d, du)
+        return d
+    }
+
+    /** Whether tile [i] is in the inner part or the centre of its town, where streets have sidewalk up to the buildings. */
+    private fun downtown(i: Int): Boolean {
+        val t = world.towns.getOrNull(world.townOf[i].toInt()) ?: return false
+        val z = t.zoneAt(i % world.width, i / world.width)
+        return z == Zones.CENTRE || z == Zones.INNER
+    }
+
+    /** Street trees on the boulevards of a paved suburban road on world tile ([wx], [wy]), where the tile's dice put them. */
+    private fun streetTrees(wx: Int, wy: Int, shadow: Boolean) {
+        val bits = world.road[world.index(wx, wy)].toInt()
+        if (bits and PAVED == 0 || downtown(world.index(wx, wy))) return
+        val cells = if (shadow) Atlas.TREE_SHADOW else Atlas.TREE
+        val spots = ArrayList<FloatArray>()
+        val side = (BOULEVARD + CARRIAGEWAY + KERB) / 2
+        for (e in 0 until 4) {
+            if (bits and (1 shl e) == 0) continue
+            val d = LandPainter.dice(wx, wy, 20 + e)
+            for (s in listOf(-1f, 1f)) {
+                if ((d shr (if (s < 0) 0 else 8)) and 255 > 110) continue
+                val along = if (e == Track.XM || e == Track.YM) 0.22f else 0.78f
+                val (tx, ty) = if (e == Track.XM || e == Track.XP) wx + along to wy + 0.5f + s * side else wx + 0.5f + s * side to wy + along
+                spots += floatArrayOf(view.toViewX(tx, ty) + view.toViewY(tx, ty), tx, ty, ((d shr 16) and 255).toFloat())
+            }
+        }
+        spots.sortBy { it[0] }
+        for (sp in spots) standing(cells[STREET_TREE * Atlas.TREE_LOOKS + sp[3].toInt() % Atlas.TREE_LOOKS], sp[1], sp[2])
+    }
+
+    /** Whether ([u], [v]) is within [w] of the middle line of a road reaching the view edges in [bits]. */
+    private fun inRoad(u: Float, v: Float, bits: Int, w: Float): Boolean {
+        val du = abs(u - 0.5f)
+        val dv = abs(v - 0.5f)
+        if (du < w && dv < w) return true
+        if (dv < w && ((u < 0.5f && bits and (1 shl Track.XM) != 0) || (u >= 0.5f && bits and (1 shl Track.XP) != 0))) return true
+        if (du < w && ((v < 0.5f && bits and (1 shl Track.YM) != 0) || (v >= 0.5f && bits and (1 shl Track.YP) != 0))) return true
+        return false
     }
 
     /** [a] moved [t] of the way to [b], colour by colour. */
@@ -430,6 +539,14 @@ internal class ChunkBaker(
         return Track.PIECES.indexOf(Track.pieceOf(viewEdge(e and 3), viewEdge(e shr 2)))
     }
 
+    /** Each building kind's place in [Atlas.HOUSE_KEYS], or -1 for one the game has no drawing of. */
+    private val houseArts = IntArray(world.roster.houses.size) { h ->
+        val key = world.roster.houses[h].key
+        if (key.startsWith("base:")) Atlas.HOUSE_KEYS.indexOf(key.removePrefix("base:")) else -1
+    }
+
+    private fun houseArt(h: Int) = houseArts.getOrElse(h) { -1 }
+
     private fun viewEdge(edge: Int): Int = when (view.turn) {
         0 -> edge
         1 -> when (edge) { Track.XM -> Track.YM; Track.XP -> Track.YP; Track.YM -> Track.XP; else -> Track.XM }
@@ -457,6 +574,22 @@ internal class ChunkBaker(
         private const val BARE_FROM = 0.64f
 
         private const val GRID_LIGHT = 0xfff2efe6.toInt()
+
+        /**
+         * Across a road from its middle line, as shares of a tile: the carriageway's half width, its kerb,
+         * then out to the boulevard's far side and the sidewalk's, the lot line being at a half.
+         */
+        private const val CARRIAGEWAY = 0.2f
+        private const val KERB = 0.015f
+        private const val BOULEVARD = 0.33f
+        private const val SIDEWALK = 0.47f
+        /** Added to a tile's road bits for the baker when it's downtown. */
+        private const val DOWNTOWN = 32
+        /** Street trees are maples. */
+        private const val STREET_TREE = 3
+        /** The dashed line down a paved straight: its half width and colour. */
+        private const val LINE = 0.012f
+        private const val ROAD_LINE = 0xffd6c46a.toInt()
 
         /** Overlays, as bits. */
         const val GRID = 1

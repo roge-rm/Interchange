@@ -1,0 +1,129 @@
+{
+  "houses": [
+    {
+      "id": "log_cabin",
+      "name": { "en": "Log cabin", "fr": "Cabane en bois rond" },
+      "from": 1836,
+      "until": 1895,
+      "residents": 5,
+      "jobs": 0,
+      "zones": ["outskirts", "suburbs"],
+      "weight": 6
+    },
+    {
+      "id": "farmhouse",
+      "name": { "en": "Farmhouse", "fr": "Maison de ferme" },
+      "from": 1836,
+      "until": 1950,
+      "residents": 7,
+      "jobs": 1,
+      "zones": ["outskirts"],
+      "weight": 5
+    },
+    {
+      "id": "clapboard_house",
+      "name": { "en": "Clapboard house", "fr": "Maison à clins" },
+      "from": 1845,
+      "until": 1960,
+      "residents": 8,
+      "jobs": 0,
+      "zones": ["suburbs", "inner", "centre"],
+      "weight": 8
+    },
+    {
+      "id": "general_store",
+      "name": { "en": "General store", "fr": "Magasin général" },
+      "from": 1836,
+      "until": 1940,
+      "residents": 3,
+      "jobs": 6,
+      "zones": ["inner", "centre"],
+      "weight": 2
+    },
+    {
+      "id": "church",
+      "name": { "en": "Church", "fr": "Église" },
+      "from": 1836,
+      "until": 2050,
+      "residents": 0,
+      "jobs": 3,
+      "zones": ["suburbs", "inner"],
+      "weight": 1
+    },
+    {
+      "id": "brick_row",
+      "name": { "en": "Brick row houses", "fr": "Maisons en rangée de brique" },
+      "from": 1870,
+      "until": 1970,
+      "residents": 18,
+      "jobs": 0,
+      "zones": ["inner", "centre"],
+      "min_population": 300,
+      "weight": 6
+    },
+    {
+      "id": "brick_block",
+      "name": { "en": "Brick block", "fr": "Édifice de brique" },
+      "from": 1880,
+      "until": 1975,
+      "residents": 10,
+      "jobs": 24,
+      "zones": ["inner", "centre"],
+      "min_population": 400,
+      "weight": 5
+    },
+    {
+      "id": "bungalow",
+      "name": { "en": "Bungalow", "fr": "Bungalow" },
+      "from": 1915,
+      "until": 2010,
+      "residents": 6,
+      "jobs": 0,
+      "zones": ["outskirts", "suburbs"],
+      "weight": 8
+    },
+    {
+      "id": "walkup",
+      "name": { "en": "Walk-up apartments", "fr": "Immeuble sans ascenseur" },
+      "from": 1910,
+      "until": 2000,
+      "residents": 36,
+      "jobs": 2,
+      "zones": ["inner"],
+      "min_population": 1200,
+      "weight": 5
+    },
+    {
+      "id": "split_level",
+      "name": { "en": "Split-level house", "fr": "Maison à demi-niveaux" },
+      "from": 1955,
+      "until": 2050,
+      "residents": 7,
+      "jobs": 0,
+      "zones": ["outskirts", "suburbs"],
+      "weight": 8
+    },
+    {
+      "id": "office_block",
+      "name": { "en": "Office block", "fr": "Immeuble de bureaux" },
+      "from": 1950,
+      "until": 2050,
+      "residents": 0,
+      "jobs": 90,
+      "zones": ["centre"],
+      "min_population": 3000,
+      "weight": 4
+    },
+    {
+      "id": "apartment_tower",
+      "name": { "en": "Apartment tower", "fr": "Tour d'habitation" },
+      "from": 1960,
+      "until": 2050,
+      "residents": 140,
+      "jobs": 4,
+      "zones": ["inner", "centre"],
+      "min_population": 4000,
+      "weight": 4
+    }
+  ]
+}

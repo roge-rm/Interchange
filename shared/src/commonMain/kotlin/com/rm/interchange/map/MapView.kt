@@ -49,6 +49,8 @@ fun MapView(
     overlay: (DrawScope.(LandPainter) -> Unit)? = null,
     /** The grid and heights overlays baked into the map, as [ChunkBaker.GRID] and [ChunkBaker.HEIGHTS] bits. */
     overlays: Int = 0,
+    /** Drawn over everything else: town names. */
+    labels: (DrawScope.() -> Unit)? = null,
 ) {
     val scope = rememberCoroutineScope()
     val renderer = remember(world) { Renderer(world, sheets, scope) }
@@ -133,6 +135,7 @@ fun MapView(
             painter.originY = view.screenY(0f, 0f, 0f, size.height)
             draw(painter)
         }
+        labels?.invoke(this)
     }
 }
 

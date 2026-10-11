@@ -15,7 +15,8 @@ package com.rm.interchange.sim
  * [roster] is what can run on the track, from the game's content packs.
  */
 class World(val settings: NewGame, val roster: Roster = Roster.BASE, generate: Boolean = true) {
-    constructor(width: Int, height: Int, seed: Long, startYear: Int = 1850) : this(NewGame(width, height, seed, startYear))
+    /** A map with no towns, for tests that lay their own track. */
+    constructor(width: Int, height: Int, seed: Long, startYear: Int = 1850) : this(NewGame(width, height, seed, startYear, towns = 0))
 
     val width get() = settings.width
     val height get() = settings.height
@@ -38,6 +39,17 @@ class World(val settings: NewGame, val roster: Roster = Roster.BASE, generate: B
 
     /** Which company owns what's on each tile, or -1. */
     val owner = ByteArray(width * height) { -1 }
+
+    /** Town roads on each tile, as [roadBit]s; buildings, packed by [packHouse], and the year each went up; and which town each is, or -1. */
+    val road = ByteArray(width * height)
+    val house = ShortArray(width * height)
+    val houseYear = ShortArray(width * height)
+    val townOf = ShortArray(width * height) { -1 }
+
+    val towns = ArrayList<Town>()
+    /** Set when a town grows, so its summary for the screen is made again. Not part of the game. */
+    var townsChanged = true
+    internal var townViews: List<TownView> = emptyList()
 
     val companies = mutableListOf(Company(0, "Company", Prices.START_MONEY))
 
@@ -81,6 +93,7 @@ class World(val settings: NewGame, val roster: Roster = Roster.BASE, generate: B
         if (generate) {
             generateLand(this)
             generateCountry(this)
+            generateTowns(this)
         }
     }
 
@@ -140,7 +153,10 @@ class World(val settings: NewGame, val roster: Roster = Roster.BASE, generate: B
     fun step() {
         tick++
         moveTrains()
-        if (tick % Calendar.TICKS_PER_DAY == 0L) payRunningCosts()
+        if (tick % Calendar.TICKS_PER_DAY == 0L) {
+            payRunningCosts()
+            townsDay()
+        }
     }
 
     /**
@@ -158,6 +174,8 @@ class World(val settings: NewGame, val roster: Roster = Roster.BASE, generate: B
                 h = (h xor track[i].toLong()) * 0x100000001b3L
                 h = (h xor trees[i].toLong()) * 0x100000001b3L
                 h = (h xor owner[i].toLong()) * 0x100000001b3L
+                h = (h xor road[i].toLong()) * 0x100000001b3L
+                h = (h xor house[i].toLong()) * 0x100000001b3L
             }
             bands[y] = h
         }
@@ -172,6 +190,7 @@ class World(val settings: NewGame, val roster: Roster = Roster.BASE, generate: B
         for (x in 0..width) mix(heightAt(x, height).toLong())
         for (y in 0 until height) mix(heightAt(width, y).toLong())
         for (c in companies) mix(c.money)
+        for (t in towns) { mix(t.population.toLong()); mix(t.growIn.toLong()) }
         for (k in signals.keys.sorted()) mix(k.toLong() * 31 + signals.getValue(k))
         for (k in stationTiles.keys.sorted()) mix(k.toLong() * 31 + stationTiles.getValue(k))
         for (k in depotTiles.keys.sorted()) mix(k.toLong() * 31 + depotTiles.getValue(k))

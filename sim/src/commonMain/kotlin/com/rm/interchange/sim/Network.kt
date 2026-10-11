@@ -78,7 +78,7 @@ internal fun World.buildStation(company: Company, c: Command.Station) {
     for (y in ys) for (x in xs) {
         if (!inside(x, y) || isWater(x, y)) return
         val i = index(x, y)
-        if (stationTiles.containsKey(i) || depotTiles.containsKey(i)) return
+        if (stationTiles.containsKey(i) || depotTiles.containsKey(i) || townBuilt(i)) return
         val t = trackAt(x, y)
         if (t != 0 && (t != c.axis || owner[i].toInt() != company.id)) return
         if (signals.containsKey(pieceKey(i, c.axis))) return
@@ -122,7 +122,7 @@ internal fun World.buildStation(company: Company, c: Command.Station) {
 internal fun World.buildDepot(company: Company, c: Command.Depot) {
     if (!inside(c.x, c.y) || !isFlat(c.x, c.y) || isWater(c.x, c.y) || c.edge !in 0..3) return
     val i = index(c.x, c.y)
-    if (trackAt(c.x, c.y) != 0 || stationTiles.containsKey(i) || depotTiles.containsKey(i)) return
+    if (trackAt(c.x, c.y) != 0 || stationTiles.containsKey(i) || depotTiles.containsKey(i) || townBuilt(i)) return
     val piece = Track.straight(c.edge)
     if (!piecesFit(c.x, c.y, piece)) return
     if (company.money < Prices.DEPOT + treeCost(i)) return

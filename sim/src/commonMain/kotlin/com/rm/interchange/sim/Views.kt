@@ -54,6 +54,9 @@ class DepotView(val tile: Int, val edge: Int)
 /** A signal as the screen shows it: where, which way and whether it shows red. */
 class SignalView(val tile: Int, val piece: Int, val facing: Int, val red: Boolean)
 
+/** A town as the screen shows it: its name over the map at its middle, and how big it is. */
+class TownView(val id: Int, val name: String, val x: Int, val y: Int, val population: Int, val houses: Int)
+
 /** Everything the screen draws and lists that moves or changes as the game runs. */
 class WorldView(
     val vehicles: VehicleView,
@@ -61,6 +64,7 @@ class WorldView(
     val stations: List<StationView>,
     val signals: List<SignalView>,
     val depots: List<DepotView>,
+    val towns: List<TownView> = emptyList(),
 )
 
 fun World.view(): WorldView {
@@ -108,7 +112,12 @@ fun World.view(): WorldView {
         SignalView(tile, piece, Signals.facing(s), blockHasTrain(tile, piece))
     }
     val depotViews = depots.filterNotNull().map { DepotView(it.tile, it.edge) }
-    return WorldView(VehicleView(tick, cars.toFloatArray()), trainViews, stationViews, signalViews, depotViews)
+    // Towns change seldom, so their list is only made again when one has.
+    if (townsChanged) {
+        townViews = towns.map { TownView(it.id, it.name, it.x, it.y, it.population, it.houses) }
+        townsChanged = false
+    }
+    return WorldView(VehicleView(tick, cars.toFloatArray()), trainViews, stationViews, signalViews, depotViews, townViews)
 }
 
 /** The heading, in eighths from along x towards y, of a step of ([dx], [dy]). */

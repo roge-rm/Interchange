@@ -116,6 +116,12 @@ for d, kind in enumerate(ground.DECOR):
         JOBS.append(("static", ("decor_shadow", d, look), lambda kind=kind, look=look: scenery(f"decor_{kind}_{look}_shadow.png", base.cell), None))
 for red in (0, 1):
     JOBS.append(("signals", ("signal", red), lambda red=red: scenery(f"signal_{red}.png", lambda: track.signal(red == 1)), None))
+# Town buildings, in the order of the base pack's houses.json, each facing every view edge, with its shadow apart.
+HOUSES = [h["id"] for h in json.loads((ROOT / "packs/base/houses.json").read_text())["houses"]]
+for k, kind in enumerate(HOUSES):
+    for e, edge in enumerate(EDGES):
+        JOBS.append(("static", ("house", k, e), lambda kind=kind, edge=edge: scenery(f"house_{kind}_{edge}.png", base.cell), None))
+        JOBS.append(("static", ("house_shadow", k, e), lambda kind=kind, edge=edge: scenery(f"house_{kind}_{edge}_shadow.png", base.cell), None))
 # The engine house again, drawn over trains on its tile so they show going in through the doors.
 for e, edge in enumerate(EDGES):
     JOBS.append(("signals", ("depot_over", e), lambda edge=edge: scenery(f"depot_{edge}.png", lambda: track.depot(edge)), None))
@@ -341,6 +347,12 @@ object Atlas {{
     /** Boulders, shrubs and tall grass, at kind * DECOR_LOOKS + look, and their shadows. On the static sheet. */
     val DECOR = intArrayOf({arr(decor)})
     val DECOR_SHADOW = intArrayOf({arr(decor_shadows)})
+
+    /** The town buildings drawn here, by the id in the base pack's houses.json. */
+    val HOUSE_KEYS = listOf({", ".join(f'"{k}"' for k in HOUSES)})
+    /** A building, at its place in HOUSE_KEYS * 4 + the view edge it faces, and its shadow. On the static sheet. */
+    val HOUSE = intArrayOf({arr([index[("house", k, e)] for k in range(len(HOUSES)) for e in range(4)])})
+    val HOUSE_SHADOW = intArrayOf({arr([index[("house_shadow", k, e)] for k in range(len(HOUSES)) for e in range(4)])})
 
     /** A signal showing clear (0) or stop (1). On the signals sheet. */
     val SIGNAL = intArrayOf({index[("signal", 0)]}, {index[("signal", 1)]})

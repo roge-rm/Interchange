@@ -16,18 +16,20 @@ package com.rm.interchange.sim
  */
 object Save {
     private val MAGIC = "ICHG".encodeToByteArray()
-    const val VERSION = 2
+    const val VERSION = 3
 
     fun write(world: World): ByteArray {
         val w = ByteWriter(world.width * world.height * 6 + 4096)
         with(world) {
             val g = settings
             w.int(g.width); w.int(g.height); w.long(g.seed); w.int(g.startYear); w.int(g.region.ordinal)
-            w.int(g.sea); w.int(g.hills); w.int(g.trees)
+            w.int(g.sea); w.int(g.hills); w.int(g.trees); w.int(g.towns)
             w.uvar(roster.packs.size.toLong())
             for (p in roster.packs) { w.string(p.id); w.int(p.version); w.long(p.hash) }
             w.uvar(roster.engines.size.toLong())
             for (e in roster.engines) w.string(e.key)
+            w.uvar(roster.houses.size.toLong())
+            for (h in roster.houses) w.string(h.key)
             w.long(tick)
             w.long(rng.state)
             w.uvar(companies.size.toLong())
@@ -61,6 +63,9 @@ object Save {
                 if (r != null) w.ints(r)
                 w.int(t.routeAt); w.bool(t.turnRound); w.long(t.lostUntil)
             }
+            w.uvar(towns.size.toLong())
+            for (t in towns) { w.string(t.name); w.int(t.x); w.int(t.y); w.int(t.grid); w.int(t.population); w.int(t.houses); w.int(t.growIn) }
+            w.bytes(road); w.shorts(house); w.shorts(houseYear); w.shorts(townOf)
         }
         val body = Squeeze.pack(w.toByteArray())
         val out = ByteWriter(body.size + 16)
@@ -71,7 +76,7 @@ object Save {
     }
 
     /** The packs a save needs, as named in it, without reading the rest. */
-    fun packs(data: ByteArray): List<PackRef> = body(data).let { (version, r) -> readSettings(r); readPacks(version, r) }
+    fun packs(data: ByteArray): List<PackRef> = body(data).let { (version, r) -> readSettings(version, r); readPacks(version, r) }
 
     /**
      * Reads a world, finding the packs it needs with [find]: the pack with that
@@ -79,7 +84,7 @@ object Save {
      */
     fun read(data: ByteArray, find: (PackRef) -> Pack? = ::basePack): World {
         val (version, r) = body(data)
-        val settings = readSettings(r)
+        val settings = readSettings(version, r)
         val refs = readPacks(version, r)
         val found = refs.map { find(it) }
         val missing = refs.filterIndexed { i, _ -> found[i] == null }
@@ -94,6 +99,11 @@ object Save {
         val ids = roster.engines.associate { it.key to it.id }
         val remap = IntArray(keys.size) { ids[keys[it]] ?: throw BadData("${keys[it]} is no longer in its pack") }
         fun vehicle(n: Int) = remap.getOrNull(n) ?: throw BadData("a train of an unknown vehicle")
+        val houseIds = roster.houses.associate { it.key to it.id }
+        val houseRemap = if (version < 3) IntArray(0) else {
+            val keys = List(r.uvar().toInt().also { if (it > 4095) throw BadData("too many buildings") }) { r.string() }
+            IntArray(keys.size) { houseIds[keys[it]] ?: throw BadData("${keys[it]} is no longer in its pack") }
+        }
         val world = World(settings, roster, generate = false)
         with(world) {
             tick = r.long()
@@ -125,6 +135,23 @@ object Save {
                 t.routeAt = r.int(); t.turnRound = r.bool(); t.lostUntil = r.long()
                 trains += t
             }
+            if (version >= 3) {
+                repeat(r.uvar().toInt()) { id ->
+                    val t = Town(id, r.string(), r.int(), r.int(), r.int())
+                    t.population = r.int(); t.houses = r.int(); t.growIn = r.int()
+                    towns += t
+                }
+                fill(road, r.bytes())
+                val h = r.shorts()
+                if (h.size != house.size) throw BadData("a map layer is the wrong size")
+                for (k in h.indices) {
+                    val v = h[k].toInt()
+                    if (v == 0) continue
+                    val n = houseRemap.getOrNull(houseOf(v)) ?: throw BadData("a building of an unknown kind")
+                    house[k] = packHouse(n, houseFacing(v)).toShort()
+                }
+                fillShorts(houseYear, r.shorts()); fillShorts(townOf, r.shorts())
+            }
         }
         // Signal blocks and who's on which tile are worked out afresh before the next move.
         world.networkChangedKeepingRoutes()
@@ -139,11 +166,13 @@ object Save {
         return version to ByteReader(Squeeze.unpack(head.bytes()))
     }
 
-    private fun readSettings(r: ByteReader): NewGame {
+    private fun readSettings(version: Int, r: ByteReader): NewGame {
         val settings = NewGame(
             width = r.int(), height = r.int(), seed = r.long(), startYear = r.int(),
             region = Region.entries.getOrElse(r.int()) { Region.MIXED },
             sea = r.int(), hills = r.int(), trees = r.int(),
+            // Before version 3 there were no towns.
+            towns = if (version >= 3) r.int() else 0,
         )
         if (settings.width !in 16..4096 || settings.height !in 16..4096) throw BadData("map size out of range")
         return settings
@@ -156,6 +185,11 @@ object Save {
     }
 
     private fun basePack(ref: PackRef) = Packs.BASE.takeIf { it.id == ref.id && it.version >= ref.version }
+
+    private fun fillShorts(into: ShortArray, from: ShortArray) {
+        if (from.size != into.size) throw BadData("a map layer is the wrong size")
+        from.copyInto(into)
+    }
 
     private fun fill(into: ByteArray, from: ByteArray) {
         if (from.size != into.size) throw BadData("a map layer is the wrong size")

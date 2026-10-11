@@ -50,6 +50,9 @@ class ByteWriter(initial: Int = 1024) {
         for (v in a) int(v)
     }
 
+    /** Each short as two bytes, low first, as one block. */
+    fun shorts(a: ShortArray) = bytes(ByteArray(a.size * 2) { k -> (a[k / 2].toInt() shr (k % 2 * 8)).toByte() })
+
     fun toByteArray(): ByteArray = buf.copyOf(size)
 }
 
@@ -91,6 +94,11 @@ class ByteReader(private val buf: ByteArray, private var at: Int = 0) {
     }
 
     fun string(): String = bytes().decodeToString()
+
+    fun shorts(): ShortArray {
+        val b = bytes()
+        return ShortArray(b.size / 2) { k -> ((b[k * 2].toInt() and 0xff) or (b[k * 2 + 1].toInt() shl 8)).toShort() }
+    }
 
     fun ints(): IntArray {
         val n = uvar().toInt()

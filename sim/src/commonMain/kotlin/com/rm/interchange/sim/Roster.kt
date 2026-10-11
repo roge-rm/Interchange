@@ -42,11 +42,33 @@ class Engine(
     fun type(language: String) = types[language] ?: types["en"] ?: ""
 }
 
+/**
+ * A kind of town building, as the packs in a game make it: who lives and works
+ * in it, the years it's built in, how far into a town ([zones], [Zones] bits)
+ * and how big a town has to be first. [weight] is how often it's picked among
+ * those that fit.
+ */
+class House(
+    /** Its place in [Roster.houses], which the map and saves use. */
+    val id: Int,
+    val key: String,
+    val names: Map<String, String>,
+    val from: Int,
+    val until: Int,
+    val residents: Int,
+    val jobs: Int,
+    val zones: Int,
+    val minPopulation: Int,
+    val weight: Int,
+) {
+    fun name(language: String) = names[language] ?: names["en"] ?: key
+}
+
 /** A vehicle drawing: the sheet [name] in pack [pack]. */
 data class SpriteRef(val pack: String, val name: String)
 
 /** Everything that can run on the track in one game, from its packs in order, base first. */
-class Roster(val packs: List<PackRef>, val engines: List<Engine>, val sprites: List<SpriteRef>) {
+class Roster(val packs: List<PackRef>, val engines: List<Engine>, val sprites: List<SpriteRef>, val houses: List<House> = emptyList()) {
     operator fun get(id: Int) = engines[id]
     fun getOrNull(id: Int) = engines.getOrNull(id)
 
@@ -99,8 +121,11 @@ class Roster(val packs: List<PackRef>, val engines: List<Engine>, val sprites: L
                     sprite = spriteIds.getOrPut(sprite) { sprites += sprite; sprites.size - 1 }, tender = tender, enabled = s.enabled,
                 )
             }
+            val houses = packs.flatMap { p -> p.houses.map { p.id to it } }.mapIndexed { i, (pack, h) ->
+                House(i, "$pack:${h.id}", h.names, h.from, h.until, h.residents, h.jobs, h.zones, h.minPopulation, h.weight)
+            }
             if (problems.isNotEmpty()) throw BadPack(problems)
-            return Roster(packs.map { it.ref }, engines, sprites)
+            return Roster(packs.map { it.ref }, engines, sprites, houses)
         }
 
         /** [old] with whatever [v] gives in its place. */

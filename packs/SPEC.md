@@ -83,6 +83,10 @@ It stays the same vehicle in saved games. Its kind can't change. A pack that onl
 
 A saved game names each pack and its version, and loads with that version or a newer one. Vehicles are found again by their full name, so in a new version you can add vehicles anywhere and change any number, but don't remove a vehicle or change its id: games saved with it won't load.
 
+## Town buildings
+
+The base pack lists its town buildings in `houses.json`: who lives and works in each, the years it's built in, how far into a town it goes (`outskirts`, `suburbs`, `inner`, `centre`) and how big a town has to be first. Packs can't add town buildings yet; that comes with a later format, along with their sprites.
+
 ## Sprite sheets
 
 One PNG for each drawing, 1024 by 1024 pixels: four rows of four cells, each cell 256 pixels square. Cells go left to right, top to bottom:

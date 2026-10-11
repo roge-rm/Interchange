@@ -163,7 +163,7 @@ class PackTest {
 
     /** A line with a depot and two stations, as in the train tests, on [roster]. */
     private fun line(roster: Roster): World {
-        val w = World(NewGame(64, 64, 1, startYear = 1880), roster)
+        val w = World(NewGame(64, 64, 1, startYear = 1880, towns = 0), roster)
         for (i in w.corners.indices) w.corners[i] = 3
         w.companies[0].money = 10_000_000
         w.apply(Command.Depot(0, 2, 10, Track.XP))
