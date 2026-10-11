@@ -48,6 +48,8 @@ class TrainView(
     val capacity: IntArray = IntArray(Cargo.COUNT),
     val profitThisYear: Long = 0,
     val profitLastYear: Long = 0,
+    /** The group of trains it shares its orders with, or -1. */
+    val shared: Int = -1,
 )
 
 /** A station as the screen shows it. */
@@ -136,7 +138,7 @@ fun World.view(): WorldView {
         TrainView(
             t.id, t.name, t.engine, t.wagon, t.wagons, t.depot, t.inDepot, t.running, t.toDepot,
             t.orders.toIntArray(), t.order, t.speed / 16 * 2700 / 4096, t.waiting > 0, t.running && !t.inDepot && t.lostUntil > tick,
-            IntArray(Cargo.COUNT) { t.load(it) }, IntArray(Cargo.COUNT) { t.capacity(it) }, t.profitThisYear, t.profitLastYear,
+            IntArray(Cargo.COUNT) { t.load(it) }, IntArray(Cargo.COUNT) { t.capacity(it) }, t.profitThisYear, t.profitLastYear, t.shared,
         )
     }
     val stationViews = stations.filterNotNull().map { s ->

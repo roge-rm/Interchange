@@ -68,6 +68,10 @@ class IndustryDef(
     val layout: List<List<String>>,
     val produces: Map<String, Int>,
     val accepts: List<String>,
+    /** How much it makes each month, January first, in percent of its usual. */
+    val seasons: List<Int>,
+    /** It stands on the shore, the first row of its layout facing the water. */
+    val water: Boolean,
 )
 
 /** How far into a town a building stands, as bits, from the outskirts in to the centre. */
@@ -273,6 +277,7 @@ object Packs {
                 industries += IndustryDef(
                     iid, f.words("name", need = true) ?: emptyMap(), f.int("from", 1700, 2300, need = true) ?: 0, f.int("until", 1700, 2300, need = true) ?: 0,
                     regions, f.strings("ground") ?: emptyList(), layout, produces, accepts,
+                    f.seasons(), f.bool("water") ?: false,
                 )
                 f.done()
             }
@@ -294,7 +299,26 @@ object Packs {
 
     /** Reads typed fields out of a JSON object, noting each problem, and any field left over as unknown. */
     private class Fields(var where: String, val map: Map<*, *>, val problems: MutableList<String>) {
+        /** An industry's months, twelve percentages, or all a hundred if it doesn't say. */
+        fun seasons(): List<Int> {
+            val v = intList("seasons") ?: return List(12) { 100 }
+            if (v.size != 12) { problems += "$where: \"seasons\" needs twelve months"; return List(12) { 100 } }
+            return v
+        }
+
+        fun intList(k: String): List<Int>? {
+            val v = get(k, false) ?: return null
+            val list = v as? List<*>
+            if (list == null || list.any { it !is Long }) { problems += "$where: \"$k\" should be a list of whole numbers"; return null }
+            return list.map { (it as Long).toInt() }
+        }
+
         private val used = HashSet<String>()
+
+        fun bool(k: String): Boolean? {
+            val v = get(k, false) ?: return null
+            return v as? Boolean ?: run { problems += "$where: \"$k\" should be true or false"; null }
+        }
 
         /** Marks [k] as read by hand, so it isn't reported unknown. */
         fun used(k: String) {

@@ -168,4 +168,97 @@ class IndustryTest {
         assertTrue(w.stations[2]!!.waiting(Cargo.COAL) > 0, "nothing set down")
         assertTrue(w.trains[0]!!.profitThisYear > -1_000_000)
     }
+
+    @Test
+    fun portsAndHarboursStandOnTheShoreFacingTheWater() {
+        val w = World(NewGame(width = 256, height = 256, seed = 4, startYear = 1900, region = Region.MARITIMES))
+        val coastal = w.industries.filter { w.roster.industries[it.kind].water }
+        assertTrue(coastal.isNotEmpty(), "no ports or harbours")
+        for (ind in coastal) {
+            val kind = w.roster.industries[ind.kind]
+            // Water just beyond the side its first row faces.
+            val tiles = (ind.y until ind.y + kind.along(ind.turn)).flatMap { ty -> (ind.x until ind.x + kind.across(ind.turn)).map { tx -> tx to ty } }
+            val wet = tiles.count { (tx, ty) -> listOf(tx - 1 to ty, tx + 1 to ty, tx to ty - 1, tx to ty + 1).any { (nx, ny) -> w.inside(nx, ny) && w.isWater(nx, ny) } }
+            assertTrue(wet > 0, "${kind.key} at ${ind.x},${ind.y} isn't by the water")
+        }
+    }
+
+    @Test
+    fun farmsMakeMostAtHarvest() {
+        val kind = Roster.BASE.industries.first { it.key == "base:farm" }
+        assertTrue(kind.seasons[8] > kind.seasons[0] * 4)
+        assertEquals(1200, kind.seasons.sum())
+    }
+
+    @Test
+    fun aGoViaOrderRunsThroughWithoutStopping() {
+        val w = chain()
+        w.apply(Command.Station(0, 44, 10, 46, 10, Track.X))
+        w.apply(Command.BuyTrain(0, 0, 4, 18, 2))
+        w.apply(Command.TrainOrder(0, 0, Command.TrainOrder.ORDERS, intArrayOf(0, 2 or Order.VIA, 1)))
+        w.apply(Command.TrainOrder(0, 0, Command.TrainOrder.START_STOP))
+        val t = w.trains[0]!!
+        var stoppedAtVia = false
+        var reachedMill = false
+        repeat(Calendar.TICKS_PER_DAY * 60) {
+            w.step()
+            val here = w.stationTiles[stepTile(t.steps.lastOrNull() ?: 0)]
+            if (t.waiting > 0 && here == 2) stoppedAtVia = true
+            if (t.waiting > 0 && here == 1) reachedMill = true
+        }
+        assertTrue(!stoppedAtVia, "stopped at the via station")
+        assertTrue(reachedMill)
+    }
+
+    @Test
+    fun sharedOrdersChangeTogether() {
+        val w = chain()
+        w.apply(Command.BuyTrain(0, 0, 4, 18, 2))
+        w.apply(Command.BuyTrain(0, 0, 4, 18, 2))
+        w.apply(Command.TrainOrder(0, 0, Command.TrainOrder.ORDERS, intArrayOf(0, 1)))
+        w.apply(Command.TrainOrder(0, 1, Command.TrainOrder.SHARE, intArrayOf(0)))
+        assertEquals(listOf(0, 1), w.trains[1]!!.orders.toList())
+        w.apply(Command.TrainOrder(0, 0, Command.TrainOrder.ORDERS, intArrayOf(1, 0 or Order.FULL_LOAD)))
+        assertEquals(w.trains[0]!!.orders.toList(), w.trains[1]!!.orders.toList())
+        w.apply(Command.TrainOrder(0, 1, Command.TrainOrder.UNSHARE))
+        w.apply(Command.TrainOrder(0, 0, Command.TrainOrder.ORDERS, intArrayOf(0)))
+        assertEquals(2, w.trains[1]!!.orders.size)
+        assertEquals(-1, Save.read(Save.write(w)).trains[1]!!.shared)
+    }
+
+    @Test
+    fun aStopWithNothingToDoIsSkipped() {
+        val w = chain()
+        // A station in the middle with nothing round it, set to be skipped when there's nothing there.
+        w.apply(Command.Station(0, 44, 10, 46, 10, Track.X))
+        w.apply(Command.BuyTrain(0, 0, 4, 18, 2))
+        w.apply(Command.TrainOrder(0, 0, Command.TrainOrder.ORDERS, intArrayOf(0, 2 or Order.SKIP_IF_NOTHING, 1)))
+        w.apply(Command.TrainOrder(0, 0, Command.TrainOrder.START_STOP))
+        val t = w.trains[0]!!
+        var called = false
+        repeat(Calendar.TICKS_PER_DAY * 60) {
+            w.step()
+            if (t.waiting > 0 && w.stationTiles[stepTile(t.steps.lastOrNull() ?: 0)] == 2) called = true
+        }
+        assertTrue(!called, "called where there was nothing to do")
+    }
+
+    @Test
+    fun fundingBuildsAMillAndProspectsForAMine() {
+        val w = World(NewGame(width = 256, height = 256, seed = 3, startYear = 1900))
+        w.companies[0].money = 10_000_000
+        val mill = w.roster.industries.first { it.key == "base:sawmill" }
+        val before = w.industries.size
+        w.apply(Command.FundIndustry(0, mill.id))
+        assertEquals(before + 1, w.industries.size)
+        assertEquals(mill.id, w.industries.last().kind)
+        // Prospecting: some found, some not, money spent each time.
+        val mine = w.roster.industries.first { it.key == "base:coal_mine" }
+        val money = w.companies[0].money
+        repeat(9) { w.apply(Command.FundIndustry(0, mine.id)) }
+        val found = w.industries.size - before - 1
+        assertTrue(found in 3..9, "$found found")
+        assertTrue(w.companies[0].money < money - 8 * w.price(fundCost(mine)))
+        assertEquals(Command.FundIndustry(0, 3), Codec.decode(Codec.encode(Command.FundIndustry(0, 3))))
+    }
 }

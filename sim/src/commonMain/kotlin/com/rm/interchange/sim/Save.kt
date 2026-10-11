@@ -16,7 +16,7 @@ package com.rm.interchange.sim
  */
 object Save {
     private val MAGIC = "ICHG".encodeToByteArray()
-    const val VERSION = 8
+    const val VERSION = 9
 
     fun write(world: World): ByteArray {
         val w = ByteWriter(world.width * world.height * 6 + 4096)
@@ -73,6 +73,7 @@ object Save {
                 if (r != null) w.ints(r)
                 w.int(t.routeAt); w.bool(t.turnRound); w.long(t.lostUntil)
                 writeCargo(w, t.cargo); w.long(t.profitThisYear); w.long(t.profitLastYear)
+                w.int(t.shared)
             }
             w.uvar(towns.size.toLong())
             for (t in towns) { w.string(t.name); w.int(t.x); w.int(t.y); w.int(t.grid); w.bool(t.french); w.int(t.population); w.int(t.houses); w.int(t.growIn); w.int(t.servedThisMonth); w.int(t.servedLastMonth); w.ints(t.approval) }
@@ -183,6 +184,7 @@ object Save {
                 if (version >= 5) {
                     readCargo(r, t.cargo, version)
                     t.profitThisYear = r.long(); t.profitLastYear = r.long()
+                    if (version >= 9) t.shared = r.int()
                 } else if (version == 4) {
                     val load = r.ints()
                     val at = r.ints()

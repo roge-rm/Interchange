@@ -212,7 +212,7 @@
 
     <!-- Industries et marchandises -->
     <string-array name="cargoes">
-        <item>Voyageurs</item><item>Courrier</item><item>Bois rond</item><item>Bois d'œuvre</item><item>Grain</item><item>Charbon</item><item>Minerai de fer</item><item>Acier</item><item>Marchandises</item><item>Pétrole</item><item>Carburant</item><item>Bétail</item><item>Aliments</item>
+        <item>Voyageurs</item><item>Courrier</item><item>Bois rond</item><item>Bois d'œuvre</item><item>Grain</item><item>Charbon</item><item>Minerai de fer</item><item>Acier</item><item>Marchandises</item><item>Pétrole</item><item>Carburant</item><item>Bétail</item><item>Aliments</item><item>Poisson</item><item>Papier</item><item>Potasse</item><item>Minerai de nickel</item><item>Nickel</item><item>Bauxite</item><item>Aluminium</item>
     </string-array>
     <string name="cargo_waiting">%1$s en attente : %2$d, note %3$d&#160;%</string>
     <string name="cargo_load">%1$s %2$d/%3$d</string>
@@ -255,4 +255,15 @@
     <string name="book_total">Bénéfice</string>
     <string name="money_graph">Argent, deux dernières années</string>
     <string name="inflation">Inflation</string>
+
+    <!-- Autres ordres, et financer des industries -->
+    <string name="go_via">Passer par</string>
+    <string name="skip_if_nothing">Sauter si rien à faire</string>
+    <string name="share_orders">Partager les ordres avec</string>
+    <string name="orders_shared">Ordres partagés avec d'autres trains</string>
+    <string name="stop_sharing">Ne plus partager</string>
+    <string name="fund_industry">Financer une industrie</string>
+    <string name="build_for">Construire pour %1$s</string>
+    <string name="prospect_for">Prospecter pour %1$s</string>
+    <string name="news_prospect_failed">Prospection infructueuse : %1$s</string>
 </resources>

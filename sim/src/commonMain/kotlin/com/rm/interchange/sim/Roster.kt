@@ -85,11 +85,18 @@ class IndustryKind(
     val accepts: Int,
     /** The cargo it makes, as bits by cargo number, whether a month's worth of its own or from what it's brought. */
     val outputs: Int,
+    /** Percent of its usual it makes each month, January first. */
+    val seasons: IntArray = IntArray(12) { 100 },
+    /** It stands on the shore, its layout's first row facing the water. */
+    val water: Boolean = false,
 ) {
+    /** The cargo it makes from what's brought, as bits: what it makes but has no monthly amount of its own for. */
+    val converts: Int = (0 until Cargo.COUNT).fold(0) { m, c -> if (outputs and (1 shl c) != 0 && produces[c] == 0) m or (1 shl c) else m }
     fun name(language: String) = names[language] ?: names["en"] ?: key
     val width get() = layout[0].size
     val height get() = layout.size
-    val secondary get() = accepts != 0
+    /** Makes its cargo from what's brought rather than of its own. */
+    val secondary get() = converts != 0
     fun takes(c: Int) = accepts and (1 shl c) != 0
     /** How often it's placed in [region], by weight; 2 where it doesn't say. */
     fun weight(region: Region) = regions[region.name.lowercase()] ?: 2
@@ -167,6 +174,7 @@ class Roster(
                     IntArray(Cargo.COUNT) { c -> d.produces[Cargo.IDS[c]] ?: 0 },
                     d.accepts.fold(0) { m, cg -> Cargo.of(cg).let { if (it >= 0) m or (1 shl it) else m } },
                     d.produces.keys.fold(0) { m, cg -> Cargo.of(cg).let { if (it >= 0) m or (1 shl it) else m } },
+                    d.seasons.toIntArray(), d.water,
                 )
             }
             if (problems.isNotEmpty()) throw BadPack(problems)

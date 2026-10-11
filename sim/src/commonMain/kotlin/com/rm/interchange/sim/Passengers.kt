@@ -219,7 +219,9 @@ internal fun World.passengersDay() {
             if (n <= 0) continue
             // Where it can go: stations that take it, people for passengers and mail weighed by how many, freight
             // by nearness alone.
-            val reach = reachable.filter { accepts(stations[it]!!, cg) }
+            // Never to another industry of a kind that made it here, so grain doesn't go round from elevator to elevator.
+            val makers = stationIndustries[sid].orEmpty().map { industries[it] }.filter { roster.industries[it.kind].outputs and (1 shl cg) != 0 }.map { it.kind }.toSet()
+            val reach = reachable.filter { d -> accepts(stations[d]!!, cg) && takerAt(stations[d]!!, cg)?.kind?.let { it in makers } != true }
             val people = cg == Cargo.PASSENGERS || cg == Cargo.MAIL
             val weights = IntArray(reach.size) { i ->
                 (if (people) (stationPeople[reach[i]] ?: 0) + 20 else 64) * 256 / (stationDistance(sid, reach[i]) + 8)

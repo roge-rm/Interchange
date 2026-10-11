@@ -87,6 +87,9 @@ class Train(
     /** What car [e] carries in this train: the wagons what they're set to, anything else its first. */
     fun carCargo(e: Engine): Int = if (e.id == wagon && wagonCargo in e.cargoes) wagonCargo else e.cargoes.firstOrNull() ?: -1
 
+    /** The trains sharing their orders with this one have the same group, the first train's id; -1 for none. */
+    var shared = -1
+
     /** The stations it calls at in turn, and what to do at each, packed by [Order]. */
     val orders = ArrayList<Int>()
     var order = 0
@@ -165,11 +168,26 @@ internal fun World.trainCommand(company: Company, c: Command.TrainOrder) {
             } else t.running = !t.running
         }
         Command.TrainOrder.ORDERS -> {
+            // Every train sharing its orders gets the same.
+            val group = trains.filter { it != null && t.shared >= 0 && it.shared == t.shared }.ifEmpty { listOf(t) }
+            for (g in group) {
+                g!!.orders.clear()
+                for (o in c.stations) if (stations.getOrNull(Order.station(o))?.owner == company.id) g.orders += o
+                g.order = 0
+                g.route = null
+            }
+        }
+        Command.TrainOrder.SHARE -> {
+            val other = trains.getOrNull(c.stations.firstOrNull() ?: -1) ?: return
+            if (other.owner != company.id || other.id == t.id) return
+            if (other.shared < 0) other.shared = other.id
+            t.shared = other.shared
             t.orders.clear()
-            for (o in c.stations) if (stations.getOrNull(Order.station(o))?.owner == company.id) t.orders += o
+            t.orders += other.orders
             t.order = 0
             t.route = null
         }
+        Command.TrainOrder.UNSHARE -> t.shared = -1
         Command.TrainOrder.TO_DEPOT -> {
             if (!t.inDepot) {
                 t.toDepot = !t.toDepot
@@ -239,7 +257,7 @@ private fun World.moveTrain(t: Train) {
                     return
                 }
             }
-            t.order = (t.order + 1) % t.orders.size.coerceAtLeast(1)
+            nextOrder(t)
             t.route = null
         }
         return
@@ -256,6 +274,12 @@ private fun World.moveTrain(t: Train) {
             advance(t, t.speed / 16, freeAhead(t).first)
         } else turnRound(t)
         return
+    }
+    // Going via a station: once the nose is in it, on to the next order without stopping.
+    val o = t.orders.getOrNull(t.order % t.orders.size.coerceAtLeast(1)) ?: 0
+    if (Order.has(o, Order.VIA) && stationTiles[stepTile(t.steps.last())] == Order.station(o)) {
+        nextOrder(t)
+        t.route = null
     }
     val (free, stop) = freeAhead(t)
     val allowed = isqrt(2L * BRAKE * 16 * free).toInt()
@@ -293,7 +317,7 @@ private fun World.freeAhead(t: Train): Pair<Int, Stop> {
     val target = t.target
     while (free < reach) {
         val tile = stepTile(cur)
-        if (target >= 0 && stationTiles[tile] == target) {
+        if (target >= 0 && stationTiles[tile] == target && !Order.has(t.orders.getOrNull(t.order % t.orders.size.coerceAtLeast(1)) ?: 0, Order.VIA)) {
             val nx = nextFrom(t, cur, at)
             if (nx < 0 || stationTiles[stepTile(nx)] != target) return free to Stop.STATION
         }
@@ -439,6 +463,27 @@ internal fun isqrt(n: Long): Long {
     while (x * x > n) x--
     while ((x + 1) * (x + 1) <= n) x++
     return x
+}
+
+/** On to the train's next order, leaving out those to skip when there's nothing to do there. */
+internal fun World.nextOrder(t: Train) {
+    val n = t.orders.size
+    if (n == 0) return
+    repeat(n) {
+        t.order = (t.order + 1) % n
+        val o = t.orders[t.order]
+        if (!Order.has(o, Order.SKIP_IF_NOTHING) || somethingAt(t, Order.station(o))) return
+    }
+}
+
+/** Whether train [t] has something to set down at station [id], or something waiting there it could carry. */
+private fun World.somethingAt(t: Train, id: Int): Boolean {
+    val s = stations.getOrNull(id) ?: return false
+    for (c in 0 until Cargo.COUNT) {
+        if (t.cargo[c].any { it.dest == id || (it.dest == -1 && it.origin != id && accepts(s, c)) }) return true
+        if (t.capacity(c) > 0 && s.waiting(c) > 0) return true
+    }
+    return false
 }
 
 /** How often a train waiting to fill up looks for more cargo, in ticks. */

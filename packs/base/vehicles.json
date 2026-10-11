@@ -315,11 +315,7 @@
       "cost": 1800,
       "running": 220,
       "length": 9,
-      "carries": [
-        "goods",
-        "grain",
-        "lumber"
-      ],
+      "carries": ["goods", "grain", "lumber", "paper", "aluminium"],
       "capacity": 20
     },
     {
@@ -334,11 +330,7 @@
       "cost": 5000,
       "running": 400,
       "length": 10,
-      "carries": [
-        "goods",
-        "grain",
-        "lumber"
-      ],
+      "carries": ["goods", "grain", "lumber", "paper", "aluminium"],
       "capacity": 40
     },
     {
@@ -353,11 +345,7 @@
       "cost": 1400,
       "running": 180,
       "length": 9,
-      "carries": [
-        "timber",
-        "lumber",
-        "steel"
-      ],
+      "carries": ["timber", "lumber", "steel", "aluminium"],
       "capacity": 20
     },
     {
@@ -372,11 +360,7 @@
       "cost": 1900,
       "running": 220,
       "length": 9,
-      "carries": [
-        "steel",
-        "coal",
-        "iron_ore"
-      ],
+      "carries": ["steel", "coal", "iron_ore", "nickel_ore"],
       "capacity": 30
     },
     {
@@ -391,10 +375,7 @@
       "cost": 2400,
       "running": 240,
       "length": 8,
-      "carries": [
-        "coal",
-        "iron_ore"
-      ],
+      "carries": ["coal", "iron_ore", "nickel_ore", "bauxite"],
       "capacity": 50
     },
     {
@@ -409,10 +390,7 @@
       "cost": 2600,
       "running": 260,
       "length": 8,
-      "carries": [
-        "oil",
-        "fuel"
-      ],
+      "carries": ["oil", "fuel"],
       "capacity": 40
     },
     {
@@ -455,9 +433,7 @@
       "cost": 3200,
       "running": 320,
       "length": 9,
-      "carries": [
-        "food"
-      ],
+      "carries": ["food", "fish"],
       "capacity": 20
     },
     {
@@ -472,9 +448,7 @@
       "cost": 2800,
       "running": 260,
       "length": 6,
-      "carries": [
-        "iron_ore"
-      ],
+      "carries": ["iron_ore", "nickel_ore"],
       "capacity": 60
     },
     {
@@ -489,9 +463,7 @@
       "cost": 9000,
       "running": 520,
       "length": 11,
-      "carries": [
-        "grain"
-      ],
+      "carries": ["grain", "potash"],
       "capacity": 90
     }
   ]

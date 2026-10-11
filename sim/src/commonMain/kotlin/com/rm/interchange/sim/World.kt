@@ -166,6 +166,7 @@ class World(val settings: NewGame, val roster: Roster = Roster.BASE, generate: B
             is Command.BuyTrain -> buyTrain(company, command)
             is Command.TrainOrder -> trainCommand(company, command)
             is Command.Loan -> loanCommand(company, command)
+            is Command.FundIndustry -> fundIndustry(company, command)
         }
     }
 

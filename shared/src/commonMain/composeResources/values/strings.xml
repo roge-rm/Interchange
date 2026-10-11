@@ -229,7 +229,7 @@
 
     <!-- Industries and freight -->
     <string-array name="cargoes">
-        <item>Passengers</item><item>Mail</item><item>Timber</item><item>Lumber</item><item>Grain</item><item>Coal</item><item>Iron ore</item><item>Steel</item><item>Goods</item><item>Oil</item><item>Fuel</item><item>Livestock</item><item>Food</item>
+        <item>Passengers</item><item>Mail</item><item>Timber</item><item>Lumber</item><item>Grain</item><item>Coal</item><item>Iron ore</item><item>Steel</item><item>Goods</item><item>Oil</item><item>Fuel</item><item>Livestock</item><item>Food</item><item>Fish</item><item>Paper</item><item>Potash</item><item>Nickel ore</item><item>Nickel</item><item>Bauxite</item><item>Aluminium</item>
     </string-array>
     <string name="cargo_waiting">%1$s waiting: %2$d, rating %3$d%</string>
     <string name="cargo_load">%1$s %2$d/%3$d</string>
@@ -272,4 +272,15 @@
     <string name="book_total">Profit</string>
     <string name="money_graph">Money, last two years</string>
     <string name="inflation">Inflation</string>
+
+    <!-- More orders, and funding industries -->
+    <string name="go_via">Go via</string>
+    <string name="skip_if_nothing">Skip if nothing to do</string>
+    <string name="share_orders">Share orders with</string>
+    <string name="orders_shared">Orders shared with other trains</string>
+    <string name="stop_sharing">Stop sharing</string>
+    <string name="fund_industry">Fund a new industry</string>
+    <string name="build_for">Build for %1$s</string>
+    <string name="prospect_for">Prospect for %1$s</string>
+    <string name="news_prospect_failed">Prospecting found no %1$s</string>
 </resources>

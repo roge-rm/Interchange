@@ -253,7 +253,7 @@ private fun Root(settings: Settings) {
             )
             Win.Overlays -> OverlaysWindow(settings) { window = null }
             Win.Finances -> runner?.let { r -> FinanceWindow(r) { window = null } }
-            Win.Industries -> runner?.game?.world?.let { w -> IndustriesWindow(w, { x, y -> goTo.value = x to y; window = null }) { window = null } }
+            Win.Industries -> runner?.game?.world?.let { w -> IndustriesWindow(w, { x, y -> goTo.value = x to y; window = null }, { runner?.request(it) }) { window = null } }
             null -> {}
         }
     }
@@ -464,7 +464,7 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
 
         // Under the strip, the latest news; a tap goes to where it happened.
         worldView.value?.news?.lastOrNull()?.let { n ->
-            val ind = world.industries.getOrNull(n.about)
+            val ind = if (n.kind == News.PROSPECTING_FAILED) null else world.industries.getOrNull(n.about)
             val text = newsText(world, n)
             Box(
                 Modifier.align(Alignment.TopCenter)
@@ -636,6 +636,7 @@ private fun IndustryCard(world: World, ind: Industry, where: String, onClose: ()
 /** What a piece of news says. */
 @Composable
 private fun newsText(world: World, n: News): String {
+    if (n.kind == News.PROSPECTING_FAILED) return stringResource(Res.string.news_prospect_failed, world.roster.industries.getOrNull(n.about)?.name(languageCode()) ?: "")
     val ind = world.industries.getOrNull(n.about) ?: return ""
     val name = industryName(world, ind, languageCode())
     return stringResource(

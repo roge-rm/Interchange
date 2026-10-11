@@ -61,6 +61,7 @@ import com.rm.interchange.sim.Packs
 import com.rm.interchange.sim.Region
 import com.rm.interchange.sim.Roster
 import com.rm.interchange.sim.World
+import com.rm.interchange.sim.price
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
@@ -500,10 +501,24 @@ private fun MoneyGraph(history: List<LongArray>, modifier: Modifier) {
 
 /** Every industry open on the map, by kind then name, with what it made last month; a tap goes to it. */
 @Composable
-fun IndustriesWindow(world: World, onGo: (Float, Float) -> Unit, onClose: () -> Unit) {
+fun IndustriesWindow(world: World, onGo: (Float, Float) -> Unit, send: (com.rm.interchange.sim.Command) -> Unit, onClose: () -> Unit) {
     val lang = languageCode()
     val names = stringArrayResource(Res.array.cargoes)
+    var funding by remember { mutableStateOf(false) }
     Window(stringResource(Res.string.industries), onClose, Glyph.Layers) {
+        BigButton(stringResource(Res.string.fund_industry), primary = !funding, glyph = Glyph.Plus) { funding = !funding }
+        if (funding) {
+            // What can be built this year, and what it costs now.
+            val year = com.rm.interchange.sim.Calendar.year(world.startYear, world.day)
+            for (kind in world.roster.industries.filter { year >= it.from && year < it.until }) {
+                val prospect = kind.produces.any { it > 0 } && kind.accepts == 0
+                ListRow(Glyph.Plus, kind.name(lang), stringResource(if (prospect) Res.string.prospect_for else Res.string.build_for, money(world.price(com.rm.interchange.sim.fundCost(kind)))), {
+                    send(com.rm.interchange.sim.Command.FundIndustry(0, kind.id))
+                    onClose()
+                })
+            }
+            return@Window
+        }
         val open = world.industries.filter { !it.closed }.sortedWith(compareBy({ it.kind }, { industryName(world, it, lang) }))
         for (ind in open) {
             val kind = world.roster.industries[ind.kind]

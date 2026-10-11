@@ -7,6 +7,7 @@
       "until": 2050,
       "regions": { "shield": 5, "rockies": 4, "maritimes": 4, "mixed": 3, "north": 2, "prairies": 1 },
       "ground": ["forest"],
+      "seasons": [150, 150, 130, 70, 50, 60, 70, 70, 80, 100, 120, 150],
       "layout": ["bunkhouse log_pile", "camp_shed log_pile"],
       "produces": { "timber": 90 }
     },
@@ -27,6 +28,7 @@
       "until": 2050,
       "regions": { "prairies": 6, "mixed": 4, "maritimes": 2, "shield": 1, "rockies": 1 },
       "ground": ["prairie", "meadow"],
+      "seasons": [30, 30, 30, 40, 60, 80, 110, 220, 240, 200, 90, 70],
       "layout": ["barn silo wheat_field", "wheat_field wheat_field wheat_field", "wheat_field wheat_field wheat_field"],
       "produces": { "grain": 80 }
     },
@@ -75,7 +77,7 @@
       "until": 2050,
       "regions": { "mixed": 4, "maritimes": 2, "shield": 2, "prairies": 2, "rockies": 1, "north": 0 },
       "layout": ["factory_shed factory_shed factory_chimney", "loading_dock factory_shed factory_yard"],
-      "accepts": ["steel", "lumber"],
+      "accepts": ["steel", "lumber", "nickel", "aluminium"],
       "produces": { "goods": 0 }
     },
     {
@@ -104,6 +106,7 @@
       "until": 2050,
       "regions": { "prairies": 5, "rockies": 3, "mixed": 2, "north": 0, "maritimes": 1, "shield": 0 },
       "ground": ["prairie", "meadow"],
+      "seasons": [70, 70, 80, 90, 100, 100, 100, 110, 150, 160, 90, 80],
       "layout": ["ranch_barn corral corral", "corral corral corral"],
       "produces": { "livestock": 50 }
     },
@@ -116,6 +119,116 @@
       "layout": ["packing_plant packing_plant", "stockyard stockyard"],
       "accepts": ["livestock"],
       "produces": { "food": 0 }
+    },
+    {
+      "id": "pulp_mill",
+      "name": { "en": "Pulp and Paper Mill", "fr": "Usine de pâtes et papiers" },
+      "from": 1866,
+      "until": 2050,
+      "regions": { "shield": 4, "maritimes": 3, "rockies": 2, "mixed": 2, "north": 1, "prairies": 0 },
+      "layout": ["digester paper_machine chip_pile", "paper_machine paper_machine log_pile"],
+      "accepts": ["timber"],
+      "produces": { "paper": 0 }
+    },
+    {
+      "id": "printing_works",
+      "name": { "en": "Printing Works", "fr": "Imprimerie" },
+      "from": 1850,
+      "until": 2050,
+      "regions": { "mixed": 4, "maritimes": 2, "shield": 2, "prairies": 2, "rockies": 1, "north": 0 },
+      "layout": ["printing_works printing_works"],
+      "accepts": ["paper"],
+      "produces": { "goods": 0 }
+    },
+    {
+      "id": "grain_elevator",
+      "name": { "en": "Grain Elevator", "fr": "Silo-élévateur" },
+      "from": 1881,
+      "until": 2050,
+      "regions": { "prairies": 6, "mixed": 2, "maritimes": 0, "shield": 0, "rockies": 0, "north": 0 },
+      "layout": ["elevator elevator_annex"],
+      "accepts": ["grain"],
+      "produces": { "grain": 0 }
+    },
+    {
+      "id": "port",
+      "name": { "en": "Port", "fr": "Port" },
+      "from": 1836,
+      "until": 2050,
+      "regions": { "maritimes": 5, "mixed": 3, "shield": 2, "rockies": 2, "north": 1, "prairies": 1 },
+      "water": true,
+      "layout": ["wharf wharf crane", "terminal_elevator warehouse warehouse"],
+      "accepts": ["grain", "lumber", "potash", "coal", "fish", "paper"],
+      "produces": { "goods": 40, "bauxite": 30 }
+    },
+    {
+      "id": "fishing_harbour",
+      "name": { "en": "Fishing Harbour", "fr": "Port de pêche" },
+      "from": 1836,
+      "until": 2050,
+      "regions": { "maritimes": 6, "north": 2, "mixed": 2, "rockies": 1, "shield": 1, "prairies": 0 },
+      "water": true,
+      "seasons": [30, 30, 50, 90, 140, 160, 170, 160, 140, 100, 70, 60],
+      "layout": ["fish_wharf fish_wharf", "fish_shed boat_shed"],
+      "produces": { "fish": 60 }
+    },
+    {
+      "id": "cannery",
+      "name": { "en": "Cannery", "fr": "Conserverie" },
+      "from": 1840,
+      "until": 2050,
+      "regions": { "maritimes": 4, "mixed": 2, "rockies": 1, "north": 1, "shield": 1, "prairies": 0 },
+      "layout": ["cannery cannery"],
+      "accepts": ["fish"],
+      "produces": { "food": 0 }
+    },
+    {
+      "id": "potash_mine",
+      "name": { "en": "Potash Mine", "fr": "Mine de potasse" },
+      "from": 1962,
+      "until": 2050,
+      "regions": { "prairies": 6, "mixed": 1, "maritimes": 0, "shield": 0, "rockies": 0, "north": 0 },
+      "layout": ["headframe potash_mill", "tailings tailings"],
+      "produces": { "potash": 110 }
+    },
+    {
+      "id": "nickel_mine",
+      "name": { "en": "Nickel Mine", "fr": "Mine de nickel" },
+      "from": 1886,
+      "until": 2050,
+      "regions": { "shield": 6, "north": 3, "mixed": 1, "maritimes": 0, "rockies": 0, "prairies": 0 },
+      "layout": ["headframe rock_dump", "mine_shed nickel_heap"],
+      "produces": { "nickel_ore": 90 }
+    },
+    {
+      "id": "smelter",
+      "name": { "en": "Nickel Smelter", "fr": "Fonderie de nickel" },
+      "from": 1888,
+      "until": 2050,
+      "regions": { "shield": 4, "north": 2, "mixed": 1, "maritimes": 0, "rockies": 0, "prairies": 0 },
+      "layout": ["superstack roaster", "slag_heap smelter_shed"],
+      "accepts": ["nickel_ore"],
+      "produces": { "nickel": 0 }
+    },
+    {
+      "id": "aluminium_smelter",
+      "name": { "en": "Aluminium Smelter", "fr": "Aluminerie" },
+      "from": 1901,
+      "until": 2050,
+      "regions": { "shield": 4, "rockies": 2, "mixed": 2, "north": 1, "maritimes": 0, "prairies": 0 },
+      "water": true,
+      "layout": ["dam powerhouse dam", "potline potline potline"],
+      "accepts": ["bauxite"],
+      "produces": { "aluminium": 0 }
+    },
+    {
+      "id": "oil_sands",
+      "name": { "en": "Oil Sands", "fr": "Sables bitumineux" },
+      "from": 1967,
+      "until": 2050,
+      "regions": { "north": 5, "prairies": 3, "mixed": 0, "maritimes": 0, "shield": 0, "rockies": 0 },
+      "layout": ["sand_pit sand_pit upgrader", "sand_pit sand_pit upgrader", "tailings_pond tailings_pond refinery_tanks"],
+      "produces": { "oil": 160 }
     }
   ]
 }

@@ -87,6 +87,8 @@ fun TrainCard(
                     if (Order.has(o, Order.UNLOAD) || Order.has(o, Order.TRANSFER)) append(" ↓")
                     if (Order.has(o, Order.NO_LOAD)) append(" ⊘")
                     if (Order.waitDays(o) > 0) append(" ${Order.waitDays(o)}d")
+                    if (Order.has(o, Order.VIA)) append(" →")
+                    if (Order.has(o, Order.SKIP_IF_NOTHING)) append(" ?")
                 }
                 Chip("${i + 1}. ${stationName(view, Order.station(o))}$marks", i == t.order % t.orders.size || i == open) { open = if (open == i) -1 else i }
             }
@@ -95,7 +97,10 @@ fun TrainCard(
         t.orders.getOrNull(open)?.let { o ->
             fun change(new: Int) = send(Command.TrainOrder(0, t.id, Command.TrainOrder.ORDERS, t.orders.copyOf().also { it[open] = new }))
             FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                for ((flag, label) in listOf(Order.FULL_LOAD to Res.string.full_load, Order.UNLOAD to Res.string.unload_all, Order.TRANSFER to Res.string.transfer, Order.NO_LOAD to Res.string.no_loading)) {
+                for ((flag, label) in listOf(
+                    Order.FULL_LOAD to Res.string.full_load, Order.UNLOAD to Res.string.unload_all, Order.TRANSFER to Res.string.transfer,
+                    Order.NO_LOAD to Res.string.no_loading, Order.VIA to Res.string.go_via, Order.SKIP_IF_NOTHING to Res.string.skip_if_nothing,
+                )) {
                     Chip(stringResource(label), Order.has(o, flag)) { change(Order.toggle(o, flag)) }
                 }
             }
@@ -107,6 +112,23 @@ fun TrainCard(
                 ActionButton(stringResource(Res.string.remove_stop)) {
                     send(Command.TrainOrder(0, t.id, Command.TrainOrder.ORDERS, t.orders.filterIndexed { j, _ -> j != open }.toIntArray()))
                     open = -1
+                }
+            }
+        }
+        // Sharing orders with another train: pick which, or stop sharing.
+        var sharing by remember(t.id) { mutableStateOf(false) }
+        val others = view.trains.filter { it.id != t.id }
+        if (t.shared >= 0) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(stringResource(Res.string.orders_shared), color = c.textDim, fontSize = 13.sp, modifier = Modifier.weight(1f))
+                ActionButton(stringResource(Res.string.stop_sharing)) { send(Command.TrainOrder(0, t.id, Command.TrainOrder.UNSHARE)) }
+            }
+        } else if (others.isNotEmpty()) {
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Chip(stringResource(Res.string.share_orders), sharing) { sharing = !sharing }
+                if (sharing) for (o in others) Chip(trainName(o), false) {
+                    send(Command.TrainOrder(0, t.id, Command.TrainOrder.SHARE, intArrayOf(o.id)))
+                    sharing = false
                 }
             }
         }

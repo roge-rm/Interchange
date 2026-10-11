@@ -35,6 +35,9 @@ sealed interface Command {
     /** Buys a train in a depot, its wagons set to carry [cargo] if they can, or their first. */
     data class BuyTrain(override val company: Int, val depot: Int, val engine: Int, val wagon: Int, val wagons: Int, val cargo: Int = -1) : Command
 
+    /** Pays for a new industry of [kind] somewhere on the map: built for sure if it takes cargo, prospected if not. */
+    data class FundIndustry(override val company: Int, val kind: Int) : Command
+
     /** Borrows a step more from the bank, or repays one. */
     data class Loan(override val company: Int, val borrow: Boolean) : Command
 
@@ -46,6 +49,9 @@ sealed interface Command {
             const val TO_DEPOT = 2
             const val TURN = 3
             const val SELL = 4
+            /** Share orders with the train in [stations]'s first place. */
+            const val SHARE = 5
+            const val UNSHARE = 6
         }
     }
 }

@@ -45,6 +45,8 @@ class News(val kind: Int, val about: Int, val tick: Long) {
         const val INDUSTRY_CLOSES = 1
         const val PRODUCTION_UP = 2
         const val PRODUCTION_DOWN = 3
+        /** Prospecting found nothing; [News.about] is the industry kind. */
+        const val PROSPECTING_FAILED = 4
     }
 }
 
@@ -97,12 +99,28 @@ internal fun generateIndustries(world: World) = with(world) {
 /** Puts an industry of [kind] somewhere it fits, trying a few spots. True if it found one. */
 internal fun World.placeIndustry(kind: IndustryKind): Boolean {
     repeat(PLACE_TRIES) {
-        val turn = rng.below(4)
-        val w = kind.across(turn)
-        val h = kind.along(turn)
-        val x = 2 + rng.below(maxOf(1, width - w - 4))
-        val y = 2 + rng.below(maxOf(1, height - h - 4))
-        if (industryFits(kind, x, y, w, h)) {
+        var turn = rng.below(4)
+        var w = kind.across(turn)
+        var h = kind.along(turn)
+        var x = 2 + rng.below(maxOf(1, width - w - 4))
+        var y = 2 + rng.below(maxOf(1, height - h - 4))
+        if (kind.water) {
+            // A shore tile, and the layout turned so its first row stands along the water there.
+            val s = shoreTile() ?: return false
+            val sx = s % width
+            val sy = s / width
+            turn = WATERFRONT.indexOfFirst { e -> inside(sx + edgeX(e), sy + edgeY(e)) && isWater(sx + edgeX(e), sy + edgeY(e)) }
+            if (turn < 0) return@repeat
+            w = kind.across(turn)
+            h = kind.along(turn)
+            when (turn) {
+                0 -> { x = sx - rng.below(w); y = sy }
+                1 -> { x = sx - (w - 1); y = sy - rng.below(h) }
+                2 -> { x = sx - rng.below(w); y = sy - (h - 1) }
+                else -> { x = sx; y = sy - rng.below(h) }
+            }
+        }
+        if (industryFits(kind, x, y, w, h, turn)) {
             val town = towns.minByOrNull { maxOf(kotlin.math.abs(it.x - x), kotlin.math.abs(it.y - y)) }?.id ?: -1
             val ind = Industry(industries.size, kind.id, x, y, turn, town)
             industries += ind
@@ -125,17 +143,46 @@ private const val PLACE_TRIES = 40
 private const val INDUSTRY_SPACING = 5
 private const val TOWN_CLEARANCE = 7
 
-private fun World.industryFits(kind: IndustryKind, x: Int, y: Int, w: Int, h: Int): Boolean {
+/** The world edge an industry's first layout row faces, by how it's turned. */
+private val WATERFRONT = intArrayOf(Track.YM, Track.XP, Track.YP, Track.XM)
+private fun edgeX(e: Int) = when (e) { Track.XM -> -1; Track.XP -> 1; else -> 0 }
+private fun edgeY(e: Int) = when (e) { Track.YM -> -1; Track.YP -> 1; else -> 0 }
+
+/** A dry tile beside water, picked at random, or null if the dice find none. */
+private fun World.shoreTile(): Int? {
+    repeat(400) {
+        val x = 1 + rng.below(width - 2)
+        val y = 1 + rng.below(height - 2)
+        if (!isWater(x, y) && (isWater(x - 1, y) || isWater(x + 1, y) || isWater(x, y - 1) || isWater(x, y + 1))) return index(x, y)
+    }
+    return null
+}
+
+private fun World.industryFits(kind: IndustryKind, x: Int, y: Int, w: Int, h: Int, turn: Int): Boolean {
     if (x < 1 || y < 1 || x + w >= width || y + h >= height) return false
     var suits = 0
     for (ty in y until y + h) for (tx in x until x + w) {
         val i = index(tx, ty)
         if (isWater(tx, ty) || steep(tx, ty) || track[i].toInt() != 0 || townBuilt(i) || industryOf[i].toInt() != 0 || owner[i].toInt() != -1) return false
-        if (minOf(minOf(heightAt(tx, ty), heightAt(tx + 1, ty)), minOf(heightAt(tx + 1, ty + 1), heightAt(tx, ty + 1))) == 0) return false
+        // Off the beach, unless it's meant to be by the water.
+        if (!kind.water && minOf(minOf(heightAt(tx, ty), heightAt(tx + 1, ty)), minOf(heightAt(tx + 1, ty + 1), heightAt(tx, ty + 1))) == 0) return false
         if (kind.ground.isEmpty() || Ground.NAMES[ground[i].toInt()].lowercase() in kind.ground) suits++
     }
     // Most of it on the ground it needs.
     if (suits * 2 < w * h) return false
+    // Water all along most of its waterfront.
+    if (kind.water) {
+        val e = WATERFRONT[turn]
+        var wet = 0
+        var all = 0
+        for (ty in y until y + h) for (tx in x until x + w) {
+            val front = when (e) { Track.YM -> ty == y; Track.YP -> ty == y + h - 1; Track.XM -> tx == x; else -> tx == x + w - 1 }
+            if (!front) continue
+            all++
+            if (inside(tx + edgeX(e), ty + edgeY(e)) && isWater(tx + edgeX(e), ty + edgeY(e))) wet++
+        }
+        if (wet * 2 < all) return false
+    }
     for (o in industries) if (!o.closed && o.x - INDUSTRY_SPACING < x + w && x - INDUSTRY_SPACING < o.x + roster.industries[o.kind].across(o.turn) &&
         o.y - INDUSTRY_SPACING < y + h && y - INDUSTRY_SPACING < o.y + roster.industries[o.kind].along(o.turn)) return false
     for (t in towns) if (kotlin.math.abs(t.x - (x + w / 2)) < TOWN_CLEARANCE && kotlin.math.abs(t.y - (y + h / 2)) < TOWN_CLEARANCE) return false
@@ -153,17 +200,17 @@ internal fun World.industriesDay(made: HashMap<Int, IntArray>) {
         if (ind.closed) continue
         val kind = roster.industries[ind.kind]
         val out = IntArray(Cargo.COUNT)
-        if (kind.secondary) {
-            // What's brought, made into its own: the same amount, shared among what it makes.
-            val n = ind.brought
-            ind.brought = 0
-            val kinds = (0 until Cargo.COUNT).filter { kind.outputs and (1 shl it) != 0 }
-            for ((k, c) in kinds.withIndex()) out[c] = n / kinds.size + if (k < n % kinds.size) 1 else 0
-        } else {
-            for (c in 0 until Cargo.COUNT) {
-                val month = kind.produces[c] * ind.level / 16
-                if (month > 0) out[c] = (month * 8 + rng.below(240)) / 240
-            }
+        // What's brought, made into what it makes of it, the same amount shared among those; taken and gone at one
+        // that makes nothing of it, as a port ships it away.
+        val n = ind.brought
+        ind.brought = 0
+        val kinds = (0 until Cargo.COUNT).filter { kind.converts and (1 shl it) != 0 }
+        if (kinds.isNotEmpty()) for ((k, c) in kinds.withIndex()) out[c] += n / kinds.size + if (k < n % kinds.size) 1 else 0
+        // And a month's worth of its own over the month, more or less by the season.
+        val season = kind.seasons[Calendar.month(startYear, day)]
+        for (c in 0 until Cargo.COUNT) {
+            val month = kind.produces[c] * ind.level / 16 * season / 100
+            if (month > 0) out[c] += (month * 8 + rng.below(240)) / 240
         }
         for (c in 0 until Cargo.COUNT) {
             if (out[c] == 0) continue
@@ -196,7 +243,7 @@ internal fun World.industriesMonth() {
     for (ind in industries) {
         if (ind.closed) continue
         val kind = roster.industries[ind.kind]
-        if (!kind.secondary && rng.below(CHANGE_ODDS) == 0) {
+        if (kind.produces.any { it > 0 } && rng.below(CHANGE_ODDS) == 0) {
             val made = ind.made.sum()
             val share = if (made == 0) 0 else ind.moved.sum() * 100 / made
             // Well served it's likelier to grow, badly served likelier to shrink.
@@ -230,6 +277,34 @@ internal fun World.industriesMonth() {
         }
     }
     news.removeAll { tick - it.tick > NEWS_TICKS }
+}
+
+/** What funding an industry of [kind] costs before inflation: more for one that's built for sure. */
+fun fundCost(kind: IndustryKind) = if (kind.secondary || kind.accepts != 0) 80_000L else 40_000L
+
+/** One in this many prospecting runs comes to nothing. */
+private const val PROSPECT_FAILS = 3
+
+/**
+ * Pays for a new industry: one that takes cargo is built somewhere it fits;
+ * one that makes its own is prospected for, and found two times in three.
+ * The money's spent either way, unless there's nowhere at all it would go.
+ */
+internal fun World.fundIndustry(company: Company, c: Command.FundIndustry) {
+    val kind = roster.industries.getOrNull(c.kind) ?: return
+    val year = Calendar.year(startYear, day)
+    if (year < kind.from || year >= kind.until) return
+    val cost = price(fundCost(kind))
+    if (company.money < cost) return
+    val prospect = kind.produces.any { it > 0 } && kind.accepts == 0
+    if (prospect && rng.below(PROSPECT_FAILS) == 0) {
+        spend(company, Books.CONSTRUCTION, cost)
+        news += News(News.PROSPECTING_FAILED, kind.id, tick)
+        return
+    }
+    if (!placeIndustry(kind)) return
+    spend(company, Books.CONSTRUCTION, cost)
+    news += News(News.INDUSTRY_OPENS, industries.last().id, tick)
 }
 
 /** Shuts [ind] down: its tiles cleared, its stations no longer reaching it. */
