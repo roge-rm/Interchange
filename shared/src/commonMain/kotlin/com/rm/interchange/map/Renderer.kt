@@ -189,7 +189,7 @@ internal class Renderer(private val world: World, private val sheets: Sheets, pr
         return sum
     }
 
-    private fun bake(key: Key, sheet: ImageBitmap) {
+    private fun bake(key: Key, sheet: LevelSheets) {
         // The view as it is now, kept apart so turning while this bakes doesn't change it.
         val bakeView = View(world.width, world.height).also { it.turnBy(key.turn) }
         val version = versionOf(bakeView, key.level, key.cx, key.cy)
@@ -204,24 +204,24 @@ internal class Renderer(private val world: World, private val sheets: Sheets, pr
         }
     }
 
-    private fun bakeChunk(view: View, key: Key, sheet: ImageBitmap): ImageBitmap {
+    private fun bakeChunk(view: View, key: Key, sheet: LevelSheets): ImageBitmap {
         val hw = LEVELS[key.level]
         val tiles = chunkTiles(key.level)
         val height = chunkHeight(key.level, hw)
-        val image = ImageBitmap(CHUNK_PIXELS, height)
-        val painter = LandPainter(world, view, hw, sheet)
+        val baker = ChunkBaker(world, view, key.level, sheet, CHUNK_PIXELS, height)
         val vx0 = key.cx * tiles
         val vy0 = key.cy * tiles
-        painter.originX = tiles * hw - (vx0 - vy0) * hw
-        painter.originY = topPad(hw) - (vx0 + vy0) * hw / 2
+        baker.originX = tiles * hw - (vx0 - vy0) * hw
+        baker.originY = topPad(hw) - (vx0 + vy0) * hw / 2
         // A ring of the neighbours' tiles is drawn too, in order with the chunk's own, so where chunks meet both
-        // have the same solid pixels and no seam shows when they're drawn scaled.
-        CanvasDrawScope().draw(Density(1f), LayoutDirection.Ltr, Canvas(image), Size(CHUNK_PIXELS.toFloat(), height.toFloat())) {
-            with(painter) {
-                for (vy in max(0, vy0 - 1) until min(vy0 + tiles + 1, view.viewHeight)) for (vx in max(0, vx0 - 1) until min(vx0 + tiles + 1, view.viewWidth)) tile(vx, vy)
-            }
-        }
-        return image
+        // have the same solid pixels and no seam shows when they're drawn scaled. Ground first, then every
+        // shadow over it, then what stands up, so shadows fall across tile edges.
+        val ys = max(0, vy0 - 1) until min(vy0 + tiles + 1, view.viewHeight)
+        val xs = max(0, vx0 - 1) until min(vx0 + tiles + 1, view.viewWidth)
+        for (vy in ys) for (vx in xs) baker.ground(vx, vy)
+        for (vy in ys) for (vx in xs) baker.shadows(vx, vy)
+        for (vy in ys) for (vx in xs) baker.objects(vx, vy)
+        return imageBitmapOf(baker.finish(), CHUNK_PIXELS, height)
     }
 
     /** Lets go of the chunks used longest ago, past the memory budget. */

@@ -16,10 +16,14 @@ class VehicleView(val tick: Long, val cars: FloatArray) {
     /** The way it faces in the world, 0 along x, on round towards y, in eighths. */
     fun heading(i: Int) = cars[i * CAR_FIELDS + 3].toInt()
     fun sprite(i: Int) = cars[i * CAR_FIELDS + 4].toInt()
+    /** 1 climbing, -1 going down, 0 level. */
+    fun slope(i: Int) = cars[i * CAR_FIELDS + 5].toInt()
+    /** How long it is, in tiles. */
+    fun length(i: Int) = cars[i * CAR_FIELDS + 6]
     fun train(i: Int) = key(i) / 256
 
     companion object {
-        const val CAR_FIELDS = 5
+        const val CAR_FIELDS = 7
     }
 }
 
@@ -78,6 +82,11 @@ fun World.view(): WorldView {
             cars += ay + (by - ay) * along
             cars += heading(Track.edgeX4(b) - Track.edgeX4(a), Track.edgeY4(b) - Track.edgeY4(a)).toFloat()
             cars += Engines.ALL[t.carEngines[c]].sprite.toFloat()
+            // Climbing or going down: the edge it leaves by against the edge it came in at.
+            val pieces = track[tile].toInt()
+            val rise = edgeHeight(tile % width, tile / width, pieces, b) - edgeHeight(tile % width, tile / width, pieces, a)
+            cars += rise.coerceIn(-1, 1).toFloat()
+            cars += Engines.ALL[t.carEngines[c]].length / 16f
         }
     }
     val trainViews = trains.filterNotNull().map { t ->

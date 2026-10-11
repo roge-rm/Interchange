@@ -17,9 +17,9 @@ internal fun DrawScope.drawMoving(world: World, view: View, sheets: Sheets, movi
     // The level's sheet, or the nearest one unpacked while it isn't yet.
     val level = sheets.nearest(Renderer.levelFor(view.halfWidth)) ?: return
     val hw = Renderer.LEVELS[level]
-    val painter = LandPainter(world, view, hw, sheets.get(level))
+    val painter = LandPainter(world, view, hw, sheets.get(level)?.signals)
     val scale = view.halfWidth / hw
-    // Everything to draw, as depth, x, y and atlas cell.
+    // Everything to draw, as depth, x, y, sprite, and which vehicle's sheet it's on (-1 for the signals').
     val items = ArrayList<FloatArray>()
     for (s in moving.now.signals) {
         val p = signalPoint(world, s.tile, s.piece, s.facing)
@@ -43,23 +43,40 @@ internal fun DrawScope.drawMoving(world: World, view: View, sheets: Sheets, movi
                 y = by + (y - by) * moving.between
             }
         }
-        val cell = Atlas.VEHICLE.getOrElse(v.sprite(i) * 8 + painter.viewHeading(v.heading(i))) { -1 }
-        add(items, world, view, x, y, cell.toFloat())
+        val heading = painter.viewHeading(v.heading(i))
+        // On a slope, the straight headings have drawings tilted up or down: sprites 8 on in the vehicle's sheet.
+        val slope = v.slope(i)
+        val cell = if (slope != 0 && heading % 2 == 0) 8 + heading / 2 * 2 + (if (slope > 0) 0 else 1) else heading
+        // Sorted by its nearest end rather than its middle, so a long car in front covers what's behind it.
+        val reach = v.length(i) / 2 * NEAR[heading]
+        add(items, world, view, x, y, cell.toFloat(), reach, v.sprite(i))
     }
     items.sortBy { it[0] }
     with(painter) {
-        for (it in items) spriteAt(it[3].toInt(), it[1], it[2], scale)
+        for (it in items) {
+            val model = it[4].toInt()
+            if (model < 0) {
+                spriteAt(it[3].toInt(), it[1], it[2], scale)
+            } else {
+                // Its own sheet at this level, unpacked the first time it's on screen; it shows a frame or two later.
+                val sheet = sheets.vehicle(model, level) ?: continue
+                spriteAt(sheet, Atlas.VEHICLE_RECTS, model * 16 + it[3].toInt(), it[1], it[2], scale)
+            }
+        }
     }
 }
 
-private fun DrawScope.add(items: ArrayList<FloatArray>, world: World, view: View, x: Float, y: Float, cell: Float) {
+/** How much nearer the camera a car's front end is than its middle, per tile of half length, by heading in the view. */
+private val NEAR = floatArrayOf(1f, 1.414f, 1f, 0f, 1f, 1.414f, 1f, 0f)
+
+private fun DrawScope.add(items: ArrayList<FloatArray>, world: World, view: View, x: Float, y: Float, cell: Float, reach: Float = 0f, model: Int = -1) {
     val vx = view.toViewX(x, y)
     val vy = view.toViewY(x, y)
     val sx = view.screenX(vx, vy, size.width)
     val sy = view.screenY(vx, vy, groundHeight(world, x, y), size.height)
     val margin = view.halfWidth * 2
     if (sx < -margin || sx > size.width + margin || sy < -margin || sy > size.height + margin * 2) return
-    items += floatArrayOf(vx + vy, sx, sy, cell)
+    items += floatArrayOf(vx + vy + reach, sx, sy, cell, model.toFloat())
 }
 
 /** Where a signal on [piece] of [tile] facing [facing] stands: just in from that edge, beside the track on the right of trains it faces. */

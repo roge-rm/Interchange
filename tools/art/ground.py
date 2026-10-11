@@ -6,9 +6,11 @@ import random
 import zlib
 from functools import lru_cache
 
+import numpy as np
 from PIL import Image, ImageDraw
 
-from base import (DCELL, DHH, DHW, DSTEP, SS, STEP_RISE, Frame, c, cell, draw, lit, masked, mix, noise_layer, proj, shade)
+from base import (DCELL, DHH, DHW, DSTEP, DTOP, SS, STEP_RISE, Frame, c, cell, draw, lit, masked, mix, noise_layer, proj, shade)
+
 
 # ---- ground -----------------------------------------------------------------------
 
@@ -55,61 +57,109 @@ def tri_normal(a, b, c_):
     return n if n[2] > 0 else tuple(-x for x in n)
 
 
+def field(seed, scales, size=DCELL):
+    """Smooth noise from 0 to 1 over a cell: random fields blurred at each scale and added, larger scales weighing more."""
+    rng = np.random.default_rng(seed)
+    w, h = size
+    total = np.zeros((h, w), np.float32)
+    weight = 0.0
+    for scale in scales:
+        small = rng.random((max(2, h // scale + 2), max(2, w // scale + 2))).astype(np.float32)
+        img = Image.fromarray((small * 255).astype(np.uint8)).resize((w + 2 * scale, h + 2 * scale), Image.BICUBIC)
+        arr = np.asarray(img, np.float32)[scale:scale + h, scale:scale + w] / 255
+        total += arr * scale
+        weight += scale
+    total /= weight
+    lo, hi = np.percentile(total, 2), np.percentile(total, 98)
+    return np.clip((total - lo) / (hi - lo + 1e-6), 0, 1)
+
+
+def blend(cols, t):
+    """Colours along a ramp of palette colours, t from 0 to 1."""
+    pal = np.array([col[:3] for col in cols], np.float32)
+    x = t * (len(pal) - 1)
+    i = np.clip(x.astype(int), 0, len(pal) - 2)
+    f = (x - i)[..., None]
+    return pal[i] * (1 - f) + pal[i + 1] * f
+
+
+# A ramp from dark to light for each kind, and its details.
+RAMPS = {
+    "meadow": [c("#3f6e2a"), c("#4f8634"), c("#5f9a3e"), c("#72aa4a"), c("#86b858")],
+    "prairie": [c("#7d7a42"), c("#948e50"), c("#aea463"), c("#bfb272"), c("#cdbf84")],
+    "forest": [c("#2a3a20"), c("#34482a"), c("#3f5a2e"), c("#4a6634"), c("#5a5236")],
+    "rock": [c("#6e6560"), c("#857a74"), c("#9c918b"), c("#b0a49c"), c("#c4b8ae")],
+    "tundra": [c("#5c5a3c"), c("#6b6a48"), c("#7d7a52"), c("#8f8c60"), c("#7a5f44")],
+    "snow": [c("#cdd9e4"), c("#dde6ee"), c("#eef3f7"), c("#f6f9fb"), c("#ffffff")],
+    "sand": [c("#b9a774"), c("#c9b47e"), c("#d8c690"), c("#e4d5a3"), c("#efe3b8")],
+}
+
+
 @lru_cache(maxsize=None)
 def texture(kind, variant):
-    """A cell of a kind's ground, with its details drawn in."""
-    cols, _ = GROUND[kind]
-    seed = zlib.crc32(f"{kind}{variant}".encode()) & 0xffff
-    img = noise_layer(cols, seed, [0.55, 0.2, 0.15, 0.1])
+    """A cell of a kind's ground: patches and clumps from noise at several scales, then its details drawn in."""
+    seed = zlib.crc32(f"{kind}{variant}".encode())
+    broad = field(seed, [96, 48])
+    fine = field(seed + 1, [12, 6, 3])
+    grain = field(seed + 2, [2, 1])
+    t = np.clip(broad * 0.55 + fine * 0.3 + grain * 0.15, 0, 1)
+    rgb = blend(RAMPS[kind], t)
+    img = Image.fromarray(np.clip(rgb, 0, 255).astype(np.uint8), "RGB").convert("RGBA")
     d = ImageDraw.Draw(img)
-    rng = random.Random(seed + 1)
+    rng = random.Random(seed)
     w, h = DCELL
+    ramp = RAMPS[kind]
     if kind == "meadow":
-        for _ in range(260):
+        for _ in range(900):
             x, y = rng.randrange(w), rng.randrange(h)
-            d.line([x, y, x + rng.randint(-2, 2), y - rng.randint(4, 9)], shade(cols[3], 0.9), width=SS)
-            d.point([x, y - 9], fill=cols[2])
-        for _ in range(18):
+            col = ramp[rng.choice([0, 1, 3, 4])]
+            d.line([x, y, x + rng.randint(-2, 2), y - rng.randint(3, 8)], col, width=1)
+        for _ in range(30):
             x, y = rng.randrange(w), rng.randrange(h)
-            d.ellipse([x, y, x + 3, y + 3], fill=rng.choice([c("#f4eecf"), c("#f0d24a"), c("#d9a6d8")]))
+            col = rng.choice([c("#f4eecf"), c("#f0d24a"), c("#d9a6d8"), c("#ffffff")])
+            for _ in range(rng.randint(2, 5)):
+                dx, dy = rng.randint(-6, 6), rng.randint(-3, 3)
+                d.ellipse([x + dx, y + dy, x + dx + 2, y + dy + 2], fill=col)
     elif kind == "prairie":
-        for _ in range(420):
+        for _ in range(1400):
             x, y = rng.randrange(w), rng.randrange(h)
-            d.line([x, y, x + rng.randint(2, 6), y - rng.randint(5, 11)], rng.choice([cols[1], cols[2], cols[3]]), width=SS)
+            d.line([x, y, x + rng.randint(1, 5), y - rng.randint(4, 10)], ramp[rng.choice([0, 1, 3, 4])], width=1)
     elif kind == "forest":
-        for _ in range(300):
+        for _ in range(700):
             x, y = rng.randrange(w), rng.randrange(h)
             d.line([x, y, x + rng.randint(-4, 4), y + rng.randint(-2, 2)], c("#6b4e30"), width=1)
-        for _ in range(40):
+        for _ in range(60):
             x, y = rng.randrange(w), rng.randrange(h)
-            r = rng.randint(4, 9)
+            r = rng.randint(4, 10)
             d.ellipse([x - r, y - r // 2, x + r, y + r // 2], fill=c("#5c7a3e"))
     elif kind == "rock":
-        for _ in range(26):
-            x, y = rng.randrange(w), rng.randrange(h)
-            pts = [(x, y)]
-            for _ in range(rng.randint(2, 5)):
-                x += rng.randint(-14, 14)
-                y += rng.randint(-6, 6)
-                pts.append((x, y))
-            d.line(pts, c("#5e5550"), width=SS)
-        for _ in range(60):
-            x, y = rng.randrange(w), rng.randrange(h)
-            r = rng.randint(3, 7)
-            d.ellipse([x - r, y - r // 2, x + r, y + r // 2], fill=rng.choice([c("#8f9a5a"), c("#b0a84a"), c("#c2b8a8")]))
-    elif kind == "tundra":
-        for _ in range(140):
-            x, y = rng.randrange(w), rng.randrange(h)
-            r = rng.randint(2, 5)
-            d.ellipse([x - r, y - r // 2, x + r, y + r // 2], fill=rng.choice([c("#5e6a3a"), c("#8a4e36"), c("#6f7a44")]))
-    elif kind == "snow":
         for _ in range(40):
             x, y = rng.randrange(w), rng.randrange(h)
-            d.line([x, y, x + rng.randint(10, 30), y + rng.randint(-3, 3)], c("#cfdbe6"), width=SS)
-    elif kind == "sand":
+            pts = [(x, y)]
+            for _ in range(rng.randint(2, 6)):
+                x += rng.randint(-16, 16)
+                y += rng.randint(-6, 6)
+                pts.append((x, y))
+            d.line(pts, c("#5a504a"), width=SS)
+            d.line([(px, py + 2) for px, py in pts], c("#cfc4ba"), width=1)
+        for _ in range(90):
+            x, y = rng.randrange(w), rng.randrange(h)
+            r = rng.randint(3, 8)
+            d.ellipse([x - r, y - r // 2, x + r, y + r // 2], fill=rng.choice([c("#8f9a5a"), c("#b0a84a"), c("#d8d0c4")]))
+    elif kind == "tundra":
+        for _ in range(260):
+            x, y = rng.randrange(w), rng.randrange(h)
+            r = rng.randint(2, 6)
+            d.ellipse([x - r, y - r // 2, x + r, y + r // 2], fill=rng.choice([c("#5e6a3a"), c("#8a4e36"), c("#6f7a44"), c("#a08a5a")]))
+    elif kind == "snow":
         for _ in range(60):
             x, y = rng.randrange(w), rng.randrange(h)
-            d.point([x, y], fill=c("#a8977a"))
+            d.line([x, y, x + rng.randint(12, 40), y + rng.randint(-3, 3)], c("#c8d6e2"), width=SS)
+            d.line([x, y - 2, x + rng.randint(8, 30), y - 2], c("#ffffff"), width=1)
+    elif kind == "sand":
+        for _ in range(240):
+            x, y = rng.randrange(w), rng.randrange(h)
+            d.point([x, y], fill=rng.choice([c("#a8977a"), c("#f4ecd0")]))
     return img
 
 
@@ -120,6 +170,93 @@ def ground(kind, variant, shape):
         # Hills read without striping the land: a little over a quarter of what a real slope would show.
         f = lit(tri_normal(*tri), strength=0.28, low=0.84, high=1.12)
         img.alpha_composite(masked(layer, [proj(*p) for p in tri], f, grow=1))
+    return img
+
+
+# Where a tile's top corner sits in a cell, at height 0.
+DTOP_GROUND = DTOP
+
+# The shapes edge blends come in: flat and the four slopes. Other shapes use the flat one.
+BLEND_SHAPES = [0, 3, 6, 12, 9]
+# View edges, on round from the top corner: 0 from top to right (the v = 0 side), 1 from right to bottom (u = 1),
+# 2 from bottom to left (v = 1), 3 from left to top (u = 0).
+EDGES = 4
+
+
+def edge_mask(edge, shape, seed):
+    """A mask over the tile's top, solid at the given view edge and fading out with a ragged line into the tile."""
+    o = offsets(shape)
+    w, h = DCELL
+    rag = field(seed, [24, 8])
+    # Distance into the tile from the edge, worked out in (u, v) for every pixel by inverting the projection at height 0,
+    # then lifted by the slope's height there, which is close enough for a soft fade.
+    ys, xs = np.mgrid[0:h, 0:w].astype(np.float32)
+    a = (xs - DHW) / DHW
+    b = (ys - DTOP_GROUND) / DHH
+    u = (a + b) / 2
+    v = (b - a) / 2
+    for _ in range(2):
+        hgt = (o[0] * (1 - u) + o[1] * u) * (1 - v) + (o[3] * (1 - u) + o[2] * u) * v
+        b2 = (ys - DTOP_GROUND + hgt * DSTEP) / DHH
+        u = (a + b2) / 2
+        v = (b2 - a) / 2
+    dist = [v, 1 - u, 1 - v, u][edge]
+    reach = 0.28 + (rag - 0.5) * 0.18
+    mask = np.clip(1 - dist / reach, 0, 1) ** 1.4
+    inside = (u >= -0.01) & (u <= 1.01) & (v >= -0.01) & (v <= 1.01)
+    return Image.fromarray((mask * inside * 255).astype(np.uint8), "L")
+
+
+def edge_blend(kind, edge, shape):
+    """The neighbour's ground fading in over this tile from one view edge."""
+    tex = ground(kind, 0, shape)
+    m = edge_mask(edge, shape, zlib.crc32(f"edge{kind}{edge}".encode()))
+    alpha = Image.fromarray((np.asarray(tex.getchannel("A"), np.float32) * np.asarray(m, np.float32) / 255).astype(np.uint8), "L")
+    out = tex.copy()
+    out.putalpha(alpha)
+    return out
+
+
+def foam(edge):
+    """Foam and wet sand along the edge of a water tile where it meets land."""
+    img = cell()
+    m = np.asarray(edge_mask(edge, 0, zlib.crc32(f"foam{edge}".encode())), np.float32) / 255
+    w, h = DCELL
+    wet = np.zeros((h, w, 4), np.float32)
+    band = np.clip((m - 0.55) / 0.45, 0, 1)
+    froth = np.clip(1 - np.abs(m - 0.45) / 0.12, 0, 1) * (field(zlib.crc32(f"froth{edge}".encode()), [4, 2]) > 0.45)
+    sand = np.array(c("#c9b47e")[:3], np.float32)
+    white = np.array([235, 242, 245], np.float32)
+    wet[..., :3] = sand * band[..., None] + white * (1 - band[..., None])
+    wet[..., 3] = np.clip(band * 255 + froth * 230, 0, 255)
+    return Image.fromarray(wet.astype(np.uint8), "RGBA")
+
+
+DECOR = ["boulder", "shrub", "tall_grass"]
+DECOR_LOOKS = 3
+
+
+def decor(kind, look):
+    rng = random.Random(zlib.crc32(f"{kind}{look}".encode()))
+    img = cell()
+    d = ImageDraw.Draw(img)
+    if kind == "boulder":
+        f = Frame(0)
+        faces = []
+        for k in range(rng.randint(1, 3)):
+            a, s_ = rng.uniform(-0.08, 0.08), rng.uniform(-0.08, 0.08)
+            r = rng.uniform(0.04, 0.07)
+            faces += f.upright(a, s_, 0, rng.uniform(0.25, 0.5), r, r * 0.55, rng.choice([c("#8a8078"), c("#9c928a"), c("#7a706a")]), n=7)
+        draw(img, faces, strength=0.6)
+    elif kind == "shrub":
+        for _ in range(rng.randint(5, 9)):
+            a, s_ = rng.uniform(-0.06, 0.06), rng.uniform(-0.06, 0.06)
+            sphere(d, proj(0.5 + a, 0.5 + s_, rng.uniform(0.2, 0.6)), rng.uniform(9, 15), rng.choice([c("#4a6a30"), c("#5a7a38"), c("#3e5a2a")]))
+    else:
+        for _ in range(60):
+            a, s_ = rng.uniform(-0.1, 0.1), rng.uniform(-0.1, 0.1)
+            x, y = proj(0.5 + a, 0.5 + s_, 0)
+            d.line([x, y, x + rng.randint(-5, 5), y - rng.randint(14, 30)], rng.choice([c("#6a8a3a"), c("#8aa04a"), c("#a8a85a")]), width=SS)
     return img
 
 

@@ -1,0 +1,199 @@
+"""Building blocks for models: materials, and shapes placed in a model's own terms.
+
+A model is built facing +y (Blender's y is the game's u), across x, in tiles,
+with heights given in steps (rig.RISE tiles each). Everything is added to one
+collection so it can be turned to a heading as a whole.
+"""
+import math
+
+import bmesh
+import bpy
+from mathutils import Matrix, Vector
+
+import rig
+
+_materials = {}
+
+
+def hexcol(h):
+    """A colour from #rrggbb, in Blender's linear terms."""
+    def lin(c):
+        c /= 255
+        return c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4
+    return (lin(int(h[1:3], 16)), lin(int(h[3:5], 16)), lin(int(h[5:7], 16)), 1.0)
+
+
+def material(name, colour, metal=0.0, rough=0.5, clearcoat=0.0):
+    key = (name, colour, metal, rough, clearcoat)
+    if key in _materials:
+        return _materials[key]
+    m = bpy.data.materials.new(name)
+    m.use_nodes = True
+    p = m.node_tree.nodes["Principled BSDF"]
+    p.inputs["Base Color"].default_value = hexcol(colour)
+    p.inputs["Metallic"].default_value = metal
+    p.inputs["Roughness"].default_value = rough
+    if clearcoat:
+        p.inputs["Coat Weight"].default_value = clearcoat
+    _materials[key] = m
+    return m
+
+
+class Model:
+    """Shapes added to a collection, in the model's own terms: y along it, x across it, z in steps."""
+
+    def __init__(self, name):
+        self.col = bpy.data.collections.new(name)
+        bpy.context.scene.collection.children.link(self.col)
+        self.objects = []
+
+    def _link(self, obj, mat):
+        for c in obj.users_collection:
+            c.objects.unlink(obj)
+        self.col.objects.link(obj)
+        if mat is not None:
+            obj.data.materials.clear()
+            obj.data.materials.append(mat)
+        self.objects.append(obj)
+        return obj
+
+    def _mesh(self, name, bm, mat):
+        me = bpy.data.meshes.new(name)
+        bm.to_mesh(me)
+        bm.free()
+        obj = bpy.data.objects.new(name, me)
+        bpy.context.scene.collection.objects.link(obj)
+        return self._link(obj, mat)
+
+    def box(self, x0, x1, y0, y1, z0, z1, mat, bevel=0.0):
+        """A box across x0 to x1, along y0 to y1, z0 to z1 steps high, its edges rounded by bevel tiles."""
+        bm = bmesh.new()
+        bmesh.ops.create_cube(bm, size=1.0)
+        sx, sy, sz = x1 - x0, y1 - y0, (z1 - z0) * rig.RISE
+        bmesh.ops.scale(bm, vec=(sx, sy, sz), verts=bm.verts)
+        bmesh.ops.translate(bm, vec=((x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2 * rig.RISE), verts=bm.verts)
+        obj = self._mesh("box", bm, mat)
+        if bevel > 0:
+            mod = obj.modifiers.new("bevel", "BEVEL")
+            mod.width = bevel
+            mod.segments = 2
+            mod.limit_method = "NONE"
+        return obj
+
+    def tube(self, y0, y1, x, z, r, mat, segments=24, cap=True):
+        """A cylinder lying along the model from y0 to y1, its middle at x across and z steps up, r tiles round."""
+        bm = bmesh.new()
+        bmesh.ops.create_cone(bm, cap_ends=cap, cap_tris=False, segments=segments, radius1=r, radius2=r, depth=y1 - y0)
+        bmesh.ops.rotate(bm, verts=bm.verts, cent=(0, 0, 0), matrix=Matrix.Rotation(math.radians(90), 3, "X"))
+        bmesh.ops.translate(bm, vec=(x, (y0 + y1) / 2, z * rig.RISE), verts=bm.verts)
+        obj = self._mesh("tube", bm, mat)
+        obj.data.polygons.foreach_set("use_smooth", [True] * len(obj.data.polygons))
+        return obj
+
+    def upright(self, x, y, z0, z1, r0, r1, mat, segments=20):
+        """An upright cylinder or cone at x, y from z0 to z1 steps, r0 tiles round at the foot and r1 at the top."""
+        bm = bmesh.new()
+        bmesh.ops.create_cone(bm, cap_ends=True, cap_tris=False, segments=segments, radius1=r0, radius2=r1, depth=(z1 - z0) * rig.RISE)
+        bmesh.ops.translate(bm, vec=(x, y, (z0 + z1) / 2 * rig.RISE), verts=bm.verts)
+        obj = self._mesh("upright", bm, mat)
+        obj.data.polygons.foreach_set("use_smooth", [True] * len(obj.data.polygons))
+        return obj
+
+    def lathe(self, x, y, z0, profile, mat, segments=24):
+        """A turned shape standing at x, y from z0 steps: profile is (radius in tiles, height in steps above z0) from the foot up."""
+        bm = bmesh.new()
+        rings = []
+        for r, h in profile:
+            ring = []
+            for i in range(segments):
+                a = 2 * math.pi * i / segments
+                ring.append(bm.verts.new((x + r * math.cos(a), y + r * math.sin(a), (z0 + h) * rig.RISE)))
+            rings.append(ring)
+        for a, b in zip(rings, rings[1:]):
+            for i in range(segments):
+                j = (i + 1) % segments
+                bm.faces.new((a[i], a[j], b[j], b[i]))
+        bm.faces.new(list(reversed(rings[0])))
+        bm.faces.new(rings[-1])
+        obj = self._mesh("lathe", bm, mat)
+        obj.data.polygons.foreach_set("use_smooth", [True] * len(obj.data.polygons))
+        return obj
+
+    def rod(self, a, b, r, mat, segments=8):
+        """A thin round bar between points a and b, each (x, y, z in steps)."""
+        pa = Vector((a[0], a[1], a[2] * rig.RISE))
+        pb = Vector((b[0], b[1], b[2] * rig.RISE))
+        d = pb - pa
+        bm = bmesh.new()
+        bmesh.ops.create_cone(bm, cap_ends=True, cap_tris=False, segments=segments, radius1=r, radius2=r, depth=d.length)
+        rot = d.to_track_quat("Z", "Y").to_matrix()
+        bmesh.ops.rotate(bm, verts=bm.verts, cent=(0, 0, 0), matrix=rot)
+        bmesh.ops.translate(bm, vec=(pa + pb) / 2, verts=bm.verts)
+        return self._mesh("rod", bm, mat)
+
+    def wheel(self, y, side, r, mats, spokes=12, counterweight=False):
+        """A spoked wheel at y along the model, on side (-1 or 1), r tiles round: a tire, a rim, spokes and a hub."""
+        tire, body, hub = mats
+        x = side * 0.103
+        zc = r / rig.RISE
+        w = 0.012
+        self.tube_x(x - w / 2, x + w / 2, y, zc, r, tire)
+        self.tube_x(x - w / 2 + side * 0.002, x + w / 2 + side * 0.002, y, zc, r * 0.86, body, ring_inner=r * 0.74)
+        for k in range(spokes):
+            a = 2 * math.pi * k / spokes
+            p = (x + side * 0.004, y + math.cos(a) * r * 0.76, zc + math.sin(a) * r * 0.76 / rig.RISE)
+            self.rod((x + side * 0.004, y, zc), p, r * 0.07, body, segments=6)
+        self.tube_x(x + side * 0.003, x + side * 0.011, y, zc, r * 0.2, hub)
+        if counterweight:
+            # A crescent of weight opposite the crank, drawn as a short thick segment of rim.
+            self.box(x + side * 0.002 - 0.004, x + side * 0.002 + 0.004, y - r * 0.45, y + r * 0.45, zc - r * 0.75 / rig.RISE, zc - r * 0.35 / rig.RISE, body)
+
+    def tube_x(self, x0, x1, y, z, r, mat, segments=28, ring_inner=None):
+        """A short cylinder across the model from x0 to x1, at y and z steps, r tiles round; a ring if ring_inner is given."""
+        bm = bmesh.new()
+        bmesh.ops.create_cone(bm, cap_ends=True, cap_tris=False, segments=segments, radius1=r, radius2=r, depth=abs(x1 - x0))
+        bmesh.ops.rotate(bm, verts=bm.verts, cent=(0, 0, 0), matrix=Matrix.Rotation(math.radians(90), 3, "Y"))
+        bmesh.ops.translate(bm, vec=((x0 + x1) / 2, y, z * rig.RISE), verts=bm.verts)
+        obj = self._mesh("disc", bm, mat)
+        obj.data.polygons.foreach_set("use_smooth", [True] * len(obj.data.polygons))
+        return obj
+
+    def wedge(self, pts_bottom, pts_top, mat):
+        """A solid from a polygon at the bottom to one at the top, each a list of (x, y, z in steps), the same length."""
+        bm = bmesh.new()
+        bot = [bm.verts.new((x, y, z * rig.RISE)) for x, y, z in pts_bottom]
+        top = [bm.verts.new((x, y, z * rig.RISE)) for x, y, z in pts_top]
+        n = len(bot)
+        bm.faces.new(list(reversed(bot)))
+        bm.faces.new(top)
+        for i in range(n):
+            j = (i + 1) % n
+            bm.faces.new((bot[i], bot[j], top[j], top[i]))
+        bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+        return self._mesh("wedge", bm, mat)
+
+    def text(self, body, x, y, z, size, mat, side):
+        """Lettering on the model's side (side -1 or 1), centred at y along it and z steps up."""
+        cu = bpy.data.curves.new("text", "FONT")
+        cu.body = body
+        cu.align_x = "CENTER"
+        cu.align_y = "CENTER"
+        cu.size = size
+        cu.extrude = 0.0005
+        obj = bpy.data.objects.new("text", cu)
+        bpy.context.scene.collection.objects.link(obj)
+        obj.location = (x, y, z * rig.RISE)
+        obj.rotation_euler = (math.radians(90), 0, math.radians(90 if side > 0 else -90))
+        return self._link(obj, mat)
+
+    def place(self, heading, slope=0):
+        """Sets the model on the middle of the tile, facing heading (eighths of a turn from u towards v), tilted up a slope of slope steps over a tile."""
+        empty = bpy.data.objects.new("pivot", None)
+        bpy.context.scene.collection.objects.link(empty)
+        for o in self.objects:
+            o.parent = empty
+        tilt = math.atan2(slope * rig.RISE, 1.0)
+        # From u towards v is from Blender's y towards its x, a turn the clockwise way seen from above.
+        empty.rotation_euler = (tilt, 0, -heading * math.pi / 4)
+        empty.location = rig.game(0.5, 0.5, 0)
+        return empty
