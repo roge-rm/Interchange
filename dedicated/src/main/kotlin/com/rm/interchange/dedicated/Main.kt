@@ -1,7 +1,8 @@
 package com.rm.interchange.dedicated
 
-import com.rm.interchange.server.Game
+import com.rm.interchange.server.GameThread
 import com.rm.interchange.sim.World
+import com.rm.interchange.sim.Workers
 
 /**
  * Runs a game with no screen. For now it only keeps time; players joining over
@@ -9,17 +10,13 @@ import com.rm.interchange.sim.World
  */
 fun main() {
     val seed = System.getenv("INTERCHANGE_SEED")?.toLongOrNull() ?: 1L
-    val game = Game(World(256, 256, seed))
-    println("Interchange server running, seed $seed")
-    val tickNanos = 1_000_000_000L / Game.TICKS_PER_SECOND
-    var next = System.nanoTime()
+    val size = System.getenv("INTERCHANGE_MAP_SIZE")?.toIntOrNull() ?: 256
+    val runner = GameThread { World(size, size, seed) }
+    runner.start()
+    println("Interchange server running, seed $seed, ${size}x$size, ${Workers.threads} threads")
     while (true) {
-        game.step()
-        if (game.world.tick % (Game.TICKS_PER_SECOND * 60L) == 0L) {
-            println("Tick ${game.world.tick}, checksum ${game.world.checksum()}")
-        }
-        next += tickNanos
-        val wait = next - System.nanoTime()
-        if (wait > 0) Thread.sleep(wait / 1_000_000, (wait % 1_000_000).toInt())
+        Thread.sleep(60_000)
+        if (runner.game == null) continue
+        println("Tick ${runner.tick}, checksum ${runner.checksum}")
     }
 }

@@ -89,4 +89,29 @@ class WorldTest {
         assertEquals(true, w.hasFoundation(5, 5))
         assertEquals(before - 2 * Prices.TRACK - Prices.FOUNDATION, w.companies[0].money)
     }
+
+    @Test
+    fun trackWontLeaveAStepAtAJoin() {
+        val w = World(32, 32, 1)
+        for (i in w.corners.indices) w.corners[i] = 3
+        // Tile 6, 5 has its far corner sunk, so a straight piece across it needs a foundation at 3,
+        // while tile 7, 5 slopes down along x from 3 to 2.
+        w.corners[w.corner(8, 5)] = 2
+        w.corners[w.corner(8, 6)] = 2
+        w.apply(Command.Rail(0, 5, 5, 8, 5, Track.X, remove = false))
+        for (x in 5..7) assertEquals(Track.X, w.trackAt(x, 5))
+        // A diagonal on the sloping tile would put it on a flat foundation at 3, a step above its neighbour at 2.
+        w.apply(Command.Rail(0, 8, 5, 8, 5, Track.X, remove = false))
+        assertEquals(Track.X, w.trackAt(8, 5))
+        w.apply(Command.Rail(0, 7, 5, 7, 5, Track.N, remove = false))
+        assertEquals(Track.X, w.trackAt(7, 5))
+    }
+
+    @Test
+    fun theChecksumIsTheSameHoweverTheWorkIsSplit() {
+        val a = World(256, 256, 9)
+        val b = World(256, 256, 9)
+        assertEquals(a.checksum(), b.checksum())
+        assertEquals(a.checksum(), a.checksum())
+    }
 }

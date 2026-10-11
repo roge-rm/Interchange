@@ -2,6 +2,7 @@ package com.rm.interchange.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.WindowInsets
@@ -15,7 +16,9 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
@@ -32,6 +35,7 @@ import com.rm.interchange.map.MapView
 import com.rm.interchange.map.Pick
 import com.rm.interchange.map.View
 import com.rm.interchange.server.Game
+import com.rm.interchange.server.GameThread
 import com.rm.interchange.sim.Calendar
 import com.rm.interchange.sim.Command
 import com.rm.interchange.sim.Prices
@@ -46,9 +50,29 @@ fun App() {
 
 @Composable
 private fun GameScreen() {
+    // The game runs on its own thread and makes the world there.
+    val runner = remember { GameThread { World(256, 256, 1) }.also { it.start() } }
+    DisposableEffect(runner) { onDispose { runner.stop() } }
+    var game by remember { mutableStateOf<Game?>(null) }
+    // Redraws every display frame, and picks up the game once it's made.
+    val frame = remember { mutableLongStateOf(0L) }
+    LaunchedEffect(runner) {
+        while (true) withFrameNanos {
+            frame.longValue++
+            if (game == null) game = runner.game
+        }
+    }
+    val g = game
+    if (g == null) {
+        Box(Modifier.fillMaxSize().background(LocalColors.current.page))
+        return
+    }
+    GameScreen(runner, g.world, frame)
+}
+
+@Composable
+private fun GameScreen(runner: GameThread, world: World, frame: State<Long>) {
     val c = LocalColors.current
-    val game = remember { Game(World(256, 256, 1)) }
-    val world = game.world
     val view = remember {
         View(world.width, world.height).apply {
             val i = world.landNearMiddle()
@@ -56,12 +80,17 @@ private fun GameScreen() {
             focusY = i / world.width + 0.5f
         }
     }
-    val frame = remember { mutableLongStateOf(0L) }
     var paused by remember { mutableStateOf(false) }
     var speed by remember { mutableIntStateOf(0) }
     // What the strip shows, set only when it changes so the screen doesn't compose every frame.
-    var day by remember { mutableIntStateOf(0) }
-    var money by remember { mutableLongStateOf(world.companies[0].money) }
+    var day by remember { mutableIntStateOf(runner.day) }
+    var money by remember { mutableLongStateOf(runner.money) }
+    LaunchedEffect(runner) {
+        while (true) withFrameNanos {
+            if (runner.day != day) day = runner.day
+            if (runner.money != money) money = runner.money
+        }
+    }
 
     var tool by remember { mutableStateOf(Tool.Inspect) }
     // The tool last used in each group, so a group's button opens on it.
@@ -72,27 +101,6 @@ private fun GameScreen() {
     var plan by remember { mutableStateOf<Command.Rail?>(null) }
     var inspected by remember { mutableStateOf<Pair<Int, Int>?>(null) }
 
-    // Runs the game at its tick rate off the display's frames.
-    LaunchedEffect(game) {
-        val tickNanos = 1_000_000_000L / Game.TICKS_PER_SECOND
-        var last = withFrameNanos { it }
-        var owed = 0L
-        while (true) {
-            withFrameNanos { now ->
-                owed = (owed + now - last).coerceAtMost(tickNanos * 4)
-                last = now
-                while (owed >= tickNanos) {
-                    if (!paused) repeat(SPEEDS[speed]) { game.step() }
-                    owed -= tickNanos
-                }
-                frame.longValue++
-                if (world.day != day) day = world.day
-                val m = world.companies[0].money
-                if (m != money) money = m
-            }
-        }
-    }
-
     val input = remember(tool, removing) {
         object : MapInput {
             var start: Pick? = null
@@ -100,9 +108,9 @@ private fun GameScreen() {
             override fun tap(at: Pick) {
                 when (tool) {
                     Tool.Inspect -> inspected = at.tileX to at.tileY
-                    Tool.Track -> { game.request(trackLine(0, at, at, removing)); folded = true }
+                    Tool.Track -> { runner.request(trackLine(0, at, at, removing)); folded = true }
                     Tool.Raise, Tool.Lower -> {
-                        game.request(Command.Terraform(0, at.x.roundToInt(), at.y.roundToInt(), tool == Tool.Raise))
+                        runner.request(Command.Terraform(0, at.x.roundToInt(), at.y.roundToInt(), tool == Tool.Raise))
                         folded = true
                     }
                     else -> {}
@@ -116,7 +124,7 @@ private fun GameScreen() {
                 start?.let { plan = trackLine(0, it, at, removing) }
             }
             override fun dragEnd() {
-                plan?.let { game.request(it); folded = true }
+                plan?.let { runner.request(it); folded = true }
                 plan = null
                 start = null
             }
@@ -134,12 +142,12 @@ private fun GameScreen() {
         val safe = WindowInsets.safeDrawing
 
         MapView(
-            world, view, { frame.longValue }, input, Modifier.fillMaxSize(),
+            world, view, { frame.value }, input, Modifier.fillMaxSize(),
             overlay = plan?.let { p -> { painter -> drawTrackPlan(world, painter, p) } },
         )
 
         StatusStrip(
-            paused, { paused = !paused }, speed, { speed = (speed + 1) % SPEEDS.size },
+            paused, { paused = !paused; runner.paused = paused }, speed, { speed = (speed + 1) % SPEEDS.size; runner.speed = SPEEDS[speed] },
             dateText(Calendar.dayOfMonth(day), Calendar.month(day), Calendar.year(world.startYear, day)),
             moneyText(money), money < 0,
             { view.turnBy(-1) }, { view.turnBy(1) },

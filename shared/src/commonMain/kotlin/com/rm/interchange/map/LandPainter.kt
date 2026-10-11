@@ -4,7 +4,13 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
+import com.rm.interchange.sim.CORNER_E
+import com.rm.interchange.sim.CORNER_N
+import com.rm.interchange.sim.CORNER_S
+import com.rm.interchange.sim.CORNER_W
 import com.rm.interchange.sim.Track
+import com.rm.interchange.sim.hasFoundation
+import com.rm.interchange.sim.surfaceHeight
 import com.rm.interchange.sim.World
 
 /**
@@ -27,6 +33,14 @@ class LandPainter(private val world: World, private val view: View, private val 
     fun y(vx: Float, vy: Float, h: Float) = originY + (vx + vy) * halfHeight - h * step
 
     private fun cornerHeight(vx: Int, vy: Int) = world.heightAt(view.cornerX(vx, vy), view.cornerY(vx, vy))
+
+    /** The foundation's height at view corner ([cvx], [cvy]) of world tile ([wx], [wy]), with [pieces] on it. */
+    private fun surface(wx: Int, wy: Int, cvx: Int, cvy: Int, pieces: Int): Int {
+        val dx = view.cornerX(cvx, cvy) - wx
+        val dy = view.cornerY(cvx, cvy) - wy
+        val corner = if (dy == 0) (if (dx == 0) CORNER_N else CORNER_E) else (if (dx == 0) CORNER_W else CORNER_S)
+        return world.surfaceHeight(wx, wy, pieces, corner)
+    }
 
     /** Draws view tile ([vx], [vy]): the ground, track on it and, at the map's front edges, the earth under it. */
     fun DrawScope.tile(vx: Int, vy: Int) {
@@ -69,15 +83,18 @@ class LandPainter(private val world: World, private val view: View, private val 
 
         val pieces = world.trackAt(wx, wy)
         if (world.hasFoundation(wx, wy)) {
-            // Built up level with the highest corner: a flat top and the stone faces towards the camera.
-            val top = maxOf(t, r, b, l).toFloat()
-            val ty = y(fx, fy, top); val ry = y(fx + 1, fy, top); val by2 = y(fx + 1, fy + 1, top); val ly = y(fx, fy + 1, top)
+            // Built up under the track: a top at the foundation's height and stone faces down to the land towards the camera.
+            val st = surface(wx, wy, vx, vy, pieces).toFloat()
+            val sr = surface(wx, wy, vx + 1, vy, pieces).toFloat()
+            val sb = surface(wx, wy, vx + 1, vy + 1, pieces).toFloat()
+            val sl = surface(wx, wy, vx, vy + 1, pieces).toFloat()
+            val ty = y(fx, fy, st); val ry = y(fx + 1, fy, sr); val by2 = y(fx + 1, fy + 1, sb); val ly = y(fx, fy + 1, sl)
             quad(rxp, ry, bxp, by2, bxp, byp, rxp, ryp)
             drawPath(path, STONE_DARK)
             quad(lxp, ly, bxp, by2, bxp, byp, lxp, lyp)
             drawPath(path, STONE_LIGHT)
             quad(txp, ty, rxp, ry, bxp, by2, lxp, ly)
-            drawPath(path, grass(top.toInt()))
+            drawPath(path, grass(maxOf(st, sr, sb, sl).toInt()))
             if (halfWidth >= 12f) drawPath(path, GRID, style = Stroke(1f))
         }
         if (pieces != 0) for (p in Track.PIECES) if (pieces and p != 0) track(wx, wy, p, TRACK_BED, RAIL)

@@ -1,6 +1,11 @@
 package com.rm.interchange.map
 
+import com.rm.interchange.sim.CORNER_E
+import com.rm.interchange.sim.CORNER_N
+import com.rm.interchange.sim.CORNER_S
+import com.rm.interchange.sim.CORNER_W
 import com.rm.interchange.sim.World
+import com.rm.interchange.sim.surfaceHeight
 import kotlin.math.floor
 
 /**
@@ -149,20 +154,18 @@ class Pick(val x: Float, val y: Float) {
     val fy get() = y - floor(y)
 }
 
-/** The ground's height at world point ([x], [y]), from its tile's corners, or the top of its foundation. */
+/** The height at world point ([x], [y]) of the land, or of the foundation built on it. */
 fun groundHeight(world: World, x: Float, y: Float): Float {
     val tx = floor(x).toInt().coerceIn(0, world.width - 1)
     val ty = floor(y).toInt().coerceIn(0, world.height - 1)
-    if (world.hasFoundation(tx, ty)) {
-        return maxOf(world.heightAt(tx, ty), world.heightAt(tx + 1, ty), world.heightAt(tx + 1, ty + 1), world.heightAt(tx, ty + 1)).toFloat()
-    }
     val fx = (x - tx).coerceIn(0f, 1f)
     val fy = (y - ty).coerceIn(0f, 1f)
-    val n = world.heightAt(tx, ty)
-    val e = world.heightAt(tx + 1, ty)
-    val s = world.heightAt(tx + 1, ty + 1)
-    val wv = world.heightAt(tx, ty + 1)
-    return (n * (1 - fx) + e * fx) * (1 - fy) + (wv * (1 - fx) + s * fx) * fy
+    val p = world.trackAt(tx, ty)
+    val n = world.surfaceHeight(tx, ty, p, CORNER_N)
+    val e = world.surfaceHeight(tx, ty, p, CORNER_E)
+    val s = world.surfaceHeight(tx, ty, p, CORNER_S)
+    val w = world.surfaceHeight(tx, ty, p, CORNER_W)
+    return (n * (1 - fx) + e * fx) * (1 - fy) + (w * (1 - fx) + s * fx) * fy
 }
 
 /** Zooms by [by] keeping the point under ([px], [py]) where it is, on a screen [w] by [h]. */

@@ -7,6 +7,7 @@ import com.rm.interchange.map.Pick
 import com.rm.interchange.sim.Command
 import com.rm.interchange.sim.Track
 import com.rm.interchange.sim.World
+import com.rm.interchange.sim.planRail
 import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.sign
@@ -46,15 +47,11 @@ fun trackLine(company: Int, start: Pick, end: Pick, remove: Boolean): Command.Ra
 /** The line [rail] would lay, drawn over the map: pale where it'll go, red where it can't. */
 fun DrawScope.drawTrackPlan(world: World, painter: LandPainter, rail: Command.Rail) {
     val line = Track.line(world, rail.sx, rail.sy, rail.ex, rail.ey, rail.first) ?: return
-    for (entry in line) {
+    val ok = world.planRail(rail) ?: return
+    for ((k, entry) in line.withIndex()) {
         val i = entry / 64
-        val piece = entry % 64
-        val x = i % world.width
-        val y = i / world.width
-        val has = world.trackAt(x, y) and piece != 0
-        val ok = if (rail.remove) has else has || world.pieceFits(x, y, piece)
         with(painter) {
-            track(x, y, piece, if (ok) PLAN_OK else PLAN_BAD, if (ok) PLAN_RAIL else PLAN_BAD)
+            track(i % world.width, i / world.width, entry % 64, if (ok[k]) PLAN_OK else PLAN_BAD, if (ok[k]) PLAN_RAIL else PLAN_BAD)
         }
     }
 }
