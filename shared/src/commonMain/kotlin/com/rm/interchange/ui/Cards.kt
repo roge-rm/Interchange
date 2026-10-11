@@ -144,6 +144,18 @@ fun StationCard(view: WorldView, s: StationView, onTrain: (Int) -> Unit, onClose
         Text(stringResource(Res.string.platform_tiles, s.platforms), color = c.textDim, fontSize = 13.sp)
         Text(stringResource(Res.string.passengers_waiting, s.waiting[Cargo.PASSENGERS]), color = c.text, fontSize = 13.sp)
         Text(stringResource(Res.string.mail_waiting, s.waiting[Cargo.MAIL]), color = c.text, fontSize = 13.sp)
+        // Where they're going, the most first, and where they'll change on the way.
+        if (s.going.isNotEmpty()) Text(stringResource(Res.string.going_to), color = c.textDim, fontSize = 12.sp)
+        for (g in s.going.take(GOING_SHOWN)) {
+            val dest = if (g.dest < 0) stringResource(Res.string.anywhere) else stationName(view, g.dest)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    if (g.via >= 0) stringResource(Res.string.via, dest, stationName(view, g.via)) else dest,
+                    color = c.text, fontSize = 13.sp, modifier = Modifier.weight(1f), maxLines = 1,
+                )
+                Text("${g.counts[Cargo.PASSENGERS]} · ${g.counts[Cargo.MAIL]}", color = c.textDim, fontSize = 13.sp)
+            }
+        }
         val calling = view.trains.filter { s.id in it.orders }
         if (calling.isEmpty()) Text(stringResource(Res.string.no_trains_call), color = c.textDim, fontSize = 13.sp)
         for (t in calling) {
@@ -154,3 +166,6 @@ fun StationCard(view: WorldView, s: StationView, onTrain: (Int) -> Unit, onClose
         }
     }
 }
+
+/** How many destinations a station's card lists. */
+private const val GOING_SHOWN = 6

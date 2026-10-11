@@ -18,7 +18,8 @@ package com.rm.interchange.sim
 class Station(val id: Int, val owner: Int, var name: String, val signX: Int, val signY: Int) {
     /** Its platform tiles, as tile indexes, in the order they were built. */
     val tiles = ArrayList<Int>()
-    val waiting = IntArray(Cargo.COUNT)
+    /** Lots waiting, oldest first, by cargo. */
+    val cargo = Array(Cargo.COUNT) { ArrayList<Packet>() }
 }
 
 /** A train depot, open at [edge] of its tile. */

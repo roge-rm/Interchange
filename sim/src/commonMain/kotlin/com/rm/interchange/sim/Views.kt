@@ -51,7 +51,17 @@ class TrainView(
 )
 
 /** A station as the screen shows it. */
-class StationView(val id: Int, val name: String, val platforms: Int, val waiting: IntArray = IntArray(Cargo.COUNT))
+class StationView(
+    val id: Int,
+    val name: String,
+    val platforms: Int,
+    val waiting: IntArray = IntArray(Cargo.COUNT),
+    /** Where what's waiting is going, the most first. */
+    val going: List<GoingView> = emptyList(),
+)
+
+/** Passengers and mail waiting at a station for [dest] (-1 for anywhere), changing at [via] on the way or -1 if it's the next stop. */
+class GoingView(val dest: Int, val via: Int, val counts: IntArray)
 
 /** A depot as the screen shows it, to draw over the trains going in and out of it. */
 class DepotView(val tile: Int, val edge: Int)
@@ -109,10 +119,18 @@ fun World.view(): WorldView {
         TrainView(
             t.id, t.name, t.engine, t.wagon, t.wagons, t.depot, t.inDepot, t.running, t.toDepot,
             t.orders.toIntArray(), t.order, t.speed / 16 * 2700 / 4096, t.waiting > 0, t.running && !t.inDepot && t.lostUntil > tick,
-            t.load.copyOf(), IntArray(Cargo.COUNT) { t.capacity(it) }, t.profitThisYear, t.profitLastYear,
+            IntArray(Cargo.COUNT) { t.load(it) }, IntArray(Cargo.COUNT) { t.capacity(it) }, t.profitThisYear, t.profitLastYear,
         )
     }
-    val stationViews = stations.filterNotNull().map { StationView(it.id, it.name, it.tiles.size, it.waiting.copyOf()) }
+    val stationViews = stations.filterNotNull().map { s ->
+        val going = HashMap<Int, IntArray>()
+        for (c in 0 until Cargo.COUNT) for (p in s.cargo[c]) going.getOrPut(p.dest) { IntArray(Cargo.COUNT) }[c] += p.count
+        val list = going.entries.sortedWith(compareByDescending<Map.Entry<Int, IntArray>> { it.value.sum() }.thenBy { it.key }).map { (d, n) ->
+            val hop = if (d >= 0) nextHop(s.id, d) else -1
+            GoingView(d, if (hop >= 0 && hop != d) hop else -1, n)
+        }
+        StationView(s.id, s.name, s.tiles.size, IntArray(Cargo.COUNT) { s.waiting(it) }, list)
+    }
     val signalViews = signals.entries.sortedBy { it.key }.map { (k, s) ->
         val tile = k / 8
         val piece = Track.PIECES[k % 8]

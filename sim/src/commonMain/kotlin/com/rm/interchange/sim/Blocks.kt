@@ -14,6 +14,7 @@ package com.rm.interchange.sim
 internal fun World.networkChanged() {
     blocksDirty = true
     catchmentDirty = true
+    linksDirty = true
     for (t in trains) t?.route = null
 }
 
@@ -21,6 +22,7 @@ internal fun World.networkChanged() {
 internal fun World.networkChangedKeepingRoutes() {
     blocksDirty = true
     catchmentDirty = true
+    linksDirty = true
 }
 
 internal fun World.workOutBlocks() {

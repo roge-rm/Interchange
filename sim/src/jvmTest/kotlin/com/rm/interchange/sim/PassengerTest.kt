@@ -38,8 +38,8 @@ class PassengerTest {
         w.run(Calendar.TICKS_PER_DAY * 30)
         val a = w.stations[0]!!
         val b = w.stations[1]!!
-        assertTrue(a.waiting[Cargo.PASSENGERS] > 0 && b.waiting[Cargo.PASSENGERS] > 0, "${a.waiting.toList()} ${b.waiting.toList()}")
-        assertTrue(a.waiting[Cargo.PASSENGERS] > a.waiting[Cargo.MAIL])
+        assertTrue(a.waiting(Cargo.PASSENGERS) > 0 && b.waiting(Cargo.PASSENGERS) > 0)
+        assertTrue(a.waiting(Cargo.PASSENGERS) > a.waiting(Cargo.MAIL))
     }
 
     @Test
@@ -55,7 +55,7 @@ class PassengerTest {
         var carried = false
         repeat(40_000) {
             w.step()
-            if (t.load[Cargo.PASSENGERS] > 0) carried = true
+            if (t.load(Cargo.PASSENGERS) > 0) carried = true
         }
         assertTrue(carried)
         assertTrue(t.profitThisYear + t.profitLastYear > 0 || w.companies[0].money > before, "profit ${t.profitThisYear}")
@@ -93,8 +93,67 @@ class PassengerTest {
         w.apply(Command.TrainOrder(0, 0, Command.TrainOrder.START_STOP))
         w.run(9000)
         val c = Save.read(Save.write(w))
-        assertEquals(w.trains[0]!!.load.toList(), c.trains[0]!!.load.toList())
+        assertEquals(w.trains[0]!!.load(Cargo.PASSENGERS), c.trains[0]!!.load(Cargo.PASSENGERS))
         repeat(10_000) { w.step(); c.step() }
         assertEquals(w.checksum(), c.checksum())
+    }
+
+    /**
+     * Three towns along one line, stations A, B and C, with one train between A and B and another between B and
+     * C: passengers from A for C ride the first train, change at B and ride the second.
+     */
+    @Test
+    fun passengersChangeTrainsToGetWhereTheyreGoing() {
+        val w = World(96, 64, 1, startYear = 1900)
+        for (i in w.corners.indices) w.corners[i] = 3
+        w.companies[0].money = 10_000_000
+        // A depot at each end, one for each train.
+        w.apply(Command.Depot(0, 2, 10, Track.XP))
+        w.apply(Command.Depot(0, 91, 10, Track.XM))
+        w.apply(Command.Rail(0, 3, 10, 90, 10, Track.X, remove = false))
+        val house = w.roster.houses.first { it.key == "base:clapboard_house" }
+        for ((n, xs) in listOf(10..13, 46..49, 82..85).withIndex()) {
+            val t = Town(n, "Town $n", xs.first, 12, 3)
+            w.towns += t
+            for (x in xs) {
+                val i = w.index(x, 12)
+                w.house[i] = packHouse(house.id, Track.YM).toShort()
+                w.townOf[i] = n.toShort()
+                t.houses++
+                t.population += house.residents
+            }
+            w.apply(Command.Station(0, xs.first, 10, xs.last, 10, Track.X))
+        }
+        w.catchmentDirty = true
+        for ((k, orders) in listOf(intArrayOf(0, 1), intArrayOf(1, 2)).withIndex()) {
+            w.apply(Command.BuyTrain(0, k, 2, 18, 3))
+            w.apply(Command.TrainOrder(0, k, Command.TrainOrder.ORDERS, orders))
+            w.apply(Command.TrainOrder(0, k, Command.TrainOrder.START_STOP))
+        }
+        assertEquals(1, w.nextHop(0, 2))
+        assertEquals(2, w.nextHop(1, 2))
+        assertEquals(-1, w.nextHop(2, 0).let { if (it == 1) -1 else it })
+        // Some of A's passengers are bound for C.
+        w.run(Calendar.TICKS_PER_DAY * 3)
+        assertTrue(w.stations[0]!!.cargo[Cargo.PASSENGERS].any { it.dest == 2 })
+        // Watch for them arriving at C: a payment there for passengers who started at A.
+        var throughToC = false
+        val before = w.companies[0].money
+        repeat(60_000) {
+            val onSecond = w.trains[1]!!.cargo[Cargo.PASSENGERS].any { it.origin == 0 && it.dest == 2 }
+            w.step()
+            if (onSecond) throughToC = true
+        }
+        assertTrue(throughToC, "nobody from A rode the second train")
+        assertTrue(w.companies[0].money > before)
+        // The first train only goes as far as B, but its legs towards C are credited to it.
+        assertTrue(w.trains[0]!!.profitThisYear + w.trains[0]!!.profitLastYear > -10_000)
+    }
+
+    @Test
+    fun withNoLinksPassengersGoAnywhere() {
+        val w = line()
+        w.run(Calendar.TICKS_PER_DAY * 5)
+        assertTrue(w.stations[0]!!.cargo[Cargo.PASSENGERS].all { it.dest == -1 })
     }
 }

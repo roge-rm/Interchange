@@ -54,6 +54,10 @@ class World(val settings: NewGame, val roster: Roster = Roster.BASE, generate: B
     /** Building tiles in reach of a station and the station each sends to, worked out again when [catchmentDirty]. Not saved. */
     internal var catchment = IntArray(0)
     internal var catchmentDirty = true
+    /** The people round each station, and the next stop from each station towards each it can reach. Not saved. */
+    internal val stationPeople = HashMap<Int, Int>()
+    internal val nextHops = HashMap<Int, HashMap<Int, Int>>()
+    internal var linksDirty = true
     /** Recent payments, for the screen. Not part of the game. */
     val payments = ArrayList<Payment>()
 
@@ -201,14 +205,14 @@ class World(val settings: NewGame, val roster: Roster = Roster.BASE, generate: B
         for (y in 0 until height) mix(heightAt(width, y).toLong())
         for (c in companies) mix(c.money)
         for (t in towns) { mix(t.population.toLong()); mix(t.growIn.toLong()); mix(t.servedThisMonth.toLong()) }
-        for (s in stations) if (s != null) for (w in s.waiting) mix(w.toLong())
+        for (s in stations) if (s != null) for (c in s.cargo) for (p in c) { mix(p.dest.toLong()); mix(p.count.toLong()); mix(p.credit) }
         for (k in signals.keys.sorted()) mix(k.toLong() * 31 + signals.getValue(k))
         for (k in stationTiles.keys.sorted()) mix(k.toLong() * 31 + stationTiles.getValue(k))
         for (k in depotTiles.keys.sorted()) mix(k.toLong() * 31 + depotTiles.getValue(k))
         for (t in trains) {
             if (t == null) continue
             mix(t.id.toLong()); mix(t.nose.toLong()); mix(t.speed.toLong()); mix(t.waiting.toLong()); mix(t.order.toLong())
-            for (l in t.load) mix(l.toLong())
+            for (c in t.cargo) for (p in c) { mix(p.dest.toLong()); mix(p.count.toLong()) }
             mix(t.profitThisYear)
             for (st in t.steps) mix(st.toLong())
         }

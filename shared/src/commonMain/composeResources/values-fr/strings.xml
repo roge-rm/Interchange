@@ -193,4 +193,9 @@
     <string name="passengers_load">Voyageurs %1$d/%2$d</string>
     <string name="mail_load">Courrier %1$d/%2$d</string>
     <string name="profit_line">Bénéfice cette année %1$s, l'an dernier %2$s</string>
+
+    <!-- Trajets -->
+    <string name="going_to">Destination, voyageurs · courrier</string>
+    <string name="anywhere">N'importe où</string>
+    <string name="via">%1$s, correspondance à %2$s</string>
 </resources>

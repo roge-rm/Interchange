@@ -16,7 +16,7 @@ package com.rm.interchange.sim
  */
 object Save {
     private val MAGIC = "ICHG".encodeToByteArray()
-    const val VERSION = 4
+    const val VERSION = 5
 
     fun write(world: World): ByteArray {
         val w = ByteWriter(world.width * world.height * 6 + 4096)
@@ -40,7 +40,7 @@ object Save {
                 w.bool(s != null)
                 if (s == null) continue
                 w.int(s.owner); w.string(s.name); w.int(s.signX); w.int(s.signY); w.ints(s.tiles.toIntArray())
-                w.ints(s.waiting)
+                writeCargo(w, s.cargo)
             }
             w.uvar(depots.size.toLong())
             for (d in depots) {
@@ -63,7 +63,7 @@ object Save {
                 w.bool(r != null)
                 if (r != null) w.ints(r)
                 w.int(t.routeAt); w.bool(t.turnRound); w.long(t.lostUntil)
-                w.ints(t.load); w.ints(t.loadedAt); for (v in t.loadedTick) w.long(v); w.long(t.profitThisYear); w.long(t.profitLastYear)
+                writeCargo(w, t.cargo); w.long(t.profitThisYear); w.long(t.profitLastYear)
             }
             w.uvar(towns.size.toLong())
             for (t in towns) { w.string(t.name); w.int(t.x); w.int(t.y); w.int(t.grid); w.bool(t.french); w.int(t.population); w.int(t.houses); w.int(t.growIn); w.int(t.servedThisMonth); w.int(t.servedLastMonth) }
@@ -117,7 +117,11 @@ object Save {
                 if (!r.bool()) { stations += null; return@repeat }
                 val s = Station(id, r.int(), r.string(), r.int(), r.int())
                 for (tile in r.ints()) { s.tiles += tile; stationTiles[tile] = id }
-                if (version >= 4) r.ints().let { a -> a.copyInto(s.waiting, endIndex = minOf(a.size, Cargo.COUNT)) }
+                when {
+                    version >= 5 -> readCargo(r, s.cargo)
+                    // Before journeys, what waited could go anywhere.
+                    version == 4 -> r.ints().forEachIndexed { c, n -> if (c < Cargo.COUNT && n > 0) s.cargo[c] += Packet(-1, id, n, 0) }
+                }
                 stations += s
             }
             repeat(r.uvar().toInt()) { id ->
@@ -136,10 +140,14 @@ object Save {
                 t.orders += r.ints().toList(); t.order = r.int(); t.toDepot = r.bool()
                 t.route = if (r.bool()) r.ints() else null
                 t.routeAt = r.int(); t.turnRound = r.bool(); t.lostUntil = r.long()
-                if (version >= 4) {
-                    r.ints().let { a -> a.copyInto(t.load, endIndex = minOf(a.size, Cargo.COUNT)) }
-                    r.ints().let { a -> a.copyInto(t.loadedAt, endIndex = minOf(a.size, Cargo.COUNT)) }
-                    for (c in 0 until Cargo.COUNT) t.loadedTick[c] = r.long()
+                if (version >= 5) {
+                    readCargo(r, t.cargo)
+                    t.profitThisYear = r.long(); t.profitLastYear = r.long()
+                } else if (version == 4) {
+                    val load = r.ints()
+                    val at = r.ints()
+                    val since = LongArray(load.size) { r.long() }
+                    for (c in load.indices) if (c < Cargo.COUNT && load[c] > 0) t.cargo[c] += Packet(-1, at.getOrElse(c) { -1 }, load[c], since[c], 0, at.getOrElse(c) { -1 })
                     t.profitThisYear = r.long(); t.profitLastYear = r.long()
                 }
                 trains += t
@@ -195,6 +203,27 @@ object Save {
     }
 
     private fun basePack(ref: PackRef) = Packs.BASE.takeIf { it.id == ref.id && it.version >= ref.version }
+
+    private fun writeCargo(w: ByteWriter, cargo: Array<ArrayList<Packet>>) {
+        w.uvar(cargo.size.toLong())
+        for (lots in cargo) {
+            w.uvar(lots.size.toLong())
+            for (p in lots) { w.int(p.dest); w.int(p.origin); w.int(p.count); w.long(p.since); w.long(p.credit); w.int(p.boarded) }
+        }
+    }
+
+    private fun readCargo(r: ByteReader, into: Array<ArrayList<Packet>>) {
+        val kinds = r.uvar().toInt()
+        if (kinds > 64) throw BadData("too many kinds of cargo")
+        for (c in 0 until kinds) {
+            val n = r.uvar().toInt()
+            if (n > 1_000_000) throw BadData("too many lots of cargo")
+            repeat(n) {
+                val p = Packet(r.int(), r.int(), r.int(), r.long(), r.long(), r.int())
+                if (c < into.size) into[c] += p
+            }
+        }
+    }
 
     private fun fillShorts(into: ShortArray, from: ShortArray) {
         if (from.size != into.size) throw BadData("a map layer is the wrong size")

@@ -210,4 +210,9 @@
     <string name="passengers_load">Passengers %1$d/%2$d</string>
     <string name="mail_load">Mail %1$d/%2$d</string>
     <string name="profit_line">Profit this year %1$s, last year %2$s</string>
+
+    <!-- Journeys -->
+    <string name="going_to">Going to, passengers · mail</string>
+    <string name="anywhere">Anywhere</string>
+    <string name="via">%1$s, changing at %2$s</string>
 </resources>

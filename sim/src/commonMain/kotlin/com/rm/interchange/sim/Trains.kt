@@ -70,10 +70,8 @@ class Train(
     var nose = 0
     var speed = 0
 
-    /** What it's carrying, by [Cargo], where each lot got on and when; -1 for none. */
-    val load = IntArray(Cargo.COUNT)
-    val loadedAt = IntArray(Cargo.COUNT) { -1 }
-    val loadedTick = LongArray(Cargo.COUNT)
+    /** What it's carrying, as lots by [Cargo]. */
+    val cargo = Array(Cargo.COUNT) { ArrayList<Packet>() }
     /** Fares less running costs, this year and last, in dollars. */
     var profitThisYear = 0L
     var profitLastYear = 0L
@@ -150,6 +148,8 @@ internal fun World.buyTrain(company: Company, c: Command.BuyTrain) {
 internal fun World.trainCommand(company: Company, c: Command.TrainOrder) {
     val t = trains.getOrNull(c.train) ?: return
     if (t.owner != company.id) return
+    // Orders and trains make the links passengers find their way by.
+    linksDirty = true
     when (c.what) {
         Command.TrainOrder.START_STOP -> {
             if (t.inDepot) {
