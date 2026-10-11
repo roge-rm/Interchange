@@ -57,6 +57,9 @@ MODELS = {
     "tank_car": (8, lambda m: cars.tank_car(m, L(8))),
     "stock_car": (9, lambda m: cars.stock_car(m, L(9))),
     "caboose": (7, lambda m: cars.caboose(m, L(7))),
+    "reefer": (9, lambda m: cars.reefer(m, L(9))),
+    "ore_car": (6, lambda m: cars.ore_car(m, L(6))),
+    "covered_hopper": (11, lambda m: cars.covered_hopper(m, L(11))),
 }
 
 

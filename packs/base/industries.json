@@ -1,0 +1,121 @@
+{
+  "industries": [
+    {
+      "id": "logging_camp",
+      "name": { "en": "Logging Camp", "fr": "Camp de bûcherons" },
+      "from": 1836,
+      "until": 2050,
+      "regions": { "shield": 5, "rockies": 4, "maritimes": 4, "mixed": 3, "north": 2, "prairies": 1 },
+      "ground": ["forest"],
+      "layout": ["bunkhouse log_pile", "camp_shed log_pile"],
+      "produces": { "timber": 90 }
+    },
+    {
+      "id": "sawmill",
+      "name": { "en": "Sawmill", "fr": "Scierie" },
+      "from": 1836,
+      "until": 2050,
+      "regions": { "shield": 4, "rockies": 3, "maritimes": 3, "mixed": 3, "north": 1, "prairies": 1 },
+      "layout": ["sawmill log_deck burner", "sawmill lumber_stack lumber_stack"],
+      "accepts": ["timber"],
+      "produces": { "lumber": 0 }
+    },
+    {
+      "id": "farm",
+      "name": { "en": "Farm", "fr": "Ferme" },
+      "from": 1836,
+      "until": 2050,
+      "regions": { "prairies": 6, "mixed": 4, "maritimes": 2, "shield": 1, "rockies": 1 },
+      "ground": ["prairie", "meadow"],
+      "layout": ["barn silo wheat_field", "wheat_field wheat_field wheat_field", "wheat_field wheat_field wheat_field"],
+      "produces": { "grain": 80 }
+    },
+    {
+      "id": "flour_mill",
+      "name": { "en": "Flour Mill", "fr": "Moulin à farine" },
+      "from": 1836,
+      "until": 2050,
+      "regions": { "prairies": 3, "mixed": 3, "maritimes": 1, "shield": 1, "rockies": 1 },
+      "layout": ["mill_building mill_silos", "mill_building mill_yard"],
+      "accepts": ["grain"],
+      "produces": { "food": 0 }
+    },
+    {
+      "id": "coal_mine",
+      "name": { "en": "Coal Mine", "fr": "Mine de charbon" },
+      "from": 1836,
+      "until": 2050,
+      "regions": { "maritimes": 5, "rockies": 4, "prairies": 3, "mixed": 2, "north": 1, "shield": 1 },
+      "layout": ["headframe tipple", "coal_heap mine_shed"],
+      "produces": { "coal": 100 }
+    },
+    {
+      "id": "iron_mine",
+      "name": { "en": "Iron Mine", "fr": "Mine de fer" },
+      "from": 1840,
+      "until": 2050,
+      "regions": { "shield": 5, "north": 3, "mixed": 2, "rockies": 1, "maritimes": 1, "prairies": 0 },
+      "layout": ["open_pit open_pit", "ore_crusher ore_heap"],
+      "produces": { "iron_ore": 90 }
+    },
+    {
+      "id": "steel_mill",
+      "name": { "en": "Steel Mill", "fr": "Aciérie" },
+      "from": 1880,
+      "until": 2050,
+      "regions": { "mixed": 3, "maritimes": 3, "shield": 2, "prairies": 1, "rockies": 1, "north": 0 },
+      "layout": ["blast_furnace stacks steel_shed", "slag_heap steel_shed steel_yard"],
+      "accepts": ["coal", "iron_ore"],
+      "produces": { "steel": 0 }
+    },
+    {
+      "id": "factory",
+      "name": { "en": "Factory", "fr": "Usine" },
+      "from": 1850,
+      "until": 2050,
+      "regions": { "mixed": 4, "maritimes": 2, "shield": 2, "prairies": 2, "rockies": 1, "north": 0 },
+      "layout": ["factory_shed factory_shed factory_chimney", "loading_dock factory_shed factory_yard"],
+      "accepts": ["steel", "lumber"],
+      "produces": { "goods": 0 }
+    },
+    {
+      "id": "oil_wells",
+      "name": { "en": "Oil Wells", "fr": "Puits de pétrole" },
+      "from": 1858,
+      "until": 2050,
+      "regions": { "prairies": 5, "mixed": 2, "north": 2, "rockies": 1, "maritimes": 0, "shield": 0 },
+      "layout": ["pumpjack pumpjack", "oil_tank pumpjack"],
+      "produces": { "oil": 80 }
+    },
+    {
+      "id": "refinery",
+      "name": { "en": "Oil Refinery", "fr": "Raffinerie" },
+      "from": 1880,
+      "until": 2050,
+      "regions": { "prairies": 3, "mixed": 3, "maritimes": 2, "rockies": 1, "north": 1, "shield": 1 },
+      "layout": ["refinery_columns refinery_tanks", "refinery_tanks flare"],
+      "accepts": ["oil"],
+      "produces": { "fuel": 0 }
+    },
+    {
+      "id": "ranch",
+      "name": { "en": "Ranch", "fr": "Ranch" },
+      "from": 1836,
+      "until": 2050,
+      "regions": { "prairies": 5, "rockies": 3, "mixed": 2, "north": 0, "maritimes": 1, "shield": 0 },
+      "ground": ["prairie", "meadow"],
+      "layout": ["ranch_barn corral corral", "corral corral corral"],
+      "produces": { "livestock": 50 }
+    },
+    {
+      "id": "meat_packing",
+      "name": { "en": "Meat Packing Plant", "fr": "Abattoir" },
+      "from": 1870,
+      "until": 2050,
+      "regions": { "prairies": 3, "mixed": 3, "maritimes": 1, "rockies": 1, "north": 0, "shield": 1 },
+      "layout": ["packing_plant packing_plant", "stockyard stockyard"],
+      "accepts": ["livestock"],
+      "produces": { "food": 0 }
+    }
+  ]
+}

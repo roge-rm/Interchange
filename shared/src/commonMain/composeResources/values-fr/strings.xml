@@ -209,4 +209,15 @@
         <item>lun.</item><item>mar.</item><item>mer.</item><item>jeu.</item><item>ven.</item><item>sam.</item><item>dim.</item>
     </string-array>
     <string name="weekday_date">%1$s %2$s</string>
+
+    <!-- Industries et marchandises -->
+    <string-array name="cargoes">
+        <item>Voyageurs</item><item>Courrier</item><item>Bois rond</item><item>Bois d'œuvre</item><item>Grain</item><item>Charbon</item><item>Minerai de fer</item><item>Acier</item><item>Marchandises</item><item>Pétrole</item><item>Carburant</item><item>Bétail</item><item>Aliments</item>
+    </string-array>
+    <string name="cargo_waiting">%1$s en attente : %2$d, note %3$d&#160;%</string>
+    <string name="cargo_load">%1$s %2$d/%3$d</string>
+    <string name="produced_last_month">%1$s le mois dernier : %2$d, %3$d&#160;% transportés</string>
+    <string name="takes">Accepte : %1$s</string>
+    <string name="brought_last_month">Reçu le mois dernier : %1$d</string>
+    <string name="industries">Industries</string>
 </resources>

@@ -95,8 +95,8 @@ fun houseFacing(value: Int) = (value shr 12) and 3
 fun World.roadAt(x: Int, y: Int): Int = road[index(x, y)].toInt()
 fun World.houseAt(x: Int, y: Int): Int = houseOf(house[index(x, y)].toInt())
 
-/** Something of a town's on tile [i]: a road or a building. */
-fun World.townBuilt(i: Int) = road[i].toInt() != 0 || house[i].toInt() != 0
+/** Something of a town's on tile [i], a road or a building, or an industry's: what track, stations and the land tools keep off. */
+fun World.townBuilt(i: Int) = road[i].toInt() != 0 || house[i].toInt() != 0 || industryOf[i].toInt() != 0
 
 private fun stepX(edge: Int) = when (edge) { Track.XM -> -1; Track.XP -> 1; else -> 0 }
 private fun stepY(edge: Int) = when (edge) { Track.YM -> -1; Track.YP -> 1; else -> 0 }
@@ -276,7 +276,7 @@ private fun onLot(t: Town, x: Int, y: Int) = (x - t.x).mod(t.grid) != 0 && (y - 
 /** Free for a town to build on: dry, unowned, with nothing on it. */
 private fun World.freeLand(x: Int, y: Int): Boolean {
     val i = index(x, y)
-    return !isWater(x, y) && owner[i].toInt() == -1 && track[i].toInt() == 0 && road[i].toInt() == 0 && house[i].toInt() == 0
+    return !isWater(x, y) && owner[i].toInt() == -1 && track[i].toInt() == 0 && !townBuilt(i)
 }
 
 /** A road from ([x], [y]) across [edge] onto the free tile there, if both ends take it. */

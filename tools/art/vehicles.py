@@ -353,6 +353,10 @@ ROSTER = [
     ("tank_car", 8, lambda f: tankcar(f, L(8))),
     ("stock_car", 9, lambda f: stockcar(f, L(9))),
     ("caboose", 7, lambda f: caboose(f, L(7))),
+    # Drawn plain as their nearest kin until the Blender renders are there.
+    ("reefer", 9, lambda f: boxcar(f, L(9), False)),
+    ("ore_car", 6, lambda f: hopper(f, L(6))),
+    ("covered_hopper", 11, lambda f: hopper(f, L(11))),
 ]
 
 

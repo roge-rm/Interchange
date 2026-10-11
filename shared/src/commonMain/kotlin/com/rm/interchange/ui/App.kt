@@ -50,6 +50,7 @@ import androidx.compose.ui.platform.LocalDensity
 import com.rm.interchange.sim.BadData
 import com.rm.interchange.sim.BadPack
 import com.rm.interchange.sim.Calendar
+import com.rm.interchange.sim.Cargo
 import com.rm.interchange.sim.Command
 import com.rm.interchange.sim.MissingPacks
 import com.rm.interchange.sim.Pack
@@ -60,6 +61,8 @@ import com.rm.interchange.sim.Prices
 import com.rm.interchange.sim.Track
 import com.rm.interchange.sim.PAVED
 import com.rm.interchange.sim.houseOf
+import com.rm.interchange.sim.Industry
+import com.rm.interchange.sim.industryAt
 import com.rm.interchange.sim.approvalLevel
 import com.rm.interchange.map.rememberTownLabels
 import com.rm.interchange.sim.World
@@ -558,6 +561,11 @@ private fun InspectCard(world: World, x: Int, y: Int, onClose: () -> Unit, modif
             if (world.owner[i].toInt() == 0) add(stringResource(Res.string.owned_by, stringResource(Res.string.company)))
         }
     }
+    val industry = world.industryAt(i)
+    if (industry != null) {
+        IndustryCard(world, industry, lines.first(), onClose, modifier)
+        return
+    }
     val title = when {
         house != null -> house.name(lang)
         road != 0 -> stringResource(if (road and PAVED != 0) Res.string.paved_street else Res.string.dirt_road)
@@ -566,6 +574,39 @@ private fun InspectCard(world: World, x: Int, y: Int, onClose: () -> Unit, modif
         else -> stringResource(Res.string.kind_land)
     }
     InfoCard(title, lines, onClose, modifier)
+}
+
+/** An industry: what it made last month and how much was carried, and what it takes. */
+@Composable
+private fun IndustryCard(world: World, ind: Industry, where: String, onClose: () -> Unit, modifier: Modifier) {
+    val lang = languageCode()
+    val kind = world.roster.industries[ind.kind]
+    val names = stringArrayResource(Res.array.cargoes)
+    val lines = buildList {
+        add(where)
+        for (c in 0 until Cargo.COUNT) {
+            if (kind.outputs and (1 shl c) == 0) continue
+            val made = ind.madeLastMonth[c]
+            add(stringResource(Res.string.produced_last_month, names.getOrElse(c) { "" }, made, if (made == 0) 0 else ind.movedLastMonth[c] * 100 / made))
+        }
+        if (kind.secondary) {
+            add(stringResource(Res.string.takes, (0 until Cargo.COUNT).filter { kind.takes(it) }.joinToString(stringResource(Res.string.list_join)) { names.getOrElse(it) { "" }.lowercase() }))
+            add(stringResource(Res.string.brought_last_month, ind.broughtLastMonth))
+        }
+    }
+    InfoCard(industryName(world, ind, lang), lines, onClose, modifier)
+}
+
+/**
+ * An industry's name with its town's, as each language puts it: Elmbrook Coal
+ * Mine, or Mine de charbon d'Elmbrook.
+ */
+fun industryName(world: World, ind: Industry, lang: String): String {
+    val kind = world.roster.industries[ind.kind].name(lang)
+    val town = world.towns.getOrNull(ind.town)?.name ?: return kind
+    if (lang != "fr") return "$town $kind"
+    val vowel = town.firstOrNull()?.lowercaseChar()?.let { it in "aeiouyhéèêàâîôû" } == true
+    return if (vowel) "$kind d'$town" else "$kind de $town"
 }
 
 /** The widest the trays and the bottom tool bar go. */

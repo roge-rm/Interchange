@@ -122,6 +122,18 @@ for k, kind in enumerate(HOUSES):
     for e, edge in enumerate(EDGES):
         JOBS.append(("static", ("house", k, e), lambda kind=kind, edge=edge: scenery(f"house_{kind}_{edge}.png", base.cell), None))
         JOBS.append(("static", ("house_shadow", k, e), lambda kind=kind, edge=edge: scenery(f"house_{kind}_{edge}_shadow.png", base.cell), None))
+# Industry pieces, every one named in the base pack's industries.json layouts, each facing every view edge, with
+# its shadow apart.
+PARTS = []
+for ind in json.loads((ROOT / "packs/base/industries.json").read_text())["industries"]:
+    for row in ind["layout"]:
+        for key in row.split():
+            if key not in PARTS:
+                PARTS.append(key)
+for k, key in enumerate(PARTS):
+    for e, edge in enumerate(EDGES):
+        JOBS.append(("static", ("part", k, e), lambda key=key, edge=edge: scenery(f"part_{key}_{edge}.png", base.cell), None))
+        JOBS.append(("static", ("part_shadow", k, e), lambda key=key, edge=edge: scenery(f"part_{key}_{edge}_shadow.png", base.cell), None))
 # The engine house again, drawn over trains on its tile so they show going in through the doors.
 for e, edge in enumerate(EDGES):
     JOBS.append(("signals", ("depot_over", e), lambda edge=edge: scenery(f"depot_{edge}.png", lambda: track.depot(edge)), None))
@@ -353,6 +365,12 @@ object Atlas {{
     /** A building, at its place in HOUSE_KEYS * 4 + the view edge it faces, and its shadow. On the static sheet. */
     val HOUSE = intArrayOf({arr([index[("house", k, e)] for k in range(len(HOUSES)) for e in range(4)])})
     val HOUSE_SHADOW = intArrayOf({arr([index[("house_shadow", k, e)] for k in range(len(HOUSES)) for e in range(4)])})
+
+    /** The industry pieces drawn here, by the names in the base pack's industries.json layouts. */
+    val PART_KEYS = listOf({", ".join(f'"{k}"' for k in PARTS)})
+    /** An industry piece, at its place in PART_KEYS * 4 + the view edge it faces, and its shadow. On the static sheet. */
+    val PART = intArrayOf({arr([index[("part", k, e)] for k in range(len(PARTS)) for e in range(4)])})
+    val PART_SHADOW = intArrayOf({arr([index[("part_shadow", k, e)] for k in range(len(PARTS)) for e in range(4)])})
 
     /** A signal showing clear (0) or stop (1). On the signals sheet. */
     val SIGNAL = intArrayOf({index[("signal", 0)]}, {index[("signal", 1)]})

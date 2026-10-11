@@ -210,3 +210,60 @@ def caboose(m, L):
         m.box(-0.1, 0.1, y0, y1, 0.55, 0.65, c["iron"])
         for side in (-1, 1):
             m.rod((side * 0.1, (y0 + y1) / 2, 0.65), (side * 0.1, (y0 + y1) / 2, 1.1), 0.003, c["steel"])
+
+
+def reefer(m, L):
+    """A wooden ice refrigerator car: a yellow body, ice hatches at each end of the roof and a plug door."""
+    c = common()
+    body = material("reefer yellow", "#d8b24a", rough=0.7)
+    trim = material("reefer brown", "#5a3a26", rough=0.75)
+    a0, a1 = -L / 2 + 0.015, L / 2 - 0.015
+    _base(m, L, a0, a1, c)
+    m.box(-0.12, 0.12, a0, a1, 0.62, 1.55, body, bevel=0.003)
+    m.box(-0.125, 0.125, a0 - 0.004, a1 + 0.004, 1.55, 1.6, trim, bevel=0.003)
+    m.box(-0.025, 0.025, a0, a1, 1.6, 1.64, material("roof walk", "#4a3426", rough=0.8))
+    for y in (a0 + 0.03, a1 - 0.03):
+        m.box(-0.06, 0.06, y - 0.02, y + 0.02, 1.6, 1.68, trim, bevel=0.002)
+    for side in (-1, 1):
+        for k in range(1, 11):
+            z = 0.62 + (1.55 - 0.62) * k / 11
+            m.box(side * 0.1203 - 0.0006, side * 0.1203 + 0.0006, a0 + 0.005, a1 - 0.005, z - 0.003, z + 0.003, material("reefer boards", "#c09a3a", rough=0.8))
+        m.box(side * 0.1212 - 0.002, side * 0.1212 + 0.002, -0.04, 0.04, 0.7, 1.45, trim)
+        m.text(LETTERS, side * 0.1216, a0 / 2 - 0.02, 1.25, 0.028, trim, side)
+        m.text("REFRIGERATOR", side * 0.1216, a1 / 2 + 0.03, 1.25, 0.018, trim, side)
+
+
+def ore_car(m, L):
+    """A short, heavy ore car: a deep steel hopper on two trucks, its load heaped red."""
+    c = common()
+    body = material("ore car rust", "#5a2e22", rough=0.6)
+    a0, a1 = -L / 2 + 0.015, L / 2 - 0.015
+    for y in (-L / 2 + 0.07, L / 2 - 0.07):
+        truck(m, y, c)
+    m.box(-0.11, 0.11, a0 + 0.01, a1 - 0.01, 0.95, 1.45, body, bevel=0.004)
+    m.wedge([(-0.06, -0.035, 0.42), (0.06, -0.035, 0.42), (0.06, 0.035, 0.42), (-0.06, 0.035, 0.42)],
+            [(-0.105, a0 + 0.015, 0.95), (0.105, a0 + 0.015, 0.95), (0.105, a1 - 0.015, 0.95), (-0.105, a1 - 0.015, 0.95)], body)
+    m.box(-0.095, 0.095, a0 + 0.02, a1 - 0.02, 1.4, 1.58, material("iron ore", "#7a3a2a", rough=0.95), bevel=0.02)
+    for side in (-1, 1):
+        for y in (a0 + 0.04, 0.0, a1 - 0.04):
+            m.box(side * 0.112 - 0.004, side * 0.112 + 0.004, y - 0.006, y + 0.006, 0.95, 1.45, body)
+
+
+def covered_hopper(m, L):
+    """A grain car of the 1960s on: a long grey covered hopper with three bays and roof hatches."""
+    c = common()
+    body = material("hopper grey", "#a8aaa6", rough=0.55)
+    dark = material("hopper grey dark", "#7e807c", rough=0.6)
+    a0, a1 = -L / 2 + 0.015, L / 2 - 0.015
+    for y in (-L / 2 + 0.08, L / 2 - 0.08):
+        truck(m, y, c)
+    m.box(-0.12, 0.12, a0 + 0.02, a1 - 0.02, 0.9, 1.75, body, bevel=0.01)
+    for cy in (-0.11, 0.0, 0.11):
+        m.wedge([(-0.05, cy - 0.025, 0.4), (0.05, cy - 0.025, 0.4), (0.05, cy + 0.025, 0.4), (-0.05, cy + 0.025, 0.4)],
+                [(-0.115, cy - 0.05, 0.9), (0.115, cy - 0.05, 0.9), (0.115, cy + 0.05, 0.9), (-0.115, cy + 0.05, 0.9)], dark)
+    m.box(-0.03, 0.03, a0 + 0.04, a1 - 0.04, 1.75, 1.8, dark)
+    for side in (-1, 1):
+        for k in range(1, 8):
+            y = a0 + (a1 - a0) * k / 8
+            m.box(side * 0.1205 - 0.0015, side * 0.1205 + 0.0015, y - 0.003, y + 0.003, 0.92, 1.73, dark)
+        m.text("GRAIN", side * 0.1216, 0.0, 1.35, 0.035, material("hopper letters", "#2a2a2a", rough=0.6), side)

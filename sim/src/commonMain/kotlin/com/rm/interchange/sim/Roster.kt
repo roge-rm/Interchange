@@ -24,8 +24,8 @@ class Engine(
     val cost: Long,
     val running: Long,
     val length: Int,
-    /** What a wagon carries, and how much. */
-    val carries: String,
+    /** What a wagon can carry, the first unless set otherwise, and how much. */
+    val carries: List<String>,
     val capacity: Int,
     /** Its drawing, a place in [Roster.sprites]. */
     val sprite: Int,
@@ -35,8 +35,8 @@ class Engine(
     val enabled: Boolean,
 ) {
     val pulls get() = kind == VehicleKind.ENGINE
-    /** What it carries as a [Cargo] number, or -1. */
-    val cargo = Cargo.of(carries)
+    /** What it can carry as [Cargo] numbers; empty for nothing. */
+    val cargoes: IntArray = carries.map { Cargo.of(it) }.filter { it >= 0 }.toIntArray()
     val isTender get() = kind == VehicleKind.TENDER
 
     fun name(language: String) = names[language] ?: names["en"] ?: key
@@ -66,11 +66,46 @@ class House(
     fun name(language: String) = names[language] ?: names["en"] ?: key
 }
 
+/**
+ * A kind of industry, as the packs in a game make it. [layout] is its tile
+ * pieces by row; [produces] what it makes a month of each [Cargo], and
+ * [accepts] the cargo it takes, as bits by cargo number. One that takes
+ * cargo makes its own from what it's brought.
+ */
+class IndustryKind(
+    val id: Int,
+    val key: String,
+    val names: Map<String, String>,
+    val from: Int,
+    val until: Int,
+    val regions: Map<String, Int>,
+    val ground: List<String>,
+    val layout: List<List<String>>,
+    val produces: IntArray,
+    val accepts: Int,
+    /** The cargo it makes, as bits by cargo number, whether a month's worth of its own or from what it's brought. */
+    val outputs: Int,
+) {
+    fun name(language: String) = names[language] ?: names["en"] ?: key
+    val width get() = layout[0].size
+    val height get() = layout.size
+    val secondary get() = accepts != 0
+    fun takes(c: Int) = accepts and (1 shl c) != 0
+    /** How often it's placed in [region], by weight; 2 where it doesn't say. */
+    fun weight(region: Region) = regions[region.name.lowercase()] ?: 2
+}
+
 /** A vehicle drawing: the sheet [name] in pack [pack]. */
 data class SpriteRef(val pack: String, val name: String)
 
 /** Everything that can run on the track in one game, from its packs in order, base first. */
-class Roster(val packs: List<PackRef>, val engines: List<Engine>, val sprites: List<SpriteRef>, val houses: List<House> = emptyList()) {
+class Roster(
+    val packs: List<PackRef>,
+    val engines: List<Engine>,
+    val sprites: List<SpriteRef>,
+    val houses: List<House> = emptyList(),
+    val industries: List<IndustryKind> = emptyList(),
+) {
     operator fun get(id: Int) = engines[id]
     fun getOrNull(id: Int) = engines.getOrNull(id)
 
@@ -119,15 +154,23 @@ class Roster(val packs: List<PackRef>, val engines: List<Engine>, val sprites: L
                 Engine(
                     id = i, key = s.key, kind = d.kind!!, names = d.names!!, plurals = d.plurals ?: emptyMap(), types = d.types ?: emptyMap(),
                     from = d.from!!, until = d.until!!, speed = d.speed ?: 0, power = d.power ?: 0, weight = d.weight!!,
-                    cost = d.cost!!, running = d.running!!, length = d.length!!, carries = d.carries ?: "", capacity = d.capacity ?: 0,
+                    cost = d.cost!!, running = d.running!!, length = d.length!!, carries = d.carries ?: emptyList(), capacity = d.capacity ?: 0,
                     sprite = spriteIds.getOrPut(sprite) { sprites += sprite; sprites.size - 1 }, tender = tender, enabled = s.enabled,
                 )
             }
             val houses = packs.flatMap { p -> p.houses.map { p.id to it } }.mapIndexed { i, (pack, h) ->
                 House(i, "$pack:${h.id}", h.names, h.from, h.until, h.residents, h.jobs, h.zones, h.minPopulation, h.weight)
             }
+            val industries = packs.flatMap { p -> p.industries.map { p.id to it } }.mapIndexed { i, (pack, d) ->
+                IndustryKind(
+                    i, "$pack:${d.id}", d.names, d.from, d.until, d.regions, d.ground, d.layout,
+                    IntArray(Cargo.COUNT) { c -> d.produces[Cargo.IDS[c]] ?: 0 },
+                    d.accepts.fold(0) { m, cg -> Cargo.of(cg).let { if (it >= 0) m or (1 shl it) else m } },
+                    d.produces.keys.fold(0) { m, cg -> Cargo.of(cg).let { if (it >= 0) m or (1 shl it) else m } },
+                )
+            }
             if (problems.isNotEmpty()) throw BadPack(problems)
-            return Roster(packs.map { it.ref }, engines, sprites, houses)
+            return Roster(packs.map { it.ref }, engines, sprites, houses, industries)
         }
 
         /** [old] with whatever [v] gives in its place. */

@@ -6,7 +6,8 @@ ONLY, if given, renders just the files whose names start with it.
 
 Files: tree_<kind>_<look>.png, station_<0 along u, 1 along v>.png,
 depot_<edge>.png, signal_<0 clear, 1 stop>.png, house_<kind>_<edge>.png (a town
-building facing that view edge), each a whole cell at twice the sharpest level.
+building facing that view edge), part_<piece>_<edge>.png (a piece of an
+industry), each a whole cell at twice the sharpest level.
 A file already there is left alone.
 
 Everything but signals comes twice: the thing itself with no shadow, and
@@ -20,6 +21,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import bpy  # noqa: E402
 
 import houses  # noqa: E402
+import industries  # noqa: E402
 import parts  # noqa: E402
 import rig  # noqa: E402
 import scenery  # noqa: E402
@@ -86,6 +88,9 @@ def main():
     for kind in houses.BUILDERS:
         for edge in EDGES:
             shot(out, f"house_{kind}_{edge}.png", lambda m, kind=kind: houses.house(m, kind), heading=houses.FACING[edge])
+    for key in industries.PARTS:
+        for edge in EDGES:
+            shot(out, f"part_{key}_{edge}.png", lambda m, key=key: industries.part(m, key), heading=houses.FACING[edge])
     for red in (0, 1):
         shot(out, f"signal_{red}.png", lambda m, red=red: scenery.signal(m, red == 1), shadow=False)
     for kind in DECOR:

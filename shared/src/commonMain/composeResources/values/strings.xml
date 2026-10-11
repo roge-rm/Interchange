@@ -226,4 +226,15 @@
         <item>Mon</item><item>Tue</item><item>Wed</item><item>Thu</item><item>Fri</item><item>Sat</item><item>Sun</item>
     </string-array>
     <string name="weekday_date">%1$s %2$s</string>
+
+    <!-- Industries and freight -->
+    <string-array name="cargoes">
+        <item>Passengers</item><item>Mail</item><item>Timber</item><item>Lumber</item><item>Grain</item><item>Coal</item><item>Iron ore</item><item>Steel</item><item>Goods</item><item>Oil</item><item>Fuel</item><item>Livestock</item><item>Food</item>
+    </string-array>
+    <string name="cargo_waiting">%1$s waiting: %2$d, rating %3$d%</string>
+    <string name="cargo_load">%1$s %2$d/%3$d</string>
+    <string name="produced_last_month">%1$s last month: %2$d, %3$d% carried</string>
+    <string name="takes">Takes: %1$s</string>
+    <string name="brought_last_month">Brought last month: %1$d</string>
+    <string name="industries">Industries</string>
 </resources>

@@ -32,7 +32,8 @@ class VehicleDef(
     val cost: Long?,
     val running: Long?,
     val length: Int?,
-    val carries: String?,
+    /** What it can be set to carry, by cargo id; the first is what it carries unless set otherwise. */
+    val carries: List<String>?,
     val capacity: Int?,
     val tender: String?,
     val sprite: String?,
@@ -49,6 +50,24 @@ class HouseDef(
     val zones: Int,
     val minPopulation: Int,
     val weight: Int,
+)
+
+/**
+ * An industry as a pack gives it: its tile pieces as rows of part names, the
+ * regions it's found in with how often, the ground it needs, what it makes a
+ * month by cargo id, and what it takes. One that takes something makes its
+ * cargo from what it's brought.
+ */
+class IndustryDef(
+    val id: String,
+    val names: Map<String, String>,
+    val from: Int,
+    val until: Int,
+    val regions: Map<String, Int>,
+    val ground: List<String>,
+    val layout: List<List<String>>,
+    val produces: Map<String, Int>,
+    val accepts: List<String>,
 )
 
 /** How far into a town a building stands, as bits, from the outskirts in to the centre. */
@@ -73,6 +92,7 @@ class Pack(
     val disables: List<String>,
     val vehicles: List<VehicleDef>,
     val houses: List<HouseDef>,
+    val industries: List<IndustryDef>,
     /** The sprite sheets by name, as PNG. */
     val sprites: Map<String, ByteArray>,
     val hash: Long,
@@ -103,7 +123,7 @@ object Packs {
 
     /** The game's own vehicles. */
     val BASE: Pack by lazy {
-        read(mapOf("manifest.json" to BaseData.read("manifest.json"), "vehicles.json" to BaseData.read("vehicles.json"), "houses.json" to BaseData.read("houses.json")), spritesElsewhere = true)
+        read(mapOf("manifest.json" to BaseData.read("manifest.json"), "vehicles.json" to BaseData.read("vehicles.json"), "houses.json" to BaseData.read("houses.json"), "industries.json" to BaseData.read("industries.json")), spritesElsewhere = true)
     }
 
     /** A pack from a zip. */
@@ -123,6 +143,7 @@ object Packs {
         val manifestBytes = inner["manifest.json"] ?: throw BadPack(listOf("manifest.json is missing"))
         val vehiclesBytes = inner["vehicles.json"] ?: byteArrayOf()
         val housesBytes = inner["houses.json"] ?: byteArrayOf()
+        val industriesBytes = inner["industries.json"] ?: byteArrayOf()
 
         fun json(name: String, bytes: ByteArray): Any? = try {
             Json.parse(bytes.decodeToString())
@@ -184,7 +205,7 @@ object Packs {
                     cost = f.int("cost", 0, 1_000_000_000, need = fresh)?.toLong(),
                     running = f.int("running", 0, 1_000_000_000, need = fresh)?.toLong(),
                     length = f.int("length", 1, 16, need = fresh),
-                    carries = f.string("carries"),
+                    carries = f.stringOrList("carries"),
                     capacity = f.int("capacity", 0, 100_000),
                     tender = f.string("tender"),
                     sprite = f.string("sprite") ?: if (fresh) vid else null,
@@ -195,6 +216,7 @@ object Packs {
                 if (kind != null && kind != VehicleKind.ENGINE && (def.speed != null || def.power != null)) problems += "$at: only engines have speed and power"
                 if (def.tender != null && kind != null && kind != VehicleKind.ENGINE) problems += "$at: only engines have a tender"
                 if (def.capacity != null && def.capacity > 0 && def.carries == null) problems += "$at: capacity without carries"
+                for (cg in def.carries.orEmpty()) if (Cargo.of(cg) < 0) problems += "$at: unknown cargo \"$cg\" (${Cargo.IDS.joinToString()})"
                 if (!spritesElsewhere && def.sprite != null && "sprites/${def.sprite}.png" !in inner) problems += "$at: sprites/${def.sprite}.png is missing"
                 vehicles += def
             }
@@ -228,9 +250,36 @@ object Packs {
                 f.done()
             }
         }
+        val industries = ArrayList<IndustryDef>()
+        if (industriesBytes.isNotEmpty()) {
+            if (!base) problems += "industries.json: industries in packs come with a later version of the game"
+            val root = json("industries.json", industriesBytes)
+            val list = (root as? Map<*, *>)?.get("industries") as? List<*>
+            if (root != null && list == null) problems += "industries.json should be { \"industries\": [ ... ] }"
+            list?.forEachIndexed { n, item ->
+                val map = item as? Map<*, *> ?: run { problems += "industries.json, industry ${n + 1} should be an object { }"; return@forEachIndexed }
+                val f = Fields("industries.json, industry ${n + 1}", map, problems)
+                val iid = f.string("id", need = true) ?: ""
+                f.where = "industries.json, \"$iid\""
+                val regions = (map["regions"] as? Map<*, *>)?.entries?.associate { (k, v) -> k.toString() to ((v as? Long)?.toInt() ?: 0) } ?: emptyMap()
+                f.used("regions")
+                for (r in regions.keys) if (Region.entries.none { it.name.lowercase() == r }) problems += "${f.where}: unknown region \"$r\""
+                val layout = (f.strings("layout") ?: emptyList()).map { row -> row.split(' ').filter { it.isNotEmpty() } }
+                if (layout.isEmpty() || layout.any { it.size != layout[0].size }) problems += "${f.where}: \"layout\" needs rows of the same length"
+                val produces = (map["produces"] as? Map<*, *>)?.entries?.associate { (k, v) -> k.toString() to ((v as? Long)?.toInt() ?: 0) } ?: emptyMap()
+                f.used("produces")
+                val accepts = f.strings("accepts") ?: emptyList()
+                for (cg in produces.keys + accepts) if (Cargo.of(cg) < 0) problems += "${f.where}: unknown cargo \"$cg\""
+                industries += IndustryDef(
+                    iid, f.words("name", need = true) ?: emptyMap(), f.int("from", 1700, 2300, need = true) ?: 0, f.int("until", 1700, 2300, need = true) ?: 0,
+                    regions, f.strings("ground") ?: emptyList(), layout, produces, accepts,
+                )
+                f.done()
+            }
+        }
         if (problems.isNotEmpty()) throw BadPack(problems)
         val sprites = inner.filterKeys { it.startsWith("sprites/") && it.endsWith(".png") }.mapKeys { it.key.removePrefix("sprites/").removeSuffix(".png") }
-        return Pack(id, version, names, descriptions, author, licence, needs, disables, vehicles, houses, sprites, hash(manifestBytes, vehiclesBytes, housesBytes))
+        return Pack(id, version, names, descriptions, author, licence, needs, disables, vehicles, houses, industries, sprites, hash(manifestBytes, vehiclesBytes, housesBytes, industriesBytes))
     }
 
     /** FNV-1a over the data files, so two packs match when their data does. Sprites are left out: they don't change the game. */
@@ -246,6 +295,11 @@ object Packs {
     /** Reads typed fields out of a JSON object, noting each problem, and any field left over as unknown. */
     private class Fields(var where: String, val map: Map<*, *>, val problems: MutableList<String>) {
         private val used = HashSet<String>()
+
+        /** Marks [k] as read by hand, so it isn't reported unknown. */
+        fun used(k: String) {
+            used += k
+        }
 
         private fun get(k: String, need: Boolean): Any? {
             used += k
@@ -264,6 +318,12 @@ object Packs {
             val n = v as? Long ?: run { problems += "$where: \"$k\" should be a whole number"; return null }
             if (n < lo || n > hi) { problems += "$where: \"$k\" should be from $lo to $hi"; return null }
             return n.toInt()
+        }
+
+        /** One text or a list of them. */
+        fun stringOrList(k: String): List<String>? {
+            val v = map[k]
+            return if (v is String) string(k)?.let { listOf(it) } else strings(k)
         }
 
         fun strings(k: String): List<String>? {

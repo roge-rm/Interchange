@@ -67,9 +67,9 @@ fun TrainCard(
         val w = roster[t.wagon]
         Text(stringResource(Res.string.consist, roster[t.engine].name(lang), t.wagons, (if (t.wagons == 1) w.name(lang) else w.plural(lang)).lowercase()), color = c.textDim, fontSize = 13.sp)
         Text(doing, color = if (t.lost) c.warn else c.text, fontSize = 13.sp)
-        val loads = buildList {
-            if (t.capacity[Cargo.PASSENGERS] > 0) add(stringResource(Res.string.passengers_load, t.load[Cargo.PASSENGERS], t.capacity[Cargo.PASSENGERS]))
-            if (t.capacity[Cargo.MAIL] > 0) add(stringResource(Res.string.mail_load, t.load[Cargo.MAIL], t.capacity[Cargo.MAIL]))
+        val names = stringArrayResource(Res.array.cargoes)
+        val loads = (0 until Cargo.COUNT).filter { t.capacity[it] > 0 }.map {
+            stringResource(Res.string.cargo_load, names.getOrElse(it) { "" }, t.load[it], t.capacity[it])
         }
         if (loads.isNotEmpty()) Text(loads.joinToString(" · "), color = c.text, fontSize = 13.sp)
         Text(
@@ -108,12 +108,21 @@ fun DepotCard(view: WorldView, roster: Roster, depot: Int, year: Int, funds: Lon
     var engine by remember { mutableIntStateOf(engines.firstOrNull()?.id ?: 0) }
     var wagon by remember { mutableIntStateOf(wagons.firstOrNull()?.id ?: 0) }
     var count by remember { mutableIntStateOf(3) }
+    var cargo by remember { mutableIntStateOf(-1) }
+    val names = stringArrayResource(Res.array.cargoes)
     Card(stringResource(Res.string.depot), onClose, modifier) {
         FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             for (e in engines) Chip(stringResource(Res.string.engine_speed, e.name(lang), e.type(lang), e.speed), e.id == engine) { engine = e.id }
         }
         FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            for (w in wagons) Chip(w.name(lang), w.id == wagon) { wagon = w.id }
+            for (w in wagons) Chip(w.name(lang), w.id == wagon) { wagon = w.id; cargo = -1 }
+        }
+        // What the wagons are to carry, where they can carry more than one thing.
+        val choices = roster.getOrNull(wagon)?.cargoes ?: IntArray(0)
+        if (choices.size > 1) {
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                for (cg in choices) Chip(names.getOrElse(cg) { "" }, cg == (if (cargo in choices) cargo else choices[0])) { cargo = cg }
+            }
         }
         val e = roster[engine]
         val cost = e.cost + (roster.getOrNull(e.tender)?.cost ?: 0) + roster[wagon].cost * count
@@ -122,7 +131,7 @@ fun DepotCard(view: WorldView, roster: Roster, depot: Int, year: Int, funds: Lon
             Text(stringResource(Res.string.wagons_count, count), color = c.text, fontSize = 13.sp)
             SquareButton(Glyph.Raise, stringResource(Res.string.more_wagons), 32.dp, enabled = count < MAX_WAGONS) { count++ }
             ActionButton(stringResource(Res.string.buy_for, money(cost)), enabled = funds >= cost, strong = true) {
-                send(Command.BuyTrain(0, depot, engine, wagon, count))
+                send(Command.BuyTrain(0, depot, engine, wagon, count, if (cargo in choices) cargo else -1))
             }
         }
         val here = view.trains.filter { it.depot == depot && it.inDepot }
@@ -142,9 +151,16 @@ fun StationCard(view: WorldView, s: StationView, onTrain: (Int) -> Unit, onClose
     val c = LocalColors.current
     Card(stationName(view, s.id), onClose, modifier) {
         Text(stringResource(Res.string.platform_tiles, s.platforms), color = c.textDim, fontSize = 13.sp)
-        Text(stringResource(Res.string.passengers_waiting, s.waiting[Cargo.PASSENGERS], s.rating[Cargo.PASSENGERS] * 100 / 255), color = c.text, fontSize = 13.sp)
-        Text(stringResource(Res.string.mail_waiting, s.waiting[Cargo.MAIL], s.rating[Cargo.MAIL] * 100 / 255), color = c.text, fontSize = 13.sp)
-        // Where they're going, the most first, and where they'll change on the way.
+        // Each cargo it deals in, with how much is waiting and its rating; passengers and mail always.
+        val names = stringArrayResource(Res.array.cargoes)
+        for (cg in 0 until Cargo.COUNT) {
+            if (cg > Cargo.MAIL && s.served and (1 shl cg) == 0) continue
+            Text(
+                stringResource(Res.string.cargo_waiting, names.getOrElse(cg) { "" }, s.waiting[cg], s.rating[cg] * 100 / 255),
+                color = c.text, fontSize = 13.sp,
+            )
+        }
+        // Where it's going, the most first, and where it'll change on the way.
         if (s.going.isNotEmpty()) Text(stringResource(Res.string.going_to), color = c.textDim, fontSize = 12.sp)
         for (g in s.going.take(GOING_SHOWN)) {
             val dest = if (g.dest < 0) stringResource(Res.string.anywhere) else stationName(view, g.dest)
@@ -153,7 +169,10 @@ fun StationCard(view: WorldView, s: StationView, onTrain: (Int) -> Unit, onClose
                     if (g.via >= 0) stringResource(Res.string.via, dest, stationName(view, g.via)) else dest,
                     color = c.text, fontSize = 13.sp, modifier = Modifier.weight(1f), maxLines = 1,
                 )
-                Text("${g.counts[Cargo.PASSENGERS]} · ${g.counts[Cargo.MAIL]}", color = c.textDim, fontSize = 13.sp)
+                Text(
+                    (0 until Cargo.COUNT).filter { g.counts[it] > 0 }.joinToString(" · ") { "${g.counts[it]} ${names.getOrElse(it) { "" }.lowercase()}" },
+                    color = c.textDim, fontSize = 13.sp,
+                )
             }
         }
         val calling = view.trains.filter { s.id in it.orders }

@@ -11,6 +11,8 @@ import com.rm.interchange.sim.World
 import com.rm.interchange.sim.Zones
 import com.rm.interchange.sim.zoneAt
 import com.rm.interchange.sim.houseFacing
+import com.rm.interchange.sim.industryAt
+import com.rm.interchange.sim.part
 import com.rm.interchange.sim.houseOf
 import com.rm.interchange.sim.townBuilt
 import kotlin.math.abs
@@ -116,8 +118,8 @@ internal class ChunkBaker(
         val tile = world.index(wx, wy)
         val pieces = world.trackAt(wx, wy)
         val base = minOf(minOf(t, r), minOf(b, l))
-        // A building on a slope stands on a foundation level with its highest corner, its yard on top.
-        if (world.house[tile].toInt() != 0) {
+        // A building or an industry on a slope stands on a foundation level with its highest corner, its yard on top.
+        if (world.house[tile].toInt() != 0 || world.industryOf[tile].toInt() != 0) {
             val top = maxOf(maxOf(t, r), maxOf(b, l))
             if (top != base) {
                 sprite(Atlas.WALLS[shapeOf(t - base, r - base, b - base, l - base) * 16 + 15], vx, vy, base)
@@ -162,6 +164,13 @@ internal class ChunkBaker(
         val pieces = world.trackAt(wx, wy)
         val kind = kindOf(vx, vy)
         if (pieces == 0) {
+            world.industryAt(tile)?.let { ind ->
+                val kind = world.roster.industries[ind.kind]
+                val art = partArt(kind.part(wx - ind.x, wy - ind.y, ind.turn))
+                val base = maxOf(maxOf(cornerHeight(vx, vy), cornerHeight(vx + 1, vy)), maxOf(cornerHeight(vx + 1, vy + 1), cornerHeight(vx, vy + 1)))
+                if (art >= 0) sprite((if (shadow) Atlas.PART_SHADOW else Atlas.PART)[art * 4 + viewEdge(INDUSTRY_FACING[ind.turn])], vx, vy, base)
+                return
+            }
             val built = world.house[tile].toInt()
             if (built != 0) {
                 val art = houseArt(houseOf(built))
@@ -547,6 +556,10 @@ internal class ChunkBaker(
 
     private fun houseArt(h: Int) = houseArts.getOrElse(h) { -1 }
 
+    /** An industry piece's place in [Atlas.PART_KEYS], or -1 for one the game has no drawing of. */
+    private val partArts = HashMap<String, Int>()
+    private fun partArt(key: String) = partArts.getOrPut(key) { Atlas.PART_KEYS.indexOf(key) }
+
     private fun viewEdge(edge: Int): Int = when (view.turn) {
         0 -> edge
         1 -> when (edge) { Track.XM -> Track.YM; Track.XP -> Track.YP; Track.YM -> Track.XP; else -> Track.XM }
@@ -590,6 +603,9 @@ internal class ChunkBaker(
         /** The dashed line down a paved straight: its half width and colour. */
         private const val LINE = 0.012f
         private const val ROAD_LINE = 0xffd6c46a.toInt()
+
+        /** The world edge an industry's pieces face, by how its layout is turned. */
+        private val INDUSTRY_FACING = intArrayOf(Track.XP, Track.YP, Track.XM, Track.YM)
 
         /** Overlays, as bits. */
         const val GRID = 1

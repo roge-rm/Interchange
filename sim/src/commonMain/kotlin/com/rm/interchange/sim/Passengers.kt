@@ -16,27 +16,14 @@ package com.rm.interchange.sim
  * links goes anywhere, as it would with no plan.
  */
 
-/** The kinds of cargo, by number. More come with industries. */
-object Cargo {
-    const val PASSENGERS = 0
-    const val MAIL = 1
-    const val COUNT = 2
-    val IDS = listOf("passengers", "mail")
-
-    /** The number of cargo [id], as packs name it, or -1. */
-    fun of(id: String) = IDS.indexOf(id)
-
-    /** What carrying one a tile pays, in hundredths of a dollar, at full speed. */
-    val RATE = intArrayOf(20, 35)
-}
-
 /**
  * A lot of passengers or mail travelling together: going to station [dest]
  * (-1 for anywhere), from station [origin], since tick [since]. [credit] is
  * what its earlier legs have been credited to the trains that carried them;
- * [boarded] is the station it got on its present train at.
+ * [boarded] is the station it got on its present train at, and [waitingFrom]
+ * when it started waiting at the station it's at.
  */
-class Packet(val dest: Int, val origin: Int, var count: Int, val since: Long, var credit: Long = 0, var boarded: Int = -1)
+class Packet(val dest: Int, val origin: Int, var count: Int, val since: Long, var credit: Long = 0, var boarded: Int = -1, var waitingFrom: Long = since)
 
 /** How far from its platforms a station gathers from, in tiles each way. */
 const val CATCHMENT = 4
@@ -44,7 +31,7 @@ const val CATCHMENT = 4
 /** The most of each cargo a station holds waiting. */
 const val MAX_WAITING = 4095
 
-/** Days passengers and mail wait at a station before they give up. */
+/** Days cargo waits at a station before it gives up, counted from when it got there. */
 const val GIVE_UP_DAYS = 90
 
 /** What a change of train costs a journey, in tiles of distance, when working out the way. */
@@ -90,8 +77,28 @@ internal fun World.workOutCatchment() {
         val s = best.getValue(tile)
         stationPeople[s] = (stationPeople[s] ?: 0) + h.residents + h.jobs
     }
+    // Industries a station reaches, and the stations each industry is reached by: any of its tiles in reach.
+    industryStations.clear()
+    stationIndustries.clear()
+    for (s in stations) {
+        if (s == null) continue
+        val found = ArrayList<Int>()
+        for (p in s.tiles) {
+            val px = p % width
+            val py = p / width
+            for (y in maxOf(0, py - CATCHMENT)..minOf(height - 1, py + CATCHMENT)) for (x in maxOf(0, px - CATCHMENT)..minOf(width - 1, px + CATCHMENT)) {
+                val n = industryOf[index(x, y)].toInt()
+                if (n > 0 && (n - 1) !in found) found += n - 1
+            }
+        }
+        found.sort()
+        if (found.isEmpty()) continue
+        stationIndustries[s.id] = found
+        for (n in found) industryStations.getOrPut(n) { ArrayList() } += s.id
+    }
     linksDirty = true
 }
+
 
 /**
  * The links trains' orders make, each stop to the next and the last back to
@@ -160,7 +167,7 @@ private fun World.addWaiting(s: Station, c: Int, dest: Int, origin: Int, n: Int,
     if (same != null) {
         same.count += n
         same.credit += credit
-    } else s.cargo[c] += Packet(dest, origin, n, since, credit)
+    } else s.cargo[c] += Packet(dest, origin, n, since, credit, -1, tick)
 }
 
 /**
@@ -172,6 +179,9 @@ internal fun World.passengersDay() {
     if (catchmentDirty) workOutCatchment()
     if (linksDirty) workOutLinks()
     val made = HashMap<Int, IntArray>()
+    // Freight, rated by each station as it's shared out.
+    val freight = HashMap<Int, IntArray>()
+    industriesDay(freight)
     val c = catchment
     var k = 0
     while (k < c.size) {
@@ -196,13 +206,25 @@ internal fun World.passengersDay() {
         m[Cargo.PASSENGERS] = m[Cargo.PASSENGERS] * travel / 100
         m[Cargo.MAIL] = m[Cargo.MAIL] * post / 100
         for (cg in 0 until Cargo.COUNT) m[cg] = (m[cg] * s.rating[cg] + rng.below(255)) / 255
-        // Where it can send to, by weight: people there over distance.
-        val reach = nextHops[sid]?.keys?.filter { (stationPeople[it] ?: 0) > 0 }?.sorted().orEmpty()
-        val weights = IntArray(reach.size) { i -> ((stationPeople[reach[i]] ?: 0) + 20) * 256 / (stationDistance(sid, reach[i]) + 8) }
-        val total = weights.sum()
+    }
+    for ((sid, f) in freight) {
+        val m = made.getOrPut(sid) { IntArray(Cargo.COUNT) }
+        for (cg in 0 until Cargo.COUNT) m[cg] += f[cg]
+    }
+    for (sid in made.keys.sorted()) {
+        val s = stations.getOrNull(sid) ?: continue
+        val reachable = nextHops[sid]?.keys?.sorted().orEmpty()
         for (cg in 0 until Cargo.COUNT) {
             val n = minOf(made.getValue(sid)[cg], MAX_WAITING - s.waiting(cg))
             if (n <= 0) continue
+            // Where it can go: stations that take it, people for passengers and mail weighed by how many, freight
+            // by nearness alone.
+            val reach = reachable.filter { accepts(stations[it]!!, cg) }
+            val people = cg == Cargo.PASSENGERS || cg == Cargo.MAIL
+            val weights = IntArray(reach.size) { i ->
+                (if (people) (stationPeople[reach[i]] ?: 0) + 20 else 64) * 256 / (stationDistance(sid, reach[i]) + 8)
+            }
+            val total = weights.sum()
             if (total == 0) {
                 addWaiting(s, cg, -1, sid, n, tick)
                 continue
@@ -220,7 +242,7 @@ internal fun World.passengersDay() {
     for (s in stations) {
         if (s == null) continue
         for (cg in 0 until Cargo.COUNT) {
-            s.cargo[cg].removeAll { tick - it.since > GIVE_UP_DAYS * Calendar.TICKS_PER_DAY.toLong() }
+            s.cargo[cg].removeAll { tick - it.waitingFrom > GIVE_UP_DAYS * Calendar.TICKS_PER_DAY.toLong() }
             // The rating creeps towards what the service deserves, a little a day.
             val target = ratingTarget(s, cg)
             s.rating[cg] += (target - s.rating[cg]).coerceIn(-RATING_STEP, RATING_STEP)
@@ -260,10 +282,17 @@ internal fun World.ratingTarget(s: Station, c: Int): Int {
 /** How far a station's rating moves in a day. */
 const val RATING_STEP = 2
 
-/** Whether station [s] has any building within reach, to take passengers and mail off trains. */
-internal fun World.accepts(s: Station): Boolean {
+/**
+ * Whether station [s] takes cargo [c] off trains: passengers and mail where
+ * anyone lives or works in reach, a town's goods, food, fuel and lumber where
+ * enough do, and anything an industry in reach takes.
+ */
+internal fun World.accepts(s: Station, c: Int): Boolean {
     if (catchmentDirty) workOutCatchment()
-    return (stationPeople[s.id] ?: 0) > 0
+    val people = stationPeople[s.id] ?: 0
+    if ((c == Cargo.PASSENGERS || c == Cargo.MAIL) && people > 0) return true
+    if (Cargo.townWants(c) && people >= Cargo.TOWN_GOODS_PEOPLE) return true
+    return takerAt(s, c) != null
 }
 
 /** The station train [t] calls at after the one it's at now, or -1. */
@@ -283,11 +312,16 @@ internal fun World.callAt(t: Train, s: Station) {
         val stay = ArrayList<Packet>()
         for (p in t.cargo[c]) {
             val from = stations.getOrNull(p.origin)
-            val arrived = p.dest == s.id || (p.dest == -1 && p.origin != s.id && accepts(s))
+            val arrived = p.dest == s.id || (p.dest == -1 && p.origin != s.id && accepts(s, c))
             when {
                 arrived && from != null -> {
                     val full = fare(c, p.count, from, s, days(p))
                     paid += full
+                    // Freight for an industry here goes to it to be made into its own.
+                    takerAt(s, c)?.let { ind ->
+                        ind.brought += p.count
+                        ind.broughtThisMonth += p.count
+                    }
                     // The legs before were credited to the trains that carried them; this one gets the rest.
                     t.profitThisYear += full - p.credit
                 }
@@ -337,13 +371,13 @@ internal fun World.callAt(t: Train, s: Station) {
 
 /**
  * What [n] of cargo [c] pays carried from [from] to [to] in [days]: by the
- * distance between the stations, full if it came about as fast as a train
- * reasonably could, less a hundredth a day after, down to a third.
+ * distance between the stations, full if it came as fast as that cargo needs,
+ * then less each day after, down to a third.
  */
 fun fare(c: Int, n: Int, from: Station, to: Station, days: Int): Long {
     val dist = kotlin.math.abs(from.signX - to.signX) + kotlin.math.abs(from.signY - to.signY)
-    val quick = dist / 2 + 5
-    val share = (100 - maxOf(0, days - quick)).coerceAtLeast(33)
+    val quick = dist / 2 + Cargo.GRACE[c]
+    val share = (100 - maxOf(0, days - quick) * Cargo.DECAY[c]).coerceAtLeast(33)
     return n.toLong() * dist * Cargo.RATE[c] * share / 10_000
 }
 

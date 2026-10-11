@@ -16,14 +16,14 @@ package com.rm.interchange.sim
  */
 object Save {
     private val MAGIC = "ICHG".encodeToByteArray()
-    const val VERSION = 6
+    const val VERSION = 7
 
     fun write(world: World): ByteArray {
         val w = ByteWriter(world.width * world.height * 6 + 4096)
         with(world) {
             val g = settings
             w.int(g.width); w.int(g.height); w.long(g.seed); w.int(g.startYear); w.int(g.region.ordinal)
-            w.int(g.sea); w.int(g.hills); w.int(g.trees); w.int(g.towns)
+            w.int(g.sea); w.int(g.hills); w.int(g.trees); w.int(g.towns); w.int(g.industries)
             w.uvar(roster.packs.size.toLong())
             for (p in roster.packs) { w.string(p.id); w.int(p.version); w.long(p.hash) }
             w.uvar(roster.engines.size.toLong())
@@ -41,7 +41,7 @@ object Save {
                 if (s == null) continue
                 w.int(s.owner); w.string(s.name); w.int(s.signX); w.int(s.signY); w.ints(s.tiles.toIntArray())
                 writeCargo(w, s.cargo)
-                w.ints(s.rating); for (v in s.lastCall) w.long(v); w.ints(s.lastSpeed)
+                w.ints(s.rating); w.uvar(s.lastCall.size.toLong()); for (v in s.lastCall) w.long(v); w.ints(s.lastSpeed)
             }
             w.uvar(depots.size.toLong())
             for (d in depots) {
@@ -56,7 +56,7 @@ object Save {
             for (t in trains) {
                 w.bool(t != null)
                 if (t == null) continue
-                w.int(t.owner); w.int(t.engine); w.int(t.wagon); w.int(t.wagons); w.int(t.depot); w.string(t.name)
+                w.int(t.owner); w.int(t.engine); w.int(t.wagon); w.int(t.wagons); w.int(t.depot); w.int(t.wagonCargo); w.string(t.name)
                 w.bool(t.inDepot); w.bool(t.running); w.int(t.waiting)
                 w.ints(t.steps.toIntArray()); w.int(t.nose); w.int(t.speed)
                 w.ints(t.orders.toIntArray()); w.int(t.order); w.bool(t.toDepot)
@@ -69,6 +69,15 @@ object Save {
             w.uvar(towns.size.toLong())
             for (t in towns) { w.string(t.name); w.int(t.x); w.int(t.y); w.int(t.grid); w.bool(t.french); w.int(t.population); w.int(t.houses); w.int(t.growIn); w.int(t.servedThisMonth); w.int(t.servedLastMonth); w.ints(t.approval) }
             w.bytes(road); w.shorts(house); w.shorts(houseYear); w.shorts(townOf)
+            w.uvar(roster.industries.size.toLong())
+            for (k in roster.industries) w.string(k.key)
+            w.uvar(industries.size.toLong())
+            for (ind in industries) {
+                w.int(ind.kind); w.int(ind.x); w.int(ind.y); w.int(ind.turn); w.int(ind.town); w.int(ind.level); w.int(ind.brought)
+                w.ints(ind.made); w.ints(ind.madeLastMonth); w.ints(ind.moved); w.ints(ind.movedLastMonth)
+                w.int(ind.broughtThisMonth); w.int(ind.broughtLastMonth)
+            }
+            w.shorts(industryOf)
         }
         val body = Squeeze.pack(w.toByteArray())
         val out = ByteWriter(body.size + 16)
@@ -119,13 +128,15 @@ object Save {
                 val s = Station(id, r.int(), r.string(), r.int(), r.int())
                 for (tile in r.ints()) { s.tiles += tile; stationTiles[tile] = id }
                 when {
-                    version >= 5 -> readCargo(r, s.cargo)
+                    version >= 5 -> readCargo(r, s.cargo, version)
                     // Before journeys, what waited could go anywhere.
                     version == 4 -> r.ints().forEachIndexed { c, n -> if (c < Cargo.COUNT && n > 0) s.cargo[c] += Packet(-1, id, n, 0) }
                 }
                 if (version >= 6) {
                     r.ints().let { a -> a.copyInto(s.rating, endIndex = minOf(a.size, Cargo.COUNT)) }
-                    for (c in 0 until Cargo.COUNT) s.lastCall[c] = r.long()
+                    // Version 6 had passengers and mail only, and no count.
+                    val calls = if (version >= 7) r.uvar().toInt().also { if (it > 64) throw BadData("too many kinds of cargo") } else 2
+                    for (c in 0 until calls) r.long().let { v -> if (c < Cargo.COUNT) s.lastCall[c] = v }
                     r.ints().let { a -> a.copyInto(s.lastSpeed, endIndex = minOf(a.size, Cargo.COUNT)) }
                 }
                 stations += s
@@ -139,7 +150,12 @@ object Save {
             repeat(r.uvar().toInt()) { signals[r.int()] = r.int() }
             repeat(r.uvar().toInt()) { id ->
                 if (!r.bool()) { trains += null; return@repeat }
-                val t = Train(roster, id, r.int(), vehicle(r.int()), vehicle(r.int()), r.int(), r.int())
+                val owner = r.int()
+                val engine = vehicle(r.int())
+                val wagon = vehicle(r.int())
+                val wagons = r.int()
+                val depot = r.int()
+                val t = Train(roster, id, owner, engine, wagon, wagons, depot, if (version >= 7) r.int() else -1)
                 t.name = r.string()
                 t.inDepot = r.bool(); t.running = r.bool(); t.waiting = r.int()
                 t.steps += r.ints().toList(); t.nose = r.int(); t.speed = r.int()
@@ -147,7 +163,7 @@ object Save {
                 t.route = if (r.bool()) r.ints() else null
                 t.routeAt = r.int(); t.turnRound = r.bool(); t.lostUntil = r.long()
                 if (version >= 5) {
-                    readCargo(r, t.cargo)
+                    readCargo(r, t.cargo, version)
                     t.profitThisYear = r.long(); t.profitLastYear = r.long()
                 } else if (version == 4) {
                     val load = r.ints()
@@ -177,6 +193,21 @@ object Save {
                 }
                 fillShorts(houseYear, r.shorts()); fillShorts(townOf, r.shorts())
             }
+            if (version >= 7) {
+                val kindIds = roster.industries.associate { it.key to it.id }
+                val kinds = List(r.uvar().toInt().also { if (it > 4095) throw BadData("too many kinds of industry") }) { r.string() }
+                val kindRemap = IntArray(kinds.size) { kindIds[kinds[it]] ?: throw BadData("${kinds[it]} is no longer in its pack") }
+                repeat(r.uvar().toInt()) { id ->
+                    val kind = kindRemap.getOrNull(r.int()) ?: throw BadData("an industry of an unknown kind")
+                    val ind = Industry(id, kind, r.int(), r.int(), r.int(), r.int())
+                    ind.level = r.int(); ind.brought = r.int()
+                    fun into(a: IntArray) = r.ints().let { v -> v.copyInto(a, endIndex = minOf(v.size, Cargo.COUNT)) }
+                    into(ind.made); into(ind.madeLastMonth); into(ind.moved); into(ind.movedLastMonth)
+                    ind.broughtThisMonth = r.int(); ind.broughtLastMonth = r.int()
+                    industries += ind
+                }
+                fillShorts(industryOf, r.shorts())
+            }
         }
         // Signal blocks and who's on which tile are worked out afresh before the next move.
         world.networkChangedKeepingRoutes()
@@ -198,6 +229,7 @@ object Save {
             sea = r.int(), hills = r.int(), trees = r.int(),
             // Before version 3 there were no towns.
             towns = if (version >= 3) r.int() else 0,
+            industries = if (version >= 7) r.int() else 0,
         )
         if (settings.width !in 16..4096 || settings.height !in 16..4096) throw BadData("map size out of range")
         return settings
@@ -215,11 +247,11 @@ object Save {
         w.uvar(cargo.size.toLong())
         for (lots in cargo) {
             w.uvar(lots.size.toLong())
-            for (p in lots) { w.int(p.dest); w.int(p.origin); w.int(p.count); w.long(p.since); w.long(p.credit); w.int(p.boarded) }
+            for (p in lots) { w.int(p.dest); w.int(p.origin); w.int(p.count); w.long(p.since); w.long(p.credit); w.int(p.boarded); w.long(p.waitingFrom) }
         }
     }
 
-    private fun readCargo(r: ByteReader, into: Array<ArrayList<Packet>>) {
+    private fun readCargo(r: ByteReader, into: Array<ArrayList<Packet>>, version: Int) {
         val kinds = r.uvar().toInt()
         if (kinds > 64) throw BadData("too many kinds of cargo")
         for (c in 0 until kinds) {
@@ -227,6 +259,7 @@ object Save {
             if (n > 1_000_000) throw BadData("too many lots of cargo")
             repeat(n) {
                 val p = Packet(r.int(), r.int(), r.int(), r.long(), r.long(), r.int())
+                if (version >= 7) p.waitingFrom = r.long()
                 if (c < into.size) into[c] += p
             }
         }

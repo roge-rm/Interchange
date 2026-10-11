@@ -145,8 +145,9 @@ fun NewGameScreen(packs: List<Pack>, onStart: (NewGame, List<Pack>) -> Unit, onB
     var hills by remember { mutableIntStateOf(1) }
     var trees by remember { mutableIntStateOf(2) }
     var towns by remember { mutableIntStateOf(2) }
+    var industries by remember { mutableIntStateOf(2) }
     var off by remember { mutableStateOf(emptySet<String>()) }
-    val settings = NewGame(width, height, seed, year, region, sea, hills, trees, towns)
+    val settings = NewGame(width, height, seed, year, region, sea, hills, trees, towns, industries)
     val chosen = packs.filter { it.id !in off }
     val clash = remember(chosen) {
         try {
@@ -223,7 +224,9 @@ fun NewGameScreen(packs: List<Pack>, onStart: (NewGame, List<Pack>) -> Unit, onB
         })
         SideBySide(wide, {
             StepSlider(stringResource(Res.string.towns), (0..3).toList(), towns, { townNames.getOrElse(it) { "$it" } }) { towns = it }
-        }, {})
+        }, {
+            StepSlider(stringResource(Res.string.industries), (0..3).toList(), industries, { townNames.getOrElse(it) { "$it" } }) { industries = it }
+        })
         if (packs.isNotEmpty()) {
             Text(stringResource(Res.string.packs), color = c.text, fontSize = 15.sp)
             for (row in packs.chunked(2)) {

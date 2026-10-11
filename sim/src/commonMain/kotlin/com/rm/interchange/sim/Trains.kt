@@ -39,6 +39,8 @@ class Train(
     val wagons: Int,
     /** The depot it was bought in, and goes back to. */
     var depot: Int,
+    /** What its wagons are set to carry, a [Cargo] number among those they can, or -1 for their first. */
+    val wagonCargo: Int = -1,
 ) {
     /** Its own name, or empty to be called by its number in the screen's language. */
     var name = ""
@@ -77,7 +79,10 @@ class Train(
     var profitLastYear = 0L
 
     /** How much of cargo [c] its cars hold. */
-    fun capacity(c: Int) = carEngines.sumOf { e -> roster[e].let { if (it.cargo == c) it.capacity else 0 } }
+    fun capacity(c: Int) = carEngines.sumOf { e -> roster[e].let { if (carCargo(it) == c) it.capacity else 0 } }
+
+    /** What car [e] carries in this train: the wagons what they're set to, anything else its first. */
+    fun carCargo(e: Engine): Int = if (e.id == wagon && wagonCargo in e.cargoes) wagonCargo else e.cargoes.firstOrNull() ?: -1
 
     /** The stations it calls at, in turn. */
     val orders = ArrayList<Int>()
@@ -139,7 +144,7 @@ internal fun World.buyTrain(company: Company, c: Command.BuyTrain) {
     val year = Calendar.year(startYear, day)
     if (!e.enabled || !w.enabled || !e.pulls || w.pulls || w.isTender || year < e.from || year >= e.until || year < w.from || year >= w.until) return
     if (c.wagons !in 0..MAX_WAGONS) return
-    val t = Train(roster, trains.size, company.id, e.id, w.id, c.wagons, depot.id)
+    val t = Train(roster, trains.size, company.id, e.id, w.id, c.wagons, depot.id, if (c.cargo in w.cargoes) c.cargo else -1)
     if (company.money < t.price) return
     company.money -= t.price
     trains += t

@@ -315,7 +315,11 @@
       "cost": 1800,
       "running": 220,
       "length": 9,
-      "carries": "goods",
+      "carries": [
+        "goods",
+        "grain",
+        "lumber"
+      ],
       "capacity": 20
     },
     {
@@ -330,7 +334,11 @@
       "cost": 5000,
       "running": 400,
       "length": 10,
-      "carries": "goods",
+      "carries": [
+        "goods",
+        "grain",
+        "lumber"
+      ],
       "capacity": 40
     },
     {
@@ -345,7 +353,11 @@
       "cost": 1400,
       "running": 180,
       "length": 9,
-      "carries": "timber",
+      "carries": [
+        "timber",
+        "lumber",
+        "steel"
+      ],
       "capacity": 20
     },
     {
@@ -360,7 +372,11 @@
       "cost": 1900,
       "running": 220,
       "length": 9,
-      "carries": "steel",
+      "carries": [
+        "steel",
+        "coal",
+        "iron_ore"
+      ],
       "capacity": 30
     },
     {
@@ -375,7 +391,10 @@
       "cost": 2400,
       "running": 240,
       "length": 8,
-      "carries": "coal",
+      "carries": [
+        "coal",
+        "iron_ore"
+      ],
       "capacity": 50
     },
     {
@@ -390,7 +409,10 @@
       "cost": 2600,
       "running": 260,
       "length": 8,
-      "carries": "oil",
+      "carries": [
+        "oil",
+        "fuel"
+      ],
       "capacity": 40
     },
     {
@@ -420,6 +442,57 @@
       "cost": 2200,
       "running": 250,
       "length": 7
+    },
+    {
+      "id": "reefer",
+      "kind": "wagon",
+      "name": { "en": "Refrigerator car", "fr": "Wagon réfrigérant" },
+      "plural": { "en": "Refrigerator cars", "fr": "Wagons réfrigérants" },
+      "type": { "en": "Reefer", "fr": "Wagon réfrigérant" },
+      "from": 1880,
+      "until": 2000,
+      "weight": 16,
+      "cost": 3200,
+      "running": 320,
+      "length": 9,
+      "carries": [
+        "food"
+      ],
+      "capacity": 20
+    },
+    {
+      "id": "ore_car",
+      "kind": "wagon",
+      "name": { "en": "Ore car", "fr": "Wagon à minerai" },
+      "plural": { "en": "Ore cars", "fr": "Wagons à minerai" },
+      "type": { "en": "Ore car", "fr": "Wagon à minerai" },
+      "from": 1900,
+      "until": 2050,
+      "weight": 18,
+      "cost": 2800,
+      "running": 260,
+      "length": 6,
+      "carries": [
+        "iron_ore"
+      ],
+      "capacity": 60
+    },
+    {
+      "id": "covered_hopper",
+      "kind": "wagon",
+      "name": { "en": "Covered hopper", "fr": "Wagon-trémie couvert" },
+      "plural": { "en": "Covered hoppers", "fr": "Wagons-trémies couverts" },
+      "type": { "en": "Grain car", "fr": "Wagon à grain" },
+      "from": 1965,
+      "until": 2050,
+      "weight": 28,
+      "cost": 9000,
+      "running": 520,
+      "length": 11,
+      "carries": [
+        "grain"
+      ],
+      "capacity": 90
     }
   ]
 }

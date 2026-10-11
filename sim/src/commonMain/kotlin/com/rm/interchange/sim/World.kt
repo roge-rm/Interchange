@@ -16,7 +16,7 @@ package com.rm.interchange.sim
  */
 class World(val settings: NewGame, val roster: Roster = Roster.BASE, generate: Boolean = true) {
     /** A map with no towns, for tests that lay their own track. */
-    constructor(width: Int, height: Int, seed: Long, startYear: Int = 1850) : this(NewGame(width, height, seed, startYear, towns = 0))
+    constructor(width: Int, height: Int, seed: Long, startYear: Int = 1850) : this(NewGame(width, height, seed, startYear, towns = 0, industries = 0))
 
     val width get() = settings.width
     val height get() = settings.height
@@ -47,6 +47,10 @@ class World(val settings: NewGame, val roster: Roster = Roster.BASE, generate: B
     val townOf = ShortArray(width * height) { -1 }
 
     val towns = ArrayList<Town>()
+
+    /** Industries, and which stands on each tile, as its id plus one, 0 for none. */
+    val industries = ArrayList<Industry>()
+    val industryOf = ShortArray(width * height)
     /** Set when a town grows, so its summary for the screen is made again. Not part of the game. */
     var townsChanged = true
     internal var townViews: List<TownView> = emptyList()
@@ -57,6 +61,9 @@ class World(val settings: NewGame, val roster: Roster = Roster.BASE, generate: B
     /** The people round each station, and the next stop from each station towards each it can reach. Not saved. */
     internal val stationPeople = HashMap<Int, Int>()
     internal val nextHops = HashMap<Int, HashMap<Int, Int>>()
+    /** The stations reaching each industry, and the industries each station reaches, by id. Not saved. */
+    internal val industryStations = HashMap<Int, ArrayList<Int>>()
+    internal val stationIndustries = HashMap<Int, ArrayList<Int>>()
     internal var linksDirty = true
     /** Recent payments, for the screen. Not part of the game. */
     val payments = ArrayList<Payment>()
@@ -104,6 +111,7 @@ class World(val settings: NewGame, val roster: Roster = Roster.BASE, generate: B
             generateLand(this)
             generateCountry(this)
             generateTowns(this)
+            generateIndustries(this)
         }
     }
 
@@ -167,7 +175,10 @@ class World(val settings: NewGame, val roster: Roster = Roster.BASE, generate: B
             payRunningCosts()
             passengersDay()
             townsDay()
-            if (Calendar.dayOfMonth(startYear, day) == 1) passengersMonth()
+            if (Calendar.dayOfMonth(startYear, day) == 1) {
+                passengersMonth()
+                industriesMonth()
+            }
             if (Calendar.newYear(startYear, day)) passengersYear()
             payments.removeAll { tick - it.tick > PAYMENT_TICKS }
         }
@@ -190,6 +201,7 @@ class World(val settings: NewGame, val roster: Roster = Roster.BASE, generate: B
                 h = (h xor owner[i].toLong()) * 0x100000001b3L
                 h = (h xor road[i].toLong()) * 0x100000001b3L
                 h = (h xor house[i].toLong()) * 0x100000001b3L
+                h = (h xor industryOf[i].toLong()) * 0x100000001b3L
             }
             bands[y] = h
         }
@@ -205,6 +217,7 @@ class World(val settings: NewGame, val roster: Roster = Roster.BASE, generate: B
         for (y in 0 until height) mix(heightAt(width, y).toLong())
         for (c in companies) mix(c.money)
         for (t in towns) { mix(t.population.toLong()); mix(t.growIn.toLong()); mix(t.servedThisMonth.toLong()); for (a in t.approval) mix(a.toLong()) }
+        for (ind in industries) { mix(ind.level.toLong()); mix(ind.brought.toLong()); for (m in ind.made) mix(m.toLong()) }
         for (s in stations) if (s != null) {
             for (c in s.cargo) for (p in c) { mix(p.dest.toLong()); mix(p.count.toLong()); mix(p.credit) }
             for (r in s.rating) mix(r.toLong())
