@@ -168,6 +168,13 @@ class PassengerTest {
         assertEquals(0, Calendar.mail(1925, 181))
         assertEquals(250, Calendar.mail(1925, 340))
         assertTrue(Calendar.travel(1925, 0) > Calendar.travel(1925, 3))
+        // Thanksgiving 1925 was Monday 9 November, with Armistice Day; in 1961 it was Monday 9 October.
+        assertTrue(Calendar.holiday(1925, 312))
+        assertTrue(!Calendar.holiday(1925, 284))
+        assertTrue(Calendar.holiday(1961, 281))
+        // No Dominion Day before 1879, and no Labour Day before 1894.
+        assertTrue(!Calendar.holiday(1850, 181))
+        assertTrue(Calendar.holiday(1850, 0))
     }
 
     @Test

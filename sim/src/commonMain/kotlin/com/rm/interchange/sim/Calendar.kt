@@ -40,13 +40,33 @@ object Calendar {
         return (jan1 + day) % 7
     }
 
-    /** Whether game day [day] is a holiday: New Year's, Dominion Day, Labour Day, Thanksgiving, Christmas or Boxing Day. */
+    /**
+     * Whether game day [day] is a holiday, as kept in Canada that year:
+     * New Year's, Christmas and Boxing Day always; Dominion Day from 1879;
+     * Labour Day from 1894; Thanksgiving from 1879, on the days it was held.
+     */
     fun holiday(startYear: Int, day: Int): Boolean {
+        val y = year(startYear, day)
         val m = month(day)
         val d = dayOfMonth(day)
-        val monday = weekday(startYear, day) == 0
-        return (m == 0 && d == 1) || (m == 6 && d == 1) || (m == 8 && monday && d <= 7) ||
-            (m == 9 && monday && d in 8..14) || (m == 11 && (d == 25 || d == 26))
+        val wd = weekday(startYear, day)
+        return (m == 0 && d == 1) || (m == 11 && (d == 25 || d == 26)) ||
+            (y >= 1879 && m == 6 && d == 1) ||
+            (y >= 1894 && m == 8 && wd == 0 && d <= 7) ||
+            thanksgiving(y, m, d, wd)
+    }
+
+    /**
+     * Thanksgiving by era: a Thursday in early November from 1879, a Thursday
+     * in mid-October from 1899, the Monday of the week of Armistice Day from
+     * 1921, and the second Monday of October from 1931, fixed by law in 1957.
+     */
+    private fun thanksgiving(y: Int, m: Int, d: Int, wd: Int): Boolean = when {
+        y < 1879 -> false
+        y < 1899 -> m == 10 && wd == 3 && d <= 7
+        y < 1921 -> m == 9 && wd == 3 && d in 15..21
+        y < 1931 -> m == 10 && wd == 0 && d in 5..11
+        else -> m == 9 && wd == 0 && d in 8..14
     }
 
     /**
