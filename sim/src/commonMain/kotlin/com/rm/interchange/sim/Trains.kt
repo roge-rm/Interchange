@@ -399,7 +399,7 @@ internal fun World.countOn(t: Train) {
     for (b in t.onBlocks) blockTrains[b] = (blockTrains[b] ?: 0) + 1
 }
 
-/** Running costs, taken every day: a 365th of a year's, the remainders carried. */
+/** Running costs, taken every day: a 365th of a year's, the remainders carried, so a leap year costs a day more. */
 internal fun World.payRunningCosts() {
     for (t in trains) {
         if (t == null || t.inDepot && !t.running) continue

@@ -45,7 +45,7 @@ class TownTest {
     fun townsGrowAndBuildForTheirEra() {
         val w = world(year = 1850)
         val before = w.towns.sumOf { it.houses }
-        repeat(365 * 40 * Calendar.TICKS_PER_DAY) { w.step() }
+        while (Calendar.year(w.startYear, w.day) < 1890) w.step()
         val after = w.towns.sumOf { it.houses }
         assertTrue(after > before, "$before then $after")
         val year = Calendar.year(w.startYear, w.day)

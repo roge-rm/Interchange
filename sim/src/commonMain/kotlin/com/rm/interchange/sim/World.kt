@@ -167,8 +167,8 @@ class World(val settings: NewGame, val roster: Roster = Roster.BASE, generate: B
             payRunningCosts()
             passengersDay()
             townsDay()
-            if (Calendar.dayOfMonth(day) == 1) passengersMonth()
-            if (day % 365 == 0) passengersYear()
+            if (Calendar.dayOfMonth(startYear, day) == 1) passengersMonth()
+            if (Calendar.newYear(startYear, day)) passengersYear()
             payments.removeAll { tick - it.tick > PAYMENT_TICKS }
         }
     }

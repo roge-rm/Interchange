@@ -334,8 +334,8 @@ fun money(amount: Long): String =
 fun date(day: Int, startYear: Int): String {
     val months = stringArrayResource(Res.array.months)
     return stringResource(
-        Res.string.date, com.rm.interchange.sim.Calendar.dayOfMonth(day),
-        months.getOrElse(com.rm.interchange.sim.Calendar.month(day)) { "" }, com.rm.interchange.sim.Calendar.year(startYear, day),
+        Res.string.date, com.rm.interchange.sim.Calendar.dayOfMonth(startYear, day),
+        months.getOrElse(com.rm.interchange.sim.Calendar.month(startYear, day)) { "" }, com.rm.interchange.sim.Calendar.year(startYear, day),
     )
 }
 

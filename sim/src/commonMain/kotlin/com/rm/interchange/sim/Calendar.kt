@@ -1,44 +1,53 @@
 package com.rm.interchange.sim
 
-/** Days counted from the first of January of [World.startYear], in 365 day years. */
+/**
+ * Days counted from the first of January of [World.startYear], on the real
+ * calendar, leap years and all, so dates and weekdays match history. All in
+ * integers, as everything the game decides by must be.
+ */
 object Calendar {
     const val TICKS_PER_DAY = 64
 
-    private val MONTH_DAYS = intArrayOf(31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31)
+    /** Days since 1 January 1970 of [y]-[m]-[d], [m] from 1; Gregorian, any year. */
+    private fun civilToDays(y: Int, m: Int, d: Int): Long {
+        val yy = (if (m <= 2) y - 1 else y).toLong()
+        val era = yy.floorDiv(400L)
+        val yoe = yy - era * 400
+        val mp = (m + 9) % 12
+        val doy = (153 * mp + 2) / 5 + d - 1
+        val doe = yoe * 365 + yoe / 4 - yoe / 100 + doy
+        return era * 146097 + doe - 719468
+    }
 
-    fun year(startYear: Int, day: Int) = startYear + day / 365
+    /** The year, month (1 to 12) and day of the month of day [z] since 1 January 1970, packed as year * 10000 + month * 100 + day. */
+    private fun daysToCivil(z0: Long): Long {
+        val z = z0 + 719468
+        val era = z.floorDiv(146097L)
+        val doe = z - era * 146097
+        val yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365
+        val doy = doe - (365 * yoe + yoe / 4 - yoe / 100)
+        val mp = (5 * doy + 2) / 153
+        val d = doy - (153 * mp + 2) / 5 + 1
+        val m = if (mp < 10) mp + 3 else mp - 9
+        val y = yoe + era * 400 + (if (m <= 2) 1 else 0)
+        return y * 10000 + m * 100 + d
+    }
+
+    private fun civil(startYear: Int, day: Int) = daysToCivil(civilToDays(startYear, 1, 1) + day)
+
+    fun year(startYear: Int, day: Int) = (civil(startYear, day) / 10000).toInt()
 
     /** 0 for January. */
-    fun month(day: Int): Int {
-        var d = day % 365
-        for (m in 0 until 12) {
-            if (d < MONTH_DAYS[m]) return m
-            d -= MONTH_DAYS[m]
-        }
-        return 11
-    }
+    fun month(startYear: Int, day: Int) = (civil(startYear, day) / 100 % 100).toInt() - 1
 
     /** 1 for the first of the month. */
-    fun dayOfMonth(day: Int): Int {
-        var d = day % 365
-        for (m in 0 until 12) {
-            if (d < MONTH_DAYS[m]) return d + 1
-            d -= MONTH_DAYS[m]
-        }
-        return d + 1
-    }
+    fun dayOfMonth(startYear: Int, day: Int) = (civil(startYear, day) % 100).toInt()
 
-    /** The day of the week of game day [day], 0 for Monday, years kept at 365 days as the game's are. */
-    fun weekday(startYear: Int, day: Int): Int {
-        // January 1st of the start year by Zeller's rule, as the game's own weeks start from it.
-        val y = startYear - 1
-        val k = y % 100
-        val j = y / 100
-        // Zeller for the 1st of a January counted as the 13th month of the year before; 0 is Saturday.
-        val h = (1 + 13 * 14 / 5 + k + k / 4 + j / 4 + 5 * j) % 7
-        val jan1 = (h + 5) % 7
-        return (jan1 + day) % 7
-    }
+    /** Whether game day [day] is the first of January. */
+    fun newYear(startYear: Int, day: Int) = civil(startYear, day) % 10000 == 101L
+
+    /** The day of the week of game day [day], 0 for Monday. 1 January 1970 was a Thursday. */
+    fun weekday(startYear: Int, day: Int): Int = (civilToDays(startYear, 1, 1) + day + 3).mod(7L).toInt()
 
     /**
      * Whether game day [day] is a holiday, as kept in Canada that year:
@@ -47,8 +56,8 @@ object Calendar {
      */
     fun holiday(startYear: Int, day: Int): Boolean {
         val y = year(startYear, day)
-        val m = month(day)
-        val d = dayOfMonth(day)
+        val m = month(startYear, day)
+        val d = dayOfMonth(startYear, day)
         val wd = weekday(startYear, day)
         return (m == 0 && d == 1) || (m == 11 && (d == 25 || d == 26)) ||
             (y >= 1879 && m == 6 && d == 1) ||
@@ -75,8 +84,8 @@ object Calendar {
      * holidays, at Christmas and through the summer.
      */
     fun travel(startYear: Int, day: Int): Int {
-        val m = month(day)
-        val d = dayOfMonth(day)
+        val m = month(startYear, day)
+        val d = dayOfMonth(startYear, day)
         var f = when (weekday(startYear, day)) { 5 -> 85; 6 -> 65; else -> 110 }
         if (holiday(startYear, day)) f = 150
         if ((m == 11 && d >= 20) || (m == 0 && d <= 2)) f = f * 130 / 100
@@ -87,6 +96,6 @@ object Calendar {
     /** How much mail there is on game day [day], in percent: none on Sundays or holidays, and the Christmas rush through December. */
     fun mail(startYear: Int, day: Int): Int {
         if (weekday(startYear, day) == 6 || holiday(startYear, day)) return 0
-        return if (month(day) == 11 && dayOfMonth(day) <= 24) 250 else 100
+        return if (month(startYear, day) == 11 && dayOfMonth(startYear, day) <= 24) 250 else 100
     }
 }

@@ -168,10 +168,17 @@ class PassengerTest {
         assertEquals(0, Calendar.mail(1925, 181))
         assertEquals(250, Calendar.mail(1925, 340))
         assertTrue(Calendar.travel(1925, 0) > Calendar.travel(1925, 3))
-        // Thanksgiving 1925 was Monday 9 November, with Armistice Day; in 1961 it was Monday 9 October.
+        // Thanksgiving 1925 was Monday 9 November, with Armistice Day; in 1960, a leap year, it was Monday 10 October.
         assertTrue(Calendar.holiday(1925, 312))
         assertTrue(!Calendar.holiday(1925, 284))
-        assertTrue(Calendar.holiday(1961, 281))
+        assertTrue(Calendar.holiday(1960, 283))
+        // 29 February 2024 is there, and was a Thursday; 1 March 1900 follows 28 February, 1900 not being a leap year.
+        assertEquals(1, Calendar.month(2024, 59))
+        assertEquals(29, Calendar.dayOfMonth(2024, 59))
+        assertEquals(3, Calendar.weekday(2024, 59))
+        assertEquals(2, Calendar.month(1900, 59))
+        assertEquals(2025, Calendar.year(2024, 366))
+        assertTrue(Calendar.newYear(2024, 366))
         // No Dominion Day before 1879, and no Labour Day before 1894.
         assertTrue(!Calendar.holiday(1850, 181))
         assertTrue(Calendar.holiday(1850, 0))
