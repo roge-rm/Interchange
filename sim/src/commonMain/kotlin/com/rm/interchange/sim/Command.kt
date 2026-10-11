@@ -19,4 +19,30 @@ sealed interface Command {
         val first: Int,
         val remove: Boolean,
     ) : Command
+
+    /** Lays platforms over a rectangle, running along [axis]. */
+    data class Station(override val company: Int, val x0: Int, val y0: Int, val x1: Int, val y1: Int, val axis: Int) : Command
+
+    /** Builds a depot open at [edge]. */
+    data class Depot(override val company: Int, val x: Int, val y: Int, val edge: Int) : Command
+
+    /** Puts a signal on a piece facing [facing], or moves the one there on a kind. */
+    data class Signal(override val company: Int, val x: Int, val y: Int, val piece: Int, val facing: Int) : Command
+
+    /** Clears a tile of track, signals, a platform or a depot. */
+    data class Clear(override val company: Int, val x: Int, val y: Int) : Command
+
+    /** Buys a train in a depot. */
+    data class BuyTrain(override val company: Int, val depot: Int, val engine: Int, val wagon: Int, val wagons: Int) : Command
+
+    /** Tells a train what to do; [stations] only for [ORDERS]. */
+    class TrainOrder(override val company: Int, val train: Int, val what: Int, val stations: IntArray = IntArray(0)) : Command {
+        companion object {
+            const val START_STOP = 0
+            const val ORDERS = 1
+            const val TO_DEPOT = 2
+            const val TURN = 3
+            const val SELL = 4
+        }
+    }
 }

@@ -43,6 +43,28 @@ object Track {
 
     fun opposite(edge: Int) = edge xor 1
 
+    /** The other edge [piece] joins, leaving it having come in at [edge]. */
+    fun other(piece: Int, edge: Int): Int {
+        val e = edges(piece)
+        return if (e and 3 == edge) e shr 2 else e and 3
+    }
+
+    /** 0 to 5, in the order of [PIECES]. */
+    fun index(piece: Int) = when (piece) { X -> 0; Y -> 1; N -> 2; E -> 3; S -> 4; else -> 5 }
+
+    /** How long a piece is, in sixteenths of a tile: a diagonal cuts a corner and is shorter. */
+    fun length(piece: Int) = if (piece == X || piece == Y) 16 else 11
+
+    /** The straight piece running out through [edge]. */
+    fun straight(edge: Int) = if (edge == XM || edge == XP) X else Y
+
+    /** Whether two pieces on one tile meet or cross. Only the parallel diagonals keep apart. */
+    fun touch(a: Int, b: Int) = !((a or b) == (N or S) || (a or b) == (E or W))
+
+    /** The tile next to ([x], [y]) through [edge], as x and y steps. */
+    fun dx(edge: Int) = when (edge) { XM -> -1; XP -> 1; else -> 0 }
+    fun dy(edge: Int) = when (edge) { YM -> -1; YP -> 1; else -> 0 }
+
     /** Where an edge's middle is in the tile, x and y in quarters of a tile. */
     fun edgeX4(edge: Int) = when (edge) { XM -> 0; XP -> 4; else -> 2 }
     fun edgeY4(edge: Int) = when (edge) { YM -> 0; YP -> 4; else -> 2 }

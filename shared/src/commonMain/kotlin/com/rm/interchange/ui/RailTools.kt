@@ -1,0 +1,92 @@
+package com.rm.interchange.ui
+
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.DrawScope
+import com.rm.interchange.map.LandPainter
+import com.rm.interchange.map.Pick
+import com.rm.interchange.sim.Command
+import com.rm.interchange.sim.Track
+import com.rm.interchange.sim.World
+import kotlin.math.abs
+
+/**
+ * The signal a tap at [at] puts down: on the piece of the tile nearest the
+ * finger, facing trains that come in at its end nearer the finger. Null if
+ * there's no track.
+ */
+fun signalAt(world: World, company: Int, at: Pick): Command.Signal? {
+    val pieces = if (world.inside(at.tileX, at.tileY)) world.trackAt(at.tileX, at.tileY) else 0
+    if (pieces == 0) return null
+    var best = 0
+    var bestD = Float.MAX_VALUE
+    for (p in Track.PIECES) {
+        if (pieces and p == 0) continue
+        val d = distanceToPiece(p, at.fx, at.fy)
+        if (d < bestD) { bestD = d; best = p }
+    }
+    val e = Track.edges(best)
+    val a = e and 3
+    val b = e shr 2
+    val da = sq(Track.edgeX4(a) / 4f - at.fx) + sq(Track.edgeY4(a) / 4f - at.fy)
+    val db = sq(Track.edgeX4(b) / 4f - at.fx) + sq(Track.edgeY4(b) / 4f - at.fy)
+    return Command.Signal(company, at.tileX, at.tileY, best, if (da <= db) a else b)
+}
+
+private fun sq(v: Float) = v * v
+
+private fun distanceToPiece(piece: Int, x: Float, y: Float): Float {
+    val e = Track.edges(piece)
+    val ax = Track.edgeX4(e and 3) / 4f
+    val ay = Track.edgeY4(e and 3) / 4f
+    val bx = Track.edgeX4(e shr 2) / 4f
+    val by = Track.edgeY4(e shr 2) / 4f
+    val len = sq(bx - ax) + sq(by - ay)
+    val t = (((x - ax) * (bx - ax) + (y - ay) * (by - ay)) / len).coerceIn(0f, 1f)
+    return sq(ax + (bx - ax) * t - x) + sq(ay + (by - ay) * t - y)
+}
+
+/** The depot a tap at [at] builds: its doors towards track next door that could run in, else the side nearest the finger. */
+fun depotAt(world: World, company: Int, at: Pick): Command.Depot {
+    val x = at.tileX
+    val y = at.tileY
+    for (edge in intArrayOf(Track.XM, Track.XP, Track.YM, Track.YP)) {
+        val nx = x + Track.dx(edge)
+        val ny = y + Track.dy(edge)
+        if (!world.inside(nx, ny)) continue
+        val back = Track.opposite(edge)
+        if (Track.PIECES.any { world.trackAt(nx, ny) and it != 0 && Track.has(it, back) }) return Command.Depot(company, x, y, edge)
+    }
+    val u = at.fx - 0.5f
+    val v = at.fy - 0.5f
+    val edge = if (abs(u) > abs(v)) (if (u < 0) Track.XM else Track.XP) else (if (v < 0) Track.YM else Track.YP)
+    return Command.Depot(company, x, y, edge)
+}
+
+/**
+ * The platforms a drag from [start] to [end] lays: the rectangle between
+ * them, running along its longer side, or along [alongX] when it's square.
+ */
+fun stationPlan(company: Int, start: Pick, end: Pick, alongX: Boolean): Command.Station {
+    val dx = abs(end.tileX - start.tileX)
+    val dy = abs(end.tileY - start.tileY)
+    val axis = when {
+        dx > dy -> Track.X
+        dy > dx -> Track.Y
+        alongX -> Track.X
+        else -> Track.Y
+    }
+    return Command.Station(company, start.tileX, start.tileY, end.tileX, end.tileY, axis)
+}
+
+/** The platforms [plan] would lay, shaded over the map, with their track. */
+fun DrawScope.drawStationPlan(world: World, painter: LandPainter, plan: Command.Station) {
+    for (y in minOf(plan.y0, plan.y1)..maxOf(plan.y0, plan.y1)) for (x in minOf(plan.x0, plan.x1)..maxOf(plan.x0, plan.x1)) {
+        if (!world.inside(x, y)) continue
+        val ok = !world.isWater(x, y)
+        with(painter) { track(x, y, plan.axis, if (ok) PLAN_OK else PLAN_BAD, if (ok) Color(0xCCFFFFFF) else PLAN_BAD) }
+    }
+}
+
+private val PLAN_OK = Color(0x99F0B429)
+private val PLAN_BAD = Color(0x99E05A4E)

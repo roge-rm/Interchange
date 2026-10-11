@@ -267,6 +267,211 @@ def track(piece, surface_shape):
     return img
 
 
+# ---- solids -------------------------------------------------------------------
+#
+# Buildings and vehicles are made of solids: a convex base in (u, v), raised
+# from h0 to h1 steps. Their faces are drawn far to near, those turned from
+# the camera left out, each shaded by the light and outlined a pixel dark.
+
+# Towards the camera, in (u, v, steps): moving along this keeps a point where it is on screen.
+VIEW = (1.0, 1.0, 4.0)
+# A vehicle's or a post's anchor: the middle of the tile, on the ground.
+MID_Y = STEP + HH
+
+
+def solid(base, h0, h1, col, top=None):
+    """The faces of a solid, as (points, colour, centre)."""
+    n = len(base)
+    cu = sum(p[0] for p in base) / n
+    cv = sum(p[1] for p in base) / n
+    centre = (cu, cv, (h0 + h1) / 2)
+    faces = []
+    for i in range(n):
+        (au, av), (bu, bv) = base[i], base[(i + 1) % n]
+        faces.append(([(au, av, h0), (bu, bv, h0), (bu, bv, h1), (au, av, h1)], col, centre))
+    faces.append(([(u, v, h1) for u, v in base], top or col, centre))
+    return faces
+
+
+def normal(pts, centre):
+    """The face's normal, turned away from the solid's middle."""
+    (ax, ay, az), (bx, by, bz), (cx, cy, cz) = pts[0], pts[1], pts[2]
+    ux, uy, uz = bx - ax, by - ay, bz - az
+    vx, vy, vz = cx - ax, cy - ay, cz - az
+    n = (uy * vz - uz * vy, uz * vx - ux * vz, ux * vy - uy * vx)
+    mid = [sum(p[i] for p in pts) / len(pts) for i in range(3)]
+    out = [mid[i] - centre[i] for i in range(3)]
+    if sum(n[i] * out[i] for i in range(3)) < 0:
+        n = tuple(-x for x in n)
+    return n
+
+
+def face_shade(n):
+    # Heights in steps are half a tile's width in shading terms, as for the land.
+    nx, ny, nz = n[0], n[1], n[2] * 2
+    ln = math.sqrt(nx * nx + ny * ny + nz * nz) or 1
+    lx, ly, lz = LIGHT
+    ll = math.sqrt(lx * lx + ly * ly + lz * lz)
+    d = (nx * lx + ny * ly + nz * lz) / (ln * ll)
+    return max(0.66, min(1.05, 0.84 + 0.16 * d / (lz / ll)))
+
+
+def draw_solids(img, faces, ox=0.0, oy=0.0):
+    """Draws faces far to near, shifted on screen by ox, oy."""
+    d = ImageDraw.Draw(img)
+    shown = []
+    for pts, col, centre in faces:
+        n = normal(pts, centre)
+        if n[0] * VIEW[0] + n[1] * VIEW[1] + n[2] * VIEW[2] <= 1e-6:
+            continue
+        mid = [sum(p[i] for p in pts) / len(pts) for i in range(3)]
+        depth = mid[0] * VIEW[0] + mid[1] * VIEW[1] + mid[2] * VIEW[2]
+        shown.append((depth, pts, shade(col, face_shade(n))))
+    for _, pts, col in sorted(shown, key=lambda f: f[0]):
+        poly = [(x + ox, y + oy) for x, y in (proj(u, v, h) for u, v, h in pts)]
+        d.polygon(poly, fill=col, outline=OUTLINE)
+
+
+def box(u0, u1, v0, v1, h0, h1, col, top=None):
+    return solid([(u0, v0), (u1, v0), (u1, v1), (u0, v1)], h0, h1, col, top)
+
+
+def gable(u0, u1, v0, v1, h0, h1, along_u, col):
+    """A pitched roof from h0 at the eaves to h1 at the ridge, the ridge along u or v."""
+    if along_u:
+        m = (v0 + v1) / 2
+        a = [(u0, v0, h0), (u1, v0, h0), (u1, m, h1), (u0, m, h1)]
+        b = [(u0, v1, h0), (u0, m, h1), (u1, m, h1), (u1, v1, h0)]
+        e0 = [(u0, v0, h0), (u0, m, h1), (u0, v1, h0)]
+        e1 = [(u1, v0, h0), (u1, v1, h0), (u1, m, h1)]
+    else:
+        m = (u0 + u1) / 2
+        a = [(u0, v0, h0), (m, v0, h1), (m, v1, h1), (u0, v1, h0)]
+        b = [(u1, v0, h0), (u1, v1, h0), (m, v1, h1), (m, v0, h1)]
+        e0 = [(u0, v0, h0), (u1, v0, h0), (m, v0, h1)]
+        e1 = [(u0, v1, h0), (m, v1, h1), (u1, v1, h0)]
+    centre = ((u0 + u1) / 2, (v0 + v1) / 2, h0)
+    return [(a, col, centre), (b, col, centre), (e0, WALL_BRICK, centre), (e1, WALL_BRICK, centre)]
+
+
+# ---- stations, depots and signals -----------------------------------------------
+
+CONCRETE = c("#c9c3b5")
+CANOPY = c("#8c4a32")
+POST = c("#4a4a4a")
+WALL_BRICK = c("#9c5a3c")
+SLATE = c("#5b6470")
+DOORWAY = c("#2a2622")
+
+
+def swap(faces, along_u):
+    """Faces drawn for a platform along u, turned to run along v instead."""
+    if along_u:
+        return faces
+    return [([(v, u, h) for u, v, h in pts], col, (cen[1], cen[0], cen[2])) for pts, col, cen in faces]
+
+
+def station(along_u):
+    img = track("X" if along_u else "Y", 0)
+    faces = box(0.0, 1.0, 0.0, 0.27, 0.0, 0.35, CONCRETE)
+    faces += box(0.0, 1.0, 0.73, 1.0, 0.0, 0.35, CONCRETE)
+    # A canopy over the far platform.
+    for u in (0.18, 0.82):
+        faces += box(u - 0.025, u + 0.025, 0.11, 0.16, 0.35, 2.4, POST)
+    faces += box(0.04, 0.96, 0.0, 0.3, 2.4, 2.65, CANOPY)
+    draw_solids(img, swap(faces, along_u))
+    return img
+
+
+def depot(edge):
+    """A brick shed over the track, its doors at view edge XM, XP, YM or YP."""
+    along_u = edge in ("XM", "XP")
+    if along_u:
+        u0, u1 = (0.0, 0.84) if edge == "XP" else (0.16, 1.0)
+        faces = box(u0, u1, 0.14, 0.86, 0.0, 1.9, WALL_BRICK) + gable(u0, u1, 0.1, 0.9, 1.9, 3.0, True, SLATE)
+    else:
+        v0, v1 = (0.0, 0.84) if edge == "YP" else (0.16, 1.0)
+        faces = box(0.14, 0.86, v0, v1, 0.0, 1.9, WALL_BRICK) + gable(0.1, 0.9, v0, v1, 1.9, 3.0, False, SLATE)
+    img = Image.new("RGBA", (CELL_W, CELL_H))
+    draw_solids(img, faces)
+    # The doorway, on the wall facing the camera when the doors are on that side.
+    d = ImageDraw.Draw(img)
+    if edge == "XP":
+        d.polygon([proj(0.84, v, h) for v, h in ((0.32, 0), (0.68, 0), (0.68, 1.6), (0.32, 1.6))], fill=DOORWAY, outline=OUTLINE)
+    elif edge == "YP":
+        d.polygon([proj(u, 0.84, h) for u, h in ((0.32, 0), (0.68, 0), (0.68, 1.6), (0.32, 1.6))], fill=DOORWAY, outline=OUTLINE)
+    return img
+
+
+def signal(red):
+    img = Image.new("RGBA", (CELL_W, CELL_H))
+    faces = box(0.48, 0.52, 0.48, 0.52, 0.0, 2.2, POST)
+    faces += box(0.46, 0.54, 0.46, 0.54, 2.2, 3.0, c("#1e1e1e"))
+    draw_solids(img, faces)
+    x, y = proj(0.54, 0.54, 2.6)
+    lamp = c("#ff3b2f") if red else c("#3bff6a")
+    ImageDraw.Draw(img).ellipse([x - 3, y - 3, x + 3, y + 3], fill=lamp, outline=OUTLINE)
+    return img
+
+
+# ---- vehicles -------------------------------------------------------------------
+
+LOCO_BODY = c("#2f5a3a")
+LOCO_DARK = c("#1d2a22")
+SMOKEBOX = c("#2a2a2a")
+CHASSIS = c("#2b2b2b")
+COACH = c("#7a2a2a")
+COACH_BAND = c("#e8dcc0")
+VAN = c("#7a5236")
+WAGON = c("#6d6a64")
+ROOF = c("#8f8f8f")
+WINDOW = c("#2e3540")
+BRASS = c("#c9a640")
+
+
+def oriented(cu, cv, angle, a0, a1, w, h0, h1, col, top=None):
+    """A box along heading [angle] (radians from +u towards +v), from a0 to a1 along it and w wide, about the point cu, cv."""
+    du, dv = math.cos(angle), math.sin(angle)
+    pu, pv = -dv, du
+    base = [(cu + du * a + pu * s, cv + dv * a + pv * s) for a, s in ((a0, -w / 2), (a1, -w / 2), (a1, w / 2), (a0, w / 2))]
+    return solid(base, h0, h1, col, top)
+
+
+def vehicle(kind, heading):
+    """A rail vehicle half a tile long, its middle on the tile's middle, facing one of eight ways."""
+    ang = heading * math.pi / 4
+    L = 0.25
+    faces = oriented(0.5, 0.5, ang, -L + 0.03, L - 0.03, 0.15, 0.08, 0.38, CHASSIS)
+    if kind in ("comet", "ranger"):
+        body = LOCO_BODY if kind == "comet" else c("#3a3f6b")
+        faces += oriented(0.5, 0.5, ang, -L + 0.02, L - 0.02, 0.2, 0.38, 0.55, LOCO_DARK)
+        # Boiler, smokebox and chimney at the front, the cab at the back.
+        faces += oriented(0.5, 0.5, ang, -0.06, L - 0.06, 0.15, 0.55, 1.25, body)
+        faces += oriented(0.5, 0.5, ang, L - 0.06, L - 0.01, 0.15, 0.55, 1.25, SMOKEBOX)
+        faces += oriented(0.5, 0.5, ang, L - 0.07, L - 0.02, 0.06, 1.25, 1.95, SMOKEBOX)
+        faces += oriented(0.5, 0.5, ang, -0.03, 0.01, 0.07, 1.25, 1.5, BRASS)
+        faces += oriented(0.5, 0.5, ang, -L + 0.02, -0.06, 0.2, 0.55, 1.75, body, top=ROOF)
+    elif kind == "coach":
+        faces += oriented(0.5, 0.5, ang, -L + 0.01, L - 0.01, 0.2, 0.38, 0.75, COACH)
+        faces += oriented(0.5, 0.5, ang, -L + 0.01, L - 0.01, 0.2, 0.75, 1.25, COACH_BAND)
+        faces += oriented(0.5, 0.5, ang, -L + 0.01, L - 0.01, 0.2, 1.25, 1.55, COACH, top=ROOF)
+        # Windows along both sides, a hair proud of the band so they draw over it.
+        for k in range(4):
+            a0 = -L + 0.04 + k * 0.115
+            faces += oriented(0.5, 0.5, ang, a0, a0 + 0.07, 0.205, 0.85, 1.18, WINDOW)
+    elif kind == "van":
+        faces += oriented(0.5, 0.5, ang, -L + 0.01, L - 0.01, 0.2, 0.38, 1.45, VAN, top=ROOF)
+    else:
+        faces += oriented(0.5, 0.5, ang, -L + 0.01, L - 0.01, 0.2, 0.38, 0.95, WAGON, top=c("#3a3836"))
+    img = Image.new("RGBA", (CELL_W, CELL_H))
+    draw_solids(img, faces)
+    return img
+
+
+VEHICLES = ["comet", "ranger", "coach", "van", "open"]
+EDGES = ["XM", "XP", "YM", "YP"]
+
+
 # ---- the sprite list ------------------------------------------------------------
 
 SLOPES = list(range(15))
@@ -287,6 +492,15 @@ def sprites():
     for p, piece in enumerate(PIECES):
         for s in TRACK_SURFACES.get(piece, [0]):
             out.append((("track", p, s), track(piece, s)))
+    for a in (0, 1):
+        out.append((("station", a), station(a == 0)))
+    for e, edge in enumerate(EDGES):
+        out.append((("depot", e), depot(edge)))
+    for red in (0, 1):
+        out.append((("signal", red), signal(red == 1)))
+    for k, kind in enumerate(VEHICLES):
+        for h in range(8):
+            out.append((("vehicle", k, h), vehicle(kind, h)))
     return out
 
 
@@ -309,13 +523,25 @@ def main():
     ground_cells = [-1] * (len(KINDS) * 16)
     wall_cells = [-1] * (16 * 16)
     track_cells = [-1] * (len(PIECES) * 16)
+    station_cells = [-1] * 2
+    depot_cells = [-1] * 4
+    signal_cells = [-1] * 2
+    vehicle_cells = [-1] * (len(VEHICLES) * 8)
     for i, (key, _) in enumerate(items):
         if key[0] == "ground":
             ground_cells[key[1] * 16 + key[2]] = i
         elif key[0] == "walls":
             wall_cells[key[1] * 16 + key[2]] = i
-        else:
+        elif key[0] == "track":
             track_cells[key[1] * 16 + key[2]] = i
+        elif key[0] == "station":
+            station_cells[key[1]] = i
+        elif key[0] == "depot":
+            depot_cells[key[1]] = i
+        elif key[0] == "signal":
+            signal_cells[key[1]] = i
+        else:
+            vehicle_cells[key[1] * 8 + key[2]] = i
 
     def arr(xs):
         return ", ".join(str(x) for x in xs)
@@ -339,6 +565,8 @@ object Atlas {{
     const val CELL_W = {CELL_W}
     const val CELL_H = {CELL_H}
     const val CELL_H_ANCHOR = {STEP}
+    /** A vehicle's or a signal's anchor down the cell at level 0: the tile's middle, on the ground. */
+    const val MID_ANCHOR = {MID_Y}
     const val COLUMNS = {COLUMNS}
 
 {kinds}
@@ -351,6 +579,18 @@ object Atlas {{
 
     /** The cell for a track piece in the view, at piece index * 16 + the shape it lies on, or -1. */
     val TRACK = intArrayOf({arr(track_cells)})
+
+    /** A platform with its track, running along view u (0) or v (1). */
+    val STATION = intArrayOf({arr(station_cells)})
+
+    /** A depot with its doors at view edge XM, XP, YM or YP. */
+    val DEPOT = intArrayOf({arr(depot_cells)})
+
+    /** A signal showing green (0) or red (1), anchored at [MID_ANCHOR]. */
+    val SIGNAL = intArrayOf({arr(signal_cells)})
+
+    /** A rail vehicle's drawing, at sprite * 8 + heading in the view (0 down the u axis, on round towards v), anchored at [MID_ANCHOR]. */
+    val VEHICLE = intArrayOf({arr(vehicle_cells)})
 }}
 """)
     print(f"{len(items)} sprites, {rows} rows")

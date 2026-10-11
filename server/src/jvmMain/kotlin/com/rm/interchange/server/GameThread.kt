@@ -2,6 +2,8 @@ package com.rm.interchange.server
 
 import com.rm.interchange.sim.Command
 import com.rm.interchange.sim.World
+import com.rm.interchange.sim.WorldView
+import com.rm.interchange.sim.view
 import java.util.concurrent.ConcurrentLinkedQueue
 
 /**
@@ -27,6 +29,19 @@ class GameThread(private val make: () -> World) {
         private set
     @Volatile var money = 0L
         private set
+    /** What the screen draws and lists, as of the last tick, and the tick before for smoothing moves between them. */
+    @Volatile var view: WorldView? = null
+        private set
+    @Volatile var lastView: WorldView? = null
+        private set
+    @Volatile private var viewAt = 0L
+
+    /** How far through to the next tick it is now, 0 to 1, for drawing moves between ticks. */
+    fun sinceTick(): Float {
+        val period = 1_000_000_000f / Game.TICKS_PER_SECOND
+        return ((System.nanoTime() - viewAt) / period).coerceIn(0f, 1f)
+    }
+
     /** The world's checksum, worked out every [CHECKSUM_TICKS] ticks. */
     @Volatile var checksum = 0L
         private set
@@ -76,6 +91,9 @@ class GameThread(private val make: () -> World) {
     }
 
     private fun publish(g: Game) {
+        lastView = view
+        view = g.world.view()
+        viewAt = System.nanoTime()
         tick = g.world.tick
         day = g.world.day
         money = g.world.companies[0].money

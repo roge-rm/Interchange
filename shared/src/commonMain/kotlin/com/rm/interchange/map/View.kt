@@ -132,7 +132,7 @@ class View(val mapWidth: Int, val mapHeight: Int) {
             if (vx >= 0 && vy >= 0 && vx < viewWidth && vy < viewHeight) {
                 val x = toWorldX(vx, vy)
                 val y = toWorldY(vx, vy)
-                if (groundHeight(world, x, y) >= h - 0.125f) return Pick(x, y)
+                if (groundHeight(world, x, y) >= h - 0.125f) return Pick(x, y, px, py)
             }
             h -= 0.125f
         }
@@ -145,8 +145,8 @@ class View(val mapWidth: Int, val mapHeight: Int) {
     }
 }
 
-/** A world point picked on the land, in tiles. */
-class Pick(val x: Float, val y: Float) {
+/** A world point picked on the land, in tiles, and the screen point it was picked at. */
+class Pick(val x: Float, val y: Float, val screenX: Float = 0f, val screenY: Float = 0f) {
     val tileX get() = floor(x).toInt()
     val tileY get() = floor(y).toInt()
     /** Where in its tile, 0 to 1. */

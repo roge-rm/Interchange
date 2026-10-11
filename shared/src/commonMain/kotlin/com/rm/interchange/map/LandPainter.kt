@@ -99,6 +99,13 @@ class LandPainter(private val world: World, private val view: View, private val 
 
         val pieces = world.trackAt(wx, wy)
         if (pieces == 0) return
+        val tile = world.index(wx, wy)
+        world.depotTiles[tile]?.let { id ->
+            val d = world.depots.getOrNull(id) ?: return@let
+            sprite(Atlas.TRACK[viewPieceIndex(Track.index(pieces)) * 16], vx, vy, base)
+            sprite(Atlas.DEPOT[viewEdge(d.edge)], vx, vy, base)
+            return
+        }
         // What the track lies on: the land, or a foundation's top.
         val st = world.surfaceHeight(wx, wy, pieces, worldCorner(wx, wy, vx, vy))
         val sr = world.surfaceHeight(wx, wy, pieces, worldCorner(wx, wy, vx + 1, vy))
@@ -110,11 +117,31 @@ class LandPainter(private val world: World, private val view: View, private val 
             sprite(Atlas.WALLS[shape * 16 + shapeOf(st - base, sr - base, sb - base, sl - base)], vx, vy, base)
             sprite(Atlas.GROUND[(Atlas.GRASS0 + variant(wx, wy)) * 16 + sShape], vx, vy, sBase)
         }
+        if (world.stationTiles.containsKey(tile)) {
+            sprite(Atlas.STATION[viewPieceIndex(Track.index(pieces))], vx, vy, sBase)
+            return
+        }
         for ((i, p) in Track.PIECES.withIndex()) {
             if (pieces and p == 0) continue
             sprite(Atlas.TRACK[viewPieceIndex(i) * 16 + sShape], vx, vy, sBase)
         }
     }
+
+    /** Draws a vehicle or signal's [cell] with its anchor at screen point ([px], [py]), scaled by [scale] from this level. */
+    fun DrawScope.spriteAt(cell: Int, px: Float, py: Float, scale: Float) {
+        val image = sheet ?: return
+        if (cell < 0) return
+        val sx = (cell % Atlas.COLUMNS) * cellW
+        val sy = (cell / Atlas.COLUMNS) * cellH
+        val w = (cellW * scale).toInt()
+        val h = (cellH * scale).toInt()
+        val left = (px - cellW / 2 * scale).toInt()
+        val top = (py - Atlas.MID_ANCHOR * this@LandPainter.scale * scale).toInt()
+        drawImage(image, IntOffset(sx, sy), IntSize(cellW, cellH), IntOffset(left, top), IntSize(w, h), filterQuality = androidx.compose.ui.graphics.FilterQuality.None)
+    }
+
+    /** A world heading in eighths, as it shows in this view. */
+    fun viewHeading(h: Int): Int = (h + 2 * view.turn) % 8
 
     /** The index of world piece [index] as it shows in this view. */
     private fun viewPieceIndex(index: Int): Int {

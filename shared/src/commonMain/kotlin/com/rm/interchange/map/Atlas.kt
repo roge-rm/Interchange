@@ -16,6 +16,8 @@ object Atlas {
     const val CELL_W = 128
     const val CELL_H = 96
     const val CELL_H_ANCHOR = 16
+    /** A vehicle's or a signal's anchor down the cell at level 0: the tile's middle, on the ground. */
+    const val MID_ANCHOR = 48
     const val COLUMNS = 8
 
     const val GRASS0 = 0
@@ -33,4 +35,16 @@ object Atlas {
 
     /** The cell for a track piece in the view, at piece index * 16 + the shape it lies on, or -1. */
     val TRACK = intArrayOf(98, -1, -1, -1, -1, -1, 99, -1, -1, 100, -1, -1, -1, -1, -1, -1, 101, -1, -1, 102, -1, -1, -1, -1, -1, -1, -1, -1, 103, -1, -1, -1, 104, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, 105, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, 106, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, 107, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1)
+
+    /** A platform with its track, running along view u (0) or v (1). */
+    val STATION = intArrayOf(108, 109)
+
+    /** A depot with its doors at view edge XM, XP, YM or YP. */
+    val DEPOT = intArrayOf(110, 111, 112, 113)
+
+    /** A signal showing green (0) or red (1), anchored at [MID_ANCHOR]. */
+    val SIGNAL = intArrayOf(114, 115)
+
+    /** A rail vehicle's drawing, at sprite * 8 + heading in the view (0 down the u axis, on round towards v), anchored at [MID_ANCHOR]. */
+    val VEHICLE = intArrayOf(116, 117, 118, 119, 120, 121, 122, 123, 124, 125, 126, 127, 128, 129, 130, 131, 132, 133, 134, 135, 136, 137, 138, 139, 140, 141, 142, 143, 144, 145, 146, 147, 148, 149, 150, 151, 152, 153, 154, 155)
 }

@@ -24,6 +24,8 @@ const val CORNER_W = 3
 /** Whether track [pieces] on tile ([x], [y]) need a foundation. */
 fun World.needsFoundation(x: Int, y: Int, pieces: Int): Boolean {
     if (pieces == 0 || isFlat(x, y)) return false
+    // Platforms are always level.
+    if (stationTiles.containsKey(index(x, y))) return true
     val n = heightAt(x, y)
     val e = heightAt(x + 1, y)
     val s = heightAt(x + 1, y + 1)
@@ -47,6 +49,7 @@ fun World.surfaceHeight(x: Int, y: Int, pieces: Int, corner: Int): Int {
     val s = heightAt(x + 1, y + 1)
     val w = heightAt(x, y + 1)
     if (!needsFoundation(x, y, pieces)) return when (corner) { CORNER_N -> n; CORNER_E -> e; CORNER_S -> s; else -> w }
+    if (stationTiles.containsKey(index(x, y))) return maxOf(maxOf(n, e), maxOf(s, w))
     return when (pieces) {
         Track.X -> if (corner == CORNER_N || corner == CORNER_W) maxOf(n, w) else maxOf(e, s)
         Track.Y -> if (corner == CORNER_N || corner == CORNER_E) maxOf(n, e) else maxOf(w, s)
@@ -102,7 +105,8 @@ fun World.planRail(c: Command.Rail): BooleanArray? {
         val i = line[k] / 64
         val piece = line[k] % 64
         val has = trackOf(i)
-        val ok = if (c.remove) {
+        val special = stationTiles.containsKey(i) || depotTiles.containsKey(i)
+        val ok = !special && if (c.remove) {
             has and piece != 0 && owner[i].toInt() == c.company
         } else {
             has and piece == 0 && (has == 0 || owner[i].toInt() == c.company) && piecesFit(i % width, i / width, has or piece, trackOf)
@@ -120,11 +124,14 @@ internal fun World.buildRail(company: Company, c: Command.Rail) {
         val x = i % width
         val y = i / width
         val has = track[i].toInt()
+        // Platforms and depots come up with the Clear tool, not here.
+        if (stationTiles.containsKey(i) || depotTiles.containsKey(i)) continue
         if (c.remove) {
-            if (has and piece == 0 || owner[i].toInt() != company.id) continue
+            if (has and piece == 0 || owner[i].toInt() != company.id || trainOnTile(i)) continue
             if (company.money < Prices.TRACK_REMOVE) return
             company.money -= Prices.TRACK_REMOVE
             track[i] = (has and piece.inv()).toByte()
+            signals.remove(pieceKey(i, piece))
             if (track[i].toInt() == 0) owner[i] = -1
         } else {
             if (has and piece != 0 || (has != 0 && owner[i].toInt() != company.id)) continue
@@ -134,7 +141,10 @@ internal fun World.buildRail(company: Company, c: Command.Rail) {
             company.money -= cost
             track[i] = (has or piece).toByte()
             owner[i] = company.id.toByte()
+            // A tile that now branches can't keep its signals.
+            if (!signalFits(x, y, piece)) for (p in Track.PIECES) signals.remove(pieceKey(i, p))
         }
         touched(x, y)
+        networkChanged()
     }
 }

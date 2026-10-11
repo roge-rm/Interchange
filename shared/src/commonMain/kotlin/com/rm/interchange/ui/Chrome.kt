@@ -262,3 +262,51 @@ fun moneyText(amount: Long): String {
 private val MONTHS = listOf("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
 
 fun dateText(day: Int, month: Int, year: Int) = "$day ${MONTHS[month]} $year"
+
+/** A pill that's on or off, for picking one of a few things. */
+@Composable
+fun Chip(label: String, on: Boolean, enabled: Boolean = true, onClick: () -> Unit) {
+    val c = LocalColors.current
+    Box(
+        Modifier
+            .alpha(if (enabled) 1f else 0.4f)
+            .clip(RoundedCornerShape(16.dp))
+            .background(if (on) c.accent else c.button)
+            .semantics { selected = on }
+            .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 6.dp),
+    ) {
+        Text(label, color = if (on) c.onAccent else c.text, fontSize = 13.sp, maxLines = 1)
+    }
+}
+
+/** A button with words on it, for what a card can do. */
+@Composable
+fun ActionButton(label: String, enabled: Boolean = true, strong: Boolean = false, onClick: () -> Unit) {
+    val c = LocalColors.current
+    Box(
+        Modifier
+            .alpha(if (enabled) 1f else 0.4f)
+            .clip(ButtonShape)
+            .background(if (strong) c.accent else c.button)
+            .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+    ) {
+        Text(label, color = if (strong) c.onAccent else c.text, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+    }
+}
+
+/** A card with a title, a close button and whatever goes under them. */
+@Composable
+fun Card(title: String, onClose: () -> Unit, modifier: Modifier = Modifier, content: @Composable () -> Unit) {
+    val c = LocalColors.current
+    ChromeBox(modifier) {
+        Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(title, color = c.text, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f), maxLines = 1)
+                SquareButton(Glyph.Remove, "Close", 28.dp, onClick = onClose)
+            }
+            content()
+        }
+    }
+}

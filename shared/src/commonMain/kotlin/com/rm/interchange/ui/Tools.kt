@@ -15,9 +15,9 @@ enum class Tool(val group: ToolGroup, val title: String, val glyph: Glyph, val r
     Inspect(ToolGroup.Inspect, "Inspect", Glyph.Inspect, ready = true),
 
     Track(ToolGroup.Rail, "Track", Glyph.Rail, ready = true),
-    Signals(ToolGroup.Rail, "Signals", Glyph.Signal),
-    Station(ToolGroup.Rail, "Station", Glyph.Station),
-    Depot(ToolGroup.Rail, "Depot", Glyph.Depot),
+    Signals(ToolGroup.Rail, "Signals", Glyph.Signal, ready = true),
+    Station(ToolGroup.Rail, "Station", Glyph.Station, ready = true),
+    Depot(ToolGroup.Rail, "Depot", Glyph.Depot, ready = true),
     Bridge(ToolGroup.Rail, "Bridge", Glyph.Bridge),
     Tunnel(ToolGroup.Rail, "Tunnel", Glyph.Tunnel),
 
@@ -39,7 +39,7 @@ enum class Tool(val group: ToolGroup, val title: String, val glyph: Glyph, val r
     Lower(ToolGroup.Land, "Lower", Glyph.Lower, ready = true),
     Level(ToolGroup.Land, "Level", Glyph.Level),
     Trees(ToolGroup.Land, "Trees", Glyph.Tree),
-    Clear(ToolGroup.Land, "Clear", Glyph.Clear);
+    Clear(ToolGroup.Land, "Clear", Glyph.Clear, ready = true);
 
     companion object {
         fun of(group: ToolGroup) = entries.filter { it.group == group }

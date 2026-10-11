@@ -27,6 +27,24 @@ class World(val width: Int, val height: Int, seed: Long, val startYear: Int = 18
 
     val companies = mutableListOf(Company(0, "Company", Prices.START_MONEY))
 
+    // What's built on the track, by id; a removed one leaves null.
+    val stations = ArrayList<Station?>()
+    val depots = ArrayList<Depot?>()
+    val trains = ArrayList<Train?>()
+
+    /** Platform tiles to their station, depot tiles to their depot. */
+    val stationTiles = HashMap<Int, Int>()
+    val depotTiles = HashMap<Int, Int>()
+
+    /** Signals by [pieceKey], packed by [Signals.pack]. */
+    val signals = HashMap<Int, Int>()
+
+    // Worked out from the above as needed, not saved: the block each piece is in, and how many trains are on each tile and block.
+    internal val blocks = HashMap<Int, Int>()
+    internal var blocksDirty = true
+    internal val tileTrains = HashMap<Int, Int>()
+    internal val blockTrains = HashMap<Int, Int>()
+
     val rng = Rng(seed)
 
     /** Ticks since the game began. */
@@ -83,6 +101,12 @@ class World(val width: Int, val height: Int, seed: Long, val startYear: Int = 18
         when (command) {
             is Command.Terraform -> terraform(company, command.x, command.y, command.up)
             is Command.Rail -> buildRail(company, command)
+            is Command.Station -> buildStation(company, command)
+            is Command.Depot -> buildDepot(company, command)
+            is Command.Signal -> placeSignal(company, command)
+            is Command.Clear -> clearTile(company, command)
+            is Command.BuyTrain -> buyTrain(company, command)
+            is Command.TrainOrder -> trainCommand(company, command)
         }
     }
 
@@ -94,6 +118,8 @@ class World(val width: Int, val height: Int, seed: Long, val startYear: Int = 18
     /** Moves the world on by one tick. */
     fun step() {
         tick++
+        moveTrains()
+        if (tick % Calendar.TICKS_PER_DAY == 0L) payRunningCosts()
     }
 
     /**
@@ -124,6 +150,14 @@ class World(val width: Int, val height: Int, seed: Long, val startYear: Int = 18
         for (x in 0..width) mix(heightAt(x, height).toLong())
         for (y in 0 until height) mix(heightAt(width, y).toLong())
         for (c in companies) mix(c.money)
+        for (k in signals.keys.sorted()) mix(k.toLong() * 31 + signals.getValue(k))
+        for (k in stationTiles.keys.sorted()) mix(k.toLong() * 31 + stationTiles.getValue(k))
+        for (k in depotTiles.keys.sorted()) mix(k.toLong() * 31 + depotTiles.getValue(k))
+        for (t in trains) {
+            if (t == null) continue
+            mix(t.id.toLong()); mix(t.nose.toLong()); mix(t.speed.toLong()); mix(t.waiting.toLong()); mix(t.order.toLong())
+            for (st in t.steps) mix(st.toLong())
+        }
         return h
     }
 
