@@ -226,4 +226,14 @@
     <string name="news_closes">Fermeture : %1$s</string>
     <string name="news_more">%1$s produit davantage</string>
     <string name="news_less">%1$s produit moins</string>
+
+    <!-- Ordres -->
+    <string name="full_load">Plein chargement</string>
+    <string name="unload_all">Tout décharger</string>
+    <string name="transfer">Transfert</string>
+    <string name="no_loading">Pas de chargement</string>
+    <string name="wait_days">Attendre %1$d jours</string>
+    <string name="wait_less">Attendre un jour de moins</string>
+    <string name="wait_more">Attendre un jour de plus</string>
+    <string name="remove_stop">Retirer l'arrêt</string>
 </resources>

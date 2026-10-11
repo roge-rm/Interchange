@@ -243,4 +243,14 @@
     <string name="news_closes">%1$s closes</string>
     <string name="news_more">%1$s makes more</string>
     <string name="news_less">%1$s makes less</string>
+
+    <!-- Orders -->
+    <string name="full_load">Full load</string>
+    <string name="unload_all">Unload all</string>
+    <string name="transfer">Transfer</string>
+    <string name="no_loading">No loading</string>
+    <string name="wait_days">Wait %1$d days</string>
+    <string name="wait_less">Wait a day less</string>
+    <string name="wait_more">Wait a day more</string>
+    <string name="remove_stop">Remove stop</string>
 </resources>

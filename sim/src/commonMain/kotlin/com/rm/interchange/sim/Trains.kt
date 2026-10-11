@@ -81,10 +81,13 @@ class Train(
     /** How much of cargo [c] its cars hold. */
     fun capacity(c: Int) = carEngines.sumOf { e -> roster[e].let { if (carCargo(it) == c) it.capacity else 0 } }
 
+    /** Full of everything it can carry. */
+    fun full() = (0 until Cargo.COUNT).all { load(it) >= capacity(it) }
+
     /** What car [e] carries in this train: the wagons what they're set to, anything else its first. */
     fun carCargo(e: Engine): Int = if (e.id == wagon && wagonCargo in e.cargoes) wagonCargo else e.cargoes.firstOrNull() ?: -1
 
-    /** The stations it calls at, in turn. */
+    /** The stations it calls at in turn, and what to do at each, packed by [Order]. */
     val orders = ArrayList<Int>()
     var order = 0
     var toDepot = false
@@ -112,7 +115,7 @@ class Train(
     val target: Int get() = when {
         toDepot -> -1
         orders.isEmpty() -> -2
-        else -> orders[order % orders.size]
+        else -> Order.station(orders[order % orders.size])
     }
 
     /**
@@ -163,7 +166,7 @@ internal fun World.trainCommand(company: Company, c: Command.TrainOrder) {
         }
         Command.TrainOrder.ORDERS -> {
             t.orders.clear()
-            for (s in c.stations) if (stations.getOrNull(s)?.owner == company.id) t.orders += s
+            for (o in c.stations) if (stations.getOrNull(Order.station(o))?.owner == company.id) t.orders += o
             t.order = 0
             t.route = null
         }
@@ -226,6 +229,16 @@ internal fun World.moveTrains() {
 private fun World.moveTrain(t: Train) {
     if (t.waiting > 0) {
         if (--t.waiting == 0) {
+            // A full load order keeps it there, loading as more comes, till it's full.
+            val o = t.orders.getOrNull(t.order % t.orders.size.coerceAtLeast(1)) ?: 0
+            val s = stations.getOrNull(Order.station(o))
+            if (Order.has(o, Order.FULL_LOAD) && s != null && !t.full()) {
+                loadAt(t, s)
+                if (!t.full()) {
+                    t.waiting = FULL_LOAD_RETRY
+                    return
+                }
+            }
             t.order = (t.order + 1) % t.orders.size.coerceAtLeast(1)
             t.route = null
         }
@@ -255,8 +268,9 @@ private fun World.moveTrain(t: Train) {
         t.speed = 0
         when (stop) {
             Stop.STATION -> {
-                t.waiting = Calendar.TICKS_PER_DAY * 2
-                stationAt(stepTile(t.steps.last()))?.let { callAt(t, it) }
+                val o = t.orders.getOrNull(t.order % t.orders.size.coerceAtLeast(1)) ?: 0
+                t.waiting = maxOf(Calendar.TICKS_PER_DAY * 2, Calendar.TICKS_PER_DAY * Order.waitDays(o))
+                stationAt(stepTile(t.steps.last()))?.let { callAt(t, it, o) }
             }
             Stop.DEPOT -> enterDepot(t)
             Stop.END -> if (t.route == null || t.routeAt >= (t.route?.size ?: 0)) {
@@ -426,6 +440,9 @@ internal fun isqrt(n: Long): Long {
     while ((x + 1) * (x + 1) <= n) x++
     return x
 }
+
+/** How often a train waiting to fill up looks for more cargo, in ticks. */
+const val FULL_LOAD_RETRY = Calendar.TICKS_PER_DAY / 2
 
 /** How hard trains brake, in speed units a tick. */
 const val BRAKE = 40

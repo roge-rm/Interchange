@@ -111,8 +111,8 @@ internal fun World.workOutLinks() {
     for (t in trains) {
         if (t == null || t.orders.size < 2) continue
         for (k in t.orders.indices) {
-            val a = t.orders[k]
-            val b = t.orders[(k + 1) % t.orders.size]
+            val a = Order.station(t.orders[k])
+            val b = Order.station(t.orders[(k + 1) % t.orders.size])
             if (a == b || stations.getOrNull(a) == null || stations.getOrNull(b) == null) continue
             val out = links.getOrPut(a) { ArrayList() }
             if (b !in out) out += b
@@ -296,23 +296,28 @@ internal fun World.accepts(s: Station, c: Int): Boolean {
 }
 
 /** The station train [t] calls at after the one it's at now, or -1. */
-private fun nextStop(t: Train): Int = if (t.orders.size < 2) -1 else t.orders[(t.order + 1) % t.orders.size]
+private fun nextStop(t: Train): Int = if (t.orders.size < 2) -1 else Order.station(t.orders[(t.order + 1) % t.orders.size])
 
 /**
- * Train [t] standing at station [s]: those who've arrived get off and pay for
- * their whole journey, those changing here get off to wait and their leg is
- * credited to the train, then on get those whose next stop is the train's.
+ * Train [t] standing at station [s] on order [o]: those who've arrived get
+ * off and pay for their whole journey, those changing here get off to wait
+ * and their leg is credited to the train, then on get those whose next stop
+ * is the train's. An order to unload sets everything down, paid where the
+ * station takes it; one to transfer sets everything down to change trains;
+ * one not to load takes nothing on.
  */
-internal fun World.callAt(t: Train, s: Station) {
+internal fun World.callAt(t: Train, s: Station, o: Int = 0) {
     val company = companies.getOrNull(t.owner) ?: return
     val next = nextStop(t)
     val days = { p: Packet -> ((tick - p.since) / Calendar.TICKS_PER_DAY).toInt() }
+    val unload = Order.has(o, Order.UNLOAD)
+    val transfer = Order.has(o, Order.TRANSFER)
     var paid = 0L
     for (c in 0 until Cargo.COUNT) {
         val stay = ArrayList<Packet>()
         for (p in t.cargo[c]) {
             val from = stations.getOrNull(p.origin)
-            val arrived = p.dest == s.id || (p.dest == -1 && p.origin != s.id && accepts(s, c))
+            val arrived = !transfer && (p.dest == s.id || ((p.dest == -1 || unload) && p.origin != s.id && accepts(s, c)))
             when {
                 arrived && from != null -> {
                     val full = fare(c, p.count, from, s, days(p))
@@ -326,12 +331,12 @@ internal fun World.callAt(t: Train, s: Station) {
                     t.profitThisYear += full - p.credit
                 }
                 arrived -> {}
-                p.dest >= 0 && nextHop(s.id, p.dest) != next -> {
+                transfer || unload || (p.dest >= 0 && nextHop(s.id, p.dest) != next) -> {
                     // Changing here: the leg it's done on this train is this train's, up to what the whole journey will pay.
                     val boarded = stations.getOrNull(p.boarded)
                     val dest = stations.getOrNull(p.dest)
                     val leg = if (boarded != null && boarded.id != s.id) fare(c, p.count, boarded, s, days(p)) else 0L
-                    val whole = if (from != null && dest != null) fare(c, p.count, from, dest, days(p)) else 0L
+                    val whole = if (from != null && dest != null) fare(c, p.count, from, dest, days(p)) else leg
                     val credit = minOf(leg, maxOf(0L, whole - p.credit))
                     t.profitThisYear += credit
                     addWaiting(s, c, p.dest, p.origin, p.count, p.since, p.credit + credit)
@@ -346,6 +351,12 @@ internal fun World.callAt(t: Train, s: Station) {
         company.money += paid
         payments += Payment(s.tiles.first(), paid, tick)
     }
+    if (!Order.has(o, Order.NO_LOAD)) loadAt(t, s)
+}
+
+/** Train [t] at station [s] takes on what's waiting for its next stop, as much as it has room for. */
+internal fun World.loadAt(t: Train, s: Station) {
+    val next = nextStop(t)
     for (c in 0 until Cargo.COUNT) {
         val capacity = t.capacity(c)
         if (capacity > 0) {
@@ -356,7 +367,8 @@ internal fun World.callAt(t: Train, s: Station) {
         val it = s.cargo[c].iterator()
         while (room > 0 && it.hasNext()) {
             val p = it.next()
-            if (p.dest != -1 && (next < 0 || nextHop(s.id, p.dest) != next)) continue
+            // Only towards where it's going, and never back where it came from.
+            if (next == p.origin || (p.dest != -1 && (next < 0 || nextHop(s.id, p.dest) != next))) continue
             val take = minOf(room, p.count)
             // A share of the lot's credit goes with those who board.
             val credit = p.credit * take / p.count

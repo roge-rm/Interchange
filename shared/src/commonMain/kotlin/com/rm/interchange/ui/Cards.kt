@@ -16,10 +16,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.foundation.layout.Box
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.rm.interchange.sim.Command
 import com.rm.interchange.sim.Cargo
+import com.rm.interchange.sim.Order
 import com.rm.interchange.sim.Roster
 import com.rm.interchange.sim.MAX_WAGONS
 import com.rm.interchange.sim.StationView
@@ -52,7 +54,7 @@ fun TrainCard(
 ) {
     val c = LocalColors.current
     Card(trainName(t), onClose, modifier) {
-        val target = if (t.orders.isEmpty()) null else t.orders[t.order % t.orders.size]
+        val target = if (t.orders.isEmpty()) null else Order.station(t.orders[t.order % t.orders.size])
         val doing = when {
             t.inDepot && t.running -> stringResource(Res.string.waiting_to_leave)
             t.inDepot -> stringResource(Res.string.in_depot)
@@ -76,14 +78,37 @@ fun TrainCard(
             stringResource(Res.string.profit_line, money(t.profitThisYear), money(t.profitLastYear)),
             color = if (t.profitThisYear < 0) c.bad else c.textDim, fontSize = 13.sp,
         )
+        // The stops, the one it's heading for lit; a tap opens what to do there.
+        var open by remember(t.id) { mutableIntStateOf(-1) }
         FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            for ((i, s) in t.orders.withIndex()) {
-                // Tapping a stop takes it off.
-                Chip("${i + 1}. ${stationName(view, s)} ✕", i == t.order % t.orders.size) {
-                    send(Command.TrainOrder(0, t.id, Command.TrainOrder.ORDERS, t.orders.filterIndexed { j, _ -> j != i }.toIntArray()))
+            for ((i, o) in t.orders.withIndex()) {
+                val marks = buildString {
+                    if (Order.has(o, Order.FULL_LOAD)) append(" ⬤")
+                    if (Order.has(o, Order.UNLOAD) || Order.has(o, Order.TRANSFER)) append(" ↓")
+                    if (Order.has(o, Order.NO_LOAD)) append(" ⊘")
+                    if (Order.waitDays(o) > 0) append(" ${Order.waitDays(o)}d")
                 }
+                Chip("${i + 1}. ${stationName(view, Order.station(o))}$marks", i == t.order % t.orders.size || i == open) { open = if (open == i) -1 else i }
             }
             Chip(stringResource(if (addingStops) Res.string.done_adding else Res.string.add_stops), addingStops, onClick = onAddStops)
+        }
+        t.orders.getOrNull(open)?.let { o ->
+            fun change(new: Int) = send(Command.TrainOrder(0, t.id, Command.TrainOrder.ORDERS, t.orders.copyOf().also { it[open] = new }))
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                for ((flag, label) in listOf(Order.FULL_LOAD to Res.string.full_load, Order.UNLOAD to Res.string.unload_all, Order.TRANSFER to Res.string.transfer, Order.NO_LOAD to Res.string.no_loading)) {
+                    Chip(stringResource(label), Order.has(o, flag)) { change(Order.toggle(o, flag)) }
+                }
+            }
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                SquareButton(Glyph.Lower, stringResource(Res.string.wait_less), 32.dp, enabled = Order.waitDays(o) > 0) { change(Order.withWait(o, Order.waitDays(o) - 1)) }
+                Text(stringResource(Res.string.wait_days, Order.waitDays(o)), color = c.text, fontSize = 13.sp)
+                SquareButton(Glyph.Raise, stringResource(Res.string.wait_more), 32.dp, enabled = Order.waitDays(o) < Order.MAX_WAIT_DAYS) { change(Order.withWait(o, Order.waitDays(o) + 1)) }
+                Box(Modifier.weight(1f))
+                ActionButton(stringResource(Res.string.remove_stop)) {
+                    send(Command.TrainOrder(0, t.id, Command.TrainOrder.ORDERS, t.orders.filterIndexed { j, _ -> j != open }.toIntArray()))
+                    open = -1
+                }
+            }
         }
         FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             ActionButton(stringResource(if (t.running) Res.string.stop else Res.string.start), strong = !t.running) { send(Command.TrainOrder(0, t.id, Command.TrainOrder.START_STOP)) }
@@ -175,7 +200,7 @@ fun StationCard(view: WorldView, s: StationView, onTrain: (Int) -> Unit, onClose
                 )
             }
         }
-        val calling = view.trains.filter { s.id in it.orders }
+        val calling = view.trains.filter { tr -> tr.orders.any { Order.station(it) == s.id } }
         if (calling.isEmpty()) Text(stringResource(Res.string.no_trains_call), color = c.textDim, fontSize = 13.sp)
         for (t in calling) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {

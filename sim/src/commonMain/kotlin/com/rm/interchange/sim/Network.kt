@@ -183,7 +183,7 @@ internal fun World.clearTile(company: Company, c: Command.Clear) {
         s.tiles.remove(i)
         if (s.tiles.isEmpty()) {
             stations[id] = null
-            for (t in trains) t?.orders?.removeAll { it == id }
+            for (t in trains) t?.orders?.removeAll { Order.station(it) == id }
         }
     }
     depotTiles.remove(i)?.let { id -> depots[id] = null }

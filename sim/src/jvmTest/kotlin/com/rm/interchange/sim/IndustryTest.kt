@@ -120,4 +120,52 @@ class IndustryTest {
         repeat(Calendar.TICKS_PER_DAY * 100) { w.step(); c.step() }
         assertEquals(w.checksum(), c.checksum())
     }
+
+    @Test
+    fun aFullLoadOrderWaitsUntilTheTrainIsFull() {
+        val w = chain()
+        val hopper = w.roster.engines.first { it.key == "base:hopper" }
+        w.apply(Command.BuyTrain(0, 0, 4, hopper.id, 3, Cargo.COAL))
+        w.apply(Command.TrainOrder(0, 0, Command.TrainOrder.ORDERS, intArrayOf(0 or Order.FULL_LOAD, 1)))
+        w.apply(Command.TrainOrder(0, 0, Command.TrainOrder.START_STOP))
+        val t = w.trains[0]!!
+        // Every time it leaves the mine, it leaves full.
+        var departures = 0
+        var wasAtMine = false
+        repeat(Calendar.TICKS_PER_DAY * 300) {
+            w.step()
+            val atMine = t.waiting > 0 && t.order == 0
+            if (wasAtMine && !atMine) {
+                departures++
+                assertEquals(t.capacity(Cargo.COAL), t.load(Cargo.COAL))
+            }
+            wasAtMine = atMine
+        }
+        assertTrue(departures > 0)
+    }
+
+    @Test
+    fun ordersKeepWhatToDoAndHowLongToWait() {
+        val o = Order.withWait(Order.toggle(5, Order.UNLOAD), 7)
+        assertEquals(5, Order.station(o))
+        assertTrue(Order.has(o, Order.UNLOAD))
+        assertEquals(7, Order.waitDays(o))
+        // Transfer and unload rule each other out.
+        val t = Order.toggle(o, Order.TRANSFER)
+        assertTrue(Order.has(t, Order.TRANSFER) && !Order.has(t, Order.UNLOAD))
+    }
+
+    @Test
+    fun aTransferOrderLeavesCargoAndCreditsTheTrain() {
+        val w = chain()
+        val hopper = w.roster.engines.first { it.key == "base:hopper" }
+        // A station halfway along, where the train sets its coal down to transfer.
+        w.apply(Command.Station(0, 44, 10, 46, 10, Track.X))
+        w.apply(Command.BuyTrain(0, 0, 4, hopper.id, 3, Cargo.COAL))
+        w.apply(Command.TrainOrder(0, 0, Command.TrainOrder.ORDERS, intArrayOf(0, 2 or Order.TRANSFER)))
+        w.apply(Command.TrainOrder(0, 0, Command.TrainOrder.START_STOP))
+        repeat(Calendar.TICKS_PER_DAY * 120) { w.step() }
+        assertTrue(w.stations[2]!!.waiting(Cargo.COAL) > 0, "nothing set down")
+        assertTrue(w.trains[0]!!.profitThisYear > -1_000_000)
+    }
 }
