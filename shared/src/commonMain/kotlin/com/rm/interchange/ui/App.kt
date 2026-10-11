@@ -42,8 +42,17 @@ import com.rm.interchange.map.Pick
 import com.rm.interchange.map.View
 import com.rm.interchange.server.Game
 import com.rm.interchange.server.GameThread
+import com.rm.interchange.map.VehicleSource
+import com.rm.interchange.platform.picker
+import com.rm.interchange.sim.BadData
+import com.rm.interchange.sim.BadPack
 import com.rm.interchange.sim.Calendar
 import com.rm.interchange.sim.Command
+import com.rm.interchange.sim.MissingPacks
+import com.rm.interchange.sim.Pack
+import com.rm.interchange.sim.Packs
+import com.rm.interchange.sim.Roster
+import com.rm.interchange.sim.Save
 import com.rm.interchange.sim.Prices
 import com.rm.interchange.sim.Track
 import com.rm.interchange.sim.World
@@ -71,6 +80,7 @@ private sealed interface Screen {
     data object NewGame : Screen
     data class Load(val back: Screen) : Screen
     data class Options(val back: Screen) : Screen
+    data object Packs : Screen
     data object Playing : Screen
 }
 
@@ -84,6 +94,18 @@ private fun Root(settings: Settings) {
     var saves by remember { mutableStateOf(SavedGames.list()) }
     var loadError by remember { mutableStateOf<String?>(null) }
     val cantLoad = stringResource(Res.string.cant_load, "%s")
+    val needsPacks = stringResource(Res.string.needs_packs, "%s")
+    val cantAdd = stringResource(Res.string.cant_add_pack, "%s")
+    val added = stringResource(Res.string.pack_added, "%s")
+    val lang = languageCode()
+    // The packs added, read off the main thread since each is unzipped; null until they're read.
+    var packs by remember { mutableStateOf<List<Pack>?>(null) }
+    var adding by remember { mutableStateOf(false) }
+    var packMessage by remember { mutableStateOf<Pair<String, Boolean>?>(null) }
+    fun readPacks() {
+        scope.launch { packs = withContext(Dispatchers.Default) { InstalledPacks.list() } }
+    }
+    LaunchedEffect(Unit) { readPacks() }
 
     // The game saves itself when the app is put away.
     DisposableEffect(Unit) {
@@ -103,17 +125,41 @@ private fun Root(settings: Settings) {
         screen = Screen.Playing
     }
 
-    /** Reads a save off the main thread and plays it, or says why it can't. */
+    /** Reads a save off the main thread, with the packs it needs, and plays it, or says why it can't. */
     fun load(entry: SavedGames.Entry) {
         scope.launch {
             val world = withContext(Dispatchers.Default) {
                 try {
-                    Result.success(com.rm.interchange.sim.Save.read(SavedGames.read(entry.name) ?: throw com.rm.interchange.sim.BadData("missing")))
-                } catch (e: com.rm.interchange.sim.BadData) {
+                    val w = Save.read(SavedGames.read(entry.name) ?: throw BadData("missing"), InstalledPacks::find)
+                    InstalledPacks.prepare(w.roster)
+                    Result.success(w)
+                } catch (e: BadData) {
                     Result.failure(e)
                 }
             }
-            world.onSuccess { w -> loadError = null; play { w } }.onFailure { loadError = cantLoad.replace("%s", it.message ?: "") }
+            world.onSuccess { w -> loadError = null; play { w } }.onFailure {
+                loadError = if (it is MissingPacks) needsPacks.replace("%s", it.packs.joinToString { p -> "${p.id} ${p.version}" })
+                else cantLoad.replace("%s", it.message ?: "")
+            }
+        }
+    }
+
+    /** Asks for a pack's file and adds it, checked off the main thread. */
+    fun addPack() {
+        picker.pickFile { bytes ->
+            if (bytes == null) return@pickFile
+            adding = true
+            scope.launch {
+                packMessage = withContext(Dispatchers.Default) {
+                    try {
+                        added.replace("%s", InstalledPacks.add(bytes).name(lang)) to false
+                    } catch (e: BadPack) {
+                        cantAdd.replace("%s", e.problems.joinToString("\n")) to true
+                    }
+                }
+                adding = false
+                readPacks()
+            }
         }
     }
 
@@ -123,9 +169,32 @@ private fun Root(settings: Settings) {
             onContinue = { saves.firstOrNull()?.let { load(it) } },
             onNew = { screen = Screen.NewGame },
             onLoad = { saves = SavedGames.list(); screen = Screen.Load(Screen.Title) },
+            onPacks = { packMessage = null; screen = Screen.Packs },
             onSettings = { screen = Screen.Options(Screen.Title) },
         )
-        Screen.NewGame -> NewGameScreen(onStart = { ng -> play { World(ng) } }, onBack = { screen = Screen.Title })
+        Screen.NewGame -> NewGameScreen(
+            packs.orEmpty(),
+            onStart = { ng, chosen ->
+                play {
+                    val roster = Roster.build(listOf(Packs.BASE) + chosen)
+                    InstalledPacks.prepare(roster)
+                    World(ng, roster)
+                }
+            },
+            onBack = { screen = Screen.Title },
+        )
+        Screen.Packs -> PacksScreen(
+            packs.orEmpty(), adding, packMessage?.first, packMessage?.second == true,
+            onAdd = ::addPack,
+            onRemove = { p ->
+                scope.launch {
+                    withContext(Dispatchers.Default) { InstalledPacks.remove(p.id) }
+                    packMessage = null
+                    readPacks()
+                }
+            },
+            onBack = { screen = Screen.Title },
+        )
         is Screen.Load -> LoadScreen(
             saves, loadError, onLoad = { load(it) },
             onDelete = { SavedGames.delete(it.name); saves = SavedGames.list() },
@@ -143,8 +212,13 @@ private fun Root(settings: Settings) {
                     load = { saves = SavedGames.list(); screen = Screen.Load(Screen.Playing) },
                     newGame = { screen = Screen.NewGame },
                     settings = { screen = Screen.Options(Screen.Playing) },
+                    // Back to the title screen the game is saved and stopped; Continue loads it again.
                     title = {
-                        SavedGames.save(r, SavedGames.AUTOSAVE) { scope.launch { saves = SavedGames.list() } }
+                        SavedGames.save(r, SavedGames.AUTOSAVE) {
+                            r.stop()
+                            scope.launch { saves = SavedGames.list() }
+                        }
+                        runner = null
                         screen = Screen.Title
                     },
                 ))
@@ -179,6 +253,13 @@ private fun Playing(runner: GameThread, sheets: Sheets, menu: Menu) {
 @Composable
 private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: State<Long>, menu: Menu) {
     val c = LocalColors.current
+    // The drawings of this game's vehicles: the base pack's come with the app, the others from their packs.
+    remember(world) {
+        sheets.useVehicles(world.roster.sprites.map { ref ->
+            if (ref.pack == Packs.BASE_ID) sheets.baseVehicle(ref.name)
+            else InstalledPacks.rects(ref.pack, ref.name)?.let { rects -> VehicleSource(rects) { level -> InstalledPacks.sheet(ref.pack, ref.name, level) } }
+        })
+    }
     val view = remember {
         View(world.width, world.height).apply {
             val i = world.landNearMiddle()
@@ -351,10 +432,10 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
                 is Selection.Train -> {
                     val t = wv?.trains?.firstOrNull { it.id == sel.id }
                     if (t == null || wv == null) selected = null
-                    else TrainCard(wv, t, addingStops == t.id, { addingStops = if (addingStops == t.id) null else t.id }, runner::request, { selected = null; addingStops = null }, trayWidth)
+                    else TrainCard(wv, world.roster, t, addingStops == t.id, { addingStops = if (addingStops == t.id) null else t.id }, runner::request, { selected = null; addingStops = null }, trayWidth)
                 }
                 is Selection.Depot -> if (wv != null) DepotCard(
-                    wv, sel.id, Calendar.year(world.startYear, day), money, runner::request,
+                    wv, world.roster, sel.id, Calendar.year(world.startYear, day), money, runner::request,
                     { selected = Selection.Train(it) }, { selected = null }, trayWidth,
                 )
                 is Selection.Station -> {

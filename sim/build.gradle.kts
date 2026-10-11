@@ -13,6 +13,11 @@ kotlin {
     }
 
     sourceSets {
+        // The base pack's data goes in as resources, base/manifest.json and base/vehicles.json.
+        jvmMain {
+            resources.srcDir(rootProject.file("packs"))
+            resources.include("base/*.json")
+        }
         jvmTest.dependencies {
             implementation(kotlin("test"))
         }

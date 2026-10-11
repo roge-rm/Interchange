@@ -28,8 +28,13 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.rm.interchange.res.*
+import com.rm.interchange.sim.BadPack
 import com.rm.interchange.sim.NewGame
+import com.rm.interchange.sim.Pack
+import com.rm.interchange.sim.Packs
 import com.rm.interchange.sim.Region
+import com.rm.interchange.sim.Roster
+import org.jetbrains.compose.resources.pluralStringResource
 import org.jetbrains.compose.resources.stringArrayResource
 import org.jetbrains.compose.resources.stringResource
 
@@ -56,23 +61,24 @@ private fun Label(text: String) {
     Text(text, color = LocalColors.current.textDim, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
 }
 
-/** The title screen: carry on, start afresh, load or change settings. */
+/** The title screen: carry on, start afresh, load, add packs or change settings. */
 @Composable
-fun TitleScreen(canContinue: Boolean, onContinue: () -> Unit, onNew: () -> Unit, onLoad: () -> Unit, onSettings: () -> Unit) {
+fun TitleScreen(canContinue: Boolean, onContinue: () -> Unit, onNew: () -> Unit, onLoad: () -> Unit, onPacks: () -> Unit, onSettings: () -> Unit) {
     Page(stringResource(Res.string.app_name), null) {
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
             if (canContinue) ActionButton(stringResource(Res.string.continue_game), strong = true, onClick = onContinue)
             ActionButton(stringResource(Res.string.new_game), strong = !canContinue, onClick = onNew)
             ActionButton(stringResource(Res.string.load), onClick = onLoad)
+            ActionButton(stringResource(Res.string.packs), onClick = onPacks)
             ActionButton(stringResource(Res.string.settings), onClick = onSettings)
         }
     }
 }
 
-/** Choosing a new map: its size, region, start year, seed, and how much sea, hills and trees. */
+/** Choosing a new map: its size, region, start year, seed, how much sea, hills and trees, and which of [packs] are on. */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun NewGameScreen(onStart: (NewGame) -> Unit, onBack: () -> Unit) {
+fun NewGameScreen(packs: List<Pack>, onStart: (NewGame, List<Pack>) -> Unit, onBack: () -> Unit) {
     val c = LocalColors.current
     var width by remember { mutableIntStateOf(256) }
     var height by remember { mutableIntStateOf(256) }
@@ -82,7 +88,17 @@ fun NewGameScreen(onStart: (NewGame) -> Unit, onBack: () -> Unit) {
     var sea by remember { mutableIntStateOf(28) }
     var hills by remember { mutableIntStateOf(1) }
     var trees by remember { mutableIntStateOf(2) }
+    var off by remember { mutableStateOf(emptySet<String>()) }
     val gap = Arrangement.spacedBy(6.dp)
+    val chosen = packs.filter { it.id !in off }
+    val clash = remember(chosen) {
+        try {
+            Roster.build(listOf(Packs.BASE) + chosen)
+            null
+        } catch (e: BadPack) {
+            e.problems.first()
+        }
+    }
     Page(stringResource(Res.string.new_game), onBack) {
         Label(stringResource(Res.string.region))
         val regions = stringArrayResource(Res.array.regions)
@@ -121,8 +137,16 @@ fun NewGameScreen(onStart: (NewGame) -> Unit, onBack: () -> Unit) {
             Text("$seed", color = c.text, fontSize = 16.sp, modifier = Modifier.weight(1f))
             ActionButton(stringResource(Res.string.new_seed)) { seed = kotlin.random.Random.nextLong(1, 1_000_000) }
         }
-        ActionButton(stringResource(Res.string.start_game), strong = true) {
-            onStart(NewGame(width, height, seed, year, region, sea, hills, trees))
+        if (packs.isNotEmpty()) {
+            Label(stringResource(Res.string.packs))
+            val lang = languageCode()
+            FlowRow(horizontalArrangement = gap, verticalArrangement = gap) {
+                for (p in packs) Chip(p.name(lang), p.id !in off) { off = if (p.id in off) off - p.id else off + p.id }
+            }
+            if (clash != null) Text(stringResource(Res.string.packs_clash, clash), color = c.bad, fontSize = 13.sp)
+        }
+        ActionButton(stringResource(Res.string.start_game), enabled = clash == null, strong = true) {
+            onStart(NewGame(width, height, seed, year, region, sea, hills, trees), chosen)
         }
     }
 }
@@ -147,6 +171,32 @@ fun LoadScreen(saves: List<SavedGames.Entry>, error: String?, onLoad: (SavedGame
                     }
                     ActionButton(stringResource(Res.string.load), strong = true) { onLoad(s) }
                     ActionButton(stringResource(Res.string.delete)) { onDelete(s) }
+                }
+            }
+        }
+    }
+}
+
+/** The content packs added: what each is, adding more from a file, and taking them off. */
+@Composable
+fun PacksScreen(packs: List<Pack>, adding: Boolean, message: String?, failed: Boolean, onAdd: () -> Unit, onRemove: (Pack) -> Unit, onBack: () -> Unit) {
+    val c = LocalColors.current
+    val lang = languageCode()
+    Page(stringResource(Res.string.packs), onBack) {
+        ActionButton(stringResource(if (adding) Res.string.adding_pack else Res.string.add_pack), enabled = !adding, strong = true, onClick = onAdd)
+        if (message != null) Text(message, color = if (failed) c.bad else c.text, fontSize = 14.sp)
+        for (p in listOf(Packs.BASE) + packs) {
+            ChromeBox(Modifier.fillMaxWidth()) {
+                Row(Modifier.padding(10.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Text(p.name(lang), color = c.text, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                        Text(
+                            stringResource(Res.string.pack_line, p.version, p.author) + " · " + pluralStringResource(Res.plurals.vehicles_count, p.vehicles.size, p.vehicles.size),
+                            color = c.textDim, fontSize = 13.sp,
+                        )
+                        if (p.description(lang).isNotEmpty()) Text(p.description(lang), color = c.text, fontSize = 13.sp)
+                    }
+                    if (p.id != Packs.BASE_ID) ActionButton(stringResource(Res.string.remove)) { onRemove(p) }
                 }
             }
         }

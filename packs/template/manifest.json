@@ -1,0 +1,10 @@
+{
+  "format": 1,
+  "id": "template",
+  "version": 1,
+  "name": { "en": "Template pack", "fr": "Pack modèle" },
+  "description": { "en": "One of each thing a pack can do: a new engine with its tender, a new wagon, and the caboose changed.", "fr": "Un exemple de tout ce qu'un pack peut faire : une nouvelle locomotive et son tender, un nouveau wagon, et le fourgon de queue modifié." },
+  "author": "Your name",
+  "licence": "CC-BY-SA-4.0",
+  "needs": ["base"]
+}

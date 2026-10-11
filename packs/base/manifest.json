@@ -1,0 +1,9 @@
+{
+  "format": 1,
+  "id": "base",
+  "version": 1,
+  "name": { "en": "Base pack", "fr": "Pack de base" },
+  "description": { "en": "The game's own vehicles, after those used in Canada.", "fr": "Les véhicules du jeu, d'après ceux du Canada." },
+  "author": "Interchange",
+  "licence": "GPL-3.0-or-later"
+}

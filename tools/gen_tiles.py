@@ -19,9 +19,16 @@ half the last:
 
 Each sprite is drawn on a cell, shrunk to the sharpest level, trimmed to what it
 covers and packed; trimmed edges sit on a 32 pixel grid so every level divides
-exactly. map/Atlas.kt says where everything is and sim/VehicleArt.kt which
-drawing and length each vehicle has.
+exactly. map/Atlas.kt says where everything is.
+
+The vehicles also go into content packs (packs/SPEC.md), each as a sheet of
+sixteen cells at the sharpest level: the base pack in build/packs, with each
+vehicle's length written into packs/base/vehicles.json, and the template pack
+in packs/template, its vehicles recoloured from the base ones.
 """
+import json
+import re
+import zipfile
 import multiprocessing
 import sys
 from pathlib import Path
@@ -42,7 +49,11 @@ RENDERS = ROOT / "build/renders"
 SCENERY = RENDERS / "scenery"
 OUT_PNG = ROOT / "shared/src/commonMain/composeResources/files"
 OUT_KT = ROOT / "shared/src/commonMain/kotlin/com/rm/interchange/map/Atlas.kt"
-OUT_SIM = ROOT / "sim/src/commonMain/kotlin/com/rm/interchange/sim/VehicleArt.kt"
+PACKS = ROOT / "packs"
+BUILD_PACKS = ROOT / "build/packs"
+# A pack sprite sheet: four by four cells, each CELL square, the vehicle's middle standing at (STAND_X, STAND_Y).
+CELL = 256
+STAND_X, STAND_Y = 128, 160
 
 LEVELS = 6
 GRID = 1 << (LEVELS - 1)
@@ -138,19 +149,26 @@ def outline(img):
     return out
 
 
+def pack_cell(img):
+    """A vehicle's cell as a pack has it: the same size whatever it holds, the tile's top corner 64 above where it stands."""
+    left, top = base.HW - STAND_X, base.TOP + base.HH - STAND_Y
+    return img.crop((left, top, left + CELL, top + CELL))
+
+
 def render(i):
     sheet, key, fn, finish = JOBS[i]
     img = shrink(fn(), base.SS)
     if finish == "outline":
         img = outline(img)
+    cell = pack_cell(img) if sheet.startswith("vehicle_") else None
     # Trimmed to where it's more than faint, so a soft shadow's last wisps don't stretch the box.
     box = img.getchannel("A").point(lambda v: 255 if v > 12 else 0).getbbox()
     if box is None:
-        return i, None, (0, 0, 0, 0)
+        return i, None, (0, 0, 0, 0), cell
     l, t, r, b = box
     l, t = l // GRID * GRID, t // GRID * GRID
     r, b = -(-r // GRID) * GRID, -(-b // GRID) * GRID
-    return i, img.crop((l, t, r, b)), (l, t, r, b)
+    return i, img.crop((l, t, r, b)), (l, t, r, b), cell
 
 
 def pack(sizes, sheet_w=SHEET_W):
@@ -172,17 +190,17 @@ def pack(sizes, sheet_w=SHEET_W):
 
 def write_sheet(name, done, sheet_w=SHEET_W):
     """Packs one sheet's sprites and writes it at every level. Returns each sprite's rect and where it sits from its anchor."""
-    sizes = [(im.width, im.height) if im else (0, 0) for _, im, _ in done]
+    sizes = [(im.width, im.height) if im else (0, 0) for _, im, _, _ in done]
     pos, height = pack(sizes, sheet_w)
     sheet = Image.new("RGBA", (sheet_w, max(GRID, height)))
-    for (_, im, _), p in zip(done, pos):
+    for (_, im, _, _), p in zip(done, pos):
         if im:
             sheet.paste(im, p)
     for level in range(LEVELS):
         f = 1 << level
         (sheet if f == 1 else shrink(sheet, f)).save(OUT_PNG / f"{name}_{level}.png", optimize=True)
     rects = []
-    for (_, im, (l, t, r, b)), p in zip(done, pos):
+    for (_, im, (l, t, r, b), _), p in zip(done, pos):
         rects += [p[0], p[1], r - l, b - t, l - base.HW, t - base.TOP]
     return rects, height
 
@@ -331,18 +349,79 @@ object Atlas {{
     val DEPOT_OVER = intArrayOf({", ".join(str(index[("depot_over", e)]) for e in range(4))})
 }}
 """)
-    consts = "\n".join(f"    const val {key.upper()} = {m}" for m, (key, _, _) in enumerate(vehicles.ROSTER))
-    OUT_SIM.write_text(f"""package com.rm.interchange.sim
+    write_packs(done)
 
-// Written by tools/gen_tiles.py. Don't edit by hand.
 
-/** The vehicle drawings, and each one's length in sixteenths of a tile. */
-object VehicleArt {{
-{consts}
+def write_json(path, data):
+    """JSON two spaces in, with each { "en": ..., "fr": ... } on one line."""
+    text = json.dumps(data, indent=2, ensure_ascii=False)
+    text = re.sub(r'\{\n\s+("en": "[^"\n]*")(?:,\n\s+("fr": "[^"\n]*"))?\n\s+\}', lambda m: "{ " + ", ".join(g for g in m.groups() if g) + " }", text)
+    path.write_text(text + "\n")
 
-    val LENGTHS = intArrayOf({", ".join(str(length) for _, length, _ in vehicles.ROSTER)})
-}}
-""")
+
+def zip_pack(src, sheets, out):
+    """A pack's zip: its manifest and vehicles from src, and its sprite sheets."""
+    out.parent.mkdir(parents=True, exist_ok=True)
+    with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
+        for name in ("manifest.json", "vehicles.json"):
+            z.write(src / name, name)
+        for name, path in sheets.items():
+            z.write(path, f"sprites/{name}.png")
+
+
+def recolour(img, turn):
+    """A new livery: the hue of everything coloured turned by turn, a fraction of the way round; greys and black stay."""
+    alpha = img.getchannel("A")
+    h, s_, v = img.convert("RGB").convert("HSV").split()
+    h = h.point(lambda x: (x + int(turn * 256)) % 256)
+    out = Image.merge("HSV", (h, s_, v)).convert("RGB").convert("RGBA")
+    out.putalpha(alpha)
+    return out
+
+
+# The template pack: (its id for the vehicle, the base drawing it's recoloured from, how far round the hue turns).
+TEMPLATE = [("prairie", "ten_wheeler", 0.45), ("prairie_tender", "ten_wheeler_tender", 0.45), ("ore_car", "hopper", 0.08), ("van", "caboose", 0.6)]
+
+
+def write_packs(done):
+    """Each vehicle's sixteen cells as a pack sprite sheet, then the base and template packs."""
+    cells = {}
+    for i, _, _, cell in done:
+        sheet, key = JOBS[i][0], JOBS[i][1]
+        if cell is None:
+            continue
+        name = sheet.removeprefix("vehicle_")
+        n = key[2] if key[0] == "vehicle" else 8 + key[2] // 2 * 2 + (0 if key[3] == "up" else 1)
+        cells.setdefault(name, [None] * 16)[n] = cell
+
+    def sheet_of(name, turn=0.0):
+        out = Image.new("RGBA", (CELL * 4, CELL * 4))
+        for n, cell in enumerate(cells[name]):
+            out.paste(recolour(cell, turn) if turn else cell, (n % 4 * CELL, n // 4 * CELL))
+        return out
+
+    sprites = BUILD_PACKS / "base/sprites"
+    sprites.mkdir(parents=True, exist_ok=True)
+    base_sheets = {}
+    for key, _, _ in vehicles.ROSTER:
+        base_sheets[key] = sprites / f"{key}.png"
+        sheet_of(key).save(base_sheets[key], optimize=True)
+    # The base pack's lengths come from the drawings.
+    lengths = {key: length for key, length, _ in vehicles.ROSTER}
+    data = json.loads((PACKS / "base/vehicles.json").read_text())
+    for v in data["vehicles"]:
+        v["length"] = lengths[v.get("sprite", v["id"])]
+    write_json(PACKS / "base/vehicles.json", data)
+    zip_pack(PACKS / "base", base_sheets, BUILD_PACKS / "base.ichpack")
+
+    template = PACKS / "template"
+    (template / "sprites").mkdir(parents=True, exist_ok=True)
+    template_sheets = {}
+    for name, source, turn in TEMPLATE:
+        template_sheets[name] = template / "sprites" / f"{name}.png"
+        sheet_of(source, turn).save(template_sheets[name], optimize=True)
+    zip_pack(template, template_sheets, BUILD_PACKS / "template.ichpack")
+    print(f"Packs: {len(base_sheets)} base sheets, {len(template_sheets)} template sheets, in {BUILD_PACKS}")
 
 
 if __name__ == "__main__":

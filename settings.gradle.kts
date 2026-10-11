@@ -32,6 +32,8 @@ include(":net")
 include(":server")
 // The dedicated server, run on its own or with docker compose.
 include(":dedicated")
+// Checks content packs and zips them up.
+include(":packtool")
 
 // The Docker build has no Android SDK, so it builds the server modules only.
 val hasAndroidSdk = file("local.properties").exists() ||

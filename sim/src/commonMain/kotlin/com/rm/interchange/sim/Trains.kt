@@ -4,8 +4,8 @@ package com.rm.interchange.sim
  * Trains and how they move.
  *
  * A train is an engine, its tender if it has one, and its wagons, nose to
- * tail, each as long as its drawing says. Where it
- * is on the track is a list of steps, from the piece under its last wagon to
+ * tail, each as long as its pack says. Where it is
+ * on the track is a list of steps, from the piece under its last wagon to
  * the piece under its nose, and how far along that last piece the nose is. A
  * step is a tile, the piece the train runs along there and the edge it came
  * in at, packed by [step].
@@ -30,6 +30,8 @@ fun stepExit(s: Int) = Track.other(stepPiece(s), stepEntry(s))
 fun stepLength(s: Int) = Track.length(stepPiece(s)) * FIX
 
 class Train(
+    /** The game's roster, which [engine] and [wagon] are places in. */
+    val roster: Roster,
     val id: Int,
     val owner: Int,
     val engine: Int,
@@ -44,17 +46,17 @@ class Train(
     /** What each car is, nose first: the engine, its tender, then the wagons. */
     val carEngines: IntArray = buildList {
         add(engine)
-        Engines.ALL[engine].tender.takeIf { it >= 0 }?.let { add(it) }
+        roster[engine].tender.takeIf { it >= 0 }?.let { add(it) }
         repeat(wagons) { add(wagon) }
     }.toIntArray()
     val cars get() = carEngines.size
-    val length = carEngines.sumOf { Engines.ALL[it].length } * FIX
+    val length = carEngines.sumOf { roster[it].length } * FIX
 
     /** How far behind the nose car [i]'s middle is. */
     fun carMiddle(i: Int): Int {
         var d = 0
-        for (k in 0 until i) d += Engines.ALL[carEngines[k]].length
-        return (d * 2 + Engines.ALL[carEngines[i]].length) * FIX / 2
+        for (k in 0 until i) d += roster[carEngines[k]].length
+        return (d * 2 + roster[carEngines[i]].length) * FIX / 2
     }
 
     /** In its depot, off the map. */
@@ -85,12 +87,12 @@ class Train(
     internal var onTiles = IntArray(0)
     internal var onBlocks = IntArray(0)
 
-    val engineInfo get() = Engines.ALL[engine]
-    val wagonInfo get() = Engines.ALL[wagon]
+    val engineInfo get() = roster[engine]
+    val wagonInfo get() = roster[wagon]
     val maxSpeed get() = engineInfo.speed * 4096 * 16 / 2700
-    val weight get() = carEngines.sumOf { Engines.ALL[it].weight }
+    val weight get() = carEngines.sumOf { roster[it].weight }
     /** What it cost new: the engine, its tender and its wagons. */
-    val price get() = carEngines.sumOf { Engines.ALL[it].cost }
+    val price get() = carEngines.sumOf { roster[it].cost }
 
     /** Where it's heading: a station id, -1 for its depot, or -2 for nowhere. */
     val target: Int get() = when {
@@ -123,12 +125,12 @@ fun World.trainOnTile(tile: Int) = (tileTrains[tile] ?: 0) > 0
 internal fun World.buyTrain(company: Company, c: Command.BuyTrain) {
     val depot = depots.getOrNull(c.depot) ?: return
     if (depot.owner != company.id) return
-    val e = Engines.ALL.getOrNull(c.engine) ?: return
-    val w = Engines.ALL.getOrNull(c.wagon) ?: return
+    val e = roster.getOrNull(c.engine) ?: return
+    val w = roster.getOrNull(c.wagon) ?: return
     val year = Calendar.year(startYear, day)
-    if (!e.pulls || w.pulls || w.isTender || year < e.from || year >= e.until || year < w.from || year >= w.until) return
+    if (!e.enabled || !w.enabled || !e.pulls || w.pulls || w.isTender || year < e.from || year >= e.until || year < w.from || year >= w.until) return
     if (c.wagons !in 0..MAX_WAGONS) return
-    val t = Train(trains.size, company.id, e.id, w.id, c.wagons, depot.id)
+    val t = Train(roster, trains.size, company.id, e.id, w.id, c.wagons, depot.id)
     if (company.money < t.price) return
     company.money -= t.price
     trains += t
@@ -388,7 +390,7 @@ internal fun World.payRunningCosts() {
     for (t in trains) {
         if (t == null || t.inDepot && !t.running) continue
         val c = companies.getOrNull(t.owner) ?: continue
-        val yearly = t.carEngines.sumOf { Engines.ALL[it].running }
+        val yearly = t.carEngines.sumOf { roster[it].running }
         c.runningOwed += yearly
         c.money -= c.runningOwed / 365
         c.runningOwed %= 365

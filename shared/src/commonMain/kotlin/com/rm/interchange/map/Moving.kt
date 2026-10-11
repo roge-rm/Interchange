@@ -78,7 +78,7 @@ internal fun DrawScope.drawMoving(world: World, view: View, sheets: Sheets, movi
             } else {
                 // Its own sheet at this level, unpacked the first time it's on screen; it shows a frame or two later.
                 val sheet = sheets.vehicle(model, level) ?: continue
-                spriteAt(sheet, Atlas.VEHICLE_RECTS, model * 16 + it[3].toInt(), it[1], it[2], scale)
+                spriteAt(sheet, sheets.vehicleRects(model) ?: continue, it[3].toInt(), it[1], it[2], scale)
             }
         }
     }

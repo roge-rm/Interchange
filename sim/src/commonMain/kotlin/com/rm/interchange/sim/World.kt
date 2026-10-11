@@ -11,8 +11,10 @@ package com.rm.interchange.sim
  *
  * Only the game thread changes the world. Other threads may read it, and see
  * a tick's changes part done; the renderer copes through [chunkVersions].
+ *
+ * [roster] is what can run on the track, from the game's content packs.
  */
-class World(val settings: NewGame, generate: Boolean = true) {
+class World(val settings: NewGame, val roster: Roster = Roster.BASE, generate: Boolean = true) {
     constructor(width: Int, height: Int, seed: Long, startYear: Int = 1850) : this(NewGame(width, height, seed, startYear))
 
     val width get() = settings.width
@@ -51,7 +53,7 @@ class World(val settings: NewGame, generate: Boolean = true) {
     /** Signals by [pieceKey], packed by [Signals.pack]. */
     val signals = HashMap<Int, Int>()
 
-    // Worked out from the above as needed, not saved: the block each piece is in, and how many trains are on each tile and block.
+    // Worked out from the above as needed and left out of saves: the block each piece is in, and how many trains are on each tile and block.
     internal val blocks = HashMap<Int, Int>()
     internal var blocksDirty = true
     internal val tileTrains = HashMap<Int, Int>()

@@ -2,6 +2,7 @@ package com.rm.interchange.ui
 
 import androidx.compose.runtime.Composable
 import com.rm.interchange.res.Res
+import com.rm.interchange.res.language_code
 import com.rm.interchange.res.number_group
 import org.jetbrains.compose.resources.stringResource
 
@@ -13,6 +14,10 @@ fun InLanguage(language: String, content: @Composable () -> Unit) {
         content()
     }
 }
+
+/** The code of the language being shown, "en" or "fr", for text that comes from packs. */
+@Composable
+fun languageCode(): String = stringResource(Res.string.language_code)
 
 /** [content] with the platform set to [language], or its own when empty, so strings are looked up in it. */
 @Composable

@@ -124,7 +124,7 @@ internal fun World.buildRail(company: Company, c: Command.Rail) {
         val x = i % width
         val y = i / width
         val has = track[i].toInt()
-        // Platforms and depots come up with the Clear tool, not here.
+        // Platforms and depots are left for the Clear tool.
         if (stationTiles.containsKey(i) || depotTiles.containsKey(i)) continue
         if (c.remove) {
             if (has and piece == 0 || owner[i].toInt() != company.id || trainOnTile(i)) continue

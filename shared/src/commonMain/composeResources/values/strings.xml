@@ -11,6 +11,7 @@
 
     <!-- Numbers and money. -->
     <string name="number_group">,</string>
+    <string name="language_code">en</string>
     <string name="money">$%1$s</string>
     <string name="money_owed">−$%1$s</string>
     <string-array name="months">
@@ -167,4 +168,19 @@
     <string-array name="autosave_levels">
         <item>Off</item><item>Every month</item><item>Every three months</item><item>Every year</item>
     </string-array>
+
+    <!-- Content packs -->
+    <string name="packs">Packs</string>
+    <string name="add_pack">Add a pack</string>
+    <string name="adding_pack">Adding…</string>
+    <string name="remove">Remove</string>
+    <string name="pack_line">Version %1$d · %2$s</string>
+    <plurals name="vehicles_count">
+        <item quantity="one">%1$d vehicle</item>
+        <item quantity="other">%1$d vehicles</item>
+    </plurals>
+    <string name="pack_added">Added %1$s.</string>
+    <string name="cant_add_pack">Can't add this pack: %1$s</string>
+    <string name="packs_clash">These packs don't work together: %1$s</string>
+    <string name="needs_packs">This game needs packs you haven't got: %1$s</string>
 </resources>

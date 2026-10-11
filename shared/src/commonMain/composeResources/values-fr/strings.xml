@@ -4,6 +4,7 @@
     <string name="app_name">Interchange</string>
 
     <string name="number_group">&#160;</string>
+    <string name="language_code">fr</string>
     <string name="money">%1$s&#160;$</string>
     <string name="money_owed">−%1$s&#160;$</string>
     <string-array name="months">
@@ -150,4 +151,19 @@
     <string-array name="autosave_levels">
         <item>Jamais</item><item>Chaque mois</item><item>Aux trois mois</item><item>Chaque année</item>
     </string-array>
+
+    <!-- Packs de contenu -->
+    <string name="packs">Packs</string>
+    <string name="add_pack">Ajouter un pack</string>
+    <string name="adding_pack">Ajout…</string>
+    <string name="remove">Retirer</string>
+    <string name="pack_line">Version %1$d · %2$s</string>
+    <plurals name="vehicles_count">
+        <item quantity="one">%1$d véhicule</item>
+        <item quantity="other">%1$d véhicules</item>
+    </plurals>
+    <string name="pack_added">Pack ajouté : %1$s.</string>
+    <string name="cant_add_pack">Impossible d'ajouter ce pack : %1$s</string>
+    <string name="packs_clash">Ces packs ne vont pas ensemble : %1$s</string>
+    <string name="needs_packs">Il manque des packs pour cette partie : %1$s</string>
 </resources>

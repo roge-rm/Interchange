@@ -9,10 +9,14 @@ package com.rm.interchange.sim
  *
  * The file is MAGIC, the format's version, then the rest squeezed. A newer
  * version reads older ones; each change to the format bumps [VERSION].
+ *
+ * A save names the packs it was played with, by [PackRef], and the key of
+ * each vehicle in their roster. It loads with the same packs at that version
+ * or newer, its vehicles found again by key.
  */
 object Save {
     private val MAGIC = "ICHG".encodeToByteArray()
-    const val VERSION = 1
+    const val VERSION = 2
 
     fun write(world: World): ByteArray {
         val w = ByteWriter(world.width * world.height * 6 + 4096)
@@ -20,6 +24,10 @@ object Save {
             val g = settings
             w.int(g.width); w.int(g.height); w.long(g.seed); w.int(g.startYear); w.int(g.region.ordinal)
             w.int(g.sea); w.int(g.hills); w.int(g.trees)
+            w.uvar(roster.packs.size.toLong())
+            for (p in roster.packs) { w.string(p.id); w.int(p.version); w.long(p.hash) }
+            w.uvar(roster.engines.size.toLong())
+            for (e in roster.engines) w.string(e.key)
             w.long(tick)
             w.long(rng.state)
             w.uvar(companies.size.toLong())
@@ -62,19 +70,31 @@ object Save {
         return out.toByteArray()
     }
 
-    fun read(data: ByteArray): World {
-        val head = ByteReader(data)
-        for (b in MAGIC) if (head.byte() != (b.toInt() and 0xff)) throw BadData("not an Interchange save")
-        val version = head.int()
-        if (version < 1 || version > VERSION) throw BadData("saved by a newer version of the game ($version)")
-        val r = ByteReader(Squeeze.unpack(head.bytes()))
-        val settings = NewGame(
-            width = r.int(), height = r.int(), seed = r.long(), startYear = r.int(),
-            region = Region.entries.getOrElse(r.int()) { Region.MIXED },
-            sea = r.int(), hills = r.int(), trees = r.int(),
-        )
-        if (settings.width !in 16..4096 || settings.height !in 16..4096) throw BadData("map size out of range")
-        val world = World(settings, generate = false)
+    /** The packs a save needs, as named in it, without reading the rest. */
+    fun packs(data: ByteArray): List<PackRef> = body(data).let { (version, r) -> readSettings(r); readPacks(version, r) }
+
+    /**
+     * Reads a world, finding the packs it needs with [find]: the pack with that
+     * id at that version or newer, or null if it hasn't got one.
+     */
+    fun read(data: ByteArray, find: (PackRef) -> Pack? = ::basePack): World {
+        val (version, r) = body(data)
+        val settings = readSettings(r)
+        val refs = readPacks(version, r)
+        val found = refs.map { find(it) }
+        val missing = refs.filterIndexed { i, _ -> found[i] == null }
+        if (missing.isNotEmpty()) throw MissingPacks(missing)
+        val roster = try {
+            Roster.build(found.map { it!! })
+        } catch (e: BadPack) {
+            throw BadData(e.problems.first())
+        }
+        // Each saved vehicle's place in this roster.
+        val keys = if (version < 2) Roster.BASE.engines.map { it.key } else List(r.uvar().toInt().also { if (it > 65536) throw BadData("too many vehicles") }) { r.string() }
+        val ids = roster.engines.associate { it.key to it.id }
+        val remap = IntArray(keys.size) { ids[keys[it]] ?: throw BadData("${keys[it]} is no longer in its pack") }
+        fun vehicle(n: Int) = remap.getOrNull(n) ?: throw BadData("a train of an unknown vehicle")
+        val world = World(settings, roster, generate = false)
         with(world) {
             tick = r.long()
             rng.state = r.long()
@@ -96,7 +116,7 @@ object Save {
             repeat(r.uvar().toInt()) { signals[r.int()] = r.int() }
             repeat(r.uvar().toInt()) { id ->
                 if (!r.bool()) { trains += null; return@repeat }
-                val t = Train(id, r.int(), r.int(), r.int(), r.int(), r.int())
+                val t = Train(roster, id, r.int(), vehicle(r.int()), vehicle(r.int()), r.int(), r.int())
                 t.name = r.string()
                 t.inDepot = r.bool(); t.running = r.bool(); t.waiting = r.int()
                 t.steps += r.ints().toList(); t.nose = r.int(); t.speed = r.int()
@@ -110,6 +130,32 @@ object Save {
         world.networkChangedKeepingRoutes()
         return world
     }
+
+    private fun body(data: ByteArray): Pair<Int, ByteReader> {
+        val head = ByteReader(data)
+        for (b in MAGIC) if (head.byte() != (b.toInt() and 0xff)) throw BadData("not an Interchange save")
+        val version = head.int()
+        if (version < 1 || version > VERSION) throw BadData("saved by a newer version of the game ($version)")
+        return version to ByteReader(Squeeze.unpack(head.bytes()))
+    }
+
+    private fun readSettings(r: ByteReader): NewGame {
+        val settings = NewGame(
+            width = r.int(), height = r.int(), seed = r.long(), startYear = r.int(),
+            region = Region.entries.getOrElse(r.int()) { Region.MIXED },
+            sea = r.int(), hills = r.int(), trees = r.int(),
+        )
+        if (settings.width !in 16..4096 || settings.height !in 16..4096) throw BadData("map size out of range")
+        return settings
+    }
+
+    /** Version 1 saves came before packs, with the base pack's first version. */
+    private fun readPacks(version: Int, r: ByteReader): List<PackRef> {
+        if (version < 2) return listOf(Packs.BASE.ref)
+        return List(r.uvar().toInt().also { if (it > 256) throw BadData("too many packs") }) { PackRef(r.string(), r.int(), r.long()) }
+    }
+
+    private fun basePack(ref: PackRef) = Packs.BASE.takeIf { it.id == ref.id && it.version >= ref.version }
 
     private fun fill(into: ByteArray, from: ByteArray) {
         if (from.size != into.size) throw BadData("a map layer is the wrong size")

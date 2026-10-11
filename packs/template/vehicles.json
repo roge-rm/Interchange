@@ -1,0 +1,53 @@
+{
+  "vehicles": [
+    {
+      "id": "prairie",
+      "kind": "engine",
+      "name": { "en": "Prairie", "fr": "Prairie" },
+      "type": { "en": "2-6-2", "fr": "2-6-2" },
+      "from": 1900,
+      "until": 1950,
+      "speed": 95,
+      "power": 1200,
+      "weight": 62,
+      "cost": 24000,
+      "running": 2700,
+      "length": 11,
+      "tender": "prairie_tender"
+    },
+    {
+      "id": "prairie_tender",
+      "kind": "tender",
+      "name": { "en": "Prairie tender", "fr": "Tender Prairie" },
+      "type": { "en": "Tender", "fr": "Tender" },
+      "from": 1900,
+      "until": 1950,
+      "weight": 38,
+      "cost": 4000,
+      "running": 0,
+      "length": 8
+    },
+    {
+      "id": "ore_car",
+      "kind": "wagon",
+      "name": { "en": "Ore car", "fr": "Wagon à minerai" },
+      "plural": { "en": "Ore cars", "fr": "Wagons à minerai" },
+      "type": { "en": "Ore car", "fr": "Wagon à minerai" },
+      "from": 1895,
+      "until": 2050,
+      "weight": 16,
+      "cost": 2600,
+      "running": 250,
+      "length": 8,
+      "carries": "iron_ore",
+      "capacity": 55
+    },
+    {
+      "id": "van",
+      "replaces": "base:caboose",
+      "name": { "en": "Van", "fr": "Fourgon" },
+      "plural": { "en": "Vans", "fr": "Fourgons" },
+      "sprite": "van"
+    }
+  ]
+}

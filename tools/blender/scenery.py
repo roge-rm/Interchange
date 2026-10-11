@@ -217,7 +217,7 @@ def signal(m, red):
 
 # ---- track --------------------------------------------------------------------------------
 #
-# Built in the tile's own terms, not about its middle: the piece runs between the middles of two of the tile's
+# Built in the tile's own terms, from its corner: the piece runs between the middles of two of the tile's
 # edges, in game (u, v), lifted to the shape it lies on. Rail ends land exactly on the edges, so pieces join up.
 
 EDGE_MID = {"XM": (0.0, 0.5), "XP": (1.0, 0.5), "YM": (0.5, 0.0), "YP": (0.5, 1.0)}

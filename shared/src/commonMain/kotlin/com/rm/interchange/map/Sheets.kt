@@ -16,7 +16,10 @@ import org.jetbrains.compose.resources.decodeToImageBitmap
 /** One zoom level's sheets: the ground textures and the static sprites as pixels for baking, the signals as a bitmap for drawing. */
 class LevelSheets(val ground: IntArray, val static: IntArray, val staticWidth: Int, val signals: ImageBitmap)
 
-/** The packed sheets for each level, as read from the app, and each vehicle's, by its place in [Atlas.VEHICLE_KEYS]. */
+/** A vehicle drawing: its sixteen rects, as [Atlas.VEHICLE_RECTS] has them for one vehicle, and its sheet at each level. */
+class VehicleSource(val rects: IntArray, val sheet: (level: Int) -> ByteArray?)
+
+/** The packed sheets for each level, as read from the app, and each base vehicle's, by its place in [Atlas.VEHICLE_KEYS]. */
 class PackedSheets(val ground: List<ByteArray>, val static: List<ByteArray>, val signals: List<ByteArray>, val vehicles: List<List<ByteArray>>)
 
 /**
@@ -57,17 +60,42 @@ class Sheets(private val packed: PackedSheets, private val scope: CoroutineScope
         return null
     }
 
+    private var sources: List<VehicleSource?> = emptyList()
     private val vehicles = HashMap<Int, ImageBitmap>()
     private val vehiclesUnpacking = HashSet<Int>()
+    /** Goes up with each game's drawings, so a sheet still unpacking for the last game is dropped. */
+    private var generation = 0
+
+    /** The base pack's drawing [name], or null if there's none of that name. */
+    fun baseVehicle(name: String): VehicleSource? {
+        val i = Atlas.VEHICLE_KEYS.indexOf(name)
+        if (i < 0) return null
+        return VehicleSource(Atlas.VEHICLE_RECTS.copyOfRange(i * 96, i * 96 + 96)) { level -> packed.vehicles[i][level] }
+    }
+
+    /** The drawings of a game's vehicles, by their place in its roster's sprites. */
+    fun useVehicles(list: List<VehicleSource?>) {
+        sources = list
+        vehicles.clear()
+        vehiclesUnpacking.clear()
+        generation++
+    }
+
+    /** Vehicle drawing [model]'s rects, or null if it has none. */
+    fun vehicleRects(model: Int): IntArray? = sources.getOrNull(model)?.rects
 
     /** Vehicle drawing [model]'s sheet at [level], unpacked the first time it's asked for; null until then. */
     @OptIn(ExperimentalResourceApi::class)
     fun vehicle(model: Int, level: Int): ImageBitmap? {
         val key = model * Atlas.LEVELS + level
         vehicles[key]?.let { return it }
+        val source = sources.getOrNull(model) ?: return null
         if (vehiclesUnpacking.add(key)) {
+            val mine = generation
             scope.launch {
-                vehicles[key] = withContext(decoder) { packed.vehicles[model][level].decodeToImageBitmap() }
+                val image = withContext(decoder) { source.sheet(level)?.decodeToImageBitmap() } ?: return@launch
+                if (mine != generation) return@launch
+                vehicles[key] = image
                 revision.intValue++
             }
         }

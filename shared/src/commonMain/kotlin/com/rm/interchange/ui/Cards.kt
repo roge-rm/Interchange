@@ -19,7 +19,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.rm.interchange.sim.Command
-import com.rm.interchange.sim.Engines
+import com.rm.interchange.sim.Roster
 import com.rm.interchange.sim.MAX_WAGONS
 import com.rm.interchange.sim.StationView
 import com.rm.interchange.sim.TrainView
@@ -41,6 +41,7 @@ fun trainName(t: TrainView): String = t.name.takeIf { it.isNotEmpty() } ?: strin
 @Composable
 fun TrainCard(
     view: WorldView,
+    roster: Roster,
     t: TrainView,
     addingStops: Boolean,
     onAddStops: () -> Unit,
@@ -61,8 +62,9 @@ fun TrainCard(
             target != null -> stringResource(Res.string.heading_for, stationName(view, target), t.kmh)
             else -> stringResource(Res.string.no_stops)
         }
-        val w = Engines.ALL[t.wagon]
-        Text(stringResource(Res.string.consist, Engines.ALL[t.engine].name, t.wagons, (if (t.wagons == 1) w.name else w.plural).lowercase()), color = c.textDim, fontSize = 13.sp)
+        val lang = languageCode()
+        val w = roster[t.wagon]
+        Text(stringResource(Res.string.consist, roster[t.engine].name(lang), t.wagons, (if (t.wagons == 1) w.name(lang) else w.plural(lang)).lowercase()), color = c.textDim, fontSize = 13.sp)
         Text(doing, color = if (t.lost) c.warn else c.text, fontSize = 13.sp)
         FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             for ((i, s) in t.orders.withIndex()) {
@@ -88,22 +90,23 @@ fun TrainCard(
 /** A depot: buying a train, and the trains in it. */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun DepotCard(view: WorldView, depot: Int, year: Int, funds: Long, send: (Command) -> Unit, onTrain: (Int) -> Unit, onClose: () -> Unit, modifier: Modifier) {
+fun DepotCard(view: WorldView, roster: Roster, depot: Int, year: Int, funds: Long, send: (Command) -> Unit, onTrain: (Int) -> Unit, onClose: () -> Unit, modifier: Modifier) {
     val c = LocalColors.current
-    val engines = Engines.available(year, pulls = true)
-    val wagons = Engines.available(year, pulls = false)
+    val lang = languageCode()
+    val engines = roster.available(year, pulls = true)
+    val wagons = roster.available(year, pulls = false)
     var engine by remember { mutableIntStateOf(engines.firstOrNull()?.id ?: 0) }
     var wagon by remember { mutableIntStateOf(wagons.firstOrNull()?.id ?: 0) }
     var count by remember { mutableIntStateOf(3) }
     Card(stringResource(Res.string.depot), onClose, modifier) {
         FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            for (e in engines) Chip(stringResource(Res.string.engine_speed, e.name, e.type, e.speed), e.id == engine) { engine = e.id }
+            for (e in engines) Chip(stringResource(Res.string.engine_speed, e.name(lang), e.type(lang), e.speed), e.id == engine) { engine = e.id }
         }
         FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            for (w in wagons) Chip(w.name, w.id == wagon) { wagon = w.id }
+            for (w in wagons) Chip(w.name(lang), w.id == wagon) { wagon = w.id }
         }
-        val e = Engines.ALL[engine]
-        val cost = e.cost + (Engines.ALL.getOrNull(e.tender)?.cost ?: 0) + Engines.ALL[wagon].cost * count
+        val e = roster[engine]
+        val cost = e.cost + (roster.getOrNull(e.tender)?.cost ?: 0) + roster[wagon].cost * count
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             SquareButton(Glyph.Lower, stringResource(Res.string.fewer_wagons), 32.dp, enabled = count > 0) { count-- }
             Text(stringResource(Res.string.wagons_count, count), color = c.text, fontSize = 13.sp)

@@ -100,7 +100,10 @@ class ByteReader(private val buf: ByteArray, private var at: Int = 0) {
 }
 
 /** Data that isn't what it should be: a damaged save, or a message from a broken client. */
-class BadData(message: String) : Exception(message)
+open class BadData(message: String) : Exception(message)
+
+/** A save that needs packs this game hasn't got, or not at the version it was made with. */
+class MissingPacks(val packs: List<PackRef>) : BadData("needs " + packs.joinToString { "${it.id} ${it.version}" })
 
 /** Squeezes bytes smaller and back, for saves; zlib on the JVM. */
 expect object Squeeze {

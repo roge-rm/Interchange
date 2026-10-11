@@ -86,12 +86,12 @@ fun World.view(): WorldView {
             cars += ax + (bx - ax) * along
             cars += ay + (by - ay) * along
             cars += heading(Track.edgeX4(b) - Track.edgeX4(a), Track.edgeY4(b) - Track.edgeY4(a)).toFloat()
-            cars += Engines.ALL[t.carEngines[c]].sprite.toFloat()
+            cars += roster[t.carEngines[c]].sprite.toFloat()
             // Climbing or going down: the edge it leaves by against the edge it came in at.
             val pieces = track[tile].toInt()
             val rise = edgeHeight(tile % width, tile / width, pieces, b) - edgeHeight(tile % width, tile / width, pieces, a)
             cars += rise.coerceIn(-1, 1).toFloat()
-            cars += Engines.ALL[t.carEngines[c]].length / 16f
+            cars += roster[t.carEngines[c]].length / 16f
         }
     }
     val trainViews = trains.filterNotNull().map { t ->
