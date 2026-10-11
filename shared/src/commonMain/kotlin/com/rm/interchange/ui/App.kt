@@ -30,7 +30,9 @@ import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.graphics.ImageBitmap
 import com.rm.interchange.map.MapInput
+import com.rm.interchange.map.rememberSheets
 import com.rm.interchange.map.MapView
 import com.rm.interchange.map.Pick
 import com.rm.interchange.map.View
@@ -62,16 +64,18 @@ private fun GameScreen() {
             if (game == null) game = runner.game
         }
     }
+    val sheets by rememberSheets()
     val g = game
-    if (g == null) {
+    val s = sheets
+    if (g == null || s == null) {
         Box(Modifier.fillMaxSize().background(LocalColors.current.page))
         return
     }
-    GameScreen(runner, g.world, frame)
+    GameScreen(runner, g.world, s, frame)
 }
 
 @Composable
-private fun GameScreen(runner: GameThread, world: World, frame: State<Long>) {
+private fun GameScreen(runner: GameThread, world: World, sheets: List<ImageBitmap>, frame: State<Long>) {
     val c = LocalColors.current
     val view = remember {
         View(world.width, world.height).apply {
@@ -142,7 +146,7 @@ private fun GameScreen(runner: GameThread, world: World, frame: State<Long>) {
         val safe = WindowInsets.safeDrawing
 
         MapView(
-            world, view, { frame.value }, input, Modifier.fillMaxSize(),
+            world, sheets, view, { frame.value }, input, Modifier.fillMaxSize(),
             overlay = plan?.let { p -> { painter -> drawTrackPlan(world, painter, p) } },
         )
 

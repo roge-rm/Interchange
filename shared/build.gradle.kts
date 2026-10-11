@@ -12,6 +12,7 @@ kotlin {
         namespace = "com.rm.interchange.shared"
         compileSdk = 37
         minSdk = 27
+        androidResources { enable = true }
     }
 
     sourceSets {
@@ -21,7 +22,13 @@ kotlin {
             implementation(libs.jb.compose.foundation)
             implementation(libs.jb.compose.ui)
             implementation(libs.jb.compose.material3)
+            implementation(libs.jb.compose.resources)
             implementation(libs.kotlinx.coroutines.core)
         }
     }
+}
+
+compose.resources {
+    packageOfResClass = "com.rm.interchange.res"
+    publicResClass = false
 }

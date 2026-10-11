@@ -10,6 +10,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChange
@@ -39,6 +40,7 @@ interface MapInput {
 @Composable
 fun MapView(
     world: World,
+    sheets: List<ImageBitmap>,
     view: View,
     frame: () -> Long,
     input: MapInput,
@@ -46,7 +48,7 @@ fun MapView(
     overlay: (DrawScope.(LandPainter) -> Unit)? = null,
 ) {
     val scope = rememberCoroutineScope()
-    val renderer = remember(world) { Renderer(world, scope) }
+    val renderer = remember(world) { Renderer(world, sheets, scope) }
     val currentInput by rememberUpdatedState(input)
     Canvas(
         modifier.pointerInput(world, view) {

@@ -1,29 +1,42 @@
 package com.rm.interchange.map
 
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.DrawScope
-import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntSize
 import com.rm.interchange.sim.CORNER_E
 import com.rm.interchange.sim.CORNER_N
 import com.rm.interchange.sim.CORNER_S
 import com.rm.interchange.sim.CORNER_W
 import com.rm.interchange.sim.Track
+import com.rm.interchange.sim.World
 import com.rm.interchange.sim.hasFoundation
 import com.rm.interchange.sim.surfaceHeight
-import com.rm.interchange.sim.World
 
 /**
- * Draws tiles of land and track, in plain shapes until the generated art
- * comes. The light comes from the top left of the screen in every view.
+ * Draws tiles of land and track from the atlas made by tools/gen_tiles.py,
+ * one level's sheet, at that level's size. The sprites are drawn as the
+ * camera sees them, so the painter turns each tile's corners and track into
+ * view coordinates and picks the sprite for that shape.
  *
  * Positions are worked out from view coordinates by [x] and [y], set for
- * whatever is being drawn on: a chunk being baked, or the screen.
+ * whatever is being drawn on: a chunk being baked, or the screen. On the
+ * screen, with no [sheet], only [track] is used, drawn as plain shapes at any
+ * size, for previews.
  */
-class LandPainter(private val world: World, private val view: View, private val halfWidth: Float) {
+class LandPainter(private val world: World, private val view: View, private val halfWidth: Float, private val sheet: ImageBitmap? = null) {
     private val halfHeight = halfWidth / 2
     private val step = halfWidth / 4
     private val path = Path()
+
+    // A cell's size and anchor at this level.
+    private val scale = halfWidth / (Atlas.CELL_W / 2)
+    private val cellW = (Atlas.CELL_W * scale).toInt()
+    private val cellH = (Atlas.CELL_H * scale).toInt()
+    private val anchorY = (Atlas.CELL_H_ANCHOR * scale).toInt()
 
     /** Where view point 0, 0 at height 0 lands. */
     var originX = 0f
@@ -34,73 +47,91 @@ class LandPainter(private val world: World, private val view: View, private val 
 
     private fun cornerHeight(vx: Int, vy: Int) = world.heightAt(view.cornerX(vx, vy), view.cornerY(vx, vy))
 
-    /** The foundation's height at view corner ([cvx], [cvy]) of world tile ([wx], [wy]), with [pieces] on it. */
-    private fun surface(wx: Int, wy: Int, cvx: Int, cvy: Int, pieces: Int): Int {
+    /** Which world corner of tile ([wx], [wy]) view corner ([cvx], [cvy]) is. */
+    private fun worldCorner(wx: Int, wy: Int, cvx: Int, cvy: Int): Int {
         val dx = view.cornerX(cvx, cvy) - wx
         val dy = view.cornerY(cvx, cvy) - wy
-        val corner = if (dy == 0) (if (dx == 0) CORNER_N else CORNER_E) else (if (dx == 0) CORNER_W else CORNER_S)
-        return world.surfaceHeight(wx, wy, pieces, corner)
+        return if (dy == 0) (if (dx == 0) CORNER_N else CORNER_E) else (if (dx == 0) CORNER_W else CORNER_S)
     }
 
-    /** Draws view tile ([vx], [vy]): the ground, track on it and, at the map's front edges, the earth under it. */
+    /** Draws atlas [cell] with its anchor on view tile ([vx], [vy])'s top corner at height [h]. */
+    private fun DrawScope.sprite(cell: Int, vx: Int, vy: Int, h: Int) {
+        val image = sheet ?: return
+        if (cell < 0) return
+        val sx = (cell % Atlas.COLUMNS) * cellW
+        val sy = (cell / Atlas.COLUMNS) * cellH
+        val dx = x(vx.toFloat(), vy.toFloat()) - halfWidth
+        val dy = y(vx.toFloat(), vy.toFloat(), h.toFloat()) - anchorY
+        drawImage(image, IntOffset(sx, sy), IntSize(cellW, cellH), IntOffset(dx.toInt(), dy.toInt()), IntSize(cellW, cellH))
+    }
+
+    /** Draws view tile ([vx], [vy]): the ground, any foundation and track on it, and at the map's front edges the earth under it. */
     fun DrawScope.tile(vx: Int, vy: Int) {
+        // The corners in view order: top, right, bottom, left.
         val t = cornerHeight(vx, vy)
         val r = cornerHeight(vx + 1, vy)
         val b = cornerHeight(vx + 1, vy + 1)
         val l = cornerHeight(vx, vy + 1)
         val wx = view.worldX(vx, vy)
         val wy = view.worldY(vx, vy)
-        val water = t == 0 && r == 0 && b == 0 && l == 0
-
         val fx = vx.toFloat()
         val fy = vy.toFloat()
-        val txp = x(fx, fy); val typ = y(fx, fy, t.toFloat())
-        val rxp = x(fx + 1, fy); val ryp = y(fx + 1, fy, r.toFloat())
-        val bxp = x(fx + 1, fy + 1); val byp = y(fx + 1, fy + 1, b.toFloat())
-        val lxp = x(fx, fy + 1); val lyp = y(fx, fy + 1, l.toFloat())
 
         // The earth under the front edges of the map, down past sea level.
         if (vx == view.viewWidth - 1) {
-            quad(rxp, ryp, bxp, byp, bxp, y(fx + 1, fy + 1, -2f), rxp, y(fx + 1, fy, -2f))
+            quad(x(fx + 1, fy), y(fx + 1, fy, r.toFloat()), x(fx + 1, fy + 1), y(fx + 1, fy + 1, b.toFloat()), x(fx + 1, fy + 1), y(fx + 1, fy + 1, -2f), x(fx + 1, fy), y(fx + 1, fy, -2f))
             drawPath(path, EARTH_DARK)
         }
         if (vy == view.viewHeight - 1) {
-            quad(lxp, lyp, bxp, byp, bxp, y(fx + 1, fy + 1, -2f), lxp, y(fx, fy + 1, -2f))
+            quad(x(fx, fy + 1), y(fx, fy + 1, l.toFloat()), x(fx + 1, fy + 1), y(fx + 1, fy + 1, b.toFloat()), x(fx + 1, fy + 1), y(fx + 1, fy + 1, -2f), x(fx, fy + 1), y(fx, fy + 1, -2f))
             drawPath(path, EARTH_LIGHT)
         }
 
-        quad(txp, typ, rxp, ryp, bxp, byp, lxp, lyp)
-        val colour = if (water) WATER else {
-            // Brighter facing the top left of the screen, darker facing away.
-            val alongX = (r + b - t - l) / 2f
-            val alongY = (l + b - t - r) / 2f
-            val shade = (1f - 0.16f * alongX - 0.06f * alongY).coerceIn(0.6f, 1.25f)
-            val base = if (minOf(t, r, b, l) == 0) SAND else grass(maxOf(t, r, b, l))
-            Color((base.red * shade).coerceAtMost(1f), (base.green * shade).coerceAtMost(1f), (base.blue * shade).coerceAtMost(1f))
+        val base = minOf(minOf(t, r), minOf(b, l))
+        val shape = shapeOf(t - base, r - base, b - base, l - base)
+        val water = base == 0 && shape == 0
+        val kind = when {
+            water -> Atlas.WATER
+            base == 0 -> Atlas.SAND
+            else -> Atlas.GRASS0 + variant(wx, wy)
         }
-        drawPath(path, colour)
-        if (halfWidth >= 12f) drawPath(path, GRID, style = Stroke(1f))
+        sprite(Atlas.GROUND[kind * 16 + shape], vx, vy, base)
 
         val pieces = world.trackAt(wx, wy)
+        if (pieces == 0) return
+        // What the track lies on: the land, or a foundation's top.
+        val st = world.surfaceHeight(wx, wy, pieces, worldCorner(wx, wy, vx, vy))
+        val sr = world.surfaceHeight(wx, wy, pieces, worldCorner(wx, wy, vx + 1, vy))
+        val sb = world.surfaceHeight(wx, wy, pieces, worldCorner(wx, wy, vx + 1, vy + 1))
+        val sl = world.surfaceHeight(wx, wy, pieces, worldCorner(wx, wy, vx, vy + 1))
+        val sBase = minOf(minOf(st, sr), minOf(sb, sl))
+        val sShape = shapeOf(st - sBase, sr - sBase, sb - sBase, sl - sBase)
         if (world.hasFoundation(wx, wy)) {
-            // Built up under the track: a top at the foundation's height and stone faces down to the land towards the camera.
-            val st = surface(wx, wy, vx, vy, pieces).toFloat()
-            val sr = surface(wx, wy, vx + 1, vy, pieces).toFloat()
-            val sb = surface(wx, wy, vx + 1, vy + 1, pieces).toFloat()
-            val sl = surface(wx, wy, vx, vy + 1, pieces).toFloat()
-            val ty = y(fx, fy, st); val ry = y(fx + 1, fy, sr); val by2 = y(fx + 1, fy + 1, sb); val ly = y(fx, fy + 1, sl)
-            quad(rxp, ry, bxp, by2, bxp, byp, rxp, ryp)
-            drawPath(path, STONE_DARK)
-            quad(lxp, ly, bxp, by2, bxp, byp, lxp, lyp)
-            drawPath(path, STONE_LIGHT)
-            quad(txp, ty, rxp, ry, bxp, by2, lxp, ly)
-            drawPath(path, grass(maxOf(st, sr, sb, sl).toInt()))
-            if (halfWidth >= 12f) drawPath(path, GRID, style = Stroke(1f))
+            sprite(Atlas.WALLS[shape * 16 + shapeOf(st - base, sr - base, sb - base, sl - base)], vx, vy, base)
+            sprite(Atlas.GROUND[(Atlas.GRASS0 + variant(wx, wy)) * 16 + sShape], vx, vy, sBase)
         }
-        if (pieces != 0) for (p in Track.PIECES) if (pieces and p != 0) track(wx, wy, p, TRACK_BED, RAIL)
+        for ((i, p) in Track.PIECES.withIndex()) {
+            if (pieces and p == 0) continue
+            sprite(Atlas.TRACK[viewPieceIndex(i) * 16 + sShape], vx, vy, sBase)
+        }
     }
 
-    /** One track piece on world tile ([wx], [wy]), drawn as a bed with sleepers and two rails. */
+    /** The index of world piece [index] as it shows in this view. */
+    private fun viewPieceIndex(index: Int): Int {
+        val e = Track.edges(Track.PIECES[index])
+        val v = Track.pieceOf(viewEdge(e and 3), viewEdge(e shr 2))
+        return Track.PIECES.indexOf(v)
+    }
+
+    /** Where a world tile edge shows in this view. */
+    private fun viewEdge(edge: Int): Int = when (view.turn) {
+        0 -> edge
+        1 -> when (edge) { Track.XM -> Track.YM; Track.XP -> Track.YP; Track.YM -> Track.XP; else -> Track.XM }
+        2 -> Track.opposite(edge)
+        else -> when (edge) { Track.YM -> Track.XM; Track.YP -> Track.XP; Track.XM -> Track.YP; else -> Track.YM }
+    }
+
+    /** One track piece on world tile ([wx], [wy]), drawn as plain shapes: a bed and two rails. For previews. */
     fun DrawScope.track(wx: Int, wy: Int, piece: Int, bed: Color, rail: Color) {
         val e = Track.edges(piece)
         val a = e and 3
@@ -113,47 +144,31 @@ class LandPainter(private val world: World, private val view: View, private val 
         // Across the track, a fifth of a tile each side for the bed.
         val nx = -(by - ay) / len
         val ny = (bx - ax) / len
-        strip(ax, ay, bx, by, nx, ny, 0.2f, bed)
-        if (halfWidth >= 6f) {
-            val sleepers = (len * 6).toInt().coerceAtLeast(2)
-            for (i in 0 until sleepers) {
-                val t0 = (i + 0.3f) / sleepers
-                val t1 = (i + 0.6f) / sleepers
-                strip(ax + (bx - ax) * t0, ay + (by - ay) * t0, ax + (bx - ax) * t1, ay + (by - ay) * t1, nx, ny, 0.16f, SLEEPER)
-            }
-            line(ax + nx * 0.09f, ay + ny * 0.09f, bx + nx * 0.09f, by + ny * 0.09f, rail)
-            line(ax - nx * 0.09f, ay - ny * 0.09f, bx - nx * 0.09f, by - ny * 0.09f, rail)
-        }
-    }
-
-    /** A strip from world point a to b, [half] tiles each side of the line along ([nx], [ny]). */
-    private fun DrawScope.strip(ax: Float, ay: Float, bx: Float, by: Float, nx: Float, ny: Float, half: Float, colour: Color) {
         val p = floatArrayOf(
-            ax + nx * half, ay + ny * half, bx + nx * half, by + ny * half,
-            bx - nx * half, by - ny * half, ax - nx * half, ay - ny * half,
+            ax + nx * 0.2f, ay + ny * 0.2f, bx + nx * 0.2f, by + ny * 0.2f,
+            bx - nx * 0.2f, by - ny * 0.2f, ax - nx * 0.2f, ay - ny * 0.2f,
         )
         path.reset()
         for (i in 0 until 4) {
-            val sx = screenOf(p[i * 2], p[i * 2 + 1])
-            val sy = screenYOf(p[i * 2], p[i * 2 + 1])
+            val sx = screenX(p[i * 2], p[i * 2 + 1])
+            val sy = screenY(p[i * 2], p[i * 2 + 1])
             if (i == 0) path.moveTo(sx, sy) else path.lineTo(sx, sy)
         }
         path.close()
-        drawPath(path, colour)
+        drawPath(path, bed)
+        for (side in floatArrayOf(-0.09f, 0.09f)) {
+            drawLine(
+                rail,
+                Offset(screenX(ax + nx * side, ay + ny * side), screenY(ax + nx * side, ay + ny * side)),
+                Offset(screenX(bx + nx * side, by + ny * side), screenY(bx + nx * side, by + ny * side)),
+                strokeWidth = (halfWidth / 16f).coerceAtLeast(1f),
+            )
+        }
     }
 
-    private fun DrawScope.line(ax: Float, ay: Float, bx: Float, by: Float, colour: Color) {
-        drawLine(
-            colour,
-            androidx.compose.ui.geometry.Offset(screenOf(ax, ay), screenYOf(ax, ay)),
-            androidx.compose.ui.geometry.Offset(screenOf(bx, by), screenYOf(bx, by)),
-            strokeWidth = (halfWidth / 16f).coerceAtLeast(1f),
-        )
-    }
-
-    // A world point, lifted to the ground's height there, a little above it so track sits on top.
-    private fun screenOf(x: Float, y: Float) = x(view.toViewX(x, y), view.toViewY(x, y))
-    private fun screenYOf(x: Float, y: Float) = y(view.toViewX(x, y), view.toViewY(x, y), groundHeight(world, x, y))
+    // A world point, lifted to the ground's height there.
+    private fun screenX(x: Float, y: Float) = x(view.toViewX(x, y), view.toViewY(x, y))
+    private fun screenY(x: Float, y: Float) = y(view.toViewX(x, y), view.toViewY(x, y), groundHeight(world, x, y))
 
     private fun quad(x0: Float, y0: Float, x1: Float, y1: Float, x2: Float, y2: Float, x3: Float, y3: Float) {
         path.reset()
@@ -165,22 +180,17 @@ class LandPainter(private val world: World, private val view: View, private val 
     }
 
     companion object {
-        val WATER = Color(0xFF3A6FB0)
-        val SAND = Color(0xFFC9B47E)
         val EARTH_LIGHT = Color(0xFF7A6248)
         val EARTH_DARK = Color(0xFF5A4634)
-        val GRID = Color(0x1A000000)
-        val STONE_LIGHT = Color(0xFFA39A8A)
-        val STONE_DARK = Color(0xFF7F7768)
-        val TRACK_BED = Color(0xFF8C8478)
-        val SLEEPER = Color(0xFF5B4632)
-        val RAIL = Color(0xFFD9D4CC)
-        private val GRASS = Array(World.MAX_HEIGHT + 1) { h ->
-            // Greener low down, drier and paler up high.
-            val t = h / World.MAX_HEIGHT.toFloat()
-            Color(0.35f + 0.25f * t, 0.6f - 0.05f * t, 0.24f + 0.1f * t)
-        }
 
-        fun grass(h: Int) = GRASS[h.coerceIn(0, World.MAX_HEIGHT)]
+        /** Which view corners stand a step up, as Atlas shapes. */
+        fun shapeOf(t: Int, r: Int, b: Int, l: Int) = t or (r shl 1) or (b shl 2) or (l shl 3)
+
+        /** Which of the grass sprites a tile gets, the same in every view. */
+        fun variant(wx: Int, wy: Int): Int {
+            var h = wx * 73856093 xor wy * 19349663
+            h = h xor (h ushr 13)
+            return (h * 0x5bd1e995 ushr 29) and 3
+        }
     }
 }

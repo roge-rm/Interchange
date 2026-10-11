@@ -11,6 +11,7 @@ import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.LayoutDirection
+import com.rm.interchange.sim.Workers
 import com.rm.interchange.sim.World
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -33,7 +34,7 @@ import kotlin.math.roundToInt
  *
  * Everything but the baking itself runs on the main thread.
  */
-internal class Renderer(private val world: World, private val scope: CoroutineScope) {
+internal class Renderer(private val world: World, private val sheets: List<ImageBitmap>, private val scope: CoroutineScope) {
     private class Key(val level: Int, val turn: Int, val cx: Int, val cy: Int) {
         override fun equals(other: Any?) = other is Key && other.level == level && other.turn == turn && other.cx == cx && other.cy == cy
         override fun hashCode() = ((level * 4 + turn) * 8191 + cx) * 8191 + cy
@@ -205,7 +206,7 @@ internal class Renderer(private val world: World, private val scope: CoroutineSc
         val tiles = chunkTiles(key.level)
         val height = chunkHeight(key.level, hw)
         val image = ImageBitmap(CHUNK_PIXELS, height)
-        val painter = LandPainter(world, view, hw)
+        val painter = LandPainter(world, view, hw, sheets[key.level])
         val vx0 = key.cx * tiles
         val vy0 = key.cy * tiles
         painter.originX = tiles * hw - (vx0 - vy0) * hw
@@ -233,7 +234,8 @@ internal class Renderer(private val world: World, private val scope: CoroutineSc
         /** Half a tile's width at each level, sharpest first. */
         val LEVELS = floatArrayOf(64f, 32f, 16f, 8f, 4f)
         const val CHUNK_PIXELS = 1024
-        const val BAKERS = 3
+        /** Chunks baking at once, leaving cores for the screen and the game. */
+        val BAKERS = (Workers.threads - 1).coerceIn(2, 6)
         /** Bitmap memory for chunks, in bytes. */
         const val BUDGET = 192L * 1024 * 1024
 
