@@ -13,14 +13,17 @@ import kotlinx.coroutines.withContext
 import org.jetbrains.compose.resources.ExperimentalResourceApi
 import org.jetbrains.compose.resources.decodeToImageBitmap
 
-/** One zoom level's sheets: the ground textures and the static sprites as pixels for baking, the signals as a bitmap for drawing. */
-class LevelSheets(val ground: IntArray, val static: IntArray, val staticWidth: Int, val signals: ImageBitmap)
+/**
+ * One zoom level's sheets: the ground textures and the static sprites as pixels for baking, the shadows as a byte a
+ * pixel of how dark, and the signals as a bitmap for drawing.
+ */
+class LevelSheets(val ground: IntArray, val static: IntArray, val staticWidth: Int, val shadows: ByteArray, val shadowWidth: Int, val signals: ImageBitmap)
 
 /** A vehicle drawing: its sixteen rects, as [Atlas.VEHICLE_RECTS] has them for one vehicle, and its sheet at each level. */
 class VehicleSource(val rects: IntArray, val sheet: (level: Int) -> ByteArray?)
 
 /** The packed sheets for each level, as read from the app, and each base vehicle's, by its place in [Atlas.VEHICLE_KEYS]. */
-class PackedSheets(val ground: List<ByteArray>, val static: List<ByteArray>, val signals: List<ByteArray>, val vehicles: List<List<ByteArray>>)
+class PackedSheets(val ground: List<ByteArray>, val static: List<ByteArray>, val shadows: List<ByteArray>, val signals: List<ByteArray>, val vehicles: List<List<ByteArray>>)
 
 /**
  * The sheets, sharpest level first. They're kept packed and a level is only
@@ -52,7 +55,10 @@ class Sheets(private val packed: PackedSheets, private val scope: CoroutineScope
                     }
                     val (ground, _) = pixels(packed.ground[level])
                     val (static, width) = pixels(packed.static[level])
-                    LevelSheets(ground, static, width, packed.signals[level].decodeToImageBitmap())
+                    // Grey, so any one channel is how dark.
+                    val (shade, shadeWidth) = pixels(packed.shadows[level])
+                    val shadows = ByteArray(shade.size) { shade[it].toByte() }
+                    LevelSheets(ground, static, width, shadows, shadeWidth, packed.signals[level].decodeToImageBitmap())
                 }
                 revision.intValue++
             }
@@ -114,6 +120,6 @@ class Sheets(private val packed: PackedSheets, private val scope: CoroutineScope
 fun rememberPackedSheets(): State<PackedSheets?> = produceState<PackedSheets?>(null) {
     value = withContext(Dispatchers.Default) {
         suspend fun read(name: String) = (0 until Atlas.LEVELS).map { Res.readBytes("files/${name}_$it.png") }
-        PackedSheets(read("ground"), read("static"), read("signals"), Atlas.VEHICLE_KEYS.map { read("vehicle_$it") })
+        PackedSheets(read("ground"), read("static"), read("shadows"), read("signals"), Atlas.VEHICLE_KEYS.map { read("vehicle_$it") })
     }
 }

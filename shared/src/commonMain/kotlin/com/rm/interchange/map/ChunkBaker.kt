@@ -168,14 +168,14 @@ internal class ChunkBaker(
                 val kind = world.roster.industries[ind.kind]
                 val art = partArt(kind.part(wx - ind.x, wy - ind.y, ind.turn))
                 val base = maxOf(maxOf(cornerHeight(vx, vy), cornerHeight(vx + 1, vy)), maxOf(cornerHeight(vx + 1, vy + 1), cornerHeight(vx, vy + 1)))
-                if (art >= 0) sprite((if (shadow) Atlas.PART_SHADOW else Atlas.PART)[art * 4 + viewEdge(INDUSTRY_FACING[ind.turn])], vx, vy, base)
+                if (art >= 0) sprite((if (shadow) Atlas.PART_SHADOW else Atlas.PART)[art * 4 + viewEdge(INDUSTRY_FACING[ind.turn])], vx, vy, base, shadow)
                 return
             }
             val built = world.house[tile].toInt()
             if (built != 0) {
                 val art = houseArt(houseOf(built))
                 val base = maxOf(maxOf(cornerHeight(vx, vy), cornerHeight(vx + 1, vy)), maxOf(cornerHeight(vx + 1, vy + 1), cornerHeight(vx, vy + 1)))
-                if (art >= 0) sprite((if (shadow) Atlas.HOUSE_SHADOW else Atlas.HOUSE)[art * 4 + viewEdge(houseFacing(built))], vx, vy, base)
+                if (art >= 0) sprite((if (shadow) Atlas.HOUSE_SHADOW else Atlas.HOUSE)[art * 4 + viewEdge(houseFacing(built))], vx, vy, base, shadow)
                 return
             }
             if (world.road[tile].toInt() != 0) {
@@ -192,13 +192,13 @@ internal class ChunkBaker(
         world.depotTiles[tile]?.let { id ->
             val d = world.depots.getOrNull(id) ?: return@let
             val e = viewEdge(d.edge)
-            sprite(if (shadow) Atlas.DEPOT_SHADOW[e] else Atlas.DEPOT[e], vx, vy, base)
+            sprite(if (shadow) Atlas.DEPOT_SHADOW[e] else Atlas.DEPOT[e], vx, vy, base, shadow)
             return
         }
         if (world.stationTiles.containsKey(tile)) {
             val st = world.surfaceHeight(wx, wy, pieces, worldCorner(wx, wy, vx, vy))
             val a = viewPieceIndex(Track.index(pieces))
-            sprite(if (shadow) Atlas.STATION_SHADOW[a] else Atlas.STATION[a], vx, vy, st)
+            sprite(if (shadow) Atlas.STATION_SHADOW[a] else Atlas.STATION[a], vx, vy, st, shadow)
         }
     }
 
@@ -380,7 +380,7 @@ internal class ChunkBaker(
             }
         }
         spots.sortBy { it[0] }
-        for (sp in spots) standing(cells[STREET_TREE * Atlas.TREE_LOOKS + sp[3].toInt() % Atlas.TREE_LOOKS], sp[1], sp[2])
+        for (sp in spots) standing(cells[STREET_TREE * Atlas.TREE_LOOKS + sp[3].toInt() % Atlas.TREE_LOOKS], sp[1], sp[2], shadow)
     }
 
     /** Whether ([u], [v]) is within [w] of the middle line of a road reaching the view edges in [bits]. */
@@ -448,6 +448,35 @@ internal class ChunkBaker(
     // ---- sprites -------------------------------------------------------------------------
 
     /** Blits static sprite [cell] with its anchor at ([ax], [ay]), blending by its alpha. */
+    /** Shadow [cell] from the shadows sheet laid at ([ax], [ay]): what's under it darkened by how dark the shadow is there. */
+    private fun shade(cell: Int, ax: Float, ay: Float) {
+        if (cell < 0) return
+        val r = cell * 6
+        val sx = Atlas.SHADOW_RECTS[r] / shrink
+        val sy = Atlas.SHADOW_RECTS[r + 1] / shrink
+        val w = Atlas.SHADOW_RECTS[r + 2] / shrink
+        val h = Atlas.SHADOW_RECTS[r + 3] / shrink
+        val left = (ax + Atlas.SHADOW_RECTS[r + 4] / shrink).toInt()
+        val top = (ay + Atlas.SHADOW_RECTS[r + 5] / shrink).toInt()
+        val src = sheets.shadows
+        val sw = sheets.shadowWidth
+        for (j in 0 until h) {
+            val py = top + j
+            if (py < 0 || py >= height) continue
+            val srcRow = (sy + j) * sw + sx
+            val dstRow = py * width
+            for (i in 0 until w) {
+                val px = left + i
+                if (px < 0 || px >= width) continue
+                val a = src[srcRow + i].toInt() and 255
+                if (a == 0) continue
+                val d = pixels[dstRow + px]
+                val keep = 255 - a
+                pixels[dstRow + px] = (d and 0xff000000.toInt()) or ((((d shr 16) and 255) * keep / 255) shl 16) or ((((d shr 8) and 255) * keep / 255) shl 8) or ((d and 255) * keep / 255)
+            }
+        }
+    }
+
     private fun blit(cell: Int, ax: Float, ay: Float) {
         if (cell < 0) return
         val r = cell * 6
@@ -487,13 +516,16 @@ internal class ChunkBaker(
     }
 
     /** A static sprite anchored on view tile ([vx], [vy])'s top corner at height [h]. */
-    private fun sprite(cell: Int, vx: Int, vy: Int, h: Int) = blit(cell, x(vx.toFloat(), vy.toFloat()), y(vx.toFloat(), vy.toFloat(), h.toFloat()))
+    private fun sprite(cell: Int, vx: Int, vy: Int, h: Int, shadow: Boolean = false) =
+        if (shadow) shade(cell, x(vx.toFloat(), vy.toFloat()), y(vx.toFloat(), vy.toFloat(), h.toFloat())) else blit(cell, x(vx.toFloat(), vy.toFloat()), y(vx.toFloat(), vy.toFloat(), h.toFloat()))
 
     /** A sprite standing at world point ([tx], [ty]), drawn as if on a tile whose middle is there. */
-    private fun standing(cell: Int, tx: Float, ty: Float) {
+    private fun standing(cell: Int, tx: Float, ty: Float, shadow: Boolean = false) {
         val vx = view.toViewX(tx, ty)
         val vy = view.toViewY(tx, ty)
-        blit(cell, x(vx - 0.5f, vy - 0.5f), y(vx - 0.5f, vy - 0.5f, groundHeight(world, tx, ty)))
+        val ax = x(vx - 0.5f, vy - 0.5f)
+        val ay = y(vx - 0.5f, vy - 0.5f, groundHeight(world, tx, ty))
+        if (shadow) shade(cell, ax, ay) else blit(cell, ax, ay)
     }
 
     /** The trees on a tile, or their shadows, each where the tile's own dice put it, the furthest first. */
@@ -512,7 +544,7 @@ internal class ChunkBaker(
         }
         spots.sortBy { it[0] }
         val cells = if (shadow) Atlas.TREE_SHADOW else Atlas.TREE
-        for (sp in spots) standing(cells[kind * Atlas.TREE_LOOKS + sp[3].toInt() % Atlas.TREE_LOOKS], sp[1], sp[2])
+        for (sp in spots) standing(cells[kind * Atlas.TREE_LOOKS + sp[3].toInt() % Atlas.TREE_LOOKS], sp[1], sp[2], shadow)
     }
 
     /** Now and then a boulder, a shrub or a clump of tall grass, as suits the ground, or its shadow. Only for looks. */
@@ -532,7 +564,7 @@ internal class ChunkBaker(
         val tx = wx + 0.25f + ((d shr 8) and 255) / 255f * 0.5f
         val ty = wy + 0.25f + ((d shr 16) and 255) / 255f * 0.5f
         val cells = if (shadow) Atlas.DECOR_SHADOW else Atlas.DECOR
-        standing(cells[what * Atlas.DECOR_LOOKS + (d ushr 24) % Atlas.DECOR_LOOKS], tx, ty)
+        standing(cells[what * Atlas.DECOR_LOOKS + (d ushr 24) % Atlas.DECOR_LOOKS], tx, ty, shadow)
     }
 
     // ---- view helpers ---------------------------------------------------------------------

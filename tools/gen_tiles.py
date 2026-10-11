@@ -102,18 +102,18 @@ for p, piece in enumerate(track.PIECES):
 # Platforms and the engine house over their track, each with its shadow apart so the game can lay shadows first.
 for a in (0, 1):
     JOBS.append(("static", ("station", a), lambda a=a: over(track.track("X" if a == 0 else "Y", 0), scenery(f"station_{a}.png", lambda: track.station(a == 0))), None))
-    JOBS.append(("static", ("station_shadow", a), lambda a=a: scenery(f"station_{a}_shadow.png", base.cell), None))
+    JOBS.append(("shadows", ("station_shadow", a), lambda a=a: scenery(f"station_{a}_shadow.png", base.cell), None))
 for e, edge in enumerate(EDGES):
     JOBS.append(("static", ("depot", e), lambda edge=edge: scenery(f"depot_{edge}.png", lambda: track.depot(edge)), None))
-    JOBS.append(("static", ("depot_shadow", e), lambda edge=edge: scenery(f"depot_{edge}_shadow.png", base.cell), None))
+    JOBS.append(("shadows", ("depot_shadow", e), lambda edge=edge: scenery(f"depot_{edge}_shadow.png", base.cell), None))
 for t, kind in enumerate(ground.TREES):
     for look in range(ground.TREE_LOOKS):
         JOBS.append(("static", ("tree", t, look), lambda kind=kind, look=look: scenery(f"tree_{kind}_{look}.png", lambda: ground.tree(kind, look)), None))
-        JOBS.append(("static", ("tree_shadow", t, look), lambda kind=kind, look=look: scenery(f"tree_{kind}_{look}_shadow.png", base.cell), None))
+        JOBS.append(("shadows", ("tree_shadow", t, look), lambda kind=kind, look=look: scenery(f"tree_{kind}_{look}_shadow.png", base.cell), None))
 for d, kind in enumerate(ground.DECOR):
     for look in range(ground.DECOR_LOOKS):
         JOBS.append(("static", ("decor", d, look), lambda kind=kind, look=look: scenery(f"decor_{kind}_{look}.png", lambda: ground.decor(kind, look)), None))
-        JOBS.append(("static", ("decor_shadow", d, look), lambda kind=kind, look=look: scenery(f"decor_{kind}_{look}_shadow.png", base.cell), None))
+        JOBS.append(("shadows", ("decor_shadow", d, look), lambda kind=kind, look=look: scenery(f"decor_{kind}_{look}_shadow.png", base.cell), None))
 for red in (0, 1):
     JOBS.append(("signals", ("signal", red), lambda red=red: scenery(f"signal_{red}.png", lambda: track.signal(red == 1)), None))
 # Town buildings, in the order of the base pack's houses.json, each facing every view edge, with its shadow apart.
@@ -121,7 +121,7 @@ HOUSES = [h["id"] for h in json.loads((ROOT / "packs/base/houses.json").read_tex
 for k, kind in enumerate(HOUSES):
     for e, edge in enumerate(EDGES):
         JOBS.append(("static", ("house", k, e), lambda kind=kind, edge=edge: scenery(f"house_{kind}_{edge}.png", base.cell), None))
-        JOBS.append(("static", ("house_shadow", k, e), lambda kind=kind, edge=edge: scenery(f"house_{kind}_{edge}_shadow.png", base.cell), None))
+        JOBS.append(("shadows", ("house_shadow", k, e), lambda kind=kind, edge=edge: scenery(f"house_{kind}_{edge}_shadow.png", base.cell), None))
 # Industry pieces, every one named in the base pack's industries.json layouts, each facing every view edge, with
 # its shadow apart.
 PARTS = []
@@ -133,7 +133,7 @@ for ind in json.loads((ROOT / "packs/base/industries.json").read_text())["indust
 for k, key in enumerate(PARTS):
     for e, edge in enumerate(EDGES):
         JOBS.append(("static", ("part", k, e), lambda key=key, edge=edge: scenery(f"part_{key}_{edge}.png", base.cell), None))
-        JOBS.append(("static", ("part_shadow", k, e), lambda key=key, edge=edge: scenery(f"part_{key}_{edge}_shadow.png", base.cell), None))
+        JOBS.append(("shadows", ("part_shadow", k, e), lambda key=key, edge=edge: scenery(f"part_{key}_{edge}_shadow.png", base.cell), None))
 # The engine house again, drawn over trains on its tile so they show going in through the doors.
 for e, edge in enumerate(EDGES):
     JOBS.append(("signals", ("depot_over", e), lambda edge=edge: scenery(f"depot_{edge}.png", lambda: track.depot(edge)), None))
@@ -216,7 +216,9 @@ def write_sheet(name, done, sheet_w=SHEET_W):
             sheet.paste(im, p)
     for level in range(LEVELS):
         f = 1 << level
-        (sheet if f == 1 else shrink(sheet, f)).save(OUT_PNG / f"{name}_{level}.png", optimize=True)
+        out = sheet if f == 1 else shrink(sheet, f)
+        # Shadows are black, so their sheet keeps only how dark each pixel is, a byte each.
+        (out.getchannel("A") if name == "shadows" else out).save(OUT_PNG / f"{name}_{level}.png", optimize=True)
     rects = []
     for (_, im, (l, t, r, b), _), p in zip(done, pos):
         rects += [p[0], p[1], r - l, b - t, l - base.HW, t - base.TOP]
@@ -239,7 +241,7 @@ def main():
     with multiprocessing.get_context("fork").Pool() as pool:
         done = sorted(pool.map(render, range(len(JOBS)), chunksize=4))
     OUT_PNG.mkdir(parents=True, exist_ok=True)
-    for pattern in ("atlas_*.png", "static_*.png", "moving_*.png", "signals_*.png", "vehicle_*.png", "ground_*.png"):
+    for pattern in ("atlas_*.png", "static_*.png", "shadows_*.png", "moving_*.png", "signals_*.png", "vehicle_*.png", "ground_*.png"):
         for old in OUT_PNG.glob(pattern):
             old.unlink()
 
@@ -254,7 +256,7 @@ def main():
         mine = [d for d in done if JOBS[d[0]][0] == name]
         for n, d in enumerate(mine):
             index[JOBS[d[0]][1]] = n
-        rects[name], height = write_sheet(name, mine, SHEET_W if name == "static" else 1024)
+        rects[name], height = write_sheet(name, mine, SHEET_W if name in ("static", "shadows") else 1024)
         if not name.startswith("vehicle_"):
             print(f"{name}: {len(mine)} sprites, {height} high at level 0")
     biggest = max(len(rects[n]) for n in names if n.startswith("vehicle_")) // 6
@@ -317,6 +319,11 @@ object Atlas {{
         {arr(rects["static"])},
     )
 
+    /** Shadows, on files/shadows_<level>.png: how dark, a byte a pixel, to darken what's under them. */
+    val SHADOW_RECTS = intArrayOf(
+        {arr(rects["shadows"])},
+    )
+
     val SIGNAL_RECTS = intArrayOf(
         {arr(rects["signals"])},
     )
@@ -342,33 +349,33 @@ object Atlas {{
         {arr(tracks)},
     )
 
-    /** A platform with its track, along view u (0) or v (1), and its shadow. On the static sheet. */
+    /** A platform with its track, along view u (0) or v (1), and its shadow, on the shadows sheet. On the static sheet. */
     val STATION = intArrayOf({index[("station", 0)]}, {index[("station", 1)]})
     val STATION_SHADOW = intArrayOf({index[("station_shadow", 0)]}, {index[("station_shadow", 1)]})
 
-    /** A depot with its doors at view edge XM, XP, YM or YP, and its shadow. On the static sheet. */
+    /** A depot with its doors at view edge XM, XP, YM or YP, and its shadow, on the shadows sheet. On the static sheet. */
     val DEPOT = intArrayOf({", ".join(str(index[("depot", e)]) for e in range(4))})
     val DEPOT_SHADOW = intArrayOf({", ".join(str(index[("depot_shadow", e)]) for e in range(4))})
 
     const val TREE_LOOKS = {ground.TREE_LOOKS}
-    /** A tree, at kind * TREE_LOOKS + look, kinds in the order of the game's trees, and its shadow. On the static sheet. */
+    /** A tree, at kind * TREE_LOOKS + look, kinds in the order of the game's trees, and its shadow, on the shadows sheet. On the static sheet. */
     val TREE = intArrayOf({arr(trees)})
     val TREE_SHADOW = intArrayOf({arr(tree_shadows)})
 
     const val DECOR_LOOKS = {ground.DECOR_LOOKS}
-    /** Boulders, shrubs and tall grass, at kind * DECOR_LOOKS + look, and their shadows. On the static sheet. */
+    /** Boulders, shrubs and tall grass, at kind * DECOR_LOOKS + look, and their shadows, on the shadows sheet. On the static sheet. */
     val DECOR = intArrayOf({arr(decor)})
     val DECOR_SHADOW = intArrayOf({arr(decor_shadows)})
 
     /** The town buildings drawn here, by the id in the base pack's houses.json. */
     val HOUSE_KEYS = listOf({", ".join(f'"{k}"' for k in HOUSES)})
-    /** A building, at its place in HOUSE_KEYS * 4 + the view edge it faces, and its shadow. On the static sheet. */
+    /** A building, at its place in HOUSE_KEYS * 4 + the view edge it faces, and its shadow, on the shadows sheet. On the static sheet. */
     val HOUSE = intArrayOf({arr([index[("house", k, e)] for k in range(len(HOUSES)) for e in range(4)])})
     val HOUSE_SHADOW = intArrayOf({arr([index[("house_shadow", k, e)] for k in range(len(HOUSES)) for e in range(4)])})
 
     /** The industry pieces drawn here, by the names in the base pack's industries.json layouts. */
     val PART_KEYS = listOf({", ".join(f'"{k}"' for k in PARTS)})
-    /** An industry piece, at its place in PART_KEYS * 4 + the view edge it faces, and its shadow. On the static sheet. */
+    /** An industry piece, at its place in PART_KEYS * 4 + the view edge it faces, and its shadow, on the shadows sheet. On the static sheet. */
     val PART = intArrayOf({arr([index[("part", k, e)] for k in range(len(PARTS)) for e in range(4)])})
     val PART_SHADOW = intArrayOf({arr([index[("part_shadow", k, e)] for k in range(len(PARTS)) for e in range(4)])})
 

@@ -246,7 +246,7 @@ internal class Renderer(private val world: World, private val sheets: Sheets, pr
         /** Chunks baking at once, leaving cores for the screen and the game. */
         val BAKERS = (Workers.threads - 1).coerceIn(2, 6)
         /** Bitmap memory for chunks, in bytes. */
-        const val BUDGET = 192L * 1024 * 1024
+        const val BUDGET = 128L * 1024 * 1024
 
         fun chunkTiles(level: Int) = (CHUNK_PIXELS / (2 * LEVELS[level])).toInt()
 

@@ -19,6 +19,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.State
+import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
@@ -91,7 +92,7 @@ fun App() {
 private enum class Screen { Title, NewGame, Playing }
 
 /** A window open over the screen. */
-private enum class Win { Menu, Load, Settings, Packs, Overlays, Finances }
+private enum class Win { Menu, Load, Settings, Packs, Overlays, Finances, Industries }
 
 @Composable
 private fun Root(settings: Settings) {
@@ -100,6 +101,8 @@ private fun Root(settings: Settings) {
     val sheets = remember(packed) { packed?.let { Sheets(it, scope) } }
     var screen by remember { mutableStateOf(Screen.Title) }
     var window by remember { mutableStateOf<Win?>(null) }
+    // A world point for the map to go to, set from a window and taken by the game screen.
+    val goTo = remember { mutableStateOf<Pair<Float, Float>?>(null) }
     // Saved from the menu since it was opened.
     var saved by remember { mutableStateOf(false) }
     var runner by remember { mutableStateOf<GameThread?>(null) }
@@ -204,7 +207,7 @@ private fun Root(settings: Settings) {
                 if (r == null || s == null) {
                     Box(Modifier.fillMaxSize().background(LocalColors.current.page))
                 } else {
-                    Playing(r, s, settings, onMenu = { saved = false; window = Win.Menu }, onOverlays = { window = Win.Overlays }, onFinances = { window = Win.Finances })
+                    Playing(r, s, settings, onMenu = { saved = false; window = Win.Menu }, onOverlays = { window = Win.Overlays }, onFinances = { window = Win.Finances }, goTo = goTo)
                 }
             }
         }
@@ -215,6 +218,7 @@ private fun Root(settings: Settings) {
                 onLoad = { saves = SavedGames.list(); window = Win.Load },
                 onNew = { window = null; screen = Screen.NewGame },
                 onSettings = { window = Win.Settings },
+                onIndustries = { window = Win.Industries },
                 // Back to the title screen the game is saved and stopped; Continue loads it again.
                 onTitle = {
                     runner?.let { r ->
@@ -249,6 +253,7 @@ private fun Root(settings: Settings) {
             )
             Win.Overlays -> OverlaysWindow(settings) { window = null }
             Win.Finances -> runner?.let { r -> FinanceWindow(r) { window = null } }
+            Win.Industries -> runner?.game?.world?.let { w -> IndustriesWindow(w, { x, y -> goTo.value = x to y; window = null }) { window = null } }
             null -> {}
         }
     }
@@ -256,7 +261,7 @@ private fun Root(settings: Settings) {
 
 /** A game being played: waits for the world to be made, then shows it. */
 @Composable
-private fun Playing(runner: GameThread, sheets: Sheets, settings: Settings, onMenu: () -> Unit, onOverlays: () -> Unit, onFinances: () -> Unit) {
+private fun Playing(runner: GameThread, sheets: Sheets, settings: Settings, onMenu: () -> Unit, onOverlays: () -> Unit, onFinances: () -> Unit, goTo: MutableState<Pair<Float, Float>?>) {
     var game by remember(runner) { mutableStateOf<Game?>(null) }
     // Redraws every display frame, and picks up the game once it's made.
     val frame = remember(runner) { mutableLongStateOf(0L) }
@@ -271,11 +276,11 @@ private fun Playing(runner: GameThread, sheets: Sheets, settings: Settings, onMe
         Box(Modifier.fillMaxSize().background(LocalColors.current.page))
         return
     }
-    key(runner) { GameScreen(runner, g.world, sheets, frame, settings, onMenu, onOverlays, onFinances) }
+    key(runner) { GameScreen(runner, g.world, sheets, frame, settings, onMenu, onOverlays, onFinances, goTo) }
 }
 
 @Composable
-private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: State<Long>, settings: Settings, onMenu: () -> Unit, onOverlays: () -> Unit, onFinances: () -> Unit) {
+private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: State<Long>, settings: Settings, onMenu: () -> Unit, onOverlays: () -> Unit, onFinances: () -> Unit, goTo: MutableState<Pair<Float, Float>?>) {
     val c = LocalColors.current
     // The drawings of this game's vehicles: the base pack's come with the app, the others from their packs.
     remember(world) {
@@ -293,6 +298,13 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
             focusY = i / world.width + 0.5f
         }
     }
+    // Going where a window asked to.
+    goTo.value?.let { (x, y) ->
+        view.focusX = x
+        view.focusY = y
+        goTo.value = null
+    }
+
     var paused by remember { mutableStateOf(false) }
     var speed by remember { mutableIntStateOf(0) }
     // What the strip shows, set only when it changes so the screen doesn't compose every frame.

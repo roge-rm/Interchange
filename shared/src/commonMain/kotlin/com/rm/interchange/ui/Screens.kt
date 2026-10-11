@@ -415,11 +415,12 @@ fun OverlaysWindow(settings: Settings, onClose: () -> Unit) {
 
 /** The in-game menu: save, load, start afresh, settings, or back to the title screen. */
 @Composable
-fun MenuWindow(saved: Boolean, onSave: () -> Unit, onLoad: () -> Unit, onNew: () -> Unit, onSettings: () -> Unit, onTitle: () -> Unit, onClose: () -> Unit) {
+fun MenuWindow(saved: Boolean, onSave: () -> Unit, onLoad: () -> Unit, onNew: () -> Unit, onSettings: () -> Unit, onIndustries: () -> Unit, onTitle: () -> Unit, onClose: () -> Unit) {
     Window(stringResource(Res.string.menu), onClose, Glyph.Menu) {
         BigButton(stringResource(if (saved) Res.string.saved else Res.string.save), primary = !saved, glyph = Glyph.Save, onClick = onSave)
         BigButton(stringResource(Res.string.load), glyph = Glyph.Folder, onClick = onLoad)
         BigButton(stringResource(Res.string.new_game), glyph = Glyph.Plus, onClick = onNew)
+        BigButton(stringResource(Res.string.industries), glyph = Glyph.Layers, onClick = onIndustries)
         BigButton(stringResource(Res.string.settings), glyph = Glyph.Gear, onClick = onSettings)
         BigButton(stringResource(Res.string.title_screen), glyph = Glyph.Home, onClick = onTitle)
     }
@@ -494,5 +495,21 @@ private fun MoneyGraph(history: List<LongArray>, modifier: Modifier) {
         val path = androidx.compose.ui.graphics.Path()
         for ((k, h) in history.withIndex()) if (k == 0) path.moveTo(0f, y(h[0])) else path.lineTo(k * step, y(h[0]))
         drawPath(path, c.accent, style = androidx.compose.ui.graphics.drawscope.Stroke(2.dp.toPx()))
+    }
+}
+
+/** Every industry open on the map, by kind then name, with what it made last month; a tap goes to it. */
+@Composable
+fun IndustriesWindow(world: World, onGo: (Float, Float) -> Unit, onClose: () -> Unit) {
+    val lang = languageCode()
+    val names = stringArrayResource(Res.array.cargoes)
+    Window(stringResource(Res.string.industries), onClose, Glyph.Layers) {
+        val open = world.industries.filter { !it.closed }.sortedWith(compareBy({ it.kind }, { industryName(world, it, lang) }))
+        for (ind in open) {
+            val kind = world.roster.industries[ind.kind]
+            val made = (0 until com.rm.interchange.sim.Cargo.COUNT).filter { kind.outputs and (1 shl it) != 0 }
+                .joinToString(" · ") { "${ind.madeLastMonth[it]} ${names.getOrElse(it) { "" }.lowercase()}" }
+            ListRow(Glyph.Layers, industryName(world, ind, lang), made, { onGo(ind.x + 1f, ind.y + 1f) })
+        }
     }
 }

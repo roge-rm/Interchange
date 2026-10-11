@@ -21,10 +21,15 @@ def ground(m, colour="#6e5c46", name="yard dirt"):
 
 
 def heap(m, x, y, r, h, colour, seed, name="heap"):
-    """A rough heap of loose stuff: coal, ore, slag or sawdust."""
+    """A heap of loose stuff, coal, ore or slag: a broad mound with a rough top and a few lumps on it."""
     mat = material(name + " " + colour, colour, rough=1.0)
-    obj = m.upright(x, y, 0, h, r, r * 0.12, mat, segments=20)
-    scenery.lumpy(m, obj, r * 0.25, r * 0.5, seed)
+    m.lathe(x, y, 0, [(r, 0), (r * 0.92, h * 0.25), (r * 0.7, h * 0.6), (r * 0.4, h * 0.88), (r * 0.12, h), (0.0, h * 1.02)], mat, segments=20)
+    rng = random.Random(seed)
+    for _ in range(7):
+        a = rng.uniform(0, math.tau)
+        d = rng.uniform(0.2, 0.75) * r
+        z = h * (1 - d / r) * 0.9
+        scenery.blob(m, x + d * math.cos(a), y + d * math.sin(a), z, r * rng.uniform(0.12, 0.2), mat, seed * 11 + _, squash=0.6)
 
 
 def logs(m, x0, x1, y, z, r, n, mat):
