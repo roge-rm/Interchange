@@ -120,7 +120,7 @@ internal class ChunkBaker(
         if (pieces == 0) {
             if (kind != Atlas.WATER && kind != Atlas.SAND) {
                 trees(wx, wy, shadow)
-                if (!shadow) decor(wx, wy, kind)
+                decor(wx, wy, kind, shadow)
             }
             return
         }
@@ -327,8 +327,8 @@ internal class ChunkBaker(
         for (sp in spots) standing(cells[kind * Atlas.TREE_LOOKS + sp[3].toInt() % Atlas.TREE_LOOKS], sp[1], sp[2])
     }
 
-    /** Now and then a boulder, a shrub or a clump of tall grass, as suits the ground. Only for looks. */
-    private fun decor(wx: Int, wy: Int, kind: Int) {
+    /** Now and then a boulder, a shrub or a clump of tall grass, as suits the ground, or its shadow. Only for looks. */
+    private fun decor(wx: Int, wy: Int, kind: Int, shadow: Boolean) {
         if (Trees.count(world.trees[world.index(wx, wy)].toInt()) > 0) return
         val d = LandPainter.dice(wx, wy, 11)
         val roll = d and 255
@@ -343,7 +343,8 @@ internal class ChunkBaker(
         if (what < 0) return
         val tx = wx + 0.25f + ((d shr 8) and 255) / 255f * 0.5f
         val ty = wy + 0.25f + ((d shr 16) and 255) / 255f * 0.5f
-        standing(Atlas.DECOR[what * Atlas.DECOR_LOOKS + (d ushr 24) % Atlas.DECOR_LOOKS], tx, ty)
+        val cells = if (shadow) Atlas.DECOR_SHADOW else Atlas.DECOR
+        standing(cells[what * Atlas.DECOR_LOOKS + (d ushr 24) % Atlas.DECOR_LOOKS], tx, ty)
     }
 
     // ---- view helpers ---------------------------------------------------------------------

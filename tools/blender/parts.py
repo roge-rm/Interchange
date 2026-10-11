@@ -23,18 +23,51 @@ def hexcol(h):
     return (lin(int(h[1:3], 16)), lin(int(h[3:5], 16)), lin(int(h[5:7], 16)), 1.0)
 
 
-def material(name, colour, metal=0.0, rough=0.5, clearcoat=0.0):
-    key = (name, colour, metal, rough, clearcoat)
+def material(name, colour, metal=0.0, rough=0.5, clearcoat=0.0, grime=0.45):
+    """A material with a little life in it: the colour wanders a few percent, the surface has a fine grain, and
+    crevices darken with grime as real paint and metal do. grime is how dark the crevices go."""
+    key = (name, colour, metal, rough, clearcoat, grime)
     if key in _materials:
         return _materials[key]
     m = bpy.data.materials.new(name)
     m.use_nodes = True
-    p = m.node_tree.nodes["Principled BSDF"]
-    p.inputs["Base Color"].default_value = hexcol(colour)
+    nt = m.node_tree
+    p = nt.nodes["Principled BSDF"]
     p.inputs["Metallic"].default_value = metal
     p.inputs["Roughness"].default_value = rough
     if clearcoat:
         p.inputs["Coat Weight"].default_value = clearcoat
+    base = hexcol(colour)
+    # Colour wandering a few percent over the surface.
+    noise = nt.nodes.new("ShaderNodeTexNoise")
+    noise.inputs["Scale"].default_value = 220.0
+    noise.inputs["Detail"].default_value = 6.0
+    tint = nt.nodes.new("ShaderNodeValToRGB")
+    tint.color_ramp.elements[0].color = tuple(v * 0.9 for v in base[:3]) + (1,)
+    tint.color_ramp.elements[1].color = tuple(min(1.0, v * 1.08) for v in base[:3]) + (1,)
+    nt.links.new(noise.outputs["Fac"], tint.inputs["Fac"])
+    # Grime in the crevices, from ambient occlusion.
+    ao = nt.nodes.new("ShaderNodeAmbientOcclusion")
+    ao.inputs["Distance"].default_value = 0.02
+    ao.samples = 8
+    dirty = nt.nodes.new("ShaderNodeMix")
+    dirty.data_type = "RGBA"
+    dirty.blend_type = "MULTIPLY"
+    nt.links.new(tint.outputs["Color"], dirty.inputs[6])
+    grime_ramp = nt.nodes.new("ShaderNodeValToRGB")
+    grime_ramp.color_ramp.elements[0].color = (1 - grime, 1 - grime, 1 - grime, 1)
+    grime_ramp.color_ramp.elements[1].color = (1, 1, 1, 1)
+    nt.links.new(ao.outputs["AO"], grime_ramp.inputs["Fac"])
+    nt.links.new(grime_ramp.outputs["Color"], dirty.inputs[7])
+    dirty.inputs[0].default_value = 1.0
+    nt.links.new(dirty.outputs[2], p.inputs["Base Color"])
+    # A fine grain to the surface.
+    grain = nt.nodes.new("ShaderNodeTexNoise")
+    grain.inputs["Scale"].default_value = 900.0
+    bump = nt.nodes.new("ShaderNodeBump")
+    bump.inputs["Strength"].default_value = 0.08
+    nt.links.new(grain.outputs["Fac"], bump.inputs["Height"])
+    nt.links.new(bump.outputs["Normal"], p.inputs["Normal"])
     _materials[key] = m
     return m
 

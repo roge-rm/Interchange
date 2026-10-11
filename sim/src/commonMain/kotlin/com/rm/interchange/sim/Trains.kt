@@ -261,7 +261,8 @@ private fun World.freeAhead(t: Train): Pair<Int, Stop> {
             val nx = nextFrom(t, cur, at)
             if (nx < 0 || stationTiles[stepTile(nx)] != target) return free to Stop.STATION
         }
-        if (target == -1 && depotTiles[tile] == t.depot) return free to Stop.DEPOT
+        // Into the depot: it runs on in past the end of the tile until its last car is inside.
+        if (target == -1 && depotTiles[tile] == t.depot) return free + t.length to Stop.DEPOT
         val next = nextFrom(t, cur, at)
         if (next < 0) return free to Stop.END
         val nt = stepTile(next)
@@ -322,6 +323,8 @@ private fun World.advance(t: Train, move: Int, free: Int) {
     if (move <= 0) return
     t.nose += minOf(move, free)
     while (t.nose > stepLength(t.steps.last())) {
+        // Running into its depot, the nose goes on past the end of the tile, into the shed.
+        if (t.toDepot && depotTiles[stepTile(t.steps.last())] == t.depot) break
         val next = nextFrom(t, t.steps.last(), t.routeAt)
         if (next < 0) {
             t.nose = stepLength(t.steps.last())

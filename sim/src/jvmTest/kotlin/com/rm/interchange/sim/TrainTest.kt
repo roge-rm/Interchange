@@ -119,4 +119,27 @@ class TrainTest {
         // Once turned, the nose is where the last car was, so within a train's length of either end, never out on the line.
         assertTrue(turnedAt.all { it <= 7 || it >= 16 }, "turned at $turnedAt")
     }
+
+    @Test
+    fun aTrainSentToItsDepotRunsInCarByCar() {
+        val w = line()
+        w.apply(Command.BuyTrain(0, 0, 0, 18, 3))
+        val t = w.trains[0]!!
+        w.apply(Command.TrainOrder(0, 0, Command.TrainOrder.ORDERS, intArrayOf(1)))
+        w.apply(Command.TrainOrder(0, 0, Command.TrainOrder.START_STOP))
+        w.run(1_500)
+        assertTrue(!t.inDepot)
+        w.apply(Command.TrainOrder(0, 0, Command.TrainOrder.TO_DEPOT))
+        // While it runs in, the cars still showing go from all of them to none, one at a time.
+        var shown = t.cars
+        var fewer = 0
+        w.run(8_000) {
+            if (t.inDepot) return@run
+            val now = w.view().vehicles.count
+            if (now < shown) fewer++
+            shown = now
+        }
+        assertTrue(t.inDepot, "never got into the depot")
+        assertTrue(fewer >= 2, "cars should go in one at a time, went $fewer times")
+    }
 }

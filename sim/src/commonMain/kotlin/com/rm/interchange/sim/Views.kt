@@ -48,6 +48,9 @@ class TrainView(
 /** A station as the screen shows it. */
 class StationView(val id: Int, val name: String, val platforms: Int)
 
+/** A depot as the screen shows it, to draw over the trains going in and out of it. */
+class DepotView(val tile: Int, val edge: Int)
+
 /** A signal as the screen shows it: where, which way and whether it shows red. */
 class SignalView(val tile: Int, val piece: Int, val facing: Int, val red: Boolean)
 
@@ -57,6 +60,7 @@ class WorldView(
     val trains: List<TrainView>,
     val stations: List<StationView>,
     val signals: List<SignalView>,
+    val depots: List<DepotView>,
 )
 
 fun World.view(): WorldView {
@@ -69,7 +73,8 @@ fun World.view(): WorldView {
             if (i < 0) continue
             val s = t.steps[i]
             val tile = stepTile(s)
-            if (depotTiles.containsKey(tile)) continue
+            // A car that's run on in past the end of its depot's tile is inside the shed.
+            if ((at and 0xffffffffL).toInt() > stepLength(s) && depotTiles.containsKey(tile)) continue
             val along = (at and 0xffffffffL).toFloat() / stepLength(s)
             val a = stepEntry(s)
             val b = stepExit(s)
@@ -102,7 +107,8 @@ fun World.view(): WorldView {
         // Red while a train is in the block the signal guards: the one its piece is in.
         SignalView(tile, piece, Signals.facing(s), blockHasTrain(tile, piece))
     }
-    return WorldView(VehicleView(tick, cars.toFloatArray()), trainViews, stationViews, signalViews)
+    val depotViews = depots.filterNotNull().map { DepotView(it.tile, it.edge) }
+    return WorldView(VehicleView(tick, cars.toFloatArray()), trainViews, stationViews, signalViews, depotViews)
 }
 
 /** The heading, in eighths from along x towards y, of a step of ([dx], [dy]). */

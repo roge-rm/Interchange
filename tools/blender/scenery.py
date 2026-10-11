@@ -213,3 +213,131 @@ def signal(m, red):
     lamp = material("lamp red" if red else "lamp green", "#ff3a2a" if red else "#3aff5a", rough=0.2)
     m.box(0.008, 0.03, -0.014, 0.014, 3.55, 3.75, black, 0.002)
     m.box(0.012, 0.026, 0.0135, 0.0155, 3.6, 3.7, lamp)
+
+
+# ---- track --------------------------------------------------------------------------------
+#
+# Built in the tile's own terms, not about its middle: the piece runs between the middles of two of the tile's
+# edges, in game (u, v), lifted to the shape it lies on. Rail ends land exactly on the edges, so pieces join up.
+
+EDGE_MID = {"XM": (0.0, 0.5), "XP": (1.0, 0.5), "YM": (0.5, 0.0), "YP": (0.5, 1.0)}
+PIECE_EDGES = {"X": ("XM", "XP"), "Y": ("YM", "YP"), "N": ("YM", "XM"), "E": ("YM", "XP"), "S": ("XP", "YP"), "W": ("XM", "YP")}
+
+
+def _height(offs, u, v):
+    t, r, b, l = offs
+    return (t * (1 - u) + r * u) * (1 - v) + (l * (1 - u) + b * u) * v
+
+
+def _strip(m, a, b, offs, half_top, half_bottom, z0, z1, mat, t0=0.0, t1=1.0):
+    """A prism along a piece from t0 to t1, its cross section a trapezoid half_bottom wide at z0 and half_top at z1 steps above the ground."""
+    ax, ay = a
+    bx, by = b
+    length = math.hypot(bx - ax, by - ay)
+    nx, ny = -(by - ay) / length, (bx - ax) / length
+    sx, sy = ax + (bx - ax) * t0, ay + (by - ay) * t0
+    ex, ey = ax + (bx - ax) * t1, ay + (by - ay) * t1
+    bm = bmesh.new()
+
+    def vert(u, v, lift):
+        return bm.verts.new(rig.game(u, v, _height(offs, u, v) + lift))
+
+    ring = []
+    for (u, v) in ((sx, sy), (ex, ey)):
+        ring.append([
+            vert(u + nx * half_bottom, v + ny * half_bottom, z0),
+            vert(u + nx * half_top, v + ny * half_top, z1),
+            vert(u - nx * half_top, v - ny * half_top, z1),
+            vert(u - nx * half_bottom, v - ny * half_bottom, z0),
+        ])
+    s, e = ring
+    bm.faces.new(list(reversed(s)))
+    bm.faces.new(e)
+    for i in range(4):
+        j = (i + 1) % 4
+        bm.faces.new((s[i], s[j], e[j], e[i]))
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+    return m._mesh("strip", bm, mat)
+
+
+def gravel():
+    key = ("gravel",)
+    if key in parts._materials:
+        return parts._materials[key]
+    mat = bpy.data.materials.new("ballast")
+    mat.use_nodes = True
+    nt = mat.node_tree
+    p = nt.nodes["Principled BSDF"]
+    p.inputs["Roughness"].default_value = 0.95
+    v = nt.nodes.new("ShaderNodeTexVoronoi")
+    v.inputs["Scale"].default_value = 700.0
+    ramp = nt.nodes.new("ShaderNodeValToRGB")
+    ramp.color_ramp.elements[0].color = parts.hexcol("#6a645a")
+    ramp.color_ramp.elements[1].color = parts.hexcol("#a8a094")
+    nt.links.new(v.outputs["Distance"], ramp.inputs["Fac"])
+    nt.links.new(ramp.outputs["Color"], p.inputs["Base Color"])
+    bump = nt.nodes.new("ShaderNodeBump")
+    bump.inputs["Strength"].default_value = 0.6
+    nt.links.new(v.outputs["Distance"], bump.inputs["Height"])
+    nt.links.new(bump.outputs["Normal"], p.inputs["Normal"])
+    parts._materials[key] = mat
+    return mat
+
+
+def track(m, piece, shape):
+    offs = [(shape >> i) & 1 for i in range(4)]
+    a = EDGE_MID[PIECE_EDGES[piece][0]]
+    b = EDGE_MID[PIECE_EDGES[piece][1]]
+    length = math.hypot(b[0] - a[0], b[1] - a[1])
+    tie = material("tie", "#4e3626", rough=0.9)
+    plate = material("tie plate", "#3e3c3a", metal=0.6, rough=0.6)
+    rail = material("rail", "#6a6662", metal=0.9, rough=0.45)
+    head = material("rail head", "#d8d4cc", metal=1.0, rough=0.2)
+    _strip(m, a, b, offs, 0.17, 0.23, 0.0, 0.14, gravel())
+    ties = max(4, round(length * 9))
+    for i in range(ties):
+        t = (i + 0.5) / ties
+        dt = 0.024 / length
+        _strip(m, a, b, offs, 0.165, 0.165, 0.12, 0.2, tie, t - dt, t + dt)
+        for side in (-1, 1):
+            # Plates under each rail, a touch wider than it.
+            _plate_strip(m, a, b, offs, side * 0.095, 0.022, 0.2, 0.225, plate, t - dt * 0.8, t + dt * 0.8)
+    for side in (-1, 1):
+        _plate_strip(m, a, b, offs, side * 0.095, 0.012, 0.225, 0.26, rail, 0.0, 1.0)
+        _plate_strip(m, a, b, offs, side * 0.095, 0.004, 0.26, 0.36, rail, 0.0, 1.0)
+        _plate_strip(m, a, b, offs, side * 0.095, 0.009, 0.36, 0.42, head, 0.0, 1.0)
+
+
+def _plate_strip(m, a, b, offs, across, half, z0, z1, mat, t0, t1):
+    """A thin strip along a piece, set across it by across tiles, half tiles wide each side."""
+    ax, ay = a
+    bx, by = b
+    length = math.hypot(bx - ax, by - ay)
+    nx, ny = -(by - ay) / length, (bx - ax) / length
+    return _strip(m, (ax + nx * across, ay + ny * across), (bx + nx * across, by + ny * across), offs, half, half, z0, z1, mat, t0, t1)
+
+
+# ---- decorations ----------------------------------------------------------------------------
+
+def decor(m, kind, look):
+    rng = random.Random(f"{kind}{look}")
+    if kind == "boulder":
+        granite = material("granite", "#8a807a", rough=0.85)
+        for k in range(rng.randint(1, 3)):
+            x, y = rng.uniform(-0.1, 0.1), rng.uniform(-0.1, 0.1)
+            r = rng.uniform(0.06, 0.11)
+            bm = bmesh.new()
+            bmesh.ops.create_icosphere(bm, subdivisions=2, radius=r)
+            bmesh.ops.scale(bm, vec=(1.0, rng.uniform(0.7, 1.2), 0.65), verts=bm.verts)
+            bmesh.ops.translate(bm, vec=(x, y, r * 0.3), verts=bm.verts)
+            obj = m._mesh("boulder", bm, granite)
+            lumpy(m, obj, r * 0.3, r * 0.8, look * 7 + k)
+    elif kind == "shrub":
+        green = leafy("shrub leaves", "#2e4a20", "#5a7a36")
+        for k in range(rng.randint(6, 9)):
+            blob(m, rng.uniform(-0.08, 0.08), rng.uniform(-0.08, 0.08), rng.uniform(0.35, 0.9), rng.uniform(0.055, 0.085), green, look * 9 + k)
+    else:
+        blades = leafy("tall grass", "#4a6a2a", "#a0a456")
+        for k in range(rng.randint(30, 45)):
+            x, y = rng.uniform(-0.09, 0.09), rng.uniform(-0.09, 0.09)
+            m.upright(x, y, 0, rng.uniform(1.4, 2.6), 0.009, 0.0, blades, segments=4)

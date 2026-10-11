@@ -21,6 +21,10 @@ import rig  # noqa: E402
 import scenery  # noqa: E402
 
 TREES = ["spruce", "pine", "fir", "maple", "birch", "aspen"]
+DECOR = ["boulder", "shrub", "tall_grass"]
+PIECES = ["X", "Y", "N", "E", "S", "W"]
+# The shapes each piece lies on: flat, and for the straight ones the slopes running along them.
+TRACK_SHAPES = {"X": [0, 6, 9], "Y": [0, 3, 12]}
 EDGES = ["XM", "XP", "YM", "YP"]
 
 
@@ -31,7 +35,7 @@ def shadow_catcher():
     return plane
 
 
-def shot(out, name, build, samples=48, shadow=True):
+def shot(out, name, build, samples=48, shadow=True, placed=True):
     shadow_name = name.replace(".png", "_shadow.png")
     if (out / name).exists() and (not shadow or (out / shadow_name).exists()):
         return
@@ -41,8 +45,10 @@ def shot(out, name, build, samples=48, shadow=True):
     catcher = shadow_catcher()
     model = parts.Model(name)
     build(model)
-    model.place(0)
+    if placed:
+        model.place(0)
     if not shadow:
+        catcher.hide_render = True
         rig.render(str(out / name))
         return
     # The thing alone: nothing to catch its shadow.
@@ -67,6 +73,13 @@ def main():
         shot(out, f"depot_{edge}.png", lambda m, edge=edge: scenery.depot(m, edge))
     for red in (0, 1):
         shot(out, f"signal_{red}.png", lambda m, red=red: scenery.signal(m, red == 1), shadow=False)
+    for kind in DECOR:
+        for look in range(3):
+            shot(out, f"decor_{kind}_{look}.png", lambda m, kind=kind, look=look: scenery.decor(m, kind, look))
+    # Track is built in the tile's own terms, already in place, and lies on the ground so needs no shadow apart.
+    for p, piece in enumerate(PIECES):
+        for shape in TRACK_SHAPES.get(piece, [0]):
+            shot(out, f"track_{piece}_{shape}.png", lambda m, piece=piece, shape=shape: scenery.track(m, piece, shape), shadow=False, placed=False)
 
 
 main()

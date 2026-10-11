@@ -38,7 +38,7 @@ import vehicles  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
 RENDERS = ROOT / "build/renders"
-# Trees, platforms, the engine house and signals rendered by tools/blender/render_scenery.py.
+# Trees, platforms, the engine house, signals, track and decorations rendered by tools/blender/render_scenery.py.
 SCENERY = RENDERS / "scenery"
 OUT_PNG = ROOT / "shared/src/commonMain/composeResources/files"
 OUT_KT = ROOT / "shared/src/commonMain/kotlin/com/rm/interchange/map/Atlas.kt"
@@ -87,7 +87,7 @@ for s in SURFACES:
             JOBS.append(("static", ("walls", g, s), lambda g=g, s=s: track.walls(g, s), None))
 for p, piece in enumerate(track.PIECES):
     for s in TRACK_SURFACES.get(piece, [0]):
-        JOBS.append(("static", ("track", p, s), lambda piece=piece, s=s: track.track(piece, s), None))
+        JOBS.append(("static", ("track", p, s), lambda piece=piece, s=s: scenery(f"track_{piece}_{s}.png", lambda: track.track(piece, s)), None))
 # Platforms and the engine house over their track, each with its shadow apart so the game can lay shadows first.
 for a in (0, 1):
     JOBS.append(("static", ("station", a), lambda a=a: over(track.track("X" if a == 0 else "Y", 0), scenery(f"station_{a}.png", lambda: track.station(a == 0))), None))
@@ -101,9 +101,13 @@ for t, kind in enumerate(ground.TREES):
         JOBS.append(("static", ("tree_shadow", t, look), lambda kind=kind, look=look: scenery(f"tree_{kind}_{look}_shadow.png", base.cell), None))
 for d, kind in enumerate(ground.DECOR):
     for look in range(ground.DECOR_LOOKS):
-        JOBS.append(("static", ("decor", d, look), lambda kind=kind, look=look: ground.decor(kind, look), None))
+        JOBS.append(("static", ("decor", d, look), lambda kind=kind, look=look: scenery(f"decor_{kind}_{look}.png", lambda: ground.decor(kind, look)), None))
+        JOBS.append(("static", ("decor_shadow", d, look), lambda kind=kind, look=look: scenery(f"decor_{kind}_{look}_shadow.png", base.cell), None))
 for red in (0, 1):
     JOBS.append(("signals", ("signal", red), lambda red=red: scenery(f"signal_{red}.png", lambda: track.signal(red == 1)), None))
+# The engine house again, drawn over trains on its tile so they show going in through the doors.
+for e, edge in enumerate(EDGES):
+    JOBS.append(("signals", ("depot_over", e), lambda edge=edge: scenery(f"depot_{edge}.png", lambda: track.depot(edge)), None))
 
 
 def rendered_slope(key, h, way, build):
@@ -230,6 +234,7 @@ def main():
     trees = [index[("tree", t, lk)] for t in range(len(ground.TREES)) for lk in range(ground.TREE_LOOKS)]
     tree_shadows = [index[("tree_shadow", t, lk)] for t in range(len(ground.TREES)) for lk in range(ground.TREE_LOOKS)]
     decor = [index[("decor", d, lk)] for d in range(len(ground.DECOR)) for lk in range(ground.DECOR_LOOKS)]
+    decor_shadows = [index[("decor_shadow", d, lk)] for d in range(len(ground.DECOR)) for lk in range(ground.DECOR_LOOKS)]
     # Each vehicle's sixteen sprites in its own sheet, in a fixed order: eight headings, then the slopes.
     vehicle_rects = []
     for m, (key, _, _) in enumerate(vehicles.ROSTER):
@@ -315,11 +320,15 @@ object Atlas {{
     val TREE_SHADOW = intArrayOf({arr(tree_shadows)})
 
     const val DECOR_LOOKS = {ground.DECOR_LOOKS}
-    /** Boulders, shrubs and tall grass, at kind * DECOR_LOOKS + look. On the static sheet. */
+    /** Boulders, shrubs and tall grass, at kind * DECOR_LOOKS + look, and their shadows. On the static sheet. */
     val DECOR = intArrayOf({arr(decor)})
+    val DECOR_SHADOW = intArrayOf({arr(decor_shadows)})
 
     /** A signal showing clear (0) or stop (1). On the signals sheet. */
     val SIGNAL = intArrayOf({index[("signal", 0)]}, {index[("signal", 1)]})
+
+    /** The engine house with its doors at view edge XM, XP, YM or YP, drawn over trains on its tile. On the signals sheet. */
+    val DEPOT_OVER = intArrayOf({", ".join(str(index[("depot_over", e)]) for e in range(4))})
 }}
 """)
     consts = "\n".join(f"    const val {key.upper()} = {m}" for m, (key, _, _) in enumerate(vehicles.ROSTER))

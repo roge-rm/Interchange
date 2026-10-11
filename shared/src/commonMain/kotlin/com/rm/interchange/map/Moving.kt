@@ -25,6 +25,20 @@ internal fun DrawScope.drawMoving(world: World, view: View, sheets: Sheets, movi
         val p = signalPoint(world, s.tile, s.piece, s.facing)
         add(items, world, view, p.first, p.second, (if (s.red) Atlas.SIGNAL[1] else Atlas.SIGNAL[0]).toFloat())
     }
+    // Engine houses go just in front of everything on their own tile and behind anything on the tile in front.
+    for (d in moving.now.depots) {
+        val wx = d.tile % world.width
+        val wy = d.tile / world.width
+        val vx = view.toViewX(wx + 0.5f, wy + 0.5f)
+        val vy = view.toViewY(wx + 0.5f, wy + 0.5f)
+        val sx = view.screenX(vx - 0.5f, vy - 0.5f, size.width)
+        val base = world.heightAt(wx, wy).toFloat()
+        // The sprite is anchored on the tile's top corner, half a tile above where a standing thing's would be.
+        val sy = view.screenY(vx - 0.5f, vy - 0.5f, base, size.height) + view.halfHeight
+        val margin = view.halfWidth * 3
+        if (sx < -margin || sx > size.width + margin || sy < -margin || sy > size.height + margin * 2) continue
+        items += floatArrayOf(vx + vy + DEPOT_DEPTH, sx, sy, Atlas.DEPOT_OVER[painter.viewEdge(d.edge)].toFloat(), -1f)
+    }
     val v = moving.now.vehicles
     val before = moving.before?.vehicles
     // Where each wagon was on the tick before, by its key.
@@ -47,8 +61,12 @@ internal fun DrawScope.drawMoving(world: World, view: View, sheets: Sheets, movi
         // On a slope, the straight headings have drawings tilted up or down: sprites 8 on in the vehicle's sheet.
         val slope = v.slope(i)
         val cell = if (slope != 0 && heading % 2 == 0) 8 + heading / 2 * 2 + (if (slope > 0) 0 else 1) else heading
-        // Sorted by its nearest end rather than its middle, so a long car in front covers what's behind it.
-        val reach = v.length(i) / 2 * NEAR[heading]
+        // Sorted by its nearest end rather than its middle, so a long car in front covers what's behind it; but a car in
+        // an engine house stays behind the house.
+        var reach = v.length(i) / 2 * NEAR[heading]
+        if (world.depotTiles.containsKey(world.index(x.toInt().coerceIn(0, world.width - 1), y.toInt().coerceIn(0, world.height - 1)))) {
+            reach = minOf(reach, DEPOT_DEPTH - 0.1f - (view.toViewX(x, y) + view.toViewY(x, y) - (view.toViewX(x.toInt() + 0.5f, y.toInt() + 0.5f) + view.toViewY(x.toInt() + 0.5f, y.toInt() + 0.5f))))
+        }
         add(items, world, view, x, y, cell.toFloat(), reach, v.sprite(i))
     }
     items.sortBy { it[0] }
@@ -65,6 +83,9 @@ internal fun DrawScope.drawMoving(world: World, view: View, sheets: Sheets, movi
         }
     }
 }
+
+/** How far in front of its tile's middle an engine house is drawn, in view depth: past anything on the tile, short of the tile in front. */
+private const val DEPOT_DEPTH = 0.95f
 
 /** How much nearer the camera a car's front end is than its middle, per tile of half length, by heading in the view. */
 private val NEAR = floatArrayOf(1f, 1.414f, 1f, 0f, 1f, 1.414f, 1f, 0f)

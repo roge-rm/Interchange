@@ -64,6 +64,14 @@ class LandPainter(private val world: World, private val view: View, private val 
         )
     }
 
+    /** Where a world tile edge shows in this view. */
+    fun viewEdge(edge: Int): Int = when (view.turn) {
+        0 -> edge
+        1 -> when (edge) { Track.XM -> Track.YM; Track.XP -> Track.YP; Track.YM -> Track.XP; else -> Track.XM }
+        2 -> Track.opposite(edge)
+        else -> when (edge) { Track.YM -> Track.XM; Track.YP -> Track.XP; Track.XM -> Track.YP; else -> Track.YM }
+    }
+
     /** A world heading in eighths, as it shows in this view. */
     fun viewHeading(h: Int): Int = (h + 2 * view.turn) % 8
 
