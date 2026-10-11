@@ -346,6 +346,15 @@ fun weekdayDate(day: Int, startYear: Int): String {
     return stringResource(Res.string.weekday_date, days.getOrElse(com.rm.interchange.sim.Calendar.weekday(startYear, day)) { "" }, date(day, startYear))
 }
 
+/** A message over the map under the strip, which does [onClick] when tapped. */
+@Composable
+fun MessageChip(text: String, onClick: () -> Unit) {
+    val c = LocalColors.current
+    ChromeBox(Modifier.clickable(role = Role.Button, onClick = onClick)) {
+        Text(text, color = c.text, fontSize = 14.sp, modifier = Modifier.padding(horizontal = 14.dp, vertical = 9.dp))
+    }
+}
+
 /** A pill that's on or off, for picking one of a few things. */
 @Composable
 fun Chip(label: String, on: Boolean, enabled: Boolean = true, onClick: () -> Unit) {

@@ -62,6 +62,8 @@ import com.rm.interchange.sim.Track
 import com.rm.interchange.sim.PAVED
 import com.rm.interchange.sim.houseOf
 import com.rm.interchange.sim.Industry
+import com.rm.interchange.sim.News
+import androidx.compose.ui.layout.onSizeChanged
 import com.rm.interchange.sim.industryAt
 import com.rm.interchange.sim.approvalLevel
 import com.rm.interchange.map.rememberTownLabels
@@ -410,6 +412,7 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
         // On an upright phone with its camera in the top edge, the strip goes up round it: if each camera is small
         // enough to leave room for the buttons, and short enough to stay within the strip's first row.
         val density = LocalDensity.current
+        var stripHeight by remember { mutableIntStateOf(0) }
         val windowPx = with(density) { maxWidth.toPx() }
         val rowPx = with(density) { CAMERA_ROW.dp.toPx() }
         val deepestPx = with(density) { (CAMERA_ROW + CAMERA_DEEPER).dp.toPx() }
@@ -442,8 +445,27 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
                     .windowInsetsPadding(safe.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal))
                     .padding(gap)
                     .then(if (twoLines) Modifier.fillMaxWidth() else Modifier)
-            },
+            }.onSizeChanged { stripHeight = it.height },
         )
+
+        // Under the strip, the latest news; a tap goes to where it happened.
+        worldView.value?.news?.lastOrNull()?.let { n ->
+            val ind = world.industries.getOrNull(n.about)
+            val text = newsText(world, n)
+            Box(
+                Modifier.align(Alignment.TopCenter)
+                    .padding(top = with(density) { stripHeight.toDp() } + gap)
+                    .windowInsetsPadding(safe.only(WindowInsetsSides.Horizontal))
+                    .padding(horizontal = gap),
+            ) {
+                MessageChip(text) {
+                    if (ind != null) {
+                        view.focusX = ind.x + 1f
+                        view.focusY = ind.y + 1f
+                    }
+                }
+            }
+        }
 
         fun pickGroup(g: ToolGroup) {
             if (tool.group != g) lastTool[tool.group] = tool
@@ -595,6 +617,22 @@ private fun IndustryCard(world: World, ind: Industry, where: String, onClose: ()
         }
     }
     InfoCard(industryName(world, ind, lang), lines, onClose, modifier)
+}
+
+/** What a piece of news says. */
+@Composable
+private fun newsText(world: World, n: News): String {
+    val ind = world.industries.getOrNull(n.about) ?: return ""
+    val name = industryName(world, ind, languageCode())
+    return stringResource(
+        when (n.kind) {
+            News.INDUSTRY_OPENS -> Res.string.news_opens
+            News.INDUSTRY_CLOSES -> Res.string.news_closes
+            News.PRODUCTION_UP -> Res.string.news_more
+            else -> Res.string.news_less
+        },
+        name,
+    )
 }
 
 /**

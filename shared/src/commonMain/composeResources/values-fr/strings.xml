@@ -220,4 +220,10 @@
     <string name="takes">Accepte : %1$s</string>
     <string name="brought_last_month">Reçu le mois dernier : %1$d</string>
     <string name="industries">Industries</string>
+
+    <!-- Nouvelles -->
+    <string name="news_opens">Ouverture : %1$s</string>
+    <string name="news_closes">Fermeture : %1$s</string>
+    <string name="news_more">%1$s produit davantage</string>
+    <string name="news_less">%1$s produit moins</string>
 </resources>

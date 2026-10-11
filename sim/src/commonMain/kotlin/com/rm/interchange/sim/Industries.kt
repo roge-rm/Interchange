@@ -34,6 +34,18 @@ class Industry(
     /** What's been brought this month and last, all cargo together. */
     var broughtThisMonth = 0
     var broughtLastMonth = 0
+    /** Shut down: its tiles are cleared and it makes and takes nothing. Kept so ids stay put. */
+    var closed = false
+}
+
+/** Something that happened in the world worth telling the player, by kind, with the industry or town it's about. */
+class News(val kind: Int, val about: Int, val tick: Long) {
+    companion object {
+        const val INDUSTRY_OPENS = 0
+        const val INDUSTRY_CLOSES = 1
+        const val PRODUCTION_UP = 2
+        const val PRODUCTION_DOWN = 3
+    }
 }
 
 /** An industry's size on the map, its layout turned by [turn]. */
@@ -124,7 +136,7 @@ private fun World.industryFits(kind: IndustryKind, x: Int, y: Int, w: Int, h: In
     }
     // Most of it on the ground it needs.
     if (suits * 2 < w * h) return false
-    for (o in industries) if (o.x - INDUSTRY_SPACING < x + w && x - INDUSTRY_SPACING < o.x + roster.industries[o.kind].across(o.turn) &&
+    for (o in industries) if (!o.closed && o.x - INDUSTRY_SPACING < x + w && x - INDUSTRY_SPACING < o.x + roster.industries[o.kind].across(o.turn) &&
         o.y - INDUSTRY_SPACING < y + h && y - INDUSTRY_SPACING < o.y + roster.industries[o.kind].along(o.turn)) return false
     for (t in towns) if (kotlin.math.abs(t.x - (x + w / 2)) < TOWN_CLEARANCE && kotlin.math.abs(t.y - (y + h / 2)) < TOWN_CLEARANCE) return false
     return true
@@ -138,6 +150,7 @@ private fun World.industryFits(kind: IndustryKind, x: Int, y: Int, w: Int, h: In
  */
 internal fun World.industriesDay(made: HashMap<Int, IntArray>) {
     for (ind in industries) {
+        if (ind.closed) continue
         val kind = roster.industries[ind.kind]
         val out = IntArray(Cargo.COUNT)
         if (kind.secondary) {
@@ -172,9 +185,32 @@ internal fun World.industriesDay(made: HashMap<Int, IntArray>) {
     }
 }
 
-/** The first of each month: what each industry made and moved last month, for the screen. */
+/**
+ * The first of each month: what each industry made and moved last month, and
+ * now and then a change. A primary industry well served tends to make more,
+ * one poorly served less, and one that's fallen as far as it can closes. Now
+ * and then a new one opens somewhere.
+ */
 internal fun World.industriesMonth() {
+    val year = Calendar.year(startYear, day)
     for (ind in industries) {
+        if (ind.closed) continue
+        val kind = roster.industries[ind.kind]
+        if (!kind.secondary && rng.below(CHANGE_ODDS) == 0) {
+            val made = ind.made.sum()
+            val share = if (made == 0) 0 else ind.moved.sum() * 100 / made
+            // Well served it's likelier to grow, badly served likelier to shrink.
+            val up = rng.below(100) < 25 + share / 2
+            if (up && ind.level < MAX_LEVEL) {
+                ind.level = minOf(MAX_LEVEL, ind.level * 3 / 2)
+                news += News(News.PRODUCTION_UP, ind.id, tick)
+            } else if (!up) {
+                if (ind.level <= MIN_LEVEL || year >= kind.until) closeIndustry(ind) else {
+                    ind.level = maxOf(MIN_LEVEL, ind.level * 2 / 3)
+                    news += News(News.PRODUCTION_DOWN, ind.id, tick)
+                }
+            }
+        }
         ind.made.copyInto(ind.madeLastMonth)
         ind.moved.copyInto(ind.movedLastMonth)
         ind.made.fill(0)
@@ -182,8 +218,45 @@ internal fun World.industriesMonth() {
         ind.broughtLastMonth = ind.broughtThisMonth
         ind.broughtThisMonth = 0
     }
+    // New industries, more often on bigger maps.
+    if (settings.industries > 0 && rng.below(OPEN_ODDS * 256 * 256 / (width * height).coerceAtLeast(1) + 1) == 0) {
+        val kinds = roster.industries.filter { year >= it.from && year < it.until && it.weight(settings.region) > 0 }
+        if (kinds.isNotEmpty()) {
+            val total = kinds.sumOf { it.weight(settings.region) }
+            var roll = rng.below(total)
+            var i = 0
+            while (roll >= kinds[i].weight(settings.region)) roll -= kinds[i++].weight(settings.region)
+            if (placeIndustry(kinds[i])) news += News(News.INDUSTRY_OPENS, industries.last().id, tick)
+        }
+    }
+    news.removeAll { tick - it.tick > NEWS_TICKS }
 }
+
+/** Shuts [ind] down: its tiles cleared, its stations no longer reaching it. */
+internal fun World.closeIndustry(ind: Industry) {
+    ind.closed = true
+    val kind = roster.industries[ind.kind]
+    for (ty in ind.y until ind.y + kind.along(ind.turn)) for (tx in ind.x until ind.x + kind.across(ind.turn)) {
+        industryOf[index(tx, ty)] = 0
+        touched(tx, ty)
+    }
+    catchmentDirty = true
+    news += News(News.INDUSTRY_CLOSES, ind.id, tick)
+}
+
+/** An industry's level in sixteenths: at most 4 times and at least a quarter of its kind's. */
+const val MAX_LEVEL = 64
+const val MIN_LEVEL = 4
+
+/** One in this many chances a month that a primary industry's production changes. */
+private const val CHANGE_ODDS = 20
+
+/** About one in this many months a new industry opens, on a 256 by 256 map. */
+private const val OPEN_ODDS = 6
+
+/** How long news is kept for the screen. */
+const val NEWS_TICKS = Calendar.TICKS_PER_DAY * 10L
 
 /** The industry in reach of station [s] that takes cargo [c], the first by id, or null. */
 internal fun World.takerAt(s: Station, c: Int): Industry? =
-    stationIndustries[s.id].orEmpty().map { industries[it] }.firstOrNull { roster.industries[it.kind].takes(c) }
+    stationIndustries[s.id].orEmpty().map { industries[it] }.firstOrNull { !it.closed && roster.industries[it.kind].takes(c) }

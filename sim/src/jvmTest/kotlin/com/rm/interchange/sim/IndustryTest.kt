@@ -92,4 +92,32 @@ class IndustryTest {
         val cmd = Command.BuyTrain(0, 1, 2, 3, 4, Cargo.GRAIN)
         assertEquals(cmd, Codec.decode(Codec.encode(cmd)))
     }
+
+    @Test
+    fun overYearsIndustriesOpenCloseAndChange() {
+        val w = World(NewGame(width = 256, height = 256, seed = 8, startYear = 1900))
+        val start = w.industries.size
+        var opened = 0
+        var closed = 0
+        var changed = 0
+        while (Calendar.year(w.startYear, w.day) < 1930) {
+            w.step()
+            for (n in w.news) if (n.tick == w.tick) when (n.kind) {
+                News.INDUSTRY_OPENS -> opened++
+                News.INDUSTRY_CLOSES -> closed++
+                else -> changed++
+            }
+        }
+        assertTrue(opened > 0, "none opened")
+        assertTrue(closed > 0, "none closed")
+        assertTrue(changed > 0, "none changed")
+        assertEquals(start + opened, w.industries.size)
+        // A closed one leaves nothing on the map.
+        for (ind in w.industries.filter { it.closed }) assertTrue(w.industryOf.none { it.toInt() == ind.id + 1 })
+        for (ind in w.industries) assertTrue(ind.level in MIN_LEVEL..MAX_LEVEL)
+        // And it all carries on the same after saving.
+        val c = Save.read(Save.write(w))
+        repeat(Calendar.TICKS_PER_DAY * 100) { w.step(); c.step() }
+        assertEquals(w.checksum(), c.checksum())
+    }
 }

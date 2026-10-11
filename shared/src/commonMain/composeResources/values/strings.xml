@@ -237,4 +237,10 @@
     <string name="takes">Takes: %1$s</string>
     <string name="brought_last_month">Brought last month: %1$d</string>
     <string name="industries">Industries</string>
+
+    <!-- News -->
+    <string name="news_opens">%1$s opens</string>
+    <string name="news_closes">%1$s closes</string>
+    <string name="news_more">%1$s makes more</string>
+    <string name="news_less">%1$s makes less</string>
 </resources>

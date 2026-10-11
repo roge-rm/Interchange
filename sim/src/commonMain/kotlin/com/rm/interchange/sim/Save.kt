@@ -75,7 +75,7 @@ object Save {
             for (ind in industries) {
                 w.int(ind.kind); w.int(ind.x); w.int(ind.y); w.int(ind.turn); w.int(ind.town); w.int(ind.level); w.int(ind.brought)
                 w.ints(ind.made); w.ints(ind.madeLastMonth); w.ints(ind.moved); w.ints(ind.movedLastMonth)
-                w.int(ind.broughtThisMonth); w.int(ind.broughtLastMonth)
+                w.int(ind.broughtThisMonth); w.int(ind.broughtLastMonth); w.bool(ind.closed)
             }
             w.shorts(industryOf)
         }
@@ -203,7 +203,7 @@ object Save {
                     ind.level = r.int(); ind.brought = r.int()
                     fun into(a: IntArray) = r.ints().let { v -> v.copyInto(a, endIndex = minOf(v.size, Cargo.COUNT)) }
                     into(ind.made); into(ind.madeLastMonth); into(ind.moved); into(ind.movedLastMonth)
-                    ind.broughtThisMonth = r.int(); ind.broughtLastMonth = r.int()
+                    ind.broughtThisMonth = r.int(); ind.broughtLastMonth = r.int(); ind.closed = r.bool()
                     industries += ind
                 }
                 fillShorts(industryOf, r.shorts())

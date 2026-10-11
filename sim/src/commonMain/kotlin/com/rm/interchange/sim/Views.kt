@@ -85,6 +85,7 @@ class WorldView(
     val depots: List<DepotView>,
     val towns: List<TownView> = emptyList(),
     val payments: List<Payment> = emptyList(),
+    val news: List<News> = emptyList(),
     val tick: Long = 0,
 )
 
@@ -149,7 +150,7 @@ fun World.view(): WorldView {
         townViews = towns.map { TownView(it.id, it.name, it.x, it.y, it.population, it.houses) }
         townsChanged = false
     }
-    return WorldView(VehicleView(tick, cars.toFloatArray()), trainViews, stationViews, signalViews, depotViews, townViews, payments.toList(), tick)
+    return WorldView(VehicleView(tick, cars.toFloatArray()), trainViews, stationViews, signalViews, depotViews, townViews, payments.toList(), news.toList(), tick)
 }
 
 /** The heading, in eighths from along x towards y, of a step of ([dx], [dy]). */
