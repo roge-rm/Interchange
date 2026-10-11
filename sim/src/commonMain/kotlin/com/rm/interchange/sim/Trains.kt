@@ -70,6 +70,17 @@ class Train(
     var nose = 0
     var speed = 0
 
+    /** What it's carrying, by [Cargo], where each lot got on and when; -1 for none. */
+    val load = IntArray(Cargo.COUNT)
+    val loadedAt = IntArray(Cargo.COUNT) { -1 }
+    val loadedTick = LongArray(Cargo.COUNT)
+    /** Fares less running costs, this year and last, in dollars. */
+    var profitThisYear = 0L
+    var profitLastYear = 0L
+
+    /** How much of cargo [c] its cars hold. */
+    fun capacity(c: Int) = carEngines.sumOf { e -> roster[e].let { if (it.cargo == c) it.capacity else 0 } }
+
     /** The stations it calls at, in turn. */
     val orders = ArrayList<Int>()
     var order = 0
@@ -238,7 +249,10 @@ private fun World.moveTrain(t: Train) {
         // At the stopping point.
         t.speed = 0
         when (stop) {
-            Stop.STATION -> t.waiting = Calendar.TICKS_PER_DAY * 2
+            Stop.STATION -> {
+                t.waiting = Calendar.TICKS_PER_DAY * 2
+                stationAt(stepTile(t.steps.last()))?.let { callAt(t, it) }
+            }
             Stop.DEPOT -> enterDepot(t)
             Stop.END -> if (t.route == null || t.routeAt >= (t.route?.size ?: 0)) {
                 t.route = null
@@ -392,7 +406,9 @@ internal fun World.payRunningCosts() {
         val c = companies.getOrNull(t.owner) ?: continue
         val yearly = t.carEngines.sumOf { roster[it].running }
         c.runningOwed += yearly
-        c.money -= c.runningOwed / 365
+        val today = c.runningOwed / 365
+        c.money -= today
+        t.profitThisYear -= today
         c.runningOwed %= 365
     }
 }

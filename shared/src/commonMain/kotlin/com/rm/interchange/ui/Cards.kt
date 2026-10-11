@@ -19,6 +19,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.rm.interchange.sim.Command
+import com.rm.interchange.sim.Cargo
 import com.rm.interchange.sim.Roster
 import com.rm.interchange.sim.MAX_WAGONS
 import com.rm.interchange.sim.StationView
@@ -66,6 +67,15 @@ fun TrainCard(
         val w = roster[t.wagon]
         Text(stringResource(Res.string.consist, roster[t.engine].name(lang), t.wagons, (if (t.wagons == 1) w.name(lang) else w.plural(lang)).lowercase()), color = c.textDim, fontSize = 13.sp)
         Text(doing, color = if (t.lost) c.warn else c.text, fontSize = 13.sp)
+        val loads = buildList {
+            if (t.capacity[Cargo.PASSENGERS] > 0) add(stringResource(Res.string.passengers_load, t.load[Cargo.PASSENGERS], t.capacity[Cargo.PASSENGERS]))
+            if (t.capacity[Cargo.MAIL] > 0) add(stringResource(Res.string.mail_load, t.load[Cargo.MAIL], t.capacity[Cargo.MAIL]))
+        }
+        if (loads.isNotEmpty()) Text(loads.joinToString(" · "), color = c.text, fontSize = 13.sp)
+        Text(
+            stringResource(Res.string.profit_line, money(t.profitThisYear), money(t.profitLastYear)),
+            color = if (t.profitThisYear < 0) c.bad else c.textDim, fontSize = 13.sp,
+        )
         FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             for ((i, s) in t.orders.withIndex()) {
                 // Tapping a stop takes it off.
@@ -132,6 +142,8 @@ fun StationCard(view: WorldView, s: StationView, onTrain: (Int) -> Unit, onClose
     val c = LocalColors.current
     Card(stationName(view, s.id), onClose, modifier) {
         Text(stringResource(Res.string.platform_tiles, s.platforms), color = c.textDim, fontSize = 13.sp)
+        Text(stringResource(Res.string.passengers_waiting, s.waiting[Cargo.PASSENGERS]), color = c.text, fontSize = 13.sp)
+        Text(stringResource(Res.string.mail_waiting, s.waiting[Cargo.MAIL]), color = c.text, fontSize = 13.sp)
         val calling = view.trains.filter { s.id in it.orders }
         if (calling.isEmpty()) Text(stringResource(Res.string.no_trains_call), color = c.textDim, fontSize = 13.sp)
         for (t in calling) {

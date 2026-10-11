@@ -14,10 +14,11 @@ package com.rm.interchange.sim
  * the other way. Signals only go on tiles where the track doesn't branch.
  */
 
-/** A station: a name and the platforms that make it up. */
+/** A station: a name, the platforms that make it up, and what's waiting there, by [Cargo]. */
 class Station(val id: Int, val owner: Int, var name: String, val signX: Int, val signY: Int) {
     /** Its platform tiles, as tile indexes, in the order they were built. */
     val tiles = ArrayList<Int>()
+    val waiting = IntArray(Cargo.COUNT)
 }
 
 /** A train depot, open at [edge] of its tile. */
@@ -188,7 +189,35 @@ internal fun World.clearTile(company: Company, c: Command.Clear) {
 
 /** A name for a new station: none yet, so the screen calls it by its number in its own language. Towns will name them. */
 @Suppress("UNUSED_PARAMETER")
-private fun World.stationName(x: Int, y: Int): String = ""
+/**
+ * A new station's name, after the nearest town within [NAMING_REACH] tiles:
+ * its own name, then with which way the station lies from its middle, or
+ * "Centre", as the town's language writes them. Empty if none fits, and the
+ * screen calls it by its number.
+ */
+private fun World.stationName(x: Int, y: Int): String {
+    val t = towns.minByOrNull { maxOf(kotlin.math.abs(it.x - x), kotlin.math.abs(it.y - y)) } ?: return ""
+    if (maxOf(kotlin.math.abs(t.x - x), kotlin.math.abs(t.y - y)) > NAMING_REACH) return ""
+    val taken = stations.mapNotNull { it?.name }.toSet()
+    if (t.name !in taken) return t.name
+    val dx = x - t.x
+    val dy = y - t.y
+    // The way it lies first, then the others.
+    val ways = listOf(
+        if (kotlin.math.abs(dx) >= kotlin.math.abs(dy)) (if (dx > 0) 1 else 3) else (if (dy > 0) 2 else 0),
+        0, 1, 2, 3, 4,
+    ).distinct()
+    val english = listOf(" North", " East", " South", " West", " Central")
+    val french = listOf("-Nord", "-Est", "-Sud", "-Ouest", "-Centre")
+    for (w in ways) {
+        val name = t.name + (if (t.french) french else english)[w]
+        if (name !in taken) return name
+    }
+    return ""
+}
+
+/** How far from a town's middle a station is still named after it, in tiles. */
+private const val NAMING_REACH = 20
 
 /** The most tiles a station's rectangle spans either way in one go. */
 const val MAX_STATION = 16

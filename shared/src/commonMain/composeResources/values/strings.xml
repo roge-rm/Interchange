@@ -203,4 +203,11 @@
     <string name="jobs">Jobs: %1$d</string>
     <string name="town_of">Town: %1$s</string>
     <string name="population">Population: %1$s</string>
+
+    <!-- Passengers and mail -->
+    <string name="passengers_waiting">Passengers waiting: %1$d</string>
+    <string name="mail_waiting">Mail waiting: %1$d</string>
+    <string name="passengers_load">Passengers %1$d/%2$d</string>
+    <string name="mail_load">Mail %1$d/%2$d</string>
+    <string name="profit_line">Profit this year %1$s, last year %2$s</string>
 </resources>

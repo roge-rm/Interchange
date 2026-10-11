@@ -65,13 +65,14 @@ internal fun generateLand(world: World) {
         Region.ROCKIES -> peak = maxOf(peak, 22)
         else -> {}
     }
-    // Mountain land rises quickly from the shore, f becoming 1 - (1 - f)², so most of it stands high.
+    // Mountain land rises quickly from the shore and keeps rising to its peaks: f becomes (3f - f²) / 2, halfway
+    // between the plain rise and one that levels off at the top, so most of it stands high without flat tops.
     val raised = g.region == Region.ROCKIES || g.hills >= 3
     val range = (top - sea).coerceAtLeast(1).toLong()
     parallelBands(sum.size) { from, until ->
         for (i in from until until) {
             val f = (sum[i] - sea).coerceAtLeast(0).toLong()
-            sum[i] = if (raised) (peak * (2 * f * range - f * f) / (range * range)).toInt() else (f * peak / range).toInt()
+            sum[i] = if (raised) (peak * (3 * f * range - f * f) / (2 * range * range)).toInt() else (f * peak / range).toInt()
         }
     }
     // Each corner no more than a step above any of its eight neighbours, in two sweeps.

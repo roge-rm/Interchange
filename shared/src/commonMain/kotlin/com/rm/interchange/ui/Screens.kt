@@ -40,6 +40,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.graphics.ImageBitmap
@@ -75,7 +76,8 @@ private fun Page(backdrop: ImageBitmap? = null, content: @Composable () -> Unit)
     val c = LocalColors.current
     Box(Modifier.fillMaxSize().background(c.page)) {
         if (backdrop != null) {
-            Image(backdrop, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop, filterQuality = FilterQuality.Low, alpha = 0.3f)
+            // Soft, so the map's tiles don't show as steps once it's scaled up to fill the screen.
+            Image(backdrop, null, Modifier.fillMaxSize().blur(6.dp), contentScale = ContentScale.Crop, filterQuality = FilterQuality.Low, alpha = 0.3f)
         }
         Column(
             Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing).verticalScroll(rememberScrollState()).padding(20.dp),

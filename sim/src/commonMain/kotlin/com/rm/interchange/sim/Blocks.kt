@@ -13,12 +13,14 @@ package com.rm.interchange.sim
 /** Marks the blocks and every route for working out again, after track, a station, a depot or a signal changes. */
 internal fun World.networkChanged() {
     blocksDirty = true
+    catchmentDirty = true
     for (t in trains) t?.route = null
 }
 
 /** Marks the blocks for working out again without touching routes, as when a world has just been loaded. */
 internal fun World.networkChangedKeepingRoutes() {
     blocksDirty = true
+    catchmentDirty = true
 }
 
 internal fun World.workOutBlocks() {

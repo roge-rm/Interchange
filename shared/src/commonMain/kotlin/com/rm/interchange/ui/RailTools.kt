@@ -7,6 +7,7 @@ import com.rm.interchange.map.LandPainter
 import com.rm.interchange.map.Pick
 import com.rm.interchange.sim.Command
 import com.rm.interchange.sim.Track
+import com.rm.interchange.sim.CATCHMENT
 import com.rm.interchange.sim.World
 import kotlin.math.abs
 
@@ -79,8 +80,20 @@ fun stationPlan(company: Int, start: Pick, end: Pick, alongX: Boolean): Command.
     return Command.Station(company, start.tileX, start.tileY, end.tileX, end.tileY, axis)
 }
 
-/** The platforms [plan] would lay, shaded over the map, with their track. */
+/**
+ * The platforms [plan] would lay, shaded over the map, with their track, and
+ * round them the tiles the station would gather passengers and mail from, its
+ * buildings brighter.
+ */
 fun DrawScope.drawStationPlan(world: World, painter: LandPainter, plan: Command.Station) {
+    val x0 = minOf(plan.x0, plan.x1)
+    val x1 = maxOf(plan.x0, plan.x1)
+    val y0 = minOf(plan.y0, plan.y1)
+    val y1 = maxOf(plan.y0, plan.y1)
+    for (y in y0 - CATCHMENT..y1 + CATCHMENT) for (x in x0 - CATCHMENT..x1 + CATCHMENT) {
+        if (!world.inside(x, y) || (x in x0..x1 && y in y0..y1)) continue
+        with(painter) { tile(x, y, if (world.house[world.index(x, y)].toInt() != 0) REACH_BUILT else REACH) }
+    }
     for (y in minOf(plan.y0, plan.y1)..maxOf(plan.y0, plan.y1)) for (x in minOf(plan.x0, plan.x1)..maxOf(plan.x0, plan.x1)) {
         if (!world.inside(x, y)) continue
         val ok = !world.isWater(x, y)
@@ -89,4 +102,6 @@ fun DrawScope.drawStationPlan(world: World, painter: LandPainter, plan: Command.
 }
 
 private val PLAN_OK = Color(0x99F0B429)
+private val REACH = Color(0x2EF0B429)
+private val REACH_BUILT = Color(0x70F0B429)
 private val PLAN_BAD = Color(0x99E05A4E)

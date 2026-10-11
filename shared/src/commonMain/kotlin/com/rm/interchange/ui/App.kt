@@ -378,6 +378,8 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
     }
 
     val townLabels = rememberTownLabels(c.chrome, c.text, c.textDim)
+    // Money as the language writes it, for drawing over the map outside composition.
+    val moneyPattern = stringResource(Res.string.money, "%s")
     BoxWithConstraints(Modifier.fillMaxSize().background(c.page)) {
         val layout = screenLayout(maxWidth, maxHeight)
         val gap = if (layout.compact) 6.dp else 10.dp
@@ -390,7 +392,13 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
             overlay = plan?.let { p -> { painter -> drawTrackPlan(world, painter, p) } }
                 ?: stationPlan?.let { p -> { painter -> drawStationPlan(world, painter, p) } },
             overlays = (if (settings.grid) ChunkBaker.GRID else 0) or (if (settings.heights) ChunkBaker.HEIGHTS else 0),
-            labels = { with(townLabels) { draw(world, view, worldView.value?.towns.orEmpty()) { Numbers.grouped(it.toLong()) } } },
+            labels = {
+                val wv = worldView.value
+                with(townLabels) {
+                    draw(world, view, wv?.towns.orEmpty()) { Numbers.grouped(it.toLong()) }
+                    if (wv != null) drawPayments(world, view, wv.payments, runner.tick, c.good) { moneyPattern.replace("%s", Numbers.grouped(it)) }
+                }
+            },
         )
 
         // Every upright phone: one line can't hold the buttons and the readings without crowding them.

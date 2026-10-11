@@ -35,6 +35,8 @@ class Engine(
     val enabled: Boolean,
 ) {
     val pulls get() = kind == VehicleKind.ENGINE
+    /** What it carries as a [Cargo] number, or -1. */
+    val cargo = Cargo.of(carries)
     val isTender get() = kind == VehicleKind.TENDER
 
     fun name(language: String) = names[language] ?: names["en"] ?: key

@@ -110,6 +110,20 @@ class LandPainter(private val world: World, private val view: View, private val 
         }
     }
 
+    /** World tile ([wx], [wy]) filled with [fill], following the ground. For previews. */
+    fun DrawScope.tile(wx: Int, wy: Int, fill: Color) {
+        path.reset()
+        val xs = floatArrayOf(0f, 1f, 1f, 0f)
+        val ys = floatArrayOf(0f, 0f, 1f, 1f)
+        for (i in 0 until 4) {
+            val sx = screenX(wx + xs[i], wy + ys[i])
+            val sy = screenY(wx + xs[i], wy + ys[i])
+            if (i == 0) path.moveTo(sx, sy) else path.lineTo(sx, sy)
+        }
+        path.close()
+        drawPath(path, fill)
+    }
+
     // A world point, lifted to the ground's height there.
     private fun screenX(x: Float, y: Float) = x(view.toViewX(x, y), view.toViewY(x, y))
     private fun screenY(x: Float, y: Float) = y(view.toViewX(x, y), view.toViewY(x, y), groundHeight(world, x, y))

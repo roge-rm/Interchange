@@ -43,10 +43,15 @@ class TrainView(
     val kmh: Int,
     val waiting: Boolean,
     val lost: Boolean,
+    /** What it's carrying and has room for, by [Cargo]. */
+    val load: IntArray = IntArray(Cargo.COUNT),
+    val capacity: IntArray = IntArray(Cargo.COUNT),
+    val profitThisYear: Long = 0,
+    val profitLastYear: Long = 0,
 )
 
 /** A station as the screen shows it. */
-class StationView(val id: Int, val name: String, val platforms: Int)
+class StationView(val id: Int, val name: String, val platforms: Int, val waiting: IntArray = IntArray(Cargo.COUNT))
 
 /** A depot as the screen shows it, to draw over the trains going in and out of it. */
 class DepotView(val tile: Int, val edge: Int)
@@ -65,6 +70,8 @@ class WorldView(
     val signals: List<SignalView>,
     val depots: List<DepotView>,
     val towns: List<TownView> = emptyList(),
+    val payments: List<Payment> = emptyList(),
+    val tick: Long = 0,
 )
 
 fun World.view(): WorldView {
@@ -102,9 +109,10 @@ fun World.view(): WorldView {
         TrainView(
             t.id, t.name, t.engine, t.wagon, t.wagons, t.depot, t.inDepot, t.running, t.toDepot,
             t.orders.toIntArray(), t.order, t.speed / 16 * 2700 / 4096, t.waiting > 0, t.running && !t.inDepot && t.lostUntil > tick,
+            t.load.copyOf(), IntArray(Cargo.COUNT) { t.capacity(it) }, t.profitThisYear, t.profitLastYear,
         )
     }
-    val stationViews = stations.filterNotNull().map { StationView(it.id, it.name, it.tiles.size) }
+    val stationViews = stations.filterNotNull().map { StationView(it.id, it.name, it.tiles.size, it.waiting.copyOf()) }
     val signalViews = signals.entries.sortedBy { it.key }.map { (k, s) ->
         val tile = k / 8
         val piece = Track.PIECES[k % 8]
@@ -117,7 +125,7 @@ fun World.view(): WorldView {
         townViews = towns.map { TownView(it.id, it.name, it.x, it.y, it.population, it.houses) }
         townsChanged = false
     }
-    return WorldView(VehicleView(tick, cars.toFloatArray()), trainViews, stationViews, signalViews, depotViews, townViews)
+    return WorldView(VehicleView(tick, cars.toFloatArray()), trainViews, stationViews, signalViews, depotViews, townViews, payments.toList(), tick)
 }
 
 /** The heading, in eighths from along x towards y, of a step of ([dx], [dy]). */

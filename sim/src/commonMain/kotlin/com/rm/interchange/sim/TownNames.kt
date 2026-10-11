@@ -17,16 +17,17 @@ object TownNames {
         Region.ROCKIES -> 5
     }
 
-    /** A name not in [taken], or one with a number after it if none comes up. */
-    fun make(rng: Rng, region: Region, taken: Set<String>): String {
+    /** A name not in [taken], or one with a number after it if none comes up, and whether it's French. */
+    fun make(rng: Rng, region: Region, taken: Set<String>): Pair<String, Boolean> {
         repeat(30) {
-            val name = if (rng.below(100) < frenchShare(region)) french(rng, region) else english(rng, region)
-            if (name !in taken) return name
+            val isFrench = rng.below(100) < frenchShare(region)
+            val name = if (isFrench) french(rng, region) else english(rng, region)
+            if (name !in taken) return name to isFrench
         }
         val base = english(rng, region)
         var n = 2
         while ("$base $n" in taken) n++
-        return "$base $n"
+        return "$base $n" to false
     }
 
     private fun <T> Rng.pick(list: List<T>) = list[below(list.size)]

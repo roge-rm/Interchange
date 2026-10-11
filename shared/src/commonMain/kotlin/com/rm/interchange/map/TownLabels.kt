@@ -14,6 +14,8 @@ import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.sp
+import com.rm.interchange.sim.PAYMENT_TICKS
+import com.rm.interchange.sim.Payment
 import com.rm.interchange.sim.TownView
 import com.rm.interchange.sim.World
 
@@ -47,6 +49,27 @@ class TownLabels(private val measurer: TextMeasurer, private val back: Color, pr
             drawRoundRect(back, Offset(left, top), Size(w, h), CornerRadius(8f * density))
             drawText(name, topLeft = Offset(sx - name.size.width / 2f, top + pad / 2))
             if (count != null) drawText(count, topLeft = Offset(sx - count.size.width / 2f, top + pad / 2 + name.size.height))
+        }
+    }
+
+    private val sums = HashMap<Long, TextLayoutResult>()
+
+    /**
+     * Each recent payment as its amount rising from its station and fading,
+     * over the [PAYMENT_TICKS] it's kept. [now] is the tick the view was made at.
+     */
+    fun DrawScope.drawPayments(world: World, view: View, payments: List<Payment>, now: Long, colour: Color, money: (Long) -> String) {
+        for (p in payments) {
+            val age = ((now - p.tick).toFloat() / PAYMENT_TICKS).coerceIn(0f, 1f)
+            val x = p.tile % world.width + 0.5f
+            val y = p.tile / world.width + 0.5f
+            val vx = view.toViewX(x, y)
+            val vy = view.toViewY(x, y)
+            val sx = view.screenX(vx, vy, size.width)
+            val sy = view.screenY(vx, vy, groundHeight(world, x, y), size.height) - view.halfWidth * (0.6f + age * 1.2f)
+            if (sx < -200f || sx > size.width + 200f || sy < -100f || sy > size.height + 100f) continue
+            val text = sums.getOrPut(p.amount) { measurer.measure("+" + money(p.amount), TextStyle(color = colour, fontSize = 13.sp, fontWeight = FontWeight.Bold)) }
+            drawText(text, topLeft = Offset(sx - text.size.width / 2f, sy - text.size.height), alpha = 1f - age * age)
         }
     }
 

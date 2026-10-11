@@ -23,11 +23,16 @@ class Town(
     val y: Int,
     /** Tiles from one street to the next. */
     val grid: Int,
+    /** Its name is French, so its stations' names follow French ways. */
+    val french: Boolean = false,
 ) {
     var population = 0
     var houses = 0
     /** Days until it next grows. */
     var growIn = 0
+    /** Passengers and mail picked up from its buildings this month and last. */
+    var servedThisMonth = 0
+    var servedLastMonth = 0
 }
 
 /** The bit for a road reaching [edge], a [Track] edge. */
@@ -123,9 +128,9 @@ internal fun generateTowns(world: World) = with(world) {
             for (o in near[by * 4096 + bx].orEmpty()) if (maxOf(kotlin.math.abs(o.x - x), kotlin.math.abs(o.y - y)) < TOWN_SPACING) close = true
         }
         if (close) continue
-        val name = TownNames.make(rng, settings.region, taken)
+        val (name, french) = TownNames.make(rng, settings.region, taken)
         taken += name
-        val t = Town(towns.size, name, x, y, grid)
+        val t = Town(towns.size, name, x, y, grid, french)
         towns += t
         near.getOrPut((y / 16) * 4096 + x / 16) { ArrayList() } += t
         // Its first crossing: a road out each way that fits.
@@ -157,7 +162,9 @@ internal fun World.townsDay() {
     for (t in towns) {
         if (--t.growIn > 0) continue
         growTown(t, year)
-        t.growIn = (40 - t.houses / 8).coerceIn(10, 40) + rng.below(10)
+        // A town with a station taking its people somewhere grows three times as fast.
+        val days = (40 - t.houses / 8).coerceIn(10, 40) + rng.below(10)
+        t.growIn = if (t.servedLastMonth > 0) (days / 3).coerceAtLeast(3) else days
     }
 }
 
@@ -300,6 +307,7 @@ private fun World.buildHouse(t: Town, x: Int, y: Int, facing: Int, year: Int): B
     clearTrees(i)
     t.houses++
     t.population += roster.houses[h].residents
+    catchmentDirty = true
     touched(x, y)
     townsChanged = true
     return true

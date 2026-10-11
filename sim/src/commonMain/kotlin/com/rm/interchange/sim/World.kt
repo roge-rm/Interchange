@@ -51,6 +51,12 @@ class World(val settings: NewGame, val roster: Roster = Roster.BASE, generate: B
     var townsChanged = true
     internal var townViews: List<TownView> = emptyList()
 
+    /** Building tiles in reach of a station and the station each sends to, worked out again when [catchmentDirty]. Not saved. */
+    internal var catchment = IntArray(0)
+    internal var catchmentDirty = true
+    /** Recent payments, for the screen. Not part of the game. */
+    val payments = ArrayList<Payment>()
+
     val companies = mutableListOf(Company(0, "Company", Prices.START_MONEY))
 
     // What's built on the track, by id; a removed one leaves null.
@@ -155,7 +161,11 @@ class World(val settings: NewGame, val roster: Roster = Roster.BASE, generate: B
         moveTrains()
         if (tick % Calendar.TICKS_PER_DAY == 0L) {
             payRunningCosts()
+            passengersDay()
             townsDay()
+            if (Calendar.dayOfMonth(day) == 1) passengersMonth()
+            if (day % 365 == 0) passengersYear()
+            payments.removeAll { tick - it.tick > PAYMENT_TICKS }
         }
     }
 
@@ -190,13 +200,16 @@ class World(val settings: NewGame, val roster: Roster = Roster.BASE, generate: B
         for (x in 0..width) mix(heightAt(x, height).toLong())
         for (y in 0 until height) mix(heightAt(width, y).toLong())
         for (c in companies) mix(c.money)
-        for (t in towns) { mix(t.population.toLong()); mix(t.growIn.toLong()) }
+        for (t in towns) { mix(t.population.toLong()); mix(t.growIn.toLong()); mix(t.servedThisMonth.toLong()) }
+        for (s in stations) if (s != null) for (w in s.waiting) mix(w.toLong())
         for (k in signals.keys.sorted()) mix(k.toLong() * 31 + signals.getValue(k))
         for (k in stationTiles.keys.sorted()) mix(k.toLong() * 31 + stationTiles.getValue(k))
         for (k in depotTiles.keys.sorted()) mix(k.toLong() * 31 + depotTiles.getValue(k))
         for (t in trains) {
             if (t == null) continue
             mix(t.id.toLong()); mix(t.nose.toLong()); mix(t.speed.toLong()); mix(t.waiting.toLong()); mix(t.order.toLong())
+            for (l in t.load) mix(l.toLong())
+            mix(t.profitThisYear)
             for (st in t.steps) mix(st.toLong())
         }
         return h

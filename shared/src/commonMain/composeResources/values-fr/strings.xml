@@ -186,4 +186,11 @@
     <string name="jobs">Emplois : %1$d</string>
     <string name="town_of">Ville : %1$s</string>
     <string name="population">Population : %1$s</string>
+
+    <!-- Voyageurs et courrier -->
+    <string name="passengers_waiting">Voyageurs en attente : %1$d</string>
+    <string name="mail_waiting">Courrier en attente : %1$d</string>
+    <string name="passengers_load">Voyageurs %1$d/%2$d</string>
+    <string name="mail_load">Courrier %1$d/%2$d</string>
+    <string name="profit_line">Bénéfice cette année %1$s, l'an dernier %2$s</string>
 </resources>
