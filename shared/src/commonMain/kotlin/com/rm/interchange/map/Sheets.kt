@@ -60,6 +60,11 @@ class Sheets(private val packed: PackedSheets, private val scope: CoroutineScope
                     val shadows = ByteArray(shade.size) { shade[it].toByte() }
                     LevelSheets(ground, static, width, shadows, shadeWidth, packed.signals[level].decodeToImageBitmap())
                 }
+                // Only the levels next to this one stay unpacked; the sharpest alone is some 100 MB.
+                for (l in levels.indices) if (kotlin.math.abs(l - level) > 1 && levels[l] != null) {
+                    levels[l] = null
+                    unpacking[l] = false
+                }
                 revision.intValue++
             }
         }

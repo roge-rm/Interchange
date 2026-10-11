@@ -655,11 +655,14 @@ private fun newsText(world: World, n: News): String {
  * Mine, or Mine de charbon d'Elmbrook.
  */
 fun industryName(world: World, ind: Industry, lang: String): String {
+    // A second of a kind by the same town is numbered.
+    val n = world.industries.count { it.id < ind.id && it.kind == ind.kind && it.town == ind.town } + 1
+    val number = if (n > 1) " $n" else ""
     val kind = world.roster.industries[ind.kind].name(lang)
-    val town = world.towns.getOrNull(ind.town)?.name ?: return kind
-    if (lang != "fr") return "$town $kind"
+    val town = world.towns.getOrNull(ind.town)?.name ?: return kind + number
+    if (lang != "fr") return "$town $kind$number"
     val vowel = town.firstOrNull()?.lowercaseChar()?.let { it in "aeiouyhéèêàâîôû" } == true
-    return if (vowel) "$kind d'$town" else "$kind de $town"
+    return (if (vowel) "$kind d'$town" else "$kind de $town") + number
 }
 
 /** The widest the trays and the bottom tool bar go. */

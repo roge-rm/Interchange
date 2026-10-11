@@ -79,11 +79,11 @@ private fun industryCount(g: NewGame): Int {
 /** Places a new map's industries: every kind of the start year once if it'll go, then more by region. */
 internal fun generateIndustries(world: World) = with(world) {
     val year = settings.startYear
-    val kinds = roster.industries.filter { year >= it.from && year < it.until }
+    val kinds = roster.industries.filter { year >= it.from && year < it.until && it.weight(settings.region) > 0 }
     if (kinds.isEmpty()) return
     val want = industryCount(settings)
     // One of each first, so every chain can be made, then the rest by how common each is here.
-    for (k in kinds) if (industries.size < want) placeIndustry(k)
+    for (k in kinds) if (industries.size < want && k.weight(settings.region) > 0) placeIndustry(k)
     val weights = kinds.map { it.weight(settings.region) }
     val total = weights.sum()
     if (total == 0) return
