@@ -37,13 +37,13 @@ enum class Tool(val group: ToolGroup, val title: StringResource, val glyph: Glyp
     RoadBridge(ToolGroup.Road, Res.string.tool_bridge, Glyph.Bridge),
     RoadTunnel(ToolGroup.Road, Res.string.tool_tunnel, Glyph.Tunnel),
 
-    Canal(ToolGroup.Water, Res.string.tool_canal, Glyph.Canal),
-    Dock(ToolGroup.Water, Res.string.tool_dock, Glyph.Dock),
-    Shipyard(ToolGroup.Water, Res.string.tool_shipyard, Glyph.Depot),
-    Lock(ToolGroup.Water, Res.string.tool_lock, Glyph.Lock),
+    Dock(ToolGroup.Water, Res.string.tool_dock, Glyph.Dock, ready = true),
+    Shipyard(ToolGroup.Water, Res.string.tool_shipyard, Glyph.Depot, ready = true),
+    Buoy(ToolGroup.Water, Res.string.tool_buoy, Glyph.Waypoint, ready = true),
+    Canal(ToolGroup.Water, Res.string.tool_canal, Glyph.Canal, ready = true),
+    Lock(ToolGroup.Water, Res.string.tool_lock, Glyph.Lock, ready = true),
 
-    Airport(ToolGroup.Air, Res.string.tool_airport, Glyph.Airport),
-    Hangar(ToolGroup.Air, Res.string.tool_hangar, Glyph.Depot),
+    Airport(ToolGroup.Air, Res.string.tool_airport, Glyph.Airport, ready = true),
 
     Raise(ToolGroup.Land, Res.string.tool_raise, Glyph.Raise, ready = true),
     Lower(ToolGroup.Land, Res.string.tool_lower, Glyph.Lower, ready = true),

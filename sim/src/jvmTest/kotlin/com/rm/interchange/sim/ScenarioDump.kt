@@ -165,4 +165,60 @@ class ScenarioDump {
         File(out, "save_3.info").writeText("day=${w.day}\nstartYear=1965\nmoney=${w.companies[0].money}\nwidth=64\nheight=64\nregion=0\n")
         println("road vehicles " + w.roadVehicles.map { v -> "${roadStepTile(v!!.at) % 64},${roadStepTile(v.at) / 64} in${v.inDepot} r${v.route?.size}" })
     }
+
+    /** A lake with docks, a laker and a ferry; two airports with a DC-3 and a JetRanger; a seaplane base with a Beaver. Saved as save_4. */
+    @Test
+    fun waterAndAir() {
+        val out = System.getenv("INTERCHANGE_SCENARIO_OUT") ?: return
+        val w = World(NewGame(64, 64, 4, 1966, Region.SHIELD, towns = 0, industries = 0))
+        for (y in 0..64) for (x in 0..64) w.corners[w.corner(x, y)] = if (x in 8..40 && y in 30..50) 0 else 1
+        for (i in 0 until w.width * w.height) { w.trees[i] = 0; w.ground[i] = Ground.MEADOW.toByte() }
+        w.shoreChanged()
+        // On into May, the ice gone.
+        repeat(Calendar.TICKS_PER_DAY * 130) { w.step() }
+        w.companies[0].money = 20_000_000
+        w.apply(Command.Dock(0, 7, 38))
+        w.apply(Command.Dock(0, 40, 44))
+        w.apply(Command.Shipyard(0, 7, 34))
+        w.apply(Command.Buoy(0, 24, 40))
+        // A canal up a lock from the east shore.
+        w.apply(Command.Lock(0, 40, 36))
+        w.apply(Command.Canal(0, 41, 36, 46, 36, remove = false))
+        w.apply(Command.Dock(0, 47, 36))
+        val west = w.docks.getValue(w.index(7, 38))
+        val east = w.docks.getValue(w.index(40, 44))
+        val canal = w.docks.getValue(w.index(47, 36))
+        fun ship(key: String, orders: IntArray) {
+            w.apply(Command.BuyCraft(0, w.depots.size - 1, w.roster.engines.first { it.key == "base:$key" }.id))
+            val id = w.ships.size - 1
+            w.apply(Command.CraftOrder(0, false, id, Command.TrainOrder.ORDERS, orders))
+            w.apply(Command.CraftOrder(0, false, id, Command.TrainOrder.START_STOP))
+            repeat(200) { w.step() }
+        }
+        ship("seaway_laker", intArrayOf(west, east))
+        ship("car_ferry", intArrayOf(west, w.buoys.getValue(w.index(24, 40)), east))
+        ship("package_freighter", intArrayOf(west, canal))
+        w.apply(Command.Airport(0, 6, 6, Airports.CITY, Track.X))
+        w.apply(Command.Airport(0, 44, 8, Airports.REGIONAL, Track.Y))
+        w.apply(Command.Airport(0, 20, 52, Airports.STRIP, Track.X))
+        w.apply(Command.Airport(0, 30, 50, Airports.SEAPLANE, 0))
+        w.apply(Command.Airport(0, 54, 54, Airports.HELIPORT, 0))
+        w.apply(Command.Airport(0, 7, 45, Airports.SEAPLANE, 0))
+        fun fly(key: String, airport: Int, orders: IntArray) {
+            w.apply(Command.BuyCraft(0, w.airports[airport]!!.depot, w.roster.engines.first { it.key == "base:$key" }.id))
+            val id = w.aircraft.size - 1
+            w.apply(Command.CraftOrder(0, true, id, Command.TrainOrder.ORDERS, orders))
+            w.apply(Command.CraftOrder(0, true, id, Command.TrainOrder.START_STOP))
+            repeat(100) { w.step() }
+        }
+        val st = w.airports.map { it!!.station }
+        fly("dc3", 0, intArrayOf(st[0], st[1]))
+        fly("viscount", 0, intArrayOf(st[0], st[1]))
+        fly("s55", 4, intArrayOf(st[4], st[0]))
+        fly("beaver", 3, intArrayOf(st[3], st[5]))
+        repeat(Calendar.TICKS_PER_DAY * 3) { w.step() }
+        File(out, "save_4.ichg").writeBytes(Save.write(w))
+        File(out, "save_4.info").writeText("day=${w.day}\nstartYear=1966\nmoney=${w.companies[0].money}\nwidth=64\nheight=64\nregion=2\n")
+        println("ships " + w.ships.map { "${it!!.info.key} ${it.x / SHIP_UNIT},${it.y / SHIP_UNIT} in${it.inDepot} ice${w.weather.ice[w.index(8, 34)]}" } + " aircraft " + w.aircraft.map { "${it!!.info.key} ${it.state} ${it.x / SHIP_UNIT},${it.y / SHIP_UNIT} ${it.at}" } + " airports " + w.airports.map { "${it!!.kind}@${it.x},${it.y}" })
+    }
 }

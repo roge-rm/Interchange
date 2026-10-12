@@ -34,6 +34,15 @@ object Codec {
     private const val ROAD_ORDER = 24
     private const val TRAM_ROAD = 25
     private const val SALT_DEPOT = 26
+    private const val CANAL = 27
+    private const val LOCK = 28
+    private const val DOCK = 29
+    private const val SHIPYARD = 30
+    private const val BUOY = 31
+    private const val AIRPORT = 32
+    private const val AIRPORT_UPGRADE = 33
+    private const val BUY_CRAFT = 34
+    private const val CRAFT_ORDER = 35
 
     fun write(w: ByteWriter, c: Command) {
         when (c) {
@@ -52,6 +61,15 @@ object Codec {
             is Command.BuyRoadVehicle -> { w.byte(BUY_ROAD_VEHICLE); w.int(c.company); w.int(c.depot); w.int(c.model); w.int(c.cargo) }
             is Command.RoadOrder -> { w.byte(ROAD_ORDER); w.int(c.company); w.int(c.vehicle); w.int(c.what); w.ints(c.stations) }
             is Command.SaltDepot -> { w.byte(SALT_DEPOT); w.int(c.company); w.int(c.x); w.int(c.y) }
+            is Command.Canal -> { w.byte(CANAL); w.int(c.company); w.int(c.sx); w.int(c.sy); w.int(c.ex); w.int(c.ey); w.bool(c.remove) }
+            is Command.Lock -> { w.byte(LOCK); w.int(c.company); w.int(c.x); w.int(c.y) }
+            is Command.Dock -> { w.byte(DOCK); w.int(c.company); w.int(c.x); w.int(c.y) }
+            is Command.Shipyard -> { w.byte(SHIPYARD); w.int(c.company); w.int(c.x); w.int(c.y) }
+            is Command.Buoy -> { w.byte(BUOY); w.int(c.company); w.int(c.x); w.int(c.y) }
+            is Command.Airport -> { w.byte(AIRPORT); w.int(c.company); w.int(c.x); w.int(c.y); w.int(c.kind); w.int(c.axis) }
+            is Command.AirportUpgrade -> { w.byte(AIRPORT_UPGRADE); w.int(c.company); w.int(c.airport); w.int(c.what) }
+            is Command.BuyCraft -> { w.byte(BUY_CRAFT); w.int(c.company); w.int(c.depot); w.int(c.model); w.int(c.cargo) }
+            is Command.CraftOrder -> { w.byte(CRAFT_ORDER); w.int(c.company); w.bool(c.aircraft); w.int(c.vehicle); w.int(c.what); w.ints(c.stations) }
             is Command.SnowWorks -> { w.byte(SNOW_WORKS); w.int(c.company); w.int(c.x); w.int(c.y); w.bool(c.shed) }
             is Command.SetUpkeep -> { w.byte(UPKEEP); w.int(c.company); w.int(c.level) }
             is Command.Wire -> { w.byte(WIRE); w.int(c.company); w.int(c.sx); w.int(c.sy); w.int(c.ex); w.int(c.ey); w.int(c.first); w.bool(c.remove) }
@@ -89,6 +107,15 @@ object Codec {
         GARAGE -> Command.Garage(r.int(), r.int(), r.int(), r.int())
         BUY_ROAD_VEHICLE -> Command.BuyRoadVehicle(r.int(), r.int(), r.int(), r.int())
         ROAD_ORDER -> Command.RoadOrder(r.int(), r.int(), r.int(), r.ints())
+        CANAL -> Command.Canal(r.int(), r.int(), r.int(), r.int(), r.int(), r.bool())
+        LOCK -> Command.Lock(r.int(), r.int(), r.int())
+        DOCK -> Command.Dock(r.int(), r.int(), r.int())
+        SHIPYARD -> Command.Shipyard(r.int(), r.int(), r.int())
+        BUOY -> Command.Buoy(r.int(), r.int(), r.int())
+        AIRPORT -> Command.Airport(r.int(), r.int(), r.int(), r.int(), r.int())
+        AIRPORT_UPGRADE -> Command.AirportUpgrade(r.int(), r.int(), r.int())
+        BUY_CRAFT -> Command.BuyCraft(r.int(), r.int(), r.int(), r.int())
+        CRAFT_ORDER -> Command.CraftOrder(r.int(), r.bool(), r.int(), r.int(), r.ints())
         WIRE -> Command.Wire(r.int(), r.int(), r.int(), r.int(), r.int(), r.int(), r.bool())
         else -> throw BadData("no such command: $kind")
     }

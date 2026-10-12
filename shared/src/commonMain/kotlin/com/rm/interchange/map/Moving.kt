@@ -40,6 +40,7 @@ internal fun DrawScope.drawMoving(world: World, view: View, sheets: Sheets, movi
         if (s.kind != Signals.TWO_WAY && s.kind != Signals.ONE_WAY) add(items, world, view, p.first, p.second, s.kind.toFloat(), 0.01f, MARK)
     }
     for (tile in moving.now.waypoints) add(items, world, view, tile % world.width + 0.5f, tile / world.width + 0.5f, 0f, 0f, WAYPOINT)
+    for (tile in moving.now.buoys) add(items, world, view, tile % world.width + 0.5f, tile / world.width + 0.5f, 0f, 0f, BUOY)
     // Bridges a tile at a time, a step of pier at a time up from the ground, just in front of what's on the tile
     // under them; trains on a bridge are put further forward still. Tunnel mouths like engine houses.
     for (s in moving.now.spans) {
@@ -148,7 +149,13 @@ internal fun DrawScope.drawMoving(world: World, view: View, sheets: Sheets, movi
         }
         val heading = painter.viewHeading(v.heading(i))
         // On a slope, the straight headings have drawings tilted up or down: sprites 8 on in the vehicle's sheet.
+        // Up in the air, an aircraft's drawings with no shadow are 8 on, one for each heading; its shadow goes on the ground.
         val slope = v.slope(i)
+        if (v.flying(i)) {
+            add(items, world, view, x, y, (8 + heading).toFloat(), FLYING_DEPTH, v.sprite(i), v.deck(i))
+            add(items, world, view, x + SUN_X * v.deck(i), y + SUN_Y * v.deck(i), (8 + heading).toFloat(), -0.4f, v.sprite(i), shadow = true)
+            continue
+        }
         val cell = if (slope != 0 && heading % 2 == 0) 8 + heading / 2 * 2 + (if (slope > 0) 0 else 1) else heading
         // Sorted by its nearest end rather than its middle, so a long car in front covers what's behind it; but a car in
         // an engine house stays behind the house.
@@ -175,12 +182,14 @@ internal fun DrawScope.drawMoving(world: World, view: View, sheets: Sheets, movi
                 drawBoard(it[3].toInt(), it[1], it[2], view.halfWidth)
             } else if (model == MARK || model == WAYPOINT) {
                 drawMark(model, it[3].toInt(), it[1], it[2], view.halfWidth)
+            } else if (model == BUOY) {
+                drawBuoy(it[1], it[2], view.halfWidth)
             } else if (model < 0) {
                 spriteAt(it[3].toInt(), it[1], it[2], scale)
             } else {
                 // Its own sheet at this level, unpacked the first time it's on screen; it shows a frame or two later.
                 val sheet = sheets.vehicle(model, level) ?: continue
-                spriteAt(sheet, sheets.vehicleRects(model) ?: continue, it[3].toInt(), it[1], it[2], scale)
+                spriteAt(sheet, sheets.vehicleRects(model) ?: continue, it[3].toInt(), it[1], it[2], scale, shadow = it.size > 5)
             }
         }
     }
@@ -193,6 +202,19 @@ private const val WIRE = -4
 private const val FIRE = -5
 private const val BOARD = -6
 private const val FENCE = -7
+private const val BUOY = -8
+/** Aircraft in the air go over everything; their shadows fall a little off from under them, by height, as the sun stands. */
+private const val FLYING_DEPTH = 1000f
+private const val SUN_X = 0.06f
+private const val SUN_Y = 0.1f
+
+/** A buoy: a red can on the water, with a white band. */
+private fun DrawScope.drawBuoy(x: Float, y: Float, hw: Float) {
+    val u = hw / 16f
+    drawRect(Color(0xffc8302a), Offset(x - 1.6f * u, y - 5f * u), Size(3.2f * u, 5f * u))
+    drawRect(Color(0xfff4f4f0), Offset(x - 1.6f * u, y - 3.4f * u), Size(3.2f * u, 1f * u))
+    drawRect(Color(0xff2a2a2a), Offset(x - 1.6f * u, y - 5f * u), Size(3.2f * u, 5f * u), style = Stroke(0.4f * u))
+}
 
 /** Whether a snow fence on ([x], [y]) runs along x: the way the nearest track does, or across the wind if there's none near. */
 private fun fenceAlongX(world: World, x: Int, y: Int): Boolean {
@@ -344,14 +366,14 @@ private const val DEPOT_DEPTH = 0.95f
 /** How much nearer the camera a car's front end is than its middle, per tile of half length, by heading in the view. */
 private val NEAR = floatArrayOf(1f, 1.414f, 1f, 0f, 1f, 1.414f, 1f, 0f)
 
-private fun DrawScope.add(items: ArrayList<FloatArray>, world: World, view: View, x: Float, y: Float, cell: Float, reach: Float = 0f, model: Int = -1, deck: Float = -1f) {
+private fun DrawScope.add(items: ArrayList<FloatArray>, world: World, view: View, x: Float, y: Float, cell: Float, reach: Float = 0f, model: Int = -1, deck: Float = -1f, shadow: Boolean = false) {
     val vx = view.toViewX(x, y)
     val vy = view.toViewY(x, y)
     val sx = view.screenX(vx, vy, size.width)
     val sy = view.screenY(vx, vy, if (deck >= 0f) deck else groundHeight(world, x, y), size.height)
     val margin = view.halfWidth * 2
     if (sx < -margin || sx > size.width + margin || sy < -margin || sy > size.height + margin * 2) return
-    items += floatArrayOf(vx + vy + reach, sx, sy, cell, model.toFloat())
+    items += if (shadow) floatArrayOf(vx + vy + reach, sx, sy, cell, model.toFloat(), 1f) else floatArrayOf(vx + vy + reach, sx, sy, cell, model.toFloat())
 }
 
 /** Where a signal on [piece] of [tile] facing [facing] stands: just in from that edge, beside the track on the right of trains it faces. */
@@ -367,7 +389,7 @@ fun signalPoint(world: World, tile: Int, piece: Int, facing: Int): Pair<Float, F
     return (ax + dx * 0.2f - dy * 0.3f) to (ay + dy * 0.2f + dx * 0.3f)
 }
 
-/** The car key of the vehicle under screen point ([px], [py]): a train's car (its id times 256 and up) or a road vehicle (below zero); [NO_VEHICLE] for none. */
+/** The car key of the vehicle under screen point ([px], [py]): a train's car (its id times 256 and up), or a road vehicle, ship or aircraft (below zero, as [com.rm.interchange.sim.VehicleView.key] makes them); [NO_VEHICLE] for none. */
 fun vehicleAt(world: World, view: View, moving: Moving?, px: Float, py: Float, w: Float, h: Float): Int {
     val v = moving?.now?.vehicles ?: return NO_VEHICLE
     var best = NO_VEHICLE
@@ -377,7 +399,7 @@ fun vehicleAt(world: World, view: View, moving: Moving?, px: Float, py: Float, w
         val vy = view.toViewY(v.x(i), v.y(i))
         val sx = view.screenX(vx, vy, w)
         // Aimed at the car's middle, a little above the ground.
-        val sy = view.screenY(vx, vy, groundHeight(world, v.x(i), v.y(i)) + 1f, h)
+        val sy = view.screenY(vx, vy, (if (v.deck(i) >= 0f) v.deck(i) else groundHeight(world, v.x(i), v.y(i))) + 1f, h)
         val d = (sx - px) * (sx - px) + (sy - py) * (sy - py)
         if (d < bestD) {
             bestD = d

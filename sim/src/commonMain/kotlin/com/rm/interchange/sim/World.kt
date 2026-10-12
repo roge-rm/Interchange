@@ -53,6 +53,19 @@ class World(val settings: NewGame, val roster: Roster = Roster.BASE, generate: B
     /** Salt depots by tile; and which ice roads were open yesterday, not saved. */
     val saltDepots = HashSet<Int>()
     internal var iceRoadsOpen: BooleanArray? = null
+    /** Canals and locks (by tile, to the way they run) the companies have dug; docks to their station and the edge each faces; buoys to theirs. */
+    val canals = HashSet<Int>()
+    val locks = HashMap<Int, Int>()
+    val docks = HashMap<Int, Int>()
+    val dockFacing = HashMap<Int, Int>()
+    val buoys = HashMap<Int, Int>()
+    /** Ships, airports and aircraft by id, a gone one leaving null; airport tiles to their airport. */
+    val ships = ArrayList<Ship?>()
+    val airports = ArrayList<Airport?>()
+    val airportTiles = HashMap<Int, Int>()
+    val aircraft = ArrayList<Aircraft?>()
+    /** Today's weather at each airport, worked out as needed. Not saved. */
+    internal val airSkies = HashMap<Int, Int>()
     val house = ShortArray(width * height)
     val houseYear = ShortArray(width * height)
     val townOf = ShortArray(width * height) { -1 }
@@ -225,6 +238,15 @@ class World(val settings: NewGame, val roster: Roster = Roster.BASE, generate: B
             is Command.BuyRoadVehicle -> buyRoadVehicle(company, command)
             is Command.RoadOrder -> roadVehicleCommand(company, command)
             is Command.SaltDepot -> saltDepot(company, command)
+            is Command.Canal -> buildCanal(company, command)
+            is Command.Lock -> buildLock(company, command)
+            is Command.Dock -> buildDock(company, command)
+            is Command.Shipyard -> buildShipyard(company, command)
+            is Command.Buoy -> buildBuoy(company, command)
+            is Command.Airport -> buildAirport(company, command)
+            is Command.AirportUpgrade -> upgradeAirport(company, command)
+            is Command.BuyCraft -> buyCraft(company, command)
+            is Command.CraftOrder -> if (command.aircraft) aircraftCommand(company, command) else shipCommand(company, command)
             is Command.SnowWorks -> snowWorks(company, command)
             is Command.SetUpkeep -> company.upkeep = command.level.coerceIn(Upkeep.LOW, Upkeep.HIGH)
             is Command.Clear -> clearTile(company, command)
@@ -245,13 +267,18 @@ class World(val settings: NewGame, val roster: Roster = Roster.BASE, generate: B
         tick++
         moveTrains()
         moveRoadVehicles()
+        moveShips()
+        moveAircraft()
         if (tick % Calendar.TICKS_PER_DAY == 0L) {
             weatherDay()
+            airSkies.clear()
             trackDay()
             weatherLooks()
             trainsDay()
             roadVehiclesDay()
             roadsDay()
+            shipsDay()
+            aircraftDay()
             payRunningCosts()
             passengersDay()
             townsDay()
@@ -324,6 +351,13 @@ class World(val settings: NewGame, val roster: Roster = Roster.BASE, generate: B
         for (k in saltDepots.sorted()) mix(k.toLong() * 7)
         for (v in roadVehicles) if (v != null) { mix(v.id.toLong()); mix(v.at.toLong()); mix(v.along.toLong()); mix(v.speed.toLong()); for (c in v.cargo) for (p in c) mix(p.count.toLong()) }
         for (k in sheds.sorted()) mix(-k.toLong())
+        for (k in canals.sorted()) mix(k.toLong() * 3)
+        for (k in locks.keys.sorted()) mix(k.toLong() * 5 + locks.getValue(k))
+        for (k in docks.keys.sorted()) mix(k.toLong() * 11 + docks.getValue(k))
+        for (k in buoys.keys.sorted()) mix(k.toLong() * 13 + buoys.getValue(k))
+        for (v in ships) if (v != null) { mix(v.id.toLong()); mix(v.x.toLong()); mix(v.y.toLong()); mix(v.speed.toLong()); mix(v.waiting.toLong()); for (c in v.cargo) for (p in c) mix(p.count.toLong()) }
+        for (a in airports) if (a != null) { mix(a.id.toLong()); mix(a.station.toLong()); mix(if (a.ils) 1L else 0L); mix(if (a.deice) 1L else 0L) }
+        for (v in aircraft) if (v != null) { mix(v.id.toLong()); mix(v.x.toLong()); mix(v.y.toLong()); mix(v.altitude.toLong()); mix(v.state.toLong()); mix(v.waiting.toLong()); for (c in v.cargo) for (p in c) mix(p.count.toLong()) }
         for (s in spans) if (s != null) { mix(s.x0.toLong()); mix(s.y0.toLong()); mix(s.x1.toLong()); mix(s.y1.toLong()); mix(s.height.toLong()) }
         for (t in trains) {
             if (t == null) continue

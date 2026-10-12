@@ -1,7 +1,9 @@
 package com.rm.interchange.map
 
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Path
@@ -42,7 +44,7 @@ class LandPainter(private val world: World, private val view: View, private val 
     }
 
     /** Draws sprite [cell] of [image], whose rects are [rects], standing at screen point ([px], [py]). */
-    fun DrawScope.spriteAt(image: ImageBitmap, rects: IntArray, cell: Int, px: Float, py: Float, scale: Float) {
+    fun DrawScope.spriteAt(image: ImageBitmap, rects: IntArray, cell: Int, px: Float, py: Float, scale: Float, shadow: Boolean = false) {
         if (cell < 0) return
         val r = cell * 6
         val f = shrink
@@ -60,6 +62,8 @@ class LandPainter(private val world: World, private val view: View, private val 
         drawImage(
             image, IntOffset(sx, sy), IntSize(w, h), IntOffset(l, t),
             IntSize((left + w * scale).toInt() - l, (top + h * scale).toInt() - t),
+            alpha = if (shadow) SHADOW_ALPHA else 1f,
+            colorFilter = if (shadow) SHADOW_TINT else null,
             filterQuality = if (scale == 1f) FilterQuality.None else FilterQuality.Low,
         )
     }
@@ -137,3 +141,7 @@ class LandPainter(private val world: World, private val view: View, private val 
         }
     }
 }
+
+/** An aircraft's shadow on the ground: its own shape, darkened. */
+private const val SHADOW_ALPHA = 0.3f
+private val SHADOW_TINT = ColorFilter.tint(Color.Black, BlendMode.SrcIn)

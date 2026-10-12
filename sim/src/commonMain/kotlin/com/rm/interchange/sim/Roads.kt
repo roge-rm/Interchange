@@ -218,7 +218,7 @@ internal fun World.buildGarage(company: Company, c: Command.Garage) {
     if (road[n].toInt() == 0 || !roadFits(nx, ny, joined) || track[n].toInt() != 0 || roadStops.containsKey(n)) return
     if (company.money < price(Prices.DEPOT) + treeCost(i)) return
     spend(company, Books.CONSTRUCTION, price(Prices.DEPOT) + fellTrees(company, i))
-    val d = Depot(depots.size, company.id, i, c.edge, road = true)
+    val d = Depot(depots.size, company.id, i, c.edge, Depots.ROAD)
     depots += d
     depotTiles[i] = d.id
     road[n] = (road[n].toInt() or roadBit(Track.opposite(c.edge))).toByte()

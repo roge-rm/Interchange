@@ -117,6 +117,17 @@ for e, edge in enumerate(EDGES):
 JOBS.append(("static", ("salt_dome",), lambda: scenery("salt_dome.png", base.cell), None))
 JOBS.append(("shadows", ("salt_dome_shadow",), lambda: scenery("salt_dome_shadow.png", base.cell), None))
 UP[("salt_dome",)] = "salt_dome.png"
+# Docks, shipyards, locks and seaplane bases by the view edge they face; hangars and terminals by the edge their front faces.
+WATERSIDE = ["dock", "shipyard", "lock", "seaplane", "hangar_small", "hangar", "terminal_small", "terminal_mid", "terminal_big"]
+for name in WATERSIDE:
+    for e, edge in enumerate(EDGES):
+        JOBS.append(("static", (name, e), lambda name=name, edge=edge: scenery(f"{name}_{edge}.png", base.cell), None))
+        JOBS.append(("shadows", (name + "_shadow", e), lambda name=name, edge=edge: scenery(f"{name}_{edge}_shadow.png", base.cell), None))
+        UP[(name, e)] = f"{name}_{edge}.png"
+for name in ("tower", "strip_hut"):
+    JOBS.append(("static", (name,), lambda name=name: scenery(f"{name}.png", base.cell), None))
+    JOBS.append(("shadows", (name + "_shadow",), lambda name=name: scenery(f"{name}_shadow.png", base.cell), None))
+    UP[(name,)] = f"{name}.png"
 for a in (0, 1):
     JOBS.append(("static", ("road_stop", a), lambda a=a: scenery(f"road_stop_{a}.png", base.cell), None))
     JOBS.append(("shadows", ("road_stop_shadow", a), lambda a=a: scenery(f"road_stop_{a}_shadow.png", base.cell), None))
@@ -197,6 +208,19 @@ for m, (key, length, build) in enumerate(vehicles.ROSTER):
     for h in (0, 2, 4, 6):
         for way in ("up", "down"):
             JOBS.append((f"vehicle_{key}", ("slope", m, h, way), lambda key=key, build=build, h=h, way=way: rendered_slope(key, h, way, build), "outline"))
+
+
+def waterside_consts(index):
+    """Atlas lines for the docks, locks and airport buildings: each by view edge, and its shadow."""
+    out = ["    /** Docks, shipyards, locks (by the edge they rise to), seaplane bases, hangars and terminals, by the view edge they face, and their shadows. On the static sheet. */"]
+    for name in WATERSIDE:
+        const = name.upper()
+        out.append(f"    val {const} = intArrayOf({', '.join(str(index[(name, e)]) for e in range(4))})")
+        out.append(f"    val {const}_SHADOW = intArrayOf({', '.join(str(index[(name + '_shadow', e)]) for e in range(4))})")
+    for name in ("tower", "strip_hut"):
+        out.append(f"    const val {name.upper()} = {index[(name,)]}")
+        out.append(f"    const val {name.upper()}_SHADOW = {index[(name + '_shadow',)]}")
+    return "\n".join(out)
 
 
 def shrink(img, f):
@@ -426,6 +450,7 @@ object Atlas {{
     /** A salt dome, and its shadow. On the static sheet. */
     const val SALT_DOME = {index[("salt_dome",)]}
     const val SALT_DOME_SHADOW = {index[("salt_dome_shadow",)]}
+{waterside_consts(index)}
 
     const val TREE_LOOKS = {ground.TREE_LOOKS}
     /** A tree, at kind * TREE_LOOKS + look, kinds in the order of the game's trees, and its shadow, on the shadows sheet. On the static sheet. */

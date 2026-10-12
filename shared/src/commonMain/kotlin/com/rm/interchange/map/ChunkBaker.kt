@@ -5,6 +5,9 @@ import com.rm.interchange.sim.CORNER_N
 import com.rm.interchange.sim.CORNER_S
 import com.rm.interchange.sim.CORNER_W
 import com.rm.interchange.sim.Track
+import com.rm.interchange.sim.Airport
+import com.rm.interchange.sim.Airports
+import com.rm.interchange.sim.Depots
 import com.rm.interchange.sim.PAVED
 import com.rm.interchange.sim.Trees
 import com.rm.interchange.sim.World
@@ -120,7 +123,7 @@ internal class ChunkBaker(
             val y = (vy + dy).coerceIn(0, view.viewHeight - 1)
             val wx = view.worldX(x, y)
             val wy = view.worldY(x, y)
-            if (world.isWater(wx, wy)) {
+            if (world.isWater(wx, wy) || world.canals.contains(world.index(wx, wy))) {
                 val ice = world.weather.ice[world.index(wx, wy)].toInt() and 255
                 sum += ice
                 most = maxOf(most, ice)
@@ -189,7 +192,21 @@ internal class ChunkBaker(
             }
         }
         if (road != 0 || (worldRoad != 0 && !world.isWater(wx, wy))) for (e in 0 until 4) if (worldRoad and (1 shl e) != 0) road = road or (1 shl viewEdge(e))
-        ground(vx, vy, t, r, b, l, kind, edges, road, weather = true)
+        // A canal is water at its own height, with stone banks wherever it doesn't go on.
+        if (world.canals.contains(here)) {
+            var banks = 0
+            for (e in 0 until 4) {
+                val nx = wx + Track.dx(e)
+                val ny = wy + Track.dy(e)
+                val n = if (world.inside(nx, ny)) world.index(nx, ny) else -1
+                if (n < 0 || !(world.canals.contains(n) || world.locks.containsKey(n) || world.isWater(nx, ny))) banks = banks or (1 shl sideOf(viewEdge(e)))
+            }
+            ground(vx, vy, t, r, b, l, Atlas.WATER, intArrayOf(-1, -1, -1, -1), weather = true, banks = banks)
+            earthFaces(vx, vy, r, b, l)
+            return
+        }
+        val aero = world.airportTiles[here]?.let { id -> world.airports.getOrNull(id)?.let { airportGround(it, wx, wy) } } ?: 0
+        ground(vx, vy, t, r, b, l, kind, edges, road, weather = true, aero = aero)
         earthFaces(vx, vy, r, b, l)
 
         val tile = world.index(wx, wy)
@@ -246,6 +263,26 @@ internal class ChunkBaker(
                 sprite(if (shadow) Atlas.SALT_DOME_SHADOW else Atlas.SALT_DOME, vx, vy, base, shadow)
                 return
             }
+            world.docks[tile]?.let {
+                val e = viewEdge(world.dockFacing[tile] ?: 0)
+                sprite(if (shadow) Atlas.DOCK_SHADOW[e] else Atlas.DOCK[e], vx, vy, base, shadow)
+                return
+            }
+            world.locks[tile]?.let { axis ->
+                // Drawn rising to its higher end.
+                val high = if (axis == Track.X) (if (world.heightAt(wx + 1, wy) > world.heightAt(wx, wy)) Track.XP else Track.XM)
+                else (if (world.heightAt(wx, wy + 1) > world.heightAt(wx, wy)) Track.YP else Track.YM)
+                val e = viewEdge(high)
+                sprite(if (shadow) Atlas.LOCK_SHADOW[e] else Atlas.LOCK[e], vx, vy, base, shadow)
+                return
+            }
+            if (world.canals.contains(tile)) return
+            world.airportTiles[tile]?.let { id ->
+                val a = world.airports.getOrNull(id) ?: return
+                val art = airportArt(a, wx, wy, shadow)
+                if (art >= 0) sprite(art, vx, vy, base, shadow)
+                return
+            }
             if (world.roadStops.containsKey(tile)) {
                 val a = if (viewEdge(if (world.straightRoad(tile) == Track.X) Track.XP else Track.YP) <= Track.XP) 0 else 1
                 sprite(if (shadow) Atlas.ROAD_STOP_SHADOW[a] else Atlas.ROAD_STOP[a], vx, vy, base, shadow)
@@ -256,6 +293,11 @@ internal class ChunkBaker(
                 if (d != null && d.road) {
                     val e = viewEdge(d.edge)
                     sprite(if (shadow) Atlas.GARAGE_SHADOW[e] else Atlas.GARAGE[e], vx, vy, base, shadow)
+                    return
+                }
+                if (d != null && d.kind == Depots.SHIPYARD) {
+                    val e = viewEdge(d.edge)
+                    sprite(if (shadow) Atlas.SHIPYARD_SHADOW[e] else Atlas.SHIPYARD[e], vx, vy, base, shadow)
                     return
                 }
             }
@@ -303,7 +345,7 @@ internal class ChunkBaker(
      * Paints a tile's top with corner heights [t], [r], [b], [l] (view order) in [kind]'s texture, letting the
      * kinds of its neighbours across each edge ([edges], -1 for none) spread in where they rank higher.
      */
-    private fun ground(vx: Int, vy: Int, t: Int, r: Int, b: Int, l: Int, kind: Int, edges: IntArray, road: Int = 0, weather: Boolean = false) {
+    private fun ground(vx: Int, vy: Int, t: Int, r: Int, b: Int, l: Int, kind: Int, edges: IntArray, road: Int = 0, weather: Boolean = false, banks: Int = 0, aero: Int = 0) {
         // Split along whichever diagonal has its ends level, as the slopes are drawn. Each half is a plane
         // h = h0 + gu * u + gv * v over the tile's own u and v.
         val alongRL = r == l
@@ -416,18 +458,24 @@ internal class ChunkBaker(
                 if (muddy > 0f) texel = mix(texel, MUD, muddy)
                 if (charred > 0f) texel = mix(texel, CHARCOAL, charred * (0.85f + rag * 0.15f))
                 if (road != 0) texel = roadTexel(u, v, road, ti, texel)
+                if (aero != 0) texel = airportTexel(u, v, aero, texel)
                 if (icy) {
                     val ice = iT * (1f - u) * (1f - v) + ir * u * (1f - v) + ib * u * v + il * (1f - u) * v
                     if (ice >= ICE_FROM) texel = mix(texel, mix(ICE, ICE_DARK, rag * 0.6f), (0.5f + ice / 60f).coerceAtMost(0.92f))
                 }
-                if (snowy && (!water || icy)) {
+                if (banks != 0) for (k in 0 until 4) {
+                    if (banks and (1 shl k) == 0) continue
+                    val dist = when (k) { 0 -> v; 1 -> 1f - u; 2 -> 1f - v; else -> u }
+                    if (dist < BANK) texel = mix(STONE, sheets.ground[Atlas.ROCK * size * size + ti], 0.3f)
+                }
+                if (snowy && (!water || icy || banks != 0)) {
                     val depth = st * (1f - u) * (1f - v) + sr * u * (1f - v) + sb * u * v + sl * (1f - u) * v
                     // Thin snow lies in patches, from noise read somewhere else again; deeper, it covers everything.
                     val patch = (sheets.ground[ragBase + ((ty + size / 3) % size) * size + (tx + size / 2) % size] and 255) / 255f
                     val cover = ((depth - (0.5f + patch * 14f)) / 3f).coerceIn(0f, 1f)
                     if (cover > 0f) {
                         // Traffic packs the snow on a road down to a greyer track, so the road still shows through.
-                        val onRoad = road != 0 && roadTexel(u, v, road, ti, NOT_ROAD) != NOT_ROAD
+                        val onRoad = (road != 0 && roadTexel(u, v, road, ti, NOT_ROAD) != NOT_ROAD) || (aero != 0 && airportTexel(u, v, aero, NOT_ROAD) != NOT_ROAD)
                         texel = mix(texel, sheets.ground[Atlas.SNOW * size * size + ti], if (onRoad) cover * 0.8f else cover)
                         if (onRoad) texel = mix(texel, PACKED_SNOW, cover * 0.45f)
                     }
@@ -461,6 +509,112 @@ internal class ChunkBaker(
                 }
                 pixels[py * width + px] = out
             }
+        }
+    }
+
+    /** Which side of a tile view edge [edge] is, as the ground's neighbours count them: up, right, down, left. */
+    private fun sideOf(edge: Int) = when (edge) { Track.YM -> 0; Track.XP -> 1; Track.YP -> 2; else -> 3 }
+
+    /**
+     * How airport [a]'s tile ([wx], [wy]) is paved, packed for [airportTexel]: an [AERO_RUNWAY], [AERO_STRIP],
+     * [AERO_TAXI], [AERO_APRON] or [AERO_PAD] in the low bits, [AERO_ALONG_U] if its runway runs along view u, and
+     * the sides of the tile at a runway's ends from bit 8.
+     */
+    private fun airportGround(a: Airport, wx: Int, wy: Int): Int {
+        val lx = if (a.axis == Track.X) wx - a.x else wy - a.y
+        val ly = if (a.axis == Track.X) wy - a.y else wx - a.x
+        val len = Airports.LENGTH[a.kind]
+        val role = when (a.kind) {
+            Airports.SEAPLANE -> return 0
+            Airports.HELIPORT -> AERO_PAD
+            Airports.STRIP -> AERO_STRIP
+            Airports.REGIONAL -> if (ly == 0) AERO_RUNWAY else AERO_APRON
+            Airports.CITY -> when (ly) { 0 -> AERO_RUNWAY; 1 -> AERO_TAXI; else -> AERO_APRON }
+            else -> when (ly) { 0 -> AERO_RUNWAY; 1 -> AERO_TAXI; else -> AERO_APRON }
+        }
+        val alongU = viewEdge(if (a.axis == Track.X) Track.XP else Track.YP) <= Track.XP
+        var ends = 0
+        if (role == AERO_RUNWAY) {
+            val back = if (a.axis == Track.X) Track.XM else Track.YM
+            if (lx == 0) ends = ends or (1 shl sideOf(viewEdge(back)))
+            if (lx == len - 1) ends = ends or (1 shl sideOf(viewEdge(Track.opposite(back))))
+        }
+        return role or (if (alongU) AERO_ALONG_U else 0) or (ends shl 8)
+    }
+
+    /** What airport paving [aero] shows at ([u], [v]): runway markings, gravel, a taxiway's line, apron slabs or a helipad's H. [ground] is what's there otherwise. */
+    private fun airportTexel(u: Float, v: Float, aero: Int, ground: Int): Int {
+        val along = aero and AERO_ALONG_U != 0
+        val c = kotlin.math.abs((if (along) v else u) - 0.5f)
+        val l = if (along) u else v
+        val shade = if (ground == NOT_ROAD) 0f else 0.08f
+        fun base(col: Int) = if (shade > 0f) mix(col, ground, shade) else col
+        return when (aero and 15) {
+            AERO_RUNWAY -> {
+                if (c > 0.42f) return ground
+                val ends = aero shr 8
+                for (k in 0 until 4) {
+                    if (ends and (1 shl k) == 0) continue
+                    val dist = when (k) { 0 -> v; 1 -> 1f - u; 2 -> 1f - v; else -> u }
+                    if (dist < 0.16f && c < 0.33f && ((if (along) v else u) * 12f) % 1f < 0.5f) return MARKING
+                }
+                when {
+                    c < 0.018f && (l * 3f) % 1f < 0.55f -> MARKING
+                    c in 0.37f..0.395f -> MARKING
+                    else -> base(ASPHALT)
+                }
+            }
+            AERO_STRIP -> if (c > 0.3f) ground else base(STRIP_GRAVEL)
+            AERO_TAXI -> when {
+                c > 0.28f -> ground
+                c < 0.014f -> TAXI_LINE
+                else -> base(ASPHALT)
+            }
+            AERO_APRON -> if ((l * 2f) % 1f < 0.015f || ((if (along) v else u) * 2f) % 1f < 0.015f) base(APRON_JOINT) else base(APRON)
+            AERO_PAD -> {
+                val du = u - 0.5f
+                val dv = v - 0.5f
+                val rr = kotlin.math.sqrt(du * du + dv * dv)
+                when {
+                    kotlin.math.abs(du) > 0.42f || kotlin.math.abs(dv) > 0.42f -> ground
+                    rr in 0.28f..0.31f -> TAXI_LINE
+                    (kotlin.math.abs(du) in 0.1f..0.14f && kotlin.math.abs(dv) < 0.16f) || (kotlin.math.abs(du) < 0.12f && kotlin.math.abs(dv) < 0.02f) -> MARKING
+                    else -> base(APRON)
+                }
+            }
+            else -> ground
+        }
+    }
+
+    /** The building on airport [a]'s tile ([wx], [wy]) and its shadow, facing the runway, or -1. */
+    private fun airportArt(a: Airport, wx: Int, wy: Int, shadow: Boolean): Int {
+        val lx = if (a.axis == Track.X) wx - a.x else wy - a.y
+        val ly = if (a.axis == Track.X) wy - a.y else wx - a.x
+        val e = viewEdge(if (a.axis == Track.X) Track.YM else Track.XM)
+        fun pick(art: IntArray, shade: IntArray) = if (shadow) shade[e] else art[e]
+        val back = Airports.WIDTH[a.kind] - 1
+        return when (a.kind) {
+            Airports.SEAPLANE -> viewEdge(a.axis).let { if (shadow) Atlas.SEAPLANE_SHADOW[it] else Atlas.SEAPLANE[it] }
+            Airports.STRIP -> if (lx == Airports.LENGTH[a.kind] - 1) (if (shadow) Atlas.STRIP_HUT_SHADOW else Atlas.STRIP_HUT) else -1
+            Airports.REGIONAL -> if (ly != back) -1 else when (lx) {
+                0 -> pick(Atlas.HANGAR_SMALL, Atlas.HANGAR_SMALL_SHADOW)
+                2 -> pick(Atlas.TERMINAL_SMALL, Atlas.TERMINAL_SMALL_SHADOW)
+                4 -> if (shadow) Atlas.TOWER_SHADOW else Atlas.TOWER
+                else -> -1
+            }
+            Airports.CITY -> if (ly != back) -1 else when (lx) {
+                0 -> pick(Atlas.HANGAR, Atlas.HANGAR_SHADOW)
+                2, 3 -> pick(Atlas.TERMINAL_MID, Atlas.TERMINAL_MID_SHADOW)
+                5 -> if (shadow) Atlas.TOWER_SHADOW else Atlas.TOWER
+                else -> -1
+            }
+            Airports.INTERNATIONAL -> if (ly != back) -1 else when (lx) {
+                0, 1 -> pick(Atlas.HANGAR, Atlas.HANGAR_SHADOW)
+                3, 4, 5 -> pick(Atlas.TERMINAL_BIG, Atlas.TERMINAL_BIG_SHADOW)
+                7 -> if (shadow) Atlas.TOWER_SHADOW else Atlas.TOWER
+                else -> -1
+            }
+            else -> -1
         }
     }
 
@@ -876,6 +1030,22 @@ internal class ChunkBaker(
         private const val SNOW_TOP = 0xfff4f7fa.toInt()
         private const val MUD = 0xff5a4630.toInt()
         private const val PACKED_SNOW = 0xff9c9a94.toInt()
+        /** A canal's stone banks, and how far in from the edge they reach. */
+        private const val STONE = 0xff8e8a82.toInt()
+        private const val BANK = 0.11f
+        /** Airport paving, as [airportGround] packs it, and its colours. */
+        private const val AERO_RUNWAY = 1
+        private const val AERO_STRIP = 2
+        private const val AERO_TAXI = 3
+        private const val AERO_APRON = 4
+        private const val AERO_PAD = 5
+        private const val AERO_ALONG_U = 16
+        private const val ASPHALT = 0xff4a4c4e.toInt()
+        private const val STRIP_GRAVEL = 0xffa8987c.toInt()
+        private const val APRON = 0xffb4b0a8.toInt()
+        private const val APRON_JOINT = 0xff96928a.toInt()
+        private const val MARKING = 0xffeeeeea.toInt()
+        private const val TAXI_LINE = 0xffe8c030.toInt()
         /** Passed to roadTexel as the ground, to tell where a road shows. */
         private const val NOT_ROAD = 0x00010203
         private const val MUD_MOST = 0.45f

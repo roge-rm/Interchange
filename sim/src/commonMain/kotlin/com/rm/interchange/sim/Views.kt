@@ -24,11 +24,29 @@ class VehicleView(val tick: Long, val cars: FloatArray) {
     fun deck(i: Int) = cars[i * CAR_FIELDS + 7]
     /** The train a car belongs to, or -1 for a road vehicle. */
     fun train(i: Int) = if (key(i) >= 0) key(i) / 256 else -1
-    /** The road vehicle it is, or -1 for a train's car. */
-    fun roadVehicle(i: Int) = if (key(i) < 0) -key(i) / 256 - 1 else -1
+    /** The road vehicle, ship or aircraft it is, or -1. */
+    fun roadVehicle(i: Int) = craft(key(i), ROAD)
+    fun ship(i: Int) = craft(key(i), SHIP)
+    fun aircraft(i: Int) = craft(key(i), AIRCRAFT)
+    /** Up in the air: drawn from its flying sprites, with a shadow on the ground. */
+    fun flying(i: Int) = slope(i) == FLYING
 
     companion object {
         const val CAR_FIELDS = 8
+        /** What a key below zero is: [ROAD], [SHIP] or [AIRCRAFT] in its low byte, the id above. */
+        const val ROAD = 0
+        const val SHIP = 1
+        const val AIRCRAFT = 2
+        /** A slope that means flying. */
+        const val FLYING = 2
+
+        fun key(kind: Int, id: Int) = -((id + 1) * 256 + kind)
+        /** The id in [key] if it's of [kind], else -1. */
+        fun craft(key: Int, kind: Int): Int {
+            if (key >= 0) return -1
+            val n = -key
+            return if (n % 256 == kind) n / 256 - 1 else -1
+        }
     }
 }
 
@@ -101,6 +119,70 @@ class RoadVehicleView(
     val renewCost: Long,
 )
 
+/** A ship as the screen shows it. */
+class ShipView(
+    val id: Int,
+    val name: String,
+    val model: Int,
+    val depot: Int,
+    val inDepot: Boolean,
+    val running: Boolean,
+    val toDepot: Boolean,
+    val orders: IntArray,
+    val order: Int,
+    val kmh: Int,
+    val waiting: Boolean,
+    val lost: Boolean,
+    val carries: Int,
+    val load: Int,
+    val capacity: Int,
+    val profitThisYear: Long,
+    val profitLastYear: Long,
+    val age: Int,
+    val reliability: Int,
+    val broken: Boolean,
+    val service: Boolean,
+    val servicing: Boolean,
+    val renewCost: Long,
+    /** Held up by ice it can't break, or in port for a storm. */
+    val iced: Boolean,
+    val stormbound: Boolean,
+)
+
+/** An aircraft as the screen shows it. */
+class AircraftView(
+    val id: Int,
+    val name: String,
+    val model: Int,
+    val depot: Int,
+    val inDepot: Boolean,
+    val running: Boolean,
+    val toDepot: Boolean,
+    val orders: IntArray,
+    val order: Int,
+    val kmh: Int,
+    val state: Int,
+    val waiting: Boolean,
+    val carries: Int,
+    val load: Int,
+    val capacity: Int,
+    val profitThisYear: Long,
+    val profitLastYear: Long,
+    val age: Int,
+    val reliability: Int,
+    val broken: Boolean,
+    val service: Boolean,
+    val servicing: Boolean,
+    val renewCost: Long,
+    val gear: Int,
+    val seasonalGear: Boolean,
+    /** Why it's holding, as [cantLand] says, or null. */
+    val holdingFor: String?,
+)
+
+/** An airport as the screen shows it. */
+class AirportView(val id: Int, val station: Int, val kind: Int, val x: Int, val y: Int, val w: Int, val h: Int, val axis: Int, val depot: Int, val ils: Boolean, val deice: Boolean)
+
 /** A station as the screen shows it. */
 class StationView(
     val id: Int,
@@ -166,6 +248,11 @@ class WorldView(
     val sheds: IntArray = IntArray(0),
     val fences: IntArray = IntArray(0),
     val roadVehicles: List<RoadVehicleView> = emptyList(),
+    val ships: List<ShipView> = emptyList(),
+    val aircraft: List<AircraftView> = emptyList(),
+    val airports: List<AirportView> = emptyList(),
+    /** Buoys, by tile. */
+    val buoys: IntArray = IntArray(0),
 )
 
 fun World.view(): WorldView {
@@ -210,7 +297,7 @@ fun World.view(): WorldView {
         val x = tile % width
         val y = tile / width
         val rise = edgeHeight(x, y, 0, roadStepExit(v.at)) - edgeHeight(x, y, 0, roadStepEntry(v.at))
-        cars += (-(v.id + 1) * 256).toFloat()
+        cars += VehicleView.key(VehicleView.ROAD, v.id).toFloat()
         cars += p[0]
         cars += p[1]
         cars += p[2]
@@ -218,6 +305,28 @@ fun World.view(): WorldView {
         cars += rise.coerceIn(-1, 1).toFloat()
         cars += v.info.length / 16f
         cars += -1f
+    }
+    for (v in ships) {
+        if (v == null || v.inDepot) continue
+        cars += VehicleView.key(VehicleView.SHIP, v.id).toFloat()
+        cars += v.x / SHIP_UNIT.toFloat()
+        cars += v.y / SHIP_UNIT.toFloat()
+        cars += v.heading.toFloat()
+        cars += v.info.sprite.toFloat()
+        cars += 0f
+        cars += v.info.length / 16f
+        cars += -1f
+    }
+    for (v in aircraft) {
+        if (v == null || v.inDepot) continue
+        cars += VehicleView.key(VehicleView.AIRCRAFT, v.id).toFloat()
+        cars += v.x / SHIP_UNIT.toFloat()
+        cars += v.y / SHIP_UNIT.toFloat()
+        cars += v.heading.toFloat()
+        cars += v.info.sprite.toFloat()
+        cars += if (v.flying) VehicleView.FLYING.toFloat() else 0f
+        cars += v.info.length / 16f
+        cars += if (v.flying) v.altitude / 16f else -1f
     }
     val trainViews = trains.filterNotNull().map { t ->
         TrainView(
@@ -245,7 +354,8 @@ fun World.view(): WorldView {
         // Red while a train is in the block the signal guards: the one its piece is in.
         SignalView(tile, piece, Signals.facing(s), signalRed(tile, piece, s), Signals.kind(s))
     }
-    val depotViews = depots.filterNotNull().map { DepotView(it.tile, it.edge, it.id, depotWired(it)) }
+    // Only engine houses are drawn over what goes in and out of them.
+    val depotViews = depots.filterNotNull().filter { it.kind == Depots.RAIL }.map { DepotView(it.tile, it.edge, it.id, depotWired(it)) }
     // Towns change seldom, so their list is only made again when one has.
     if (townsChanged) {
         townViews = towns.map { TownView(it.id, it.name, it.x, it.y, it.population, it.houses) }
@@ -264,7 +374,33 @@ fun World.view(): WorldView {
                 v.profitThisYear, v.profitLastYear, (day - v.built).coerceAtLeast(0) / 365, v.reliability / 100, v.brokenFor > 0 && !v.slid, v.slid,
                 v.service, v.servicing, v.tires, v.seasonalTires, price(v.price) - roadValue(v),
             )
-        })
+        },
+        ships.filterNotNull().map { v ->
+            val c = v.carries
+            val r = v.route
+            val iced = !v.inDepot && v.running && r == null && v.lostUntil > tick
+            ShipView(
+                v.id, v.name, v.model, v.depot, v.inDepot, v.running, v.toDepot, v.orders.toIntArray(), v.order, v.speed / 16 * 2700 / 4096,
+                v.waiting > 0, iced, c, if (c >= 0) v.load(c) else 0, if (c >= 0) v.capacity(c) else 0,
+                v.profitThisYear, v.profitLastYear, (day - v.built).coerceAtLeast(0) / 365, v.reliability / 100, v.brokenFor > 0,
+                v.service, v.servicing, price(v.price) - craftValue(v.price, v.built, v.info.life),
+                iced && (weather.ice[shipTile(v)].toInt() and 255) > 0, v.waiting == 1 && weather.wind >= STORM_WIND,
+            )
+        },
+        aircraft.filterNotNull().map { v ->
+            val c = v.carries
+            val dest = if (v.target >= 0) airportOf(v.target) else null
+            AircraftView(
+                v.id, v.name, v.model, v.depot, v.inDepot, v.running, v.toDepot, v.orders.toIntArray(), v.order, v.speed / 16 * 2700 / 4096,
+                v.state, v.waiting > 0, c, if (c >= 0) v.load(c) else 0, if (c >= 0) v.capacity(c) else 0,
+                v.profitThisYear, v.profitLastYear, (day - v.built).coerceAtLeast(0) / 365, v.reliability / 100, v.brokenFor > 0,
+                v.service, v.servicing, price(v.price) - craftValue(v.price, v.built, v.info.life), v.gear, v.seasonalGear,
+                if (v.state == Flight.HOLD && dest != null) cantLand(v, dest) else null,
+            )
+        },
+        airports.filterNotNull().map { AirportView(it.id, it.station, it.kind, it.x, it.y, it.w, it.h, it.axis, it.depot, it.ils, it.deice) },
+        buoys.keys.sorted().toIntArray(),
+    )
 }
 
 /** The weather's copy for the screen, made again only once a day. */

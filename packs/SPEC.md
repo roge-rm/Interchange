@@ -54,18 +54,24 @@ Each vehicle:
 | Field | Needed | What it is |
 |---|---|---|
 | id | yes | Lower case letters, digits, `-` and `_`. Its full name is `pack:id`. |
-| kind | yes | `engine`, `wagon` or `tender`. A tender only comes with its engine. |
+| kind | yes | `engine`, `wagon` or `tender` on the track, `road` for buses, trucks and streetcars, `ship` or `aircraft`. A tender only comes with its engine. |
 | name | yes | Its name in each language. |
 | plural | no | What more than one is called, for wagons. |
 | type | no | What railwaymen called it: a wheel arrangement like `4-6-2`, or what a car is for. |
 | from, until | yes | The years it's on sale, from the first up to but not including the second. |
-| speed | engines | Top speed in km/h. |
-| power | engines | Horsepower. |
+| speed | engines, road, ships, aircraft | Top speed in km/h. |
+| power | engines, road, ships, aircraft | Horsepower. |
 | tractive | no | Engines' starting tractive effort in kN, what the wheels pull before they slip. A quarter of the engine's weight if left out (its weight in tonnes times 2.45). |
 | traction | no | Engines: `steam` (the default), `diesel` or `electric`. Electric engines only run under wires. |
 | life | no | Years it runs well before it wears out and breaks down more. 35 if left out. |
 | reliability | no | How reliable it is new, in percent. 85 if left out. |
-| plow | no | Wagons: `wedge` or `rotary` makes it a snow plow, run at the head of its train. A wedge clears up to a metre of snow and pushes through drifts four times as fast; a rotary clears anything. |
+| plow | no | Wagons: `wedge` or `rotary` makes it a snow plow, run at the head of its train. A wedge clears up to a metre of snow and pushes through drifts four times as fast; a rotary clears anything. Road vehicles: a plow truck that clears the road it drives. |
+| tram | no | Road vehicles: `true` for a streetcar, which runs only on tram rails. |
+| icebreaker | no | Ships: the ice it breaks through, in cm, clearing a channel as it goes. Other ships stop at 15 cm. |
+| hovercraft | no | Ships: `true` rides over ice of any thickness. |
+| runway | aircraft | The least it lands at: `strip` (a gravel strip), `regional`, `city` or `international` airport, or `heli` for a helicopter, which lands at any airport or a heliport. |
+| range | no | Aircraft: how far it flies without stopping, in km. Stops beyond it are skipped. |
+| floats | no | Aircraft: `true` for a bush plane, which goes on floats in summer and skis in winter, and lands at seaplane bases. |
 | weight | yes | Tonnes. |
 | cost | yes | Dollars to buy. |
 | running | yes | Dollars a year to run. |
@@ -99,7 +105,7 @@ One PNG for each drawing, 1024 by 1024 pixels: four rows of four cells, each cel
 | Cells | What's drawn |
 |---|---|
 | 1 to 8 | On the level, heading each of the eight ways, a step of 45° clockwise as seen from above each time. Cell 1 runs down to the right on screen, cell 3 down to the left, cell 5 up to the left, cell 7 up to the right. |
-| 9 to 16 | On a slope, for the four headings of cells 1, 3, 5 and 7, each climbing then going down: 9 and 10 for cell 1's heading, 11 and 12 for cell 3's, 13 and 14 for cell 5's, 15 and 16 for cell 7's. |
+| 9 to 16 | On a slope, for the four headings of cells 1, 3, 5 and 7, each climbing then going down: 9 and 10 for cell 1's heading, 11 and 12 for cell 3's, 13 and 14 for cell 5's, 15 and 16 for cell 7's. Aircraft instead have each of the eight headings again up in the air, with no shadow: cell 9 for cell 1's heading and so on; the game draws the shadow on the ground. Ships don't use these. |
 
 - The view is the game's: orthographic, looking down 30°, turned 45°. A tile is 256 pixels wide and 128 high at this size.
 - In each cell, the middle of the vehicle stands on the rail at pixel (128, 160) from the cell's top left.

@@ -21,6 +21,8 @@ import rig  # noqa: E402
 import steam  # noqa: E402
 import diesel  # noqa: E402
 import roadcars  # noqa: E402
+import ships  # noqa: E402
+import aircraft  # noqa: E402
 
 
 def L(n):
@@ -110,6 +112,10 @@ MODELS = {
     "flexity": (16, lambda m: roadcars.streetcar(m, L(16), "flexity")),
     "rotary_plow": (12, lambda m: cars.rotary_plow(m, L(12))),
 }
+SHIPS = ships.ship_builders()
+AIRCRAFT = aircraft.aircraft_builders()
+for _key, (_n, _build) in list(SHIPS.items()) + list(AIRCRAFT.items()):
+    MODELS[_key] = (_n, lambda m, n=_n, build=_build: build(m, L(n)))
 
 
 # Road vehicles stand alone; everything else runs coupled in trains.
@@ -175,19 +181,25 @@ def main():
         # The reset takes the materials with it.
         parts._materials.clear()
         rig.setup(samples=40)
-        shadow_catcher()
+        catcher = shadow_catcher()
         model = parts.Model(key)
         build(model)
-        if key not in ROAD:
+        if key not in ROAD and key not in SHIPS and key not in AIRCRAFT:
             couple(model, L(length))
         pivot = model.place(0)
         # A step up over a tile, the steepest track climbs.
         tilt = math.atan2(rig.RISE, 1.0)
         shots = [(f"{key}_{h}.png", 0.0, h) for h in range(8)]
-        shots += [(f"{key}_s{h}_{way}.png", tilt if way == "up" else -tilt, h) for h in (0, 2, 4, 6) for way in ("up", "down")]
-        for name, pitch, h in shots:
+        if key in AIRCRAFT:
+            # Flying: each heading again with no ground under it, in the slope drawings' cells (heading h in cell 8 + h).
+            shots += [(f"{key}_s{h // 2 * 2}_{'up' if h % 2 == 0 else 'down'}.png", 0.0, h) for h in range(8)]
+        elif key not in SHIPS:
+            shots += [(f"{key}_s{h}_{way}.png", tilt if way == "up" else -tilt, h) for h in (0, 2, 4, 6) for way in ("up", "down")]
+        for k, (name, pitch, h) in enumerate(shots):
             if (out / name).exists():
                 continue
+            if key in AIRCRAFT and k == 8:
+                catcher.hide_render = True
             pivot.rotation_euler = (pitch, 0, -h * math.pi / 4)
             rig.render(str(out / name))
 

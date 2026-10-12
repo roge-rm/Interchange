@@ -16,7 +16,7 @@ package com.rm.interchange.sim
  */
 object Save {
     private val MAGIC = "ICHG".encodeToByteArray()
-    const val VERSION = 16
+    const val VERSION = 17
 
     fun write(world: World): ByteArray {
         val w = ByteWriter(world.width * world.height * 6 + 4096)
@@ -49,6 +49,7 @@ object Save {
                 w.bool(s != null)
                 if (s == null) continue
                 w.int(s.owner); w.string(s.name); w.int(s.signX); w.int(s.signY); w.bool(s.waypoint); w.ints(s.tiles.toIntArray()); w.ints(s.stops.toIntArray())
+                w.ints(s.docks.toIntArray()); w.ints(s.aero.toIntArray())
                 writeCargo(w, s.cargo)
                 w.ints(s.rating); w.uvar(s.lastCall.size.toLong()); for (v in s.lastCall) w.long(v); w.ints(s.lastSpeed)
             }
@@ -56,7 +57,7 @@ object Save {
             for (d in depots) {
                 w.bool(d != null)
                 if (d == null) continue
-                w.int(d.owner); w.int(d.tile); w.int(d.edge); w.bool(d.road)
+                w.int(d.owner); w.int(d.tile); w.int(d.edge); w.int(d.kind)
             }
             val keys = signals.keys.sorted()
             w.uvar(keys.size.toLong())
@@ -126,6 +127,7 @@ object Save {
             w.int(wx.anomaly); w.int(wx.recent); w.int(wx.windFrom); w.int(wx.wind)
             w.uvar(wx.fronts.size.toLong())
             for (f in wx.fronts) { w.int(f.kind); w.int(f.x); w.int(f.y); w.int(f.dx); w.int(f.dy); w.int(f.radius); w.int(f.strength); w.int(f.warmth); w.int(f.life); w.bool(f.freezing) }
+            writeWaterAndAir(w, this)
         }
         val body = Squeeze.pack(w.toByteArray())
         val out = ByteWriter(body.size + 16)
@@ -189,6 +191,7 @@ object Save {
                 val s = Station(id, r.int(), r.string(), r.int(), r.int(), if (version >= 12) r.bool() else false)
                 for (tile in r.ints()) { s.tiles += tile; stationTiles[tile] = id }
                 if (version >= 16) for (tile in r.ints()) { s.stops += tile; roadStops[tile] = id }
+                if (version >= 17) { s.docks += r.ints().toList(); s.aero += r.ints().toList() }
                 when {
                     version >= 5 -> readCargo(r, s.cargo, version)
                     // Before journeys, what waited could go anywhere.
@@ -205,7 +208,11 @@ object Save {
             }
             repeat(r.uvar().toInt()) { id ->
                 if (!r.bool()) { depots += null; return@repeat }
-                val d = Depot(id, r.int(), r.int(), r.int(), if (version >= 16) r.bool() else false)
+                val d = Depot(id, r.int(), r.int(), r.int(), when {
+                    version >= 17 -> r.int()
+                    version >= 16 -> if (r.bool()) Depots.ROAD else Depots.RAIL
+                    else -> Depots.RAIL
+                })
                 depotTiles[d.tile] = id
                 depots += d
             }
@@ -328,6 +335,7 @@ object Save {
                     wx.fronts += Front(r.int(), r.int(), r.int(), r.int(), r.int(), r.int(), r.int(), r.int(), r.int(), r.bool())
                 }
             }
+            if (version >= 17) readWaterAndAir(r, this, ::vehicle, version)
         }
         // Signal blocks and who's on which tile are worked out afresh before the next move.
         world.networkChangedKeepingRoutes()
@@ -364,6 +372,94 @@ object Save {
     }
 
     private fun basePack(ref: PackRef) = Packs.BASE.takeIf { it.id == ref.id && it.version >= ref.version }
+
+    private fun writeMap(w: ByteWriter, m: Map<Int, Int>) {
+        val ks = m.keys.sorted()
+        w.uvar(ks.size.toLong())
+        for (k in ks) { w.int(k); w.int(m.getValue(k)) }
+    }
+
+    private fun readMap(r: ByteReader, into: MutableMap<Int, Int>) {
+        repeat(r.uvar().toInt().also { if (it > 10_000_000) throw BadData("too many entries") }) { into[r.int()] = r.int() }
+    }
+
+    private fun writeWaterAndAir(w: ByteWriter, world: World) = with(world) {
+        w.ints(canals.sorted().toIntArray())
+        writeMap(w, locks); writeMap(w, docks); writeMap(w, dockFacing); writeMap(w, buoys)
+        w.uvar(ships.size.toLong())
+        for (v in ships) {
+            w.bool(v != null)
+            if (v == null) continue
+            w.int(v.owner); w.int(v.model); w.int(v.depot); w.int(v.cargoChoice); w.string(v.name)
+            w.bool(v.inDepot); w.bool(v.running); w.int(v.waiting); w.int(v.x); w.int(v.y); w.int(v.heading); w.int(v.speed); w.int(v.lockWait); w.bool(v.fogged)
+            writeCargo(w, v.cargo); w.long(v.profitThisYear); w.long(v.profitLastYear)
+            w.ints(v.orders.toIntArray()); w.int(v.order); w.bool(v.toDepot)
+            val r = v.route
+            w.bool(r != null)
+            if (r != null) w.ints(r)
+            w.int(v.routeAt); w.long(v.lostUntil); w.int(v.built); w.int(v.serviced); w.int(v.reliability); w.int(v.breakdowns); w.int(v.brokenFor)
+            w.bool(v.servicing); w.bool(v.service)
+        }
+        w.uvar(airports.size.toLong())
+        for (a in airports) {
+            w.bool(a != null)
+            if (a == null) continue
+            w.int(a.owner); w.int(a.station); w.int(a.kind); w.int(a.x); w.int(a.y); w.int(a.axis); w.int(a.depot); w.bool(a.ils); w.bool(a.deice)
+        }
+        w.uvar(aircraft.size.toLong())
+        for (v in aircraft) {
+            w.bool(v != null)
+            if (v == null) continue
+            w.int(v.owner); w.int(v.model); w.int(v.depot); w.int(v.cargoChoice); w.string(v.name)
+            w.bool(v.inDepot); w.bool(v.running); w.int(v.waiting); w.int(v.x); w.int(v.y); w.int(v.altitude); w.int(v.heading); w.int(v.speed)
+            w.int(v.state); w.int(v.at); w.int(v.holding); w.int(v.gear); w.bool(v.seasonalGear)
+            writeCargo(w, v.cargo); w.long(v.profitThisYear); w.long(v.profitLastYear)
+            w.ints(v.orders.toIntArray()); w.int(v.order); w.bool(v.toDepot)
+            w.int(v.built); w.int(v.serviced); w.int(v.reliability); w.int(v.breakdowns); w.int(v.brokenFor)
+            w.bool(v.servicing); w.bool(v.service)
+        }
+    }
+
+    private fun readWaterAndAir(r: ByteReader, world: World, vehicle: (Int) -> Int, version: Int) = with(world) {
+        canals += r.ints().toList()
+        readMap(r, locks); readMap(r, docks); readMap(r, dockFacing); readMap(r, buoys)
+        repeat(r.uvar().toInt().also { if (it > 1_000_000) throw BadData("too many ships") }) { id ->
+            if (!r.bool()) { ships += null; return@repeat }
+            val owner = r.int()
+            val model = vehicle(r.int())
+            val v = Ship(roster, id, owner, model, r.int(), r.int())
+            v.name = r.string()
+            v.inDepot = r.bool(); v.running = r.bool(); v.waiting = r.int(); v.x = r.int(); v.y = r.int(); v.heading = r.int(); v.speed = r.int(); v.lockWait = r.int(); v.fogged = r.bool()
+            readCargo(r, v.cargo, version); v.profitThisYear = r.long(); v.profitLastYear = r.long()
+            v.orders += r.ints().toList(); v.order = r.int(); v.toDepot = r.bool()
+            v.route = if (r.bool()) r.ints() else null
+            v.routeAt = r.int(); v.lostUntil = r.long(); v.built = r.int(); v.serviced = r.int(); v.reliability = r.int(); v.breakdowns = r.int(); v.brokenFor = r.int()
+            v.servicing = r.bool(); v.service = r.bool()
+            ships += v
+        }
+        repeat(r.uvar().toInt().also { if (it > 1_000_000) throw BadData("too many airports") }) { id ->
+            if (!r.bool()) { airports += null; return@repeat }
+            val a = Airport(id, r.int(), r.int(), r.int(), r.int(), r.int(), r.int(), r.int())
+            a.ils = r.bool(); a.deice = r.bool()
+            if (a.kind !in 0 until Airports.COUNT || !inside(a.x, a.y) || !inside(a.x + a.w - 1, a.y + a.h - 1)) throw BadData("an airport off the map")
+            airports += a
+            for (t in a.tiles(this)) airportTiles[t] = id
+        }
+        repeat(r.uvar().toInt().also { if (it > 1_000_000) throw BadData("too many aircraft") }) { id ->
+            if (!r.bool()) { aircraft += null; return@repeat }
+            val owner = r.int()
+            val model = vehicle(r.int())
+            val v = Aircraft(roster, id, owner, model, r.int(), r.int())
+            v.name = r.string()
+            v.inDepot = r.bool(); v.running = r.bool(); v.waiting = r.int(); v.x = r.int(); v.y = r.int(); v.altitude = r.int(); v.heading = r.int(); v.speed = r.int()
+            v.state = r.int(); v.at = r.int(); v.holding = r.int(); v.gear = r.int(); v.seasonalGear = r.bool()
+            readCargo(r, v.cargo, version); v.profitThisYear = r.long(); v.profitLastYear = r.long()
+            v.orders += r.ints().toList(); v.order = r.int(); v.toDepot = r.bool()
+            v.built = r.int(); v.serviced = r.int(); v.reliability = r.int(); v.breakdowns = r.int(); v.brokenFor = r.int()
+            v.servicing = r.bool(); v.service = r.bool()
+            aircraft += v
+        }
+    }
 
     private fun writeCargo(w: ByteWriter, cargo: Array<ArrayList<Packet>>) {
         w.uvar(cargo.size.toLong())

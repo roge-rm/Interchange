@@ -63,6 +63,37 @@ sealed interface Command {
     /** Builds a salt depot by the company's road, or takes it down. */
     data class SaltDepot(override val company: Int, val x: Int, val y: Int) : Command
 
+    /** Digs a canal along a straight line on flat land, or fills in the company's own. */
+    data class Canal(override val company: Int, val sx: Int, val sy: Int, val ex: Int, val ey: Int, val remove: Boolean) : Command
+
+    /** A lock on a straight slope, lifting ships a step. */
+    data class Lock(override val company: Int, val x: Int, val y: Int) : Command
+
+    /** A dock on the shore, facing the water. */
+    data class Dock(override val company: Int, val x: Int, val y: Int) : Command
+
+    /** A shipyard on the shore, launching onto the water in front. */
+    data class Shipyard(override val company: Int, val x: Int, val y: Int) : Command
+
+    /** A buoy on open water, a waypoint for ships. */
+    data class Buoy(override val company: Int, val x: Int, val y: Int) : Command
+
+    /** An airport of [kind] ([Airports]) with its corner at ([x], [y]), its runway along [axis]. */
+    data class Airport(override val company: Int, val x: Int, val y: Int, val kind: Int, val axis: Int) : Command
+
+    /** Adds landing aids ([what] 0) or de-icing (1) to an airport. */
+    data class AirportUpgrade(override val company: Int, val airport: Int, val what: Int) : Command
+
+    /** Buys a ship at a shipyard, or an aircraft in a hangar, set to carry [cargo] if it can. */
+    data class BuyCraft(override val company: Int, val depot: Int, val model: Int, val cargo: Int = -1) : Command
+
+    /** Tells a ship ([aircraft] false) or an aircraft what to do, as [TrainOrder] does a train, or turns a bush plane's seasonal gear on or off. */
+    class CraftOrder(override val company: Int, val aircraft: Boolean, val vehicle: Int, val what: Int, val stations: IntArray = IntArray(0)) : Command {
+        companion object {
+            const val GEAR = 21
+        }
+    }
+
     /** Puts up a snow shed over track at ([x], [y]), or a snow fence on open land there; again takes it down. */
     data class SnowWorks(override val company: Int, val x: Int, val y: Int, val shed: Boolean) : Command
 

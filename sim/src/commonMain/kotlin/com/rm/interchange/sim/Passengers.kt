@@ -53,7 +53,7 @@ internal fun World.workOutCatchment() {
     val bestDist = HashMap<Int, Int>()
     for (s in stations) {
         if (s == null || s.waypoint) continue
-        for (p in s.tiles + s.stops) {
+        for (p in s.places) {
             val px = p % width
             val py = p / width
             for (y in maxOf(0, py - CATCHMENT)..minOf(height - 1, py + CATCHMENT)) for (x in maxOf(0, px - CATCHMENT)..minOf(width - 1, px + CATCHMENT)) {
@@ -83,7 +83,7 @@ internal fun World.workOutCatchment() {
     for (s in stations) {
         if (s == null || s.waypoint) continue
         val found = ArrayList<Int>()
-        for (p in s.tiles + s.stops) {
+        for (p in s.places) {
             val px = p % width
             val py = p / width
             for (y in maxOf(0, py - CATCHMENT)..minOf(height - 1, py + CATCHMENT)) for (x in maxOf(0, px - CATCHMENT)..minOf(width - 1, px + CATCHMENT)) {
@@ -108,7 +108,7 @@ internal fun World.workOutCatchment() {
 internal fun World.workOutLinks() {
     linksDirty = false
     val links = HashMap<Int, MutableList<Int>>()
-    for (t in trains.filterNotNull() + roadVehicles.filterNotNull()) {
+    for (t in carriers()) {
         if (t.orders.size < 2) continue
         for (k in t.orders.indices) {
             val a = Order.station(t.orders[k])
@@ -406,7 +406,7 @@ internal fun World.callAt(t: Carrier, s: Station, o: Int = 0) {
     }
     if (paid > 0) {
         earn(company, Books.INCOME, paid)
-        payments += Payment((s.tiles.firstOrNull() ?: s.stops.first()), paid, tick)
+        payments += Payment(s.places.first(), paid, tick)
     }
     if (!Order.has(o, Order.NO_LOAD)) loadAt(t, s)
 }

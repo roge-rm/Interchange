@@ -357,4 +357,51 @@
         <item>Dirt</item><item>Gravel</item><item>Paved</item><item>Highway</item>
     </string-array>
     <string name="tool_salt">Salt depot</string>
+    <string name="tool_buoy">Buoy</string>
+    <string name="runway_other_way">Runway the other way</string>
+    <string-array name="airport_kinds">
+        <item>Gravel strip</item>
+        <item>Seaplane base</item>
+        <item>Heliport</item>
+        <item>Regional airport</item>
+        <item>City airport</item>
+        <item>International airport</item>
+    </string-array>
+    <string name="ship_n">Ship %1$d</string>
+    <string name="aircraft_n">Aircraft %1$d</string>
+    <string name="in_shipyard">In the shipyard</string>
+    <string name="in_hangar">In the hangar</string>
+    <string name="going_to_shipyard">Going to the shipyard, %1$d km/h</string>
+    <string name="going_to_hangar">Going to the hangar, %1$d km/h</string>
+    <string name="to_shipyard">To shipyard</string>
+    <string name="to_hangar">To hangar</string>
+    <string name="iced_in">Held up by ice</string>
+    <string name="storm_in_port">In port for the storm</string>
+    <string name="taking_off">Taking off</string>
+    <string name="landing_at">Landing at %1$s</string>
+    <string name="holding_over">Holding over %1$s: %2$s</string>
+    <string-array name="hold_reasons">
+        <item>storm</item>
+        <item>fog</item>
+        <item>no free gate</item>
+        <item>ice on the water</item>
+        <item>wrong gear</item>
+        <item>snow on the strip</item>
+        <item>runway too short</item>
+    </string-array>
+    <string-array name="gear_kinds">
+        <item>wheels</item>
+        <item>floats</item>
+        <item>skis</item>
+    </string-array>
+    <string name="seasonal_gear">Floats and skis with the seasons</string>
+    <string name="range_line">Range %1$d km</string>
+    <string name="breaks_ice">Breaks ice up to %1$d cm</string>
+    <string name="landing_aids_for">Landing aids for %1$s</string>
+    <string name="deicing_for">De-icing for %1$s</string>
+    <string name="has_landing_aids">Landing aids</string>
+    <string name="has_deicing">De-icing</string>
+    <string name="news_diverted">%1$s gave up holding and flew on</string>
+    <string name="kind_canal">Canal</string>
+    <string name="kind_lock">Lock</string>
 </resources>

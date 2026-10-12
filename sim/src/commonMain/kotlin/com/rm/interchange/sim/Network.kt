@@ -16,9 +16,11 @@ package com.rm.interchange.sim
 
 /** A station: a name, the platforms that make it up, and what's waiting there, by [Cargo]. */
 class Station(val id: Int, val owner: Int, var name: String, val signX: Int, val signY: Int, val waypoint: Boolean = false) {
-    /** Its platform tiles, as tile indexes, in the order they were built, and its road stops. */
+    /** Its platform tiles, as tile indexes, in the order they were built, its road stops, its docks and its airports' tiles. */
     val tiles = ArrayList<Int>()
     val stops = ArrayList<Int>()
+    val docks = ArrayList<Int>()
+    val aero = ArrayList<Int>()
     /** Lots waiting, oldest first, by cargo. */
     val cargo = Array(Cargo.COUNT) { ArrayList<Packet>() }
     /** How well it serves each cargo, 0 to 255, and when a train last called that could take it and how fast that train goes. */
@@ -27,8 +29,23 @@ class Station(val id: Int, val owner: Int, var name: String, val signX: Int, val
     val lastSpeed = IntArray(Cargo.COUNT)
 }
 
-/** A train depot, open at [edge] of its tile. */
-class Depot(val id: Int, val owner: Int, val tile: Int, val edge: Int, val road: Boolean = false)
+/** Every tile the station has, for its catchment. */
+val Station.places get() = tiles + stops + docks + aero
+
+/** Whether nothing's left of it. */
+val Station.empty get() = tiles.isEmpty() && stops.isEmpty() && docks.isEmpty() && aero.isEmpty()
+
+/** A depot, open at [edge] of its tile: an engine house, a garage, a shipyard or a hangar, by [Depots] kind. */
+class Depot(val id: Int, val owner: Int, val tile: Int, val edge: Int, val kind: Int = Depots.RAIL) {
+    val road get() = kind == Depots.ROAD
+}
+
+object Depots {
+    const val RAIL = 0
+    const val ROAD = 1
+    const val SHIPYARD = 2
+    const val HANGAR = 3
+}
 
 /** What a signal does. */
 object Signals {
@@ -221,16 +238,13 @@ internal fun World.clearTile(company: Company, c: Command.Clear) {
         roadStops.remove(i)
         val s = stations[id]!!
         s.stops.remove(i)
-        if (s.tiles.isEmpty() && s.stops.isEmpty()) {
-            stations[id] = null
-            for (t in trains) t?.orders?.removeAll { Order.station(it) == id }
-            for (v in roadVehicles) v?.orders?.removeAll { Order.station(it) == id }
-        }
+        if (s.empty) dropStation(id)
         touched(c.x, c.y)
         networkChanged()
         roadsChanged()
         return
     }
+    if (clearWaterOrAir(company, i)) return
     depotAt(i)?.takeIf { it.road }?.let { d ->
         if (roadVehicles.any { it != null && it.depot == d.id }) return
         spend(company, Books.CONSTRUCTION, price(Prices.CLEAR))
@@ -254,11 +268,7 @@ internal fun World.clearTile(company: Company, c: Command.Clear) {
     stationTiles.remove(i)?.let { id ->
         val s = stations[id]!!
         s.tiles.remove(i)
-        if (s.tiles.isEmpty() && s.stops.isEmpty()) {
-            stations[id] = null
-            for (t in trains) t?.orders?.removeAll { Order.station(it) == id }
-            for (v in roadVehicles) v?.orders?.removeAll { Order.station(it) == id }
-        }
+        if (s.empty) dropStation(id)
     }
     depotTiles.remove(i)?.let { id -> depots[id] = null }
     track[i] = 0
@@ -303,3 +313,12 @@ private const val NAMING_REACH = 20
 
 /** The most tiles a station's rectangle spans either way in one go. */
 const val MAX_STATION = 16
+
+/** Takes station [id] off the map and out of every order. */
+internal fun World.dropStation(id: Int) {
+    stations[id] = null
+    for (t in carriers()) t.orders.removeAll { Order.station(it) == id }
+}
+
+/** Everything that calls at stations. */
+fun World.carriers(): List<Carrier> = trains.filterNotNull() + roadVehicles.filterNotNull() + ships.filterNotNull() + aircraft.filterNotNull()

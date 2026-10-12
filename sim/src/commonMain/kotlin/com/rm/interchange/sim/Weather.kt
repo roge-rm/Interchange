@@ -352,7 +352,8 @@ private fun World.tileWeather(year: Int, doy: Int, today: Int) {
                 var ice = u(w.ice[i])
                 var wet = u(w.wet[i])
                 var frost = u(w.frost[i])
-                if (isWater(x, y)) {
+                // Canals and locks freeze as the lakes do.
+                if (isWater(x, y) || canals.contains(i) || locks.containsKey(i)) {
                     val far = shore[i].toInt()
                     if (t < 0) {
                         // Thickening slows as it gets thicker, under snow and out from the shore.
@@ -520,7 +521,7 @@ fun World.weatherLook(i: Int): Int {
         else -> 4
     }
     val ice = u(weather.ice[i])
-    val frozen = if (isWater(i % width, i / width)) (if (ice >= 5) 1 + minOf(ice / 20, 2) else 0) else (if (ice > 3) 1 else 0)
+    val frozen = if (isWater(i % width, i / width) || canals.contains(i)) (if (ice >= 5) 1 + minOf(ice / 20, 2) else 0) else (if (ice > 3) 1 else 0)
     val mud = mud(i).let { if (it > 120) 2 else if (it > 0) 1 else 0 }
     val f = fire[i].toInt() and 255
     val burnt = if (f in 1..FIRE_DAYS) 3 else if (f >= BURNT_FROM) 1 + (f - BURNT_FROM) * 2 / (BURNT - BURNT_FROM + 1) else 0

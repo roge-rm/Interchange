@@ -44,6 +44,13 @@ class Engine(
     val plow: Int = Plows.NONE,
     /** A streetcar, running only on tram rails in the road. */
     val tram: Boolean = false,
+    /** The ice a ship breaks through, in cm, 0 for none; a hovercraft rides over it. */
+    val icebreaker: Int = 0,
+    val hovercraft: Boolean = false,
+    /** How far an aircraft flies, in km; the least airport it lands at, a [Runways] kind; a bush plane that takes floats and skis. */
+    val range: Int = 0,
+    val runway: Int = Runways.REGIONAL,
+    val floats: Boolean = false,
 ) {
     val pulls get() = kind == VehicleKind.ENGINE
     /** What it can carry as [Cargo] numbers; empty for nothing. */
@@ -157,10 +164,13 @@ class Roster(
     fun getOrNull(id: Int) = engines.getOrNull(id)
 
     /** What can be bought in [year]: engines if [pulls], else wagons. */
-    fun available(year: Int, pulls: Boolean) = engines.filter { it.enabled && it.pulls == pulls && !it.isTender && it.kind != VehicleKind.ROAD && year >= it.from && year < it.until }
+    fun available(year: Int, pulls: Boolean) = engines.filter { it.enabled && it.pulls == pulls && !it.isTender && (it.kind == VehicleKind.ENGINE || it.kind == VehicleKind.WAGON) && year >= it.from && year < it.until }
 
     /** The road vehicles on sale in [year]. */
-    fun availableRoad(year: Int) = engines.filter { it.enabled && it.kind == VehicleKind.ROAD && year >= it.from && year < it.until }
+    fun availableRoad(year: Int) = availableOf(VehicleKind.ROAD, year)
+
+    /** What of [kind] is on sale in [year]. */
+    fun availableOf(kind: VehicleKind, year: Int) = engines.filter { it.enabled && it.kind == kind && year >= it.from && year < it.until }
 
     companion object {
         val BASE: Roster by lazy { build(listOf(Packs.BASE)) }
@@ -210,6 +220,8 @@ class Roster(
                     life = d.life ?: 35, reliability = d.reliability ?: 85,
                     plow = d.plow?.let { Plows.NAMES.indexOf(it) + 1 } ?: Plows.NONE,
                     tram = d.tram ?: false,
+                    icebreaker = d.icebreaker ?: 0, hovercraft = d.hovercraft ?: false,
+                    range = d.range ?: 0, runway = d.runway?.let { Runways.NAMES.indexOf(it) } ?: Runways.REGIONAL, floats = d.floats ?: false,
                 )
             }
             val houses = packs.flatMap { p -> p.houses.map { p.id to it } }.mapIndexed { i, (pack, h) ->
@@ -242,6 +254,8 @@ class Roster(
             life = v.life ?: old.life, reliability = v.reliability ?: old.reliability,
             plow = v.plow ?: old.plow,
             tram = v.tram ?: old.tram,
+            icebreaker = v.icebreaker ?: old.icebreaker, hovercraft = v.hovercraft ?: old.hovercraft,
+            range = v.range ?: old.range, runway = v.runway ?: old.runway, floats = v.floats ?: old.floats,
         )
     }
 }

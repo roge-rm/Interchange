@@ -34,6 +34,7 @@ import rig  # noqa: E402
 import scenery  # noqa: E402
 import spans  # noqa: E402
 import roadcars  # noqa: E402
+import waterside  # noqa: E402
 
 TREES = ["spruce", "pine", "fir", "maple", "birch", "aspen"]
 LEAFY = ["maple", "birch", "aspen"]
@@ -152,6 +153,17 @@ def main():
     for a in (0, 1):
         shot(out, f"road_stop_{a}.png", lambda m, a=a: scenery.road_stop(m, a == 0))
     shot(out, "salt_dome.png", roadcars.salt_dome)
+    for edge in EDGES:
+        shot(out, f"dock_{edge}.png", lambda m, edge=edge: waterside.dock(m, edge))
+        shot(out, f"shipyard_{edge}.png", lambda m, edge=edge: waterside.shipyard(m, edge))
+        shot(out, f"lock_{edge}.png", lambda m, edge=edge: waterside.lock(m, edge))
+        shot(out, f"seaplane_{edge}.png", lambda m, edge=edge: waterside.seaplane_dock(m, edge))
+        shot(out, f"hangar_small_{edge}.png", lambda m, edge=edge: waterside.hangar(m, edge, False))
+        shot(out, f"hangar_{edge}.png", lambda m, edge=edge: waterside.hangar(m, edge, True))
+        for size in ("small", "mid", "big"):
+            shot(out, f"terminal_{size}_{edge}.png", lambda m, edge=edge, size=size: waterside.terminal(m, edge, size))
+    shot(out, "tower.png", waterside.tower)
+    shot(out, "strip_hut.png", waterside.strip_hut)
     for kind in houses.BUILDERS:
         for edge in EDGES:
             shot(out, f"house_{kind}_{edge}.png", lambda m, kind=kind: houses.house(m, kind), heading=houses.FACING[edge])

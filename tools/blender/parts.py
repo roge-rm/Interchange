@@ -252,6 +252,36 @@ class Model:
         mod.angle_limit = math.radians(38)
         return [(p[0], p[1]) for p in pts]
 
+    def loft(self, sections, mats, part=None, caps=True, sharp=38):
+        """A body through cross-sections along the model: sections is a list of (y, ring), each ring a closed list of
+        (x, z in steps) with the same number of points. part(k) names the material in mats for the faces from ring point
+        k to the next, else the first. Hulls, fuselages, floats."""
+        keys = list(mats)
+        bm = bmesh.new()
+        rings = [[bm.verts.new((x, y, z * rig.RISE)) for x, z in ring] for y, ring in sections]
+        n = len(rings[0])
+        for a, b in zip(rings, rings[1:]):
+            for k in range(n):
+                j = (k + 1) % n
+                face = bm.faces.new((a[k], a[j], b[j], b[k]))
+                face.material_index = keys.index(part(k)) if part else 0
+        if caps:
+            for ring in (rings[0], rings[-1]):
+                face = bm.faces.new(ring)
+                face.material_index = keys.index(part(n - 1)) if part else 0
+                bmesh.ops.triangulate(bm, faces=[face])
+        bmesh.ops.remove_doubles(bm, verts=bm.verts, dist=1e-6)
+        bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+        for f in bm.faces:
+            f.smooth = True
+        for e in bm.edges:
+            if len(e.link_faces) == 2 and e.calc_face_angle(0.0) > math.radians(sharp):
+                e.smooth = False
+        obj = self._mesh("loft", bm, None)
+        for k in keys:
+            obj.data.materials.append(mats[k])
+        return obj
+
     def text(self, body, x, y, z, size, mat, side):
         """Lettering on the model's side (side -1 or 1), centred at y along it and z steps up."""
         cu = bpy.data.curves.new("text", "FONT")

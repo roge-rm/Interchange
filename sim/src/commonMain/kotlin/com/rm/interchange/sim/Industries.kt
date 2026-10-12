@@ -58,6 +58,8 @@ class News(val kind: Int, val about: Int, val tick: Long) {
         const val AVALANCHE = 9
         /** A road vehicle slid off an icy road; [News.about] is the vehicle. */
         const val SLID = 10
+        /** An aircraft gave up holding and flew on to its next stop; [News.about] is the aircraft. */
+        const val DIVERTED = 11
     }
 }
 

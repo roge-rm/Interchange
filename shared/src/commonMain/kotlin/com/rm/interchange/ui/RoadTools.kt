@@ -48,3 +48,20 @@ fun garageAt(world: World, company: Int, at: Pick): Command.Garage {
 
 private val ROAD_OK = Color(0x99F0B429)
 private val ROAD_BAD = Color(0x99E05A4E)
+
+/** The tiles a canal [plan] covers, lit on flat land it can be dug on and red elsewhere. */
+fun DrawScope.drawCanalPlan(world: World, painter: LandPainter, plan: Command.Canal) {
+    val dx = (plan.ex - plan.sx).coerceIn(-1, 1)
+    val dy = (plan.ey - plan.sy).coerceIn(-1, 1)
+    val n = maxOf(abs(plan.ex - plan.sx), abs(plan.ey - plan.sy))
+    val piece = if (dy == 0) Track.X else Track.Y
+    for (k in 0..n) {
+        val x = plan.sx + dx * k
+        val y = plan.sy + dy * k
+        if (!world.inside(x, y)) continue
+        val ok = if (plan.remove) world.canals.contains(world.index(x, y)) else world.isFlat(x, y) && !world.isWater(x, y)
+        with(painter) { track(x, y, piece, if (ok) CANAL_OK else ROAD_BAD, if (ok) Color(0x66FFFFFF) else ROAD_BAD) }
+    }
+}
+
+private val CANAL_OK = Color(0x993A7AB0)
