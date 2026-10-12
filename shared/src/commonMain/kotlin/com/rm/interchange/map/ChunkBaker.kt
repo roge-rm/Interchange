@@ -464,9 +464,48 @@ internal class ChunkBaker(
         val ragBase = Atlas.RAG * size * size
         val baseY = originY + (vx + vy) * hh
         val baseX = originX + (vx - vy) * hw
+        // The neighbours whose ground spreads in across each edge, -1 for none.
+        val spread = IntArray(4) { e -> edges[e].let { if (it < 0 || it == kind || rank(it) <= rankHere) -1 else it } }
+        val spreads = spread.any { it >= 0 }
         for (py in y0..y1) {
             val yRel = py + 0.5f - baseY
-            for (px in x0..x1) {
+            // Only the columns either half's plane can reach on this row, with a pixel to spare each side.
+            var dLo = Float.POSITIVE_INFINITY
+            var dHi = Float.NEGATIVE_INFINITY
+            for (q in 0 until 2) {
+                val pq = if (q == 0) p1 else p2
+                val c = hh - step * (pq[1] + pq[2]) / 2
+                if (c <= 0f) {
+                    dLo = -2f
+                    dHi = 2f
+                    break
+                }
+                val s0 = (yRel + step * pq[0]) / c
+                val s1 = step * (pq[1] - pq[2]) / 2 / c
+                var lo = -2f
+                var hi = 2f
+                // 0 <= s0 + b * d <= 2 for u (b = s1 + 1) and v (b = s1 - 1), as u and v are half of those.
+                for (b in floatArrayOf(s1 + 1f, s1 - 1f)) {
+                    if (b > 1e-6f) {
+                        lo = maxOf(lo, -s0 / b)
+                        hi = minOf(hi, (2f - s0) / b)
+                    } else if (b < -1e-6f) {
+                        lo = maxOf(lo, (2f - s0) / b)
+                        hi = minOf(hi, -s0 / b)
+                    } else if (s0 < 0f || s0 > 2f) {
+                        lo = 1f
+                        hi = -1f
+                    }
+                }
+                if (lo <= hi) {
+                    dLo = minOf(dLo, lo)
+                    dHi = maxOf(dHi, hi)
+                }
+            }
+            if (dLo > dHi) continue
+            val rx0 = maxOf(x0, (dLo * hw + baseX).toInt() - 2)
+            val rx1 = minOf(x1, (dHi * hw + baseX).toInt() + 2)
+            for (px in rx0..rx1) {
                 val d = (px + 0.5f - baseX) / hw
                 // Try the first half's plane, then the second's.
                 var u: Float
@@ -501,9 +540,9 @@ internal class ChunkBaker(
                     if (patch > BARE_FROM) texel = sheets.ground[bare * size * size + ti]
                 }
                 // Higher ranked ground next door spreads in across the edge with a ragged line; water gets foam at the shore.
-                for (e in 0 until 4) {
-                    val other = edges[e]
-                    if (other < 0 || other == kind || rank(other) <= rankHere) continue
+                if (spreads) for (e in 0 until 4) {
+                    val other = spread[e]
+                    if (other < 0) continue
                     val dist = when (e) { 0 -> v; 1 -> 1f - u; 2 -> 1f - v; else -> u }
                     val reach = 0.08f + rag * 0.26f
                     if (dist < reach) {

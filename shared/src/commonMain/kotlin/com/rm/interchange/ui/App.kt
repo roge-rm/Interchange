@@ -17,7 +17,11 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.runtime.LaunchedEffect
+import kotlinx.coroutines.delay
 import androidx.compose.runtime.State
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.getValue
@@ -596,12 +600,28 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
             }.onSizeChanged { stripHeight = it.height },
         )
 
-        // Under the strip, the latest news; a tap goes to where it happened.
-        worldView.value?.news?.lastOrNull()?.let { n ->
+        // Under the strip, the latest news for a few seconds after it comes; a tap goes to where it happened.
+        val latest = worldView.value?.news?.lastOrNull()
+        var shown by remember(world) { mutableStateOf<News?>(null) }
+        var seen by remember(world) { mutableStateOf<News?>(null) }
+        LaunchedEffect(latest) {
+            // The news there when the game opens is old, so only what comes after shows.
+            if (seen == null) {
+                seen = latest ?: return@LaunchedEffect
+                return@LaunchedEffect
+            }
+            if (latest == null || latest === seen) return@LaunchedEffect
+            seen = latest
+            shown = latest
+            delay(NEWS_MILLIS)
+            shown = null
+        }
+        AnimatedVisibility(shown != null, enter = fadeIn(), exit = fadeOut(), modifier = Modifier.align(Alignment.TopCenter)) {
+            val n = shown ?: seen ?: return@AnimatedVisibility
             val ind = if (n.kind >= News.PROSPECTING_FAILED) null else world.industries.getOrNull(n.about)
             val text = newsText(world, n)
             Box(
-                Modifier.align(Alignment.TopCenter)
+                Modifier
                     .padding(top = with(density) { stripHeight.toDp() } + gap)
                     .windowInsetsPadding(safe.only(WindowInsetsSides.Horizontal))
                     .padding(horizontal = gap),
@@ -929,3 +949,6 @@ private const val CAMERA_GAP = 6
 private const val CAMERA_ROW = 54
 private const val CAMERA_DEEPER = 24
 private const val CAMERA_SHARE = 0.3f
+
+/** How long a piece of news shows under the strip. */
+private const val NEWS_MILLIS = 5000L
