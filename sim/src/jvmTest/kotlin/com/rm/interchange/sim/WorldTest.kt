@@ -114,4 +114,18 @@ class WorldTest {
         assertEquals(a.checksum(), b.checksum())
         assertEquals(a.checksum(), a.checksum())
     }
+
+    @Test
+    fun linesMeetingAtACornerJoinWithACurve() {
+        val w = World(64, 64, 1)
+        for (k in w.corners.indices) w.corners[k] = 3
+        w.companies[0].money = 1_000_000
+        w.apply(Command.Rail(0, 5, 10, 10, 10, Track.X, remove = false))
+        w.apply(Command.Rail(0, 10, 10, 10, 16, Track.Y, remove = false))
+        assertEquals(Track.W, w.trackAt(10, 10))
+        // Lines going on past each other still cross.
+        w.apply(Command.Rail(0, 5, 20, 15, 20, Track.X, remove = false))
+        w.apply(Command.Rail(0, 10, 15, 10, 25, Track.Y, remove = false))
+        assertEquals(Track.X or Track.Y, w.trackAt(10, 20))
+    }
 }

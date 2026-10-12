@@ -41,6 +41,14 @@ import com.rm.interchange.map.rememberPackedSheets
 import androidx.compose.runtime.rememberCoroutineScope
 import com.rm.interchange.map.MapView
 import com.rm.interchange.map.Pick
+import com.rm.interchange.map.LandPainter
+import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.foundation.layout.RowScope
+import org.jetbrains.compose.resources.pluralStringResource
+import com.rm.interchange.sim.railCost
+import com.rm.interchange.sim.canalCost
+import com.rm.interchange.sim.bridgeCost
+import com.rm.interchange.sim.roadCost
 import com.rm.interchange.map.View
 import com.rm.interchange.server.Game
 import com.rm.interchange.server.GameThread
@@ -371,6 +379,9 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
     // A ship (false) or aircraft (true) having stops added by tapping, and which.
     var addingCraftStops by remember { mutableStateOf<Pair<Boolean, Int>?>(null) }
     var canalPlan by remember { mutableStateOf<Command.Canal?>(null) }
+    // The track tool lays lines on its own (0), or one piece, a view piece, at a time; and where the drag is now.
+    var trackPiece by remember { mutableIntStateOf(0) }
+    var dragAt by remember { mutableStateOf<Pick?>(null) }
     var airportKind by remember { mutableIntStateOf(Airports.entries(Calendar.year(world.startYear, world.day)).lastOrNull { it != Airports.SEAPLANE && it != Airports.HELIPORT } ?: Airports.STRIP) }
     var runwayAlongX by remember { mutableStateOf(true) }
     var roadPlan by remember { mutableStateOf<Command.Road?>(null) }
@@ -379,7 +390,11 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
 
     fun built() { folded = true }
 
-    val input = remember(tool, removing, stationAlongX, addingStops, addingRoadStops, addingCraftStops, signalKind, bridgeStyle, roadSurface, airportKind, runwayAlongX) {
+    fun railFor(start: Pick, end: Pick): Command.Rail =
+        if (trackPiece == 0 || tool != Tool.Track) trackLine(0, start, end, removing)
+        else pieceLine(world, 0, start, end, worldPiece(LandPainter(world, view, view.halfWidth), trackPiece), removing)
+
+    val input = remember(tool, removing, stationAlongX, addingStops, addingRoadStops, addingCraftStops, signalKind, bridgeStyle, roadSurface, airportKind, runwayAlongX, trackPiece) {
         object : MapInput {
             var start: Pick? = null
             override val drags get() = addingStops == null && addingRoadStops == null && addingCraftStops == null &&
@@ -429,7 +444,7 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
                             else -> Selection.Tile(at.tileX, at.tileY)
                         }
                     }
-                    Tool.Track -> { runner.request(trackLine(0, at, at, removing)); built() }
+                    Tool.Track -> { runner.request(railFor(at, at)); built() }
                     Tool.Road -> { runner.request(roadLine(0, at, at, roadSurface, removing)); built() }
                     Tool.TramRails -> { runner.request(roadLine(0, at, at, roadSurface, removing, tram = true)); built() }
                     Tool.RoadStop -> { runner.request(Command.RoadStop(0, at.tileX, at.tileY)); built() }
@@ -466,13 +481,14 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
             }
             override fun dragTo(at: Pick) {
                 val s = start ?: return
+                dragAt = at
                 when (tool) {
                     Tool.Road -> roadPlan = roadLine(0, s, at, roadSurface, removing)
                     Tool.TramRails -> roadPlan = roadLine(0, s, at, roadSurface, removing, tram = true)
                     Tool.Station -> stationPlan = stationPlan(0, s, at, stationAlongX)
                     Tool.Bridge -> bridgePlan = bridgePlan(0, s, at, bridgeStyle)
                     Tool.Canal -> canalPlan = roadLine(0, s, at, 0, removing).let { Command.Canal(0, it.sx, it.sy, it.ex, it.ey, removing) }
-                    else -> plan = trackLine(0, s, at, removing)
+                    else -> plan = railFor(s, at)
                 }
             }
             override fun dragEnd() {
@@ -489,12 +505,27 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
                 bridgePlan = null
                 roadPlan = null
                 canalPlan = null
+                dragAt = null
                 start = null
             }
         }
     }
 
     val townLabels = rememberTownLabels(c.chrome, c.text, c.textDim)
+    // What the drag would take, how long it is, and whether there's the money: drawn by the finger.
+    val company = world.companies[0]
+    val dragged: Pair<Int, Long>? = plan?.let { p ->
+        if (tool == Tool.Wires) Track.line(world, p.sx, p.sy, p.ex, p.ey, p.first)?.let { it.size to it.size * world.price(Prices.WIRE) }
+        else world.railCost(p).let { (cost, n) -> if (cost < 0) null else n to cost }
+    } ?: roadPlan?.let { p -> world.roadCost(company, p).takeIf { it >= 0 }?.let { (maxOf(kotlin.math.abs(p.ex - p.sx), kotlin.math.abs(p.ey - p.sy)) + 1) to it } }
+        ?: canalPlan?.let { p -> world.canalCost(company, p).let { (cost, n) -> n to cost } }
+        ?: stationPlan?.let { p -> ((kotlin.math.abs(p.x1 - p.x0) + 1) * (kotlin.math.abs(p.y1 - p.y0) + 1)).let { n -> n to n * world.price(Prices.PLATFORM) } }
+        ?: bridgePlan?.let { p -> world.bridgeCost(company, p).takeIf { it >= 0 }?.let { (maxOf(kotlin.math.abs(p.x1 - p.x0), kotlin.math.abs(p.y1 - p.y0)) + 1) to it } }
+    val dragText = dragged?.takeIf { it.first > 0 }?.let { (n, cost) ->
+        stringResource(Res.string.drag_label, pluralStringResource(Res.plurals.drag_tiles, n, n), money(cost))
+    }
+    val shortOf = dragged != null && dragged.second > money
+    val measurer = rememberTextMeasurer()
     // Money as the language writes it, for drawing over the map outside composition.
     val moneyPattern = stringResource(Res.string.money, "%s")
     BoxWithConstraints(Modifier.fillMaxSize().background(c.page)) {
@@ -511,6 +542,7 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
                 ?: bridgePlan?.let { p -> { painter -> drawBridgePlan(world, painter, p) } }
                 ?: roadPlan?.let { p -> { painter -> drawRoadPlan(world, painter, p) } }
                 ?: canalPlan?.let { p -> { painter -> drawCanalPlan(world, painter, p) } },
+            label = dragAt?.takeIf { dragText != null }?.let { at -> { drawDragLabel(world, view, measurer, dragText!!, shortOf, at) } },
             overlays = (if (settings.grid) ChunkBaker.GRID else 0) or (if (settings.heights) ChunkBaker.HEIGHTS else 0) or (if (settings.snow) ChunkBaker.SNOW else 0) or (if (settings.condition) ChunkBaker.CONDITION else 0),
             labels = {
                 val wv = worldView.value
@@ -696,7 +728,14 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
                     Tool.Raise, Tool.Lower -> stringResource(Res.string.cost_corner, money(world.price(Prices.TERRAFORM)))
                     else -> null
                 }
-                ToolTray(tool, { tool = it; plan = null; stationPlan = null }, detail, folded, { folded = it }, layout.compact, trayWidth) {
+                val pieceNames = listOf(Res.string.piece_x, Res.string.piece_y, Res.string.piece_n, Res.string.piece_e, Res.string.piece_s, Res.string.piece_w).map { stringResource(it) }
+                val trackOptions: (@Composable RowScope.() -> Unit)? = if (tool != Tool.Track) null else {
+                    {
+                        OptionButton(Glyph.TrackAuto, stringResource(Res.string.track_auto), trackPiece == 0) { trackPiece = 0 }
+                        for ((k, piece) in VIEW_PIECES.withIndex()) OptionButton(PIECE_GLYPHS[k], pieceNames[k], trackPiece == piece) { trackPiece = piece }
+                    }
+                }
+                ToolTray(tool, { tool = it; plan = null; stationPlan = null }, detail, folded, { folded = it }, layout.compact, trayWidth, options = trackOptions) {
                     if (tool == Tool.Track || tool == Tool.Wires || tool == Tool.Road || tool == Tool.TramRails || tool == Tool.Canal) TrayToggle(Glyph.Lift, stringResource(Res.string.remove_track), removing) { removing = !removing }
                     if (tool == Tool.Road) {
                         val surfaces = stringArrayResource(Res.array.surfaces)

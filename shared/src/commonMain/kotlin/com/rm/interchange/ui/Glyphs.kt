@@ -20,6 +20,7 @@ enum class Glyph {
     Raise, Lower, Level, Tree, Clear,
     Pause, Play, Speed, TurnLeft, TurnRight, Remove, Lift, Menu,
     Save, Folder, Plus, Gear, Home, Package, Layers, Grid, Heights, Renew, Back, Waypoint, Wires, Shed, Fence, OneWay, Dome,
+    TrackAuto, PieceX, PieceY, PieceN, PieceE, PieceS, PieceW,
 }
 
 /** [glyph] drawn in [tint] on a 24 unit square scaled to fit. */
@@ -128,8 +129,18 @@ private class GlyphPen(val scope: DrawScope, val u: Float, val dx: Float, val dy
             Glyph.Heights -> { open(2f, 19f, 8f, 9f, 12f, 14f, 15f, 10f, 22f, 19f); line(4.5f, 15f, 19.5f, 15f, 1.5f); line(6.5f, 12f, 17.5f, 12f, 1.5f) }
             Glyph.Renew -> { arc(12f, 12f, 7f, 30f, 280f); open(17f, 3f, 19.5f, 8.5f, 14f, 9.5f) }
             Glyph.Back -> { line(5f, 12f, 19f, 12f, 2.5f); open(11f, 6f, 5f, 12f, 11f, 18f) }
+            // A tile seen from above as the map shows it, and the piece across it, between the middles of two edges.
+            Glyph.PieceX -> { tile(); line(7.5f, 8f, 16.5f, 16f, 3f) }
+            Glyph.PieceY -> { tile(); line(16.5f, 8f, 7.5f, 16f, 3f) }
+            Glyph.PieceN -> { tile(); line(16.5f, 8f, 7.5f, 8f, 3f) }
+            Glyph.PieceE -> { tile(); line(16.5f, 8f, 16.5f, 16f, 3f) }
+            Glyph.PieceS -> { tile(); line(16.5f, 16f, 7.5f, 16f, 3f) }
+            Glyph.PieceW -> { tile(); line(7.5f, 8f, 7.5f, 16f, 3f) }
+            Glyph.TrackAuto -> { tile(); open(7.5f, 8f, 11f, 11f, 11f, 13f, 7.5f, 16f); line(12f, 12f, 16.5f, 16f, 3f) }
         }
     }
+
+    private fun tile() = shape(false, 12f, 3.5f, 21f, 12f, 12f, 20.5f, 3f, 12f)
 
     private fun wave(y: Float, x0: Float = 3f, x1: Float = 21f) {
         val path = Path()

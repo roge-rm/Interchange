@@ -677,3 +677,25 @@ internal fun World.buyCraft(company: Company, c: Command.BuyCraft) {
         depot.kind == Depots.HANGAR && e.kind == VehicleKind.AIRCRAFT -> buyAircraft(company, depot, e, c.cargo)
     }
 }
+
+/** What digging (or filling in) [c] would cost and how many tiles of it can be done. */
+fun World.canalCost(company: Company, c: Command.Canal): Pair<Long, Int> {
+    if (c.sx != c.ex && c.sy != c.ey || !inside(c.sx, c.sy) || !inside(c.ex, c.ey)) return -1L to 0
+    val dx = (c.ex - c.sx).coerceIn(-1, 1)
+    val dy = (c.ey - c.sy).coerceIn(-1, 1)
+    val n = maxOf(kotlin.math.abs(c.ex - c.sx), kotlin.math.abs(c.ey - c.sy))
+    var cost = 0L
+    var count = 0
+    for (k in 0..n) {
+        val x = c.sx + dx * k
+        val y = c.sy + dy * k
+        val i = index(x, y)
+        if (c.remove) {
+            if (canals.contains(i) && owner[i].toInt() == company.id) { cost += price(Prices.CLEAR); count++ }
+        } else if (isFlat(x, y) && clearLand(i)) {
+            cost += price(CANAL_COST) + treeCost(i)
+            count++
+        }
+    }
+    return cost to count
+}

@@ -157,4 +157,58 @@ internal fun World.buildRail(company: Company, c: Command.Rail) {
         touched(x, y)
         networkChanged()
     }
+    if (!c.remove && line.isNotEmpty()) {
+        joinCorner(company, line.first() / 64)
+        joinCorner(company, line.last() / 64)
+    }
+}
+
+/**
+ * Where two straight lines meet at a corner, each ending on the tile, they cross there with nothing beyond; a curve
+ * from one to the other is what was meant. Tile [i]'s crossing becomes that curve if each straight only leads off it
+ * one way.
+ */
+private fun World.joinCorner(company: Company, i: Int) {
+    if (track[i].toInt() != Track.X or Track.Y || owner[i].toInt() != company.id || trainOnTile(i) || crossing(i)) return
+    val x = i % width
+    val y = i / width
+    fun leads(edge: Int): Boolean {
+        val nx = x + Track.dx(edge)
+        val ny = y + Track.dy(edge)
+        if (!inside(nx, ny)) return false
+        val n = index(nx, ny)
+        val there = track[n].toInt()
+        return Track.PIECES.any { there and it != 0 && Track.has(it, Track.opposite(edge)) } || spanHeads.containsKey(n)
+    }
+    val alongX = intArrayOf(Track.XM, Track.XP).filter(::leads)
+    val alongY = intArrayOf(Track.YM, Track.YP).filter(::leads)
+    if (alongX.size != 1 || alongY.size != 1) return
+    val curve = Track.pieceOf(alongX[0], alongY[0])
+    if (!piecesFit(x, y, curve)) return
+    track[i] = curve.toByte()
+    wires[i] = (wires[i].toInt() and curve).toByte()
+    for (p in Track.PIECES) signals.remove(pieceKey(i, p))
+    touched(x, y)
+    networkChanged()
+}
+
+/** What laying (or lifting) [c] would cost and how many pieces of it can be done, as a pair; -1 cost if it's no line at all. */
+fun World.railCost(c: Command.Rail): Pair<Long, Int> {
+    val line = Track.line(this, c.sx, c.sy, c.ex, c.ey, c.first) ?: return -1L to 0
+    val ok = planRail(c) ?: return -1L to 0
+    var cost = 0L
+    var n = 0
+    val planned = HashMap<Int, Int>()
+    for ((k, entry) in line.withIndex()) {
+        if (!ok[k]) continue
+        val i = entry / 64
+        val piece = entry % 64
+        n++
+        if (c.remove) { cost += price(Prices.TRACK_REMOVE); continue }
+        val has = planned[i] ?: track[i].toInt()
+        cost += price(Prices.TRACK) + (if (has == 0) treeCost(i) else 0)
+        if (!needsFoundation(i % width, i / width, has) && needsFoundation(i % width, i / width, has or piece)) cost += price(Prices.FOUNDATION)
+        planned[i] = has or piece
+    }
+    return cost to n
 }

@@ -1,6 +1,16 @@
 package com.rm.interchange.ui
 
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.TextMeasurer
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.drawText
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.rm.interchange.map.View
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import com.rm.interchange.map.LandPainter
 import com.rm.interchange.map.Pick
@@ -59,3 +69,63 @@ fun DrawScope.drawTrackPlan(world: World, painter: LandPainter, rail: Command.Ra
 private val PLAN_OK = Color(0x99F0B429)
 private val PLAN_RAIL = Color(0xCCFFFFFF)
 private val PLAN_BAD = Color(0x99E05A4E)
+
+/** The pieces the track tool can lay one at a time, in the view's own terms, and their drawings. */
+val VIEW_PIECES = intArrayOf(Track.X, Track.Y, Track.N, Track.E, Track.S, Track.W)
+val PIECE_GLYPHS = listOf(Glyph.PieceX, Glyph.PieceY, Glyph.PieceN, Glyph.PieceE, Glyph.PieceS, Glyph.PieceW)
+
+/** The piece in the world that shows on screen as [viewPiece], with the view turned as [painter] has it. */
+fun worldPiece(painter: LandPainter, viewPiece: Int): Int {
+    val e = Track.edges(viewPiece)
+    val want = setOf(e and 3, e shr 2)
+    return Track.PIECES.first { p -> Track.edges(p).let { setOf(painter.viewEdge(it and 3), painter.viewEdge(it shr 2)) } == want }
+}
+
+/**
+ * Track of just [piece] from [start] towards [end]: a tap lays the one piece; a drag lays a straight piece along its
+ * own row or column, or a diagonal piece and its partner in turn along their diagonal, as far as the finger went.
+ */
+fun pieceLine(world: World, company: Int, start: Pick, end: Pick, piece: Int, remove: Boolean): Command.Rail {
+    val sx = start.tileX
+    val sy = start.tileY
+    val dx = end.tileX - sx
+    val dy = end.tileY - sy
+    if (dx == 0 && dy == 0) return Command.Rail(company, sx, sy, sx, sy, piece, remove)
+    return when (piece) {
+        Track.X -> Command.Rail(company, sx, sy, sx + dx, sy, piece, remove)
+        Track.Y -> Command.Rail(company, sx, sy, sx, sy + dy, piece, remove)
+        else -> {
+            // N and S zigzag along x = -y, E and W along x = y.
+            val across = piece == Track.N || piece == Track.S
+            val k = if (across) (dx - dy) / 2 else (dx + dy) / 2
+            val ex = sx + k
+            val ey = if (across) sy - k else sy + k
+            val partner = when (piece) { Track.N -> Track.S; Track.S -> Track.N; Track.E -> Track.W; else -> Track.E }
+            val first = if (Track.line(world, sx, sy, ex, ey, piece) != null) piece else partner
+            Command.Rail(company, sx, sy, ex, ey, first, remove)
+        }
+    }
+}
+
+/**
+ * What a drag would take, [text], on a dark label just above and right of the tile under the finger ([at]), kept on
+ * the screen; red when there isn't the money for it ([short]).
+ */
+fun DrawScope.drawDragLabel(world: World, view: View, measurer: TextMeasurer, text: String, short: Boolean, at: Pick) {
+    val style = TextStyle(color = if (short) LABEL_SHORT else Color.White, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+    val layout = measurer.measure(text, style)
+    val x = at.tileX + 1f
+    val y = at.tileY.toFloat()
+    val vx = view.toViewX(x, y)
+    val vy = view.toViewY(x, y)
+    val cornerX = view.screenX(vx, vy, size.width)
+    val cornerY = view.screenY(vx, vy, world.heightAt(at.tileX + 1, at.tileY).toFloat(), size.height)
+    val pad = 6.dp.toPx()
+    val box = Size(layout.size.width + 2 * pad, layout.size.height + pad)
+    val topLeft = Offset((cornerX + pad).coerceIn(0f, size.width - box.width), (cornerY - box.height - pad).coerceIn(0f, size.height - box.height))
+    drawRoundRect(LABEL, topLeft, box, CornerRadius(pad))
+    drawText(layout, topLeft = Offset(topLeft.x + pad, topLeft.y + pad / 2))
+}
+
+private val LABEL = Color(0xD91C1F24)
+private val LABEL_SHORT = Color(0xFFFF8A80)

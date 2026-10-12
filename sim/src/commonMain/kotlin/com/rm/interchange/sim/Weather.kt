@@ -532,7 +532,7 @@ fun World.weatherLook(i: Int): Int {
 
 /** Notes each chunk with a tile whose snow, ice, mud, fire or wear has changed how it looks, for the renderer to draw it again. */
 internal fun World.weatherLooks() {
-    val side = width / World.CHUNK
+    val side = width / World.BLOCK
     val changed = BooleanArray(chunkVersions.size)
     val looks = weatherLooks ?: ShortArray(width * height).also { weatherLooks = it }
     parallelBands(height / World.CHUNK) { from, until ->
@@ -541,7 +541,7 @@ internal fun World.weatherLooks() {
             val look = weatherLook(i).toShort()
             if (looks[i] != look) {
                 looks[i] = look
-                changed[cy * side + x / World.CHUNK] = true
+                changed[y / World.BLOCK * side + x / World.BLOCK] = true
             }
         }
     }

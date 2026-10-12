@@ -173,10 +173,10 @@ class World(val settings: NewGame, val roster: Roster = Roster.BASE, generate: B
      * How many times each [CHUNK] by [CHUNK] block of tiles has changed, so the
      * renderer knows what to draw again. Not part of the game and not saved.
      */
-    val chunkVersions = IntArray((width / CHUNK) * (height / CHUNK))
+    val chunkVersions = IntArray((width / BLOCK) * (height / BLOCK))
 
     /** The same for how the weather looks on each block: snow, ice, mud. Kept apart so the renderer can take its time over these. */
-    val weatherVersions = IntArray((width / CHUNK) * (height / CHUNK))
+    val weatherVersions = IntArray((width / BLOCK) * (height / BLOCK))
 
     init {
         // A loaded game fills these in from its save instead.
@@ -262,7 +262,7 @@ class World(val settings: NewGame, val roster: Roster = Roster.BASE, generate: B
 
     /** Notes that tile ([x], [y]) has changed, for the renderer. */
     fun touched(x: Int, y: Int) {
-        chunkVersions[(y / CHUNK) * (width / CHUNK) + x / CHUNK]++
+        chunkVersions[(y / BLOCK) * (width / BLOCK) + x / BLOCK]++
     }
 
     /** Moves the world on by one tick. */
@@ -376,5 +376,7 @@ class World(val settings: NewGame, val roster: Roster = Roster.BASE, generate: B
         const val MAX_HEIGHT = 24
         /** Tiles a side in a block the renderer redraws together; map sides are a multiple of it. */
         const val CHUNK = 16
+        /** Tiles a side in a block whose changes are counted together, for the renderer: small, so building redraws little. */
+        const val BLOCK = 4
     }
 }

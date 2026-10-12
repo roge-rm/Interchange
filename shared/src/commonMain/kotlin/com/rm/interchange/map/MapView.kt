@@ -51,6 +51,8 @@ fun MapView(
     overlays: Int = 0,
     /** Drawn over everything else: town names. */
     labels: (DrawScope.() -> Unit)? = null,
+    /** Over even those: what the drag would cost, by the finger. */
+    label: (DrawScope.() -> Unit)? = null,
 ) {
     val scope = rememberCoroutineScope()
     val renderer = remember(world) { Renderer(world, sheets, scope) }
@@ -109,7 +111,7 @@ fun MapView(
                             } else mode = Mode.Moving
                         }
                         when (mode) {
-                            Mode.Using -> view.pick(world, p.position.x, p.position.y, w, h)?.let { currentInput.dragTo(it) }
+                            Mode.Using -> view.pick(world, p.position.x, p.position.y, w, h)?.let { renderer.lastEdit = it.tileX to it.tileY; currentInput.dragTo(it) }
                             Mode.Moving -> p.positionChange().let { view.pan(it.x, it.y) }
                             else -> {}
                         }
@@ -117,7 +119,7 @@ fun MapView(
                     event.changes.forEach { it.consume() }
                 }
                 when (mode) {
-                    Mode.Undecided -> view.pick(world, start.x, start.y, w, h)?.let { currentInput.tap(it) }
+                    Mode.Undecided -> view.pick(world, start.x, start.y, w, h)?.let { renderer.lastEdit = it.tileX to it.tileY; currentInput.tap(it) }
                     Mode.Using -> currentInput.dragEnd()
                     else -> {}
                 }
@@ -139,6 +141,7 @@ fun MapView(
             draw(painter)
         }
         labels?.invoke(this)
+        label?.invoke(this)
     }
 }
 

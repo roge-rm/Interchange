@@ -10,7 +10,7 @@ class GameTest {
     /** A player's copy of the world, kept in step by the host's messages alone, ends up the same. */
     @Test
     fun aPlayerFollowingTheMessagesKeepsTheSameWorld() {
-        val host = Game(World(32, 32, 7))
+        val host = Game(World(32, 32, 7)).also { it.solo = false }
         val copy = World(32, 32, 7)
         val waiting = ArrayDeque<Message.Scheduled>()
         var allowed = -1L

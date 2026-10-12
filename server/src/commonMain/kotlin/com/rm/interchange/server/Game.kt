@@ -9,8 +9,8 @@ import com.rm.interchange.sim.World
  * player game is a game with one player and no network.
  *
  * Commands go in with [request] and run [DELAY] ticks later, so they reach
- * every player before their tick comes round. Not thread safe: one thread
- * calls everything.
+ * every player before their tick comes round; with one player they run at
+ * once. Not thread safe: one thread calls everything.
  */
 class Game(val world: World) {
     private val pending = ArrayDeque<Message.Scheduled>()
@@ -18,7 +18,14 @@ class Game(val world: World) {
     /** Who to tell about each scheduled command. */
     var broadcast: (Message) -> Unit = {}
 
+    /** One player and nobody to keep in step with: commands run as soon as they're asked for, paused or not. */
+    var solo = true
+
     fun request(command: Command) {
+        if (solo) {
+            world.apply(command)
+            return
+        }
         val scheduled = Message.Scheduled(world.tick + DELAY, command)
         pending.addLast(scheduled)
         broadcast(scheduled)

@@ -259,6 +259,8 @@ fun ToolTray(
     onFold: (Boolean) -> Unit,
     compact: Boolean,
     modifier: Modifier = Modifier,
+    /** A row of choices for the tool, under its tabs, shown while the tray's open. */
+    options: (@Composable RowScope.() -> Unit)? = null,
     extras: @Composable RowScope.() -> Unit = {},
 ) {
     val c = LocalColors.current
@@ -292,6 +294,7 @@ fun ToolTray(
                     }
                 }
             }
+            if (options != null && !folded) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp), content = options)
             Row(
                 Modifier
                     .fillMaxWidth()
@@ -310,6 +313,24 @@ fun ToolTray(
                 extras()
             }
         }
+    }
+}
+
+/** One of a row of choices across the tray, sharing the width with the others. */
+@Composable
+fun RowScope.OptionButton(glyph: Glyph, label: String, on: Boolean, onClick: () -> Unit) {
+    val c = LocalColors.current
+    Box(
+        Modifier
+            .weight(1f)
+            .heightIn(min = 34.dp, max = 34.dp)
+            .clip(ButtonShape)
+            .background(if (on) c.accent else c.button)
+            .semantics { contentDescription = label; selected = on }
+            .clickable(role = Role.Button, onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        GlyphIcon(glyph, if (on) c.onAccent else c.text, Modifier.size(24.dp))
     }
 }
 
