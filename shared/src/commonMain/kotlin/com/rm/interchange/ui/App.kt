@@ -543,6 +543,7 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
                 ?: roadPlan?.let { p -> { painter -> drawRoadPlan(world, painter, p) } }
                 ?: canalPlan?.let { p -> { painter -> drawCanalPlan(world, painter, p) } },
             label = dragAt?.takeIf { dragText != null }?.let { at -> { drawDragLabel(world, view, measurer, dragText!!, shortOf, at) } },
+            page = c.page,
             overlays = (if (settings.grid) ChunkBaker.GRID else 0) or (if (settings.heights) ChunkBaker.HEIGHTS else 0) or (if (settings.snow) ChunkBaker.SNOW else 0) or (if (settings.condition) ChunkBaker.CONDITION else 0),
             labels = {
                 val wv = worldView.value

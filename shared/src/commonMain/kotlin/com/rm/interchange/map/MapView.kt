@@ -10,6 +10,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.input.pointer.pointerInput
@@ -53,6 +54,8 @@ fun MapView(
     labels: (DrawScope.() -> Unit)? = null,
     /** Over even those: what the drag would cost, by the finger. */
     label: (DrawScope.() -> Unit)? = null,
+    /** What shows while the map first bakes. */
+    page: Color = Color.Black,
 ) {
     val scope = rememberCoroutineScope()
     val renderer = remember(world) { Renderer(world, sheets, scope) }
@@ -142,6 +145,7 @@ fun MapView(
         }
         labels?.invoke(this)
         label?.invoke(this)
+        renderer.cover().let { if (it > 0f) drawRect(page.copy(alpha = it)) }
     }
 }
 

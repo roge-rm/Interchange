@@ -13,8 +13,22 @@ android {
         applicationId = "com.rm.interchange"
         minSdk = 27
         targetSdk = 37
-        versionCode = 12
-        versionName = "0.8.2"
+        versionCode = 13
+        versionName = "0.8.3"
+    }
+
+    buildTypes {
+        release {
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+        }
+        // As quick as a release, signed with the debug key so it installs over a debug build, for trying on phones.
+        create("fast") {
+            initWith(getByName("release"))
+            signingConfig = signingConfigs.getByName("debug")
+            matchingFallbacks += listOf("release")
+        }
     }
 
     compileOptions {

@@ -64,6 +64,15 @@ internal class Renderer(private val world: World, private val sheets: Sheets, pr
     /** What's baking in the background lane. */
     private val behind = HashSet<Key>()
     private val clock = kotlin.time.TimeSource.Monotonic.markNow()
+    /** When the first screen was all baked, or -1 till it is. */
+    private var readyAt = -1L
+
+    /** How much the map is still hidden behind the page as it first comes up: 1 till it's ready, fading to 0 just after. */
+    fun cover(): Float = if (readyAt < 0) 1f else (1f - (clock.elapsedNow().inWholeMilliseconds - readyAt) / FADE_MILLIS.toFloat()).coerceIn(0f, 1f)
+
+    /** The level on screen and the view's turn then, which zooming changes only once the next level's ready. */
+    private var shownLevel = -1
+    private var shownTurn = -1
     /** A weather batch's chunks baked so far, how many are still to come, and when the last batch began. */
     private val held = HashMap<Key, Entry>()
     private var batch = 0
@@ -91,8 +100,29 @@ internal class Renderer(private val world: World, private val sheets: Sheets, pr
     /** Draws the chunks that are on screen and asks for any that are missing or out of date. */
     fun DrawScope.draw(view: View) {
         frame++
-        val level = levelFor(view.halfWidth)
+        // Zooming across a level, the one shown stays on screen, scaled, till every chunk of the next is baked; then
+        // the screen changes over all at once, with no patches of the two.
+        val target = levelFor(view.halfWidth)
+        var level = if (shownLevel >= 0 && view.turn == shownTurn && kotlin.math.abs(shownLevel - target) == 1) shownLevel else target
         val wanted = ArrayList<Pair<Key, Float>>()
+        if (level != target) {
+            var ready = true
+            forEachVisible(view, target) { key, _, _, _ ->
+                if (key !in cache) {
+                    ready = false
+                    wanted += key to 1f
+                }
+            }
+            if (ready) level = target
+        }
+        shownLevel = level
+        shownTurn = view.turn
+        // Hidden till the first screen is all baked, then shown at once.
+        if (readyAt < 0) {
+            var all = true
+            forEachVisible(view, level) { key, _, _, _ -> if (key !in cache) all = false }
+            if (all) readyAt = clock.elapsedNow().inWholeMilliseconds
+        }
         val now = clock.elapsedNow().inWholeMilliseconds
         // Which way the map's moving, in view tiles a frame, to bake ahead that way first.
         val fx = view.focusViewX()
@@ -123,6 +153,7 @@ internal class Renderer(private val world: World, private val sheets: Sheets, pr
             if (entry != null) entry.used = frame
             if (entry == null) wanted += key to 1.5f
             else if (entry.version != versionOf(view, COARSE, key.cx, key.cy)) wanted += key to 4f
+            else if (now - entry.baked > WEATHER_MILLIS && entry.weather != weatherOf(view, COARSE, key.cx, key.cy)) wanted += key to 4f
         }
         // Once the screen has all it needs: a ring round it at this level, the way it's moving first, then the next level
         // out for zooming out, while there's room for them.
@@ -161,6 +192,11 @@ internal class Renderer(private val world: World, private val sheets: Sheets, pr
             // Waits for its level's sheet to be unpacked; asking starts that.
             val sheet = sheets.get(key.level) ?: continue
             bake(key, sheet, ahead = ahead)
+        }
+        // The levels either side unpacked ahead, so zooming finds them ready, once this one's in and the screen's baked.
+        if (readyAt >= 0 && sheets.get(target) != null) {
+            if (target + 1 < LEVELS.size) sheets.get(target + 1)
+            if (target > 0) sheets.get(target - 1)
         }
         trim()
     }

@@ -168,6 +168,12 @@ internal fun DrawScope.drawMoving(world: World, view: View, sheets: Sheets, movi
         if (deck >= 0f) reach += ON_DECK
         add(items, world, view, x, y, cell.toFloat(), reach, v.sprite(i), deck)
     }
+    // Vehicles' drawings at the levels either side unpacked ahead, so they're there when the view zooms.
+    for (i in 0 until v.count) {
+        val model = v.sprite(i)
+        if (level > 0) sheets.vehicle(model, level - 1)
+        if (level + 1 < Renderer.LEVELS.size) sheets.vehicle(model, level + 1)
+    }
     items.sortBy { it[0] }
     with(painter) {
         for (it in items) {

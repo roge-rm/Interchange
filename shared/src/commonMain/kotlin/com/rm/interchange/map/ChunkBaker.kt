@@ -642,6 +642,10 @@ internal class ChunkBaker(
             }
             if (highway && d > half - EDGE_LINE * 2 && d < half - EDGE_LINE) return EDGE_WHITE
             if ((straightX && abs(v - 0.5f) < LINE && (u * 5f) % 1f < 0.55f) || (straightY && abs(u - 0.5f) < LINE && (v * 5f) % 1f < 0.55f)) return ROAD_LINE
+            // Round a corner the dashes follow the curve.
+            cornerOf(bits)?.let { (cu, cv) ->
+                if (d < LINE && (kotlin.math.atan2(abs(v - cv), abs(u - cu)) / (kotlin.math.PI.toFloat() / 2) * 4f) % 1f < 0.55f) return ROAD_LINE
+            }
             return sheets.ground[Atlas.ASPHALT * size * size + ti]
         }
         // Sidewalks and boulevards only in towns; a company's road out in the country has a gravel shoulder.
@@ -659,7 +663,17 @@ internal class ChunkBaker(
     }
 
     /** Whether ([u], [v]) is on a streetcar rail: a pair a little either side of the middle of each arm of the road. */
+    /** The tile corner a road that only turns a corner turns round, as (u, v), or null for any other road. */
+    private fun cornerOf(bits: Int): Pair<Float, Float>? {
+        val e = bits and 15
+        val x = e and ((1 shl Track.XM) or (1 shl Track.XP))
+        val y = e and ((1 shl Track.YM) or (1 shl Track.YP))
+        if (x.countOneBits() != 1 || y.countOneBits() != 1) return null
+        return (if (x == 1 shl Track.XM) 0f else 1f) to (if (y == 1 shl Track.YM) 0f else 1f)
+    }
+
     private fun tramRail(u: Float, v: Float, bits: Int): Boolean {
+        if (cornerOf(bits) != null) return abs(roadDistance(u, v, bits) - TRAM_GAUGE) < TRAM_WIDTH
         val du = abs(u - 0.5f)
         val dv = abs(v - 0.5f)
         val alongU = (u < 0.5f && bits and (1 shl Track.XM) != 0) || (u >= 0.5f && bits and (1 shl Track.XP) != 0)
@@ -683,6 +697,8 @@ internal class ChunkBaker(
 
     /** How far ([u], [v]) is from the middle line of a road reaching the view edges in [bits], squarely round its middle. */
     private fun roadDistance(u: Float, v: Float, bits: Int): Float {
+        // A road turning a corner sweeps round it: a quarter circle about the corner its two edges share, through their middles.
+        cornerOf(bits)?.let { (cu, cv) -> return abs(sqrt((u - cu) * (u - cu) + (v - cv) * (v - cv)) - 0.5f) }
         val du = abs(u - 0.5f)
         val dv = abs(v - 0.5f)
         var d = maxOf(du, dv)

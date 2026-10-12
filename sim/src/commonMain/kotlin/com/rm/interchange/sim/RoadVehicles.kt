@@ -556,6 +556,26 @@ fun World.roadPosition(v: RoadVehicle): FloatArray {
     val ay = tile / width + Track.edgeY4(a) / 4f
     val bx = tile % width + Track.edgeX4(b) / 4f
     val by = tile / width + Track.edgeY4(b) / 4f
+    // Turning a corner: round the quarter circle the road sweeps, about the corner its two edges share.
+    if (a != b && a != Track.opposite(b)) {
+        val ex = if (a == Track.XM || a == Track.XP) a else b
+        val ey = if (a == Track.YM || a == Track.YP) a else b
+        val ox = tile % width + Track.edgeX4(ex) / 4f
+        val oy = tile / width + Track.edgeY4(ey) / 4f
+        val sx = ax - ox; val sy = ay - oy
+        val fx = bx - ox; val fy = by - oy
+        val angle = t * (kotlin.math.PI / 2).toFloat()
+        val c = kotlin.math.cos(angle)
+        val s = kotlin.math.sin(angle)
+        var x = ox + sx * c + fx * s
+        var y = oy + sy * c + fy * s
+        val dx = -sx * s + fx * c
+        val dy = -sy * s + fy * c
+        val len = kotlin.math.sqrt(dx * dx + dy * dy).coerceAtLeast(0.001f)
+        x += -dy / len * LANE
+        y += dx / len * LANE
+        return floatArrayOf(x, y, heading(kotlin.math.round(dx * 4 / len).toInt(), kotlin.math.round(dy * 4 / len).toInt()).toFloat())
+    }
     // Turning round: into the middle and back out.
     val (x0, y0, x1, y1, f) = if (a == b) {
         if (t < 0.5f) listOf(ax, ay, cx, cy, t * 2) else listOf(cx, cy, bx, by, t * 2 - 1)

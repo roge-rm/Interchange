@@ -27,8 +27,8 @@ class PackedSheets(val ground: List<ByteArray>, val static: List<ByteArray>, val
 
 /**
  * The sheets, sharpest level first. They're kept packed and a level is only
- * unpacked the first time something asks for it, off the main thread, since
- * the sharpest is large and only used up close.
+ * unpacked the first time something asks for it, off the main thread; the
+ * renderer asks for the levels either side of the one on screen ahead of time.
  *
  * Main thread only: [get] hands back null while a level is still unpacking.
  */
@@ -60,10 +60,10 @@ class Sheets(private val packed: PackedSheets, private val scope: CoroutineScope
                     val shadows = ByteArray(shade.size) { shade[it].toByte() }
                     LevelSheets(ground, static, width, shadows, shadeWidth, packed.signals[level].decodeToImageBitmap())
                 }
-                // Only the levels next to this one stay unpacked; the sharpest alone is some 100 MB.
-                for (l in levels.indices) if (kotlin.math.abs(l - level) > 1 && levels[l] != null) {
-                    levels[l] = null
-                    unpacking[l] = false
+                // Every level stays unpacked but the sharpest, some 100 MB, which goes once the screen's well away from it.
+                if (level >= 2 && levels[0] != null) {
+                    levels[0] = null
+                    unpacking[0] = false
                 }
                 revision.intValue++
             }
