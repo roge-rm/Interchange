@@ -42,7 +42,8 @@ internal class Renderer(private val world: World, private val sheets: Sheets, pr
         override fun hashCode() = ((level * 4 + turn) * 8191 + cx) * 8191 + cy
     }
 
-    private class Entry(val image: ImageBitmap, val version: Int, var used: Long) {
+    /** A baked chunk: its picture, the world's and the weather's versions it shows, and when it was baked and last drawn. */
+    private class Entry(val image: ImageBitmap, val top: Int, val version: Int, val weather: Int, val baked: Long, var used: Long) {
         val bytes get() = image.width.toLong() * image.height * 4
     }
 
@@ -58,6 +59,11 @@ internal class Renderer(private val world: World, private val sheets: Sheets, pr
     val revision = mutableIntStateOf(0)
 
     private val bakers = Dispatchers.Default.limitedParallelism(BAKERS)
+    private val clock = kotlin.time.TimeSource.Monotonic.markNow()
+    /** A weather batch's chunks baked so far, how many are still to come, and when the last batch began. */
+    private val held = HashMap<Key, Entry>()
+    private var batch = 0
+    private var lastWeather = 0L
 
     private var lookDay = -1
     private var look = Climate.SUMMER
@@ -77,26 +83,40 @@ internal class Renderer(private val world: World, private val sheets: Sheets, pr
         frame++
         val level = levelFor(view.halfWidth)
         val wanted = ArrayList<Pair<Key, Float>>()
+        val now = clock.elapsedNow().inWholeMilliseconds
+        // Chunks whose weather is out of date, to bake again together now and then.
+        val stale = ArrayList<Key>()
         forEachVisible(view, level) { key, left, top, scale ->
             val entry = cache[key]
             val version = versionOf(view, level, key.cx, key.cy)
             if (entry != null) {
                 entry.used = frame
-                drawChunk(entry.image, left, top, scale)
+                drawChunk(entry, left, top, scale)
                 if (entry.version != version) wanted += key to 0f
+                else if (entry.weather != weatherOf(view, level, key.cx, key.cy)) stale += key
             } else {
                 drawFallback(view, level, key)
                 wanted += key to 1f
             }
         }
-        // The next level out too, so zooming out has it ready.
-        if (level + 1 < LEVELS.size) forEachVisible(view, level + 1) { key, _, _, _ ->
+        // The next level out too, so zooming out has it ready, once this level has all it needs.
+        if (wanted.isEmpty() && baking.isEmpty() && level + 1 < LEVELS.size) forEachVisible(view, level + 1) { key, _, _, _ ->
             val entry = cache[key]
             if (entry != null) entry.used = frame
             if (entry == null || entry.version != versionOf(view, level + 1, key.cx, key.cy)) wanted += key to 2f
         }
+        // The weather every while, when nothing else is baking: every chunk on screen that needs it, shown all at once
+        // when the last is done, so no seams show between chunks of different days.
+        if (stale.isNotEmpty() && wanted.isEmpty() && baking.isEmpty() && held.isEmpty() && now - lastWeather > WEATHER_MILLIS) {
+            val sheet = sheets.get(level)
+            if (sheet != null) {
+                lastWeather = now
+                batch = stale.size
+                for (key in stale) bake(key, sheet, hold = true)
+            }
+        }
         for ((key, _) in wanted.sortedBy { it.second }) {
-            if (baking.size >= BAKERS * 2) break
+            if (baking.size >= BAKERS) break
             if (key in baking) continue
             // Waits for its level's sheet to be unpacked; asking starts that.
             val sheet = sheets.get(key.level) ?: continue
@@ -116,7 +136,7 @@ internal class Renderer(private val world: World, private val sheets: Sheets, pr
                 val ok = Key(other, key.turn, key.cx * tiles / otherTiles, key.cy * tiles / otherTiles)
                 val e = cache[ok] ?: continue
                 e.used = frame
-                placeChunk(view, other, ok.cx, ok.cy) { l, t, s -> drawChunk(e.image, l, t, s) }
+                placeChunk(view, other, ok.cx, ok.cy) { l, t, s -> drawChunk(e, l, t, s) }
                 return
             } else {
                 // A finer level: draw what of its chunks are here, if all are.
@@ -129,14 +149,17 @@ internal class Renderer(private val world: World, private val sheets: Sheets, pr
                 if (parts.size < n * n) continue
                 for ((k, e) in parts) {
                     e.used = frame
-                    placeChunk(view, other, k.cx, k.cy) { l, t, s -> drawChunk(e.image, l, t, s) }
+                    placeChunk(view, other, k.cx, k.cy) { l, t, s -> drawChunk(e, l, t, s) }
                 }
                 return
             }
         }
     }
 
-    private fun DrawScope.drawChunk(image: ImageBitmap, left: Float, top: Float, scale: Float) {
+    /** Draws [entry]'s picture with its chunk's top left at ([left], [top]), its trimmed rows left out above. */
+    private fun DrawScope.drawChunk(entry: Entry, left: Float, chunkTop: Float, scale: Float) {
+        val image = entry.image
+        val top = chunkTop + entry.top * scale
         val l = left.roundToInt()
         val t = top.roundToInt()
         val r = (left + image.width * scale).roundToInt()
@@ -190,7 +213,13 @@ internal class Renderer(private val world: World, private val sheets: Sheets, pr
     }
 
     /** How many times the world under a chunk has changed, from the world's own blocks. */
-    private fun versionOf(view: View, level: Int, cx: Int, cy: Int): Int {
+    private fun versionOf(view: View, level: Int, cx: Int, cy: Int): Int = (sumOf(world.chunkVersions, view, level, cx, cy) * 8 + overlays) * 8 + look()
+
+    /** How many times the weather under a chunk has changed. */
+    private fun weatherOf(view: View, level: Int, cx: Int, cy: Int): Int = sumOf(world.weatherVersions, view, level, cx, cy)
+
+    /** The sum of [versions] over the world's blocks under chunk ([cx], [cy]) at [level]. */
+    private fun sumOf(versions: IntArray, view: View, level: Int, cx: Int, cy: Int): Int {
         val tiles = chunkTiles(level)
         // The chunk's own tiles and the ring round it it draws too.
         val vx0 = max(0, cx * tiles - 1)
@@ -203,32 +232,49 @@ internal class Renderer(private val world: World, private val sheets: Sheets, pr
         val y1 = max(view.worldY(vx0, vy0), view.worldY(vx1, vy1)) / World.CHUNK
         val across = world.width / World.CHUNK
         var sum = 0
-        for (y in y0..y1) for (x in x0..x1) sum += world.chunkVersions[y * across + x]
-        return (sum * 8 + overlays) * 8 + look()
+        for (y in y0..y1) for (x in x0..x1) sum += versions[y * across + x]
+        return sum
     }
 
-    private fun bake(key: Key, sheet: LevelSheets) {
+    /** Bakes [key] off the main thread and puts it in the cache, or with [hold] keeps it till the rest of its batch is done. */
+    private fun bake(key: Key, sheet: LevelSheets, hold: Boolean = false) {
         // The view as it is now, kept apart so turning while this bakes doesn't change it.
         val bakeView = View(world.width, world.height).also { it.turnBy(key.turn) }
         val version = versionOf(bakeView, key.level, key.cx, key.cy)
+        val weather = weatherOf(bakeView, key.level, key.cx, key.cy)
         baking += key
         // The scope is the composition's, on the main thread; only the baking goes off it.
         scope.launch {
             val o = overlays
             val l = look()
-            val image = withContext(bakers) { bakeChunk(bakeView, key, sheet, o, l) }
+            val (image, top) = withContext(bakers) { bakeChunk(bakeView, key, sheet, o, l) }
             baking -= key
-            cache.put(key, Entry(image, version, frame))?.let { bytes -= it.bytes }
-            bytes += image.width.toLong() * image.height * 4
+            val entry = Entry(image, top, version, weather, clock.elapsedNow().inWholeMilliseconds, frame)
+            if (!hold) {
+                install(key, entry)
+            } else {
+                held[key] = entry
+                if (--batch == 0) {
+                    for ((k, e) in held) install(k, e)
+                    held.clear()
+                }
+            }
             revision.intValue++
         }
     }
 
-    private fun bakeChunk(view: View, key: Key, sheet: LevelSheets, overlays: Int, look: Int): ImageBitmap {
+    private fun install(key: Key, entry: Entry) {
+        cache.put(key, entry)?.let { bytes -= it.bytes }
+        bytes += entry.bytes
+    }
+
+    /** Bakes chunk [key]: its picture with the clear rows above whatever's highest on it left off, and how many rows those were. */
+    private fun bakeChunk(view: View, key: Key, sheet: LevelSheets, overlays: Int, look: Int): Pair<ImageBitmap, Int> {
         val hw = LEVELS[key.level]
         val tiles = chunkTiles(key.level)
         val height = chunkHeight(key.level, hw)
-        val baker = ChunkBaker(world, view, key.level, sheet, CHUNK_PIXELS, height, overlays, look)
+        val buffer = takeBuffer(CHUNK_PIXELS * height)
+        val baker = ChunkBaker(world, view, key.level, sheet, CHUNK_PIXELS, height, overlays, look, buffer)
         val vx0 = key.cx * tiles
         val vy0 = key.cy * tiles
         baker.originX = tiles * hw - (vx0 - vy0) * hw
@@ -241,8 +287,23 @@ internal class Renderer(private val world: World, private val sheets: Sheets, pr
         for (vy in ys) for (vx in xs) baker.ground(vx, vy)
         for (vy in ys) for (vx in xs) baker.shadows(vx, vy)
         for (vy in ys) for (vx in xs) baker.objects(vx, vy)
-        return imageBitmapOf(baker.finish(), CHUNK_PIXELS, height)
+        val pixels = baker.finish()
+        var top = 0
+        while (top < height - 1 && (top * CHUNK_PIXELS until (top + 1) * CHUNK_PIXELS).all { pixels[it] ushr 24 == 0 }) top++
+        val image = chunkBitmapOf(pixels, CHUNK_PIXELS, top, height - top)
+        giveBack(buffer)
+        return image to top
     }
+
+    /** Pixel buffers kept between bakes, so baking doesn't make megabytes of garbage each time. */
+    private val buffers = ArrayList<IntArray>()
+
+    private fun takeBuffer(size: Int): IntArray = synchronized(buffers) {
+        val i = buffers.indexOfFirst { it.size == size }
+        if (i >= 0) buffers.removeAt(i).also { it.fill(0) } else IntArray(size)
+    }
+
+    private fun giveBack(buffer: IntArray) = synchronized(buffers) { if (buffers.size < BAKERS) buffers += buffer }
 
     /** Lets go of the chunks used longest ago, past the memory budget. */
     private fun trim() {
@@ -261,6 +322,8 @@ internal class Renderer(private val world: World, private val sheets: Sheets, pr
         const val CHUNK_PIXELS = 1024
         /** Chunks baking at once, leaving cores for the screen and the game. */
         val BAKERS = (Workers.threads - 1).coerceIn(2, 6)
+        /** How often the chunks on screen are baked again for the weather, at most, in milliseconds. */
+        const val WEATHER_MILLIS = 15_000L
         /** Bitmap memory for chunks, in bytes. */
         const val BUDGET = 128L * 1024 * 1024
 

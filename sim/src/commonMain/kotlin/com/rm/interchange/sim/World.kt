@@ -175,6 +175,9 @@ class World(val settings: NewGame, val roster: Roster = Roster.BASE, generate: B
      */
     val chunkVersions = IntArray((width / CHUNK) * (height / CHUNK))
 
+    /** The same for how the weather looks on each block: snow, ice, mud. Kept apart so the renderer can take its time over these. */
+    val weatherVersions = IntArray((width / CHUNK) * (height / CHUNK))
+
     init {
         // A loaded game fills these in from its save instead.
         if (generate) {

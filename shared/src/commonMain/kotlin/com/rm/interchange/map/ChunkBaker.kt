@@ -67,6 +67,8 @@ internal class ChunkBaker(
     private val height: Int,
     private val overlays: Int = 0,
     private val look: Int = Climate.SUMMER,
+    /** Where to draw, width by height, clear to start with. */
+    private val pixels: IntArray = IntArray(width * height),
 ) {
     private val hw = Renderer.LEVELS[level]
     private val hh = hw / 2
@@ -74,7 +76,6 @@ internal class ChunkBaker(
     private val shrink = 1 shl level
     private val texels = Atlas.TEXELS shr level
     private val size = texels * Atlas.PERIOD
-    private val pixels = IntArray(width * height)
 
     /** Where view point 0, 0 at height 0 lands. */
     var originX = 0f

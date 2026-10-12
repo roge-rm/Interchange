@@ -545,7 +545,7 @@ internal fun World.weatherLooks() {
             }
         }
     }
-    for (c in changed.indices) if (changed[c]) chunkVersions[c]++
+    for (c in changed.indices) if (changed[c]) weatherVersions[c]++
 }
 
 /** Days of weather run before a new game starts. */
