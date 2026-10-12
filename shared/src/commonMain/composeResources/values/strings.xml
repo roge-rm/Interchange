@@ -335,4 +335,6 @@
     <string name="tool_snow_shed">Snow shed</string>
     <string name="tool_snow_fence">Snow fence</string>
     <string name="news_avalanche">An avalanche buries the line</string>
+    <string name="depot_needs_wires">Hang wires over this depot for electric engines to get out</string>
+    <string name="needs_wires">Can't leave: no wires over the depot</string>
 </resources>

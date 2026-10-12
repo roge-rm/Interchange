@@ -64,6 +64,8 @@ class TrainView(
     val renewCost: Long = 0,
     /** Past its engine's working life. */
     val old: Boolean = false,
+    /** An electric engine in a depot with no wires, so it can't leave. */
+    val needsWires: Boolean = false,
 )
 
 /** A station as the screen shows it. */
@@ -84,7 +86,7 @@ class StationView(
 class GoingView(val dest: Int, val via: Int, val counts: IntArray)
 
 /** A depot as the screen shows it, to draw over the trains going in and out of it. */
-class DepotView(val tile: Int, val edge: Int)
+class DepotView(val tile: Int, val edge: Int, val id: Int = -1, val wired: Boolean = false)
 
 /** A signal as the screen shows it: where, which way and whether it shows red. */
 class SignalView(val tile: Int, val piece: Int, val facing: Int, val red: Boolean, val kind: Int = Signals.TWO_WAY)
@@ -172,6 +174,7 @@ fun World.view(): WorldView {
             t.orders.toIntArray(), t.order, t.speed / 16 * 2700 / 4096, t.waiting > 0, t.running && !t.inDepot && t.lostUntil > tick,
             IntArray(Cargo.COUNT) { t.load(it) }, IntArray(Cargo.COUNT) { t.capacity(it) }, t.profitThisYear, t.profitLastYear, t.shared,
             age(t), t.reliability / 100, t.brokenFor > 0, t.breakdowns, t.service, t.servicing, price(t.price) - value(t), age(t) >= t.engineInfo.life,
+            t.inDepot && t.engineInfo.traction == Traction.ELECTRIC && depots.getOrNull(t.depot)?.let { !depotWired(it) } == true,
         )
     }
     val stationViews = stations.filterNotNull().map { s ->
@@ -191,7 +194,7 @@ fun World.view(): WorldView {
         // Red while a train is in the block the signal guards: the one its piece is in.
         SignalView(tile, piece, Signals.facing(s), signalRed(tile, piece, s), Signals.kind(s))
     }
-    val depotViews = depots.filterNotNull().map { DepotView(it.tile, it.edge) }
+    val depotViews = depots.filterNotNull().map { DepotView(it.tile, it.edge, it.id, depotWired(it)) }
     // Towns change seldom, so their list is only made again when one has.
     if (townsChanged) {
         townViews = towns.map { TownView(it.id, it.name, it.x, it.y, it.population, it.houses) }

@@ -35,4 +35,25 @@ class ElectricTest {
         }
         assertTrue(arrived, "never got to the far end once it was wired")
     }
+
+    @Test
+    fun anElectricEngineIsntSoldWhereItCantGetOut() {
+        val w = World(64, 64, 1, startYear = 1920)
+        for (i in w.corners.indices) w.corners[i] = 3
+        w.companies[0].money = 10_000_000
+        w.apply(Command.Depot(0, 2, 10, Track.XP))
+        w.apply(Command.Rail(0, 3, 10, 20, 10, Track.X, remove = false))
+        val boxcab = w.roster.engines.first { it.key == "base:boxcab" }.id
+        val coach = w.roster.engines.first { it.key == "base:coach_steel" }.id
+        w.apply(Command.BuyTrain(0, 0, boxcab, coach, 2))
+        assertTrue(w.trains.isEmpty(), "bought one with no wires over the depot")
+        w.apply(Command.Wire(0, 2, 10, 20, 10, Track.X, remove = false))
+        w.apply(Command.BuyTrain(0, 0, boxcab, coach, 2))
+        assertTrue(w.trains.size == 1)
+        // Wires taken down while it's in: it stays in, stopped.
+        w.apply(Command.Wire(0, 2, 10, 2, 10, Track.X, remove = true))
+        w.apply(Command.TrainOrder(0, 0, Command.TrainOrder.START_STOP))
+        repeat(200) { w.step() }
+        assertTrue(w.trains[0]!!.inDepot && !w.trains[0]!!.running)
+    }
 }

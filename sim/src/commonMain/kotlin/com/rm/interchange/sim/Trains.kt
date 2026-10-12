@@ -171,6 +171,8 @@ internal fun World.buyTrain(company: Company, c: Command.BuyTrain) {
     val year = Calendar.year(startYear, day)
     if (!e.enabled || !w.enabled || !e.pulls || w.pulls || w.isTender || year < e.from || year >= e.until || year < w.from || year >= w.until) return
     if (c.wagons !in 0..MAX_WAGONS) return
+    // An electric engine can't get out of a depot with no wires over it.
+    if (e.traction == Traction.ELECTRIC && !depotWired(depot)) return
     val t = Train(roster, trains.size, company.id, e.id, w.id, c.wagons, depot.id, if (c.cargo in w.cargoes) c.cargo else -1)
     if (company.money < price(t.price)) return
     spend(company, Books.NEW_TRAINS, price(t.price))
@@ -251,6 +253,11 @@ internal fun World.trainCommand(company: Company, c: Command.TrainOrder) {
 /** Puts a train in its depot onto the track at the depot's door, nose first, if the tile's clear. */
 private fun World.leaveDepot(t: Train) {
     val d = depots.getOrNull(t.depot) ?: return
+    // Its wires taken down since: it stays in, stopped.
+    if (t.engineInfo.traction == Traction.ELECTRIC && !depotWired(d)) {
+        t.running = false
+        return
+    }
     if (trainOnTile(d.tile)) {
         t.running = true
         return

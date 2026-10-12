@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.rm.interchange.sim.Command
+import com.rm.interchange.sim.Traction
 import com.rm.interchange.sim.Cargo
 import com.rm.interchange.sim.Order
 import com.rm.interchange.sim.Roster
@@ -57,6 +58,7 @@ fun TrainCard(
         val target = if (t.orders.isEmpty()) null else Order.station(t.orders[t.order % t.orders.size])
         val doing = when {
             t.broken -> stringResource(Res.string.broken_down)
+            t.needsWires -> stringResource(Res.string.needs_wires)
             t.inDepot && t.running -> stringResource(Res.string.waiting_to_leave)
             t.inDepot -> stringResource(Res.string.in_depot)
             !t.running -> stringResource(Res.string.stopped)
@@ -70,7 +72,7 @@ fun TrainCard(
         val lang = languageCode()
         val w = roster[t.wagon]
         Text(stringResource(Res.string.consist, roster[t.engine].name(lang), t.wagons, (if (t.wagons == 1) w.name(lang) else w.plural(lang)).lowercase()), color = c.textDim, fontSize = 13.sp)
-        Text(doing, color = if (t.lost || t.broken) c.warn else c.text, fontSize = 13.sp)
+        Text(doing, color = if (t.lost || t.broken || t.needsWires) c.warn else c.text, fontSize = 13.sp)
         Text(
             stringResource(Res.string.age_line, t.age, t.reliability, t.breakdowns),
             color = if (t.old) c.warn else c.textDim, fontSize = 13.sp,
@@ -181,11 +183,14 @@ fun DepotCard(view: WorldView, roster: Roster, depot: Int, year: Int, funds: Lon
         }
         val e = roster[engine]
         val cost = price(e.cost + (roster.getOrNull(e.tender)?.cost ?: 0) + roster[wagon].cost * count)
+        // Electric engines need wires over the depot to get out.
+        val unwired = e.traction == Traction.ELECTRIC && view.depots.firstOrNull { it.id == depot }?.wired != true
+        if (unwired) Text(stringResource(Res.string.depot_needs_wires), color = c.warn, fontSize = 13.sp)
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             SquareButton(Glyph.Lower, stringResource(Res.string.fewer_wagons), 32.dp, enabled = count > 0) { count-- }
             Text(stringResource(Res.string.wagons_count, count), color = c.text, fontSize = 13.sp)
             SquareButton(Glyph.Raise, stringResource(Res.string.more_wagons), 32.dp, enabled = count < MAX_WAGONS) { count++ }
-            ActionButton(stringResource(Res.string.buy_for, money(cost)), enabled = funds >= cost, strong = true) {
+            ActionButton(stringResource(Res.string.buy_for, money(cost)), enabled = funds >= cost && !unwired, strong = true) {
                 send(Command.BuyTrain(0, depot, engine, wagon, count, if (cargo in choices) cargo else -1))
             }
         }

@@ -294,67 +294,41 @@ def wedge_plow(m, L):
 
 
 def rotary_plow(m, L):
-    """A steam rotary plow: a long boxy car with a great fan in a round housing at the front, and a stack."""
+    """A steam rotary plow: a long red car with a black roof and stack, and a great fan in a black drum at the
+    front, its lip painted yellow so it shows."""
     c = common()
-    body = material("rotary black", "#2a2826", rough=0.5)
-    trim = material("rotary red", "#9a2e24", rough=0.5)
-    fan = material("rotary fan", "#5a5e62", metal=0.7, rough=0.4)
+    body = material("rotary red", "#8e2a22", rough=0.45, clearcoat=0.3)
+    black = material("rotary black", "#1e1e20", rough=0.55)
+    band = material("rotary cream", "#e8dcb8", rough=0.5)
+    lip = material("rotary yellow", "#e8b020", rough=0.4)
+    fan = material("rotary fan", "#c8ccd0", metal=0.8, rough=0.3)
     a0, a1 = -L / 2 + 0.02, L / 2 - 0.02
     _base(m, L, a0, a1, c)
     m.box(-0.125, 0.125, a0, a1 - 0.14, 0.62, 1.65, body, bevel=0.004)
-    m.box(-0.13, 0.13, a0 - 0.01, a1 - 0.13, 1.65, 1.74, trim, bevel=0.004)
-    m.upright(0, a0 + 0.12, 1.74, 2.05, 0.022, 0.026, body, segments=12)
+    m.box(-0.132, 0.132, a0 - 0.01, a1 - 0.13, 1.65, 1.76, black, bevel=0.006)
+    m.upright(0, a0 + 0.12, 1.76, 2.1, 0.024, 0.028, black, segments=12)
+    m.upright(0, a0 + 0.12, 2.06, 2.12, 0.032, 0.032, black, segments=12)
     for side in (-1, 1):
-        for y in (a0 + 0.06, a0 + 0.16, a0 + 0.26):
-            m.box(side * 0.1257 - 0.0008, side * 0.1257 + 0.0008, y - 0.025, y + 0.025, 1.1, 1.35, c["glass"])
-        m.box(side * 0.1262 - 0.002, side * 0.1262 + 0.002, a0 + 0.01, a1 - 0.15, 0.7, 0.76, trim)
-    # The fan housing: a short drum facing forward, the hood flaring over it, and blades inside.
-    # Radii in tiles, heights in steps.
-    m.tube(a1 - 0.14, a1 + 0.01, 0.0, 1.12, 0.145, trim, segments=32)
-    m.tube(a1 - 0.005, a1 + 0.012, 0.0, 1.12, 0.125, fan, segments=32)
-    for k in range(8):
-        ang = k * math.pi / 4
-        m.rod((0.0, a1 + 0.014, 1.12), (0.12 * math.cos(ang), a1 + 0.014, 1.12 + 0.12 * math.sin(ang) / rig.RISE), 0.01, body)
-    m.text(LETTERS, 0.1266, a0 / 2, 1.5, 0.03, c["letters"], 1)
-    m.text(LETTERS, -0.1266, a0 / 2, 1.5, 0.03, c["letters"], -1)
-
-
-def coach_streamline(m, L):
-    """A lightweight stainless steel coach of the 1950s: fluted sides, a smooth roof and a long band of windows."""
-    c = common()
-    stainless = material("stainless", "#c4c8cc", metal=0.85, rough=0.28)
-    band = material("coach band", "#6a2a26", rough=0.4, clearcoat=0.4)
-    a0, a1 = -L / 2 + 0.012, L / 2 - 0.012
-    _base(m, L, a0, a1, c)
-    m.box(-0.12, 0.12, a0, a1, 0.62, 1.62, stainless, bevel=0.006)
-    m.box(-0.115, 0.115, a0, a1, 1.62, 1.78, stainless, bevel=0.02)
-    for side in (-1, 1):
-        for k in range(14):
-            z = 0.66 + k * 0.022
-            m.box(side * 0.1205 - 0.001, side * 0.1205 + 0.001, a0 + 0.01, a1 - 0.01, z, z + 0.009, material("fluting", "#9ea2a6", metal=0.9, rough=0.3))
-        m.box(side * 0.1206 - 0.001, side * 0.1206 + 0.001, a0 + 0.01, a1 - 0.01, 1.32, 1.36, band)
-        n = 10
-        for i in range(n):
-            y0 = a0 + 0.03 + (a1 - a0 - 0.06) * i / n
-            m.box(side * 0.1208 - 0.0008, side * 0.1208 + 0.0008, y0, y0 + (a1 - a0 - 0.06) / n * 0.78, 1.02, 1.3, c["glass"])
-        m.text(LETTERS, side * 0.1216, 0, 1.45, 0.03, band, side)
-
-
-def well_car(m, L):
-    """An intermodal well car with two containers stacked in it."""
-    c = common()
-    frame_mat = material("well car", "#3a3e42", rough=0.6)
-    boxes = [material("container red", "#9a3a2a", rough=0.6), material("container blue", "#2a4a7a", rough=0.6)]
-    a0, a1 = -L / 2 + 0.01, L / 2 - 0.01
-    for y in (-L / 2 + 0.07, L / 2 - 0.07):
-        truck(m, y, c)
-    for side in (-1, 1):
-        m.box(side * 0.105, side * 0.125, a0 + 0.08, a1 - 0.08, 0.35, 0.95, frame_mat, bevel=0.003)
-    m.box(-0.125, 0.125, a0, a0 + 0.1, 0.45, 0.95, frame_mat)
-    m.box(-0.125, 0.125, a1 - 0.1, a1, 0.45, 0.95, frame_mat)
-    for k, (z0, z1) in enumerate(((0.4, 1.45), (1.45, 2.5))):
-        m.box(-0.1, 0.1, a0 + 0.11, a1 - 0.11, z0, z1, boxes[k], bevel=0.003)
-        for side in (-1, 1):
-            for j in range(1, 12):
-                y = a0 + 0.11 + (a1 - a0 - 0.22) * j / 12
-                m.box(side * 0.1005 - 0.0008, side * 0.1005 + 0.0008, y - 0.003, y + 0.003, z0 + 0.03, z1 - 0.03, material("container ribs", "#555555", rough=0.7))
+        m.box(side * 0.1256 - 0.001, side * 0.1256 + 0.001, a0 + 0.01, a1 - 0.15, 1.08, 1.4, band)
+        for y in (a0 + 0.06, a0 + 0.16, a0 + 0.26, a1 - 0.22):
+            m.box(side * 0.1262 - 0.0008, side * 0.1262 + 0.0008, y - 0.025, y + 0.025, 1.12, 1.36, c["glass"])
+        m.box(side * 0.1262 - 0.002, side * 0.1262 + 0.002, a0 + 0.01, a1 - 0.15, 0.66, 0.72, black)
+    # The hood: a square front with the snow chute on top, a yellow rim round a dark recess, and the wheel in it:
+    # broad pale blades round a steel hub. Radii in tiles, heights in steps.
+    m.box(-0.135, 0.135, a1 - 0.14, a1 - 0.004, 0.55, 1.78, black, bevel=0.006)
+    m.box(-0.045, 0.045, a1 - 0.1, a1 - 0.03, 1.78, 2.15, black, bevel=0.004)
+    m.wedge([(-0.05, a1 - 0.1, 2.15), (0.05, a1 - 0.1, 2.15), (0.05, a1 - 0.03, 2.15), (-0.05, a1 - 0.03, 2.15)],
+            [(-0.05, a1 - 0.16, 2.35), (0.05, a1 - 0.16, 2.35), (0.05, a1 - 0.1, 2.35), (-0.05, a1 - 0.1, 2.35)], black)
+    m.tube(a1 - 0.006, a1 + 0.002, 0.0, 1.12, 0.132, lip, segments=40)
+    m.tube(a1 - 0.004, a1 + 0.004, 0.0, 1.12, 0.12, black, segments=40)
+    blades = 10
+    for k in range(blades):
+        ang = k * 2 * math.pi / blades
+        pts = []
+        for r, da in ((0.025, -0.16), (0.112, -0.2), (0.112, 0.2), (0.025, 0.16)):
+            a = ang + da
+            pts.append((r * math.cos(a), r * math.sin(a) / rig.RISE))
+        m.wedge([(x, a1 + 0.004, 1.12 + z) for x, z in pts], [(x, a1 + 0.011, 1.12 + z) for x, z in pts], fan)
+    m.tube(a1 + 0.004, a1 + 0.016, 0.0, 1.12, 0.03, material("hub", "#e8e8e4", metal=0.9, rough=0.25), segments=20)
+    m.text(LETTERS, 0.1266, a0 / 2, 0.92, 0.03, band, 1)
+    m.text(LETTERS, -0.1266, a0 / 2, 0.92, 0.03, band, -1)

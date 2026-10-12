@@ -318,4 +318,6 @@
     <string name="tool_snow_shed">Paraneige</string>
     <string name="tool_snow_fence">Clôture à neige</string>
     <string name="news_avalanche">Une avalanche ensevelit la voie</string>
+    <string name="depot_needs_wires">Posez la caténaire au-dessus de ce dépôt pour que les locomotives électriques puissent sortir</string>
+    <string name="needs_wires">Ne peut pas sortir : pas de caténaire au-dessus du dépôt</string>
 </resources>

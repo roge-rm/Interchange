@@ -244,6 +244,9 @@ internal fun World.removeSpan(s: Span): Boolean {
 /** Whether step [s]'s piece has wires over it. */
 fun World.wired(s: Int): Boolean = spanOf(s)?.wired ?: (wires[stepTile(s)].toInt() and stepPiece(s) != 0)
 
+/** Whether depot [d]'s track has wires over it, for electric engines to come and go. */
+fun World.depotWired(d: Depot): Boolean = wires[d.tile].toInt() and Track.straight(d.edge) != 0
+
 /** The year wires can first be hung. */
 const val WIRES_FROM = 1895
 
