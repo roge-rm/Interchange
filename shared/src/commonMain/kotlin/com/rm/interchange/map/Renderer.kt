@@ -431,6 +431,8 @@ internal class Renderer(private val world: World, private val sheets: Sheets, pr
         val LEVELS = floatArrayOf(128f, 64f, 32f, 16f, 8f, 4f)
         /** Small enough that a chunk bakes again quickly when something's built on it. */
         const val CHUNK_PIXELS = 512
+        /** The sharpest level drawn. Level 0's sheets take some 130 MB, more than a small heap holds with everything else. */
+        val SHARPEST = if (heapBytes() >= 400L * 1024 * 1024) 0 else 1
         /** Chunks baking at once, leaving cores for the screen and the game. */
         val BAKERS = (Workers.threads - 1).coerceIn(2, 6)
         val BACKGROUND = (BAKERS - 1).coerceAtLeast(1)
@@ -459,8 +461,8 @@ internal class Renderer(private val world: World, private val sheets: Sheets, pr
 
         /** The level to draw at: the sharpest one no bigger than needed, so chunks only ever scale down, except past the sharpest. */
         fun levelFor(halfWidth: Float): Int {
-            for (i in LEVELS.indices.reversed()) if (LEVELS[i] >= halfWidth) return i
-            return 0
+            for (i in LEVELS.indices.reversed()) if (LEVELS[i] >= halfWidth) return maxOf(i, SHARPEST)
+            return SHARPEST
         }
     }
 }

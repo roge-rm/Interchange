@@ -18,3 +18,5 @@ internal actual fun chunkBitmapOf(pixels: IntArray, width: Int, top: Int, height
     soft.recycle()
     return hard.asImageBitmap()
 }
+
+internal actual fun heapBytes(): Long = Runtime.getRuntime().maxMemory()

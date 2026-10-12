@@ -7,3 +7,6 @@ internal expect fun imageBitmapOf(pixels: IntArray, width: Int, height: Int): Im
 
 /** A baked chunk's picture: rows [top] to [top] + [height] of [pixels], kept where drawing it is quickest. */
 internal expect fun chunkBitmapOf(pixels: IntArray, width: Int, top: Int, height: Int): ImageBitmap
+
+/** How much memory the app may hold on the heap, in bytes. */
+internal expect fun heapBytes(): Long

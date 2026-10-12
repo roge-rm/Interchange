@@ -42,6 +42,7 @@ class Sheets(private val packed: PackedSheets, private val scope: CoroutineScope
 
     @OptIn(ExperimentalResourceApi::class)
     fun get(level: Int): LevelSheets? {
+        if (level < Renderer.SHARPEST) return null
         levels[level]?.let { return it }
         if (!unpacking[level]) {
             unpacking[level] = true
@@ -55,9 +56,16 @@ class Sheets(private val packed: PackedSheets, private val scope: CoroutineScope
                     }
                     val (ground, _) = pixels(packed.ground[level])
                     val (static, width) = pixels(packed.static[level])
-                    // Grey, so any one channel is how dark.
-                    val (shade, shadeWidth) = pixels(packed.shadows[level])
-                    val shadows = ByteArray(shade.size) { shade[it].toByte() }
+                    // Grey, so any one channel is how dark. Read a strip at a time, as the sharpest is some 70 MB as ints.
+                    val shade = packed.shadows[level].decodeToImageBitmap()
+                    val shadeWidth = shade.width
+                    val shadows = ByteArray(shade.width * shade.height)
+                    val strip = IntArray(shade.width * SHADE_ROWS)
+                    for (y in 0 until shade.height step SHADE_ROWS) {
+                        val rows = minOf(SHADE_ROWS, shade.height - y)
+                        shade.readPixels(strip, 0, y, shade.width, rows)
+                        for (i in 0 until shade.width * rows) shadows[y * shade.width + i] = strip[i].toByte()
+                    }
                     LevelSheets(ground, static, width, shadows, shadeWidth, packed.signals[level].decodeToImageBitmap())
                 }
                 // Every level stays unpacked but the sharpest, some 100 MB, which goes once the screen's well away from it.
@@ -117,6 +125,10 @@ class Sheets(private val packed: PackedSheets, private val scope: CoroutineScope
     fun nearest(level: Int): Int? {
         get(level)?.let { return level }
         return levels.indices.filter { levels[it] != null }.minByOrNull { kotlin.math.abs(it - level) }
+    }
+
+    private companion object {
+        const val SHADE_ROWS = 256
     }
 }
 

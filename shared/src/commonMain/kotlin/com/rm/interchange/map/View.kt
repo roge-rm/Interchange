@@ -114,7 +114,7 @@ class View(val mapWidth: Int, val mapHeight: Int) {
     }
 
     fun zoom(by: Float) {
-        halfWidth = (halfWidth * by).coerceIn(MIN_HALF_WIDTH, MAX_HALF_WIDTH)
+        halfWidth = (halfWidth * by).coerceIn(MIN_HALF_WIDTH, MAX_HALF_WIDTH * Renderer.LEVELS[Renderer.SHARPEST] / Renderer.LEVELS[0])
     }
 
     /**
