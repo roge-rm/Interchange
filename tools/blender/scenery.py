@@ -248,6 +248,23 @@ def signal(m, red):
     m.box(0.012, 0.026, 0.0135, 0.0155, 3.6, 3.7, lamp)
 
 
+def colour_light(m, red):
+    """A colour light signal of the 1930s on: a plain mast, a black target with two lamps, the lit one red or green."""
+    grey = material("mast grey", "#7a7c7e", metal=0.4, rough=0.5)
+    black = material("signal black", "#202020", rough=0.6)
+    m.upright(0, 0, 0, 3.9, 0.014, 0.012, grey, segments=10)
+    m.box(-0.012, 0.012, -0.012, 0.012, 0.0, 0.25, black)
+    m.tube(0.004, 0.012, 0.0, 3.55, 0.045, black, segments=24)
+    m.box(-0.012, 0.012, -0.006, 0.008, 3.2, 3.9, black, 0.003)
+    on = material("lamp red" if red else "lamp green", "#ff3a2a" if red else "#3aff5a", rough=0.2)
+    off = material("lamp off", "#3a3a3a", rough=0.3)
+    m.tube(0.012, 0.016, 0.0, 3.68, 0.011, off if red else on, segments=16)
+    m.tube(0.012, 0.016, 0.0, 3.42, 0.011, on if red else off, segments=16)
+    for k in range(9):
+        z = 0.4 + k * 0.36
+        m.box(0.014, 0.034, -0.01, 0.01, z, z + 0.025, black)
+
+
 # ---- track --------------------------------------------------------------------------------
 #
 # Built in the tile's own terms, from its corner: the piece runs between the middles of two of the tile's

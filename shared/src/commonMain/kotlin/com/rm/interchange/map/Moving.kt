@@ -34,7 +34,8 @@ internal fun DrawScope.drawMoving(world: World, view: View, sheets: Sheets, movi
     val items = ArrayList<FloatArray>()
     for (s in moving.now.signals) {
         val p = signalPoint(world, s.tile, s.piece, s.facing)
-        add(items, world, view, p.first, p.second, (if (s.red) Atlas.SIGNAL[1] else Atlas.SIGNAL[0]).toFloat())
+        val heads = if ((moving.now.weather?.year ?: 0) >= Atlas.SIGNAL_LIGHTS_FROM) Atlas.SIGNAL_LIGHT else Atlas.SIGNAL
+        add(items, world, view, p.first, p.second, (if (s.red) heads[1] else heads[0]).toFloat())
         // A plate at its foot for the kinds that aren't plain block signals, just in front of it.
         if (s.kind != Signals.TWO_WAY && s.kind != Signals.ONE_WAY) add(items, world, view, p.first, p.second, s.kind.toFloat(), 0.01f, MARK)
     }

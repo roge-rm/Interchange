@@ -56,7 +56,7 @@ class ScenarioDump {
     @Test
     fun bridgesTunnelsAndSignals() {
         val out = System.getenv("INTERCHANGE_SCENARIO_OUT") ?: return
-        val w = World(NewGame(64, 64, 1, 1925, Region.MIXED, towns = 0, industries = 0, weather = false))
+        val w = World(NewGame(64, 64, 1, 1960, Region.MIXED, towns = 0, industries = 0, weather = false))
         for (y in 0..64) for (x in 0..64) {
             val valley = minOf(minOf(x - 19, 31 - x), minOf(y - 3, 17 - y)).coerceIn(0, 3)
             val ridge = minOf(minOf(x - 16, 34 - x), minOf(y - 23, 37 - y)).coerceIn(0, 4)
@@ -88,8 +88,14 @@ class ScenarioDump {
         w.apply(Command.Signal(0, 25, 50, Track.X, Track.XM, Signals.EXIT))
         w.apply(Command.Waypoint(0, 15, 50))
         w.apply(Command.Wire(0, 3, 50, 45, 50, Track.X, remove = false))
-        val american = w.roster.engines.first { it.key == "base:pacific" }.id
-        val coach = w.roster.engines.first { it.key == "base:coach_steel" }.id
+        // A snow shed, a fence, worn track with a slow order, and a patch of burnt forest.
+        w.apply(Command.SnowWorks(0, 40, 10, shed = true))
+        w.apply(Command.SnowWorks(0, 12, 52, shed = false))
+        w.apply(Command.SnowWorks(0, 13, 52, shed = false))
+        for (x in 8..12) w.condition[w.index(x, 30)] = 60
+        for (y in 40..44) for (x in 20..26) { w.fire[w.index(x, y)] = if (x == 23) 3 else BURNT.toByte(); w.trees[w.index(x, y)] = 0 }
+        val american = w.roster.engines.first { it.key == "base:gp9" }.id
+        val coach = w.roster.engines.first { it.key == "base:coach_streamline" }.id
         val ends = w.stations.withIndex().filter { (_, s) -> s != null && !s.waypoint }.map { it.index }
         val waypoint = w.stations.indexOfFirst { it?.waypoint == true }
         for ((k, depot) in listOf(0, 1, 2, 2).withIndex()) {
@@ -102,7 +108,7 @@ class ScenarioDump {
         }
         repeat(Calendar.TICKS_PER_DAY * 6) { w.step() }
         File(out, "save_2.ichg").writeBytes(Save.write(w))
-        File(out, "save_2.info").writeText("day=${w.day}\nstartYear=1925\nmoney=${w.companies[0].money}\nwidth=64\nheight=64\nregion=0\n")
+        File(out, "save_2.info").writeText("day=${w.day}\nstartYear=1960\nmoney=${w.companies[0].money}\nwidth=64\nheight=64\nregion=0\n")
         println("spans ${w.spans.size} stations ${w.stations.size} " + w.trains.map { t -> stepTile(t!!.steps.lastOrNull() ?: 0) })
     }
 }

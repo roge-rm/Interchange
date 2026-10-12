@@ -138,6 +138,7 @@ for d, kind in enumerate(ground.DECOR):
         UP[("decor", d, look)] = f"decor_{kind}_{look}.png"
 for red in (0, 1):
     JOBS.append(("signals", ("signal", red), lambda red=red: scenery(f"signal_{red}.png", lambda: track.signal(red == 1)), None))
+    JOBS.append(("signals", ("signal_light", red), lambda red=red: scenery(f"signal_light_{red}.png", lambda: track.signal(red == 1)), None))
 # Town buildings, in the order of the base pack's houses.json, each facing every view edge, with its shadow apart.
 HOUSES = [h["id"] for h in json.loads((ROOT / "packs/base/houses.json").read_text())["houses"]]
 for k, kind in enumerate(HOUSES):
@@ -434,6 +435,9 @@ object Atlas {{
 
     /** A signal showing clear (0) or stop (1). On the signals sheet. */
     val SIGNAL = intArrayOf({index[("signal", 0)]}, {index[("signal", 1)]})
+    /** A colour light signal showing clear (0) or stop (1), from [SIGNAL_LIGHTS_FROM]. On the signals sheet. */
+    val SIGNAL_LIGHT = intArrayOf({index[("signal_light", 0)]}, {index[("signal_light", 1)]})
+    const val SIGNAL_LIGHTS_FROM = 1930
 
     /** A tile of bridge and a step of what holds it up, at style * 2 + 0 along view u or 1 along v; a tunnel mouth opening to view edge XM, XP, YM or YP. On the signals sheet. */
     val SPAN_DECK = intArrayOf({", ".join(str(index[("span_deck", st, a)]) for st in range(len(SPAN_STYLES)) for a in (0, 1))})

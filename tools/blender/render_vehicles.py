@@ -19,6 +19,7 @@ import cars  # noqa: E402
 import parts  # noqa: E402
 import rig  # noqa: E402
 import steam  # noqa: E402
+import diesel  # noqa: E402
 
 
 def L(n):
@@ -61,6 +62,20 @@ MODELS = {
     "ore_car": (6, lambda m: cars.ore_car(m, L(6))),
     "covered_hopper": (11, lambda m: cars.covered_hopper(m, L(11))),
     "wedge_plow": (10, lambda m: cars.wedge_plow(m, L(10))),
+    "boxcab": (12, lambda m: diesel.boxcab(m, L(12))),
+    "fp7": (13, lambda m: diesel.cab_unit(m, L(13), "green")),
+    "rs3": (12, lambda m: diesel.hood(m, L(12), "maroon")),
+    "gp9": (12, lambda m: diesel.hood(m, L(12), "black", dynamic=True)),
+    "fpa4": (13, lambda m: diesel.cab_unit(m, L(13), "maroon")),
+    "sd40": (15, lambda m: diesel.hood(m, L(15), "red", axles=3, dynamic=True)),
+    "lrc": (13, lambda m: diesel.lrc(m, L(13))),
+    "gf6c": (15, lambda m: diesel.gf6c(m, L(15))),
+    "f40": (13, lambda m: diesel.hood(m, L(13), "silver", wide=True)),
+    "dash9": (16, lambda m: diesel.hood(m, L(16), "black", axles=3, wide=True, dynamic=True)),
+    "sd70": (16, lambda m: diesel.hood(m, L(16), "red", axles=3, wide=True, dynamic=True)),
+    "charger": (14, lambda m: diesel.charger(m, L(14))),
+    "coach_streamline": (14, lambda m: cars.coach_streamline(m, L(14))),
+    "well_car": (14, lambda m: cars.well_car(m, L(14))),
     "rotary_plow": (12, lambda m: cars.rotary_plow(m, L(12))),
 }
 

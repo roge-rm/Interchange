@@ -317,3 +317,44 @@ def rotary_plow(m, L):
         m.rod((0.0, a1 + 0.014, 1.12), (0.12 * math.cos(ang), a1 + 0.014, 1.12 + 0.12 * math.sin(ang) / rig.RISE), 0.01, body)
     m.text(LETTERS, 0.1266, a0 / 2, 1.5, 0.03, c["letters"], 1)
     m.text(LETTERS, -0.1266, a0 / 2, 1.5, 0.03, c["letters"], -1)
+
+
+def coach_streamline(m, L):
+    """A lightweight stainless steel coach of the 1950s: fluted sides, a smooth roof and a long band of windows."""
+    c = common()
+    stainless = material("stainless", "#c4c8cc", metal=0.85, rough=0.28)
+    band = material("coach band", "#6a2a26", rough=0.4, clearcoat=0.4)
+    a0, a1 = -L / 2 + 0.012, L / 2 - 0.012
+    _base(m, L, a0, a1, c)
+    m.box(-0.12, 0.12, a0, a1, 0.62, 1.62, stainless, bevel=0.006)
+    m.box(-0.115, 0.115, a0, a1, 1.62, 1.78, stainless, bevel=0.02)
+    for side in (-1, 1):
+        for k in range(14):
+            z = 0.66 + k * 0.022
+            m.box(side * 0.1205 - 0.001, side * 0.1205 + 0.001, a0 + 0.01, a1 - 0.01, z, z + 0.009, material("fluting", "#9ea2a6", metal=0.9, rough=0.3))
+        m.box(side * 0.1206 - 0.001, side * 0.1206 + 0.001, a0 + 0.01, a1 - 0.01, 1.32, 1.36, band)
+        n = 10
+        for i in range(n):
+            y0 = a0 + 0.03 + (a1 - a0 - 0.06) * i / n
+            m.box(side * 0.1208 - 0.0008, side * 0.1208 + 0.0008, y0, y0 + (a1 - a0 - 0.06) / n * 0.78, 1.02, 1.3, c["glass"])
+        m.text(LETTERS, side * 0.1216, 0, 1.45, 0.03, band, side)
+
+
+def well_car(m, L):
+    """An intermodal well car with two containers stacked in it."""
+    c = common()
+    frame_mat = material("well car", "#3a3e42", rough=0.6)
+    boxes = [material("container red", "#9a3a2a", rough=0.6), material("container blue", "#2a4a7a", rough=0.6)]
+    a0, a1 = -L / 2 + 0.01, L / 2 - 0.01
+    for y in (-L / 2 + 0.07, L / 2 - 0.07):
+        truck(m, y, c)
+    for side in (-1, 1):
+        m.box(side * 0.105, side * 0.125, a0 + 0.08, a1 - 0.08, 0.35, 0.95, frame_mat, bevel=0.003)
+    m.box(-0.125, 0.125, a0, a0 + 0.1, 0.45, 0.95, frame_mat)
+    m.box(-0.125, 0.125, a1 - 0.1, a1, 0.45, 0.95, frame_mat)
+    for k, (z0, z1) in enumerate(((0.4, 1.45), (1.45, 2.5))):
+        m.box(-0.1, 0.1, a0 + 0.11, a1 - 0.11, z0, z1, boxes[k], bevel=0.003)
+        for side in (-1, 1):
+            for j in range(1, 12):
+                y = a0 + 0.11 + (a1 - a0 - 0.22) * j / 12
+                m.box(side * 0.1005 - 0.0008, side * 0.1005 + 0.0008, y - 0.003, y + 0.003, z0 + 0.03, z1 - 0.03, material("container ribs", "#555555", rough=0.7))

@@ -164,6 +164,7 @@ def main():
         shot(out, f"span_shed_{a}.png", lambda m, a=a: spans.shed(m, a == 0), shadow=False)
     for red in (0, 1):
         shot(out, f"signal_{red}.png", lambda m, red=red: scenery.signal(m, red == 1), shadow=False)
+        shot(out, f"signal_light_{red}.png", lambda m, red=red: scenery.colour_light(m, red == 1), shadow=False)
     for kind in DECOR:
         for look in range(3):
             shot(out, f"decor_{kind}_{look}.png", lambda m, kind=kind, look=look: scenery.decor(m, kind, look))

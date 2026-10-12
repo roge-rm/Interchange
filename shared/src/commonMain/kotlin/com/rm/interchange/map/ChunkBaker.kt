@@ -298,7 +298,7 @@ internal class ChunkBaker(
         val muddy = if (weather && !water && kind != Atlas.SAND) world.mud(tile) / 255f * MUD_MOST else 0f
         // Burnt black, fading as the ground grows back.
         val fireAt = world.fire[tile].toInt() and 255
-        val charred = if (fireAt >= BURNT_FROM) (fireAt - BURNT_FROM) / (BURNT - BURNT_FROM).toFloat() * 0.75f else if (fireAt > 0) 0.6f else 0f
+        val charred = if (fireAt >= BURNT_FROM) 0.25f + (fireAt - BURNT_FROM) / (BURNT - BURNT_FROM).toFloat() * 0.7f else if (fireAt > 0) 0.7f else 0f
         val worn = if (overlays and CONDITION != 0 && world.track[tile].toInt() != 0) world.condition[tile].toInt() and 255 else -1
         val grade = GRADES[look].getOrNull(kind) ?: 0
         val gradeBy = (grade ushr 24) / 255f
@@ -372,7 +372,7 @@ internal class ChunkBaker(
                 }
                 if (gradeBy > 0f) texel = mix(texel, grade, gradeBy)
                 if (muddy > 0f) texel = mix(texel, MUD, muddy)
-                if (charred > 0f) texel = mix(texel, CHARCOAL, charred * (0.6f + rag * 0.4f))
+                if (charred > 0f) texel = mix(texel, CHARCOAL, charred * (0.85f + rag * 0.15f))
                 if (road != 0) texel = roadTexel(u, v, road, ti, texel)
                 if (icy) {
                     val ice = iT * (1f - u) * (1f - v) + ir * u * (1f - v) + ib * u * v + il * (1f - u) * v
