@@ -52,7 +52,7 @@ internal fun World.workOutCatchment() {
     val best = HashMap<Int, Int>()
     val bestDist = HashMap<Int, Int>()
     for (s in stations) {
-        if (s == null) continue
+        if (s == null || s.waypoint) continue
         for (p in s.tiles) {
             val px = p % width
             val py = p / width
@@ -81,7 +81,7 @@ internal fun World.workOutCatchment() {
     industryStations.clear()
     stationIndustries.clear()
     for (s in stations) {
-        if (s == null) continue
+        if (s == null || s.waypoint) continue
         val found = ArrayList<Int>()
         for (p in s.tiles) {
             val px = p % width

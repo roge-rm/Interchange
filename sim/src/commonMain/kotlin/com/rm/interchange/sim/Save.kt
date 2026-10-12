@@ -16,7 +16,7 @@ package com.rm.interchange.sim
  */
 object Save {
     private val MAGIC = "ICHG".encodeToByteArray()
-    const val VERSION = 11
+    const val VERSION = 12
 
     fun write(world: World): ByteArray {
         val w = ByteWriter(world.width * world.height * 6 + 4096)
@@ -47,7 +47,7 @@ object Save {
             for (s in stations) {
                 w.bool(s != null)
                 if (s == null) continue
-                w.int(s.owner); w.string(s.name); w.int(s.signX); w.int(s.signY); w.ints(s.tiles.toIntArray())
+                w.int(s.owner); w.string(s.name); w.int(s.signX); w.int(s.signY); w.bool(s.waypoint); w.ints(s.tiles.toIntArray())
                 writeCargo(w, s.cargo)
                 w.ints(s.rating); w.uvar(s.lastCall.size.toLong()); for (v in s.lastCall) w.long(v); w.ints(s.lastSpeed)
             }
@@ -88,6 +88,9 @@ object Save {
                 w.int(ind.broughtThisMonth); w.int(ind.broughtLastMonth); w.bool(ind.closed)
             }
             w.shorts(industryOf)
+            val held = reserved.keys.sorted()
+            w.uvar(held.size.toLong())
+            for (k in held) { w.int(k); w.int(reserved.getValue(k)) }
             val wx = weather
             w.bytes(wx.snow); w.bytes(wx.ice); w.bytes(wx.wet); w.bytes(wx.frost)
             w.int(wx.anomaly); w.int(wx.recent); w.int(wx.windFrom); w.int(wx.wind)
@@ -150,7 +153,7 @@ object Save {
             fill(corners, r.bytes()); fill(ground, r.bytes()); fill(trees, r.bytes()); fill(track, r.bytes()); fill(owner, r.bytes())
             repeat(r.uvar().toInt()) { id ->
                 if (!r.bool()) { stations += null; return@repeat }
-                val s = Station(id, r.int(), r.string(), r.int(), r.int())
+                val s = Station(id, r.int(), r.string(), r.int(), r.int(), if (version >= 12) r.bool() else false)
                 for (tile in r.ints()) { s.tiles += tile; stationTiles[tile] = id }
                 when {
                     version >= 5 -> readCargo(r, s.cargo, version)
@@ -242,6 +245,7 @@ object Save {
                 }
                 fillShorts(industryOf, r.shorts())
             }
+            if (version >= 12) repeat(r.uvar().toInt().also { if (it > 10_000_000) throw BadData("too many held pieces") }) { reserved[r.int()] = r.int() }
             if (version >= 10) {
                 val wx = weather
                 fill(wx.snow, r.bytes()); fill(wx.ice, r.bytes()); fill(wx.wet, r.bytes()); fill(wx.frost, r.bytes())

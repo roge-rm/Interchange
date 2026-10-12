@@ -1,6 +1,12 @@
 package com.rm.interchange.map
 
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.drawscope.Stroke
+import com.rm.interchange.sim.Signals
 import com.rm.interchange.sim.Track
 import com.rm.interchange.sim.WorldView
 import com.rm.interchange.sim.World
@@ -24,7 +30,10 @@ internal fun DrawScope.drawMoving(world: World, view: View, sheets: Sheets, movi
     for (s in moving.now.signals) {
         val p = signalPoint(world, s.tile, s.piece, s.facing)
         add(items, world, view, p.first, p.second, (if (s.red) Atlas.SIGNAL[1] else Atlas.SIGNAL[0]).toFloat())
+        // A plate at its foot for the kinds that aren't plain block signals, just in front of it.
+        if (s.kind != Signals.TWO_WAY && s.kind != Signals.ONE_WAY) add(items, world, view, p.first, p.second, s.kind.toFloat(), 0.01f, MARK)
     }
+    for (tile in moving.now.waypoints) add(items, world, view, tile % world.width + 0.5f, tile / world.width + 0.5f, 0f, 0f, WAYPOINT)
     // Engine houses go just in front of everything on their own tile and behind anything on the tile in front.
     for (d in moving.now.depots) {
         val wx = d.tile % world.width
@@ -73,7 +82,9 @@ internal fun DrawScope.drawMoving(world: World, view: View, sheets: Sheets, movi
     with(painter) {
         for (it in items) {
             val model = it[4].toInt()
-            if (model < 0) {
+            if (model == MARK || model == WAYPOINT) {
+                drawMark(model, it[3].toInt(), it[1], it[2], view.halfWidth)
+            } else if (model < 0) {
                 spriteAt(it[3].toInt(), it[1], it[2], scale)
             } else {
                 // Its own sheet at this level, unpacked the first time it's on screen; it shows a frame or two later.
@@ -82,6 +93,31 @@ internal fun DrawScope.drawMoving(world: World, view: View, sheets: Sheets, movi
             }
         }
     }
+}
+
+/** Items that aren't sprites: a signal's kind plate, and a waypoint's post. */
+private const val MARK = -2
+private const val WAYPOINT = -3
+
+/** A signal kind's plate at the foot of its mast, or a waypoint's post with a diamond on top, standing at ([x], [y]) on screen. */
+private fun DrawScope.drawMark(what: Int, kind: Int, x: Float, y: Float, hw: Float) {
+    val u = hw / 16f
+    if (what == WAYPOINT) {
+        drawLine(Color(0xff3a3a3a), Offset(x, y), Offset(x, y - 7 * u), 1.2f * u)
+        val d = Path().apply { moveTo(x, y - 11 * u); lineTo(x + 2.5f * u, y - 8.5f * u); lineTo(x, y - 6 * u); lineTo(x - 2.5f * u, y - 8.5f * u); close() }
+        drawPath(d, Color(0xfff0c030))
+        drawPath(d, Color(0xff3a3a3a), style = Stroke(0.6f * u))
+        return
+    }
+    val colour = when (kind) {
+        Signals.ENTRY -> Color(0xfff0c030)
+        Signals.EXIT -> Color(0xff40a050)
+        Signals.COMBO -> Color(0xff3a78d0)
+        else -> Color(0xfff4f4f0)
+    }
+    val r = 1.6f * u
+    drawRect(colour, Offset(x - r, y - r * 1.6f), Size(2 * r, 1.6f * r))
+    drawRect(Color(0xff2a2a2a), Offset(x - r, y - r * 1.6f), Size(2 * r, 1.6f * r), style = Stroke(0.5f * u))
 }
 
 /** How far in front of its tile's middle an engine house is drawn, in view depth: past anything on the tile, short of the tile in front. */

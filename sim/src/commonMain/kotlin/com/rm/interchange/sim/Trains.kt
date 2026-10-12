@@ -119,6 +119,7 @@ class Train(
 
     // The tiles and blocks it's on, as last counted.
     internal var onTiles = IntArray(0)
+    internal var onPieces = IntArray(0)
     internal var onBlocks = IntArray(0)
 
     val engineInfo get() = roster[engine]
@@ -188,7 +189,8 @@ internal fun World.trainCommand(company: Company, c: Command.TrainOrder) {
             // Every train sharing its orders gets the same.
             val group = trains.filter { it != null && t.shared >= 0 && it.shared == t.shared }.ifEmpty { listOf(t) }
             for (g in group) {
-                g!!.orders.clear()
+                releaseAhead(g!!)
+                g.orders.clear()
                 for (o in c.stations) if (stations.getOrNull(Order.station(o))?.owner == company.id) g.orders += o
                 g.order = 0
                 g.route = null
@@ -233,6 +235,7 @@ internal fun World.trainCommand(company: Company, c: Command.TrainOrder) {
             t.route = null
         }
         Command.TrainOrder.SELL -> if (t.inDepot) {
+            reserved.entries.removeAll { it.value == t.id }
             earn(company, Books.TRAINS_SOLD, value(t))
             trains[t.id] = null
         }
@@ -318,7 +321,7 @@ private fun World.moveTrain(t: Train) {
     }
     // Going via a station: once the nose is in it, on to the next order without stopping.
     val o = t.orders.getOrNull(t.order % t.orders.size.coerceAtLeast(1)) ?: 0
-    if (Order.has(o, Order.VIA) && stationTiles[stepTile(t.steps.last())] == Order.station(o)) {
+    if ((Order.has(o, Order.VIA) || stations.getOrNull(Order.station(o))?.waypoint == true) && stationTiles[stepTile(t.steps.last())] == Order.station(o)) {
         nextOrder(t)
         t.route = null
     }
@@ -352,6 +355,11 @@ private fun World.moveTrain(t: Train) {
         // At the stopping point.
         t.speed = 0
         when (stop) {
+            Stop.SIGNAL -> if (tick % PATH_RETRY == 0L && t.route != null) {
+                // Held at a signal: look again for a way, another platform perhaps.
+                t.route = null
+                releaseAhead(t)
+            }
             Stop.STATION -> {
                 val o = t.orders.getOrNull(t.order % t.orders.size.coerceAtLeast(1)) ?: 0
                 t.waiting = maxOf(Calendar.TICKS_PER_DAY * 2, Calendar.TICKS_PER_DAY * Order.waitDays(o))
@@ -414,7 +422,7 @@ private fun World.freeAhead(t: Train, brake: Int = BRAKE): Pair<Int, Stop> {
     val target = t.target
     while (free < reach) {
         val tile = stepTile(cur)
-        if (target >= 0 && stationTiles[tile] == target && !Order.has(t.orders.getOrNull(t.order % t.orders.size.coerceAtLeast(1)) ?: 0, Order.VIA)) {
+        if (target >= 0 && stationTiles[tile] == target && !Order.has(t.orders.getOrNull(t.order % t.orders.size.coerceAtLeast(1)) ?: 0, Order.VIA) && stations.getOrNull(target)?.waypoint != true) {
             val nx = nextFrom(t, cur, at)
             if (nx < 0 || stationTiles[stepTile(nx)] != target) return free to Stop.STATION
         }
@@ -424,9 +432,11 @@ private fun World.freeAhead(t: Train, brake: Int = BRAKE): Pair<Int, Stop> {
         if (next < 0) return free to Stop.END
         val nt = stepTile(next)
         if (!mayPass(nt, stepPiece(next), stepEntry(next))) return free to Stop.END
-        if (signalApplies(cur, next) && blockTaken(next, t)) return free to Stop.SIGNAL
+        val signal = signalFor(cur, next)
+        if (signal >= 0 && !signalLets(t, signal, next, at)) return free to Stop.SIGNAL
         if ((weather.snow[nt].toInt() and 255) >= Weather.BLOCKING) return free to Stop.SNOW
-        if ((tileTrains[nt] ?: 0) - (if (nt in t.onTiles) 1 else 0) > 0) return free to Stop.TRAIN
+        // On tiles in a path signal's area other trains can be on pieces that don't cross; elsewhere a train anywhere on the tile holds it.
+        if (!pieceFree(t, nt, stepPiece(next), occupiedTile = !inPathArea(next))) return free to Stop.TRAIN
         free += stepLength(next)
         cur = next
         at++
@@ -462,18 +472,84 @@ fun World.waysIn(tile: Int, entry: Int): IntArray {
     return out.toIntArray()
 }
 
-/** Whether a signal stands between step [cur] and the [next] one, for a train going that way. */
-private fun World.signalApplies(cur: Int, next: Int): Boolean {
+/** The signal that a train going from step [cur] to [next] comes to, packed, or -1. */
+private fun World.signalFor(cur: Int, next: Int): Int {
     val mine = signalAt(stepTile(cur), stepPiece(cur))
-    if (mine >= 0 && Signals.facing(mine) == stepExit(cur) && Signals.kind(mine) == Signals.TWO_WAY) return true
+    if (mine >= 0 && Signals.facing(mine) == stepExit(cur) && !Signals.oneWay(mine)) return mine
     val theirs = signalAt(stepTile(next), stepPiece(next))
-    return theirs >= 0 && Signals.facing(theirs) == stepEntry(next)
+    return if (theirs >= 0 && Signals.facing(theirs) == stepEntry(next)) theirs else -1
 }
 
-/** Whether the block [next] is in has another train in it. */
-private fun World.blockTaken(next: Int, t: Train): Boolean {
-    val b = blocks[pieceKey(stepTile(next), stepPiece(next))] ?: return false
-    return (blockTrains[b] ?: 0) - (if (b in t.onBlocks) 1 else 0) > 0
+/**
+ * Whether [signal] lets train [t] on into step [next] (place [at] in its route): a path signal if the
+ * way through to the next signal is clear and can be held; a block signal if the block ahead is clear,
+ * and for an entry or combo signal a way out of it too.
+ */
+private fun World.signalLets(t: Train, signal: Int, next: Int, at: Int): Boolean {
+    if (Signals.path(signal)) return reserveThrough(t, next, at)
+    val b = blocks[pieceKey(stepTile(next), stepPiece(next))] ?: return true
+    return blockClear(t, b, Signals.kind(signal), 0)
+}
+
+/** Whether block [b] has no train but [t] in it and, for an entry or combo signal ([kind]) into it, a clear way out. */
+private fun World.blockClear(t: Train, b: Int, kind: Int, depth: Int): Boolean {
+    if ((blockTrains[b] ?: 0) - (if (b in t.onBlocks) 1 else 0) > 0) return false
+    if ((kind != Signals.ENTRY && kind != Signals.COMBO) || depth > MAX_PRESIGNALS) return true
+    val outs = exits[b].orEmpty().filter { it[0] == Signals.EXIT || it[0] == Signals.COMBO }
+    return outs.isEmpty() || outs.any { blockClear(t, it[1], it[0], depth + 1) }
+}
+
+/** Whether [piece] of [tile] is free for train [t]: neither it nor a piece crossing it held or run on by another train, nor, if [occupiedTile], the tile. */
+private fun World.pieceFree(t: Train, tile: Int, piece: Int, occupiedTile: Boolean): Boolean {
+    if (occupiedTile && (tileTrains[tile] ?: 0) - (if (tile in t.onTiles) 1 else 0) > 0) return false
+    val pieces = track[tile].toInt()
+    for (q in Track.PIECES) {
+        if (pieces and q == 0 || (q != piece && !Track.touch(q, piece))) continue
+        val key = pieceKey(tile, q)
+        val holder = reserved[key]
+        if (holder != null && holder != t.id) return false
+        if ((pieceTrains[key] ?: 0) - (if (key in t.onPieces) 1 else 0) > 0) return false
+    }
+    return true
+}
+
+/** Whether step [s] runs where trains hold paths: on a piece some train has reserved, or one with a path signal. */
+private fun World.inPathArea(s: Int): Boolean {
+    val tile = stepTile(s)
+    for (q in Track.PIECES) {
+        val key = pieceKey(tile, q)
+        if (reserved.containsKey(key) || signals[key]?.let { Signals.path(it) } == true) return true
+    }
+    return false
+}
+
+/**
+ * Holds the way from step [first] (place [at] in [t]'s route) through to the next signal, the end of its
+ * platform or the end of its route, if every piece of it is free. True if it's held, by this call or before.
+ */
+private fun World.reserveThrough(t: Train, first: Int, at: Int): Boolean {
+    if (reserved[pieceKey(stepTile(first), stepPiece(first))] == t.id) return true
+    val way = ArrayList<Int>()
+    var s = first
+    var i = at
+    while (way.size < MAX_PATH) {
+        if (!pieceFree(t, stepTile(s), stepPiece(s), occupiedTile = false)) return false
+        way += s
+        val target = t.target
+        val n = nextFrom(t, s, i + 1)
+        if (n < 0 || signalFor(s, n) >= 0) break
+        if (target >= 0 && stationTiles[stepTile(s)] == target && stationTiles[stepTile(n)] != target) break
+        s = n
+        i++
+    }
+    for (w in way) reserved[pieceKey(stepTile(w), stepPiece(w))] = t.id
+    return true
+}
+
+/** Lets go of what train [t] holds ahead of it, keeping only the pieces it stands on. */
+internal fun World.releaseAhead(t: Train) {
+    val under = t.steps.map { pieceKey(stepTile(it), stepPiece(it)) }.toSet()
+    reserved.entries.removeAll { it.value == t.id && it.key !in under }
 }
 
 /** Moves the nose on by [move], no further than [free], taking steps from the route as it goes. */
@@ -499,7 +575,11 @@ private fun World.advance(t: Train, move: Int, free: Int) {
     // Lets go of the steps wholly behind the last wagon.
     val tail = t.behind(t.length)
     val keep = (tail shr 32).toInt()
-    if (keep > 0) repeat(keep) { t.steps.removeAt(0) }
+    if (keep > 0) repeat(keep) {
+        val gone = t.steps.removeAt(0)
+        val key = pieceKey(stepTile(gone), stepPiece(gone))
+        if (reserved[key] == t.id && t.steps.none { pieceKey(stepTile(it), stepPiece(it)) == key }) reserved.remove(key)
+    }
     countOn(t)
 }
 
@@ -515,6 +595,7 @@ private fun World.turnRound(t: Train) {
     t.steps += kept
     t.nose = stepLength(t.steps.last()) - along
     t.route = null
+    releaseAhead(t)
     countOn(t)
 }
 
@@ -526,6 +607,7 @@ private fun World.enterDepot(t: Train) {
     t.toDepot = false
     t.steps.clear()
     t.route = null
+    reserved.entries.removeAll { it.value == t.id }
     countOn(t)
     if (t.servicing) serviced(t)
 }
@@ -533,15 +615,19 @@ private fun World.enterDepot(t: Train) {
 /** Counts the train afresh on the tiles and blocks it's on. */
 internal fun World.countOn(t: Train) {
     for (tile in t.onTiles) tileTrains[tile] = (tileTrains[tile] ?: 1) - 1
+    for (p in t.onPieces) pieceTrains[p] = (pieceTrains[p] ?: 1) - 1
     for (b in t.onBlocks) blockTrains[b] = (blockTrains[b] ?: 1) - 1
     if (t.inDepot) {
         t.onTiles = IntArray(0)
+        t.onPieces = IntArray(0)
         t.onBlocks = IntArray(0)
         return
     }
     t.onTiles = t.steps.map { stepTile(it) }.distinct().toIntArray()
+    t.onPieces = t.steps.map { pieceKey(stepTile(it), stepPiece(it)) }.distinct().toIntArray()
     t.onBlocks = t.steps.mapNotNull { blocks[pieceKey(stepTile(it), stepPiece(it))] }.distinct().toIntArray()
     for (tile in t.onTiles) tileTrains[tile] = (tileTrains[tile] ?: 0) + 1
+    for (p in t.onPieces) pieceTrains[p] = (pieceTrains[p] ?: 0) + 1
     for (b in t.onBlocks) blockTrains[b] = (blockTrains[b] ?: 0) + 1
 }
 
@@ -598,6 +684,12 @@ const val WET_RAIL = 40
 const val PLOWED = 10
 /** Ticks a train stuck in a drift takes to push through each cm of it. */
 const val RAM_TICKS = 1L
+
+/** The furthest through a path signal's area a train holds its way, in steps, and entry and exit signals chained. */
+const val MAX_PATH = 128
+const val MAX_PRESIGNALS = 4
+/** Ticks a train waits at a path signal before looking for another way, to a free platform say. */
+const val PATH_RETRY = 128L
 
 /** How hard trains brake, in speed units a tick. */
 const val BRAKE = 40

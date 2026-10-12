@@ -312,4 +312,8 @@
     <string name="renew_for">Renew for %1$s</string>
     <string name="servicing">Servicing</string>
     <string name="news_old">%1$s is getting old</string>
+    <string name="tool_waypoint">Waypoint</string>
+    <string-array name="signal_kinds">
+        <item>Block</item><item>Path</item><item>Entry</item><item>Exit</item><item>Combo</item>
+    </string-array>
 </resources>

@@ -109,6 +109,11 @@ class World(val settings: NewGame, val roster: Roster = Roster.BASE, generate: B
     internal val blocks = HashMap<Int, Int>()
     internal var blocksDirty = true
     internal val tileTrains = HashMap<Int, Int>()
+    /** Trains on each piece, by [pieceKey]; the ways out of each block, as signal kind and the block beyond. Not saved. */
+    internal val pieceTrains = HashMap<Int, Int>()
+    internal val exits = HashMap<Int, ArrayList<IntArray>>()
+    /** Pieces held by trains that passed a path signal, by [pieceKey], to the train's id. */
+    val reserved = HashMap<Int, Int>()
     internal val blockTrains = HashMap<Int, Int>()
 
     val rng = Rng(settings.seed)
@@ -180,6 +185,7 @@ class World(val settings: NewGame, val roster: Roster = Roster.BASE, generate: B
             is Command.Station -> buildStation(company, command)
             is Command.Depot -> buildDepot(company, command)
             is Command.Signal -> placeSignal(company, command)
+            is Command.Waypoint -> buildWaypoint(company, command)
             is Command.Clear -> clearTile(company, command)
             is Command.BuyTrain -> buyTrain(company, command)
             is Command.TrainOrder -> trainCommand(company, command)
@@ -261,6 +267,7 @@ class World(val settings: NewGame, val roster: Roster = Roster.BASE, generate: B
         for (k in signals.keys.sorted()) mix(k.toLong() * 31 + signals.getValue(k))
         for (k in stationTiles.keys.sorted()) mix(k.toLong() * 31 + stationTiles.getValue(k))
         for (k in depotTiles.keys.sorted()) mix(k.toLong() * 31 + depotTiles.getValue(k))
+        for (k in reserved.keys.sorted()) mix(k.toLong() * 31 + reserved.getValue(k))
         for (t in trains) {
             if (t == null) continue
             mix(t.id.toLong()); mix(t.nose.toLong()); mix(t.speed.toLong()); mix(t.waiting.toLong()); mix(t.order.toLong())

@@ -21,6 +21,7 @@ enum class Tool(val group: ToolGroup, val title: StringResource, val glyph: Glyp
     Signals(ToolGroup.Rail, Res.string.tool_signals, Glyph.Signal, ready = true),
     Station(ToolGroup.Rail, Res.string.tool_station, Glyph.Station, ready = true),
     Depot(ToolGroup.Rail, Res.string.tool_depot, Glyph.Depot, ready = true),
+    Waypoint(ToolGroup.Rail, Res.string.tool_waypoint, Glyph.Waypoint, ready = true),
     Bridge(ToolGroup.Rail, Res.string.tool_bridge, Glyph.Bridge),
     Tunnel(ToolGroup.Rail, Res.string.tool_tunnel, Glyph.Tunnel),
 

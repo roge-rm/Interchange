@@ -20,6 +20,7 @@ import com.rm.interchange.sim.hasFoundation
 import com.rm.interchange.sim.surfaceHeight
 import com.rm.interchange.sim.Climate
 import com.rm.interchange.sim.mud
+import com.rm.interchange.sim.isPlatform
 import kotlin.math.sqrt
 
 /**
@@ -192,7 +193,7 @@ internal class ChunkBaker(
             ground(vx, vy, st, sr, sb, sl, kind, intArrayOf(-1, -1, -1, -1))
         }
         // Platforms bring their own track, drawn with them.
-        if (world.stationTiles.containsKey(tile)) return
+        if (world.isPlatform(tile)) return
         for ((i, p) in Track.PIECES.withIndex()) {
             if (pieces and p == 0) continue
             sprite(Atlas.TRACK[viewPieceIndex(i) * 16 + sShape], vx, vy, sBase)
@@ -243,7 +244,7 @@ internal class ChunkBaker(
             sprite(if (shadow) Atlas.DEPOT_SHADOW[e] else Atlas.DEPOT[e], vx, vy, base, shadow)
             return
         }
-        if (world.stationTiles.containsKey(tile)) {
+        if (world.isPlatform(tile)) {
             val st = world.surfaceHeight(wx, wy, pieces, worldCorner(wx, wy, vx, vy))
             val a = viewPieceIndex(Track.index(pieces))
             sprite(if (shadow) Atlas.STATION_SHADOW[a] else Atlas.STATION[a], vx, vy, st, shadow)

@@ -15,7 +15,7 @@ package com.rm.interchange.sim
  */
 
 /** A station: a name, the platforms that make it up, and what's waiting there, by [Cargo]. */
-class Station(val id: Int, val owner: Int, var name: String, val signX: Int, val signY: Int) {
+class Station(val id: Int, val owner: Int, var name: String, val signX: Int, val signY: Int, val waypoint: Boolean = false) {
     /** Its platform tiles, as tile indexes, in the order they were built. */
     val tiles = ArrayList<Int>()
     /** Lots waiting, oldest first, by cargo. */
@@ -31,8 +31,21 @@ class Depot(val id: Int, val owner: Int, val tile: Int, val edge: Int)
 
 /** What a signal does. */
 object Signals {
+    /** Block signals, two-way and one-way. */
     const val TWO_WAY = 0
     const val ONE_WAY = 1
+    /** Path signals, two-way and one-way: a train reserves its way through to the next signal, and trains share a block when their ways don't cross. */
+    const val PATH = 2
+    const val ONE_WAY_PATH = 3
+    /** Block signals for a block with more than one way out: an entry signal clears only if a way out of the block ahead is clear, at an exit signal; a combo signal is both. */
+    const val ENTRY = 4
+    const val EXIT = 5
+    const val COMBO = 6
+
+    fun oneWay(signal: Int) = kind(signal) == ONE_WAY || kind(signal) == ONE_WAY_PATH
+    fun path(signal: Int) = kind(signal) == PATH || kind(signal) == ONE_WAY_PATH
+    /** The kind a placing tool asks for, with one-way left to tapping again. */
+    val PLACED = intArrayOf(TWO_WAY, PATH, ENTRY, EXIT, COMBO)
 
     /** A signal packed into an int: the edge it faces, and its kind. */
     fun pack(facing: Int, kind: Int) = facing or (kind shl 2)
@@ -47,6 +60,9 @@ fun World.stationAt(tile: Int): Station? = stationTiles[tile]?.let { stations[it
 
 fun World.depotAt(tile: Int): Depot? = depotTiles[tile]?.let { depots[it] }
 
+/** Whether [tile] is a station's platform, as against plain track or a waypoint. */
+fun World.isPlatform(tile: Int): Boolean = stationTiles[tile]?.let { stations.getOrNull(it)?.waypoint == false } == true
+
 /** The signal on [piece] of [tile], packed, or -1. */
 fun World.signalAt(tile: Int, piece: Int): Int = signals[pieceKey(tile, piece)] ?: -1
 
@@ -56,7 +72,7 @@ fun World.signalAt(tile: Int, piece: Int): Int = signals[pieceKey(tile, piece)] 
  */
 fun World.mayPass(tile: Int, piece: Int, entry: Int): Boolean {
     val s = signalAt(tile, piece)
-    return s < 0 || Signals.kind(s) != Signals.ONE_WAY || Signals.facing(s) == entry
+    return s < 0 || !Signals.oneWay(s) || Signals.facing(s) == entry
 }
 
 /** Whether a signal could go on [piece] of tile ([x], [y]): plain track that doesn't branch. */
@@ -153,16 +169,37 @@ internal fun World.placeSignal(company: Company, c: Command.Signal) {
     if (owner[i].toInt() != company.id) return
     val key = pieceKey(i, c.piece)
     val had = signals[key]
+    val kind = if (c.kind in Signals.PLACED) c.kind else Signals.TWO_WAY
+    // The kind asked for, with block and path signals going one-way on a second tap and away on a third.
+    val base = had?.let { when (Signals.kind(it)) { Signals.ONE_WAY -> Signals.TWO_WAY; Signals.ONE_WAY_PATH -> Signals.PATH; else -> Signals.kind(it) } }
     when {
         had == null -> {
             if (company.money < price(Prices.SIGNAL)) return
             spend(company, Books.CONSTRUCTION, price(Prices.SIGNAL))
-            signals[key] = Signals.pack(c.facing, Signals.TWO_WAY)
+            signals[key] = Signals.pack(c.facing, kind)
         }
         Signals.facing(had) != c.facing -> signals[key] = Signals.pack(c.facing, Signals.kind(had))
+        base != kind -> signals[key] = Signals.pack(c.facing, kind)
         Signals.kind(had) == Signals.TWO_WAY -> signals[key] = Signals.pack(c.facing, Signals.ONE_WAY)
+        Signals.kind(had) == Signals.PATH -> signals[key] = Signals.pack(c.facing, Signals.ONE_WAY_PATH)
         else -> signals.remove(key)
     }
+    networkChanged()
+}
+
+/** Marks a tile of the company's plain straight track as a waypoint: a station with no platform that trains run through. */
+internal fun World.buildWaypoint(company: Company, c: Command.Waypoint) {
+    if (!inside(c.x, c.y)) return
+    val i = index(c.x, c.y)
+    val t = track[i].toInt()
+    if (owner[i].toInt() != company.id || (t != Track.X && t != Track.Y) || !isFlat(c.x, c.y) || stationTiles.containsKey(i) || depotTiles.containsKey(i)) return
+    if (company.money < price(Prices.SIGNAL)) return
+    spend(company, Books.CONSTRUCTION, price(Prices.SIGNAL))
+    val s = Station(stations.size, company.id, stationName(c.x, c.y), c.x, c.y, waypoint = true)
+    s.tiles += i
+    stations += s
+    stationTiles[i] = s.id
+    touched(c.x, c.y)
     networkChanged()
 }
 

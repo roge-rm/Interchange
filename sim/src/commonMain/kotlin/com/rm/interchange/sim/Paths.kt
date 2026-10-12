@@ -72,6 +72,9 @@ private fun World.search(from: Int, t: Train): IntArray? {
             val n = index(x, y) * 4 + Track.opposite(out)
             var c = cost + Track.length(piece)
             if (stationTiles.containsKey(nt)) c += 16
+            // A platform of the station it's going to with a train on it or held for one costs more, so another is taken if there is one.
+            val into = index(x, y)
+            if (target >= 0 && stationTiles[into] == target && ((tileTrains[into] ?: 0) - (if (into in t.onTiles) 1 else 0) > 0 || heldByOther(t, into))) c += TAKEN_PLATFORM
             if (c < (dist[n] ?: Int.MAX_VALUE)) {
                 dist[n] = c
                 prev[n] = (node.toLong() shl 3) or Track.index(piece).toLong()
@@ -107,6 +110,15 @@ private fun World.path(first: Int, goal: Int, prev: HashMap<Int, Long>, target: 
     }
     return back.toIntArray()
 }
+
+/** Whether a train other than [t] holds any piece of [tile]. */
+private fun World.heldByOther(t: Train, tile: Int): Boolean {
+    for (q in Track.PIECES) reserved[pieceKey(tile, q)]?.let { if (it != t.id) return true }
+    return false
+}
+
+/** What a platform already taken adds to a way's cost. */
+private const val TAKEN_PLATFORM = 400
 
 /** The most places a search looks at before giving up. */
 private const val MAX_LOOK = 200_000

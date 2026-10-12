@@ -85,7 +85,7 @@ class GoingView(val dest: Int, val via: Int, val counts: IntArray)
 class DepotView(val tile: Int, val edge: Int)
 
 /** A signal as the screen shows it: where, which way and whether it shows red. */
-class SignalView(val tile: Int, val piece: Int, val facing: Int, val red: Boolean)
+class SignalView(val tile: Int, val piece: Int, val facing: Int, val red: Boolean, val kind: Int = Signals.TWO_WAY)
 
 /** A town as the screen shows it: its name over the map at its middle, and how big it is. */
 class TownView(val id: Int, val name: String, val x: Int, val y: Int, val population: Int, val houses: Int)
@@ -117,6 +117,8 @@ class WorldView(
     val company: CompanyView? = null,
     val tick: Long = 0,
     val weather: WeatherView? = null,
+    /** Waypoint tiles. */
+    val waypoints: IntArray = IntArray(0),
 )
 
 fun World.view(): WorldView {
@@ -173,7 +175,7 @@ fun World.view(): WorldView {
         val tile = k / 8
         val piece = Track.PIECES[k % 8]
         // Red while a train is in the block the signal guards: the one its piece is in.
-        SignalView(tile, piece, Signals.facing(s), blockHasTrain(tile, piece))
+        SignalView(tile, piece, Signals.facing(s), signalRed(tile, piece, s), Signals.kind(s))
     }
     val depotViews = depots.filterNotNull().map { DepotView(it.tile, it.edge) }
     // Towns change seldom, so their list is only made again when one has.
@@ -182,7 +184,8 @@ fun World.view(): WorldView {
         townsChanged = false
     }
     return WorldView(VehicleView(tick, cars.toFloatArray()), trainViews, stationViews, signalViews, depotViews, townViews, payments.toList(), news.toList(),
-        companies.firstOrNull()?.let { c -> CompanyView(c.money, c.loan, maxLoan(), c.thisYear.copyOf(), c.lastYear.copyOf(), c.history.map { it.copyOf() }) }, tick, weatherView())
+        companies.firstOrNull()?.let { c -> CompanyView(c.money, c.loan, maxLoan(), c.thisYear.copyOf(), c.lastYear.copyOf(), c.history.map { it.copyOf() }) }, tick, weatherView(),
+        stations.filterNotNull().filter { it.waypoint }.flatMap { it.tiles }.toIntArray())
 }
 
 /** The weather's copy for the screen, made again only once a day. */

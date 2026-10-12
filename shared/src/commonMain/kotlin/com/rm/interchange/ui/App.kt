@@ -70,6 +70,7 @@ import com.rm.interchange.sim.industryAt
 import com.rm.interchange.sim.approvalLevel
 import com.rm.interchange.map.rememberTownLabels
 import com.rm.interchange.sim.World
+import com.rm.interchange.sim.Signals
 import com.rm.interchange.sim.mud
 import kotlin.math.roundToInt
 import androidx.compose.runtime.key
@@ -340,6 +341,7 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
     val lastTool = remember { mutableStateMapOf<ToolGroup, Tool>() }
     var removing by remember { mutableStateOf(false) }
     var stationAlongX by remember { mutableStateOf(true) }
+    var signalKind by remember { mutableIntStateOf(0) }
     // The tray folds to its line once something's built, to show more of the map.
     var folded by remember { mutableStateOf(false) }
     var plan by remember { mutableStateOf<Command.Rail?>(null) }
@@ -351,7 +353,7 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
 
     fun built() { folded = true }
 
-    val input = remember(tool, removing, stationAlongX, addingStops) {
+    val input = remember(tool, removing, stationAlongX, addingStops, signalKind) {
         object : MapInput {
             var start: Pick? = null
             override val drags get() = addingStops == null && (tool == Tool.Track || tool == Tool.Station)
@@ -374,7 +376,8 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
                         }
                     }
                     Tool.Track -> { runner.request(trackLine(0, at, at, removing)); built() }
-                    Tool.Signals -> signalAt(world, 0, at)?.let { runner.request(it); built() }
+                    Tool.Signals -> signalAt(world, 0, at)?.let { runner.request(it.copy(kind = Signals.PLACED[signalKind])); built() }
+                    Tool.Waypoint -> { runner.request(Command.Waypoint(0, at.tileX, at.tileY)); built() }
                     Tool.Station -> { runner.request(stationPlan(0, at, at, stationAlongX)); built() }
                     Tool.Depot -> {
                         runner.request(depotAt(world, 0, at))
@@ -551,7 +554,7 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
             if (tool.group != ToolGroup.Inspect && addingStops == null) {
                 val detail = when (tool) {
                     Tool.Track -> if (removing) stringResource(Res.string.cost_lift, money(world.price(Prices.TRACK_REMOVE))) else stringResource(Res.string.cost_track, money(world.price(Prices.TRACK)), money(world.price(Prices.FOUNDATION)))
-                    Tool.Signals -> stringResource(Res.string.cost_signal, money(world.price(Prices.SIGNAL)))
+                    Tool.Signals, Tool.Waypoint -> stringResource(Res.string.cost_signal, money(world.price(Prices.SIGNAL)))
                     Tool.Station -> stringResource(Res.string.cost_tile, money(world.price(Prices.PLATFORM)))
                     Tool.Depot -> money(world.price(Prices.DEPOT))
                     Tool.Clear -> stringResource(Res.string.cost_tile, money(world.price(Prices.CLEAR)))
@@ -561,6 +564,10 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
                 ToolTray(tool, { tool = it; plan = null; stationPlan = null }, detail, folded, { folded = it }, layout.compact, trayWidth) {
                     if (tool == Tool.Track) TrayToggle(Glyph.Lift, stringResource(Res.string.remove_track), removing) { removing = !removing }
                     if (tool == Tool.Station) TrayToggle(Glyph.TurnRight, stringResource(Res.string.platforms_other_way), !stationAlongX) { stationAlongX = !stationAlongX }
+                    if (tool == Tool.Signals) {
+                        val kinds = stringArrayResource(Res.array.signal_kinds)
+                        Chip(kinds.getOrElse(signalKind) { "" }, true) { signalKind = (signalKind + 1) % Signals.PLACED.size }
+                    }
                 }
             }
             if (!layout.sideTools) ToolBar(tool.group, ::pickGroup, vertical = false, compact = compactTools, modifier = trayWidth)

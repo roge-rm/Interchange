@@ -295,4 +295,8 @@
     <string name="renew_for">Renouveler pour %1$s</string>
     <string name="servicing">Entretien</string>
     <string name="news_old">%1$s se fait vieux</string>
+    <string name="tool_waypoint">Point de passage</string>
+    <string-array name="signal_kinds">
+        <item>Canton</item><item>Itinéraire</item><item>Entrée</item><item>Sortie</item><item>Mixte</item>
+    </string-array>
 </resources>

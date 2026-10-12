@@ -26,8 +26,11 @@ sealed interface Command {
     /** Builds a depot open at [edge]. */
     data class Depot(override val company: Int, val x: Int, val y: Int, val edge: Int) : Command
 
-    /** Puts a signal on a piece facing [facing], or moves the one there on a kind. */
-    data class Signal(override val company: Int, val x: Int, val y: Int, val piece: Int, val facing: Int) : Command
+    /** Puts a signal of [kind] on a piece facing [facing], or changes the one there to it; the same again makes it one-way, then takes it away. */
+    data class Signal(override val company: Int, val x: Int, val y: Int, val piece: Int, val facing: Int, val kind: Int = Signals.TWO_WAY) : Command
+
+    /** Marks a tile of straight track as a waypoint, for orders to route trains through. */
+    data class Waypoint(override val company: Int, val x: Int, val y: Int) : Command
 
     /** Clears a tile of track, signals, a platform or a depot. */
     data class Clear(override val company: Int, val x: Int, val y: Int) : Command

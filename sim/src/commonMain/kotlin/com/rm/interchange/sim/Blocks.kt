@@ -15,7 +15,10 @@ internal fun World.networkChanged() {
     blocksDirty = true
     catchmentDirty = true
     linksDirty = true
-    for (t in trains) t?.route = null
+    for (t in trains) if (t != null) {
+        t.route = null
+        releaseAhead(t)
+    }
 }
 
 /** Marks the blocks for working out again without touching routes, as when a world has just been loaded. */
@@ -67,16 +70,41 @@ internal fun World.workOutBlocks() {
             }
         }
     }
+    // Each signal is a way out of the block before it into the block past it, and a two-way one the other way too.
+    exits.clear()
+    for ((key, s) in signals) {
+        val tile = key / 8
+        val here = blocks[key] ?: continue
+        val f = Signals.facing(s)
+        val x = tile % width + Track.dx(f)
+        val y = tile / width + Track.dy(f)
+        if (!inside(x, y)) continue
+        val n = index(x, y)
+        for (w in waysIn(n, Track.opposite(f))) {
+            val there = blocks[pieceKey(n, stepPiece(w))] ?: continue
+            exits.getOrPut(there) { ArrayList() } += intArrayOf(Signals.kind(s), here)
+            if (!Signals.oneWay(s)) exits.getOrPut(here) { ArrayList() } += intArrayOf(Signals.kind(s), there)
+        }
+    }
     blocksDirty = false
     tileTrains.clear()
+    pieceTrains.clear()
     blockTrains.clear()
     for (t in trains) {
         if (t == null) continue
         t.onTiles = IntArray(0)
+        t.onPieces = IntArray(0)
         t.onBlocks = IntArray(0)
         countOn(t)
     }
 }
+
+/**
+ * Whether a signal [s] on [piece] of [tile] shows red, for drawing: a path signal unless a train holds
+ * the way through it, any other while a train is in its block.
+ */
+fun World.signalRed(tile: Int, piece: Int, s: Int): Boolean =
+    if (Signals.path(s)) reserved[pieceKey(tile, piece)] == null else blockHasTrain(tile, piece)
 
 /** Whether the block [piece] of [tile] is in has a train in it, for drawing its signals. */
 fun World.blockHasTrain(tile: Int, piece: Int): Boolean {
