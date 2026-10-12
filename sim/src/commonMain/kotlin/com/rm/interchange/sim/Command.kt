@@ -38,6 +38,9 @@ sealed interface Command {
     /** Hangs wires over a line of track, as [Rail]'s line goes, or takes them down; a bridge or tunnel on the line is wired whole. */
     data class Wire(override val company: Int, val sx: Int, val sy: Int, val ex: Int, val ey: Int, val first: Int, val remove: Boolean) : Command
 
+    /** How much the company spends keeping its track up, an [Upkeep] level. */
+    data class SetUpkeep(override val company: Int, val level: Int) : Command
+
     /** Marks a tile of straight track as a waypoint, for orders to route trains through. */
     data class Waypoint(override val company: Int, val x: Int, val y: Int) : Command
 

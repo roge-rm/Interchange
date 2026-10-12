@@ -64,6 +64,7 @@ private fun World.search(from: Int, t: Train): IntArray? {
             val piece = stepPiece(w)
             if (level == 0 && !mayPass(nt, piece, entry)) continue
             if (electric && !wired(w)) continue
+            if (level == 0 && closedTile(nt)) continue
             val out = Track.other(piece, entry)
             val na = across(nt, level, out)
             if (na < 0 || piecesAt(na / 2, na % 2) == 0) continue

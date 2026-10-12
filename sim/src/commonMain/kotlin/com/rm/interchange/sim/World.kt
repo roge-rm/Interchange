@@ -58,7 +58,7 @@ class World(val settings: NewGame, val roster: Roster = Roster.BASE, generate: B
     /** Snow, ice, wet and frost on each tile, and the fronts crossing the map. */
     val weather = Weather(width * height)
     /** How each tile's weather looked last, by [weatherLook], to know which chunks to draw again. Not saved. */
-    internal var weatherLooks: ByteArray? = null
+    internal var weatherLooks: ShortArray? = null
     internal var weatherViewCache: WeatherView? = null
     private var lookDay = -1
     private var look = Climate.SUMMER
@@ -97,6 +97,12 @@ class World(val settings: NewGame, val roster: Roster = Roster.BASE, generate: B
     val stations = ArrayList<Station?>()
     val depots = ArrayList<Depot?>()
     val trains = ArrayList<Train?>()
+
+    /** Each tile's track condition, 255 new; fire on each tile, days left burning or how long it's been black; kinked track by tile, days left; closed track by tile, why in the high bits and days left in the low 16. */
+    val condition = ByteArray(width * height) { -1 }
+    val fire = ByteArray(width * height)
+    val kinks = HashMap<Int, Int>()
+    val closed = HashMap<Int, Int>()
 
     /** Track pieces wired for electric engines, as [Track] bits, on the ground; bridges and tunnels are wired whole. */
     val wires = ByteArray(width * height)
@@ -197,6 +203,7 @@ class World(val settings: NewGame, val roster: Roster = Roster.BASE, generate: B
             is Command.Bridge -> buildBridge(company, command)
             is Command.Tunnel -> buildTunnel(company, command)
             is Command.Wire -> wire(company, command)
+            is Command.SetUpkeep -> company.upkeep = command.level.coerceIn(Upkeep.LOW, Upkeep.HIGH)
             is Command.Clear -> clearTile(company, command)
             is Command.BuyTrain -> buyTrain(company, command)
             is Command.TrainOrder -> trainCommand(company, command)
@@ -216,6 +223,8 @@ class World(val settings: NewGame, val roster: Roster = Roster.BASE, generate: B
         moveTrains()
         if (tick % Calendar.TICKS_PER_DAY == 0L) {
             weatherDay()
+            trackDay()
+            weatherLooks()
             trainsDay()
             payRunningCosts()
             passengersDay()
@@ -247,6 +256,7 @@ class World(val settings: NewGame, val roster: Roster = Roster.BASE, generate: B
                 h = (h xor corners[corner(i - from, y)].toLong()) * 0x100000001b3L
                 h = (h xor track[i].toLong()) * 0x100000001b3L
                 h = (h xor wires[i].toLong()) * 0x100000001b3L
+                h = (h xor (condition[i].toLong() shl 8 or fire[i].toLong())) * 0x100000001b3L
                 h = (h xor trees[i].toLong()) * 0x100000001b3L
                 h = (h xor owner[i].toLong()) * 0x100000001b3L
                 h = (h xor road[i].toLong()) * 0x100000001b3L
@@ -280,6 +290,8 @@ class World(val settings: NewGame, val roster: Roster = Roster.BASE, generate: B
         for (k in stationTiles.keys.sorted()) mix(k.toLong() * 31 + stationTiles.getValue(k))
         for (k in depotTiles.keys.sorted()) mix(k.toLong() * 31 + depotTiles.getValue(k))
         for (k in reserved.keys.sorted()) mix(k.toLong() * 31 + reserved.getValue(k))
+        for (k in closed.keys.sorted()) mix(k.toLong() * 31 + closed.getValue(k))
+        for (k in kinks.keys.sorted()) mix(k.toLong() * 31 + kinks.getValue(k))
         for (s in spans) if (s != null) { mix(s.x0.toLong()); mix(s.y0.toLong()); mix(s.x1.toLong()); mix(s.y1.toLong()); mix(s.height.toLong()) }
         for (t in trains) {
             if (t == null) continue

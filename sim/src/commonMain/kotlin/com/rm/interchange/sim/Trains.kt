@@ -335,7 +335,9 @@ private fun World.moveTrain(t: Train) {
     val allowed = isqrt(2L * brake * 16 * free).toInt()
     // Pulling: faster or slower by what the engine has over what holds the train back, never below a crawl.
     val pulled = maxOf(t.speed + acceleration(t, grip), minOf(CRAWL, maxOf(t.speed, 1) + 4))
-    t.speed = minOf(minOf(pulled, if (out) snowLimit(t, nose) else t.maxSpeed), spanLimit(t), allowed)
+    val worn = if (stepLevel(t.steps.last()) == 0) trackLimit(nose) else -1
+    val wornLimit = if (worn < 0) t.maxSpeed else worn * 4096 * 16 / 2700
+    t.speed = minOf(minOf(pulled, if (out) snowLimit(t, nose) else t.maxSpeed), minOf(spanLimit(t), wornLimit), allowed)
     val move = minOf(t.speed / 16, free)
     advance(t, move, free)
     if (stop == Stop.SNOW && t.speed / 16 >= free) {
@@ -441,6 +443,7 @@ private fun World.freeAhead(t: Train, brake: Int = BRAKE): Pair<Int, Stop> {
         val nt = stepTile(next)
         if (stepLevel(next) == 0 && !mayPass(nt, stepPiece(next), stepEntry(next))) return free to Stop.END
         if (t.engineInfo.traction == Traction.ELECTRIC && !wired(next)) return free to Stop.END
+        if (stepLevel(next) == 0 && closedTile(nt)) return free to Stop.END
         val signal = signalFor(cur, next)
         if (signal >= 0 && !signalLets(t, signal, next, at)) return free to Stop.SIGNAL
         if (stepLevel(next) == 0 && (weather.snow[nt].toInt() and 255) >= Weather.BLOCKING) return free to Stop.SNOW
@@ -579,6 +582,7 @@ private fun World.advance(t: Train, move: Int, free: Int) {
         val tile = stepTile(next)
         val snow = weather.snow[tile].toInt() and 255
         if (stepLevel(next) == 0 && snow > PLOWED) weather.snow[tile] = (PLOWED + (snow - PLOWED) / 2).toByte()
+        if (stepLevel(next) == 0) wearBy(tile, t.massKg())
         if (t.route != null) t.routeAt++
     }
     // Lets go of the steps wholly behind the last wagon.

@@ -400,13 +400,16 @@ fun SettingsWindow(settings: Settings, onClose: () -> Unit) {
     }
 }
 
-/** The grid, heights and snow overlays, on or off. */
+/** The grid, heights, snow and track condition overlays, on or off. */
 @Composable
 private fun OverlayToggles(settings: Settings) {
     Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         TogglePill(stringResource(Res.string.grid), settings.grid, Modifier.weight(1f).fillMaxHeight()) { settings.grid = it; settings.save() }
         TogglePill(stringResource(Res.string.heights), settings.heights, Modifier.weight(1f).fillMaxHeight()) { settings.heights = it; settings.save() }
+    }
+    Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         TogglePill(stringResource(Res.string.snow_depth), settings.snow, Modifier.weight(1f).fillMaxHeight()) { settings.snow = it; settings.save() }
+        TogglePill(stringResource(Res.string.track_condition), settings.condition, Modifier.weight(1f).fillMaxHeight()) { settings.condition = it; settings.save() }
     }
 }
 
@@ -455,6 +458,7 @@ fun FinanceWindow(runner: com.rm.interchange.server.GameThread, onClose: () -> U
             Res.string.book_running to com.rm.interchange.sim.Books.RUNNING,
             Res.string.book_interest to com.rm.interchange.sim.Books.INTEREST,
             Res.string.book_sold to com.rm.interchange.sim.Books.TRAINS_SOLD,
+            Res.string.book_upkeep to com.rm.interchange.sim.Books.UPKEEP,
         )
         @Composable
         fun line(label: String, a: String, b: String, strong: Boolean = false, colour: androidx.compose.ui.graphics.Color = c.text) {
@@ -468,6 +472,9 @@ fun FinanceWindow(runner: com.rm.interchange.server.GameThread, onClose: () -> U
         for ((label, k) in rows) line(stringResource(label), money(co.thisYear[k]), money(co.lastYear[k]))
         val total = co.thisYear.sum()
         line(stringResource(Res.string.book_total), money(total), money(co.lastYear.sum()), strong = true, colour = if (total < 0) c.bad else c.good)
+        Head(stringResource(Res.string.track_upkeep))
+        val levels = stringArrayResource(Res.array.upkeep_levels)
+        FillChips(listOf(0, 1, 2), co.upkeep, { levels.getOrElse(it) { "" } }) { runner.request(com.rm.interchange.sim.Command.SetUpkeep(0, it)) }
         if (co.history.size >= 2) {
             Head(stringResource(Res.string.money_graph))
             MoneyGraph(co.history, Modifier.fillMaxWidth().height(120.dp))

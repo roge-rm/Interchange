@@ -21,6 +21,10 @@ import com.rm.interchange.sim.surfaceHeight
 import com.rm.interchange.sim.Climate
 import com.rm.interchange.sim.mud
 import com.rm.interchange.sim.isPlatform
+import com.rm.interchange.sim.BURNT
+import com.rm.interchange.sim.BURNT_FROM
+import com.rm.interchange.sim.VERY_WORN
+import com.rm.interchange.sim.WORN
 import kotlin.math.sqrt
 
 /**
@@ -292,6 +296,10 @@ internal class ChunkBaker(
         val il = if (water) cornerIce(vx, vy + 1) else 0f
         val icy = water && iT + ir + ib + il > 0f
         val muddy = if (weather && !water && kind != Atlas.SAND) world.mud(tile) / 255f * MUD_MOST else 0f
+        // Burnt black, fading as the ground grows back.
+        val fireAt = world.fire[tile].toInt() and 255
+        val charred = if (fireAt >= BURNT_FROM) (fireAt - BURNT_FROM) / (BURNT - BURNT_FROM).toFloat() * 0.75f else if (fireAt > 0) 0.6f else 0f
+        val worn = if (overlays and CONDITION != 0 && world.track[tile].toInt() != 0) world.condition[tile].toInt() and 255 else -1
         val grade = GRADES[look].getOrNull(kind) ?: 0
         val gradeBy = (grade ushr 24) / 255f
         val grid = overlays and GRID != 0 && hw >= 16
@@ -364,6 +372,7 @@ internal class ChunkBaker(
                 }
                 if (gradeBy > 0f) texel = mix(texel, grade, gradeBy)
                 if (muddy > 0f) texel = mix(texel, MUD, muddy)
+                if (charred > 0f) texel = mix(texel, CHARCOAL, charred * (0.6f + rag * 0.4f))
                 if (road != 0) texel = roadTexel(u, v, road, ti, texel)
                 if (icy) {
                     val ice = iT * (1f - u) * (1f - v) + ir * u * (1f - v) + ib * u * v + il * (1f - u) * v
@@ -378,6 +387,7 @@ internal class ChunkBaker(
                 }
                 val rel = rt * (1f - u) * (1f - v) + rr * u * (1f - v) + rb * u * v + rl * (1f - u) * v
                 var shade = f * (1f + (rel * RELIEF_GAIN).coerceIn(-RELIEF_DARK, RELIEF_LIGHT))
+                if (worn >= 0) texel = mix(texel, if (worn < VERY_WORN) 0xffd03a2a.toInt() else if (worn < WORN) 0xffe8b030.toInt() else 0xff3aa048.toInt(), 0.6f)
                 if (overlays and SNOW != 0) {
                     val depth = st * (1f - u) * (1f - v) + sr * u * (1f - v) + sb * u * v + sl * (1f - u) * v
                     val band = when {
@@ -748,6 +758,8 @@ internal class ChunkBaker(
         const val GRID = 1
         const val HEIGHTS = 2
         const val SNOW = 4
+        const val CONDITION = 8
+        private const val CHARCOAL = 0xff2e2a26.toInt()
 
         /** The snow overlay's bands: under 10 cm, under 30, under 60, deeper; then ice on the water. */
         private val SNOW_BANDS = intArrayOf(0xff9fd0f0.toInt(), 0xff5a9ae0.toInt(), 0xff3a52c8.toInt(), 0xff6a2ab0.toInt())

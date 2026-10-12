@@ -17,11 +17,13 @@ class Settings {
     var heights by mutableStateOf(false)
     /** Snow and ice by depth over the map. */
     var snow by mutableStateOf(false)
+    /** Track coloured by its condition. */
+    var condition by mutableStateOf(false)
 
     val autosaveDays get() = AUTOSAVE_DAYS[autosave.coerceIn(0, AUTOSAVE_DAYS.size - 1)]
 
     fun save() {
-        files.write(FILE, "language=$language\nautosave=$autosave\ngrid=$grid\nheights=$heights\nsnow=$snow\n".encodeToByteArray())
+        files.write(FILE, "language=$language\nautosave=$autosave\ngrid=$grid\nheights=$heights\nsnow=$snow\ncondition=$condition\n".encodeToByteArray())
     }
 
     companion object {
@@ -41,6 +43,7 @@ class Settings {
                     "grid" -> s.grid = v == "true"
                     "heights" -> s.heights = v == "true"
                     "snow" -> s.snow = v == "true"
+                    "condition" -> s.condition = v == "true"
                 }
             }
             return s

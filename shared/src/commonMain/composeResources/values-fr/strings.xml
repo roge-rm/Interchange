@@ -303,4 +303,16 @@
         <item>Chevalet</item><item>Treillis</item><item>Béton</item>
     </string-array>
     <string name="tool_wires">Caténaire</string>
+    <string name="book_upkeep">Entretien des voies</string>
+    <string name="track_upkeep">Entretien des voies</string>
+    <string-array name="upkeep_levels">
+        <item>Faible</item><item>Normal</item><item>Élevé</item>
+    </string-array>
+    <string name="track_condition">Voies</string>
+    <string name="condition_line">État %1$d %</string>
+    <string name="slow_order">Ralentissement, %1$d km/h</string>
+    <string name="closed_washout">Emportée, rouverte dans %1$d jours</string>
+    <string name="closed_fire">Fermée par un incendie, rouverte dans %1$d jours</string>
+    <string name="news_washout">Voie emportée par les eaux</string>
+    <string name="news_fire">Un incendie ferme la ligne</string>
 </resources>

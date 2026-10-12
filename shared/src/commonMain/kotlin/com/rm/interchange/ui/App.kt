@@ -71,6 +71,8 @@ import com.rm.interchange.sim.approvalLevel
 import com.rm.interchange.map.rememberTownLabels
 import com.rm.interchange.sim.World
 import com.rm.interchange.sim.Signals
+import com.rm.interchange.sim.trackLimit
+import com.rm.interchange.sim.Closure
 import com.rm.interchange.sim.Spans
 import com.rm.interchange.sim.mud
 import kotlin.math.roundToInt
@@ -438,7 +440,7 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
             overlay = plan?.let { p -> { painter -> drawTrackPlan(world, painter, p) } }
                 ?: stationPlan?.let { p -> { painter -> drawStationPlan(world, painter, p) } }
                 ?: bridgePlan?.let { p -> { painter -> drawBridgePlan(world, painter, p) } },
-            overlays = (if (settings.grid) ChunkBaker.GRID else 0) or (if (settings.heights) ChunkBaker.HEIGHTS else 0) or (if (settings.snow) ChunkBaker.SNOW else 0),
+            overlays = (if (settings.grid) ChunkBaker.GRID else 0) or (if (settings.heights) ChunkBaker.HEIGHTS else 0) or (if (settings.snow) ChunkBaker.SNOW else 0) or (if (settings.condition) ChunkBaker.CONDITION else 0),
             labels = {
                 val wv = worldView.value
                 with(townLabels) {
@@ -466,7 +468,7 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
         StatusStrip(
             onMenu,
             paused, { paused = !paused; runner.paused = paused }, speed, { speed = (speed + 1) % SPEEDS.size; runner.speed = SPEEDS[speed] },
-            settings.grid || settings.heights || settings.snow, onOverlays,
+            settings.grid || settings.heights || settings.snow || settings.condition, onOverlays,
             weekdayDate(day, world.startYear),
             money(money), money < 0,
             { view.turnBy(-1) }, { view.turnBy(1) }, onFinances,
@@ -492,7 +494,7 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
 
         // Under the strip, the latest news; a tap goes to where it happened.
         worldView.value?.news?.lastOrNull()?.let { n ->
-            val ind = if (n.kind == News.PROSPECTING_FAILED || n.kind == News.SNOWBOUND || n.kind == News.TRAIN_OLD) null else world.industries.getOrNull(n.about)
+            val ind = if (n.kind == News.PROSPECTING_FAILED || n.kind == News.SNOWBOUND || n.kind == News.TRAIN_OLD || n.kind == News.WASHOUT || n.kind == News.FIRE) null else world.industries.getOrNull(n.about)
             val text = newsText(world, n)
             Box(
                 Modifier.align(Alignment.TopCenter)
@@ -506,6 +508,10 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
                         view.focusY = ind.y + 1f
                     }
                     if (n.kind == News.SNOWBOUND || n.kind == News.TRAIN_OLD) selected = Selection.Train(n.about)
+                    if (n.kind == News.WASHOUT || n.kind == News.FIRE) {
+                        view.focusX = n.about % world.width + 0.5f
+                        view.focusY = n.about / world.width + 0.5f
+                    }
                 }
             }
         }
@@ -649,6 +655,10 @@ private fun InspectCard(world: World, x: Int, y: Int, onClose: () -> Unit, modif
         if (!water && world.mud(i) > 0) add(stringResource(Res.string.muddy))
         if (t != 0) {
             add(stringResource(Res.string.track_pieces, pieceNames.joinToString(join)))
+            add(stringResource(Res.string.condition_line, (world.condition[i].toInt() and 255) * 100 / 255))
+            val limit = world.trackLimit(i)
+            if (limit > 0) add(stringResource(Res.string.slow_order, limit))
+            world.closed[i]?.let { v -> add(stringResource(if (v shr 16 == Closure.FIRE) Res.string.closed_fire else Res.string.closed_washout, v and 0xffff)) }
             if (world.owner[i].toInt() == 0) add(stringResource(Res.string.owned_by, stringResource(Res.string.company)))
         }
     }
@@ -692,6 +702,7 @@ private fun IndustryCard(world: World, ind: Industry, where: String, onClose: ()
 @Composable
 private fun newsText(world: World, n: News): String {
     if (n.kind == News.PROSPECTING_FAILED) return stringResource(Res.string.news_prospect_failed, world.roster.industries.getOrNull(n.about)?.name(languageCode()) ?: "")
+    if (n.kind == News.WASHOUT || n.kind == News.FIRE) return stringResource(if (n.kind == News.FIRE) Res.string.news_fire else Res.string.news_washout)
     if (n.kind == News.SNOWBOUND || n.kind == News.TRAIN_OLD) {
         val name = world.trains.getOrNull(n.about)?.name?.takeIf { it.isNotEmpty() } ?: stringResource(Res.string.train_n, n.about + 1)
         return stringResource(if (n.kind == News.SNOWBOUND) Res.string.news_snowbound else Res.string.news_old, name)

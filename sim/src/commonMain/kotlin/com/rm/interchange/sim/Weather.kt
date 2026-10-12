@@ -404,8 +404,6 @@ private fun World.tileWeather(year: Int, doy: Int, today: Int) {
             }
         }
     }
-    // Chunks are drawn again when their snow or ice crosses a step of how it looks.
-    weatherLooks()
 }
 
 /** Whether tile ([x], [y]) slopes down towards the south, the bottom of the map. */
@@ -425,18 +423,22 @@ fun World.weatherLook(i: Int): Int {
     val ice = u(weather.ice[i])
     val frozen = if (isWater(i % width, i / width)) (if (ice >= 5) 1 + minOf(ice / 20, 2) else 0) else (if (ice > 3) 1 else 0)
     val mud = mud(i).let { if (it > 120) 2 else if (it > 0) 1 else 0 }
-    return snow or (frozen shl 3) or (mud shl 5)
+    val f = fire[i].toInt() and 255
+    val burnt = if (f in 1..FIRE_DAYS) 3 else if (f >= BURNT_FROM) 1 + (f - BURNT_FROM) * 2 / (BURNT - BURNT_FROM + 1) else 0
+    val c = condition[i].toInt() and 255
+    val worn = if (track[i].toInt() == 0) 0 else if (c < VERY_WORN) 2 else if (c < WORN) 1 else 0
+    return snow or (frozen shl 3) or (mud shl 5) or (burnt shl 7) or (worn shl 9)
 }
 
-/** Notes each chunk with a tile whose look has changed, for the renderer, and the season's look once it turns. */
-private fun World.weatherLooks() {
+/** Notes each chunk with a tile whose snow, ice, mud, fire or wear has changed how it looks, for the renderer to draw it again. */
+internal fun World.weatherLooks() {
     val side = width / World.CHUNK
     val changed = BooleanArray(chunkVersions.size)
-    val looks = weatherLooks ?: ByteArray(width * height).also { weatherLooks = it }
+    val looks = weatherLooks ?: ShortArray(width * height).also { weatherLooks = it }
     parallelBands(height / World.CHUNK) { from, until ->
         for (cy in from until until) for (y in cy * World.CHUNK until (cy + 1) * World.CHUNK) for (x in 0 until width) {
             val i = index(x, y)
-            val look = weatherLook(i).toByte()
+            val look = weatherLook(i).toShort()
             if (looks[i] != look) {
                 looks[i] = look
                 changed[cy * side + x / World.CHUNK] = true

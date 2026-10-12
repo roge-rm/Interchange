@@ -9,6 +9,9 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import com.rm.interchange.sim.Signals
 import com.rm.interchange.sim.Spans
 import com.rm.interchange.sim.edgeHeight
+import com.rm.interchange.sim.burning
+import com.rm.interchange.sim.closedTile
+import com.rm.interchange.sim.trackLimit
 import com.rm.interchange.sim.Track
 import com.rm.interchange.sim.WorldView
 import com.rm.interchange.sim.World
@@ -58,6 +61,19 @@ internal fun DrawScope.drawMoving(world: World, view: View, sheets: Sheets, movi
                 tileItem(items, view, x, y, z.toFloat(), DECK_DEPTH - 0.01f, Atlas.SPAN_PIER[s.style * 2 + along])
             }
             tileItem(items, view, x, y, s.height.toFloat(), DECK_DEPTH, Atlas.SPAN_DECK[s.style * 2 + along])
+        }
+    }
+    // Fires, and boards by worn or closed track, close enough in to make out.
+    if (view.halfWidth >= 8f) forTilesOnScreen(world, view) { x, y ->
+        val i = world.index(x, y)
+        if (world.burning(i)) add(items, world, view, x + 0.5f, y + 0.5f, i.toFloat(), 0.2f, FIRE)
+        if (world.track[i].toInt() != 0 && view.halfWidth >= 16f) {
+            val sign = when {
+                world.closedTile(i) -> 2
+                world.trackLimit(i) > 0 -> 1
+                else -> 0
+            }
+            if (sign != 0) add(items, world, view, x + 0.2f, y + 0.2f, sign.toFloat(), 0f, BOARD)
         }
     }
     // Wires over electrified track, close enough in to make out: a mast at one end of each piece, the wire along it.
@@ -132,6 +148,10 @@ internal fun DrawScope.drawMoving(world: World, view: View, sheets: Sheets, movi
             val model = it[4].toInt()
             if (model == WIRE) {
                 drawWire(it, view.halfWidth)
+            } else if (model == FIRE) {
+                drawFire(it[3].toInt(), it[1], it[2], view.halfWidth)
+            } else if (model == BOARD) {
+                drawBoard(it[3].toInt(), it[1], it[2], view.halfWidth)
             } else if (model == MARK || model == WAYPOINT) {
                 drawMark(model, it[3].toInt(), it[1], it[2], view.halfWidth)
             } else if (model < 0) {
@@ -149,6 +169,39 @@ internal fun DrawScope.drawMoving(world: World, view: View, sheets: Sheets, movi
 private const val MARK = -2
 private const val WAYPOINT = -3
 private const val WIRE = -4
+private const val FIRE = -5
+private const val BOARD = -6
+
+/** Flames licking up from a burning tile, flickering, and smoke rising off it; [seed] keeps tiles from flickering together. */
+private fun DrawScope.drawFire(seed: Int, x: Float, y: Float, hw: Float) {
+    val u = hw / 16f
+    val t = (flicker.elapsedNow().inWholeMilliseconds % 100_000) / 1000f
+    for (k in 0 until 5) {
+        val r = ((seed * 31 + k * 17) and 255) / 255f
+        val fx = x + (r - 0.5f) * 12f * u
+        val tall = (4f + 3f * kotlin.math.sin(t * 9f + k * 1.7f + seed)) * u
+        val p = Path().apply { moveTo(fx - 1.6f * u, y); lineTo(fx, y - tall); lineTo(fx + 1.6f * u, y); close() }
+        drawPath(p, if (k % 2 == 0) Color(0xe0f06a1a) else Color(0xd0f8c030))
+    }
+    for (k in 0 until 3) {
+        val rise = ((t * 0.6f + k / 3f + (seed and 7) / 8f) % 1f)
+        drawCircle(Color(0x50606060).copy(alpha = 0.35f * (1f - rise)), (2f + rise * 6f) * u, Offset(x + rise * 6f * u, y - 6f * u - rise * 22f * u))
+    }
+}
+
+/** A board beside the track: yellow for a slow order, red and white across it for a closure. */
+private fun DrawScope.drawBoard(kind: Int, x: Float, y: Float, hw: Float) {
+    val u = hw / 32f
+    drawLine(Color(0xff3a3a3a), Offset(x, y), Offset(x, y - 9f * u), 1.2f * u)
+    if (kind == 1) {
+        drawRect(Color(0xfff0c030), Offset(x - 3f * u, y - 13f * u), Size(6f * u, 5f * u))
+        drawRect(Color(0xff2a2a2a), Offset(x - 3f * u, y - 13f * u), Size(6f * u, 5f * u), style = Stroke(0.6f * u))
+    } else {
+        for (k in 0 until 4) drawRect(if (k % 2 == 0) Color(0xffd03a2a) else Color(0xfff4f4f0), Offset(x - 8f * u + k * 4f * u, y - 9f * u), Size(4f * u, 2.5f * u))
+    }
+}
+
+private val flicker = kotlin.time.TimeSource.Monotonic.markNow()
 /** How high the contact wire hangs over the rails, in steps. */
 private const val WIRE_HEIGHT = 2.6f
 

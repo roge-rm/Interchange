@@ -16,7 +16,7 @@ package com.rm.interchange.sim
  */
 object Save {
     private val MAGIC = "ICHG".encodeToByteArray()
-    const val VERSION = 13
+    const val VERSION = 14
 
     fun write(world: World): ByteArray {
         val w = ByteWriter(world.width * world.height * 6 + 4096)
@@ -38,6 +38,7 @@ object Save {
                 w.long(c.loan); w.long(c.monthIn); w.long(c.monthOut)
                 for (v in c.thisYear) w.long(v)
                 for (v in c.lastYear) w.long(v)
+                w.int(c.upkeep); w.long(c.upkeepOwed)
                 w.uvar(c.history.size.toLong())
                 for (h in c.history) for (v in h) w.long(v)
             }
@@ -95,6 +96,12 @@ object Save {
                 w.int(s.owner); w.bool(s.tunnel); w.int(s.style); w.int(s.x0); w.int(s.y0); w.int(s.x1); w.int(s.y1); w.int(s.height); w.bool(s.wired)
             }
             w.bytes(wires)
+            w.bytes(condition); w.bytes(fire)
+            for (m in listOf(kinks, closed)) {
+                val ks = m.keys.sorted()
+                w.uvar(ks.size.toLong())
+                for (k in ks) { w.int(k); w.int(m.getValue(k)) }
+            }
             val held = reserved.keys.sorted()
             w.uvar(held.size.toLong())
             for (k in held) { w.int(k); w.int(reserved.getValue(k)) }
@@ -150,8 +157,11 @@ object Save {
                 val c = Company(r.int(), r.string(), r.long()).also { it.runningOwed = r.long() }
                 if (version >= 8) {
                     c.loan = r.long(); c.monthIn = r.long(); c.monthOut = r.long()
-                    for (k in 0 until Books.COUNT) c.thisYear[k] = r.long()
-                    for (k in 0 until Books.COUNT) c.lastYear[k] = r.long()
+                    // Upkeep was booked from version 14.
+                    val books = if (version >= 14) Books.COUNT else 6
+                    for (k in 0 until books) c.thisYear[k] = r.long()
+                    for (k in 0 until books) c.lastYear[k] = r.long()
+                    if (version >= 14) { c.upkeep = r.int(); c.upkeepOwed = r.long() }
                     repeat(r.uvar().toInt().also { if (it > HISTORY_MONTHS) throw BadData("too long a history") }) { c.history += LongArray(3) { r.long() } }
                 }
                 companies += c
@@ -267,6 +277,10 @@ object Save {
                 for (k in 1..s.length) deck[index(s.x0 + dx * k, s.y0 + dy * k)] = id
             }
             if (version >= 13) fill(wires, r.bytes())
+            if (version >= 14) {
+                fill(condition, r.bytes()); fill(fire, r.bytes())
+                for (m in listOf(kinks, closed)) repeat(r.uvar().toInt().also { if (it > 10_000_000) throw BadData("too many closures") }) { m[r.int()] = r.int() }
+            }
             if (version >= 12) repeat(r.uvar().toInt().also { if (it > 10_000_000) throw BadData("too many held pieces") }) { reserved[r.int()] = r.int() }
             if (version >= 10) {
                 val wx = weather

@@ -18,6 +18,9 @@ class Company(val id: Int, var name: String, var money: Long) {
     /** Income and spending this month so far. */
     var monthIn = 0L
     var monthOut = 0L
+    /** How much it spends keeping its track up, an [Upkeep] level, and what it owes short of a dollar, in cents. */
+    var upkeep = Upkeep.NORMAL
+    var upkeepOwed = 0L
 }
 
 /** What money is booked to: what it was spent on or where it came from. */
@@ -28,7 +31,8 @@ object Books {
     const val INCOME = 3
     const val INTEREST = 4
     const val TRAINS_SOLD = 5
-    const val COUNT = 6
+    const val UPKEEP = 6
+    const val COUNT = 7
 }
 
 /** Months of money kept for the finance graphs. */

@@ -104,6 +104,8 @@ class CompanyView(
     val lastYear: LongArray,
     /** Money, income and spending at the end of each month, oldest first. */
     val history: List<LongArray>,
+    /** How much it spends keeping its track up, an [Upkeep] level. */
+    val upkeep: Int = Upkeep.NORMAL,
 )
 
 /** The weather as the screen shows it: copies of the fronts, the air and the wind, as of the start of [day]. */
@@ -193,7 +195,7 @@ fun World.view(): WorldView {
         townsChanged = false
     }
     return WorldView(VehicleView(tick, cars.toFloatArray()), trainViews, stationViews, signalViews, depotViews, townViews, payments.toList(), news.toList(),
-        companies.firstOrNull()?.let { c -> CompanyView(c.money, c.loan, maxLoan(), c.thisYear.copyOf(), c.lastYear.copyOf(), c.history.map { it.copyOf() }) }, tick, weatherView(),
+        companies.firstOrNull()?.let { c -> CompanyView(c.money, c.loan, maxLoan(), c.thisYear.copyOf(), c.lastYear.copyOf(), c.history.map { it.copyOf() }, c.upkeep) }, tick, weatherView(),
         stations.filterNotNull().filter { it.waypoint }.flatMap { it.tiles }.toIntArray(),
         spans.filterNotNull().map { SpanView(it.tunnel, it.style, it.x0, it.y0, it.x1, it.y1, it.height) })
 }
