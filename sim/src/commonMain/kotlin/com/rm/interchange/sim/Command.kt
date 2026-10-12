@@ -38,6 +38,9 @@ sealed interface Command {
     /** Hangs wires over a line of track, as [Rail]'s line goes, or takes them down; a bridge or tunnel on the line is wired whole. */
     data class Wire(override val company: Int, val sx: Int, val sy: Int, val ex: Int, val ey: Int, val first: Int, val remove: Boolean) : Command
 
+    /** Puts up a snow shed over track at ([x], [y]), or a snow fence on open land there; again takes it down. */
+    data class SnowWorks(override val company: Int, val x: Int, val y: Int, val shed: Boolean) : Command
+
     /** How much the company spends keeping its track up, an [Upkeep] level. */
     data class SetUpkeep(override val company: Int, val level: Int) : Command
 

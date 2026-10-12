@@ -357,6 +357,8 @@ ROSTER = [
     ("reefer", 9, lambda f: boxcar(f, L(9), False)),
     ("ore_car", 6, lambda f: hopper(f, L(6))),
     ("covered_hopper", 11, lambda f: hopper(f, L(11))),
+    ("wedge_plow", 10, lambda f: caboose(f, L(10))),
+    ("rotary_plow", 12, lambda f: caboose(f, L(12))),
 ]
 
 

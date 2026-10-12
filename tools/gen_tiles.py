@@ -166,6 +166,8 @@ for st, style in enumerate(SPAN_STYLES):
         JOBS.append(("signals", ("span_pier", st, a), lambda style=style, a=a: scenery(f"span_pier_{style}_{a}.png", base.cell), None))
 for e, edge in enumerate(EDGES):
     JOBS.append(("signals", ("portal", e), lambda edge=edge: scenery(f"span_portal_{edge}.png", base.cell), None))
+for a in (0, 1):
+    JOBS.append(("signals", ("shed", a), lambda a=a: scenery(f"span_shed_{a}.png", base.cell), None))
 # The engine house again, drawn over trains on its tile so they show going in through the doors.
 for e, edge in enumerate(EDGES):
     JOBS.append(("signals", ("depot_over", e), lambda edge=edge: scenery(f"depot_{edge}.png", lambda: track.depot(edge)), None))
@@ -437,6 +439,8 @@ object Atlas {{
     val SPAN_DECK = intArrayOf({", ".join(str(index[("span_deck", st, a)]) for st in range(len(SPAN_STYLES)) for a in (0, 1))})
     val SPAN_PIER = intArrayOf({", ".join(str(index[("span_pier", st, a)]) for st in range(len(SPAN_STYLES)) for a in (0, 1))})
     val PORTAL = intArrayOf({", ".join(str(index[("portal", e)]) for e in range(4))})
+    /** A snow shed over track along view u (0) or v (1), its solid wall on the side away from the camera. On the signals sheet. */
+    val SHED = intArrayOf({index[("shed", 0)]}, {index[("shed", 1)]})
 
     /** The engine house with its doors at view edge XM, XP, YM or YP, drawn over trains on its tile. On the signals sheet. */
     val DEPOT_OVER = intArrayOf({", ".join(str(index[("depot_over", e)]) for e in range(4))})

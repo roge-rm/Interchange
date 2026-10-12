@@ -332,4 +332,7 @@
     <string name="closed_fire">Closed by fire, open in %1$d days</string>
     <string name="news_washout">Track washed out</string>
     <string name="news_fire">Fire closes the line</string>
+    <string name="tool_snow_shed">Snow shed</string>
+    <string name="tool_snow_fence">Snow fence</string>
+    <string name="news_avalanche">An avalanche buries the line</string>
 </resources>

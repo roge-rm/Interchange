@@ -23,6 +23,8 @@ enum class Tool(val group: ToolGroup, val title: StringResource, val glyph: Glyp
     Depot(ToolGroup.Rail, Res.string.tool_depot, Glyph.Depot, ready = true),
     Waypoint(ToolGroup.Rail, Res.string.tool_waypoint, Glyph.Waypoint, ready = true),
     Wires(ToolGroup.Rail, Res.string.tool_wires, Glyph.Wires, ready = true),
+    SnowShed(ToolGroup.Rail, Res.string.tool_snow_shed, Glyph.Shed, ready = true),
+    SnowFence(ToolGroup.Rail, Res.string.tool_snow_fence, Glyph.Fence, ready = true),
     Bridge(ToolGroup.Rail, Res.string.tool_bridge, Glyph.Bridge, ready = true),
     Tunnel(ToolGroup.Rail, Res.string.tool_tunnel, Glyph.Tunnel, ready = true),
 

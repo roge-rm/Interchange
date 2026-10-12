@@ -46,12 +46,17 @@ class Train(
     /** Its own name, or empty to be called by its number in the screen's language. */
     var name = ""
 
-    /** What each car is, nose first: the engine, its tender, then the wagons. */
+    /** What each car is, nose first: the engine, its tender, then the wagons; snow plows go ahead of the engine. */
     val carEngines: IntArray = buildList {
+        val plows = roster[wagon].plow != Plows.NONE
+        if (plows) repeat(wagons) { add(wagon) }
         add(engine)
         roster[engine].tender.takeIf { it >= 0 }?.let { add(it) }
-        repeat(wagons) { add(wagon) }
+        if (!plows) repeat(wagons) { add(wagon) }
     }.toIntArray()
+
+    /** The best snow plow it has, a [Plows] kind. */
+    val plow get() = if (wagons > 0) roster[wagon].plow else Plows.NONE
     val cars get() = carEngines.size
     val length = carEngines.sumOf { roster[it].length } * FIX
 
@@ -345,7 +350,7 @@ private fun World.moveTrain(t: Train) {
         val ahead = nextFrom(t, t.steps.last(), t.routeAt)
         if (ahead >= 0 && tick % RAM_TICKS == 0L) {
             val tile = stepTile(ahead)
-            weather.snow[tile] = ((weather.snow[tile].toInt() and 255) - 1).toByte()
+            weather.snow[tile] = ((weather.snow[tile].toInt() and 255) - (if (t.plow == Plows.WEDGE) 4 else 1)).coerceAtLeast(0).toByte()
         }
         if (!t.snowbound) {
             t.snowbound = true
@@ -418,6 +423,7 @@ private fun World.spanLimit(t: Train): Int {
 
 /** The fastest train [t] can go through the snow on [tile]: its top speed, less in deep snow. */
 private fun World.snowLimit(t: Train, tile: Int): Int {
+    if (t.plow != Plows.NONE) return t.maxSpeed
     val snow = weather.snow[tile].toInt() and 255
     if (snow < Weather.DEEP) return t.maxSpeed
     return t.maxSpeed * maxOf(25, 100 - (snow - Weather.DEEP) * 2) / 100
@@ -446,7 +452,7 @@ private fun World.freeAhead(t: Train, brake: Int = BRAKE): Pair<Int, Stop> {
         if (stepLevel(next) == 0 && closedTile(nt)) return free to Stop.END
         val signal = signalFor(cur, next)
         if (signal >= 0 && !signalLets(t, signal, next, at)) return free to Stop.SIGNAL
-        if (stepLevel(next) == 0 && (weather.snow[nt].toInt() and 255) >= Weather.BLOCKING) return free to Stop.SNOW
+        if (stepLevel(next) == 0 && t.plow != Plows.ROTARY && (weather.snow[nt].toInt() and 255) >= (if (t.plow == Plows.WEDGE) WEDGE_STOPS else Weather.BLOCKING)) return free to Stop.SNOW
         // On tiles in a path signal's area other trains can be on pieces that don't cross; elsewhere a train anywhere on the tile holds it.
         if (!pieceFree(t, next, occupiedTile = !inPathArea(next))) return free to Stop.TRAIN
         free += stepLength(next)
@@ -581,7 +587,11 @@ private fun World.advance(t: Train, move: Int, free: Int) {
         // The engine's pilot pushes the snow off the line as it goes.
         val tile = stepTile(next)
         val snow = weather.snow[tile].toInt() and 255
-        if (stepLevel(next) == 0 && snow > PLOWED) weather.snow[tile] = (PLOWED + (snow - PLOWED) / 2).toByte()
+        if (stepLevel(next) == 0 && snow > 0) weather.snow[tile] = when (t.plow) {
+            Plows.ROTARY -> 0
+            Plows.WEDGE -> if (snow <= WEDGE_CLEARS) minOf(snow, 3) else snow - WEDGE_CLEARS
+            else -> if (snow > PLOWED) PLOWED + (snow - PLOWED) / 2 else snow
+        }.toByte()
         if (stepLevel(next) == 0) wearBy(tile, t.massKg())
         if (t.route != null) t.routeAt++
     }
@@ -693,6 +703,10 @@ const val FULL_LOAD_RETRY = Calendar.TICKS_PER_DAY / 2
 
 /** Ground this wet, in mm, leaves the rails wet. */
 const val WET_RAIL = 40
+/** Snow, in cm, a wedge plow clears outright, and a drift it has to stop and push through. */
+const val WEDGE_CLEARS = 100
+const val WEDGE_STOPS = 160
+
 /** Snow, in cm, a passing train leaves on the line, halving what's over it. */
 const val PLOWED = 10
 /** Ticks a train stuck in a drift takes to push through each cm of it. */

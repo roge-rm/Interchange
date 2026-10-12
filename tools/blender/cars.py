@@ -1,5 +1,8 @@
 """Cars, in our own colours: built facing +y, L tiles long."""
+import math
+
 import parts
+import rig
 from parts import material
 from steam import LETTERS, truck
 
@@ -267,3 +270,50 @@ def covered_hopper(m, L):
             y = a0 + (a1 - a0) * k / 8
             m.box(side * 0.1205 - 0.0015, side * 0.1205 + 0.0015, y - 0.003, y + 0.003, 0.92, 1.73, dark)
         m.text("GRAIN", side * 0.1216, 0.0, 1.35, 0.035, material("hopper letters", "#2a2a2a", rough=0.6), side)
+
+
+def wedge_plow(m, L):
+    """A wooden wedge plow: a heavy car with a steel wedge filling the front, flangers, and a cupola for the crew."""
+    c = common()
+    body = material("plow red", "#8a2a20", rough=0.55)
+    blade = material("plow blade", "#2e3134", metal=0.6, rough=0.45)
+    a0, a1 = -L / 2 + 0.02, L / 2 - 0.02
+    _base(m, L, a0, a1, c)
+    m.box(-0.12, 0.12, a0, a1 - 0.17, 0.62, 1.42, body, bevel=0.003)
+    m.box(-0.13, 0.13, a0 - 0.01, a1 - 0.16, 1.42, 1.5, c["roof"], bevel=0.004)
+    m.box(-0.08, 0.08, a0 + 0.08, a0 + 0.22, 1.5, 1.82, body, bevel=0.002)
+    m.box(-0.09, 0.09, a0 + 0.07, a0 + 0.23, 1.82, 1.88, c["roof"], bevel=0.003)
+    for side in (-1, 1):
+        m.box(side * 0.0807 - 0.0008, side * 0.0807 + 0.0008, a0 + 0.11, a0 + 0.19, 1.58, 1.76, c["glass"])
+    # The wedge: from a point down at the rails, out to the car's full width and up to its roof.
+    tip = a1 + 0.015
+    m.wedge([(-0.005, tip, 0.42), (0.005, tip, 0.42), (0.13, a1 - 0.17, 0.42), (-0.13, a1 - 0.17, 0.42)],
+            [(-0.005, a1 - 0.06, 1.5), (0.005, a1 - 0.06, 1.5), (0.13, a1 - 0.17, 1.5), (-0.13, a1 - 0.17, 1.5)], blade)
+    for side in (-1, 1):
+        m.text(LETTERS, side * 0.1216, a0 / 2 + 0.02, 1.1, 0.03, c["letters"], side)
+
+
+def rotary_plow(m, L):
+    """A steam rotary plow: a long boxy car with a great fan in a round housing at the front, and a stack."""
+    c = common()
+    body = material("rotary black", "#2a2826", rough=0.5)
+    trim = material("rotary red", "#9a2e24", rough=0.5)
+    fan = material("rotary fan", "#5a5e62", metal=0.7, rough=0.4)
+    a0, a1 = -L / 2 + 0.02, L / 2 - 0.02
+    _base(m, L, a0, a1, c)
+    m.box(-0.125, 0.125, a0, a1 - 0.14, 0.62, 1.65, body, bevel=0.004)
+    m.box(-0.13, 0.13, a0 - 0.01, a1 - 0.13, 1.65, 1.74, trim, bevel=0.004)
+    m.upright(0, a0 + 0.12, 1.74, 2.05, 0.022, 0.026, body, segments=12)
+    for side in (-1, 1):
+        for y in (a0 + 0.06, a0 + 0.16, a0 + 0.26):
+            m.box(side * 0.1257 - 0.0008, side * 0.1257 + 0.0008, y - 0.025, y + 0.025, 1.1, 1.35, c["glass"])
+        m.box(side * 0.1262 - 0.002, side * 0.1262 + 0.002, a0 + 0.01, a1 - 0.15, 0.7, 0.76, trim)
+    # The fan housing: a short drum facing forward, the hood flaring over it, and blades inside.
+    # Radii in tiles, heights in steps.
+    m.tube(a1 - 0.14, a1 + 0.01, 0.0, 1.12, 0.145, trim, segments=32)
+    m.tube(a1 - 0.005, a1 + 0.012, 0.0, 1.12, 0.125, fan, segments=32)
+    for k in range(8):
+        ang = k * math.pi / 4
+        m.rod((0.0, a1 + 0.014, 1.12), (0.12 * math.cos(ang), a1 + 0.014, 1.12 + 0.12 * math.sin(ang) / rig.RISE), 0.01, body)
+    m.text(LETTERS, 0.1266, a0 / 2, 1.5, 0.03, c["letters"], 1)
+    m.text(LETTERS, -0.1266, a0 / 2, 1.5, 0.03, c["letters"], -1)

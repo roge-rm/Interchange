@@ -160,6 +160,8 @@ def main():
             shot(out, f"span_pier_{style}_{a}.png", lambda m, style=style, a=a: spans.pier(m, style, a == 0), shadow=False)
     for edge in EDGES:
         shot(out, f"span_portal_{edge}.png", lambda m, edge=edge: spans.portal(m, edge), shadow=False)
+    for a in (0, 1):
+        shot(out, f"span_shed_{a}.png", lambda m, a=a: spans.shed(m, a == 0), shadow=False)
     for red in (0, 1):
         shot(out, f"signal_{red}.png", lambda m, red=red: scenery.signal(m, red == 1), shadow=False)
     for kind in DECOR:

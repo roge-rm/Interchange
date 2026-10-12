@@ -75,7 +75,8 @@ class PackTest {
     @Test
     fun theBasePackHasTheWholeRoster() {
         val r = Roster.BASE
-        assertEquals(33, r.engines.size)
+        assertEquals(35, r.engines.size)
+        assertEquals(Plows.ROTARY, r.engines.first { it.key == "base:rotary_plow" }.plow)
         assertEquals("base:american", r[2].key)
         assertEquals(r[3].id, r[2].tender)
         assertTrue(r[3].isTender)

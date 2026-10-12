@@ -71,6 +71,8 @@ import com.rm.interchange.sim.approvalLevel
 import com.rm.interchange.map.rememberTownLabels
 import com.rm.interchange.sim.World
 import com.rm.interchange.sim.Signals
+import com.rm.interchange.sim.FENCE_COST
+import com.rm.interchange.sim.SHED_COST
 import com.rm.interchange.sim.trackLimit
 import com.rm.interchange.sim.Closure
 import com.rm.interchange.sim.Spans
@@ -385,6 +387,7 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
                     Tool.Signals -> signalAt(world, 0, at)?.let { runner.request(it.copy(kind = Signals.PLACED[signalKind])); built() }
                     Tool.Waypoint -> { runner.request(Command.Waypoint(0, at.tileX, at.tileY)); built() }
                     Tool.Tunnel -> { runner.request(Command.Tunnel(0, at.tileX, at.tileY)); built() }
+                    Tool.SnowShed, Tool.SnowFence -> { runner.request(Command.SnowWorks(0, at.tileX, at.tileY, shed = tool == Tool.SnowShed)); built() }
                     Tool.Station -> { runner.request(stationPlan(0, at, at, stationAlongX)); built() }
                     Tool.Depot -> {
                         runner.request(depotAt(world, 0, at))
@@ -494,7 +497,7 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
 
         // Under the strip, the latest news; a tap goes to where it happened.
         worldView.value?.news?.lastOrNull()?.let { n ->
-            val ind = if (n.kind == News.PROSPECTING_FAILED || n.kind == News.SNOWBOUND || n.kind == News.TRAIN_OLD || n.kind == News.WASHOUT || n.kind == News.FIRE) null else world.industries.getOrNull(n.about)
+            val ind = if (n.kind == News.PROSPECTING_FAILED || n.kind == News.SNOWBOUND || n.kind == News.TRAIN_OLD || n.kind == News.WASHOUT || n.kind == News.FIRE || n.kind == News.AVALANCHE) null else world.industries.getOrNull(n.about)
             val text = newsText(world, n)
             Box(
                 Modifier.align(Alignment.TopCenter)
@@ -508,7 +511,7 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
                         view.focusY = ind.y + 1f
                     }
                     if (n.kind == News.SNOWBOUND || n.kind == News.TRAIN_OLD) selected = Selection.Train(n.about)
-                    if (n.kind == News.WASHOUT || n.kind == News.FIRE) {
+                    if (n.kind == News.WASHOUT || n.kind == News.FIRE || n.kind == News.AVALANCHE) {
                         view.focusX = n.about % world.width + 0.5f
                         view.focusY = n.about / world.width + 0.5f
                     }
@@ -575,6 +578,8 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
                     Tool.Signals, Tool.Waypoint -> stringResource(Res.string.cost_signal, money(world.price(Prices.SIGNAL)))
                     Tool.Bridge -> stringResource(Res.string.cost_tile, money(world.price(Spans.COST[bridgeStyle])))
                     Tool.Wires -> stringResource(Res.string.cost_tile, money(world.price(Prices.WIRE)))
+                    Tool.SnowShed -> stringResource(Res.string.cost_tile, money(world.price(SHED_COST)))
+                    Tool.SnowFence -> stringResource(Res.string.cost_tile, money(world.price(FENCE_COST)))
                     Tool.Tunnel -> stringResource(Res.string.cost_tile, money(world.price(Spans.COST[Spans.TUNNEL])))
                     Tool.Station -> stringResource(Res.string.cost_tile, money(world.price(Prices.PLATFORM)))
                     Tool.Depot -> money(world.price(Prices.DEPOT))
@@ -702,7 +707,7 @@ private fun IndustryCard(world: World, ind: Industry, where: String, onClose: ()
 @Composable
 private fun newsText(world: World, n: News): String {
     if (n.kind == News.PROSPECTING_FAILED) return stringResource(Res.string.news_prospect_failed, world.roster.industries.getOrNull(n.about)?.name(languageCode()) ?: "")
-    if (n.kind == News.WASHOUT || n.kind == News.FIRE) return stringResource(if (n.kind == News.FIRE) Res.string.news_fire else Res.string.news_washout)
+    if (n.kind == News.WASHOUT || n.kind == News.FIRE || n.kind == News.AVALANCHE) return stringResource(when (n.kind) { News.FIRE -> Res.string.news_fire; News.AVALANCHE -> Res.string.news_avalanche; else -> Res.string.news_washout })
     if (n.kind == News.SNOWBOUND || n.kind == News.TRAIN_OLD) {
         val name = world.trains.getOrNull(n.about)?.name?.takeIf { it.isNotEmpty() } ?: stringResource(Res.string.train_n, n.about + 1)
         return stringResource(if (n.kind == News.SNOWBOUND) Res.string.news_snowbound else Res.string.news_old, name)

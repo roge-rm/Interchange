@@ -334,7 +334,11 @@ private fun World.tileWeather(year: Int, doy: Int, today: Int) {
     val spring = doy in 50..140
     val salt = today * 31 + seedBits
     fun dither(hundredths: Int, x: Int, y: Int) = ditherBy(hundredths, x, y, salt)
-    parallelBands(height) { from, until ->
+    val cover = fenceCover()
+    val wind = w.wind
+    val bands = Workers.threads * 4
+    val slides = Array(bands) { ArrayList<Int>() }
+    parallelBandsIndexed(height, bands) { band, from, until ->
         for (y in from until until) {
             // Only the fronts that reach this row.
             val near = fronts.filter { f -> kotlin.math.abs(y * 256L + 128 - f.y) < f.radius * 256L }
@@ -391,12 +395,20 @@ private fun World.tileWeather(year: Int, doy: Int, today: Int) {
                 if (sky.freezing) ice += dither(p, x, y)
                 else if (t in -60..-1 && wet > 80 && snow < 2) ice += 1
                 if (t > 0) ice -= dither(t * 10 + 200, x, y) else ice -= dither(30, x, y)
+                // Wind drifts snow onto open track, unless a snow fence or trees nearby catch it.
+                if (track[i].toInt() != 0 && wind >= DRIFT_WIND && !cover[i] && !sheltered(x, y)) {
+                    if (t <= 0 && p > 0) snow += dither(p * (wind - DRIFT_WIND + 10) / 15, x, y)
+                    else if (t < 0 && wind >= BLOWING_WIND && snow < 40) snow += dither((wind - BLOWING_WIND + 5) * 12, x, y)
+                }
+                // Deep snow on steep high ground lets go in a thaw or under heavy snow.
+                if (snow >= AVALANCHE_SNOW && tileHeight(x, y) >= AVALANCHE_HEIGHT && !isFlat(x, y) && (t > 0 || p >= 1500) && cellDice(x, y, salt + 9) < 6) slides[band] += i
                 // Town roads cleared some days after the snow stops, by plow, or rolled flat before.
                 if (road[i].toInt() != 0 && snow > 4 && p == 0) {
                     val town = towns.getOrNull(townOf[i].toInt())
                     val busy = if (town != null && town.population > 5000) 128 else 70
                     if (cellDice(x, y, salt + 7) < busy) snow = if (plows) 2 else snow * 2 / 3
                 }
+                if (sheds.contains(i)) snow = 0
                 w.snow[i] = snow.coerceIn(0, 250).toByte()
                 w.ice[i] = ice.coerceIn(0, 250).toByte()
                 w.wet[i] = wet.coerceIn(0, 250).toByte()
@@ -404,7 +416,94 @@ private fun World.tileWeather(year: Int, doy: Int, today: Int) {
             }
         }
     }
+    for (b in 0 until bands) for (i in slides[b]) avalanche(i)
 }
+
+/** Snow sliding down from tile [i]: downhill a few tiles, burying what's there, track too, and breaking the trees. */
+private fun World.avalanche(i: Int) {
+    var x = i % width
+    var y = i / width
+    val moving = (weather.snow[i].toInt() and 255) / 2
+    weather.snow[i] = ((weather.snow[i].toInt() and 255) - moving).toByte()
+    var buried = false
+    for (k in 0 until AVALANCHE_RUN) {
+        // On to the lowest tile next door, if it's lower.
+        // Heights as the four corners added up, so a half step lower counts.
+        fun h4(tx: Int, ty: Int) = heightAt(tx, ty) + heightAt(tx + 1, ty) + heightAt(tx + 1, ty + 1) + heightAt(tx, ty + 1)
+        var best = -1
+        var bestH = h4(x, y)
+        for ((dx, dy) in arrayOf(-1 to 0, 1 to 0, 0 to -1, 0 to 1)) {
+            if (!inside(x + dx, y + dy)) continue
+            val h = h4(x + dx, y + dy)
+            if (h < bestH) { bestH = h; best = index(x + dx, y + dy) }
+        }
+        if (best < 0) break
+        x = best % width
+        y = best / width
+        if (sheds.contains(best) || isWater(x, y)) break
+        weather.snow[best] = minOf(250, (weather.snow[best].toInt() and 255) + moving).toByte()
+        trees[best] = 0
+        touched(x, y)
+        if (track[best].toInt() != 0) buried = true
+    }
+    if (buried) news += News(News.AVALANCHE, index(x, y), tick)
+}
+
+/** Whether trees stand next to ([x], [y]) to break the wind. */
+private fun World.sheltered(x: Int, y: Int): Boolean {
+    for (dy in -1..1) for (dx in -1..1) if (inside(x + dx, y + dy) && Trees.count(trees[index(x + dx, y + dy)].toInt()) >= 2) return true
+    return false
+}
+
+/** Which tiles a snow fence covers: within [FENCE_REACH] tiles of one. Worked out again when fences change. */
+internal fun World.fenceCover(): BooleanArray {
+    fenceCoverCache?.let { return it }
+    val cover = BooleanArray(width * height)
+    for (f in fences) {
+        val fx = f % width
+        val fy = f / width
+        for (dy in -FENCE_REACH..FENCE_REACH) for (dx in -FENCE_REACH..FENCE_REACH) if (inside(fx + dx, fy + dy)) cover[index(fx + dx, fy + dy)] = true
+    }
+    fenceCoverCache = cover
+    return cover
+}
+
+/** Puts up or takes down a snow fence on open land, or a snow shed over straight track. */
+internal fun World.snowWorks(company: Company, c: Command.SnowWorks) {
+    if (!inside(c.x, c.y)) return
+    val i = index(c.x, c.y)
+    if (c.shed) {
+        val t = track[i].toInt()
+        if (owner[i].toInt() != company.id || (t != Track.X && t != Track.Y) || stationTiles.containsKey(i) || depotTiles.containsKey(i) || spanHeads.containsKey(i)) return
+        if (sheds.remove(i)) { touched(c.x, c.y); return }
+        if (company.money < price(SHED_COST)) return
+        spend(company, Books.CONSTRUCTION, price(SHED_COST))
+        sheds += i
+        weather.snow[i] = 0
+    } else {
+        if (fences.remove(i)) { fenceCoverCache = null; touched(c.x, c.y); return }
+        if (track[i].toInt() != 0 || isWater(c.x, c.y) || house[i].toInt() != 0 || industryOf[i].toInt() != 0 || road[i].toInt() != 0) return
+        if (company.money < price(FENCE_COST)) return
+        spend(company, Books.CONSTRUCTION, price(FENCE_COST))
+        fences += i
+        fenceCoverCache = null
+    }
+    touched(c.x, c.y)
+}
+
+/** Wind, in km/h, that drifts falling snow onto track, and that blows lying snow about. */
+const val DRIFT_WIND = 25
+const val BLOWING_WIND = 35
+/** How far round a snow fence catches drifting snow, in tiles. */
+const val FENCE_REACH = 3
+/** Snow, in cm, and height, in steps, for an avalanche, and how far it runs, in tiles. */
+const val AVALANCHE_SNOW = 120
+const val AVALANCHE_HEIGHT = 10
+const val AVALANCHE_RUN = 10
+/** Dollars for a snow fence on a tile, and a snow shed over one. */
+const val FENCE_COST = 300L
+const val SHED_COST = 3_000L
+
 
 /** Whether tile ([x], [y]) slopes down towards the south, the bottom of the map. */
 private fun World.facesSouth(x: Int, y: Int) = heightAt(x, y) + heightAt(x + 1, y) > heightAt(x, y + 1) + heightAt(x + 1, y + 1)

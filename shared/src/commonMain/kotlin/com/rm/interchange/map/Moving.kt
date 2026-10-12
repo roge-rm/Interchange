@@ -95,6 +95,24 @@ internal fun DrawScope.drawMoving(world: World, view: View, sheets: Sheets, movi
             wireItem(items, view, ax, ay, ha, bx, by, hb)
         }
     }
+    // Snow sheds over their track like engine houses, and snow fences, a run of slats parallel to the track nearby.
+    for (tile in moving.now.sheds) {
+        val x = tile % world.width
+        val y = tile / world.width
+        val along = if (painter.viewEdge(if (world.track[tile].toInt() == Track.X) Track.XP else Track.YP) <= Track.XP) 0 else 1
+        val base = minOf(minOf(world.heightAt(x, y), world.heightAt(x + 1, y)), minOf(world.heightAt(x + 1, y + 1), world.heightAt(x, y + 1)))
+        tileItem(items, view, x, y, base.toFloat(), DEPOT_DEPTH, Atlas.SHED[along])
+    }
+    if (view.halfWidth >= 8f) for (tile in moving.now.fences) {
+        val x = tile % world.width
+        val y = tile / world.width
+        val alongX = fenceAlongX(world, x, y)
+        val (ax, ay, bx, by) = if (alongX) listOf(x + 0.1f, y + 0.5f, x + 0.9f, y + 0.5f) else listOf(x + 0.5f, y + 0.1f, x + 0.5f, y + 0.9f)
+        val h = groundHeight(world, x + 0.5f, y + 0.5f)
+        fun sx(px: Float, py: Float) = view.screenX(view.toViewX(px, py), view.toViewY(px, py), size.width)
+        fun sy(px: Float, py: Float, ph: Float) = view.screenY(view.toViewX(px, py), view.toViewY(px, py), ph, size.height)
+        items += floatArrayOf(view.toViewX(x + 0.5f, y + 0.5f) + view.toViewY(x + 0.5f, y + 0.5f), sx(ax, ay), sy(ax, ay, h), 0f, FENCE.toFloat(), sx(bx, by), sy(bx, by, h), view.step)
+    }
     // Engine houses go just in front of everything on their own tile and behind anything on the tile in front.
     for (d in moving.now.depots) {
         val wx = d.tile % world.width
@@ -148,6 +166,8 @@ internal fun DrawScope.drawMoving(world: World, view: View, sheets: Sheets, movi
             val model = it[4].toInt()
             if (model == WIRE) {
                 drawWire(it, view.halfWidth)
+            } else if (model == FENCE) {
+                drawFence(it)
             } else if (model == FIRE) {
                 drawFire(it[3].toInt(), it[1], it[2], view.halfWidth)
             } else if (model == BOARD) {
@@ -171,6 +191,32 @@ private const val WAYPOINT = -3
 private const val WIRE = -4
 private const val FIRE = -5
 private const val BOARD = -6
+private const val FENCE = -7
+
+/** Whether a snow fence on ([x], [y]) runs along x: the way the nearest track does, or across the wind if there's none near. */
+private fun fenceAlongX(world: World, x: Int, y: Int): Boolean {
+    for (r in 1..4) for (dy in -r..r) for (dx in -r..r) {
+        if (maxOf(kotlin.math.abs(dx), kotlin.math.abs(dy)) != r || !world.inside(x + dx, y + dy)) continue
+        val t = world.track[world.index(x + dx, y + dy)].toInt()
+        if (t == Track.X) return true
+        if (t == Track.Y) return false
+    }
+    return false
+}
+
+/** A fence item: two rails between its ends, slats along them, a step high. */
+private fun DrawScope.drawFence(it: FloatArray) {
+    val step = it[7]
+    val wood = Color(0xff6a5038)
+    val n = 9
+    for (k in 0..n) {
+        val t = k / n.toFloat()
+        val x = it[1] + (it[5] - it[1]) * t
+        val y = it[2] + (it[6] - it[2]) * t
+        drawLine(wood, Offset(x, y), Offset(x, y - step * 1.1f), step / 6f)
+    }
+    for (f in floatArrayOf(0.35f, 0.85f)) drawLine(Color(0xff4a3828), Offset(it[1], it[2] - step * f), Offset(it[5], it[6] - step * f), step / 10f)
+}
 
 /** Flames licking up from a burning tile, flickering, and smoke rising off it; [seed] keeps tiles from flickering together. */
 private fun DrawScope.drawFire(seed: Int, x: Float, y: Float, hw: Float) {

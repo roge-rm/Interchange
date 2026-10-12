@@ -128,3 +128,23 @@ def portal(m, edge):
     # Wing walls back into the hill.
     for side in (-1, 1):
         b(side * 0.5 - 0.06, side * 0.5 + 0.02, min(y, -out * 0.5), max(y, -out * 0.5), 0.0, 3.2, stone, 0.004)
+
+
+def shed(m, along_u):
+    """A timber snow shed over the track: a solid cribbed wall on the uphill side, posts on the other, and a roof
+    sloping down off the hill so slides pass over it."""
+    b = _boxer(m, along_u)
+    timber = material("shed timber", "#6e5236", rough=0.9)
+    dark = material("shed timber dark", "#4e3a28", rough=0.9)
+    roof = material("shed roof", "#5a4634", rough=0.85)
+    b(-0.34, -0.26, -0.5, 0.5, 0.0, 2.9, dark, 0.004)
+    for k in range(6):
+        z = 0.2 + k * 0.45
+        b(-0.345, -0.255, -0.5, 0.5, z, z + 0.04, timber)
+    for y in (-0.375, -0.125, 0.125, 0.375):
+        b(0.25, 0.29, y - 0.025, y + 0.025, 0.0, 2.55, timber, 0.003)
+        _rod(m, along_u, (0.27, y, 1.6), (0.0, y, 2.6), 0.012, timber)
+    # The roof, a slope of planks from over the wall down past the posts.
+    for k in range(10):
+        x0 = -0.36 + k * 0.069
+        b(x0, x0 + 0.07, -0.5, 0.5, 2.95 - k * 0.045, 3.03 - k * 0.045, roof)

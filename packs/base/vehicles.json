@@ -513,6 +513,34 @@
         "potash"
       ],
       "capacity": 90
+    },
+    {
+      "id": "wedge_plow",
+      "kind": "wagon",
+      "name": { "en": "Wedge plow", "fr": "Chasse-neige à étrave" },
+      "plural": { "en": "Wedge plows", "fr": "Chasse-neige à étrave" },
+      "type": { "en": "Snow plow", "fr": "Chasse-neige" },
+      "from": 1860,
+      "until": 2050,
+      "weight": 30,
+      "cost": 9000,
+      "running": 800,
+      "length": 10,
+      "plow": "wedge"
+    },
+    {
+      "id": "rotary_plow",
+      "kind": "wagon",
+      "name": { "en": "Rotary plow", "fr": "Chasse-neige rotatif" },
+      "plural": { "en": "Rotary plows", "fr": "Chasse-neige rotatifs" },
+      "type": { "en": "Snow plow", "fr": "Chasse-neige" },
+      "from": 1888,
+      "until": 2050,
+      "weight": 110,
+      "cost": 40000,
+      "running": 4000,
+      "length": 12,
+      "plow": "rotary"
     }
   ]
 }

@@ -54,6 +54,8 @@ class News(val kind: Int, val about: Int, val tick: Long) {
         /** Track washed out, and track closed by a fire; [News.about] is the tile. */
         const val WASHOUT = 7
         const val FIRE = 8
+        /** An avalanche across the line; [News.about] is the tile. */
+        const val AVALANCHE = 9
     }
 }
 

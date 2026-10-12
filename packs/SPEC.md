@@ -65,6 +65,7 @@ Each vehicle:
 | traction | no | Engines: `steam` (the default), `diesel` or `electric`. Electric engines only run under wires. |
 | life | no | Years it runs well before it wears out and breaks down more. 35 if left out. |
 | reliability | no | How reliable it is new, in percent. 85 if left out. |
+| plow | no | Wagons: `wedge` or `rotary` makes it a snow plow, run at the head of its train. A wedge clears up to a metre of snow and pushes through drifts four times as fast; a rotary clears anything. |
 | weight | yes | Tonnes. |
 | cost | yes | Dollars to buy. |
 | running | yes | Dollars a year to run. |

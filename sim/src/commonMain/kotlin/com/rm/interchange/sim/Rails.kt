@@ -147,6 +147,7 @@ internal fun World.buildRail(company: Company, c: Command.Rail) {
             track[i] = (has or piece).toByte()
             owner[i] = company.id.toByte()
             condition[i] = -1
+            if (fences.remove(i)) fenceCoverCache = null
             // Laid on cleared ground.
             if ((weather.snow[i].toInt() and 255) > PLOWED) weather.snow[i] = PLOWED.toByte()
             // A tile that now branches can't keep its signals.

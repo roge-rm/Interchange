@@ -40,6 +40,8 @@ class Engine(
     /** Years it runs well, and how reliable it is new, in percent. */
     val life: Int = 35,
     val reliability: Int = 85,
+    /** A [Plows] kind for a snow plow, or [Plows.NONE]. */
+    val plow: Int = Plows.NONE,
 ) {
     val pulls get() = kind == VehicleKind.ENGINE
     /** What it can carry as [Cargo] numbers; empty for nothing. */
@@ -49,6 +51,14 @@ class Engine(
     fun name(language: String) = names[language] ?: names["en"] ?: key
     fun plural(language: String) = plurals[language] ?: if (language == "en" || language !in names) plurals["en"] ?: (name("en") + "s") else name(language)
     fun type(language: String) = types[language] ?: types["en"] ?: ""
+}
+
+/** Snow plows: a wedge throws snow aside, a rotary blows it away through anything. */
+object Plows {
+    const val NONE = 0
+    const val WEDGE = 1
+    const val ROTARY = 2
+    val NAMES = listOf("wedge", "rotary")
 }
 
 /** How an engine is driven. Electric ones need wires over the track. */
@@ -193,6 +203,7 @@ class Roster(
                     sprite = spriteIds.getOrPut(sprite) { sprites += sprite; sprites.size - 1 }, tender = tender, enabled = s.enabled,
                     tractive = d.tractive ?: (d.weight!! * 245 / 100), traction = Traction.NAMES.indexOf(d.traction ?: "steam").coerceAtLeast(0),
                     life = d.life ?: 35, reliability = d.reliability ?: 85,
+                    plow = d.plow?.let { Plows.NAMES.indexOf(it) + 1 } ?: Plows.NONE,
                 )
             }
             val houses = packs.flatMap { p -> p.houses.map { p.id to it } }.mapIndexed { i, (pack, h) ->
@@ -223,6 +234,7 @@ class Roster(
             sprite = v.sprite ?: old.sprite,
             tractive = v.tractive ?: old.tractive, traction = v.traction ?: old.traction,
             life = v.life ?: old.life, reliability = v.reliability ?: old.reliability,
+            plow = v.plow ?: old.plow,
         )
     }
 }

@@ -232,6 +232,7 @@ internal fun World.clearTile(company: Company, c: Command.Clear) {
     depotTiles.remove(i)?.let { id -> depots[id] = null }
     track[i] = 0
     wires[i] = 0
+    sheds.remove(i)
     owner[i] = -1
     touched(c.x, c.y)
     networkChanged()

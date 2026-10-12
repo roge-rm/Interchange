@@ -60,6 +60,8 @@ MODELS = {
     "reefer": (9, lambda m: cars.reefer(m, L(9))),
     "ore_car": (6, lambda m: cars.ore_car(m, L(6))),
     "covered_hopper": (11, lambda m: cars.covered_hopper(m, L(11))),
+    "wedge_plow": (10, lambda m: cars.wedge_plow(m, L(10))),
+    "rotary_plow": (12, lambda m: cars.rotary_plow(m, L(12))),
 }
 
 

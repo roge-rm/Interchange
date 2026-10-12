@@ -44,6 +44,8 @@ class VehicleDef(
     /** Years it runs well before it wears out, and how reliable it is new, in percent. */
     val life: Int? = null,
     val reliability: Int? = null,
+    /** wedge or rotary, for a snow plow. */
+    val plow: String? = null,
 )
 
 /** A town building as a pack gives it. [zones] are bits of [Zones], from the outskirts in to the centre. */
@@ -226,12 +228,15 @@ object Packs {
                     traction = f.string("traction"),
                     life = f.int("life", 1, 200),
                     reliability = f.int("reliability", 1, 100),
+                    plow = f.string("plow"),
                 )
                 f.done()
                 if (!fresh && kind != null) problems += "$at: a vehicle that replaces another keeps its kind"
                 if (def.from != null && def.until != null && def.from >= def.until) problems += "$at: from should be before until"
                 if (kind != null && kind != VehicleKind.ENGINE && (def.speed != null || def.power != null)) problems += "$at: only engines have speed and power"
                 if (kind != null && kind != VehicleKind.ENGINE && (def.tractive != null || def.traction != null)) problems += "$at: only engines have tractive effort and traction"
+                if (def.plow != null && def.plow !in Plows.NAMES) problems += "$at: plow should be ${Plows.NAMES.joinToString(" or ")}"
+                if (def.plow != null && kind != null && kind != VehicleKind.WAGON) problems += "$at: only wagons are plows"
                 if (def.traction != null && def.traction !in Traction.NAMES) problems += "$at: traction should be ${Traction.NAMES.joinToString(", ")}"
                 if (def.tender != null && kind != null && kind != VehicleKind.ENGINE) problems += "$at: only engines have a tender"
                 if (def.capacity != null && def.capacity > 0 && def.carries == null) problems += "$at: capacity without carries"

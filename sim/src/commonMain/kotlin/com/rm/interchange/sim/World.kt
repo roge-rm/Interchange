@@ -102,6 +102,10 @@ class World(val settings: NewGame, val roster: Roster = Roster.BASE, generate: B
     val condition = ByteArray(width * height) { -1 }
     val fire = ByteArray(width * height)
     val kinks = HashMap<Int, Int>()
+    /** Snow fences on open land, and snow sheds over track, by tile. */
+    val fences = HashSet<Int>()
+    val sheds = HashSet<Int>()
+    internal var fenceCoverCache: BooleanArray? = null
     val closed = HashMap<Int, Int>()
 
     /** Track pieces wired for electric engines, as [Track] bits, on the ground; bridges and tunnels are wired whole. */
@@ -203,6 +207,7 @@ class World(val settings: NewGame, val roster: Roster = Roster.BASE, generate: B
             is Command.Bridge -> buildBridge(company, command)
             is Command.Tunnel -> buildTunnel(company, command)
             is Command.Wire -> wire(company, command)
+            is Command.SnowWorks -> snowWorks(company, command)
             is Command.SetUpkeep -> company.upkeep = command.level.coerceIn(Upkeep.LOW, Upkeep.HIGH)
             is Command.Clear -> clearTile(company, command)
             is Command.BuyTrain -> buyTrain(company, command)
@@ -292,6 +297,8 @@ class World(val settings: NewGame, val roster: Roster = Roster.BASE, generate: B
         for (k in reserved.keys.sorted()) mix(k.toLong() * 31 + reserved.getValue(k))
         for (k in closed.keys.sorted()) mix(k.toLong() * 31 + closed.getValue(k))
         for (k in kinks.keys.sorted()) mix(k.toLong() * 31 + kinks.getValue(k))
+        for (k in fences.sorted()) mix(k.toLong())
+        for (k in sheds.sorted()) mix(-k.toLong())
         for (s in spans) if (s != null) { mix(s.x0.toLong()); mix(s.y0.toLong()); mix(s.x1.toLong()); mix(s.y1.toLong()); mix(s.height.toLong()) }
         for (t in trains) {
             if (t == null) continue

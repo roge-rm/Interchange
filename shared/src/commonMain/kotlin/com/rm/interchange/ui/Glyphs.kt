@@ -19,7 +19,7 @@ enum class Glyph {
     RoadStop, Canal, Dock, Lock, Airport,
     Raise, Lower, Level, Tree, Clear,
     Pause, Play, Speed, TurnLeft, TurnRight, Remove, Lift, Menu,
-    Save, Folder, Plus, Gear, Home, Package, Layers, Grid, Heights, Renew, Back, Waypoint, Wires,
+    Save, Folder, Plus, Gear, Home, Package, Layers, Grid, Heights, Renew, Back, Waypoint, Wires, Shed, Fence,
 }
 
 /** [glyph] drawn in [tint] on a 24 unit square scaled to fit. */
@@ -82,6 +82,8 @@ private class GlyphPen(val scope: DrawScope, val u: Float, val dx: Float, val dy
             Glyph.Air -> shape(true, 12f, 2f, 13.5f, 9f, 21f, 13f, 21f, 15f, 13.5f, 13f, 13f, 19f, 16f, 21f, 16f, 22f, 12f, 21f, 8f, 22f, 8f, 21f, 11f, 19f, 10.5f, 13f, 3f, 15f, 3f, 13f, 10.5f, 9f)
             Glyph.Land -> { shape(true, 2f, 20f, 9f, 8f, 13f, 14f, 16f, 10f, 22f, 20f) }
             Glyph.Signal -> { line(12f, 12f, 12f, 22f); shape(false, 9f, 2f, 15f, 2f, 15f, 12f, 9f, 12f); circle(12f, 5f, 1.5f, true); circle(12f, 9f, 1.5f, true) }
+            Glyph.Shed -> { shape(false, 3f, 6f, 21f, 9f, 21f, 11f, 3f, 8f); line(4f, 8f, 4f, 21f); line(20f, 11f, 20f, 21f); line(7f, 18f, 17f, 18f, 1.5f); line(2f, 21f, 22f, 21f) }
+            Glyph.Fence -> { line(3f, 10f, 21f, 10f, 1.5f); line(3f, 16f, 21f, 16f, 1.5f); for (x in intArrayOf(5, 9, 13, 17)) line(x.toFloat(), 6f, x.toFloat(), 20f) }
             Glyph.Wires -> { line(5f, 22f, 5f, 3f); line(5f, 5f, 19f, 5f, 1.5f); line(2f, 9f, 22f, 9f, 1.5f); line(12f, 5f, 12f, 9f, 1.2f); line(19f, 5f, 19f, 9f, 1.2f); line(2f, 20f, 22f, 20f) }
             Glyph.Waypoint -> { line(12f, 11f, 12f, 22f); shape(false, 12f, 2f, 17f, 6.5f, 12f, 11f, 7f, 6.5f) }
             Glyph.Station -> { shape(false, 3f, 9f, 12f, 4f, 21f, 9f); line(5f, 9f, 5f, 18f); line(19f, 9f, 19f, 18f); line(2f, 18f, 22f, 18f); line(2f, 21f, 22f, 21f, 1.5f) }

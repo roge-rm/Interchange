@@ -16,7 +16,7 @@ package com.rm.interchange.sim
  */
 object Save {
     private val MAGIC = "ICHG".encodeToByteArray()
-    const val VERSION = 14
+    const val VERSION = 15
 
     fun write(world: World): ByteArray {
         val w = ByteWriter(world.width * world.height * 6 + 4096)
@@ -102,6 +102,7 @@ object Save {
                 w.uvar(ks.size.toLong())
                 for (k in ks) { w.int(k); w.int(m.getValue(k)) }
             }
+            w.ints(fences.sorted().toIntArray()); w.ints(sheds.sorted().toIntArray())
             val held = reserved.keys.sorted()
             w.uvar(held.size.toLong())
             for (k in held) { w.int(k); w.int(reserved.getValue(k)) }
@@ -281,6 +282,7 @@ object Save {
                 fill(condition, r.bytes()); fill(fire, r.bytes())
                 for (m in listOf(kinks, closed)) repeat(r.uvar().toInt().also { if (it > 10_000_000) throw BadData("too many closures") }) { m[r.int()] = r.int() }
             }
+            if (version >= 15) { fences += r.ints().toList(); sheds += r.ints().toList() }
             if (version >= 12) repeat(r.uvar().toInt().also { if (it > 10_000_000) throw BadData("too many held pieces") }) { reserved[r.int()] = r.int() }
             if (version >= 10) {
                 val wx = weather

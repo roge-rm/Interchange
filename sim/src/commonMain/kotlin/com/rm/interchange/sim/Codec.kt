@@ -25,6 +25,7 @@ object Codec {
     private const val TUNNEL = 15
     private const val WIRE = 16
     private const val UPKEEP = 17
+    private const val SNOW_WORKS = 18
 
     fun write(w: ByteWriter, c: Command) {
         when (c) {
@@ -36,6 +37,7 @@ object Codec {
             is Command.Waypoint -> { w.byte(WAYPOINT); w.int(c.company); w.int(c.x); w.int(c.y) }
             is Command.Bridge -> { w.byte(BRIDGE); w.int(c.company); w.int(c.x0); w.int(c.y0); w.int(c.x1); w.int(c.y1); w.int(c.style) }
             is Command.Tunnel -> { w.byte(TUNNEL); w.int(c.company); w.int(c.x); w.int(c.y) }
+            is Command.SnowWorks -> { w.byte(SNOW_WORKS); w.int(c.company); w.int(c.x); w.int(c.y); w.bool(c.shed) }
             is Command.SetUpkeep -> { w.byte(UPKEEP); w.int(c.company); w.int(c.level) }
             is Command.Wire -> { w.byte(WIRE); w.int(c.company); w.int(c.sx); w.int(c.sy); w.int(c.ex); w.int(c.ey); w.int(c.first); w.bool(c.remove) }
             is Command.Clear -> { w.byte(CLEAR); w.int(c.company); w.int(c.x); w.int(c.y) }
@@ -63,6 +65,7 @@ object Codec {
         BRIDGE -> Command.Bridge(r.int(), r.int(), r.int(), r.int(), r.int(), r.int())
         TUNNEL -> Command.Tunnel(r.int(), r.int(), r.int())
         UPKEEP -> Command.SetUpkeep(r.int(), r.int())
+        SNOW_WORKS -> Command.SnowWorks(r.int(), r.int(), r.int(), r.bool())
         WIRE -> Command.Wire(r.int(), r.int(), r.int(), r.int(), r.int(), r.int(), r.bool())
         else -> throw BadData("no such command: $kind")
     }
