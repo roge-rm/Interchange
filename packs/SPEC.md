@@ -61,11 +61,15 @@ Each vehicle:
 | from, until | yes | The years it's on sale, from the first up to but not including the second. |
 | speed | engines | Top speed in km/h. |
 | power | engines | Horsepower. |
+| tractive | no | Engines' starting tractive effort in kN, what the wheels pull before they slip. A quarter of the engine's weight if left out (its weight in tonnes times 2.45). |
+| traction | no | Engines: `steam` (the default), `diesel` or `electric`. Electric engines only run under wires. |
+| life | no | Years it runs well before it wears out and breaks down more. 35 if left out. |
+| reliability | no | How reliable it is new, in percent. 85 if left out. |
 | weight | yes | Tonnes. |
 | cost | yes | Dollars to buy. |
 | running | yes | Dollars a year to run. |
 | length | yes | Sixteenths of a tile, 1 to 16. Draw it to match. |
-| carries, capacity | no | The cargo a wagon carries and how much. Cargo ids for now: `passengers`, `mail`, `goods`, `timber`, `steel`, `coal`, `oil`, `livestock`, `iron_ore`. |
+| carries, capacity | no | The cargo a wagon carries and how much. Cargo ids: `passengers`, `mail`, `timber`, `lumber`, `grain`, `coal`, `iron_ore`, `steel`, `goods`, `oil`, `fuel`, `livestock`, `food`, `fish`, `paper`, `potash`, `nickel_ore`, `nickel`, `bauxite`, `aluminium`. A passenger weighs 90 kg with their bags, mail 50 kg a bag, livestock half a tonne a head, the rest a tonne each. |
 | tender | no | An engine's tender: a tender's id in this pack, or `pack:id` in another. |
 | sprite | no | Its sprite sheet, `sprites/NAME.png`. Leave it out to use the vehicle's id. Vehicles can share one. |
 

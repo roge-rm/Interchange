@@ -199,6 +199,7 @@ class World(val settings: NewGame, val roster: Roster = Roster.BASE, generate: B
         moveTrains()
         if (tick % Calendar.TICKS_PER_DAY == 0L) {
             weatherDay()
+            trainsDay()
             payRunningCosts()
             passengersDay()
             townsDay()
@@ -264,7 +265,7 @@ class World(val settings: NewGame, val roster: Roster = Roster.BASE, generate: B
             if (t == null) continue
             mix(t.id.toLong()); mix(t.nose.toLong()); mix(t.speed.toLong()); mix(t.waiting.toLong()); mix(t.order.toLong())
             for (c in t.cargo) for (p in c) { mix(p.dest.toLong()); mix(p.count.toLong()) }
-            mix(t.profitThisYear)
+            mix(t.profitThisYear); mix(t.reliability.toLong()); mix(t.brokenFor.toLong())
             for (st in t.steps) mix(st.toLong())
         }
         return h

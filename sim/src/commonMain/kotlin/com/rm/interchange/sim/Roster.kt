@@ -33,6 +33,13 @@ class Engine(
     val tender: Int,
     /** Turned off by a pack: kept so ids stay put, but not for sale. */
     val enabled: Boolean,
+    /** Starting tractive effort, in kN: what the wheels can pull before they slip. */
+    val tractive: Int = weight * 245 / 100,
+    /** A [Traction] kind. */
+    val traction: Int = Traction.STEAM,
+    /** Years it runs well, and how reliable it is new, in percent. */
+    val life: Int = 35,
+    val reliability: Int = 85,
 ) {
     val pulls get() = kind == VehicleKind.ENGINE
     /** What it can carry as [Cargo] numbers; empty for nothing. */
@@ -42,6 +49,14 @@ class Engine(
     fun name(language: String) = names[language] ?: names["en"] ?: key
     fun plural(language: String) = plurals[language] ?: if (language == "en" || language !in names) plurals["en"] ?: (name("en") + "s") else name(language)
     fun type(language: String) = types[language] ?: types["en"] ?: ""
+}
+
+/** How an engine is driven. Electric ones need wires over the track. */
+object Traction {
+    const val STEAM = 0
+    const val DIESEL = 1
+    const val ELECTRIC = 2
+    val NAMES = listOf("steam", "diesel", "electric")
 }
 
 /**
@@ -176,6 +191,8 @@ class Roster(
                     from = d.from!!, until = d.until!!, speed = d.speed ?: 0, power = d.power ?: 0, weight = d.weight!!,
                     cost = d.cost!!, running = d.running!!, length = d.length!!, carries = d.carries ?: emptyList(), capacity = d.capacity ?: 0,
                     sprite = spriteIds.getOrPut(sprite) { sprites += sprite; sprites.size - 1 }, tender = tender, enabled = s.enabled,
+                    tractive = d.tractive ?: (d.weight!! * 245 / 100), traction = Traction.NAMES.indexOf(d.traction ?: "steam").coerceAtLeast(0),
+                    life = d.life ?: 35, reliability = d.reliability ?: 85,
                 )
             }
             val houses = packs.flatMap { p -> p.houses.map { p.id to it } }.mapIndexed { i, (pack, h) ->
@@ -204,6 +221,8 @@ class Roster(
             carries = v.carries ?: old.carries, capacity = v.capacity ?: old.capacity,
             tender = v.tender?.let { if (':' in it) it else "${pack.id}:$it" } ?: old.tender,
             sprite = v.sprite ?: old.sprite,
+            tractive = v.tractive ?: old.tractive, traction = v.traction ?: old.traction,
+            life = v.life ?: old.life, reliability = v.reliability ?: old.reliability,
         )
     }
 }

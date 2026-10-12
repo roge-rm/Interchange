@@ -52,6 +52,10 @@ sealed interface Command {
             /** Share orders with the train in [stations]'s first place. */
             const val SHARE = 5
             const val UNSHARE = 6
+            /** Turn servicing at the depot on or off. */
+            const val SERVICE = 7
+            /** Make it new again, in its depot, for its price less what it's worth. */
+            const val RENEW = 8
         }
     }
 }

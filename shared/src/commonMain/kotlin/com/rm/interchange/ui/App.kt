@@ -477,7 +477,7 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
 
         // Under the strip, the latest news; a tap goes to where it happened.
         worldView.value?.news?.lastOrNull()?.let { n ->
-            val ind = if (n.kind == News.PROSPECTING_FAILED || n.kind == News.SNOWBOUND) null else world.industries.getOrNull(n.about)
+            val ind = if (n.kind == News.PROSPECTING_FAILED || n.kind == News.SNOWBOUND || n.kind == News.TRAIN_OLD) null else world.industries.getOrNull(n.about)
             val text = newsText(world, n)
             Box(
                 Modifier.align(Alignment.TopCenter)
@@ -490,7 +490,7 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
                         view.focusX = ind.x + 1f
                         view.focusY = ind.y + 1f
                     }
-                    if (n.kind == News.SNOWBOUND) selected = Selection.Train(n.about)
+                    if (n.kind == News.SNOWBOUND || n.kind == News.TRAIN_OLD) selected = Selection.Train(n.about)
                 }
             }
         }
@@ -660,9 +660,9 @@ private fun IndustryCard(world: World, ind: Industry, where: String, onClose: ()
 @Composable
 private fun newsText(world: World, n: News): String {
     if (n.kind == News.PROSPECTING_FAILED) return stringResource(Res.string.news_prospect_failed, world.roster.industries.getOrNull(n.about)?.name(languageCode()) ?: "")
-    if (n.kind == News.SNOWBOUND) {
+    if (n.kind == News.SNOWBOUND || n.kind == News.TRAIN_OLD) {
         val name = world.trains.getOrNull(n.about)?.name?.takeIf { it.isNotEmpty() } ?: stringResource(Res.string.train_n, n.about + 1)
-        return stringResource(Res.string.news_snowbound, name)
+        return stringResource(if (n.kind == News.SNOWBOUND) Res.string.news_snowbound else Res.string.news_old, name)
     }
     val ind = world.industries.getOrNull(n.about) ?: return ""
     val name = industryName(world, ind, languageCode())

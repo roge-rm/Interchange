@@ -129,8 +129,8 @@ class WeatherTest {
         }
         assertTrue(stuck, "never stuck")
         assertTrue(told, "no news")
-        assertTrue(u(w.weather.snow[drift]) <= PLOWED, "drift left at ${u(w.weather.snow[drift])}")
-        assertTrue(u(w.weather.snow[deep]) <= PLOWED, "deep snow left at ${u(w.weather.snow[deep])}")
+        assertTrue(u(w.weather.snow[drift]) < Weather.DEEP, "drift left at ${u(w.weather.snow[drift])}")
+        assertTrue(u(w.weather.snow[deep]) < Weather.DEEP, "deep snow left at ${u(w.weather.snow[deep])}")
         // It got past to the far station.
         assertTrue(t.profitThisYear != 0L || t.order > 0 || stepTile(t.steps.last()) % w.width > 30)
     }

@@ -49,6 +49,8 @@ class News(val kind: Int, val about: Int, val tick: Long) {
         const val PROSPECTING_FAILED = 4
         /** A train stuck in a snowdrift; [News.about] is the train. */
         const val SNOWBOUND = 5
+        /** A train past its engine's working life; [News.about] is the train. */
+        const val TRAIN_OLD = 6
     }
 }
 

@@ -289,4 +289,10 @@
     <string name="warmer_climate">Le climat est plus chaud de %1$s qu'en 1900</string>
     <string name="news_snowbound">%1$s est bloqué par la neige</string>
     <string name="snow_depth">Neige</string>
+    <string name="broken_down">En panne</string>
+    <string name="going_for_service">En route pour l'entretien, %1$d km/h</string>
+    <string name="age_line">%1$d ans, fiable à %2$d %, %3$d pannes</string>
+    <string name="renew_for">Renouveler pour %1$s</string>
+    <string name="servicing">Entretien</string>
+    <string name="news_old">%1$s se fait vieux</string>
 </resources>

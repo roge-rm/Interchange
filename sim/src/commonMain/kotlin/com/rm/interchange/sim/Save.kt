@@ -16,7 +16,7 @@ package com.rm.interchange.sim
  */
 object Save {
     private val MAGIC = "ICHG".encodeToByteArray()
-    const val VERSION = 10
+    const val VERSION = 11
 
     fun write(world: World): ByteArray {
         val w = ByteWriter(world.width * world.height * 6 + 4096)
@@ -74,6 +74,7 @@ object Save {
                 w.int(t.routeAt); w.bool(t.turnRound); w.long(t.lostUntil)
                 writeCargo(w, t.cargo); w.long(t.profitThisYear); w.long(t.profitLastYear)
                 w.int(t.shared)
+                w.int(t.built); w.int(t.serviced); w.int(t.reliability); w.int(t.breakdowns); w.int(t.brokenFor); w.bool(t.servicing); w.bool(t.service)
             }
             w.uvar(towns.size.toLong())
             for (t in towns) { w.string(t.name); w.int(t.x); w.int(t.y); w.int(t.grid); w.bool(t.french); w.int(t.population); w.int(t.houses); w.int(t.growIn); w.int(t.servedThisMonth); w.int(t.servedLastMonth); w.ints(t.approval) }
@@ -190,6 +191,14 @@ object Save {
                     readCargo(r, t.cargo, version)
                     t.profitThisYear = r.long(); t.profitLastYear = r.long()
                     if (version >= 9) t.shared = r.int()
+                    if (version >= 11) {
+                        t.built = r.int(); t.serviced = r.int(); t.reliability = r.int(); t.breakdowns = r.int(); t.brokenFor = r.int()
+                        t.servicing = r.bool(); t.service = r.bool()
+                    } else {
+                        t.built = (tick / Calendar.TICKS_PER_DAY).toInt()
+                        t.serviced = t.built
+                        t.reliability = t.engineInfo.reliability * 100
+                    }
                 } else if (version == 4) {
                     val load = r.ints()
                     val at = r.ints()

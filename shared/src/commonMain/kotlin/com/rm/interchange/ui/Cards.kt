@@ -56,9 +56,11 @@ fun TrainCard(
     Card(trainName(t), onClose, modifier) {
         val target = if (t.orders.isEmpty()) null else Order.station(t.orders[t.order % t.orders.size])
         val doing = when {
+            t.broken -> stringResource(Res.string.broken_down)
             t.inDepot && t.running -> stringResource(Res.string.waiting_to_leave)
             t.inDepot -> stringResource(Res.string.in_depot)
             !t.running -> stringResource(Res.string.stopped)
+            t.servicing -> stringResource(Res.string.going_for_service, t.kmh)
             t.toDepot -> stringResource(Res.string.going_to_depot, t.kmh)
             t.waiting && target != null -> stringResource(Res.string.at_station, stationName(view, target))
             t.lost -> stringResource(Res.string.lost)
@@ -68,7 +70,11 @@ fun TrainCard(
         val lang = languageCode()
         val w = roster[t.wagon]
         Text(stringResource(Res.string.consist, roster[t.engine].name(lang), t.wagons, (if (t.wagons == 1) w.name(lang) else w.plural(lang)).lowercase()), color = c.textDim, fontSize = 13.sp)
-        Text(doing, color = if (t.lost) c.warn else c.text, fontSize = 13.sp)
+        Text(doing, color = if (t.lost || t.broken) c.warn else c.text, fontSize = 13.sp)
+        Text(
+            stringResource(Res.string.age_line, t.age, t.reliability, t.breakdowns),
+            color = if (t.old) c.warn else c.textDim, fontSize = 13.sp,
+        )
         val names = stringArrayResource(Res.array.cargoes)
         val loads = (0 until Cargo.COUNT).filter { t.capacity[it] > 0 }.map {
             stringResource(Res.string.cargo_load, names.getOrElse(it) { "" }, t.load[it], t.capacity[it])
@@ -138,8 +144,10 @@ fun TrainCard(
                 ActionButton(stringResource(if (t.toDepot) Res.string.carry_on else Res.string.to_depot)) { send(Command.TrainOrder(0, t.id, Command.TrainOrder.TO_DEPOT)) }
                 ActionButton(stringResource(Res.string.turn_round)) { send(Command.TrainOrder(0, t.id, Command.TrainOrder.TURN)) }
             } else {
+                ActionButton(stringResource(Res.string.renew_for, money(t.renewCost))) { send(Command.TrainOrder(0, t.id, Command.TrainOrder.RENEW)) }
                 ActionButton(stringResource(Res.string.sell)) { send(Command.TrainOrder(0, t.id, Command.TrainOrder.SELL)) }
             }
+            Chip(stringResource(Res.string.servicing), t.service) { send(Command.TrainOrder(0, t.id, Command.TrainOrder.SERVICE)) }
         }
     }
 }

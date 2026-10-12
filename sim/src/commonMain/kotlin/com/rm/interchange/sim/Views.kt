@@ -50,6 +50,18 @@ class TrainView(
     val profitLastYear: Long = 0,
     /** The group of trains it shares its orders with, or -1. */
     val shared: Int = -1,
+    /** Years old, how reliable in percent, broken down now, and how often it has. */
+    val age: Int = 0,
+    val reliability: Int = 100,
+    val broken: Boolean = false,
+    val breakdowns: Int = 0,
+    /** Set to be serviced, and on its way for one. */
+    val service: Boolean = true,
+    val servicing: Boolean = false,
+    /** What renewing it costs. */
+    val renewCost: Long = 0,
+    /** Past its engine's working life. */
+    val old: Boolean = false,
 )
 
 /** A station as the screen shows it. */
@@ -143,6 +155,7 @@ fun World.view(): WorldView {
             t.id, t.name, t.engine, t.wagon, t.wagons, t.depot, t.inDepot, t.running, t.toDepot,
             t.orders.toIntArray(), t.order, t.speed / 16 * 2700 / 4096, t.waiting > 0, t.running && !t.inDepot && t.lostUntil > tick,
             IntArray(Cargo.COUNT) { t.load(it) }, IntArray(Cargo.COUNT) { t.capacity(it) }, t.profitThisYear, t.profitLastYear, t.shared,
+            age(t), t.reliability / 100, t.brokenFor > 0, t.breakdowns, t.service, t.servicing, price(t.price) - value(t), age(t) >= t.engineInfo.life,
         )
     }
     val stationViews = stations.filterNotNull().map { s ->

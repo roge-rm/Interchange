@@ -40,6 +40,9 @@ object Cargo {
     val GRACE = intArrayOf(5, 4, 30, 25, 20, 40, 40, 30, 12, 25, 15, 4, 3, 2, 20, 40, 40, 30, 40, 30)
     val DECAY = intArrayOf(1, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 3, 4, 5, 1, 1, 1, 1, 1, 1)
 
+    /** What one of each weighs, in kg: a passenger with their bags, a bag of mail, a head of livestock, a tonne of the rest. */
+    val KG = intArrayOf(90, 50, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 500, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000)
+
     /** What a town takes, given enough people round the station: mail and passengers from any, the rest from a bigger place. */
     fun townWants(c: Int) = c == PASSENGERS || c == MAIL || c == GOODS || c == FOOD || c == FUEL || c == LUMBER
 

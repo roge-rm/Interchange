@@ -37,6 +37,13 @@ class VehicleDef(
     val capacity: Int?,
     val tender: String?,
     val sprite: String?,
+    /** Starting tractive effort in kN, for engines. */
+    val tractive: Int? = null,
+    /** steam, diesel or electric, for engines. */
+    val traction: String? = null,
+    /** Years it runs well before it wears out, and how reliable it is new, in percent. */
+    val life: Int? = null,
+    val reliability: Int? = null,
 )
 
 /** A town building as a pack gives it. [zones] are bits of [Zones], from the outskirts in to the centre. */
@@ -215,11 +222,17 @@ object Packs {
                     capacity = f.int("capacity", 0, 100_000),
                     tender = f.string("tender"),
                     sprite = f.string("sprite") ?: if (fresh) vid else null,
+                    tractive = f.int("tractive", 1, 10_000),
+                    traction = f.string("traction"),
+                    life = f.int("life", 1, 200),
+                    reliability = f.int("reliability", 1, 100),
                 )
                 f.done()
                 if (!fresh && kind != null) problems += "$at: a vehicle that replaces another keeps its kind"
                 if (def.from != null && def.until != null && def.from >= def.until) problems += "$at: from should be before until"
                 if (kind != null && kind != VehicleKind.ENGINE && (def.speed != null || def.power != null)) problems += "$at: only engines have speed and power"
+                if (kind != null && kind != VehicleKind.ENGINE && (def.tractive != null || def.traction != null)) problems += "$at: only engines have tractive effort and traction"
+                if (def.traction != null && def.traction !in Traction.NAMES) problems += "$at: traction should be ${Traction.NAMES.joinToString(", ")}"
                 if (def.tender != null && kind != null && kind != VehicleKind.ENGINE) problems += "$at: only engines have a tender"
                 if (def.capacity != null && def.capacity > 0 && def.carries == null) problems += "$at: capacity without carries"
                 for (cg in def.carries.orEmpty()) if (Cargo.of(cg) < 0) problems += "$at: unknown cargo \"$cg\" (${Cargo.IDS.joinToString()})"

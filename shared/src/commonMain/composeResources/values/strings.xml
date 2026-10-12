@@ -306,4 +306,10 @@
     <string name="warmer_climate">The climate is %1$s warmer than in 1900</string>
     <string name="news_snowbound">%1$s is stuck in a snowdrift</string>
     <string name="snow_depth">Snow</string>
+    <string name="broken_down">Broken down</string>
+    <string name="going_for_service">Going for a service, %1$d km/h</string>
+    <string name="age_line">%1$d years old, %2$d% reliable, %3$d breakdowns</string>
+    <string name="renew_for">Renew for %1$s</string>
+    <string name="servicing">Servicing</string>
+    <string name="news_old">%1$s is getting old</string>
 </resources>

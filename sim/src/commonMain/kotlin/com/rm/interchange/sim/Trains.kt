@@ -105,6 +105,18 @@ class Train(
     /** Stuck in a drift, so the news is told once. Not saved. */
     var snowbound = false
 
+    /** The day it was bought or last renewed, and last serviced. */
+    var built = 0
+    var serviced = 0
+    /** How reliable it is now, in hundredths of a percent, and how many times it's broken down. */
+    var reliability = 8500
+    var breakdowns = 0
+    /** Ticks left standing broken down. */
+    var brokenFor = 0
+    /** Sent for a service, and whether the player wants it serviced at all. */
+    var servicing = false
+    var service = true
+
     // The tiles and blocks it's on, as last counted.
     internal var onTiles = IntArray(0)
     internal var onBlocks = IntArray(0)
@@ -155,6 +167,9 @@ internal fun World.buyTrain(company: Company, c: Command.BuyTrain) {
     val t = Train(roster, trains.size, company.id, e.id, w.id, c.wagons, depot.id, if (c.cargo in w.cargoes) c.cargo else -1)
     if (company.money < price(t.price)) return
     spend(company, Books.NEW_TRAINS, price(t.price))
+    t.built = day
+    t.serviced = day
+    t.reliability = e.reliability * 100
     trains += t
 }
 
@@ -193,15 +208,32 @@ internal fun World.trainCommand(company: Company, c: Command.TrainOrder) {
         Command.TrainOrder.TO_DEPOT -> {
             if (!t.inDepot) {
                 t.toDepot = !t.toDepot
+                t.servicing = false
                 t.route = null
             }
+        }
+        Command.TrainOrder.SERVICE -> {
+            t.service = !t.service
+            if (!t.service && t.servicing) {
+                t.servicing = false
+                t.toDepot = false
+                t.route = null
+            }
+        }
+        Command.TrainOrder.RENEW -> if (t.inDepot) {
+            val cost = price(t.price) - value(t)
+            if (company.money < cost) return
+            spend(company, Books.NEW_TRAINS, cost)
+            t.built = day
+            t.serviced = day
+            t.reliability = t.engineInfo.reliability * 100
         }
         Command.TrainOrder.TURN -> if (!t.inDepot) {
             t.turnRound = true
             t.route = null
         }
         Command.TrainOrder.SELL -> if (t.inDepot) {
-            earn(company, Books.TRAINS_SOLD, price(t.price) / 2)
+            earn(company, Books.TRAINS_SOLD, value(t))
             trains[t.id] = null
         }
     }
@@ -264,6 +296,13 @@ private fun World.moveTrain(t: Train) {
         }
         return
     }
+    if (t.brokenFor > 0) {
+        // Broken down: it rolls to a stand and waits for the fitters.
+        t.brokenFor--
+        t.speed = (t.speed - BRAKE).coerceAtLeast(0)
+        if (t.speed > 0) advance(t, t.speed / 16, freeAhead(t).first)
+        return
+    }
     if (!t.running || t.target == -2) {
         t.speed = (t.speed - BRAKE).coerceAtLeast(0)
         if (t.speed > 0) advance(t, t.speed / 16, freeAhead(t).first)
@@ -289,8 +328,9 @@ private fun World.moveTrain(t: Train) {
     val brake = BRAKE * (50 + grip / 2) / 100
     val (free, stop) = freeAhead(t, brake)
     val allowed = isqrt(2L * brake * 16 * free).toInt()
-    val accel = (t.engineInfo.power * 16 / (t.weight * 8) * grip / 100).coerceAtLeast(1)
-    t.speed = minOf(t.speed + accel, snowLimit(t, nose), allowed)
+    // Pulling: faster or slower by what the engine has over what holds the train back, never below a crawl.
+    val pulled = maxOf(t.speed + acceleration(t, grip), minOf(CRAWL, maxOf(t.speed, 1) + 4))
+    t.speed = minOf(pulled, snowLimit(t, nose), allowed)
     val move = minOf(t.speed / 16, free)
     advance(t, move, free)
     if (stop == Stop.SNOW && t.speed / 16 >= free) {
@@ -487,6 +527,7 @@ private fun World.enterDepot(t: Train) {
     t.steps.clear()
     t.route = null
     countOn(t)
+    if (t.servicing) serviced(t)
 }
 
 /** Counts the train afresh on the tiles and blocks it's on. */
