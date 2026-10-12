@@ -20,6 +20,7 @@ import parts  # noqa: E402
 import rig  # noqa: E402
 import steam  # noqa: E402
 import diesel  # noqa: E402
+import roadcars  # noqa: E402
 
 
 def L(n):
@@ -76,8 +77,66 @@ MODELS = {
     "charger": (14, lambda m: diesel.charger(m, L(14))),
     "coach_streamline": (14, lambda m: cars.coach_streamline(m, L(14))),
     "well_car": (14, lambda m: cars.well_car(m, L(14))),
+    "motor_bus": (6, lambda m: roadcars.bus(m, L(6), "motor")),
+    "brill_bus": (7, lambda m: roadcars.bus(m, L(7), "brill")),
+    "new_look": (8, lambda m: roadcars.bus(m, L(8), "newlook")),
+    "low_floor": (8, lambda m: roadcars.bus(m, L(8), "lowfloor")),
+    "electric_bus": (8, lambda m: roadcars.bus(m, L(8), "electric")),
+    "highway_coach": (9, lambda m: roadcars.highway_coach(m, L(9))),
+    "mail_truck": (5, lambda m: roadcars.truck(m, L(5), "mail")),
+    "stake_truck": (6, lambda m: roadcars.truck(m, L(6), "stake")),
+    "dump_truck": (6, lambda m: roadcars.truck(m, L(6), "dump")),
+    "tank_truck": (6, lambda m: roadcars.truck(m, L(6), "tank")),
+    "log_truck": (9, lambda m: roadcars.truck(m, L(9), "log")),
+    "cattle_truck": (8, lambda m: roadcars.truck(m, L(8), "cattle")),
+    "semi_van": (11, lambda m: roadcars.truck(m, L(11), "semi", "cabover")),
+    "plow_truck": (6, lambda m: roadcars.truck(m, L(6), "plow")),
+    "step_van": (6, lambda m: roadcars.van(m, L(6), "step")),
+    "electric_van": (6, lambda m: roadcars.van(m, L(6), "electric")),
+    "flatbed_truck": (7, lambda m: roadcars.truck(m, L(7), "flatbed", "square", 2)),
+    "tandem_dump": (7, lambda m: roadcars.truck(m, L(7), "dump", "square", 2)),
+    "quad_dump": (8, lambda m: roadcars.truck(m, L(8), "dump", "long", 3)),
+    "fuel_truck": (7, lambda m: roadcars.truck(m, L(7), "tank", "square", 2)),
+    "tandem_plow": (7, lambda m: roadcars.truck(m, L(7), "plow", "square", 2)),
+    "highway_tractor": (12, lambda m: roadcars.tractor(m, L(12), "van", "sleeper", "#2a4a7a")),
+    "aero_tractor": (12, lambda m: roadcars.tractor(m, L(12), "van", "aero", "#c83a2a")),
+    "tanker_train": (13, lambda m: roadcars.tractor(m, L(13), "tank", "aero", "#2a2a2c")),
+    "grain_train": (13, lambda m: roadcars.tractor(m, L(13), "hopper", "sleeper", "#d8a020", bumper=True)),
+    "cattle_liner": (12, lambda m: roadcars.tractor(m, L(12), "cattle", "long", "#8a2a22", bumper=True)),
+    "logger": (12, lambda m: roadcars.tractor(m, L(12), "logs", "long", "#3a5a2a", bumper=True)),
+    "streetcar": (8, lambda m: roadcars.streetcar(m, L(8), "wood")),
+    "pcc": (10, lambda m: roadcars.streetcar(m, L(10), "pcc")),
+    "clrv": (11, lambda m: roadcars.streetcar(m, L(11), "clrv")),
+    "flexity": (16, lambda m: roadcars.streetcar(m, L(16), "flexity")),
     "rotary_plow": (12, lambda m: cars.rotary_plow(m, L(12))),
 }
+
+
+# Road vehicles stand alone; everything else runs coupled in trains.
+ROAD = {"motor_bus", "brill_bus", "new_look", "low_floor", "electric_bus", "highway_coach", "mail_truck", "stake_truck", "dump_truck",
+        "tank_truck", "log_truck", "cattle_truck", "semi_van", "plow_truck", "streetcar", "pcc", "clrv", "flexity",
+        "step_van", "electric_van", "flatbed_truck", "tandem_dump", "quad_dump", "fuel_truck", "tandem_plow", "highway_tractor",
+        "aero_tractor", "tanker_train", "grain_train", "cattle_liner", "logger"}
+# How far in from each end of its length a rail vehicle's body stops, in tiles, leaving a gap to the next car that its coupler bridges.
+END_GAP = 0.03
+
+
+def couple(model, length):
+    """Draws the model a little shorter than its length, so cars have a gap between them, and puts a coupler at each end
+    reaching out to the next car's."""
+    s = (length - 2 * END_GAP) / length
+    for o in model.objects:
+        if o.type == "MESH":
+            o.scale.y *= s
+        else:
+            o.location.y *= s
+    iron = parts.material("coupler", "#2a2a2c", metal=0.5, rough=0.5)
+    for end in (-1, 1):
+        inner = end * (length / 2 - END_GAP - 0.03)
+        tip = end * (length / 2)
+        knuckle = end * (length / 2 - 0.016)
+        model.box(-0.011, 0.011, min(inner, knuckle), max(inner, knuckle), 0.48, 0.56, iron)
+        model.box(-0.024, 0.024, min(knuckle, tip), max(knuckle, tip), 0.44, 0.6, iron, bevel=0.002)
 
 
 def shadow_catcher():
@@ -119,6 +178,8 @@ def main():
         shadow_catcher()
         model = parts.Model(key)
         build(model)
+        if key not in ROAD:
+            couple(model, L(length))
         pivot = model.place(0)
         # A step up over a tile, the steepest track climbs.
         tilt = math.atan2(rig.RISE, 1.0)

@@ -1,0 +1,54 @@
+package com.rm.interchange.sim
+
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertTrue
+
+class RoadWinterTest {
+    private fun World.days(n: Int) = repeat(Calendar.TICKS_PER_DAY * n) { step() }
+
+    @Test
+    fun saltClearsTheIceOffRoadsNearItsDepot() {
+        val w = World(64, 64, 1, startYear = 1960)
+        for (i in w.corners.indices) w.corners[i] = 3
+        w.companies[0].money = 1_000_000
+        w.apply(Command.Road(0, 5, 20, 40, 20, Surface.PAVED, remove = false))
+        w.apply(Command.SaltDepot(0, 10, 21))
+        assertTrue(w.saltDepots.contains(w.index(10, 21)))
+        for (x in 5..40) w.weather.ice[w.index(x, 20)] = 20
+        w.days(1)
+        assertEquals(0, w.weather.ice[w.index(12, 20)].toInt())
+        assertTrue(w.weather.ice[w.index(30, 20)].toInt() > 0, "salted out of reach")
+        assertTrue(w.companies[0].thisYear[Books.UPKEEP] < 0)
+    }
+
+    @Test
+    fun anIceRoadOpensOnlyOnThickIce() {
+        val w = World(64, 64, 1, startYear = 1960)
+        for (y in 0..64) for (x in 0..64) w.corners[w.corner(x, y)] = if (x in 21..29) 0 else 3
+        w.companies[0].money = 1_000_000
+        val c = Command.Road(0, 15, 20, 35, 20, Surface.GRAVEL, remove = false)
+        w.apply(c)
+        assertEquals(0, w.roadEdges(w.index(25, 20)), "a road on open water")
+        for (x in 20..30) w.weather.ice[w.index(x, 20)] = 60
+        w.apply(c)
+        assertTrue(w.roadEdges(w.index(25, 20)) != 0)
+        assertTrue(w.roadWays(w.index(25, 20), Track.XM).isNotEmpty())
+        for (x in 20..30) w.weather.ice[w.index(x, 20)] = 10
+        assertTrue(w.roadWays(w.index(25, 20), Track.XM).isEmpty(), "open on thin ice")
+    }
+
+    @Test
+    fun trucksGoHalfLoadedInTheThawAndTiresChangeWithTheSeason() {
+        val w = World(NewGame(64, 64, 1, 1960, Region.MIXED, towns = 0, industries = 0))
+        // Into early spring.
+        while (w.lookToday() != Climate.EARLY_SPRING) w.days(1)
+        assertTrue(w.loadLimits())
+        assertEquals(Tires.WINTER, w.wantedTires())
+        while (w.lookToday() != Climate.SUMMER) w.days(1)
+        assertTrue(!w.loadLimits())
+        assertEquals(Tires.SUMMER, w.wantedTires())
+        val old = World(NewGame(64, 64, 1, 1910, Region.MIXED, towns = 0, industries = 0))
+        assertEquals(Tires.CHAINS, old.wantedTires())
+    }
+}

@@ -33,6 +33,7 @@ import parts  # noqa: E402
 import rig  # noqa: E402
 import scenery  # noqa: E402
 import spans  # noqa: E402
+import roadcars  # noqa: E402
 
 TREES = ["spruce", "pine", "fir", "maple", "birch", "aspen"]
 LEAFY = ["maple", "birch", "aspen"]
@@ -150,6 +151,7 @@ def main():
         shot(out, f"garage_{edge}.png", lambda m, edge=edge: scenery.garage(m, edge))
     for a in (0, 1):
         shot(out, f"road_stop_{a}.png", lambda m, a=a: scenery.road_stop(m, a == 0))
+    shot(out, "salt_dome.png", roadcars.salt_dome)
     for kind in houses.BUILDERS:
         for edge in EDGES:
             shot(out, f"house_{kind}_{edge}.png", lambda m, kind=kind: houses.house(m, kind), heading=houses.FACING[edge])

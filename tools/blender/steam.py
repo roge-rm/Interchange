@@ -125,11 +125,14 @@ def engine(m, L, lead, drive, trail, r_drive, r_lead, boiler_r, stack, domes, sc
 def tender(m, L, scheme, small=False):
     c = colours(scheme)
     a0, a1 = -L / 2 + 0.01, L / 2 - 0.01
-    m.box(-0.085, 0.085, a0, a1, 0.45, 0.62, c["iron"])
+    underframe(m, a0, a1, c)
     if small:
         for side in (-1, 1):
             for y in (a0 + 0.045, a1 - 0.045):
                 m.wheel(y, side, 0.034, (c["steel"], c["wheel"], c["steel"]), spokes=8)
+                # Pedestals either side of the axle box, down from the frame.
+                m.box(side * 0.112 - 0.008, side * 0.112 + 0.008, y - 0.03, y + 0.03, 0.12, 0.62, c["iron"], bevel=0.002)
+                m.box(side * 0.122 - 0.006, side * 0.122 + 0.006, y - 0.014, y + 0.014, 0.12, 0.26, material("journal", "#5a5c60", metal=0.4, rough=0.5))
     else:
         for y in (a0 + 0.08, a1 - 0.08):
             truck(m, y, c)
@@ -142,9 +145,18 @@ def tender(m, L, scheme, small=False):
         m.text(LETTERS, side * 0.1232, 0, (0.62 + h1) / 2, 0.05, c["letters"], side)
 
 
-def truck(m, y, c, r=0.036):
-    """A two-axle arch-bar truck at y along the model."""
+def underframe(m, a0, a1, c, deck=0.62):
+    """A car's underframe from a0 to a1: the centre sill, and side sills out to the body's sides so it comes down
+    onto its trucks with no daylight under it."""
+    m.box(-0.085, 0.085, a0, a1, 0.45, deck, c["iron"])
+    for side in (-1, 1):
+        m.box(side * 0.104, side * 0.121, a0, a1, deck - 0.14, deck, c["iron"], bevel=0.002)
+
+
+def truck(m, y, c, r=0.036, top=0.62):
+    """A two-axle arch-bar truck at y along the model, with the body bolster over it up to [top], where the body sits."""
     zc = r / 0.2041
+    m.box(-0.11, 0.11, y - 0.03, y + 0.03, zc * 2.0, top, c["iron"], bevel=0.002)
     for side in (-1, 1):
         for dy in (-0.045, 0.045):
             m.wheel(y + dy, side, r, (c["steel"], material("wheel dark", "#222224", rough=0.6), c["steel"]), spokes=0)

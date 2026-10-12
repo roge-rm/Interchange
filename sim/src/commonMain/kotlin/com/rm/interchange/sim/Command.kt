@@ -60,6 +60,9 @@ sealed interface Command {
         }
     }
 
+    /** Builds a salt depot by the company's road, or takes it down. */
+    data class SaltDepot(override val company: Int, val x: Int, val y: Int) : Command
+
     /** Puts up a snow shed over track at ([x], [y]), or a snow fence on open land there; again takes it down. */
     data class SnowWorks(override val company: Int, val x: Int, val y: Int, val shed: Boolean) : Command
 

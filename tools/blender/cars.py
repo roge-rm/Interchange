@@ -4,7 +4,7 @@ import math
 import parts
 import rig
 from parts import material
-from steam import LETTERS, truck
+from steam import LETTERS, truck, underframe
 
 
 def common():
@@ -22,7 +22,7 @@ def coach_wood(m, L):
     body = material("varnished wood", "#7a3a1e", rough=0.4, clearcoat=0.6)
     trim = material("dark wood", "#4a2414", rough=0.5)
     a0, a1 = -L / 2 + 0.03, L / 2 - 0.03
-    m.box(-0.085, 0.085, -L / 2 + 0.01, L / 2 - 0.01, 0.45, 0.62, c["iron"])
+    underframe(m, -L / 2 + 0.01, L / 2 - 0.01, c)
     for y in (-L / 2 + 0.09, L / 2 - 0.09):
         truck(m, y, c)
     m.box(-0.12, 0.12, a0, a1, 0.62, 1.5, body, bevel=0.003)
@@ -50,7 +50,7 @@ def coach_wood(m, L):
 
 
 def _base(m, L, a0, a1, c):
-    m.box(-0.085, 0.085, -L / 2 + 0.01, L / 2 - 0.01, 0.45, 0.62, c["iron"])
+    underframe(m, -L / 2 + 0.01, L / 2 - 0.01, c)
     for y in (-L / 2 + 0.085, L / 2 - 0.085):
         truck(m, y, c)
 
@@ -155,7 +155,7 @@ def hopper(m, L):
     body = material("hopper black", "#2e2e30", rough=0.6)
     a0, a1 = -L / 2 + 0.015, L / 2 - 0.015
     for y in (-L / 2 + 0.075, L / 2 - 0.075):
-        truck(m, y, c)
+        truck(m, y, c, top=0.86)
     m.box(-0.12, 0.12, a0, a1, 0.85, 1.6, body, bevel=0.003)
     # Two bays sloping down to their chutes.
     for cy in (-0.07, 0.07):
@@ -197,10 +197,9 @@ def caboose(m, L):
     c = common()
     red = material("caboose red", "#9a2e24", rough=0.5, clearcoat=0.3)
     a0, a1 = -L / 2 + 0.035, L / 2 - 0.035
-    m.box(-0.085, 0.085, -L / 2 + 0.01, L / 2 - 0.01, 0.45, 0.62, c["iron"])
-    for y in (-L / 2 + 0.06, L / 2 - 0.06):
-        for side in (-1, 1):
-            m.wheel(y, side, 0.034, (c["steel"], material("wheel dark", "#222224", rough=0.6), c["steel"]), spokes=0)
+    underframe(m, -L / 2 + 0.01, L / 2 - 0.01, c)
+    for y in (-L / 2 + 0.085, L / 2 - 0.085):
+        truck(m, y, c)
     m.box(-0.12, 0.12, a0, a1, 0.62, 1.42, red, bevel=0.003)
     m.box(-0.13, 0.13, a0 - 0.01, a1 + 0.01, 1.42, 1.5, c["roof"], bevel=0.004)
     m.box(-0.1, 0.1, -0.045, 0.045, 1.5, 1.9, red, bevel=0.002)
@@ -242,7 +241,7 @@ def ore_car(m, L):
     body = material("ore car rust", "#5a2e22", rough=0.6)
     a0, a1 = -L / 2 + 0.015, L / 2 - 0.015
     for y in (-L / 2 + 0.07, L / 2 - 0.07):
-        truck(m, y, c)
+        truck(m, y, c, top=0.96)
     m.box(-0.11, 0.11, a0 + 0.01, a1 - 0.01, 0.95, 1.45, body, bevel=0.004)
     m.wedge([(-0.06, -0.035, 0.42), (0.06, -0.035, 0.42), (0.06, 0.035, 0.42), (-0.06, 0.035, 0.42)],
             [(-0.105, a0 + 0.015, 0.95), (0.105, a0 + 0.015, 0.95), (0.105, a1 - 0.015, 0.95), (-0.105, a1 - 0.015, 0.95)], body)
@@ -259,7 +258,7 @@ def covered_hopper(m, L):
     dark = material("hopper grey dark", "#7e807c", rough=0.6)
     a0, a1 = -L / 2 + 0.015, L / 2 - 0.015
     for y in (-L / 2 + 0.08, L / 2 - 0.08):
-        truck(m, y, c)
+        truck(m, y, c, top=0.91)
     m.box(-0.12, 0.12, a0 + 0.02, a1 - 0.02, 0.9, 1.75, body, bevel=0.01)
     for cy in (-0.11, 0.0, 0.11):
         m.wedge([(-0.05, cy - 0.025, 0.4), (0.05, cy - 0.025, 0.4), (0.05, cy + 0.025, 0.4), (-0.05, cy + 0.025, 0.4)],
@@ -332,3 +331,44 @@ def rotary_plow(m, L):
     m.tube(a1 + 0.004, a1 + 0.016, 0.0, 1.12, 0.03, material("hub", "#e8e8e4", metal=0.9, rough=0.25), segments=20)
     m.text(LETTERS, 0.1266, a0 / 2, 0.92, 0.03, band, 1)
     m.text(LETTERS, -0.1266, a0 / 2, 0.92, 0.03, band, -1)
+
+
+def coach_streamline(m, L):
+    """A lightweight stainless steel coach of the 1950s: fluted sides, a smooth roof and a long band of windows."""
+    c = common()
+    stainless = material("stainless", "#c4c8cc", metal=0.85, rough=0.28)
+    band = material("coach band", "#6a2a26", rough=0.4, clearcoat=0.4)
+    a0, a1 = -L / 2 + 0.012, L / 2 - 0.012
+    _base(m, L, a0, a1, c)
+    m.box(-0.12, 0.12, a0, a1, 0.62, 1.62, stainless, bevel=0.006)
+    m.box(-0.115, 0.115, a0, a1, 1.62, 1.78, stainless, bevel=0.02)
+    for side in (-1, 1):
+        for k in range(14):
+            z = 0.66 + k * 0.022
+            m.box(side * 0.1205 - 0.001, side * 0.1205 + 0.001, a0 + 0.01, a1 - 0.01, z, z + 0.009, material("fluting", "#9ea2a6", metal=0.9, rough=0.3))
+        m.box(side * 0.1206 - 0.001, side * 0.1206 + 0.001, a0 + 0.01, a1 - 0.01, 1.32, 1.36, band)
+        n = 10
+        for i in range(n):
+            y0 = a0 + 0.03 + (a1 - a0 - 0.06) * i / n
+            m.box(side * 0.1208 - 0.0008, side * 0.1208 + 0.0008, y0, y0 + (a1 - a0 - 0.06) / n * 0.78, 1.02, 1.3, c["glass"])
+        m.text(LETTERS, side * 0.1216, 0, 1.45, 0.03, band, side)
+
+
+def well_car(m, L):
+    """An intermodal well car with two containers stacked in it."""
+    c = common()
+    frame_mat = material("well car", "#3a3e42", rough=0.6)
+    boxes = [material("container red", "#9a3a2a", rough=0.6), material("container blue", "#2a4a7a", rough=0.6)]
+    a0, a1 = -L / 2 + 0.01, L / 2 - 0.01
+    for y in (-L / 2 + 0.07, L / 2 - 0.07):
+        truck(m, y, c)
+    for side in (-1, 1):
+        m.box(side * 0.105, side * 0.125, a0 + 0.08, a1 - 0.08, 0.35, 0.95, frame_mat, bevel=0.003)
+    m.box(-0.125, 0.125, a0, a0 + 0.1, 0.45, 0.95, frame_mat)
+    m.box(-0.125, 0.125, a1 - 0.1, a1, 0.45, 0.95, frame_mat)
+    for k, (z0, z1) in enumerate(((0.4, 1.45), (1.45, 2.5))):
+        m.box(-0.1, 0.1, a0 + 0.11, a1 - 0.11, z0, z1, boxes[k], bevel=0.003)
+        for side in (-1, 1):
+            for j in range(1, 12):
+                y = a0 + 0.11 + (a1 - a0 - 0.22) * j / 12
+                m.box(side * 0.1005 - 0.0008, side * 0.1005 + 0.0008, y - 0.003, y + 0.003, z0 + 0.03, z1 - 0.03, material("container ribs", "#555555", rough=0.7))

@@ -356,4 +356,5 @@
     <string-array name="surfaces">
         <item>Dirt</item><item>Gravel</item><item>Paved</item><item>Highway</item>
     </string-array>
+    <string name="tool_salt">Salt depot</string>
 </resources>

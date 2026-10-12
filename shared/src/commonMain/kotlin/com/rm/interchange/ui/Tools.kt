@@ -33,6 +33,7 @@ enum class Tool(val group: ToolGroup, val title: StringResource, val glyph: Glyp
     Garage(ToolGroup.Road, Res.string.tool_garage, Glyph.Depot, ready = true),
     OneWay(ToolGroup.Road, Res.string.tool_one_way, Glyph.OneWay, ready = true),
     TramRails(ToolGroup.Road, Res.string.tool_tram, Glyph.Rail, ready = true),
+    SaltDepot(ToolGroup.Road, Res.string.tool_salt, Glyph.Dome, ready = true),
     RoadBridge(ToolGroup.Road, Res.string.tool_bridge, Glyph.Bridge),
     RoadTunnel(ToolGroup.Road, Res.string.tool_tunnel, Glyph.Tunnel),
 

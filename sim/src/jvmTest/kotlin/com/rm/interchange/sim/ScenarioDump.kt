@@ -111,4 +111,58 @@ class ScenarioDump {
         File(out, "save_2.info").writeText("day=${w.day}\nstartYear=1960\nmoney=${w.companies[0].money}\nwidth=64\nheight=64\nregion=0\n")
         println("spans ${w.spans.size} stations ${w.stations.size} " + w.trains.map { t -> stepTile(t!!.steps.lastOrNull() ?: 0) })
     }
+
+    /** Roads: a highway with a bus and trucks, a level crossing, a streetcar line and a salt depot, in winter. */
+    @Test
+    fun roads() {
+        val out = System.getenv("INTERCHANGE_SCENARIO_OUT") ?: return
+        val w = World(NewGame(64, 64, 1, 1965, Region.MIXED, towns = 0, industries = 0))
+        for (i in w.corners.indices) w.corners[i] = 3
+        for (i in 0 until w.width * w.height) { w.trees[i] = 0; w.ground[i] = Ground.MEADOW.toByte() }
+        w.shoreChanged()
+        w.companies[0].money = 10_000_000
+        w.apply(Command.Road(0, 6, 20, 50, 20, Surface.HIGHWAY, remove = false))
+        w.apply(Command.Road(0, 6, 20, 6, 22, Surface.PAVED, remove = false))
+        w.apply(Command.Garage(0, 6, 23, Track.YM))
+        w.apply(Command.RoadStop(0, 10, 20))
+        w.apply(Command.RoadStop(0, 46, 20))
+        w.apply(Command.SaltDepot(0, 30, 21))
+        w.apply(Command.Road(0, 20, 20, 20, 30, Surface.GRAVEL, remove = false))
+        w.apply(Command.RoadOneWay(0, 20, 25))
+        // Track across the highway on a level crossing, a train going back and forth.
+        w.apply(Command.Rail(0, 35, 5, 35, 40, Track.Y, remove = false))
+        w.apply(Command.Depot(0, 35, 41, Track.YM))
+        w.apply(Command.Station(0, 35, 6, 35, 9, Track.Y))
+        w.apply(Command.Station(0, 35, 36, 35, 39, Track.Y))
+        val stations = w.stations.size
+        w.apply(Command.BuyTrain(0, w.depots.size - 1, w.roster.engines.first { it.key == "base:gp9" }.id, w.roster.engines.first { it.key == "base:coach_streamline" }.id, 3))
+        w.apply(Command.TrainOrder(0, 0, Command.TrainOrder.ORDERS, intArrayOf(stations - 2, stations - 1)))
+        w.apply(Command.TrainOrder(0, 0, Command.TrainOrder.START_STOP))
+        // A streetcar line along y = 30.
+        w.apply(Command.Road(0, 8, 30, 45, 30, Surface.PAVED, remove = false))
+        w.apply(Command.Road(0, 8, 30, 45, 30, Surface.PAVED, remove = false, tram = true))
+        w.apply(Command.Road(0, 8, 30, 8, 32, Surface.PAVED, remove = false))
+        w.apply(Command.Road(0, 8, 30, 8, 32, Surface.PAVED, remove = false, tram = true))
+        w.apply(Command.Garage(0, 8, 33, Track.YM))
+        w.apply(Command.RoadStop(0, 12, 30))
+        w.apply(Command.RoadStop(0, 42, 30))
+        val garage = w.depots.size - 1
+        fun buy(key: String, depot: Int, orders: IntArray) {
+            w.apply(Command.BuyRoadVehicle(0, depot, w.roster.engines.first { it.key == "base:$key" }.id))
+            val id = w.roadVehicles.size - 1
+            w.apply(Command.RoadOrder(0, id, Command.TrainOrder.ORDERS, orders))
+            w.apply(Command.RoadOrder(0, id, Command.TrainOrder.START_STOP))
+            repeat(150) { w.step() }
+        }
+        val a = w.roadStops.getValue(w.index(10, 20))
+        val b = w.roadStops.getValue(w.index(46, 20))
+        for (key in listOf("new_look", "semi_van", "highway_coach", "tandem_dump")) buy(key, 0, intArrayOf(a, b))
+        val c = w.roadStops.getValue(w.index(12, 30))
+        val d = w.roadStops.getValue(w.index(42, 30))
+        buy("pcc", garage, intArrayOf(c, d))
+        repeat(Calendar.TICKS_PER_DAY * 4) { w.step() }
+        File(out, "save_3.ichg").writeBytes(Save.write(w))
+        File(out, "save_3.info").writeText("day=${w.day}\nstartYear=1965\nmoney=${w.companies[0].money}\nwidth=64\nheight=64\nregion=0\n")
+        println("road vehicles " + w.roadVehicles.map { v -> "${roadStepTile(v!!.at) % 64},${roadStepTile(v.at) / 64} in${v.inDepot} r${v.route?.size}" })
+    }
 }

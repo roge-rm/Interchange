@@ -73,6 +73,7 @@ import com.rm.interchange.map.rememberTownLabels
 import com.rm.interchange.sim.World
 import com.rm.interchange.sim.Signals
 import com.rm.interchange.sim.Surface
+import com.rm.interchange.sim.SALT_DEPOT_COST
 import com.rm.interchange.sim.FENCE_COST
 import com.rm.interchange.sim.SHED_COST
 import com.rm.interchange.sim.trackLimit
@@ -402,6 +403,7 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
                     Tool.RoadStop -> { runner.request(Command.RoadStop(0, at.tileX, at.tileY)); built() }
                     Tool.Garage -> { runner.request(garageAt(world, 0, at)); built() }
                     Tool.OneWay -> { runner.request(Command.RoadOneWay(0, at.tileX, at.tileY)); built() }
+                    Tool.SaltDepot -> { runner.request(Command.SaltDepot(0, at.tileX, at.tileY)); built() }
                     Tool.Wires -> { runner.request(trackLine(0, at, at, removing).let { Command.Wire(0, it.sx, it.sy, it.ex, it.ey, it.first, it.remove) }); built() }
                     Tool.Signals -> signalAt(world, 0, at)?.let { runner.request(it.copy(kind = Signals.PLACED[signalKind])); built() }
                     Tool.Waypoint -> { runner.request(Command.Waypoint(0, at.tileX, at.tileY)); built() }
@@ -615,6 +617,7 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
                     Tool.Road -> stringResource(Res.string.cost_tile, money(world.price(Surface.COST[roadSurface])))
                     Tool.RoadStop -> money(world.price(Prices.ROAD_STOP))
                     Tool.Garage -> money(world.price(Prices.DEPOT))
+                    Tool.SaltDepot -> money(world.price(SALT_DEPOT_COST))
                     Tool.SnowShed -> stringResource(Res.string.cost_tile, money(world.price(SHED_COST)))
                     Tool.SnowFence -> stringResource(Res.string.cost_tile, money(world.price(FENCE_COST)))
                     Tool.Tunnel -> stringResource(Res.string.cost_tile, money(world.price(Spans.COST[Spans.TUNNEL])))

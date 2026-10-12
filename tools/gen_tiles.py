@@ -114,6 +114,9 @@ for e, edge in enumerate(EDGES):
     JOBS.append(("static", ("garage", e), lambda edge=edge: scenery(f"garage_{edge}.png", base.cell), None))
     JOBS.append(("shadows", ("garage_shadow", e), lambda edge=edge: scenery(f"garage_{edge}_shadow.png", base.cell), None))
     UP[("garage", e)] = f"garage_{edge}.png"
+JOBS.append(("static", ("salt_dome",), lambda: scenery("salt_dome.png", base.cell), None))
+JOBS.append(("shadows", ("salt_dome_shadow",), lambda: scenery("salt_dome_shadow.png", base.cell), None))
+UP[("salt_dome",)] = "salt_dome.png"
 for a in (0, 1):
     JOBS.append(("static", ("road_stop", a), lambda a=a: scenery(f"road_stop_{a}.png", base.cell), None))
     JOBS.append(("shadows", ("road_stop_shadow", a), lambda a=a: scenery(f"road_stop_{a}_shadow.png", base.cell), None))
@@ -420,6 +423,9 @@ object Atlas {{
     val GARAGE_SHADOW = intArrayOf({", ".join(str(index[("garage_shadow", e)]) for e in range(4))})
     val ROAD_STOP = intArrayOf({index[("road_stop", 0)]}, {index[("road_stop", 1)]})
     val ROAD_STOP_SHADOW = intArrayOf({index[("road_stop_shadow", 0)]}, {index[("road_stop_shadow", 1)]})
+    /** A salt dome, and its shadow. On the static sheet. */
+    const val SALT_DOME = {index[("salt_dome",)]}
+    const val SALT_DOME_SHADOW = {index[("salt_dome_shadow",)]}
 
     const val TREE_LOOKS = {ground.TREE_LOOKS}
     /** A tree, at kind * TREE_LOOKS + look, kinds in the order of the game's trees, and its shadow, on the shadows sheet. On the static sheet. */

@@ -205,6 +205,53 @@ class Model:
         bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
         return self._mesh("wedge", bm, mat)
 
+    def shell(self, profile, half, mats, crown=0.0, x=0.0, cols=(-1, -0.94, -0.7, 0, 0.7, 0.94, 1), pillars=True):
+        """A body from its side outline, run across from x - half to x + half.
+
+        profile is a list of (y, z in steps, corner radius in tiles, part, width) going round the outline; part names the
+        material in mats for the edge to the next point, and width (0 to 1 of half) lets a hood or nose narrow. A point
+        given twice with two widths makes a step across, as a cab behind a narrower hood. crown drops the roof's edges by
+        that many steps. Glass stops short of the outer columns, leaving pillars, unless pillars is False.
+        Returns the rounded outline as (y, z) points."""
+        pts = _round(profile)
+        keys = list(mats)
+        z_top = max(p[1] for p in pts)
+        bm = bmesh.new()
+        rings = []
+        for y, z, part, w in pts:
+            roof = min(1.0, max(0.0, (z - (z_top - 0.15)) / 0.15))
+            rings.append([bm.verts.new((x + f * half * w, y, (z - crown * f * f * roof) * rig.RISE)) for f in cols])
+        n = len(pts)
+        for k in range(n):
+            a, b = rings[k], rings[(k + 1) % n]
+            part = pts[k][2]
+            for c in range(len(cols) - 1):
+                face = bm.faces.new((a[c], b[c], b[c + 1], a[c + 1]))
+                outer = c == 0 or c == len(cols) - 2
+                use = "paint" if part == "glass" and outer and pillars and "paint" in mats else part
+                face.material_index = keys.index(use)
+        for c, rev in ((0, True), (len(cols) - 1, False)):
+            ring = [r[c] for r in rings]
+            face = bm.faces.new(list(reversed(ring)) if rev else ring)
+            face.material_index = keys.index("paint" if "paint" in mats else keys[0])
+            bmesh.ops.triangulate(bm, faces=[face])
+        bmesh.ops.remove_doubles(bm, verts=bm.verts, dist=1e-6)
+        bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+        for f in bm.faces:
+            f.smooth = True
+        for e in bm.edges:
+            if len(e.link_faces) == 2 and e.calc_face_angle(0.0) > math.radians(38):
+                e.smooth = False
+        obj = self._mesh("shell", bm, None)
+        for k in keys:
+            obj.data.materials.append(mats[k])
+        mod = obj.modifiers.new("bevel", "BEVEL")
+        mod.width = 0.003
+        mod.segments = 2
+        mod.limit_method = "ANGLE"
+        mod.angle_limit = math.radians(38)
+        return [(p[0], p[1]) for p in pts]
+
     def text(self, body, x, y, z, size, mat, side):
         """Lettering on the model's side (side -1 or 1), centred at y along it and z steps up."""
         cu = bpy.data.curves.new("text", "FONT")
@@ -230,3 +277,40 @@ class Model:
         empty.rotation_euler = (tilt, 0, -heading * math.pi / 4)
         empty.location = rig.game(0.5, 0.5, 0)
         return empty
+
+
+def _round(profile):
+    """The outline with each corner rounded by its radius, as (y, z, part, width); corners curve in tile space."""
+    pts = [(p[0], p[1], p[2], p[3], p[4] if len(p) > 4 else 1.0) for p in profile]
+    n = len(pts)
+    out = []
+    for k, (y, z, r, part, w) in enumerate(pts):
+        py, pz, _, prev_part, pw = pts[k - 1]
+        ny, nz, _, _, nw = pts[(k + 1) % n]
+        a = Vector((py - y, (pz - z) * rig.RISE))
+        b = Vector((ny - y, (nz - z) * rig.RISE))
+        if r <= 0 or a.length < 1e-6 or b.length < 1e-6 or abs(a.normalized().dot(b.normalized())) > 0.999:
+            out.append((y, z, part, w))
+            continue
+        half_angle = a.angle(b) / 2
+        d = min(r / math.tan(half_angle), a.length * 0.48, b.length * 0.48)
+        p0 = Vector((y, z * rig.RISE)) + a.normalized() * d
+        p2 = Vector((y, z * rig.RISE)) + b.normalized() * d
+        pc = Vector((y, z * rig.RISE))
+        steps = 6
+        for i in range(steps + 1):
+            t = i / steps
+            q = p0 * (1 - t) ** 2 + pc * 2 * t * (1 - t) + p2 * t * t
+            out.append((q.x, q.y / rig.RISE, prev_part if t < 0.5 else part, w))
+    return out
+
+
+def outline_front(outline, z):
+    """How far forward the outline reaches at height z steps."""
+    best = -1e9
+    n = len(outline)
+    for k in range(n):
+        (y0, z0), (y1, z1) = outline[k], outline[(k + 1) % n]
+        if (z0 - z) * (z1 - z) <= 0 and z0 != z1:
+            best = max(best, y0 + (y1 - y0) * (z - z0) / (z1 - z0))
+    return best

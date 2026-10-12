@@ -33,6 +33,7 @@ object Codec {
     private const val BUY_ROAD_VEHICLE = 23
     private const val ROAD_ORDER = 24
     private const val TRAM_ROAD = 25
+    private const val SALT_DEPOT = 26
 
     fun write(w: ByteWriter, c: Command) {
         when (c) {
@@ -50,6 +51,7 @@ object Codec {
             is Command.Garage -> { w.byte(GARAGE); w.int(c.company); w.int(c.x); w.int(c.y); w.int(c.edge) }
             is Command.BuyRoadVehicle -> { w.byte(BUY_ROAD_VEHICLE); w.int(c.company); w.int(c.depot); w.int(c.model); w.int(c.cargo) }
             is Command.RoadOrder -> { w.byte(ROAD_ORDER); w.int(c.company); w.int(c.vehicle); w.int(c.what); w.ints(c.stations) }
+            is Command.SaltDepot -> { w.byte(SALT_DEPOT); w.int(c.company); w.int(c.x); w.int(c.y) }
             is Command.SnowWorks -> { w.byte(SNOW_WORKS); w.int(c.company); w.int(c.x); w.int(c.y); w.bool(c.shed) }
             is Command.SetUpkeep -> { w.byte(UPKEEP); w.int(c.company); w.int(c.level) }
             is Command.Wire -> { w.byte(WIRE); w.int(c.company); w.int(c.sx); w.int(c.sy); w.int(c.ex); w.int(c.ey); w.int(c.first); w.bool(c.remove) }
@@ -79,6 +81,7 @@ object Codec {
         TUNNEL -> Command.Tunnel(r.int(), r.int(), r.int())
         UPKEEP -> Command.SetUpkeep(r.int(), r.int())
         SNOW_WORKS -> Command.SnowWorks(r.int(), r.int(), r.int(), r.bool())
+        SALT_DEPOT -> Command.SaltDepot(r.int(), r.int(), r.int())
         ROAD -> Command.Road(r.int(), r.int(), r.int(), r.int(), r.int(), r.int(), r.bool())
         TRAM_ROAD -> Command.Road(r.int(), r.int(), r.int(), r.int(), r.int(), r.int(), r.bool(), r.bool())
         ROAD_ONE_WAY -> Command.RoadOneWay(r.int(), r.int(), r.int())

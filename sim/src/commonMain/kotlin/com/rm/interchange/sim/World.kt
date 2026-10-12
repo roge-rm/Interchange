@@ -50,6 +50,9 @@ class World(val settings: NewGame, val roster: Roster = Roster.BASE, generate: B
     /** Buses, trucks and streetcars by id; a sold one leaves null. */
     val roadVehicles = ArrayList<RoadVehicle?>()
     internal var roadNetDirty = true
+    /** Salt depots by tile; and which ice roads were open yesterday, not saved. */
+    val saltDepots = HashSet<Int>()
+    internal var iceRoadsOpen: BooleanArray? = null
     val house = ShortArray(width * height)
     val houseYear = ShortArray(width * height)
     val townOf = ShortArray(width * height) { -1 }
@@ -221,6 +224,7 @@ class World(val settings: NewGame, val roster: Roster = Roster.BASE, generate: B
             is Command.Garage -> buildGarage(company, command)
             is Command.BuyRoadVehicle -> buyRoadVehicle(company, command)
             is Command.RoadOrder -> roadVehicleCommand(company, command)
+            is Command.SaltDepot -> saltDepot(company, command)
             is Command.SnowWorks -> snowWorks(company, command)
             is Command.SetUpkeep -> company.upkeep = command.level.coerceIn(Upkeep.LOW, Upkeep.HIGH)
             is Command.Clear -> clearTile(company, command)
@@ -247,6 +251,7 @@ class World(val settings: NewGame, val roster: Roster = Roster.BASE, generate: B
             weatherLooks()
             trainsDay()
             roadVehiclesDay()
+            roadsDay()
             payRunningCosts()
             passengersDay()
             townsDay()
@@ -316,6 +321,7 @@ class World(val settings: NewGame, val roster: Roster = Roster.BASE, generate: B
         for (k in kinks.keys.sorted()) mix(k.toLong() * 31 + kinks.getValue(k))
         for (k in fences.sorted()) mix(k.toLong())
         for (k in roadStops.keys.sorted()) mix(k.toLong() * 31 + roadStops.getValue(k))
+        for (k in saltDepots.sorted()) mix(k.toLong() * 7)
         for (v in roadVehicles) if (v != null) { mix(v.id.toLong()); mix(v.at.toLong()); mix(v.along.toLong()); mix(v.speed.toLong()); for (c in v.cargo) for (p in c) mix(p.count.toLong()) }
         for (k in sheds.sorted()) mix(-k.toLong())
         for (s in spans) if (s != null) { mix(s.x0.toLong()); mix(s.y0.toLong()); mix(s.x1.toLong()); mix(s.y1.toLong()); mix(s.height.toLong()) }

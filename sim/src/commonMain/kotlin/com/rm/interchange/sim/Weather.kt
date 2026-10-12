@@ -402,8 +402,8 @@ private fun World.tileWeather(year: Int, doy: Int, today: Int) {
                 }
                 // Deep snow on steep high ground lets go in a thaw or under heavy snow.
                 if (snow >= AVALANCHE_SNOW && tileHeight(x, y) >= AVALANCHE_HEIGHT && !isFlat(x, y) && (t > 0 || p >= 1500) && cellDice(x, y, salt + 9) < 6) slides[band] += i
-                // Town roads cleared some days after the snow stops, by plow, or rolled flat before.
-                if (road[i].toInt() != 0 && snow > 4 && p == 0) {
+                // Town roads cleared some days after the snow stops, by plow, or rolled flat before; a company's are its own to clear.
+                if (road[i].toInt() != 0 && roadOwner[i].toInt() < 0 && snow > 4 && p == 0) {
                     val town = towns.getOrNull(townOf[i].toInt())
                     val busy = if (town != null && town.population > 5000) 128 else 70
                     if (cellDice(x, y, salt + 7) < busy) snow = if (plows) 2 else snow * 2 / 3

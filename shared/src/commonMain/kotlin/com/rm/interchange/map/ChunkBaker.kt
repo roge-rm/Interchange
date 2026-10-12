@@ -242,6 +242,10 @@ internal class ChunkBaker(
         val kind = kindOf(vx, vy)
         if (pieces == 0) {
             val base = minOf(minOf(cornerHeight(vx, vy), cornerHeight(vx + 1, vy)), minOf(cornerHeight(vx + 1, vy + 1), cornerHeight(vx, vy + 1)))
+            if (world.saltDepots.contains(tile)) {
+                sprite(if (shadow) Atlas.SALT_DOME_SHADOW else Atlas.SALT_DOME, vx, vy, base, shadow)
+                return
+            }
             if (world.roadStops.containsKey(tile)) {
                 val a = if (viewEdge(if (world.straightRoad(tile) == Track.X) Track.XP else Track.YP) <= Track.XP) 0 else 1
                 sprite(if (shadow) Atlas.ROAD_STOP_SHADOW[a] else Atlas.ROAD_STOP[a], vx, vy, base, shadow)
@@ -421,7 +425,12 @@ internal class ChunkBaker(
                     // Thin snow lies in patches, from noise read somewhere else again; deeper, it covers everything.
                     val patch = (sheets.ground[ragBase + ((ty + size / 3) % size) * size + (tx + size / 2) % size] and 255) / 255f
                     val cover = ((depth - (0.5f + patch * 14f)) / 3f).coerceIn(0f, 1f)
-                    if (cover > 0f) texel = mix(texel, sheets.ground[Atlas.SNOW * size * size + ti], cover)
+                    if (cover > 0f) {
+                        // Traffic packs the snow on a road down to a greyer track, so the road still shows through.
+                        val onRoad = road != 0 && roadTexel(u, v, road, ti, NOT_ROAD) != NOT_ROAD
+                        texel = mix(texel, sheets.ground[Atlas.SNOW * size * size + ti], if (onRoad) cover * 0.8f else cover)
+                        if (onRoad) texel = mix(texel, PACKED_SNOW, cover * 0.45f)
+                    }
                 }
                 val rel = rt * (1f - u) * (1f - v) + rr * u * (1f - v) + rb * u * v + rl * (1f - u) * v
                 var shade = f * (1f + (rel * RELIEF_GAIN).coerceIn(-RELIEF_DARK, RELIEF_LIGHT))
@@ -866,6 +875,9 @@ internal class ChunkBaker(
         private const val ICE_FROM = 4f
         private const val SNOW_TOP = 0xfff4f7fa.toInt()
         private const val MUD = 0xff5a4630.toInt()
+        private const val PACKED_SNOW = 0xff9c9a94.toInt()
+        /** Passed to roadTexel as the ground, to tell where a road shows. */
+        private const val NOT_ROAD = 0x00010203
         private const val MUD_MOST = 0.45f
 
         /**

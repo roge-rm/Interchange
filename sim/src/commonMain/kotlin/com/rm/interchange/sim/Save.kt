@@ -103,7 +103,7 @@ object Save {
                 for (k in ks) { w.int(k); w.int(m.getValue(k)) }
             }
             w.ints(fences.sorted().toIntArray()); w.ints(sheds.sorted().toIntArray())
-            w.bytes(roadKind); w.bytes(roadOwner)
+            w.bytes(roadKind); w.bytes(roadOwner); w.ints(saltDepots.sorted().toIntArray())
             w.uvar(roadVehicles.size.toLong())
             for (v in roadVehicles) {
                 w.bool(v != null)
@@ -300,7 +300,7 @@ object Save {
             }
             if (version >= 15) { fences += r.ints().toList(); sheds += r.ints().toList() }
             if (version >= 16) {
-                fill(roadKind, r.bytes()); fill(roadOwner, r.bytes())
+                fill(roadKind, r.bytes()); fill(roadOwner, r.bytes()); saltDepots += r.ints().toList()
                 repeat(r.uvar().toInt().also { if (it > 1_000_000) throw BadData("too many road vehicles") }) { id ->
                     if (!r.bool()) { roadVehicles += null; return@repeat }
                     val owner = r.int()

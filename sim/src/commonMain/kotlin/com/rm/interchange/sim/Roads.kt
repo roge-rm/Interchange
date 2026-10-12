@@ -241,3 +241,92 @@ internal fun World.roadsChanged() {
     roadNetDirty = true
     for (v in roadVehicles) v?.route = null
 }
+
+/**
+ * The roads' day: salt or sand spread from each depot on the company's roads round it, potholes from thaw
+ * and frost on paved roads, mended by the company's crews or the towns', and ice roads opened and closed
+ * as the ice comes and goes.
+ */
+internal fun World.roadsDay() {
+    val year = Calendar.year(startYear, day)
+    val salt = year >= SALT_FROM
+    for (d in saltDepots.sorted()) {
+        val c = companies.getOrNull(roadOwner[d].toInt().coerceAtLeast(0)) ?: continue
+        val x0 = d % width
+        val y0 = d / width
+        var spread = 0
+        for (y in y0 - SALT_REACH..y0 + SALT_REACH) for (x in x0 - SALT_REACH..x0 + SALT_REACH) {
+            if (!inside(x, y)) continue
+            val i = index(x, y)
+            if (roadEdges(i) == 0 || roadOwner[i].toInt() != c.id) continue
+            val ice = weather.ice[i].toInt() and 255
+            val snow = weather.snow[i].toInt() and 255
+            if (ice == 0 && snow == 0) continue
+            // Salt melts ice and thin snow; sand only gives grip, so ice is halved.
+            weather.ice[i] = (if (salt) 0 else ice / 2).toByte()
+            if (salt && snow < 20) weather.snow[i] = 0
+            spread++
+        }
+        if (spread > 0) spend(c, Books.UPKEEP, price(SALT_COST) * spread)
+    }
+    var changed = false
+    val opens = iceRoadsOpen ?: BooleanArray(0)
+    val now = ArrayList<Boolean>()
+    var k = 0
+    for (i in road.indices) {
+        if (road[i].toInt() == 0) continue
+        val x = i % width
+        val y = i / width
+        if (isWater(x, y)) {
+            val open = iceRoadFits(i)
+            now += open
+            if (opens.getOrNull(k) != open) changed = true
+            k++
+            continue
+        }
+        if (track[i].toInt() != 0) continue
+        var c = condition[i].toInt() and 255
+        if (surfaceAt(i) >= Surface.PAVED && (weather.frost[i].toInt() and 255) > 0 && settings.weather && cellDice(x, y, day * 977 + seedBits + 21) < 60) {
+            // Thaw under a paved road heaves it into potholes.
+            val t = skyAt(x, y).temperature
+            if (t > 0) c--
+        }
+        val owner = roadOwner[i].toInt()
+        val mend = if (owner < 0) Upkeep.MEND[Upkeep.NORMAL] else Upkeep.MEND[companies.getOrNull(owner)?.upkeep ?: Upkeep.NORMAL]
+        c += mend / 100 + if (cellDice(x, y, day * 977 + seedBits + 22) * 100 / 256 < mend % 100) 1 else 0
+        condition[i] = c.coerceIn(0, 255).toByte()
+    }
+    iceRoadsOpen = now.toBooleanArray()
+    if (changed) roadsChanged()
+}
+
+/** Builds a salt depot on empty land at ([x], [y]) next to the company's road, or takes it down. */
+internal fun World.saltDepot(company: Company, c: Command.SaltDepot) {
+    if (!inside(c.x, c.y)) return
+    val i = index(c.x, c.y)
+    if (saltDepots.contains(i)) {
+        if (roadOwner[i].toInt() != company.id) return
+        saltDepots.remove(i)
+        roadOwner[i] = -1
+        touched(c.x, c.y)
+        return
+    }
+    if (!isFlat(c.x, c.y) || isWater(c.x, c.y) || track[i].toInt() != 0 || road[i].toInt() != 0 || house[i].toInt() != 0 || industryOf[i].toInt() != 0 || depotTiles.containsKey(i)) return
+    val byRoad = intArrayOf(Track.XM, Track.XP, Track.YM, Track.YP).any { e ->
+        val nx = c.x + Track.dx(e)
+        val ny = c.y + Track.dy(e)
+        inside(nx, ny) && roadOwner[index(nx, ny)].toInt() == company.id
+    }
+    if (!byRoad || company.money < price(SALT_DEPOT_COST)) return
+    spend(company, Books.CONSTRUCTION, price(SALT_DEPOT_COST) + fellTrees(company, i))
+    saltDepots += i
+    // Whose it is, kept where the road owner would be.
+    roadOwner[i] = company.id.toByte()
+    touched(c.x, c.y)
+}
+
+/** Salt from this year, sand before; how far a depot's trucks spread it, in tiles; and what each costs. */
+const val SALT_FROM = 1950
+const val SALT_REACH = 8
+const val SALT_COST = 2L
+const val SALT_DEPOT_COST = 2_500L
