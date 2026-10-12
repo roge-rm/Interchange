@@ -15,8 +15,8 @@ package com.rm.interchange.sim
  * [roster] is what can run on the track, from the game's content packs.
  */
 class World(val settings: NewGame, val roster: Roster = Roster.BASE, generate: Boolean = true) {
-    /** A map with no towns, for tests that lay their own track. */
-    constructor(width: Int, height: Int, seed: Long, startYear: Int = 1850) : this(NewGame(width, height, seed, startYear, towns = 0, industries = 0))
+    /** A map with no towns and fair weather, for tests that lay their own track. */
+    constructor(width: Int, height: Int, seed: Long, startYear: Int = 1850) : this(NewGame(width, height, seed, startYear, towns = 0, industries = 0, weather = false))
 
     val width get() = settings.width
     val height get() = settings.height
@@ -54,6 +54,23 @@ class World(val settings: NewGame, val roster: Roster = Roster.BASE, generate: B
     /** Inflation so far: what costs and fares are now against at the start, in 65536ths. */
     var costScale = 1L shl 16
     var payScale = 1L shl 16
+
+    /** Snow, ice, wet and frost on each tile, and the fronts crossing the map. */
+    val weather = Weather(width * height)
+    /** How each tile's weather looked last, by [weatherLook], to know which chunks to draw again. Not saved. */
+    internal var weatherLooks: ByteArray? = null
+    internal var weatherViewCache: WeatherView? = null
+    private var lookDay = -1
+    private var look = Climate.SUMMER
+
+    /** How the land looks today, one of [Climate]'s looks, worked out from the date. */
+    fun lookToday(): Int {
+        if (lookDay != day) {
+            lookDay = day
+            look = Climate.look(settings.region, Calendar.year(startYear, day), Calendar.dayOfYear(startYear, day))
+        }
+        return look
+    }
 
     /** Recent news for the screen. Not saved; nothing in the game depends on it. */
     val news = ArrayList<News>()
@@ -118,6 +135,7 @@ class World(val settings: NewGame, val roster: Roster = Roster.BASE, generate: B
             generateCountry(this)
             generateTowns(this)
             generateIndustries(this)
+            startWeather()
         }
     }
 
@@ -180,6 +198,7 @@ class World(val settings: NewGame, val roster: Roster = Roster.BASE, generate: B
         tick++
         moveTrains()
         if (tick % Calendar.TICKS_PER_DAY == 0L) {
+            weatherDay()
             payRunningCosts()
             passengersDay()
             townsDay()
@@ -214,6 +233,7 @@ class World(val settings: NewGame, val roster: Roster = Roster.BASE, generate: B
                 h = (h xor road[i].toLong()) * 0x100000001b3L
                 h = (h xor house[i].toLong()) * 0x100000001b3L
                 h = (h xor industryOf[i].toLong()) * 0x100000001b3L
+                h = (h xor (weather.snow[i].toLong() or (weather.ice[i].toLong() shl 8) or (weather.wet[i].toLong() shl 16) or (weather.frost[i].toLong() shl 24))) * 0x100000001b3L
             }
             bands[y] = h
         }
@@ -229,6 +249,8 @@ class World(val settings: NewGame, val roster: Roster = Roster.BASE, generate: B
         for (y in 0 until height) mix(heightAt(width, y).toLong())
         for (c in companies) { mix(c.money); mix(c.loan) }
         mix(costScale); mix(payScale)
+        mix(weather.anomaly.toLong()); mix(weather.recent.toLong())
+        for (f in weather.fronts) { mix(f.x.toLong()); mix(f.y.toLong()); mix(f.life.toLong()) }
         for (t in towns) { mix(t.population.toLong()); mix(t.growIn.toLong()); mix(t.servedThisMonth.toLong()); for (a in t.approval) mix(a.toLong()) }
         for (ind in industries) { mix(if (ind.closed) 1L else 0L); mix(ind.level.toLong()); mix(ind.brought.toLong()); for (m in ind.made) mix(m.toLong()) }
         for (s in stations) if (s != null) {

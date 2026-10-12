@@ -89,6 +89,8 @@ class IndustryKind(
     val seasons: IntArray = IntArray(12) { 100 },
     /** It stands on the shore, its layout's first row facing the water. */
     val water: Boolean = false,
+    /** How the weather changes it, as bits: [CROPS], [THAW], [ICE]. */
+    val weather: Int = 0,
 ) {
     /** The cargo it makes from what's brought, as bits: what it makes but has no monthly amount of its own for. */
     val converts: Int = (0 until Cargo.COUNT).fold(0) { m, c -> if (outputs and (1 shl c) != 0 && produces[c] == 0) m or (1 shl c) else m }
@@ -100,6 +102,17 @@ class IndustryKind(
     fun takes(c: Int) = accepts and (1 shl c) != 0
     /** How often it's placed in [region], by weight; 2 where it doesn't say. */
     fun weight(region: Region) = regions[region.name.lowercase()] ?: 2
+
+    companion object {
+        /** Crops that do best in ground neither parched nor soaked. */
+        const val CROPS = 1
+        /** Stops for the spring break-up, when thawing ground turns to mud. */
+        const val THAW = 2
+        /** Shut while the water it stands on is frozen. */
+        const val ICE = 4
+        /** The rules' names in a pack, in bit order. */
+        val WEATHER = listOf("crops", "thaw", "ice")
+    }
 }
 
 /** A vehicle drawing: the sheet [name] in pack [pack]. */
@@ -175,6 +188,7 @@ class Roster(
                     d.accepts.fold(0) { m, cg -> Cargo.of(cg).let { if (it >= 0) m or (1 shl it) else m } },
                     d.produces.keys.fold(0) { m, cg -> Cargo.of(cg).let { if (it >= 0) m or (1 shl it) else m } },
                     d.seasons.toIntArray(), d.water,
+                    d.weather.fold(0) { m, r -> IndustryKind.WEATHER.indexOf(r).let { if (it >= 0) m or (1 shl it) else m } },
                 )
             }
             if (problems.isNotEmpty()) throw BadPack(problems)

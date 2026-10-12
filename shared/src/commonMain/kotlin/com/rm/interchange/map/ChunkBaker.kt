@@ -18,6 +18,8 @@ import com.rm.interchange.sim.townBuilt
 import kotlin.math.abs
 import com.rm.interchange.sim.hasFoundation
 import com.rm.interchange.sim.surfaceHeight
+import com.rm.interchange.sim.Climate
+import com.rm.interchange.sim.mud
 import kotlin.math.sqrt
 
 /**
@@ -31,6 +33,10 @@ import kotlin.math.sqrt
  * ridges are lighter and hollows darker than the land round them, and bare
  * earth shows through on slopes. [overlays] adds a tile grid or bands of
  * height with contour lines, as [GRID] and [HEIGHTS] bits.
+ *
+ * The weather shows too: snow by depth on the ground and on whatever faces
+ * the sky (from the low bits of each sprite pixel's blue), ice on the water,
+ * mud, and the grass and leaves by [look], one of [Climate]'s looks of the year.
  *
  * A tile owns the pixels whose middles fall in it, so neighbours share their
  * edges exactly and no seam shows. Textures are laid in each tile's view
@@ -46,6 +52,7 @@ internal class ChunkBaker(
     private val width: Int,
     private val height: Int,
     private val overlays: Int = 0,
+    private val look: Int = Climate.SUMMER,
 ) {
     private val hw = Renderer.LEVELS[level]
     private val hh = hw / 2
@@ -82,6 +89,47 @@ internal class ChunkBaker(
         cornerHeight(vx, vy) - sum.toFloat() / n
     }
 
+    /** The snow on view tile ([vx], [vy]) in cm, or on the nearest tile on the map. */
+    private fun snowAt(vx: Int, vy: Int): Int {
+        val x = vx.coerceIn(0, view.viewWidth - 1)
+        val y = vy.coerceIn(0, view.viewHeight - 1)
+        return world.weather.snow[world.index(view.worldX(x, y), view.worldY(x, y))].toInt() and 255
+    }
+
+    /** The snow at view corner ([vx], [vy]): the mean of the four tiles round it. */
+    private fun cornerSnow(vx: Int, vy: Int): Float = (snowAt(vx - 1, vy - 1) + snowAt(vx, vy - 1) + snowAt(vx - 1, vy) + snowAt(vx, vy)) / 4f
+
+    /** The ice at view corner ([vx], [vy]) in cm: the mean of the tiles round it, the shore as thick as the thickest ice there. */
+    private fun cornerIce(vx: Int, vy: Int): Float {
+        var sum = 0
+        var most = 0
+        var shore = 0
+        for (dy in -1..0) for (dx in -1..0) {
+            val x = (vx + dx).coerceIn(0, view.viewWidth - 1)
+            val y = (vy + dy).coerceIn(0, view.viewHeight - 1)
+            val wx = view.worldX(x, y)
+            val wy = view.worldY(x, y)
+            if (world.isWater(wx, wy)) {
+                val ice = world.weather.ice[world.index(wx, wy)].toInt() and 255
+                sum += ice
+                most = maxOf(most, ice)
+            } else shore++
+        }
+        return (sum + shore * most) / 4f
+    }
+
+    /** How much of what faces the sky on world tile [i] is under snow, in 256ths. */
+    private fun snowCover(i: Int): Int {
+        val d = world.weather.snow[i].toInt() and 255
+        return when {
+            d == 0 -> 0
+            d < 3 -> 90
+            d < 10 -> 170
+            d < 30 -> 230
+            else -> 256
+        }
+    }
+
     /** The ground kind of view tile ([vx], [vy]) as drawn: water, beach sand, or the land's own. -1 off the map. */
     private fun kindOf(vx: Int, vy: Int): Int {
         if (vx < 0 || vy < 0 || vx >= view.viewWidth || vy >= view.viewHeight) return -1
@@ -112,7 +160,7 @@ internal class ChunkBaker(
         var road = worldRoad and PAVED
         if (worldRoad != 0 && downtown(world.index(wx, wy))) road = road or DOWNTOWN
         for (e in 0 until 4) if (worldRoad and (1 shl e) != 0) road = road or (1 shl viewEdge(e))
-        ground(vx, vy, t, r, b, l, kind, edges, road)
+        ground(vx, vy, t, r, b, l, kind, edges, road, weather = true)
         earthFaces(vx, vy, r, b, l)
 
         val tile = world.index(wx, wy)
@@ -208,7 +256,7 @@ internal class ChunkBaker(
      * Paints a tile's top with corner heights [t], [r], [b], [l] (view order) in [kind]'s texture, letting the
      * kinds of its neighbours across each edge ([edges], -1 for none) spread in where they rank higher.
      */
-    private fun ground(vx: Int, vy: Int, t: Int, r: Int, b: Int, l: Int, kind: Int, edges: IntArray, road: Int = 0) {
+    private fun ground(vx: Int, vy: Int, t: Int, r: Int, b: Int, l: Int, kind: Int, edges: IntArray, road: Int = 0, weather: Boolean = false) {
         // Split along whichever diagonal has its ends level, as the slopes are drawn. Each half is a plane
         // h = h0 + gu * u + gv * v over the tile's own u and v.
         val alongRL = r == l
@@ -230,6 +278,21 @@ internal class ChunkBaker(
             Atlas.SNOW -> Atlas.ROCK
             else -> -1
         }
+        // Snow and ice at each corner, spread across the tile, so their edges don't follow the tiles.
+        val tile = world.index(view.worldX(vx, vy), view.worldY(vx, vy))
+        val st = cornerSnow(vx, vy)
+        val sr = cornerSnow(vx + 1, vy)
+        val sb = cornerSnow(vx + 1, vy + 1)
+        val sl = cornerSnow(vx, vy + 1)
+        val snowy = st + sr + sb + sl > 0f
+        val iT = if (water) cornerIce(vx, vy) else 0f
+        val ir = if (water) cornerIce(vx + 1, vy) else 0f
+        val ib = if (water) cornerIce(vx + 1, vy + 1) else 0f
+        val il = if (water) cornerIce(vx, vy + 1) else 0f
+        val icy = water && iT + ir + ib + il > 0f
+        val muddy = if (weather && !water && kind != Atlas.SAND) world.mud(tile) / 255f * MUD_MOST else 0f
+        val grade = GRADES[look].getOrNull(kind) ?: 0
+        val gradeBy = (grade ushr 24) / 255f
         val grid = overlays and GRID != 0 && hw >= 16
         val heights = overlays and HEIGHTS != 0 && !water
         val fx = vx.toFloat()
@@ -294,13 +357,38 @@ internal class ChunkBaker(
                     val reach = 0.08f + rag * 0.26f
                     if (dist < reach) {
                         texel = sheets.ground[other * size * size + ti]
-                    } else if (kind == Atlas.WATER && dist < reach + 0.07f) {
+                    } else if (kind == Atlas.WATER && dist < reach + 0.07f && !icy) {
                         texel = FOAM
                     }
                 }
+                if (gradeBy > 0f) texel = mix(texel, grade, gradeBy)
+                if (muddy > 0f) texel = mix(texel, MUD, muddy)
                 if (road != 0) texel = roadTexel(u, v, road, ti, texel)
+                if (icy) {
+                    val ice = iT * (1f - u) * (1f - v) + ir * u * (1f - v) + ib * u * v + il * (1f - u) * v
+                    if (ice >= ICE_FROM) texel = mix(texel, mix(ICE, ICE_DARK, rag * 0.6f), (0.5f + ice / 60f).coerceAtMost(0.92f))
+                }
+                if (snowy && (!water || icy)) {
+                    val depth = st * (1f - u) * (1f - v) + sr * u * (1f - v) + sb * u * v + sl * (1f - u) * v
+                    // Thin snow lies in patches, from noise read somewhere else again; deeper, it covers everything.
+                    val patch = (sheets.ground[ragBase + ((ty + size / 3) % size) * size + (tx + size / 2) % size] and 255) / 255f
+                    val cover = ((depth - (0.5f + patch * 14f)) / 3f).coerceIn(0f, 1f)
+                    if (cover > 0f) texel = mix(texel, sheets.ground[Atlas.SNOW * size * size + ti], cover)
+                }
                 val rel = rt * (1f - u) * (1f - v) + rr * u * (1f - v) + rb * u * v + rl * (1f - u) * v
                 var shade = f * (1f + (rel * RELIEF_GAIN).coerceIn(-RELIEF_DARK, RELIEF_LIGHT))
+                if (overlays and SNOW != 0) {
+                    val depth = st * (1f - u) * (1f - v) + sr * u * (1f - v) + sb * u * v + sl * (1f - u) * v
+                    val band = when {
+                        icy -> ICE_BAND
+                        water || depth < 1f -> 0
+                        depth < 10f -> SNOW_BANDS[0]
+                        depth < 30f -> SNOW_BANDS[1]
+                        depth < 60f -> SNOW_BANDS[2]
+                        else -> SNOW_BANDS[3]
+                    }
+                    if (band != 0) texel = mix(texel, band, 0.6f)
+                }
                 if (heights) {
                     val h = p[0] + p[1] * u + p[2] * v
                     texel = mix(texel, HEIGHT_COLOURS[(h / HEIGHT_BAND).toInt().coerceIn(0, HEIGHT_COLOURS.size - 1)], 0.55f)
@@ -366,7 +454,7 @@ internal class ChunkBaker(
     private fun streetTrees(wx: Int, wy: Int, shadow: Boolean) {
         val bits = world.road[world.index(wx, wy)].toInt()
         if (bits and PAVED == 0 || downtown(world.index(wx, wy))) return
-        val cells = if (shadow) Atlas.TREE_SHADOW else Atlas.TREE
+        val cells = treeCells(shadow)
         val spots = ArrayList<FloatArray>()
         val side = (BOULEVARD + CARRIAGEWAY + KERB) / 2
         for (e in 0 until 4) {
@@ -477,7 +565,7 @@ internal class ChunkBaker(
         }
     }
 
-    private fun blit(cell: Int, ax: Float, ay: Float) {
+    private fun blit(cell: Int, ax: Float, ay: Float, snow: Int = 0) {
         if (cell < 0) return
         val r = cell * 6
         val sx = Atlas.STATIC_RECTS[r] / shrink
@@ -496,9 +584,16 @@ internal class ChunkBaker(
             for (i in 0 until w) {
                 val px = left + i
                 if (px < 0 || px >= width) continue
-                val c = src[srcRow + i]
+                var c = src[srcRow + i]
                 val a = c ushr 24
                 if (a == 0) continue
+                if (snow > 0 && c and 3 != 0) {
+                    // Snow on what faces the sky, a little greyer where it's steeper.
+                    val up = c and 3
+                    val k = snow * up / 3
+                    val white = SNOW_TOP - (3 - up) * 0x0a0a0a
+                    c = (c and 0xff000000.toInt()) or (mix(c, white, k / 256f) and 0xffffff)
+                }
                 if (a == 255) {
                     pixels[dstRow + px] = c
                     continue
@@ -517,7 +612,8 @@ internal class ChunkBaker(
 
     /** A static sprite anchored on view tile ([vx], [vy])'s top corner at height [h]. */
     private fun sprite(cell: Int, vx: Int, vy: Int, h: Int, shadow: Boolean = false) =
-        if (shadow) shade(cell, x(vx.toFloat(), vy.toFloat()), y(vx.toFloat(), vy.toFloat(), h.toFloat())) else blit(cell, x(vx.toFloat(), vy.toFloat()), y(vx.toFloat(), vy.toFloat(), h.toFloat()))
+        if (shadow) shade(cell, x(vx.toFloat(), vy.toFloat()), y(vx.toFloat(), vy.toFloat(), h.toFloat()))
+        else blit(cell, x(vx.toFloat(), vy.toFloat()), y(vx.toFloat(), vy.toFloat(), h.toFloat()), snowCover(world.index(view.worldX(vx, vy), view.worldY(vx, vy))))
 
     /** A sprite standing at world point ([tx], [ty]), drawn as if on a tile whose middle is there. */
     private fun standing(cell: Int, tx: Float, ty: Float, shadow: Boolean = false) {
@@ -525,7 +621,8 @@ internal class ChunkBaker(
         val vy = view.toViewY(tx, ty)
         val ax = x(vx - 0.5f, vy - 0.5f)
         val ay = y(vx - 0.5f, vy - 0.5f, groundHeight(world, tx, ty))
-        if (shadow) shade(cell, ax, ay) else blit(cell, ax, ay)
+        if (shadow) shade(cell, ax, ay)
+        else blit(cell, ax, ay, snowCover(world.index(tx.toInt().coerceIn(0, world.width - 1), ty.toInt().coerceIn(0, world.height - 1))))
     }
 
     /** The trees on a tile, or their shadows, each where the tile's own dice put it, the furthest first. */
@@ -543,8 +640,15 @@ internal class ChunkBaker(
             spots += floatArrayOf(view.toViewX(tx, ty) + view.toViewY(tx, ty), tx, ty, ((d shr 16) and 255).toFloat())
         }
         spots.sortBy { it[0] }
-        val cells = if (shadow) Atlas.TREE_SHADOW else Atlas.TREE
+        val cells = treeCells(shadow)
         for (sp in spots) standing(cells[kind * Atlas.TREE_LOOKS + sp[3].toInt() % Atlas.TREE_LOOKS], sp[1], sp[2], shadow)
+    }
+
+    /** The trees for the time of year: leafy ones turning in autumn and bare from late autumn till spring. */
+    private fun treeCells(shadow: Boolean): IntArray = when (look) {
+        Climate.AUTUMN -> if (shadow) Atlas.TREE_SHADOW else Atlas.TREE_AUTUMN
+        Climate.LATE_AUTUMN, Climate.WINTER, Climate.EARLY_SPRING -> if (shadow) Atlas.TREE_BARE_SHADOW else Atlas.TREE_BARE
+        else -> if (shadow) Atlas.TREE_SHADOW else Atlas.TREE
     }
 
     /** Now and then a boulder, a shrub or a clump of tall grass, as suits the ground, or its shadow. Only for looks. */
@@ -642,7 +746,11 @@ internal class ChunkBaker(
         /** Overlays, as bits. */
         const val GRID = 1
         const val HEIGHTS = 2
+        const val SNOW = 4
 
+        /** The snow overlay's bands: under 10 cm, under 30, under 60, deeper; then ice on the water. */
+        private val SNOW_BANDS = intArrayOf(0xff9fd0f0.toInt(), 0xff5a9ae0.toInt(), 0xff3a52c8.toInt(), 0xff6a2ab0.toInt())
+        private const val ICE_BAND = 0xff40e0e0.toInt()
         /** Steps of height to each band of the heights overlay, and the bands' colours from sea level up. */
         private const val HEIGHT_BAND = 2f
         private val HEIGHT_COLOURS = intArrayOf(
@@ -651,6 +759,28 @@ internal class ChunkBaker(
         )
 
         private const val FOAM = 0xffe8f0f4.toInt()
+        private const val ICE = 0xffd4e2ea.toInt()
+        private const val ICE_DARK = 0xffa8bccb.toInt()
+        /** Ice thinner than this, in cm, doesn't show. */
+        private const val ICE_FROM = 4f
+        private const val SNOW_TOP = 0xfff4f7fa.toInt()
+        private const val MUD = 0xff5a4630.toInt()
+        private const val MUD_MOST = 0.45f
+
+        /**
+         * The grass through the year, by [Climate] look then ground kind: a colour to mix in, how much in its
+         * top byte. Dead grass in early spring, fresh in spring, prairie gold by late summer, red tundra and
+         * brown meadows in autumn.
+         */
+        private val GRADES = arrayOf(
+            intArrayOf(0x598a7a58, 0x598a7a58, 0x26705a40, 0, 0x4d8a7a58),
+            intArrayOf(0x1a7aa648, 0x1a8ab050, 0, 0, 0x1a7aa648),
+            intArrayOf(0, 0, 0, 0, 0),
+            intArrayOf(0x26a89a5a, 0x5ac8a860, 0, 0, 0x1aa89a5a),
+            intArrayOf(0x40a08a50, 0x66b89858, 0x1a806040, 0, 0x4da0583a),
+            intArrayOf(0x66857455, 0x73a89068, 0x26705a40, 0, 0x4d806048),
+            intArrayOf(0x73807462, 0x73a08c6c, 0x26705a40, 0, 0x4d806048),
+        )
         private const val EARTH_LIGHT = 0xff7a6248.toInt()
         private const val EARTH_DARK = 0xff5a4634.toInt()
 

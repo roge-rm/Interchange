@@ -11,6 +11,8 @@ import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.LayoutDirection
+import com.rm.interchange.sim.Calendar
+import com.rm.interchange.sim.Climate
 import com.rm.interchange.sim.Workers
 import com.rm.interchange.sim.World
 import kotlinx.coroutines.CoroutineScope
@@ -46,7 +48,7 @@ internal class Renderer(private val world: World, private val sheets: Sheets, pr
 
     private val cache = HashMap<Key, Entry>()
 
-    /** The overlays baked in, as [ChunkBaker.GRID] and [ChunkBaker.HEIGHTS] bits. A change bakes every chunk again, the old ones drawn meanwhile. */
+    /** The overlays baked in, as [ChunkBaker.GRID], [ChunkBaker.HEIGHTS] and [ChunkBaker.SNOW] bits. A change bakes every chunk again, the old ones drawn meanwhile. */
     var overlays = 0
     private val baking = HashSet<Key>()
     private var bytes = 0L
@@ -56,6 +58,19 @@ internal class Renderer(private val world: World, private val sheets: Sheets, pr
     val revision = mutableIntStateOf(0)
 
     private val bakers = Dispatchers.Default.limitedParallelism(BAKERS)
+
+    private var lookDay = -1
+    private var look = Climate.SUMMER
+
+    /** How the land looks at this time of year; every chunk bakes again when it turns. */
+    private fun look(): Int {
+        val d = world.day
+        if (d != lookDay) {
+            lookDay = d
+            look = Climate.look(world.settings.region, Calendar.year(world.startYear, d), Calendar.dayOfYear(world.startYear, d))
+        }
+        return look
+    }
 
     /** Draws the chunks that are on screen and asks for any that are missing or out of date. */
     fun DrawScope.draw(view: View) {
@@ -189,7 +204,7 @@ internal class Renderer(private val world: World, private val sheets: Sheets, pr
         val across = world.width / World.CHUNK
         var sum = 0
         for (y in y0..y1) for (x in x0..x1) sum += world.chunkVersions[y * across + x]
-        return sum * 4 + overlays
+        return (sum * 8 + overlays) * 8 + look()
     }
 
     private fun bake(key: Key, sheet: LevelSheets) {
@@ -200,7 +215,8 @@ internal class Renderer(private val world: World, private val sheets: Sheets, pr
         // The scope is the composition's, on the main thread; only the baking goes off it.
         scope.launch {
             val o = overlays
-            val image = withContext(bakers) { bakeChunk(bakeView, key, sheet, o) }
+            val l = look()
+            val image = withContext(bakers) { bakeChunk(bakeView, key, sheet, o, l) }
             baking -= key
             cache.put(key, Entry(image, version, frame))?.let { bytes -= it.bytes }
             bytes += image.width.toLong() * image.height * 4
@@ -208,11 +224,11 @@ internal class Renderer(private val world: World, private val sheets: Sheets, pr
         }
     }
 
-    private fun bakeChunk(view: View, key: Key, sheet: LevelSheets, overlays: Int): ImageBitmap {
+    private fun bakeChunk(view: View, key: Key, sheet: LevelSheets, overlays: Int, look: Int): ImageBitmap {
         val hw = LEVELS[key.level]
         val tiles = chunkTiles(key.level)
         val height = chunkHeight(key.level, hw)
-        val baker = ChunkBaker(world, view, key.level, sheet, CHUNK_PIXELS, height, overlays)
+        val baker = ChunkBaker(world, view, key.level, sheet, CHUNK_PIXELS, height, overlays, look)
         val vx0 = key.cx * tiles
         val vy0 = key.cy * tiles
         baker.originX = tiles * hw - (vx0 - vy0) * hw

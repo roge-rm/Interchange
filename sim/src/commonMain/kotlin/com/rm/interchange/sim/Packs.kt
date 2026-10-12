@@ -72,6 +72,8 @@ class IndustryDef(
     val seasons: List<Int>,
     /** It stands on the shore, the first row of its layout facing the water. */
     val water: Boolean,
+    /** How the weather changes it, by [IndustryKind.WEATHER] names. */
+    val weather: List<String> = emptyList(),
 )
 
 /** How far into a town a building stands, as bits, from the outskirts in to the centre. */
@@ -277,8 +279,9 @@ object Packs {
                 industries += IndustryDef(
                     iid, f.words("name", need = true) ?: emptyMap(), f.int("from", 1700, 2300, need = true) ?: 0, f.int("until", 1700, 2300, need = true) ?: 0,
                     regions, f.strings("ground") ?: emptyList(), layout, produces, accepts,
-                    f.seasons(), f.bool("water") ?: false,
+                    f.seasons(), f.bool("water") ?: false, f.strings("weather") ?: emptyList(),
                 )
+                industries.last().weather.filter { it !in IndustryKind.WEATHER }.forEach { problems += "${f.where}: unknown weather rule \"$it\"" }
                 f.done()
             }
         }

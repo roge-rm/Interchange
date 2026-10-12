@@ -143,6 +143,8 @@ internal fun World.buildRail(company: Company, c: Command.Rail) {
             fellTrees(company, i)
             track[i] = (has or piece).toByte()
             owner[i] = company.id.toByte()
+            // Laid on cleared ground.
+            if ((weather.snow[i].toInt() and 255) > PLOWED) weather.snow[i] = PLOWED.toByte()
             // A tile that now branches can't keep its signals.
             if (!signalFits(x, y, piece)) for (p in Track.PIECES) signals.remove(pieceKey(i, p))
         }

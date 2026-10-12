@@ -8,6 +8,7 @@
       "regions": { "shield": 5, "rockies": 4, "maritimes": 4, "mixed": 3, "north": 2, "prairies": 1 },
       "ground": ["forest"],
       "seasons": [150, 150, 130, 70, 50, 60, 70, 70, 80, 100, 120, 150],
+      "weather": ["thaw"],
       "layout": ["bunkhouse log_pile", "camp_shed log_pile"],
       "produces": { "timber": 90 }
     },
@@ -29,6 +30,7 @@
       "regions": { "prairies": 6, "mixed": 4, "maritimes": 2, "shield": 1, "rockies": 1 },
       "ground": ["prairie", "meadow"],
       "seasons": [30, 30, 30, 40, 60, 80, 110, 220, 240, 200, 90, 70],
+      "weather": ["crops"],
       "layout": ["barn silo wheat_field", "wheat_field wheat_field wheat_field", "wheat_field wheat_field wheat_field"],
       "produces": { "grain": 80 }
     },
@@ -157,6 +159,7 @@
       "until": 2050,
       "regions": { "maritimes": 5, "mixed": 3, "shield": 2, "rockies": 2, "north": 1, "prairies": 1 },
       "water": true,
+      "weather": ["ice"],
       "layout": ["wharf wharf crane", "terminal_elevator warehouse warehouse"],
       "accepts": ["grain", "lumber", "potash", "coal", "fish", "paper"],
       "produces": { "goods": 40, "bauxite": 30 }
@@ -169,6 +172,7 @@
       "regions": { "maritimes": 6, "north": 2, "mixed": 2, "rockies": 1, "shield": 1, "prairies": 0 },
       "water": true,
       "seasons": [30, 30, 50, 90, 140, 160, 170, 160, 140, 100, 70, 60],
+      "weather": ["ice"],
       "layout": ["fish_wharf fish_wharf", "fish_shed boat_shed"],
       "produces": { "fish": 60 }
     },

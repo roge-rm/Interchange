@@ -128,7 +128,10 @@ fun MapView(
         sheets.revision.intValue
         frame()
         with(renderer) { draw(view) }
-        moving()?.let { drawMoving(world, view, sheets, it) }
+        moving()?.let {
+            drawMoving(world, view, sheets, it)
+            drawSky(world, view, it)
+        }
         overlay?.let { draw ->
             val painter = LandPainter(world, view, view.halfWidth)
             painter.originX = view.screenX(0f, 0f, size.width)

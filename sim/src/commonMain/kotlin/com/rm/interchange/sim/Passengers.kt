@@ -203,7 +203,7 @@ internal fun World.passengersDay() {
         val s = stations.getOrNull(sid) ?: continue
         // Busier or quieter by the day, and only the station's rating's share comes to it at all.
         val m = made.getValue(sid)
-        m[Cargo.PASSENGERS] = m[Cargo.PASSENGERS] * travel / 100
+        m[Cargo.PASSENGERS] = m[Cargo.PASSENGERS] * travel / 100 * outings(s) / 100
         m[Cargo.MAIL] = m[Cargo.MAIL] * post / 100
         for (cg in 0 until Cargo.COUNT) m[cg] = (m[cg] * s.rating[cg] + rng.below(255)) / 255
     }
@@ -293,9 +293,62 @@ internal fun World.accepts(s: Station, c: Int): Boolean {
     if (catchmentDirty) workOutCatchment()
     val people = stationPeople[s.id] ?: 0
     if ((c == Cargo.PASSENGERS || c == Cargo.MAIL) && people > 0) return true
-    if (Cargo.townWants(c) && people >= Cargo.TOWN_GOODS_PEOPLE) return true
+    if (townWants(c) && people >= Cargo.TOWN_GOODS_PEOPLE) return true
     return takerAt(s, c) != null
 }
+
+/** Whether towns take cargo [c]: goods, food, fuel and lumber, and coal for heating homes until oil and gas take over. */
+internal fun World.townWants(c: Int) = Cargo.townWants(c) || (c == Cargo.COAL && Calendar.year(startYear, day) < COAL_HEATING_UNTIL)
+
+/**
+ * What coal or fuel brought to a town for heating pays on the day, in percent
+ * of the usual: more the colder it is at station [s], up to [HEATING_MOST]
+ * more in deep cold, nothing extra in summer.
+ */
+internal fun World.heating(s: Station): Int {
+    val t = skyAt(s.signX.coerceIn(0, width - 1), s.signY.coerceIn(0, height - 1)).temperature
+    return 100 + ((180 - t) * 4 / 10).coerceIn(0, HEATING_MOST)
+}
+
+/**
+ * How many go out from station [s] today for the weather, in percent: fewer
+ * in a downpour or a blizzard, more on a fine summer day, more again where
+ * there's water or mountains near, and in winter at mountain stations with snow
+ * for skiing.
+ */
+internal fun World.outings(s: Station): Int {
+    val x = s.signX.coerceIn(0, width - 1)
+    val y = s.signY.coerceIn(0, height - 1)
+    val sky = skyAt(x, y)
+    if (sky.precipitation >= HEAVY) return 75
+    val look = lookToday()
+    val fine = sky.precipitation == 0 && !sky.fog
+    val summer = look == Climate.SUMMER || look == Climate.LATE_SUMMER
+    val high = tileHeight(x, y) >= RESORT_HEIGHT
+    var f = 100
+    if (fine && summer) {
+        f += 10
+        if (high || waterNear(x, y)) f += 30
+    }
+    if (fine && look == Climate.WINTER && high && (weather.snow[index(x, y)].toInt() and 255) >= 30) f += 30
+    return f
+}
+
+/** Whether there's water within [RESORT_REACH] tiles of ([x], [y]). */
+private fun World.waterNear(x: Int, y: Int): Boolean {
+    for (dy in -RESORT_REACH..RESORT_REACH) for (dx in -RESORT_REACH..RESORT_REACH) if (inside(x + dx, y + dy) && isWater(x + dx, y + dy)) return true
+    return false
+}
+
+/** The year town homes stop burning coal. */
+const val COAL_HEATING_UNTIL = 1960
+/** The most extra, in percent, heating fuel pays in the cold. */
+const val HEATING_MOST = 80
+/** Precipitation, in hundredths of a mm a day, that keeps people home. */
+const val HEAVY = 1500
+/** Height in steps, and reach in tiles to water, that bring holidaymakers. */
+const val RESORT_HEIGHT = 12
+const val RESORT_REACH = 4
 
 /** The station train [t] calls at after the one it's at now, or -1. */
 private fun nextStop(t: Train): Int = if (t.orders.size < 2) -1 else Order.station(t.orders[(t.order + 1) % t.orders.size])
@@ -322,7 +375,9 @@ internal fun World.callAt(t: Train, s: Station, o: Int = 0) {
             val arrived = !transfer && (p.dest == s.id || ((p.dest == -1 || unload) && p.origin != s.id && accepts(s, c)))
             when {
                 arrived && from != null -> {
-                    val full = pay(fare(c, p.count, from, s, days(p)))
+                    var full = pay(fare(c, p.count, from, s, days(p)))
+                    // Coal and fuel for a town's homes pay more in the cold.
+                    if ((c == Cargo.COAL || c == Cargo.FUEL) && takerAt(s, c) == null) full = full * heating(s) / 100
                     paid += full
                     // Freight for an industry here goes to it to be made into its own.
                     takerAt(s, c)?.let { ind ->

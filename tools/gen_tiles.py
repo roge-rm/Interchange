@@ -12,7 +12,8 @@ build/renders) are used in place of the plain ones where they exist.
 Three kinds of sheet, one of each per zoom level, sharpest first, each level
 half the last:
 - files/ground_<level>.png: the ground textures, which the game paints the land with
-- files/static_<level>.png: what the game bakes into the map: track, buildings, trees
+- files/static_<level>.png: what the game bakes into the map: track, buildings, trees, with how
+  much each pixel faces the sky in the low two bits of its blue, for snow
 - files/signals_<level>.png: signals, drawn over the map each frame
 - files/vehicle_<key>_<level>.png: one sheet for each vehicle, so only those on
   screen are unpacked, as packs will add many
@@ -35,6 +36,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent / "art"))
 
+import numpy as np  # noqa: E402
 from PIL import Image, ImageChops, ImageFilter  # noqa: E402
 
 import base  # noqa: E402
@@ -92,6 +94,9 @@ def over(under, top):
 
 # What to draw: (sheet, key, function, finish). finish is "outline" for a dark line round the solid part.
 JOBS = []
+# Static sprites with a Blender up pass, by key: the render's file name. Where it faces the sky is packed into the
+# low two bits of each pixel's blue, for the game to lay snow on.
+UP = {}
 for s in SURFACES:
     for g in SLOPES:
         if g != 0 and g != s and g & ~s == 0:
@@ -99,21 +104,38 @@ for s in SURFACES:
 for p, piece in enumerate(track.PIECES):
     for s in TRACK_SURFACES.get(piece, [0]):
         JOBS.append(("static", ("track", p, s), lambda piece=piece, s=s: scenery(f"track_{piece}_{s}.png", lambda: track.track(piece, s)), None))
+        UP[("track", p, s)] = f"track_{piece}_{s}.png"
 # Platforms and the engine house over their track, each with its shadow apart so the game can lay shadows first.
 for a in (0, 1):
     JOBS.append(("static", ("station", a), lambda a=a: over(track.track("X" if a == 0 else "Y", 0), scenery(f"station_{a}.png", lambda: track.station(a == 0))), None))
     JOBS.append(("shadows", ("station_shadow", a), lambda a=a: scenery(f"station_{a}_shadow.png", base.cell), None))
+    UP[("station", a)] = f"station_{a}.png"
 for e, edge in enumerate(EDGES):
     JOBS.append(("static", ("depot", e), lambda edge=edge: scenery(f"depot_{edge}.png", lambda: track.depot(edge)), None))
     JOBS.append(("shadows", ("depot_shadow", e), lambda edge=edge: scenery(f"depot_{edge}_shadow.png", base.cell), None))
+    UP[("depot", e)] = f"depot_{edge}.png"
 for t, kind in enumerate(ground.TREES):
     for look in range(ground.TREE_LOOKS):
         JOBS.append(("static", ("tree", t, look), lambda kind=kind, look=look: scenery(f"tree_{kind}_{look}.png", lambda: ground.tree(kind, look)), None))
         JOBS.append(("shadows", ("tree_shadow", t, look), lambda kind=kind, look=look: scenery(f"tree_{kind}_{look}_shadow.png", base.cell), None))
+        UP[("tree", t, look)] = f"tree_{kind}_{look}.png"
+# The leafy trees in autumn and bare in winter, the bare ones with their own thinner shadows.
+LEAFY = ["maple", "birch", "aspen"]
+for t, kind in enumerate(ground.TREES):
+    if kind not in LEAFY:
+        continue
+    for season in ("autumn", "bare"):
+        for look in range(ground.TREE_LOOKS):
+            name = f"tree_{kind}_{look}_{season}.png"
+            JOBS.append(("static", ("tree_" + season, t, look), lambda name=name, kind=kind, look=look: scenery(name, lambda: ground.tree(kind, look)), None))
+            UP[("tree_" + season, t, look)] = name
+            if season == "bare":
+                JOBS.append(("shadows", ("tree_bare_shadow", t, look), lambda name=name: scenery(name.replace(".png", "_shadow.png"), base.cell), None))
 for d, kind in enumerate(ground.DECOR):
     for look in range(ground.DECOR_LOOKS):
         JOBS.append(("static", ("decor", d, look), lambda kind=kind, look=look: scenery(f"decor_{kind}_{look}.png", lambda: ground.decor(kind, look)), None))
         JOBS.append(("shadows", ("decor_shadow", d, look), lambda kind=kind, look=look: scenery(f"decor_{kind}_{look}_shadow.png", base.cell), None))
+        UP[("decor", d, look)] = f"decor_{kind}_{look}.png"
 for red in (0, 1):
     JOBS.append(("signals", ("signal", red), lambda red=red: scenery(f"signal_{red}.png", lambda: track.signal(red == 1)), None))
 # Town buildings, in the order of the base pack's houses.json, each facing every view edge, with its shadow apart.
@@ -122,6 +144,7 @@ for k, kind in enumerate(HOUSES):
     for e, edge in enumerate(EDGES):
         JOBS.append(("static", ("house", k, e), lambda kind=kind, edge=edge: scenery(f"house_{kind}_{edge}.png", base.cell), None))
         JOBS.append(("shadows", ("house_shadow", k, e), lambda kind=kind, edge=edge: scenery(f"house_{kind}_{edge}_shadow.png", base.cell), None))
+        UP[("house", k, e)] = f"house_{kind}_{edge}.png"
 # Industry pieces, every one named in the base pack's industries.json layouts, each facing every view edge, with
 # its shadow apart.
 PARTS = []
@@ -134,6 +157,7 @@ for k, key in enumerate(PARTS):
     for e, edge in enumerate(EDGES):
         JOBS.append(("static", ("part", k, e), lambda key=key, edge=edge: scenery(f"part_{key}_{edge}.png", base.cell), None))
         JOBS.append(("shadows", ("part_shadow", k, e), lambda key=key, edge=edge: scenery(f"part_{key}_{edge}_shadow.png", base.cell), None))
+        UP[("part", k, e)] = f"part_{key}_{edge}.png"
 # The engine house again, drawn over trains on its tile so they show going in through the doors.
 for e, edge in enumerate(EDGES):
     JOBS.append(("signals", ("depot_over", e), lambda edge=edge: scenery(f"depot_{edge}.png", lambda: track.depot(edge)), None))
@@ -179,14 +203,18 @@ def render(i):
     if finish == "outline":
         img = outline(img)
     cell = pack_cell(img) if sheet.startswith("vehicle_") else None
+    up = None
+    if key in UP and (SCENERY / UP[key].replace(".png", "_up.png")).exists():
+        raw = Image.open(SCENERY / UP[key].replace(".png", "_up.png")).convert("L")
+        up = raw.resize((raw.width // base.SS, raw.height // base.SS), Image.BOX)
     # Trimmed to where it's more than faint, so a soft shadow's last wisps don't stretch the box.
     box = img.getchannel("A").point(lambda v: 255 if v > 12 else 0).getbbox()
     if box is None:
-        return i, None, (0, 0, 0, 0), cell
+        return i, None, (0, 0, 0, 0), cell, None
     l, t, r, b = box
     l, t = l // GRID * GRID, t // GRID * GRID
     r, b = -(-r // GRID) * GRID, -(-b // GRID) * GRID
-    return i, img.crop((l, t, r, b)), (l, t, r, b), cell
+    return i, img.crop((l, t, r, b)), (l, t, r, b), cell, up.crop((l, t, r, b)) if up else None
 
 
 def pack(sizes, sheet_w=SHEET_W):
@@ -208,21 +236,33 @@ def pack(sizes, sheet_w=SHEET_W):
 
 def write_sheet(name, done, sheet_w=SHEET_W):
     """Packs one sheet's sprites and writes it at every level. Returns each sprite's rect and where it sits from its anchor."""
-    sizes = [(im.width, im.height) if im else (0, 0) for _, im, _, _ in done]
+    sizes = [(im.width, im.height) if im else (0, 0) for _, im, _, _, _ in done]
     pos, height = pack(sizes, sheet_w)
     sheet = Image.new("RGBA", (sheet_w, max(GRID, height)))
-    for (_, im, _, _), p in zip(done, pos):
+    ups = Image.new("L", sheet.size)
+    for (_, im, _, _, up), p in zip(done, pos):
         if im:
             sheet.paste(im, p)
+        if up:
+            ups.paste(up, p)
     for level in range(LEVELS):
         f = 1 << level
         out = sheet if f == 1 else shrink(sheet, f)
+        if name == "static":
+            out = with_up(out, ups if f == 1 else ups.resize((ups.width // f, ups.height // f), Image.BOX))
         # Shadows are black, so their sheet keeps only how dark each pixel is, a byte each.
         (out.getchannel("A") if name == "shadows" else out).save(OUT_PNG / f"{name}_{level}.png", optimize=True)
     rects = []
-    for (_, im, (l, t, r, b), _), p in zip(done, pos):
+    for (_, im, (l, t, r, b), _, _), p in zip(done, pos):
         rects += [p[0], p[1], r - l, b - t, l - base.HW, t - base.TOP]
     return rects, height
+
+
+def with_up(img, up):
+    """The sheet with how much each pixel faces the sky, 0 to 3, in the low two bits of its blue."""
+    px = np.array(img)
+    px[..., 2] = (px[..., 2] & 0xFC) | (np.array(up) >> 6)
+    return Image.fromarray(px, "RGBA")
 
 
 def arr(xs):
@@ -270,7 +310,10 @@ def main():
     walls = [index.get(("walls", g, s), -1) for g in range(16) for s in range(16)]
     tracks = [index.get(("track", p, s), -1) for p in range(6) for s in range(16)]
     trees = [index[("tree", t, lk)] for t in range(len(ground.TREES)) for lk in range(ground.TREE_LOOKS)]
+    autumn = [index.get(("tree_autumn", t, lk), index[("tree", t, lk)]) for t in range(len(ground.TREES)) for lk in range(ground.TREE_LOOKS)]
+    bare = [index.get(("tree_bare", t, lk), index[("tree", t, lk)]) for t in range(len(ground.TREES)) for lk in range(ground.TREE_LOOKS)]
     tree_shadows = [index[("tree_shadow", t, lk)] for t in range(len(ground.TREES)) for lk in range(ground.TREE_LOOKS)]
+    bare_shadows = [index.get(("tree_bare_shadow", t, lk), index[("tree_shadow", t, lk)]) for t in range(len(ground.TREES)) for lk in range(ground.TREE_LOOKS)]
     decor = [index[("decor", d, lk)] for d in range(len(ground.DECOR)) for lk in range(ground.DECOR_LOOKS)]
     decor_shadows = [index[("decor_shadow", d, lk)] for d in range(len(ground.DECOR)) for lk in range(ground.DECOR_LOOKS)]
     # Each vehicle's sixteen sprites in its own sheet, in a fixed order: eight headings, then the slopes.
@@ -361,6 +404,10 @@ object Atlas {{
     /** A tree, at kind * TREE_LOOKS + look, kinds in the order of the game's trees, and its shadow, on the shadows sheet. On the static sheet. */
     val TREE = intArrayOf({arr(trees)})
     val TREE_SHADOW = intArrayOf({arr(tree_shadows)})
+    /** The same trees in autumn colours, and bare for winter with their own shadows; the evergreens as they are. */
+    val TREE_AUTUMN = intArrayOf({arr(autumn)})
+    val TREE_BARE = intArrayOf({arr(bare)})
+    val TREE_BARE_SHADOW = intArrayOf({arr(bare_shadows)})
 
     const val DECOR_LOOKS = {ground.DECOR_LOOKS}
     /** Boulders, shrubs and tall grass, at kind * DECOR_LOOKS + look, and their shadows, on the shadows sheet. On the static sheet. */
@@ -423,7 +470,7 @@ TEMPLATE = [("prairie", "ten_wheeler", 0.45), ("prairie_tender", "ten_wheeler_te
 def write_packs(done):
     """Each vehicle's sixteen cells as a pack sprite sheet, then the base and template packs."""
     cells = {}
-    for i, _, _, cell in done:
+    for i, _, _, cell, _ in done:
         sheet, key = JOBS[i][0], JOBS[i][1]
         if cell is None:
             continue

@@ -34,6 +34,8 @@ data class NewGame(
     val industries: Int = 2,
     /** Costs and fares rising year by year. */
     val inflation: Boolean = true,
+    /** Weather crossing the map, with snow, ice and mud; without it every day is fair. */
+    val weather: Boolean = true,
 ) {
     companion object {
         val SIZES = intArrayOf(64, 128, 256, 512, 1024, 2048, 4096)

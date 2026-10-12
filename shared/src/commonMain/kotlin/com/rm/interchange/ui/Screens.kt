@@ -148,8 +148,9 @@ fun NewGameScreen(packs: List<Pack>, onStart: (NewGame, List<Pack>) -> Unit, onB
     var towns by remember { mutableIntStateOf(2) }
     var industries by remember { mutableIntStateOf(2) }
     var inflation by remember { mutableStateOf(true) }
+    var weather by remember { mutableStateOf(true) }
     var off by remember { mutableStateOf(emptySet<String>()) }
-    val settings = NewGame(width, height, seed, year, region, sea, hills, trees, towns, industries, inflation)
+    val settings = NewGame(width, height, seed, year, region, sea, hills, trees, towns, industries, inflation, weather)
     val chosen = packs.filter { it.id !in off }
     val clash = remember(chosen) {
         try {
@@ -231,7 +232,7 @@ fun NewGameScreen(packs: List<Pack>, onStart: (NewGame, List<Pack>) -> Unit, onB
         })
         Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             TogglePill(stringResource(Res.string.inflation), inflation, Modifier.weight(1f).fillMaxHeight()) { inflation = it }
-            Box(Modifier.weight(1f))
+            TogglePill(stringResource(Res.string.weather), weather, Modifier.weight(1f).fillMaxHeight()) { weather = it }
         }
         if (packs.isNotEmpty()) {
             Text(stringResource(Res.string.packs), color = c.text, fontSize = 15.sp)
@@ -399,12 +400,13 @@ fun SettingsWindow(settings: Settings, onClose: () -> Unit) {
     }
 }
 
-/** The grid and heights overlays, on or off. */
+/** The grid, heights and snow overlays, on or off. */
 @Composable
 private fun OverlayToggles(settings: Settings) {
     Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         TogglePill(stringResource(Res.string.grid), settings.grid, Modifier.weight(1f).fillMaxHeight()) { settings.grid = it; settings.save() }
         TogglePill(stringResource(Res.string.heights), settings.heights, Modifier.weight(1f).fillMaxHeight()) { settings.heights = it; settings.save() }
+        TogglePill(stringResource(Res.string.snow_depth), settings.snow, Modifier.weight(1f).fillMaxHeight()) { settings.snow = it; settings.save() }
     }
 }
 

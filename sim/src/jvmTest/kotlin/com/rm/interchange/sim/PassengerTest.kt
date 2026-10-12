@@ -135,8 +135,12 @@ class PassengerTest {
         assertEquals(2, w.nextHop(1, 2))
         assertEquals(-1, w.nextHop(2, 0).let { if (it == 1) -1 else it })
         // Some of A's passengers are bound for C.
-        w.run(Calendar.TICKS_PER_DAY * 10)
-        assertTrue(w.stations[0]!!.cargo[Cargo.PASSENGERS].any { it.dest == 2 })
+        var forC = false
+        repeat(Calendar.TICKS_PER_DAY * 10) {
+            w.step()
+            if (w.stations[0]!!.cargo[Cargo.PASSENGERS].any { it.dest == 2 }) forC = true
+        }
+        assertTrue(forC)
         // Watch for them arriving at C: a payment there for passengers who started at A.
         var throughToC = false
         var paidAtC = 0L

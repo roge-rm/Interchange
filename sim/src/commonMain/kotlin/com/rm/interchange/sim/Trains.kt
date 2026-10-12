@@ -102,6 +102,8 @@ class Train(
     var turnRound = false
     /** No way to where it's going; it tries again at this tick. */
     var lostUntil = 0L
+    /** Stuck in a drift, so the news is told once. Not saved. */
+    var snowbound = false
 
     // The tiles and blocks it's on, as last counted.
     internal var onTiles = IntArray(0)
@@ -281,12 +283,31 @@ private fun World.moveTrain(t: Train) {
         nextOrder(t)
         t.route = null
     }
-    val (free, stop) = freeAhead(t)
-    val allowed = isqrt(2L * BRAKE * 16 * free).toInt()
-    val accel = (t.engineInfo.power * 16 / (t.weight * 8)).coerceAtLeast(1)
-    t.speed = minOf(t.speed + accel, t.maxSpeed, allowed)
+    // Wet rail, leaves, ice and snow take the grip away, for pulling away and for braking; deep snow holds it back.
+    val nose = stepTile(t.steps.last())
+    val grip = adhesion(nose)
+    val brake = BRAKE * (50 + grip / 2) / 100
+    val (free, stop) = freeAhead(t, brake)
+    val allowed = isqrt(2L * brake * 16 * free).toInt()
+    val accel = (t.engineInfo.power * 16 / (t.weight * 8) * grip / 100).coerceAtLeast(1)
+    t.speed = minOf(t.speed + accel, snowLimit(t, nose), allowed)
     val move = minOf(t.speed / 16, free)
     advance(t, move, free)
+    if (stop == Stop.SNOW && t.speed / 16 >= free) {
+        // Up against a drift: it pushes into it, a little at a time.
+        val ahead = nextFrom(t, t.steps.last(), t.routeAt)
+        if (ahead >= 0 && tick % RAM_TICKS == 0L) {
+            val tile = stepTile(ahead)
+            weather.snow[tile] = ((weather.snow[tile].toInt() and 255) - 1).toByte()
+        }
+        if (!t.snowbound) {
+            t.snowbound = true
+            news += News(News.SNOWBOUND, t.id, tick)
+        }
+        t.speed = 0
+        return
+    }
+    if (move > 0) t.snowbound = false
     if (move == free && t.speed / 16 >= free) {
         // At the stopping point.
         t.speed = 0
@@ -306,11 +327,47 @@ private fun World.moveTrain(t: Train) {
     }
 }
 
-private enum class Stop { NONE, SIGNAL, TRAIN, STATION, DEPOT, END }
+private enum class Stop { NONE, SIGNAL, TRAIN, STATION, DEPOT, END, SNOW }
+
+/**
+ * How much grip the rails on [tile] give, in percent: less on wet rail, less
+ * again with leaves on it in the fall, on ice and under snow.
+ */
+fun World.adhesion(tile: Int): Int {
+    val snow = weather.snow[tile].toInt() and 255
+    val ice = weather.ice[tile].toInt() and 255
+    val wet = weather.wet[tile].toInt() and 255
+    return when {
+        ice > 2 -> 60
+        wet >= WET_RAIL && lookToday() == Climate.AUTUMN && leafy(tile) -> 55
+        snow > 5 -> 75
+        wet >= WET_RAIL -> 80
+        else -> 100
+    }
+}
+
+/** Whether leafy trees grow on [tile] or next to it, to drop their leaves on the line. */
+private fun World.leafy(tile: Int): Boolean {
+    val x = tile % width
+    val y = tile / width
+    for (dy in -1..1) for (dx in -1..1) {
+        if (!inside(x + dx, y + dy)) continue
+        val p = trees[index(x + dx, y + dy)].toInt()
+        if (Trees.count(p) > 0 && Trees.kind(p) in Trees.MAPLE..Trees.ASPEN) return true
+    }
+    return false
+}
+
+/** The fastest train [t] can go through the snow on [tile]: its top speed, less in deep snow. */
+private fun World.snowLimit(t: Train, tile: Int): Int {
+    val snow = weather.snow[tile].toInt() and 255
+    if (snow < Weather.DEEP) return t.maxSpeed
+    return t.maxSpeed * maxOf(25, 100 - (snow - Weather.DEEP) * 2) / 100
+}
 
 /** How far the train can go before it has to stand, up to what it needs to brake from full speed, and why it would stop. */
-private fun World.freeAhead(t: Train): Pair<Int, Stop> {
-    val reach = t.maxSpeed.toLong().let { (it * it / (2L * BRAKE) / 16).toInt() } + 16 * FIX
+private fun World.freeAhead(t: Train, brake: Int = BRAKE): Pair<Int, Stop> {
+    val reach = t.maxSpeed.toLong().let { (it * it / (2L * brake) / 16).toInt() } + 16 * FIX
     var cur = t.steps.last()
     var free = stepLength(cur) - t.nose
     var at = t.routeAt
@@ -328,6 +385,7 @@ private fun World.freeAhead(t: Train): Pair<Int, Stop> {
         val nt = stepTile(next)
         if (!mayPass(nt, stepPiece(next), stepEntry(next))) return free to Stop.END
         if (signalApplies(cur, next) && blockTaken(next, t)) return free to Stop.SIGNAL
+        if ((weather.snow[nt].toInt() and 255) >= Weather.BLOCKING) return free to Stop.SNOW
         if ((tileTrains[nt] ?: 0) - (if (nt in t.onTiles) 1 else 0) > 0) return free to Stop.TRAIN
         free += stepLength(next)
         cur = next
@@ -392,6 +450,10 @@ private fun World.advance(t: Train, move: Int, free: Int) {
         }
         t.nose -= stepLength(t.steps.last())
         t.steps += next
+        // The engine's pilot pushes the snow off the line as it goes.
+        val tile = stepTile(next)
+        val snow = weather.snow[tile].toInt() and 255
+        if (snow > PLOWED) weather.snow[tile] = (PLOWED + (snow - PLOWED) / 2).toByte()
         if (t.route != null) t.routeAt++
     }
     // Lets go of the steps wholly behind the last wagon.
@@ -488,6 +550,13 @@ private fun World.somethingAt(t: Train, id: Int): Boolean {
 
 /** How often a train waiting to fill up looks for more cargo, in ticks. */
 const val FULL_LOAD_RETRY = Calendar.TICKS_PER_DAY / 2
+
+/** Ground this wet, in mm, leaves the rails wet. */
+const val WET_RAIL = 40
+/** Snow, in cm, a passing train leaves on the line, halving what's over it. */
+const val PLOWED = 10
+/** Ticks a train stuck in a drift takes to push through each cm of it. */
+const val RAM_TICKS = 1L
 
 /** How hard trains brake, in speed units a tick. */
 const val BRAKE = 40

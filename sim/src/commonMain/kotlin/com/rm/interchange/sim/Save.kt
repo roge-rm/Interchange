@@ -16,14 +16,14 @@ package com.rm.interchange.sim
  */
 object Save {
     private val MAGIC = "ICHG".encodeToByteArray()
-    const val VERSION = 9
+    const val VERSION = 10
 
     fun write(world: World): ByteArray {
         val w = ByteWriter(world.width * world.height * 6 + 4096)
         with(world) {
             val g = settings
             w.int(g.width); w.int(g.height); w.long(g.seed); w.int(g.startYear); w.int(g.region.ordinal)
-            w.int(g.sea); w.int(g.hills); w.int(g.trees); w.int(g.towns); w.int(g.industries); w.bool(g.inflation)
+            w.int(g.sea); w.int(g.hills); w.int(g.trees); w.int(g.towns); w.int(g.industries); w.bool(g.inflation); w.bool(g.weather)
             w.uvar(roster.packs.size.toLong())
             for (p in roster.packs) { w.string(p.id); w.int(p.version); w.long(p.hash) }
             w.uvar(roster.engines.size.toLong())
@@ -87,6 +87,11 @@ object Save {
                 w.int(ind.broughtThisMonth); w.int(ind.broughtLastMonth); w.bool(ind.closed)
             }
             w.shorts(industryOf)
+            val wx = weather
+            w.bytes(wx.snow); w.bytes(wx.ice); w.bytes(wx.wet); w.bytes(wx.frost)
+            w.int(wx.anomaly); w.int(wx.recent); w.int(wx.windFrom); w.int(wx.wind)
+            w.uvar(wx.fronts.size.toLong())
+            for (f in wx.fronts) { w.int(f.kind); w.int(f.x); w.int(f.y); w.int(f.dx); w.int(f.dy); w.int(f.radius); w.int(f.strength); w.int(f.warmth); w.int(f.life); w.bool(f.freezing) }
         }
         val body = Squeeze.pack(w.toByteArray())
         val out = ByteWriter(body.size + 16)
@@ -228,6 +233,14 @@ object Save {
                 }
                 fillShorts(industryOf, r.shorts())
             }
+            if (version >= 10) {
+                val wx = weather
+                fill(wx.snow, r.bytes()); fill(wx.ice, r.bytes()); fill(wx.wet, r.bytes()); fill(wx.frost, r.bytes())
+                wx.anomaly = r.int(); wx.recent = r.int(); wx.windFrom = r.int(); wx.wind = r.int()
+                repeat(r.uvar().toInt().also { if (it > 4096) throw BadData("too many weather fronts") }) {
+                    wx.fronts += Front(r.int(), r.int(), r.int(), r.int(), r.int(), r.int(), r.int(), r.int(), r.int(), r.bool())
+                }
+            }
         }
         // Signal blocks and who's on which tile are worked out afresh before the next move.
         world.networkChangedKeepingRoutes()
@@ -251,6 +264,7 @@ object Save {
             towns = if (version >= 3) r.int() else 0,
             industries = if (version >= 7) r.int() else 0,
             inflation = if (version >= 8) r.bool() else false,
+            weather = if (version >= 10) r.bool() else true,
         )
         if (settings.width !in 16..4096 || settings.height !in 16..4096) throw BadData("map size out of range")
         return settings

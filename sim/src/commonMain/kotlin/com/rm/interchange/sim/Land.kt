@@ -146,4 +146,5 @@ internal fun World.terraform(company: Company, cx: Int, cy: Int, up: Boolean) {
         val y = c / (width + 1)
         for (ty in y - 1..y) for (tx in x - 1..x) if (inside(tx, ty)) touched(tx, ty)
     }
+    if (target == 0 || target == 1) shoreChanged()
 }

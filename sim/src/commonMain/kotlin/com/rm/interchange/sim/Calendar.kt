@@ -43,6 +43,12 @@ object Calendar {
     /** 1 for the first of the month. */
     fun dayOfMonth(startYear: Int, day: Int) = (civil(startYear, day) % 100).toInt()
 
+    /** Days since the first of January of game day [day]'s year, 0 to 365. */
+    fun dayOfYear(startYear: Int, day: Int): Int {
+        val z = civilToDays(startYear, 1, 1) + day
+        return (z - civilToDays((daysToCivil(z) / 10000).toInt(), 1, 1)).toInt()
+    }
+
     /** Whether game day [day] is the first of January. */
     fun newYear(startYear: Int, day: Int) = civil(startYear, day) % 10000 == 101L
 

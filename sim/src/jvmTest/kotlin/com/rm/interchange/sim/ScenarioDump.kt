@@ -4,16 +4,21 @@ import java.io.File
 import kotlin.test.Test
 
 /**
- * Writes a small game to try on a phone: three towns along one line, two
- * trains, a hundred days in. Only runs with INTERCHANGE_SCENARIO_OUT set to
- * a folder; the save and its notes go there as save_1.ichg and save_1.info.
+ * Writes a small game to try on a phone: three towns along one line by a
+ * lake on the Shield, two trains, INTERCHANGE_SCENARIO_DAYS days in (a
+ * hundred if not set). Only runs with INTERCHANGE_SCENARIO_OUT set to a
+ * folder; the save and its notes go there as save_1.ichg and save_1.info.
  */
 class ScenarioDump {
     @Test
     fun threeTownsTwoTrains() {
         val out = System.getenv("INTERCHANGE_SCENARIO_OUT") ?: return
-        val w = World(96, 64, 1, startYear = 1925)
-        for (i in w.corners.indices) w.corners[i] = 3
+        val days = System.getenv("INTERCHANGE_SCENARIO_DAYS")?.toIntOrNull() ?: 100
+        val w = World(NewGame(96, 64, 1, 1925, Region.SHIELD, towns = 0, industries = 0))
+        // Flat land at height 3 with a lake along the south, maples along the line.
+        for (y in 0..64) for (x in 0..96) w.corners[w.corner(x, y)] = if (y >= 46) 0 else if (y == 45) 1 else if (y == 44) 2 else 3
+        for (x in 3..92 step 3) w.trees[w.index(x, 28)] = Trees.pack(Trees.MAPLE, 2).toByte()
+        w.shoreChanged()
         w.companies[0].money = 300_000
         for ((n, x) in listOf(10, 47, 84).withIndex()) {
             val t = Town(n, listOf("Elmbrook", "Saint-Lin", "Port Murray")[n], x, 33, 3, french = n == 1)
@@ -41,9 +46,9 @@ class ScenarioDump {
             w.apply(Command.TrainOrder(0, k, Command.TrainOrder.ORDERS, orders))
             w.apply(Command.TrainOrder(0, k, Command.TrainOrder.START_STOP))
         }
-        repeat(Calendar.TICKS_PER_DAY * 100) { w.step() }
+        repeat(Calendar.TICKS_PER_DAY * days) { w.step() }
         File(out, "save_1.ichg").writeBytes(Save.write(w))
-        File(out, "save_1.info").writeText("day=${w.day}\nstartYear=1925\nmoney=${w.companies[0].money}\nwidth=96\nheight=64\nregion=0\n")
+        File(out, "save_1.info").writeText("day=${w.day}\nstartYear=1925\nmoney=${w.companies[0].money}\nwidth=96\nheight=64\nregion=2\n")
         println(w.stations.map { s -> s!!.name + " " + s.rating.toList() } + w.towns.map { it.approval[0] } + w.trains.map { it!!.profitThisYear })
     }
 }

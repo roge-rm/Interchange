@@ -70,6 +70,7 @@ import com.rm.interchange.sim.industryAt
 import com.rm.interchange.sim.approvalLevel
 import com.rm.interchange.map.rememberTownLabels
 import com.rm.interchange.sim.World
+import com.rm.interchange.sim.mud
 import kotlin.math.roundToInt
 import androidx.compose.runtime.key
 import com.rm.interchange.platform.Lifecycle
@@ -310,10 +311,21 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
     // What the strip shows, set only when it changes so the screen doesn't compose every frame.
     var day by remember { mutableIntStateOf(runner.day) }
     var money by remember { mutableLongStateOf(runner.money) }
+    // The temperature where the map's looking, worked out again when the day or the tile changes.
+    var weather by remember { mutableStateOf("") }
+    var weatherAt by remember { mutableStateOf(-1L) }
     LaunchedEffect(runner) {
         while (true) withFrameNanos {
             if (runner.day != day) day = runner.day
             if (runner.money != money) money = runner.money
+            val wv = runner.view?.weather
+            val x = view.focusX.toInt().coerceIn(0, world.width - 1)
+            val y = view.focusY.toInt().coerceIn(0, world.height - 1)
+            val at = (wv?.day?.toLong() ?: -1L) * world.width * world.height + world.index(x, y)
+            if (wv != null && at != weatherAt) {
+                weatherAt = at
+                weather = degrees(skyHere(world, wv, x, y).temperature)
+            }
         }
     }
 
@@ -411,7 +423,7 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
             world, sheets, view, { frame.value }, input, { moving(runner) }, Modifier.fillMaxSize(),
             overlay = plan?.let { p -> { painter -> drawTrackPlan(world, painter, p) } }
                 ?: stationPlan?.let { p -> { painter -> drawStationPlan(world, painter, p) } },
-            overlays = (if (settings.grid) ChunkBaker.GRID else 0) or (if (settings.heights) ChunkBaker.HEIGHTS else 0),
+            overlays = (if (settings.grid) ChunkBaker.GRID else 0) or (if (settings.heights) ChunkBaker.HEIGHTS else 0) or (if (settings.snow) ChunkBaker.SNOW else 0),
             labels = {
                 val wv = worldView.value
                 with(townLabels) {
@@ -439,10 +451,11 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
         StatusStrip(
             onMenu,
             paused, { paused = !paused; runner.paused = paused }, speed, { speed = (speed + 1) % SPEEDS.size; runner.speed = SPEEDS[speed] },
-            settings.grid || settings.heights, onOverlays,
+            settings.grid || settings.heights || settings.snow, onOverlays,
             weekdayDate(day, world.startYear),
             money(money), money < 0,
             { view.turnBy(-1) }, { view.turnBy(1) }, onFinances,
+            weather, { selected = if (selected == Selection.Weather) null else Selection.Weather },
             compact = layout.compact || layout.narrow,
             twoLines = twoLines,
             cameras = cameras,
@@ -464,7 +477,7 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
 
         // Under the strip, the latest news; a tap goes to where it happened.
         worldView.value?.news?.lastOrNull()?.let { n ->
-            val ind = if (n.kind == News.PROSPECTING_FAILED) null else world.industries.getOrNull(n.about)
+            val ind = if (n.kind == News.PROSPECTING_FAILED || n.kind == News.SNOWBOUND) null else world.industries.getOrNull(n.about)
             val text = newsText(world, n)
             Box(
                 Modifier.align(Alignment.TopCenter)
@@ -477,6 +490,7 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
                         view.focusX = ind.x + 1f
                         view.focusY = ind.y + 1f
                     }
+                    if (n.kind == News.SNOWBOUND) selected = Selection.Train(n.about)
                 }
             }
         }
@@ -515,6 +529,9 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
             val wv = worldView.value
             when (val sel = selected) {
                 is Selection.Tile -> InspectCard(world, sel.x, sel.y, { selected = null }, trayWidth)
+                Selection.Weather -> wv?.weather?.let { w ->
+                    WeatherCard(world, w, view.focusX.toInt().coerceIn(0, world.width - 1), view.focusY.toInt().coerceIn(0, world.height - 1), { selected = null }, trayWidth)
+                }
                 is Selection.Train -> {
                     val t = wv?.trains?.firstOrNull { it.id == sel.id }
                     if (t == null || wv == null) selected = null
@@ -557,6 +574,7 @@ private sealed interface Selection {
     data class Train(val id: Int) : Selection
     data class Depot(val id: Int) : Selection
     data class Station(val id: Int) : Selection
+    data object Weather : Selection
 }
 
 /** What moves, from the game thread, ready to draw. */
@@ -592,6 +610,11 @@ private fun InspectCard(world: World, x: Int, y: Int, onClose: () -> Unit, modif
             add(stringResource(Res.string.picked_up, town.servedLastMonth))
             add(stringResource(Res.string.town_standing, levels.getOrElse(approvalLevel(town.approval[0])) { "" }))
         }
+        val snow = world.weather.snow[i].toInt() and 255
+        val ice = world.weather.ice[i].toInt() and 255
+        if (water && ice >= 5) add(stringResource(Res.string.ice_on_water, ice))
+        if (snow > 0) add(stringResource(Res.string.snow_on_ground, snow))
+        if (!water && world.mud(i) > 0) add(stringResource(Res.string.muddy))
         if (t != 0) {
             add(stringResource(Res.string.track_pieces, pieceNames.joinToString(join)))
             if (world.owner[i].toInt() == 0) add(stringResource(Res.string.owned_by, stringResource(Res.string.company)))
@@ -637,6 +660,10 @@ private fun IndustryCard(world: World, ind: Industry, where: String, onClose: ()
 @Composable
 private fun newsText(world: World, n: News): String {
     if (n.kind == News.PROSPECTING_FAILED) return stringResource(Res.string.news_prospect_failed, world.roster.industries.getOrNull(n.about)?.name(languageCode()) ?: "")
+    if (n.kind == News.SNOWBOUND) {
+        val name = world.trains.getOrNull(n.about)?.name?.takeIf { it.isNotEmpty() } ?: stringResource(Res.string.train_n, n.about + 1)
+        return stringResource(Res.string.news_snowbound, name)
+    }
     val ind = world.industries.getOrNull(n.about) ?: return ""
     val name = industryName(world, ind, languageCode())
     return stringResource(

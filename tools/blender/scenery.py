@@ -63,7 +63,8 @@ def blob(model, x, y, z, r, mat, seed, squash=1.0):
     return lumpy(model, obj, r * 0.55, r * 0.6, seed)
 
 
-def tree(m, kind, look):
+def tree(m, kind, look, season="summer"):
+    """A tree. The leafy kinds can also be drawn in their autumn colours or bare for winter."""
     rng = random.Random(f"{kind}{look}")
     size = 0.85 + 0.15 * look + rng.uniform(-0.05, 0.05)
     bark = material("bark", "#5a3f2a", rough=0.9)
@@ -89,8 +90,11 @@ def tree(m, kind, look):
             s = rng.uniform(-0.1, 0.1)
             blob(m, a, s, top * rng.uniform(0.62, 0.95), rng.uniform(0.09, 0.13) * size, green, look * 10 + k, squash=0.55)
         return
-    colours = {"maple": ("#2c5a22", "#4e8a36"), "birch": ("#4e7a30", "#86b04e"), "aspen": ("#5a8a34", "#9ac05a")}[kind]
-    green = leafy(f"{kind} leaves", *colours)
+    colours = {
+        "summer": {"maple": ("#2c5a22", "#4e8a36"), "birch": ("#4e7a30", "#86b04e"), "aspen": ("#5a8a34", "#9ac05a")},
+        "autumn": {"maple": ("#9a2a16", "#e0702a"), "birch": ("#b08a24", "#e8c84a"), "aspen": ("#c09a1c", "#f2d454")},
+    }.get(season, {}).get(kind)
+    green = leafy(f"{kind} leaves {season}", *colours) if colours else None
     trunk = material("birch bark", "#e4e0d6", rough=0.8) if kind == "birch" else material("aspen bark", "#c4c2b0", rough=0.8) if kind == "aspen" else bark
     top = (4.2 if kind == "maple" else 4.6) * size
     m.upright(0, 0, 0, top * 0.6, 0.024, 0.016, trunk, segments=8)
@@ -100,12 +104,41 @@ def tree(m, kind, look):
             m.box(-0.026, 0.026, -0.006, 0.006, z, z + 0.06, material("birch marks", "#2a2622", rough=0.9))
     wide = (0.16 if kind == "maple" else 0.11) * size
     count = 11 if kind == "maple" else 8
+    twigs = None
+    if green is None:
+        # Bare: boughs out to where the leaves would be, twigs off them, and a faint haze of the finest twigs.
+        twigs = haze(f"{kind} twigs", "#6a5c54" if kind == "maple" else "#8a7e74")
     for k in range(count):
         t = rng.random()
         h = top * (0.55 + 0.4 * t)
         reach = wide * math.sin(math.pi * min(1.0, 0.2 + t * 0.9))
         ang = rng.uniform(0, 2 * math.pi)
-        blob(m, reach * math.cos(ang), reach * math.sin(ang), h, rng.uniform(0.1, 0.14) * size * (1.1 if kind == "maple" else 0.85), green, look * 10 + k)
+        r = rng.uniform(0.1, 0.14) * size * (1.1 if kind == "maple" else 0.85)
+        x, y = reach * math.cos(ang), reach * math.sin(ang)
+        if green is not None:
+            blob(m, x, y, h, r, green, look * 10 + k)
+            continue
+        m.rod((0, 0, top * 0.45), (x, y, h), 0.008, trunk, segments=6)
+        for j in range(3):
+            a2 = ang + rng.uniform(-1.2, 1.2)
+            m.rod((x, y, h), (x + r * 0.8 * math.cos(a2), y + r * 0.8 * math.sin(a2), h + rng.uniform(0.1, 0.6)), 0.004, trunk, segments=5)
+        blob(m, x, y, h, r * 0.9, twigs, look * 10 + k)
+
+
+def haze(name, colour):
+    """A see-through material for the fine twigs of a bare crown, seen from afar as a haze."""
+    key = ("haze", name)
+    if key in parts._materials:
+        return parts._materials[key]
+    m = bpy.data.materials.new(name)
+    m.use_nodes = True
+    p = m.node_tree.nodes["Principled BSDF"]
+    p.inputs["Base Color"].default_value = parts.hexcol(colour)
+    p.inputs["Roughness"].default_value = 0.9
+    p.inputs["Alpha"].default_value = 0.22
+    m.blend_method = "BLEND"
+    parts._materials[key] = m
+    return m
 
 
 # ---- platforms, the engine house and signals ---------------------------------------------

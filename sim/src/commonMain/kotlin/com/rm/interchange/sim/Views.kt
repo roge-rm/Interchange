@@ -89,6 +89,9 @@ class CompanyView(
     val history: List<LongArray>,
 )
 
+/** The weather as the screen shows it: copies of the fronts, the air and the wind, as of the start of [day]. */
+class WeatherView(val day: Int, val year: Int, val doy: Int, val anomaly: Int, val fronts: List<Front>, val windFrom: Int, val wind: Int)
+
 /** Everything the screen draws and lists that moves or changes as the game runs. */
 class WorldView(
     val vehicles: VehicleView,
@@ -101,6 +104,7 @@ class WorldView(
     val news: List<News> = emptyList(),
     val company: CompanyView? = null,
     val tick: Long = 0,
+    val weather: WeatherView? = null,
 )
 
 fun World.view(): WorldView {
@@ -165,7 +169,15 @@ fun World.view(): WorldView {
         townsChanged = false
     }
     return WorldView(VehicleView(tick, cars.toFloatArray()), trainViews, stationViews, signalViews, depotViews, townViews, payments.toList(), news.toList(),
-        companies.firstOrNull()?.let { c -> CompanyView(c.money, c.loan, maxLoan(), c.thisYear.copyOf(), c.lastYear.copyOf(), c.history.map { it.copyOf() }) }, tick)
+        companies.firstOrNull()?.let { c -> CompanyView(c.money, c.loan, maxLoan(), c.thisYear.copyOf(), c.lastYear.copyOf(), c.history.map { it.copyOf() }) }, tick, weatherView())
+}
+
+/** The weather's copy for the screen, made again only once a day. */
+private fun World.weatherView(): WeatherView {
+    weatherViewCache?.let { if (it.day == day) return it }
+    return WeatherView(
+        day, Calendar.year(startYear, day), Calendar.dayOfYear(startYear, day), weather.anomaly, weather.fronts.map { it.copy() }, weather.windFrom, weather.wind,
+    ).also { weatherViewCache = it }
 }
 
 /** The heading, in eighths from along x towards y, of a step of ([dx], [dy]). */

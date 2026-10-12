@@ -266,4 +266,27 @@
     <string name="build_for">Construire pour %1$s</string>
     <string name="prospect_for">Prospecter pour %1$s</string>
     <string name="news_prospect_failed">Prospection infructueuse : %1$s</string>
+    <!-- Météo. -->
+    <string name="weather">Météo</string>
+    <string-array name="skies">
+        <item>Dégagé</item><item>Nuageux</item><item>Pluie</item><item>Neige</item><item>Pluie verglaçante</item><item>Brouillard</item><item>Orage</item><item>Blizzard</item>
+    </string-array>
+    <string-array name="seasons">
+        <item>Printemps</item><item>Été</item><item>Automne</item><item>Hiver</item>
+    </string-array>
+    <string-array name="winds">
+        <item>Vent d'ouest</item><item>Vent du nord-ouest</item><item>Vent du nord</item><item>Vent du nord-est</item>
+        <item>Vent d'est</item><item>Vent du sud-est</item><item>Vent du sud</item><item>Vent du sud-ouest</item>
+    </string-array>
+    <string name="wind_speed">%1$s, %2$d km/h</string>
+    <string name="calm">Calme</string>
+    <string name="temperature_line">%1$s, normale de saison %2$s</string>
+    <string name="snow_on_ground">Neige au sol %1$d cm</string>
+    <string name="ice_on_water">Glace de %1$d cm</string>
+    <string name="frost_line">Gel à %1$d cm sous terre</string>
+    <string name="muddy">Boueux</string>
+    <string name="daylight">Jour de %1$d h %2$d min</string>
+    <string name="warmer_climate">Le climat est plus chaud de %1$s qu'en 1900</string>
+    <string name="news_snowbound">%1$s est bloqué par la neige</string>
+    <string name="snow_depth">Neige</string>
 </resources>

@@ -95,6 +95,8 @@ fun StatusStrip(
     onTurnLeft: () -> Unit,
     onTurnRight: () -> Unit,
     onMoney: () -> Unit,
+    weather: String,
+    onWeather: () -> Unit,
     compact: Boolean,
     twoLines: Boolean,
     modifier: Modifier = Modifier,
@@ -115,6 +117,10 @@ fun StatusStrip(
     }
     val readings = @Composable {
         Text(date, color = c.text, fontSize = textSize, fontWeight = FontWeight.SemiBold, maxLines = 1)
+        Text(
+            weather, color = c.text, fontSize = textSize, maxLines = 1,
+            modifier = Modifier.clip(RoundedCornerShape(6.dp)).clickable(onClickLabel = stringResource(Res.string.weather), role = Role.Button, onClick = onWeather).padding(2.dp),
+        )
         Text(
             money, color = if (moneyLow) c.bad else c.text, fontSize = textSize, maxLines = 1,
             modifier = Modifier.clip(RoundedCornerShape(6.dp)).clickable(onClickLabel = stringResource(Res.string.finances), role = Role.Button, onClick = onMoney).padding(2.dp),

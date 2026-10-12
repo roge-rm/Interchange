@@ -47,6 +47,8 @@ class News(val kind: Int, val about: Int, val tick: Long) {
         const val PRODUCTION_DOWN = 3
         /** Prospecting found nothing; [News.about] is the industry kind. */
         const val PROSPECTING_FAILED = 4
+        /** A train stuck in a snowdrift; [News.about] is the train. */
+        const val SNOWBOUND = 5
     }
 }
 
@@ -206,8 +208,8 @@ internal fun World.industriesDay(made: HashMap<Int, IntArray>) {
         ind.brought = 0
         val kinds = (0 until Cargo.COUNT).filter { kind.converts and (1 shl it) != 0 }
         if (kinds.isNotEmpty()) for ((k, c) in kinds.withIndex()) out[c] += n / kinds.size + if (k < n % kinds.size) 1 else 0
-        // And a month's worth of its own over the month, more or less by the season.
-        val season = kind.seasons[Calendar.month(startYear, day)]
+        // And a month's worth of its own over the month, more or less by the season and the weather.
+        val season = kind.seasons[Calendar.month(startYear, day)] * weatherShare(ind) / 100
         for (c in 0 until Cargo.COUNT) {
             val month = kind.produces[c] * ind.level / 16 * season / 100
             if (month > 0) out[c] += (month * 8 + rng.below(240)) / 240
@@ -334,4 +336,36 @@ const val NEWS_TICKS = Calendar.TICKS_PER_DAY * 10L
 
 /** The industry in reach of station [s] that takes cargo [c], the first by id, or null. */
 internal fun World.takerAt(s: Station, c: Int): Industry? =
-    stationIndustries[s.id].orEmpty().map { industries[it] }.firstOrNull { !it.closed && roster.industries[it.kind].takes(c) }
+    stationIndustries[s.id].orEmpty().map { industries[it] }.firstOrNull { !it.closed && roster.industries[it.kind].takes(c) && !iceBound(it) }
+
+/** Whether [ind] is shut by ice: the water by it frozen hard enough to stop boats. */
+fun World.iceBound(ind: Industry): Boolean {
+    val kind = roster.industries[ind.kind]
+    if (kind.weather and IndustryKind.ICE == 0) return false
+    for (y in ind.y - 1..ind.y + kind.along(ind.turn)) for (x in ind.x - 1..ind.x + kind.across(ind.turn)) {
+        if (inside(x, y) && isWater(x, y) && (weather.ice[index(x, y)].toInt() and 255) >= ICE_BOUND) return true
+    }
+    return false
+}
+
+/** How much of its usual [ind] makes today for the weather, in percent. */
+fun World.weatherShare(ind: Industry): Int {
+    val rules = roster.industries[ind.kind].weather
+    if (rules == 0) return 100
+    if (iceBound(ind)) return 0
+    val i = index(ind.x, ind.y)
+    if (rules and IndustryKind.THAW != 0 && mud(i) > 60) return 0
+    if (rules and IndustryKind.CROPS != 0) {
+        val wet = weather.wet[i].toInt() and 255
+        return when {
+            wet < 8 -> 55
+            wet < 20 -> 80
+            wet > 170 -> 75
+            else -> 110
+        }
+    }
+    return 100
+}
+
+/** Ice on the water, in cm, that shuts a port or harbour. */
+const val ICE_BOUND = 15
