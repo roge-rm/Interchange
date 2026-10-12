@@ -21,6 +21,9 @@ object Codec {
     /** A signal of a kind. */
     private const val SIGNAL_KIND = 12
     private const val WAYPOINT = 13
+    private const val BRIDGE = 14
+    private const val TUNNEL = 15
+    private const val WIRE = 16
 
     fun write(w: ByteWriter, c: Command) {
         when (c) {
@@ -30,6 +33,9 @@ object Codec {
             is Command.Depot -> { w.byte(DEPOT); w.int(c.company); w.int(c.x); w.int(c.y); w.int(c.edge) }
             is Command.Signal -> { w.byte(SIGNAL_KIND); w.int(c.company); w.int(c.x); w.int(c.y); w.int(c.piece); w.int(c.facing); w.int(c.kind) }
             is Command.Waypoint -> { w.byte(WAYPOINT); w.int(c.company); w.int(c.x); w.int(c.y) }
+            is Command.Bridge -> { w.byte(BRIDGE); w.int(c.company); w.int(c.x0); w.int(c.y0); w.int(c.x1); w.int(c.y1); w.int(c.style) }
+            is Command.Tunnel -> { w.byte(TUNNEL); w.int(c.company); w.int(c.x); w.int(c.y) }
+            is Command.Wire -> { w.byte(WIRE); w.int(c.company); w.int(c.sx); w.int(c.sy); w.int(c.ex); w.int(c.ey); w.int(c.first); w.bool(c.remove) }
             is Command.Clear -> { w.byte(CLEAR); w.int(c.company); w.int(c.x); w.int(c.y) }
             is Command.BuyTrain -> { w.byte(BUY_TRAIN_CARGO); w.int(c.company); w.int(c.depot); w.int(c.engine); w.int(c.wagon); w.int(c.wagons); w.int(c.cargo) }
             is Command.Loan -> { w.byte(LOAN); w.int(c.company); w.bool(c.borrow) }
@@ -52,6 +58,9 @@ object Codec {
         FUND_INDUSTRY -> Command.FundIndustry(r.int(), r.int())
         SIGNAL_KIND -> Command.Signal(r.int(), r.int(), r.int(), r.int(), r.int(), r.int())
         WAYPOINT -> Command.Waypoint(r.int(), r.int(), r.int())
+        BRIDGE -> Command.Bridge(r.int(), r.int(), r.int(), r.int(), r.int(), r.int())
+        TUNNEL -> Command.Tunnel(r.int(), r.int(), r.int())
+        WIRE -> Command.Wire(r.int(), r.int(), r.int(), r.int(), r.int(), r.int(), r.bool())
         else -> throw BadData("no such command: $kind")
     }
 

@@ -44,6 +44,8 @@ fun World.hasFoundation(x: Int, y: Int) = needsFoundation(x, y, trackAt(x, y))
  * [pieces] on it: the land, or the top of its foundation.
  */
 fun World.surfaceHeight(x: Int, y: Int, pieces: Int, corner: Int): Int {
+    // A tunnel's portal runs level into the hill at the foot of its slope.
+    spanHeads[index(x, y)]?.let { id -> spans[id]?.let { if (it.tunnel) return it.height } }
     val n = heightAt(x, y)
     val e = heightAt(x + 1, y)
     val s = heightAt(x + 1, y + 1)
@@ -65,7 +67,7 @@ fun World.edgeHeight(x: Int, y: Int, pieces: Int, edge: Int): Int = when (edge) 
 }
 
 /** The tile across [edge] of ([x], [y]), packed as an index, or -1 off the map. */
-private fun World.across(x: Int, y: Int, edge: Int): Int {
+private fun World.tileAcross(x: Int, y: Int, edge: Int): Int {
     val nx = x + when (edge) { Track.XM -> -1; Track.XP -> 1; else -> 0 }
     val ny = y + when (edge) { Track.YM -> -1; Track.YP -> 1; else -> 0 }
     return if (inside(nx, ny)) index(nx, ny) else -1
@@ -81,7 +83,7 @@ fun World.piecesFit(x: Int, y: Int, pieces: Int, trackOf: (Int) -> Int = { track
         if (pieces and p == 0) continue
         val e = Track.edges(p)
         for (edge in intArrayOf(e and 3, e shr 2)) {
-            val n = across(x, y, edge)
+            val n = tileAcross(x, y, edge)
             if (n < 0) continue
             val theirs = trackOf(n)
             val back = Track.opposite(edge)
@@ -106,7 +108,7 @@ fun World.planRail(c: Command.Rail): BooleanArray? {
         val piece = line[k] % 64
         val has = trackOf(i)
         // Town roads and buildings stay put; level crossings come with roads of the player's own.
-        val special = stationTiles.containsKey(i) || depotTiles.containsKey(i) || townBuilt(i)
+        val special = stationTiles.containsKey(i) || depotTiles.containsKey(i) || townBuilt(i) || spanHeads.containsKey(i)
         val ok = !special && if (c.remove) {
             has and piece != 0 && owner[i].toInt() == c.company
         } else {
@@ -126,12 +128,13 @@ internal fun World.buildRail(company: Company, c: Command.Rail) {
         val y = i / width
         val has = track[i].toInt()
         // Platforms and depots are left for the Clear tool.
-        if (stationTiles.containsKey(i) || depotTiles.containsKey(i) || townBuilt(i)) continue
+        if (stationTiles.containsKey(i) || depotTiles.containsKey(i) || townBuilt(i) || spanHeads.containsKey(i)) continue
         if (c.remove) {
             if (has and piece == 0 || owner[i].toInt() != company.id || trainOnTile(i)) continue
             if (company.money < price(Prices.TRACK_REMOVE)) return
             spend(company, Books.CONSTRUCTION, price(Prices.TRACK_REMOVE))
             track[i] = (has and piece.inv()).toByte()
+            wires[i] = (wires[i].toInt() and piece.inv()).toByte()
             signals.remove(pieceKey(i, piece))
             if (track[i].toInt() == 0) owner[i] = -1
         } else {

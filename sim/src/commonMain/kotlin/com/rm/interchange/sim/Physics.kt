@@ -28,6 +28,7 @@ fun Train.massKg(): Long {
 
 /** How high the track is at [along] (4096ths of a tile) into step [s], in 4096ths of a step. */
 private fun World.heightAlong(s: Int, along: Int): Long {
+    spanOf(s)?.let { return it.height * 4096L }
     val tile = stepTile(s)
     val x = tile % width
     val y = tile / width

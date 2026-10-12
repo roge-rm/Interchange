@@ -316,4 +316,8 @@
     <string-array name="signal_kinds">
         <item>Block</item><item>Path</item><item>Entry</item><item>Exit</item><item>Combo</item>
     </string-array>
+    <string-array name="bridge_styles">
+        <item>Trestle</item><item>Truss</item><item>Concrete</item>
+    </string-array>
+    <string name="tool_wires">Wires</string>
 </resources>

@@ -71,6 +71,7 @@ import com.rm.interchange.sim.approvalLevel
 import com.rm.interchange.map.rememberTownLabels
 import com.rm.interchange.sim.World
 import com.rm.interchange.sim.Signals
+import com.rm.interchange.sim.Spans
 import com.rm.interchange.sim.mud
 import kotlin.math.roundToInt
 import androidx.compose.runtime.key
@@ -342,6 +343,8 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
     var removing by remember { mutableStateOf(false) }
     var stationAlongX by remember { mutableStateOf(true) }
     var signalKind by remember { mutableIntStateOf(0) }
+    var bridgeStyle by remember { mutableIntStateOf(0) }
+    var bridgePlan by remember { mutableStateOf<Command.Bridge?>(null) }
     // The tray folds to its line once something's built, to show more of the map.
     var folded by remember { mutableStateOf(false) }
     var plan by remember { mutableStateOf<Command.Rail?>(null) }
@@ -353,10 +356,10 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
 
     fun built() { folded = true }
 
-    val input = remember(tool, removing, stationAlongX, addingStops, signalKind) {
+    val input = remember(tool, removing, stationAlongX, addingStops, signalKind, bridgeStyle) {
         object : MapInput {
             var start: Pick? = null
-            override val drags get() = addingStops == null && (tool == Tool.Track || tool == Tool.Station)
+            override val drags get() = addingStops == null && (tool == Tool.Track || tool == Tool.Wires || tool == Tool.Station || tool == Tool.Bridge)
             override fun tap(at: Pick) {
                 val tile = world.index(at.tileX, at.tileY)
                 addingStops?.let { id ->
@@ -376,8 +379,10 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
                         }
                     }
                     Tool.Track -> { runner.request(trackLine(0, at, at, removing)); built() }
+                    Tool.Wires -> { runner.request(trackLine(0, at, at, removing).let { Command.Wire(0, it.sx, it.sy, it.ex, it.ey, it.first, it.remove) }); built() }
                     Tool.Signals -> signalAt(world, 0, at)?.let { runner.request(it.copy(kind = Signals.PLACED[signalKind])); built() }
                     Tool.Waypoint -> { runner.request(Command.Waypoint(0, at.tileX, at.tileY)); built() }
+                    Tool.Tunnel -> { runner.request(Command.Tunnel(0, at.tileX, at.tileY)); built() }
                     Tool.Station -> { runner.request(stationPlan(0, at, at, stationAlongX)); built() }
                     Tool.Depot -> {
                         runner.request(depotAt(world, 0, at))
@@ -397,16 +402,22 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
             }
             override fun dragTo(at: Pick) {
                 val s = start ?: return
-                if (tool == Tool.Station) stationPlan = stationPlan(0, s, at, stationAlongX) else plan = trackLine(0, s, at, removing)
+                when (tool) {
+                    Tool.Station -> stationPlan = stationPlan(0, s, at, stationAlongX)
+                    Tool.Bridge -> bridgePlan = bridgePlan(0, s, at, bridgeStyle)
+                    else -> plan = trackLine(0, s, at, removing)
+                }
             }
             override fun dragEnd() {
-                plan?.let { runner.request(it); built() }
+                plan?.let { runner.request(if (tool == Tool.Wires) Command.Wire(0, it.sx, it.sy, it.ex, it.ey, it.first, it.remove) else it); built() }
                 stationPlan?.let { runner.request(it); built() }
+                bridgePlan?.let { runner.request(it); built() }
                 dragCancel()
             }
             override fun dragCancel() {
                 plan = null
                 stationPlan = null
+                bridgePlan = null
                 start = null
             }
         }
@@ -425,7 +436,8 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
         MapView(
             world, sheets, view, { frame.value }, input, { moving(runner) }, Modifier.fillMaxSize(),
             overlay = plan?.let { p -> { painter -> drawTrackPlan(world, painter, p) } }
-                ?: stationPlan?.let { p -> { painter -> drawStationPlan(world, painter, p) } },
+                ?: stationPlan?.let { p -> { painter -> drawStationPlan(world, painter, p) } }
+                ?: bridgePlan?.let { p -> { painter -> drawBridgePlan(world, painter, p) } },
             overlays = (if (settings.grid) ChunkBaker.GRID else 0) or (if (settings.heights) ChunkBaker.HEIGHTS else 0) or (if (settings.snow) ChunkBaker.SNOW else 0),
             labels = {
                 val wv = worldView.value
@@ -555,6 +567,9 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
                 val detail = when (tool) {
                     Tool.Track -> if (removing) stringResource(Res.string.cost_lift, money(world.price(Prices.TRACK_REMOVE))) else stringResource(Res.string.cost_track, money(world.price(Prices.TRACK)), money(world.price(Prices.FOUNDATION)))
                     Tool.Signals, Tool.Waypoint -> stringResource(Res.string.cost_signal, money(world.price(Prices.SIGNAL)))
+                    Tool.Bridge -> stringResource(Res.string.cost_tile, money(world.price(Spans.COST[bridgeStyle])))
+                    Tool.Wires -> stringResource(Res.string.cost_tile, money(world.price(Prices.WIRE)))
+                    Tool.Tunnel -> stringResource(Res.string.cost_tile, money(world.price(Spans.COST[Spans.TUNNEL])))
                     Tool.Station -> stringResource(Res.string.cost_tile, money(world.price(Prices.PLATFORM)))
                     Tool.Depot -> money(world.price(Prices.DEPOT))
                     Tool.Clear -> stringResource(Res.string.cost_tile, money(world.price(Prices.CLEAR)))
@@ -562,8 +577,18 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
                     else -> null
                 }
                 ToolTray(tool, { tool = it; plan = null; stationPlan = null }, detail, folded, { folded = it }, layout.compact, trayWidth) {
-                    if (tool == Tool.Track) TrayToggle(Glyph.Lift, stringResource(Res.string.remove_track), removing) { removing = !removing }
+                    if (tool == Tool.Track || tool == Tool.Wires) TrayToggle(Glyph.Lift, stringResource(Res.string.remove_track), removing) { removing = !removing }
                     if (tool == Tool.Station) TrayToggle(Glyph.TurnRight, stringResource(Res.string.platforms_other_way), !stationAlongX) { stationAlongX = !stationAlongX }
+                    if (tool == Tool.Bridge) {
+                        val styles = stringArrayResource(Res.array.bridge_styles)
+                        val year = Calendar.year(world.startYear, day)
+                        Chip(styles.getOrElse(bridgeStyle) { "" }, true) {
+                            // The next style built this year.
+                            var s = bridgeStyle
+                            do s = (s + 1) % 3 while (year < Spans.FROM[s] && s != bridgeStyle)
+                            bridgeStyle = s
+                        }
+                    }
                     if (tool == Tool.Signals) {
                         val kinds = stringArrayResource(Res.array.signal_kinds)
                         Chip(kinds.getOrElse(signalKind) { "" }, true) { signalKind = (signalKind + 1) % Signals.PLACED.size }

@@ -98,6 +98,14 @@ class World(val settings: NewGame, val roster: Roster = Roster.BASE, generate: B
     val depots = ArrayList<Depot?>()
     val trains = ArrayList<Train?>()
 
+    /** Track pieces wired for electric engines, as [Track] bits, on the ground; bridges and tunnels are wired whole. */
+    val wires = ByteArray(width * height)
+
+    /** Bridges and tunnels by id, a removed one leaving null; the span over or under each tile between heads, and each head's span. */
+    val spans = ArrayList<Span?>()
+    val deck = HashMap<Int, Int>()
+    val spanHeads = HashMap<Int, Int>()
+
     /** Platform tiles to their station, depot tiles to their depot. */
     val stationTiles = HashMap<Int, Int>()
     val depotTiles = HashMap<Int, Int>()
@@ -186,6 +194,9 @@ class World(val settings: NewGame, val roster: Roster = Roster.BASE, generate: B
             is Command.Depot -> buildDepot(company, command)
             is Command.Signal -> placeSignal(company, command)
             is Command.Waypoint -> buildWaypoint(company, command)
+            is Command.Bridge -> buildBridge(company, command)
+            is Command.Tunnel -> buildTunnel(company, command)
+            is Command.Wire -> wire(company, command)
             is Command.Clear -> clearTile(company, command)
             is Command.BuyTrain -> buyTrain(company, command)
             is Command.TrainOrder -> trainCommand(company, command)
@@ -235,6 +246,7 @@ class World(val settings: NewGame, val roster: Roster = Roster.BASE, generate: B
             for (i in from until from + width) {
                 h = (h xor corners[corner(i - from, y)].toLong()) * 0x100000001b3L
                 h = (h xor track[i].toLong()) * 0x100000001b3L
+                h = (h xor wires[i].toLong()) * 0x100000001b3L
                 h = (h xor trees[i].toLong()) * 0x100000001b3L
                 h = (h xor owner[i].toLong()) * 0x100000001b3L
                 h = (h xor road[i].toLong()) * 0x100000001b3L
@@ -268,6 +280,7 @@ class World(val settings: NewGame, val roster: Roster = Roster.BASE, generate: B
         for (k in stationTiles.keys.sorted()) mix(k.toLong() * 31 + stationTiles.getValue(k))
         for (k in depotTiles.keys.sorted()) mix(k.toLong() * 31 + depotTiles.getValue(k))
         for (k in reserved.keys.sorted()) mix(k.toLong() * 31 + reserved.getValue(k))
+        for (s in spans) if (s != null) { mix(s.x0.toLong()); mix(s.y0.toLong()); mix(s.x1.toLong()); mix(s.y1.toLong()); mix(s.height.toLong()) }
         for (t in trains) {
             if (t == null) continue
             mix(t.id.toLong()); mix(t.nose.toLong()); mix(t.speed.toLong()); mix(t.waiting.toLong()); mix(t.order.toLong())

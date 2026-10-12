@@ -54,7 +54,7 @@ object Signals {
 }
 
 /** The key of piece [piece] on tile [tile], for maps that hold something per piece. */
-fun pieceKey(tile: Int, piece: Int) = tile * 8 + Track.index(piece)
+fun pieceKey(tile: Int, piece: Int, level: Int = 0) = if (level == 0) tile * 8 + Track.index(piece) else -(tile * 8 + Track.index(piece)) - 1
 
 fun World.stationAt(tile: Int): Station? = stationTiles[tile]?.let { stations[it] }
 
@@ -213,6 +213,12 @@ internal fun World.clearTile(company: Company, c: Command.Clear) {
     if (owner[i].toInt() != company.id || trainOnTile(i)) return
     depotAt(i)?.let { d -> if (trains.any { it != null && it.depot == d.id && it.inDepot }) return }
     if (company.money < price(Prices.CLEAR)) return
+    // A bridge or tunnel goes all at once, from either head.
+    spanHeads[i]?.let { id ->
+        val s = spans[id] ?: return
+        if (removeSpan(s)) spend(company, Books.CONSTRUCTION, price(Prices.CLEAR))
+        return
+    }
     spend(company, Books.CONSTRUCTION, price(Prices.CLEAR))
     for (p in Track.PIECES) signals.remove(pieceKey(i, p))
     stationTiles.remove(i)?.let { id ->
@@ -225,6 +231,7 @@ internal fun World.clearTile(company: Company, c: Command.Clear) {
     }
     depotTiles.remove(i)?.let { id -> depots[id] = null }
     track[i] = 0
+    wires[i] = 0
     owner[i] = -1
     touched(c.x, c.y)
     networkChanged()

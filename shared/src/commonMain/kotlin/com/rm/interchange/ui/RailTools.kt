@@ -9,6 +9,7 @@ import com.rm.interchange.sim.Command
 import com.rm.interchange.sim.Track
 import com.rm.interchange.sim.CATCHMENT
 import com.rm.interchange.sim.World
+import com.rm.interchange.sim.bridgeCost
 import kotlin.math.abs
 
 /**
@@ -98,6 +99,28 @@ fun DrawScope.drawStationPlan(world: World, painter: LandPainter, plan: Command.
         if (!world.inside(x, y)) continue
         val ok = !world.isWater(x, y)
         with(painter) { track(x, y, plan.axis, if (ok) PLAN_OK else PLAN_BAD, if (ok) Color(0xCCFFFFFF) else PLAN_BAD) }
+    }
+}
+
+/** The bridge a drag from [start] to [end] builds: straight along whichever way it went further, of [style]. */
+fun bridgePlan(company: Int, start: Pick, end: Pick, style: Int): Command.Bridge {
+    val alongX = abs(end.tileX - start.tileX) >= abs(end.tileY - start.tileY)
+    return if (alongX) Command.Bridge(company, start.tileX, start.tileY, end.tileX, start.tileY, style)
+    else Command.Bridge(company, start.tileX, start.tileY, start.tileX, end.tileY, style)
+}
+
+/** The tiles [plan] would span, head to head, lit if it can be built and red if not. */
+fun DrawScope.drawBridgePlan(world: World, painter: LandPainter, plan: Command.Bridge) {
+    val ok = world.bridgeCost(world.companies[plan.company], plan) >= 0
+    val dx = (plan.x1 - plan.x0).coerceIn(-1, 1)
+    val dy = (plan.y1 - plan.y0).coerceIn(-1, 1)
+    val n = maxOf(abs(plan.x1 - plan.x0), abs(plan.y1 - plan.y0))
+    val axis = if (dx != 0) Track.X else Track.Y
+    for (k in 0..n) {
+        val x = plan.x0 + dx * k
+        val y = plan.y0 + dy * k
+        if (!world.inside(x, y)) continue
+        with(painter) { track(x, y, axis, if (ok) PLAN_OK else PLAN_BAD, if (ok) Color(0xCCFFFFFF) else PLAN_BAD) }
     }
 }
 

@@ -32,40 +32,43 @@ internal fun World.workOutBlocks() {
     blocks.clear()
     var next = 0
     val queue = ArrayDeque<Int>()
+    // Every piece's key: the ground's track, then the spans'.
+    val starts = ArrayList<Int>()
     for (tile in track.indices) {
         val pieces = track[tile].toInt()
-        if (pieces == 0) continue
-        for (p in Track.PIECES) {
-            if (pieces and p == 0 || blocks.containsKey(pieceKey(tile, p))) continue
-            val id = next++
-            blocks[pieceKey(tile, p)] = id
-            queue.addLast(pieceKey(tile, p))
-            while (queue.isNotEmpty()) {
-                val key = queue.removeFirst()
-                val t = key / 8
-                val piece = Track.PIECES[key % 8]
-                val here = track[t].toInt()
-                fun join(k: Int) {
-                    if (!blocks.containsKey(k)) {
-                        blocks[k] = id
-                        queue.addLast(k)
-                    }
+        if (pieces != 0) for (p in Track.PIECES) if (pieces and p != 0) starts += pieceKey(tile, p)
+    }
+    for (tile in deck.keys.sorted()) starts += pieceKey(tile, piecesAt(tile, 1), 1)
+    for (startKey in starts) {
+        if (blocks.containsKey(startKey)) continue
+        val id = next++
+        blocks[startKey] = id
+        queue.addLast(startKey)
+        while (queue.isNotEmpty()) {
+            val key = queue.removeFirst()
+            val t = keyTile(key)
+            val level = keyLevel(key)
+            val piece = keyPiece(key)
+            val here = piecesAt(t, level)
+            fun join(k: Int) {
+                if (!blocks.containsKey(k)) {
+                    blocks[k] = id
+                    queue.addLast(k)
                 }
-                for (q in Track.PIECES) if (q != piece && here and q != 0 && Track.touch(piece, q)) join(pieceKey(t, q))
-                val e = Track.edges(piece)
-                for (edge in intArrayOf(e and 3, e shr 2)) {
-                    val mine = signalAt(t, piece)
-                    if (mine >= 0 && Signals.facing(mine) == edge) continue
-                    val x = t % width + Track.dx(edge)
-                    val y = t / width + Track.dy(edge)
-                    if (!inside(x, y)) continue
-                    val n = index(x, y)
-                    for (w in waysIn(n, Track.opposite(edge))) {
-                        val q = stepPiece(w)
-                        val theirs = signalAt(n, q)
-                        if (theirs >= 0 && Signals.facing(theirs) == Track.opposite(edge)) continue
-                        join(pieceKey(n, q))
-                    }
+            }
+            for (q in Track.PIECES) if (q != piece && here and q != 0 && Track.touch(piece, q)) join(pieceKey(t, q, level))
+            val e = Track.edges(piece)
+            for (edge in intArrayOf(e and 3, e shr 2)) {
+                val mine = if (level == 0) signalAt(t, piece) else -1
+                if (mine >= 0 && Signals.facing(mine) == edge) continue
+                val a = across(t, level, edge)
+                if (a < 0) continue
+                val n = a / 2
+                for (w in waysIn(n, Track.opposite(edge), a % 2)) {
+                    val q = stepPiece(w)
+                    val theirs = if (a % 2 == 0) signalAt(n, q) else -1
+                    if (theirs >= 0 && Signals.facing(theirs) == Track.opposite(edge)) continue
+                    join(stepKey(w))
                 }
             }
         }
@@ -80,8 +83,8 @@ internal fun World.workOutBlocks() {
         val y = tile / width + Track.dy(f)
         if (!inside(x, y)) continue
         val n = index(x, y)
-        for (w in waysIn(n, Track.opposite(f))) {
-            val there = blocks[pieceKey(n, stepPiece(w))] ?: continue
+        for (w in waysIn(n, Track.opposite(f), across(tile, 0, f) % 2)) {
+            val there = blocks[stepKey(w)] ?: continue
             exits.getOrPut(there) { ArrayList() } += intArrayOf(Signals.kind(s), here)
             if (!Signals.oneWay(s)) exits.getOrPut(here) { ArrayList() } += intArrayOf(Signals.kind(s), there)
         }

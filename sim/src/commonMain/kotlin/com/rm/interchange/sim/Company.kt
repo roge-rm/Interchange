@@ -44,6 +44,8 @@ object Prices {
     const val PLATFORM = 600L
     const val DEPOT = 1_500L
     const val SIGNAL = 200L
+    /** Wires over a piece of track, for electric engines. */
+    const val WIRE = 300L
     const val CLEAR = 50L
     /** Clearing a tree to build. */
     const val TREE = 40L

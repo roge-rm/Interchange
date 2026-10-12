@@ -21,33 +21,30 @@ internal fun World.planRoute(t: Train): Plan? {
     val i = (tail shr 32).toInt()
     if (i < 0) return null
     val s = t.steps[i]
-    val turned = step(stepTile(s), Track.index(stepPiece(s)), stepExit(s))
+    val turned = step(stepTile(s), Track.index(stepPiece(s)), stepExit(s), stepLevel(s))
     return search(turned, t)?.let { Plan(it, true) }
 }
 
 /** Whether [next] carries on from [cur]: the tile through its way out, come in at the matching edge. */
 fun World.follows(cur: Int, next: Int): Boolean {
-    val exit = stepExit(cur)
-    val tile = stepTile(cur)
-    val x = tile % width + Track.dx(exit)
-    val y = tile / width + Track.dy(exit)
-    return inside(x, y) && stepTile(next) == index(x, y) && stepEntry(next) == Track.opposite(exit)
+    val a = across(stepTile(cur), stepLevel(cur), stepExit(cur))
+    return a >= 0 && stepTile(next) == a / 2 && stepLevel(next) == a % 2 && stepEntry(next) == Track.opposite(stepExit(cur))
 }
 
 private fun World.search(from: Int, t: Train): IntArray? {
     val target = t.target
     if (target == -2) return null
     val depotTile = if (target == -1) depots.getOrNull(t.depot)?.tile ?: return null else -1
+    val electric = t.engineInfo.traction == Traction.ELECTRIC
     val dist = HashMap<Int, Int>()
     // How each place was reached: the place before, times 8, plus the piece run along from it.
     val prev = HashMap<Int, Long>()
     val heap = Heap()
+    // A place is (tile * 2 + level) * 4 + the edge come in at.
     val exit = stepExit(from)
-    val tile = stepTile(from)
-    val fx = tile % width + Track.dx(exit)
-    val fy = tile / width + Track.dy(exit)
-    if (!inside(fx, fy)) return null
-    val first = index(fx, fy) * 4 + Track.opposite(exit)
+    val a = across(stepTile(from), stepLevel(from), exit)
+    if (a < 0) return null
+    val first = a * 4 + Track.opposite(exit)
     dist[first] = 0
     heap.push(0, first)
     var looked = 0
@@ -56,25 +53,26 @@ private fun World.search(from: Int, t: Train): IntArray? {
         val cost = (top ushr 32).toInt()
         val node = top.toInt()
         if (cost > (dist[node] ?: Int.MAX_VALUE)) continue
-        val nt = node / 4
+        val nt = node / 8
+        val level = (node / 4) % 2
         val entry = node % 4
-        if (if (target >= 0) stationTiles[nt] == target else nt == depotTile && depotAt(nt)?.edge == entry) {
+        if (level == 0 && if (target >= 0) stationTiles[nt] == target else nt == depotTile && depotAt(nt)?.edge == entry) {
             return path(first, node, prev, target)
         }
         if (++looked > MAX_LOOK) return null
-        for (w in waysIn(nt, entry)) {
+        for (w in waysIn(nt, entry, level)) {
             val piece = stepPiece(w)
-            if (!mayPass(nt, piece, entry)) continue
+            if (level == 0 && !mayPass(nt, piece, entry)) continue
+            if (electric && !wired(w)) continue
             val out = Track.other(piece, entry)
-            val x = nt % width + Track.dx(out)
-            val y = nt / width + Track.dy(out)
-            if (!inside(x, y) || track[index(x, y)].toInt() == 0) continue
-            val n = index(x, y) * 4 + Track.opposite(out)
+            val na = across(nt, level, out)
+            if (na < 0 || piecesAt(na / 2, na % 2) == 0) continue
+            val n = na * 4 + Track.opposite(out)
             var c = cost + Track.length(piece)
-            if (stationTiles.containsKey(nt)) c += 16
+            if (level == 0 && stationTiles.containsKey(nt)) c += 16
             // A platform of the station it's going to with a train on it or held for one costs more, so another is taken if there is one.
-            val into = index(x, y)
-            if (target >= 0 && stationTiles[into] == target && ((tileTrains[into] ?: 0) - (if (into in t.onTiles) 1 else 0) > 0 || heldByOther(t, into))) c += TAKEN_PLATFORM
+            val into = na / 2
+            if (na % 2 == 0 && target >= 0 && stationTiles[into] == target && ((tileTrains[into] ?: 0) - (if (into in t.onTiles) 1 else 0) > 0 || heldByOther(t, into))) c += TAKEN_PLATFORM
             if (c < (dist[n] ?: Int.MAX_VALUE)) {
                 dist[n] = c
                 prev[n] = (node.toLong() shl 3) or Track.index(piece).toLong()
@@ -92,11 +90,11 @@ private fun World.path(first: Int, goal: Int, prev: HashMap<Int, Long>, target: 
     while (node != first) {
         val p = prev.getValue(node)
         val from = (p ushr 3).toInt()
-        back += step(from / 4, (p and 7).toInt(), from % 4)
+        back += step(from / 8, (p and 7).toInt(), from % 4, (from / 4) % 2)
         node = from
     }
     back.reverse()
-    val goalTile = goal / 4
+    val goalTile = goal / 8
     val goalEntry = goal % 4
     val piece = waysIn(goalTile, goalEntry).firstOrNull()?.let { stepPiece(it) } ?: Track.straight(goalEntry)
     back += step(goalTile, Track.index(piece), goalEntry)

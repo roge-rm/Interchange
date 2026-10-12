@@ -20,10 +20,12 @@ class VehicleView(val tick: Long, val cars: FloatArray) {
     fun slope(i: Int) = cars[i * CAR_FIELDS + 5].toInt()
     /** How long it is, in tiles. */
     fun length(i: Int) = cars[i * CAR_FIELDS + 6]
+    /** How high it runs on a bridge, in steps, or -1 on the ground. */
+    fun deck(i: Int) = cars[i * CAR_FIELDS + 7]
     fun train(i: Int) = key(i) / 256
 
     companion object {
-        const val CAR_FIELDS = 7
+        const val CAR_FIELDS = 8
     }
 }
 
@@ -87,6 +89,9 @@ class DepotView(val tile: Int, val edge: Int)
 /** A signal as the screen shows it: where, which way and whether it shows red. */
 class SignalView(val tile: Int, val piece: Int, val facing: Int, val red: Boolean, val kind: Int = Signals.TWO_WAY)
 
+/** A bridge or tunnel as the screen shows it. */
+class SpanView(val tunnel: Boolean, val style: Int, val x0: Int, val y0: Int, val x1: Int, val y1: Int, val height: Int)
+
 /** A town as the screen shows it: its name over the map at its middle, and how big it is. */
 class TownView(val id: Int, val name: String, val x: Int, val y: Int, val population: Int, val houses: Int)
 
@@ -119,6 +124,7 @@ class WorldView(
     val weather: WeatherView? = null,
     /** Waypoint tiles. */
     val waypoints: IntArray = IntArray(0),
+    val spans: List<SpanView> = emptyList(),
 )
 
 fun World.view(): WorldView {
@@ -131,8 +137,10 @@ fun World.view(): WorldView {
             if (i < 0) continue
             val s = t.steps[i]
             val tile = stepTile(s)
-            // A car that's run on in past the end of its depot's tile is inside the shed.
+            // A car that's run on in past the end of its depot's tile is inside the shed; one in a tunnel is out of sight.
             if ((at and 0xffffffffL).toInt() > stepLength(s) && depotTiles.containsKey(tile)) continue
+            val span = spanOf(s)
+            if (span != null && span.tunnel) continue
             val along = (at and 0xffffffffL).toFloat() / stepLength(s)
             val a = stepEntry(s)
             val b = stepExit(s)
@@ -147,9 +155,10 @@ fun World.view(): WorldView {
             cars += roster[t.carEngines[c]].sprite.toFloat()
             // Climbing or going down: the edge it leaves by against the edge it came in at.
             val pieces = track[tile].toInt()
-            val rise = edgeHeight(tile % width, tile / width, pieces, b) - edgeHeight(tile % width, tile / width, pieces, a)
+            val rise = if (span != null) 0 else edgeHeight(tile % width, tile / width, pieces, b) - edgeHeight(tile % width, tile / width, pieces, a)
             cars += rise.coerceIn(-1, 1).toFloat()
             cars += roster[t.carEngines[c]].length / 16f
+            cars += span?.height?.toFloat() ?: -1f
         }
     }
     val trainViews = trains.filterNotNull().map { t ->
@@ -185,7 +194,8 @@ fun World.view(): WorldView {
     }
     return WorldView(VehicleView(tick, cars.toFloatArray()), trainViews, stationViews, signalViews, depotViews, townViews, payments.toList(), news.toList(),
         companies.firstOrNull()?.let { c -> CompanyView(c.money, c.loan, maxLoan(), c.thisYear.copyOf(), c.lastYear.copyOf(), c.history.map { it.copyOf() }) }, tick, weatherView(),
-        stations.filterNotNull().filter { it.waypoint }.flatMap { it.tiles }.toIntArray())
+        stations.filterNotNull().filter { it.waypoint }.flatMap { it.tiles }.toIntArray(),
+        spans.filterNotNull().map { SpanView(it.tunnel, it.style, it.x0, it.y0, it.x1, it.y1, it.height) })
 }
 
 /** The weather's copy for the screen, made again only once a day. */

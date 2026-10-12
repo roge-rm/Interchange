@@ -16,7 +16,7 @@ package com.rm.interchange.sim
  */
 object Save {
     private val MAGIC = "ICHG".encodeToByteArray()
-    const val VERSION = 12
+    const val VERSION = 13
 
     fun write(world: World): ByteArray {
         val w = ByteWriter(world.width * world.height * 6 + 4096)
@@ -88,6 +88,13 @@ object Save {
                 w.int(ind.broughtThisMonth); w.int(ind.broughtLastMonth); w.bool(ind.closed)
             }
             w.shorts(industryOf)
+            w.uvar(spans.size.toLong())
+            for (s in spans) {
+                w.bool(s != null)
+                if (s == null) continue
+                w.int(s.owner); w.bool(s.tunnel); w.int(s.style); w.int(s.x0); w.int(s.y0); w.int(s.x1); w.int(s.y1); w.int(s.height); w.bool(s.wired)
+            }
+            w.bytes(wires)
             val held = reserved.keys.sorted()
             w.uvar(held.size.toLong())
             for (k in held) { w.int(k); w.int(reserved.getValue(k)) }
@@ -186,9 +193,11 @@ object Save {
                 val t = Train(roster, id, owner, engine, wagon, wagons, depot, if (version >= 7) r.int() else -1)
                 t.name = r.string()
                 t.inDepot = r.bool(); t.running = r.bool(); t.waiting = r.int()
-                t.steps += r.ints().toList(); t.nose = r.int(); t.speed = r.int()
+                // Before bridges a step had no level and its tile one bit lower.
+                fun stepOf(v: Int) = if (version >= 13) v else ((v ushr 5) shl 6) or (v and 31)
+                t.steps += r.ints().map(::stepOf); t.nose = r.int(); t.speed = r.int()
                 t.orders += r.ints().toList(); t.order = r.int(); t.toDepot = r.bool()
-                t.route = if (r.bool()) r.ints() else null
+                t.route = if (r.bool()) r.ints().map(::stepOf).toIntArray() else null
                 t.routeAt = r.int(); t.turnRound = r.bool(); t.lostUntil = r.long()
                 if (version >= 5) {
                     readCargo(r, t.cargo, version)
@@ -245,6 +254,19 @@ object Save {
                 }
                 fillShorts(industryOf, r.shorts())
             }
+            if (version >= 13) repeat(r.uvar().toInt().also { if (it > 1_000_000) throw BadData("too many bridges") }) { id ->
+                if (!r.bool()) { spans += null; return@repeat }
+                val s = Span(id, r.int(), r.bool(), r.int(), r.int(), r.int(), r.int(), r.int(), r.int())
+                s.wired = r.bool()
+                if (!inside(s.x0, s.y0) || !inside(s.x1, s.y1) || s.length < 0) throw BadData("a bridge off the map")
+                spans += s
+                spanHeads[index(s.x0, s.y0)] = id
+                spanHeads[index(s.x1, s.y1)] = id
+                val dx = (s.x1 - s.x0).coerceIn(-1, 1)
+                val dy = (s.y1 - s.y0).coerceIn(-1, 1)
+                for (k in 1..s.length) deck[index(s.x0 + dx * k, s.y0 + dy * k)] = id
+            }
+            if (version >= 13) fill(wires, r.bytes())
             if (version >= 12) repeat(r.uvar().toInt().also { if (it > 10_000_000) throw BadData("too many held pieces") }) { reserved[r.int()] = r.int() }
             if (version >= 10) {
                 val wx = weather

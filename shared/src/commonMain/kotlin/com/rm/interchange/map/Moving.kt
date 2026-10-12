@@ -7,6 +7,8 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import com.rm.interchange.sim.Signals
+import com.rm.interchange.sim.Spans
+import com.rm.interchange.sim.edgeHeight
 import com.rm.interchange.sim.Track
 import com.rm.interchange.sim.WorldView
 import com.rm.interchange.sim.World
@@ -34,6 +36,49 @@ internal fun DrawScope.drawMoving(world: World, view: View, sheets: Sheets, movi
         if (s.kind != Signals.TWO_WAY && s.kind != Signals.ONE_WAY) add(items, world, view, p.first, p.second, s.kind.toFloat(), 0.01f, MARK)
     }
     for (tile in moving.now.waypoints) add(items, world, view, tile % world.width + 0.5f, tile / world.width + 0.5f, 0f, 0f, WAYPOINT)
+    // Bridges a tile at a time, a step of pier at a time up from the ground, just in front of what's on the tile
+    // under them; trains on a bridge are put further forward still. Tunnel mouths like engine houses.
+    for (s in moving.now.spans) {
+        val dx = (s.x1 - s.x0).coerceIn(-1, 1)
+        val dy = (s.y1 - s.y0).coerceIn(-1, 1)
+        if (s.tunnel) {
+            for ((hx, hy, out) in listOf(Triple(s.x0, s.y0, edgeOf(-dx, -dy)), Triple(s.x1, s.y1, edgeOf(dx, dy)))) {
+                tileItem(items, view, hx, hy, s.height.toFloat(), DEPOT_DEPTH, Atlas.PORTAL[painter.viewEdge(out)])
+            }
+            continue
+        }
+        val along = if (painter.viewEdge(if (dx != 0) Track.XP else Track.YP) <= Track.XP) 0 else 1
+        val len = maxOf(kotlin.math.abs(s.x1 - s.x0), kotlin.math.abs(s.y1 - s.y0)) - 1
+        for (k in 1..len) {
+            val x = s.x0 + dx * k
+            val y = s.y0 + dy * k
+            val ground = minOf(minOf(world.heightAt(x, y), world.heightAt(x + 1, y)), minOf(world.heightAt(x + 1, y + 1), world.heightAt(x, y + 1)))
+            // A trestle stands on bents every tile; trusses and girders on piers every other.
+            if (s.style == Spans.TRESTLE || k % 2 == 1) for (z in ground until s.height) {
+                tileItem(items, view, x, y, z.toFloat(), DECK_DEPTH - 0.01f, Atlas.SPAN_PIER[s.style * 2 + along])
+            }
+            tileItem(items, view, x, y, s.height.toFloat(), DECK_DEPTH, Atlas.SPAN_DECK[s.style * 2 + along])
+        }
+    }
+    // Wires over electrified track, close enough in to make out: a mast at one end of each piece, the wire along it.
+    if (view.halfWidth >= 12f) forTilesOnScreen(world, view) { x, y ->
+        val i = world.index(x, y)
+        val wired = world.wires[i].toInt()
+        if (wired == 0) return@forTilesOnScreen
+        for (p in Track.PIECES) {
+            if (wired and p == 0) continue
+            val e = Track.edges(p)
+            val a = e and 3
+            val b = e shr 2
+            val ha = world.edgeHeight(x, y, world.track[i].toInt(), a) + WIRE_HEIGHT
+            val hb = world.edgeHeight(x, y, world.track[i].toInt(), b) + WIRE_HEIGHT
+            val ax = x + Track.edgeX4(a) / 4f
+            val ay = y + Track.edgeY4(a) / 4f
+            val bx = x + Track.edgeX4(b) / 4f
+            val by = y + Track.edgeY4(b) / 4f
+            wireItem(items, view, ax, ay, ha, bx, by, hb)
+        }
+    }
     // Engine houses go just in front of everything on their own tile and behind anything on the tile in front.
     for (d in moving.now.depots) {
         val wx = d.tile % world.width
@@ -76,13 +121,18 @@ internal fun DrawScope.drawMoving(world: World, view: View, sheets: Sheets, movi
         if (world.depotTiles.containsKey(world.index(x.toInt().coerceIn(0, world.width - 1), y.toInt().coerceIn(0, world.height - 1)))) {
             reach = minOf(reach, DEPOT_DEPTH - 0.1f - (view.toViewX(x, y) + view.toViewY(x, y) - (view.toViewX(x.toInt() + 0.5f, y.toInt() + 0.5f) + view.toViewY(x.toInt() + 0.5f, y.toInt() + 0.5f))))
         }
-        add(items, world, view, x, y, cell.toFloat(), reach, v.sprite(i))
+        // On a bridge, at its deck's height and in front of the deck.
+        val deck = v.deck(i)
+        if (deck >= 0f) reach += ON_DECK
+        add(items, world, view, x, y, cell.toFloat(), reach, v.sprite(i), deck)
     }
     items.sortBy { it[0] }
     with(painter) {
         for (it in items) {
             val model = it[4].toInt()
-            if (model == MARK || model == WAYPOINT) {
+            if (model == WIRE) {
+                drawWire(it, view.halfWidth)
+            } else if (model == MARK || model == WAYPOINT) {
                 drawMark(model, it[3].toInt(), it[1], it[2], view.halfWidth)
             } else if (model < 0) {
                 spriteAt(it[3].toInt(), it[1], it[2], scale)
@@ -95,9 +145,54 @@ internal fun DrawScope.drawMoving(world: World, view: View, sheets: Sheets, movi
     }
 }
 
-/** Items that aren't sprites: a signal's kind plate, and a waypoint's post. */
+/** Items that aren't sprites: a signal's kind plate, a waypoint's post, and wires over a piece of track. */
 private const val MARK = -2
 private const val WAYPOINT = -3
+private const val WIRE = -4
+/** How high the contact wire hangs over the rails, in steps. */
+private const val WIRE_HEIGHT = 2.6f
+
+/** Calls [block] with every tile that could show on screen, from the screen's corners on the map at sea level and the highest land. */
+private inline fun DrawScope.forTilesOnScreen(world: World, view: View, block: (Int, Int) -> Unit) {
+    var minX = Float.MAX_VALUE; var maxX = -Float.MAX_VALUE
+    var minY = Float.MAX_VALUE; var maxY = -Float.MAX_VALUE
+    for (px in floatArrayOf(0f, size.width)) for (py in floatArrayOf(0f, size.height)) for (ht in floatArrayOf(0f, World.MAX_HEIGHT.toFloat())) {
+        val a = (px - size.width / 2) / view.halfWidth
+        val b = (py - size.height / 2 + ht * view.step) / view.halfHeight
+        val vx = view.focusViewX() + (a + b) / 2
+        val vy = view.focusViewY() + (b - a) / 2
+        val wx = view.toWorldX(vx, vy)
+        val wy = view.toWorldY(vx, vy)
+        minX = minOf(minX, wx); maxX = maxOf(maxX, wx); minY = minOf(minY, wy); maxY = maxOf(maxY, wy)
+    }
+    for (y in maxOf(0, minY.toInt() - 1)..minOf(world.height - 1, maxY.toInt() + 1)) for (x in maxOf(0, minX.toInt() - 1)..minOf(world.width - 1, maxX.toInt() + 1)) block(x, y)
+}
+
+/** A piece's wire from ([ax], [ay]) at [ha] steps to ([bx], [by]) at [hb], with a mast beside its first end. */
+private fun DrawScope.wireItem(items: ArrayList<FloatArray>, view: View, ax: Float, ay: Float, ha: Float, bx: Float, by: Float, hb: Float) {
+    fun sx(x: Float, y: Float) = view.screenX(view.toViewX(x, y), view.toViewY(x, y), size.width)
+    fun sy(x: Float, y: Float, h: Float) = view.screenY(view.toViewX(x, y), view.toViewY(x, y), h, size.height)
+    val x1 = sx(ax, ay)
+    val y1 = sy(ax, ay, ha)
+    if (x1 < -view.halfWidth * 2 || x1 > size.width + view.halfWidth * 2 || y1 < -view.halfWidth * 2 || y1 > size.height + view.halfWidth * 4) return
+    // The mast stands off to one side of the track, square to it.
+    val dx = bx - ax
+    val dy = by - ay
+    val len = sqrt(dx * dx + dy * dy)
+    val mx = ax - dy / len * 0.32f
+    val my = ay + dx / len * 0.32f
+    val depth = view.toViewX((ax + bx) / 2, (ay + by) / 2) + view.toViewY((ax + bx) / 2, (ay + by) / 2) + 0.3f
+    items += floatArrayOf(depth, x1, y1, 0f, WIRE.toFloat(), sx(bx, by), sy(bx, by, hb), sx(mx, my), sy(mx, my, ha - WIRE_HEIGHT), sy(mx, my, ha + 0.3f))
+}
+
+/** Draws a wire item: the mast from the ground up, its arm out to the wire, and the wire. */
+private fun DrawScope.drawWire(it: FloatArray, hw: Float) {
+    val u = hw / 40f
+    val mast = Color(0xff4a4e52)
+    drawLine(mast, Offset(it[7], it[8]), Offset(it[7], it[9]), 2.2f * u)
+    drawLine(mast, Offset(it[7], it[9]), Offset(it[1], it[2]), 1.2f * u)
+    drawLine(Color(0xff2a2c2e), Offset(it[1], it[2]), Offset(it[5], it[6]), 1f * u)
+}
 
 /** A signal kind's plate at the foot of its mast, or a waypoint's post with a diamond on top, standing at ([x], [y]) on screen. */
 private fun DrawScope.drawMark(what: Int, kind: Int, x: Float, y: Float, hw: Float) {
@@ -120,17 +215,40 @@ private fun DrawScope.drawMark(what: Int, kind: Int, x: Float, y: Float, hw: Flo
     drawRect(Color(0xff2a2a2a), Offset(x - r, y - r * 1.6f), Size(2 * r, 1.6f * r), style = Stroke(0.5f * u))
 }
 
+/** A sprite from the signals sheet anchored on tile ([x], [y])'s top corner at height [h], at [depth] in front of the tile's middle. */
+private fun DrawScope.tileItem(items: ArrayList<FloatArray>, view: View, x: Int, y: Int, h: Float, depth: Float, cell: Int) {
+    val vx = view.toViewX(x + 0.5f, y + 0.5f)
+    val vy = view.toViewY(x + 0.5f, y + 0.5f)
+    val sx = view.screenX(vx - 0.5f, vy - 0.5f, size.width)
+    val sy = view.screenY(vx - 0.5f, vy - 0.5f, h, size.height) + view.halfHeight
+    val margin = view.halfWidth * 3
+    if (sx < -margin || sx > size.width + margin || sy < -margin || sy > size.height + margin * 2) return
+    items += floatArrayOf(vx + vy + depth, sx, sy, cell.toFloat(), -1f)
+}
+
+/** The edge a step of ([dx], [dy]) goes out through. */
+private fun edgeOf(dx: Int, dy: Int) = when {
+    dx > 0 -> Track.XP
+    dx < 0 -> Track.XM
+    dy > 0 -> Track.YP
+    else -> Track.YM
+}
+
+/** How far in front of its tile's middle a bridge deck is drawn, and how much further cars on it. */
+private const val DECK_DEPTH = 0.45f
+private const val ON_DECK = 0.9f
+
 /** How far in front of its tile's middle an engine house is drawn, in view depth: past anything on the tile, short of the tile in front. */
 private const val DEPOT_DEPTH = 0.95f
 
 /** How much nearer the camera a car's front end is than its middle, per tile of half length, by heading in the view. */
 private val NEAR = floatArrayOf(1f, 1.414f, 1f, 0f, 1f, 1.414f, 1f, 0f)
 
-private fun DrawScope.add(items: ArrayList<FloatArray>, world: World, view: View, x: Float, y: Float, cell: Float, reach: Float = 0f, model: Int = -1) {
+private fun DrawScope.add(items: ArrayList<FloatArray>, world: World, view: View, x: Float, y: Float, cell: Float, reach: Float = 0f, model: Int = -1, deck: Float = -1f) {
     val vx = view.toViewX(x, y)
     val vy = view.toViewY(x, y)
     val sx = view.screenX(vx, vy, size.width)
-    val sy = view.screenY(vx, vy, groundHeight(world, x, y), size.height)
+    val sy = view.screenY(vx, vy, if (deck >= 0f) deck else groundHeight(world, x, y), size.height)
     val margin = view.halfWidth * 2
     if (sx < -margin || sx > size.width + margin || sy < -margin || sy > size.height + margin * 2) return
     items += floatArrayOf(vx + vy + reach, sx, sy, cell, model.toFloat())

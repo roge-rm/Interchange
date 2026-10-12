@@ -299,4 +299,8 @@
     <string-array name="signal_kinds">
         <item>Canton</item><item>Itinéraire</item><item>Entrée</item><item>Sortie</item><item>Mixte</item>
     </string-array>
+    <string-array name="bridge_styles">
+        <item>Chevalet</item><item>Treillis</item><item>Béton</item>
+    </string-array>
+    <string name="tool_wires">Caténaire</string>
 </resources>

@@ -158,6 +158,14 @@ for k, key in enumerate(PARTS):
         JOBS.append(("static", ("part", k, e), lambda key=key, edge=edge: scenery(f"part_{key}_{edge}.png", base.cell), None))
         JOBS.append(("shadows", ("part_shadow", k, e), lambda key=key, edge=edge: scenery(f"part_{key}_{edge}_shadow.png", base.cell), None))
         UP[("part", k, e)] = f"part_{key}_{edge}.png"
+# Bridges, a tile and a step at a time, and tunnel mouths, drawn over the map each frame with the trains.
+SPAN_STYLES = ["trestle", "truss", "concrete"]
+for st, style in enumerate(SPAN_STYLES):
+    for a in (0, 1):
+        JOBS.append(("signals", ("span_deck", st, a), lambda style=style, a=a: scenery(f"span_deck_{style}_{a}.png", base.cell), None))
+        JOBS.append(("signals", ("span_pier", st, a), lambda style=style, a=a: scenery(f"span_pier_{style}_{a}.png", base.cell), None))
+for e, edge in enumerate(EDGES):
+    JOBS.append(("signals", ("portal", e), lambda edge=edge: scenery(f"span_portal_{edge}.png", base.cell), None))
 # The engine house again, drawn over trains on its tile so they show going in through the doors.
 for e, edge in enumerate(EDGES):
     JOBS.append(("signals", ("depot_over", e), lambda edge=edge: scenery(f"depot_{edge}.png", lambda: track.depot(edge)), None))
@@ -349,6 +357,9 @@ object Atlas {{
     /** Half a tile's width at level 0. */
     const val HALF_WIDTH = {base.HW}
 
+    /** Numbers written out in a string: big tables as literals would make the class too large to load. */
+    private fun ints(s: String): IntArray = s.split(',').map {{ it.toInt() }}.toIntArray()
+
     /** Texels a tile across at level 0, and how many tiles a ground texture spans before it repeats. */
     const val TEXELS = {textures.TEXELS}
     const val PERIOD = {textures.PERIOD}
@@ -358,18 +369,13 @@ object Atlas {{
     /** The grey noise that makes the edges between kinds ragged, after the kinds on the ground sheet. */
     const val RAG = {len(kinds)}
 
-    val STATIC_RECTS = intArrayOf(
-        {arr(rects["static"])},
-    )
+    /** Each sprite's place on its sheet and where it sits from its anchor, six numbers each. */
+    val STATIC_RECTS = ints("{",".join(str(x) for x in rects["static"])}")
 
     /** Shadows, on files/shadows_<level>.png: how dark, a byte a pixel, to darken what's under them. */
-    val SHADOW_RECTS = intArrayOf(
-        {arr(rects["shadows"])},
-    )
+    val SHADOW_RECTS = ints("{",".join(str(x) for x in rects["shadows"])}")
 
-    val SIGNAL_RECTS = intArrayOf(
-        {arr(rects["signals"])},
-    )
+    val SIGNAL_RECTS = ints("{",".join(str(x) for x in rects["signals"])}")
 
     /** Each vehicle's sheet is files/vehicle_<key>_<level>.png. */
     val VEHICLE_KEYS = listOf({vehicle_keys})
@@ -378,9 +384,7 @@ object Atlas {{
      * Sixteen sprites a vehicle, in its own sheet: the eight headings in the view (0 down the u axis, on round
      * towards v), then the four straight headings climbing and going down a slope, at heading / 2 * 2 + 0 or 1.
      */
-    val VEHICLE_RECTS = intArrayOf(
-        {arr(vehicle_rects)},
-    )
+    val VEHICLE_RECTS = ints("{",".join(str(x) for x in vehicle_rects)}")
 
     /** A foundation's walls, at land shape * 16 + top shape, or -1. On the static sheet. */
     val WALLS = intArrayOf(
@@ -428,6 +432,11 @@ object Atlas {{
 
     /** A signal showing clear (0) or stop (1). On the signals sheet. */
     val SIGNAL = intArrayOf({index[("signal", 0)]}, {index[("signal", 1)]})
+
+    /** A tile of bridge and a step of what holds it up, at style * 2 + 0 along view u or 1 along v; a tunnel mouth opening to view edge XM, XP, YM or YP. On the signals sheet. */
+    val SPAN_DECK = intArrayOf({", ".join(str(index[("span_deck", st, a)]) for st in range(len(SPAN_STYLES)) for a in (0, 1))})
+    val SPAN_PIER = intArrayOf({", ".join(str(index[("span_pier", st, a)]) for st in range(len(SPAN_STYLES)) for a in (0, 1))})
+    val PORTAL = intArrayOf({", ".join(str(index[("portal", e)]) for e in range(4))})
 
     /** The engine house with its doors at view edge XM, XP, YM or YP, drawn over trains on its tile. On the signals sheet. */
     val DEPOT_OVER = intArrayOf({", ".join(str(index[("depot_over", e)]) for e in range(4))})

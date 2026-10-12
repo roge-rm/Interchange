@@ -29,6 +29,15 @@ sealed interface Command {
     /** Puts a signal of [kind] on a piece facing [facing], or changes the one there to it; the same again makes it one-way, then takes it away. */
     data class Signal(override val company: Int, val x: Int, val y: Int, val piece: Int, val facing: Int, val kind: Int = Signals.TWO_WAY) : Command
 
+    /** Builds a bridge of [style] from head ([x0], [y0]) to head ([x1], [y1]). */
+    data class Bridge(override val company: Int, val x0: Int, val y0: Int, val x1: Int, val y1: Int, val style: Int) : Command
+
+    /** Digs a tunnel into the hill from the portal at ([x], [y]), through to where it comes out. */
+    data class Tunnel(override val company: Int, val x: Int, val y: Int) : Command
+
+    /** Hangs wires over a line of track, as [Rail]'s line goes, or takes them down; a bridge or tunnel on the line is wired whole. */
+    data class Wire(override val company: Int, val sx: Int, val sy: Int, val ex: Int, val ey: Int, val first: Int, val remove: Boolean) : Command
+
     /** Marks a tile of straight track as a waypoint, for orders to route trains through. */
     data class Waypoint(override val company: Int, val x: Int, val y: Int) : Command
 

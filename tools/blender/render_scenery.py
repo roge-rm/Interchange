@@ -15,6 +15,9 @@ Everything but signals comes twice: the thing itself with no shadow, and
 before it draws what stands on it. Then <name>_up.png, how much each pixel faces
 the sky, from black (sideways or down) to white (flat on top), for laying snow.
 
+span_deck_<style>_<0 along u, 1 along v>.png and span_pier_... are a tile of
+bridge and a step of what holds it up; span_portal_<edge>.png a tunnel mouth.
+
 Maples, birches and aspens come again for the seasons, as
 tree_<kind>_<look>_autumn.png and tree_<kind>_<look>_bare.png.
 """
@@ -29,6 +32,7 @@ import industries  # noqa: E402
 import parts  # noqa: E402
 import rig  # noqa: E402
 import scenery  # noqa: E402
+import spans  # noqa: E402
 
 TREES = ["spruce", "pine", "fir", "maple", "birch", "aspen"]
 LEAFY = ["maple", "birch", "aspen"]
@@ -149,6 +153,13 @@ def main():
     for key in industries.PARTS:
         for edge in EDGES:
             shot(out, f"part_{key}_{edge}.png", lambda m, key=key: industries.part(m, key), heading=houses.FACING[edge])
+    # Bridges a tile and a step at a time, and tunnel mouths, drawn over trains so have no shadows of their own.
+    for style in spans.STYLES:
+        for a in (0, 1):
+            shot(out, f"span_deck_{style}_{a}.png", lambda m, style=style, a=a: spans.deck(m, style, a == 0), shadow=False)
+            shot(out, f"span_pier_{style}_{a}.png", lambda m, style=style, a=a: spans.pier(m, style, a == 0), shadow=False)
+    for edge in EDGES:
+        shot(out, f"span_portal_{edge}.png", lambda m, edge=edge: spans.portal(m, edge), shadow=False)
     for red in (0, 1):
         shot(out, f"signal_{red}.png", lambda m, red=red: scenery.signal(m, red == 1), shadow=False)
     for kind in DECOR:
