@@ -86,12 +86,69 @@ internal class ChunkBaker(
 
     fun finish(): IntArray = pixels
 
-    private fun cornerHeight(vx: Int, vy: Int) = world.heightAt(view.cornerX(vx, vy), view.cornerY(vx, vy))
+    private fun cornerHeight(vx: Int, vy: Int): Int {
+        val gx = vx - gx0
+        val gy = vy - gy0
+        if (gx in 0 until gw && gy in 0 until gh) return grid[gy * gw + gx]
+        return world.heightAt(view.cornerX(vx, vy), view.cornerY(vx, vy))
+    }
+
+    // View corners gx0 until gx0 + gw across and gy0 until gy0 + gh down, their heights and running sums of them
+    // (one row and column bigger), filled by [prepare] so a tile's corners and relief are a few array reads.
+    private var gx0 = 0
+    private var gy0 = 0
+    private var gw = 0
+    private var gh = 0
+    private var grid = IntArray(0)
+    private var sums = IntArray(0)
+
+    /** Reads the corner heights for view tiles [vx0] until [vx1] across and [vy0] until [vy1] down, before baking them. */
+    fun prepare(vx0: Int, vy0: Int, vx1: Int, vy1: Int) {
+        gx0 = maxOf(0, vx0 - RELIEF - 2)
+        gy0 = maxOf(0, vy0 - RELIEF - 2)
+        gw = minOf(view.viewWidth, vx1 + RELIEF + 2) - gx0 + 1
+        gh = minOf(view.viewHeight, vy1 + RELIEF + 2) - gy0 + 1
+        if (gw <= 0 || gh <= 0) {
+            gw = 0
+            gh = 0
+            return
+        }
+        val heights = IntArray(gw * gh)
+        for (y in 0 until gh) for (x in 0 until gw) heights[y * gw + x] = world.heightAt(view.cornerX(gx0 + x, gy0 + y), view.cornerY(gx0 + x, gy0 + y))
+        val w1 = gw + 1
+        val s = IntArray(w1 * (gh + 1))
+        for (y in 0 until gh) {
+            var row = 0
+            for (x in 0 until gw) {
+                row += heights[y * gw + x]
+                s[(y + 1) * w1 + x + 1] = s[y * w1 + x + 1] + row
+            }
+        }
+        grid = heights
+        sums = s
+    }
 
     private val reliefs = HashMap<Int, Float>()
 
     /** How far view corner ([vx], [vy]) stands above the land within [RELIEF] corners of it, in steps; below is negative. */
-    private fun relief(vx: Int, vy: Int): Float = reliefs.getOrPut(vy * (view.viewWidth + 1) + vx) {
+    private fun relief(vx: Int, vy: Int): Float {
+        val x0 = maxOf(0, vx - RELIEF)
+        val y0 = maxOf(0, vy - RELIEF)
+        val x1 = minOf(view.viewWidth, vx + RELIEF)
+        val y1 = minOf(view.viewHeight, vy + RELIEF)
+        val ax = x0 - gx0
+        val ay = y0 - gy0
+        val bx = x1 - gx0 + 1
+        val by = y1 - gy0 + 1
+        if (ax >= 0 && ay >= 0 && bx <= gw && by <= gh) {
+            val w1 = gw + 1
+            val sum = sums[by * w1 + bx] - sums[ay * w1 + bx] - sums[by * w1 + ax] + sums[ay * w1 + ax]
+            return cornerHeight(vx, vy) - sum.toFloat() / ((x1 - x0 + 1) * (y1 - y0 + 1))
+        }
+        return reliefs.getOrPut(vy * (view.viewWidth + 1) + vx) { slowRelief(vx, vy) }
+    }
+
+    private fun slowRelief(vx: Int, vy: Int): Float {
         var sum = 0
         var n = 0
         for (dy in -RELIEF..RELIEF) for (dx in -RELIEF..RELIEF) {
@@ -101,7 +158,7 @@ internal class ChunkBaker(
             sum += cornerHeight(x, y)
             n++
         }
-        cornerHeight(vx, vy) - sum.toFloat() / n
+        return cornerHeight(vx, vy) - sum.toFloat() / n
     }
 
     /** The snow on view tile ([vx], [vy]) in cm, or on the nearest tile on the map. */

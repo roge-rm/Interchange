@@ -160,7 +160,7 @@ internal class Renderer(private val world: World, private val sheets: Sheets, pr
         if (wanted.none { it.second < 2f } && bytes < BUDGET * 3 / 4) {
             val cx = size.width / 2 + (driftX - driftY) * view.halfWidth * AHEAD
             val cy = size.height / 2 + (driftX + driftY) * view.halfHeight * AHEAD
-            forEachVisible(view, level, margin = size.width * RING) { key, left, top, scale ->
+            forEachVisible(view, level, margin = size.width * (if (level >= FAR_LEVEL) FAR_RING else RING)) { key, left, top, scale ->
                 val entry = cache[key]
                 if (entry != null) entry.used = frame
                 if (entry == null) {
@@ -393,6 +393,7 @@ internal class Renderer(private val world: World, private val sheets: Sheets, pr
         // shadow over it, then what stands up, so shadows fall across tile edges.
         val ys = max(0, vy0 - 1) until min(vy0 + tiles + 1, view.viewHeight)
         val xs = max(0, vx0 - 1) until min(vx0 + tiles + 1, view.viewWidth)
+        if (!xs.isEmpty() && !ys.isEmpty()) baker.prepare(xs.first, ys.first, xs.last + 1, ys.last + 1)
         for (vy in ys) for (vx in xs) baker.ground(vx, vy)
         for (vy in ys) for (vx in xs) baker.shadows(vx, vy)
         for (vy in ys) for (vx in xs) baker.objects(vx, vy)
@@ -432,7 +433,7 @@ internal class Renderer(private val world: World, private val sheets: Sheets, pr
         const val CHUNK_PIXELS = 512
         /** Chunks baking at once, leaving cores for the screen and the game. */
         val BAKERS = (Workers.threads - 1).coerceIn(2, 6)
-        val BACKGROUND = (BAKERS / 2).coerceAtLeast(1)
+        val BACKGROUND = (BAKERS - 1).coerceAtLeast(1)
         /** How often the chunks on screen are baked again for the weather, at most, in milliseconds. */
         const val WEATHER_MILLIS = 15_000L
         /** Bitmap memory for chunks, in bytes. */
@@ -444,6 +445,9 @@ internal class Renderer(private val world: World, private val sheets: Sheets, pr
         const val COARSE_REACH = 128
         /** How far round the screen chunks are baked ahead, as a share of its width, and how many frames of drift ahead the nearest are counted from. */
         const val RING = 0.4f
+        /** Zoomed out from this level, chunks are cheap and the screen crosses them fast, so the ring goes further. */
+        const val FAR_LEVEL = 3
+        const val FAR_RING = 1f
         const val AHEAD = 30f
 
         fun chunkTiles(level: Int) = (CHUNK_PIXELS / (2 * LEVELS[level])).toInt()

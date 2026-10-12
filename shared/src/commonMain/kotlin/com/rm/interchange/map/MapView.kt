@@ -16,8 +16,6 @@ import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChange
 import com.rm.interchange.sim.World
-import kotlin.math.PI
-import kotlin.math.atan2
 
 /** What the map does with a finger, for the tool in use. */
 interface MapInput {
@@ -33,7 +31,7 @@ interface MapInput {
 /**
  * The map: chunks from the [Renderer], then whatever the tool in use draws
  * over them ([overlay]). One finger uses the tool, or moves the map if the
- * tool doesn't drag. Two fingers move, pinch to zoom and twist to turn the view.
+ * tool doesn't drag. Two fingers move and pinch to zoom; the strip's buttons turn the view.
  *
  * [frame] is read while drawing, so the canvas draws again when it changes
  * without the screen around it composing again.
@@ -71,8 +69,6 @@ fun MapView(
                 var mode = Mode.Undecided
                 var lastCentre = Offset.Unspecified
                 var lastSpan = 0f
-                var lastAngle = 0f
-                var twist = 0f
                 while (true) {
                     val event = awaitPointerEvent()
                     val pressed = event.changes.filter { it.pressed }
@@ -83,22 +79,13 @@ fun MapView(
                         val b = pressed[1].position
                         val centre = (a + b) / 2f
                         val span = (a - b).getDistance()
-                        val angle = atan2(b.y - a.y, b.x - a.x)
                         if (mode == Mode.Two && lastCentre != Offset.Unspecified) {
                             view.pan(centre.x - lastCentre.x, centre.y - lastCentre.y)
                             if (lastSpan > 0f && span > 0f) view.zoomAt(span / lastSpan, centre.x, centre.y, w, h)
-                            var turned = angle - lastAngle
-                            if (turned > PI) turned -= (2 * PI).toFloat()
-                            if (turned < -PI) turned += (2 * PI).toFloat()
-                            twist += turned
-                            // A twist past a third of a right angle turns the view a quarter.
-                            if (twist > TWIST) { view.turnBy(-1); twist = 0f }
-                            if (twist < -TWIST) { view.turnBy(1); twist = 0f }
                         }
                         mode = Mode.Two
                         lastCentre = centre
                         lastSpan = span
-                        lastAngle = angle
                     } else {
                         val p = pressed[0]
                         if (mode == Mode.Two) {
@@ -151,4 +138,3 @@ fun MapView(
 
 private enum class Mode { Undecided, Using, Moving, Two }
 
-private const val TWIST = (PI / 6).toFloat()
