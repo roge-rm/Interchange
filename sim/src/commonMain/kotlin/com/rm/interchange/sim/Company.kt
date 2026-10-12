@@ -48,6 +48,8 @@ object Prices {
     const val PLATFORM = 600L
     const val DEPOT = 1_500L
     const val SIGNAL = 200L
+    /** A drive-through road stop. */
+    const val ROAD_STOP = 400L
     /** Wires over a piece of track, for electric engines. */
     const val WIRE = 300L
     const val CLEAR = 50L

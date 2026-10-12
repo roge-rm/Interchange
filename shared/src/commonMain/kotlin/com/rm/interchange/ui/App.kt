@@ -34,7 +34,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.graphics.ImageBitmap
 import com.rm.interchange.map.MapInput
 import com.rm.interchange.map.Moving
-import com.rm.interchange.map.trainAt
+import com.rm.interchange.map.vehicleAt
+import com.rm.interchange.map.NO_VEHICLE
 import com.rm.interchange.map.Sheets
 import com.rm.interchange.map.rememberPackedSheets
 import androidx.compose.runtime.rememberCoroutineScope
@@ -71,6 +72,7 @@ import com.rm.interchange.sim.approvalLevel
 import com.rm.interchange.map.rememberTownLabels
 import com.rm.interchange.sim.World
 import com.rm.interchange.sim.Signals
+import com.rm.interchange.sim.Surface
 import com.rm.interchange.sim.FENCE_COST
 import com.rm.interchange.sim.SHED_COST
 import com.rm.interchange.sim.trackLimit
@@ -356,14 +358,18 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
     var selected by remember { mutableStateOf<Selection?>(null) }
     // The train having stops added by tapping stations, if any.
     var addingStops by remember { mutableStateOf<Int?>(null) }
+    var addingRoadStops by remember { mutableStateOf<Int?>(null) }
+    var roadPlan by remember { mutableStateOf<Command.Road?>(null) }
+    var roadSurface by remember { mutableIntStateOf(Surface.entries(Calendar.year(world.startYear, world.day)).last()) }
     var mapSize by remember { mutableStateOf(androidx.compose.ui.geometry.Size.Zero) }
 
     fun built() { folded = true }
 
-    val input = remember(tool, removing, stationAlongX, addingStops, signalKind, bridgeStyle) {
+    val input = remember(tool, removing, stationAlongX, addingStops, addingRoadStops, signalKind, bridgeStyle, roadSurface) {
         object : MapInput {
             var start: Pick? = null
-            override val drags get() = addingStops == null && (tool == Tool.Track || tool == Tool.Wires || tool == Tool.Station || tool == Tool.Bridge)
+            override val drags get() = addingStops == null && addingRoadStops == null &&
+                (tool == Tool.Track || tool == Tool.Wires || tool == Tool.Station || tool == Tool.Bridge || tool == Tool.Road || tool == Tool.TramRails)
             override fun tap(at: Pick) {
                 val tile = world.index(at.tileX, at.tileY)
                 addingStops?.let { id ->
@@ -372,17 +378,30 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
                     if (station != null && t != null) runner.request(Command.TrainOrder(0, id, Command.TrainOrder.ORDERS, t.orders + station))
                     return
                 }
+                addingRoadStops?.let { id ->
+                    val station = world.roadStops[tile] ?: world.stationTiles[tile]
+                    val v = worldView.value?.roadVehicles?.firstOrNull { it.id == id }
+                    if (station != null && v != null) runner.request(Command.RoadOrder(0, id, Command.TrainOrder.ORDERS, v.orders + station))
+                    return
+                }
                 when (tool) {
                     Tool.Inspect -> {
-                        val train = trainAt(world, view, moving(runner), at.screenX, at.screenY, mapSize.width, mapSize.height)
+                        val key = vehicleAt(world, view, moving(runner), at.screenX, at.screenY, mapSize.width, mapSize.height)
                         selected = when {
-                            train >= 0 -> Selection.Train(train)
+                            key != NO_VEHICLE && key >= 0 -> Selection.Train(key / 256)
+                            key != NO_VEHICLE -> Selection.RoadVehicle(-key / 256 - 1)
                             world.stationTiles.containsKey(tile) -> Selection.Station(world.stationTiles.getValue(tile))
-                            world.depotTiles.containsKey(tile) -> Selection.Depot(world.depotTiles.getValue(tile))
+                            world.roadStops.containsKey(tile) -> Selection.Station(world.roadStops.getValue(tile))
+                            world.depotTiles.containsKey(tile) -> world.depotTiles.getValue(tile).let { if (world.depots[it]?.road == true) Selection.Garage(it) else Selection.Depot(it) }
                             else -> Selection.Tile(at.tileX, at.tileY)
                         }
                     }
                     Tool.Track -> { runner.request(trackLine(0, at, at, removing)); built() }
+                    Tool.Road -> { runner.request(roadLine(0, at, at, roadSurface, removing)); built() }
+                    Tool.TramRails -> { runner.request(roadLine(0, at, at, roadSurface, removing, tram = true)); built() }
+                    Tool.RoadStop -> { runner.request(Command.RoadStop(0, at.tileX, at.tileY)); built() }
+                    Tool.Garage -> { runner.request(garageAt(world, 0, at)); built() }
+                    Tool.OneWay -> { runner.request(Command.RoadOneWay(0, at.tileX, at.tileY)); built() }
                     Tool.Wires -> { runner.request(trackLine(0, at, at, removing).let { Command.Wire(0, it.sx, it.sy, it.ex, it.ey, it.first, it.remove) }); built() }
                     Tool.Signals -> signalAt(world, 0, at)?.let { runner.request(it.copy(kind = Signals.PLACED[signalKind])); built() }
                     Tool.Waypoint -> { runner.request(Command.Waypoint(0, at.tileX, at.tileY)); built() }
@@ -408,6 +427,8 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
             override fun dragTo(at: Pick) {
                 val s = start ?: return
                 when (tool) {
+                    Tool.Road -> roadPlan = roadLine(0, s, at, roadSurface, removing)
+                    Tool.TramRails -> roadPlan = roadLine(0, s, at, roadSurface, removing, tram = true)
                     Tool.Station -> stationPlan = stationPlan(0, s, at, stationAlongX)
                     Tool.Bridge -> bridgePlan = bridgePlan(0, s, at, bridgeStyle)
                     else -> plan = trackLine(0, s, at, removing)
@@ -417,12 +438,14 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
                 plan?.let { runner.request(if (tool == Tool.Wires) Command.Wire(0, it.sx, it.sy, it.ex, it.ey, it.first, it.remove) else it); built() }
                 stationPlan?.let { runner.request(it); built() }
                 bridgePlan?.let { runner.request(it); built() }
+                roadPlan?.let { runner.request(it); built() }
                 dragCancel()
             }
             override fun dragCancel() {
                 plan = null
                 stationPlan = null
                 bridgePlan = null
+                roadPlan = null
                 start = null
             }
         }
@@ -442,7 +465,8 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
             world, sheets, view, { frame.value }, input, { moving(runner) }, Modifier.fillMaxSize(),
             overlay = plan?.let { p -> { painter -> drawTrackPlan(world, painter, p) } }
                 ?: stationPlan?.let { p -> { painter -> drawStationPlan(world, painter, p) } }
-                ?: bridgePlan?.let { p -> { painter -> drawBridgePlan(world, painter, p) } },
+                ?: bridgePlan?.let { p -> { painter -> drawBridgePlan(world, painter, p) } }
+                ?: roadPlan?.let { p -> { painter -> drawRoadPlan(world, painter, p) } },
             overlays = (if (settings.grid) ChunkBaker.GRID else 0) or (if (settings.heights) ChunkBaker.HEIGHTS else 0) or (if (settings.snow) ChunkBaker.SNOW else 0) or (if (settings.condition) ChunkBaker.CONDITION else 0),
             labels = {
                 val wv = worldView.value
@@ -497,7 +521,7 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
 
         // Under the strip, the latest news; a tap goes to where it happened.
         worldView.value?.news?.lastOrNull()?.let { n ->
-            val ind = if (n.kind == News.PROSPECTING_FAILED || n.kind == News.SNOWBOUND || n.kind == News.TRAIN_OLD || n.kind == News.WASHOUT || n.kind == News.FIRE || n.kind == News.AVALANCHE) null else world.industries.getOrNull(n.about)
+            val ind = if (n.kind == News.PROSPECTING_FAILED || n.kind == News.SNOWBOUND || n.kind == News.TRAIN_OLD || n.kind == News.WASHOUT || n.kind == News.FIRE || n.kind == News.AVALANCHE || n.kind == News.SLID) null else world.industries.getOrNull(n.about)
             val text = newsText(world, n)
             Box(
                 Modifier.align(Alignment.TopCenter)
@@ -511,6 +535,7 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
                         view.focusY = ind.y + 1f
                     }
                     if (n.kind == News.SNOWBOUND || n.kind == News.TRAIN_OLD) selected = Selection.Train(n.about)
+                    if (n.kind == News.SLID) selected = Selection.RoadVehicle(n.about)
                     if (n.kind == News.WASHOUT || n.kind == News.FIRE || n.kind == News.AVALANCHE) {
                         view.focusX = n.about % world.width + 0.5f
                         view.focusY = n.about / world.width + 0.5f
@@ -565,6 +590,15 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
                     wv, world.roster, sel.id, Calendar.year(world.startYear, day), money, { world.price(it) }, runner::request,
                     { selected = Selection.Train(it) }, { selected = null }, trayWidth,
                 )
+                is Selection.RoadVehicle -> {
+                    val v = wv?.roadVehicles?.firstOrNull { it.id == sel.id }
+                    if (v == null || wv == null) selected = null
+                    else RoadVehicleCard(wv, world.roster, v, addingRoadStops == v.id, { addingRoadStops = if (addingRoadStops == v.id) null else v.id }, runner::request, { selected = null; addingRoadStops = null }, trayWidth)
+                }
+                is Selection.Garage -> if (wv != null) GarageCard(
+                    wv, world.roster, sel.id, Calendar.year(world.startYear, day), money, { world.price(it) }, runner::request,
+                    { selected = Selection.RoadVehicle(it) }, { selected = null }, trayWidth,
+                )
                 is Selection.Station -> {
                     val s = wv?.stations?.firstOrNull { it.id == sel.id }
                     if (s == null || wv == null) selected = null
@@ -572,12 +606,15 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
                 }
                 null -> {}
             }
-            if (tool.group != ToolGroup.Inspect && addingStops == null) {
+            if (tool.group != ToolGroup.Inspect && addingStops == null && addingRoadStops == null) {
                 val detail = when (tool) {
                     Tool.Track -> if (removing) stringResource(Res.string.cost_lift, money(world.price(Prices.TRACK_REMOVE))) else stringResource(Res.string.cost_track, money(world.price(Prices.TRACK)), money(world.price(Prices.FOUNDATION)))
                     Tool.Signals, Tool.Waypoint -> stringResource(Res.string.cost_signal, money(world.price(Prices.SIGNAL)))
                     Tool.Bridge -> stringResource(Res.string.cost_tile, money(world.price(Spans.COST[bridgeStyle])))
-                    Tool.Wires -> stringResource(Res.string.cost_tile, money(world.price(Prices.WIRE)))
+                    Tool.Wires, Tool.TramRails -> stringResource(Res.string.cost_tile, money(world.price(Prices.WIRE)))
+                    Tool.Road -> stringResource(Res.string.cost_tile, money(world.price(Surface.COST[roadSurface])))
+                    Tool.RoadStop -> money(world.price(Prices.ROAD_STOP))
+                    Tool.Garage -> money(world.price(Prices.DEPOT))
                     Tool.SnowShed -> stringResource(Res.string.cost_tile, money(world.price(SHED_COST)))
                     Tool.SnowFence -> stringResource(Res.string.cost_tile, money(world.price(FENCE_COST)))
                     Tool.Tunnel -> stringResource(Res.string.cost_tile, money(world.price(Spans.COST[Spans.TUNNEL])))
@@ -588,7 +625,12 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
                     else -> null
                 }
                 ToolTray(tool, { tool = it; plan = null; stationPlan = null }, detail, folded, { folded = it }, layout.compact, trayWidth) {
-                    if (tool == Tool.Track || tool == Tool.Wires) TrayToggle(Glyph.Lift, stringResource(Res.string.remove_track), removing) { removing = !removing }
+                    if (tool == Tool.Track || tool == Tool.Wires || tool == Tool.Road || tool == Tool.TramRails) TrayToggle(Glyph.Lift, stringResource(Res.string.remove_track), removing) { removing = !removing }
+                    if (tool == Tool.Road) {
+                        val surfaces = stringArrayResource(Res.array.surfaces)
+                        val built = Surface.entries(Calendar.year(world.startYear, day))
+                        Chip(surfaces.getOrElse(roadSurface) { "" }, true) { roadSurface = built[(built.indexOf(roadSurface) + 1) % built.size] }
+                    }
                     if (tool == Tool.Station) TrayToggle(Glyph.TurnRight, stringResource(Res.string.platforms_other_way), !stationAlongX) { stationAlongX = !stationAlongX }
                     if (tool == Tool.Bridge) {
                         val styles = stringArrayResource(Res.array.bridge_styles)
@@ -617,6 +659,8 @@ private sealed interface Selection {
     data class Train(val id: Int) : Selection
     data class Depot(val id: Int) : Selection
     data class Station(val id: Int) : Selection
+    data class RoadVehicle(val id: Int) : Selection
+    data class Garage(val id: Int) : Selection
     data object Weather : Selection
 }
 
@@ -708,6 +752,10 @@ private fun IndustryCard(world: World, ind: Industry, where: String, onClose: ()
 private fun newsText(world: World, n: News): String {
     if (n.kind == News.PROSPECTING_FAILED) return stringResource(Res.string.news_prospect_failed, world.roster.industries.getOrNull(n.about)?.name(languageCode()) ?: "")
     if (n.kind == News.WASHOUT || n.kind == News.FIRE || n.kind == News.AVALANCHE) return stringResource(when (n.kind) { News.FIRE -> Res.string.news_fire; News.AVALANCHE -> Res.string.news_avalanche; else -> Res.string.news_washout })
+    if (n.kind == News.SLID) {
+        val name = world.roadVehicles.getOrNull(n.about)?.name?.takeIf { it.isNotEmpty() } ?: stringResource(Res.string.road_vehicle_n, n.about + 1)
+        return stringResource(Res.string.news_slid, name)
+    }
     if (n.kind == News.SNOWBOUND || n.kind == News.TRAIN_OLD) {
         val name = world.trains.getOrNull(n.about)?.name?.takeIf { it.isNotEmpty() } ?: stringResource(Res.string.train_n, n.about + 1)
         return stringResource(if (n.kind == News.SNOWBOUND) Res.string.news_snowbound else Res.string.news_old, name)

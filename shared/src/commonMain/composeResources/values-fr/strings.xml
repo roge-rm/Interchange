@@ -320,4 +320,23 @@
     <string name="news_avalanche">Une avalanche ensevelit la voie</string>
     <string name="depot_needs_wires">Posez la caténaire au-dessus de ce dépôt pour que les locomotives électriques puissent sortir</string>
     <string name="needs_wires">Ne peut pas sortir : pas de caténaire au-dessus du dépôt</string>
+    <string name="garage">Garage</string>
+    <string name="road_vehicle_n">Véhicule %1$d</string>
+    <string name="needs_tram_rails">Circule seulement sur des rails de tramway</string>
+    <string name="in_the_ditch">Sorti de la route, attend une dépanneuse</string>
+    <string name="in_garage">Au garage</string>
+    <string name="going_to_garage">En route pour le garage, %1$d km/h</string>
+    <string name="to_garage">Au garage</string>
+    <string name="age_line_road">%1$d ans, fiable à %2$d %</string>
+    <string-array name="tire_kinds">
+        <item>pneus d'été</item><item>pneus d'hiver</item><item>chaînes</item>
+    </string-array>
+    <string name="tires_line">Sur %1$s</string>
+    <string name="seasonal_tires">Pneus selon la saison</string>
+    <string name="news_slid">%1$s a glissé sur la glace</string>
+    <string name="tool_one_way">Sens unique</string>
+    <string name="tool_tram">Rails de tramway</string>
+    <string-array name="surfaces">
+        <item>Terre</item><item>Gravier</item><item>Asphalte</item><item>Autoroute</item>
+    </string-array>
 </resources>

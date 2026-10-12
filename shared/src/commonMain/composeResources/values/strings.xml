@@ -337,4 +337,23 @@
     <string name="news_avalanche">An avalanche buries the line</string>
     <string name="depot_needs_wires">Hang wires over this depot for electric engines to get out</string>
     <string name="needs_wires">Can't leave: no wires over the depot</string>
+    <string name="garage">Garage</string>
+    <string name="road_vehicle_n">Vehicle %1$d</string>
+    <string name="needs_tram_rails">Runs only on tram rails</string>
+    <string name="in_the_ditch">Slid off the road, waiting for a tow</string>
+    <string name="in_garage">In the garage</string>
+    <string name="going_to_garage">Going to the garage, %1$d km/h</string>
+    <string name="to_garage">To garage</string>
+    <string name="age_line_road">%1$d years old, %2$d% reliable</string>
+    <string-array name="tire_kinds">
+        <item>Summer tires</item><item>Winter tires</item><item>Chains</item>
+    </string-array>
+    <string name="tires_line">On %1$s</string>
+    <string name="seasonal_tires">Change tires with the seasons</string>
+    <string name="news_slid">%1$s slid off an icy road</string>
+    <string name="tool_one_way">One-way</string>
+    <string name="tool_tram">Tram rails</string>
+    <string-array name="surfaces">
+        <item>Dirt</item><item>Gravel</item><item>Paved</item><item>Highway</item>
+    </string-array>
 </resources>

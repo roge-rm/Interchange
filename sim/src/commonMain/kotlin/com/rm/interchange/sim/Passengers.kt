@@ -44,7 +44,7 @@ const val START_RATING = 175
 class Payment(val tile: Int, val amount: Long, val tick: Long)
 
 fun Station.waiting(c: Int) = cargo[c].sumOf { it.count }
-fun Train.load(c: Int) = cargo[c].sumOf { it.count }
+fun Carrier.load(c: Int) = cargo[c].sumOf { it.count }
 
 /** Each building tile within reach of a station, and the station it sends to, as pairs; and the people round each station. */
 internal fun World.workOutCatchment() {
@@ -53,7 +53,7 @@ internal fun World.workOutCatchment() {
     val bestDist = HashMap<Int, Int>()
     for (s in stations) {
         if (s == null || s.waypoint) continue
-        for (p in s.tiles) {
+        for (p in s.tiles + s.stops) {
             val px = p % width
             val py = p / width
             for (y in maxOf(0, py - CATCHMENT)..minOf(height - 1, py + CATCHMENT)) for (x in maxOf(0, px - CATCHMENT)..minOf(width - 1, px + CATCHMENT)) {
@@ -83,7 +83,7 @@ internal fun World.workOutCatchment() {
     for (s in stations) {
         if (s == null || s.waypoint) continue
         val found = ArrayList<Int>()
-        for (p in s.tiles) {
+        for (p in s.tiles + s.stops) {
             val px = p % width
             val py = p / width
             for (y in maxOf(0, py - CATCHMENT)..minOf(height - 1, py + CATCHMENT)) for (x in maxOf(0, px - CATCHMENT)..minOf(width - 1, px + CATCHMENT)) {
@@ -108,8 +108,8 @@ internal fun World.workOutCatchment() {
 internal fun World.workOutLinks() {
     linksDirty = false
     val links = HashMap<Int, MutableList<Int>>()
-    for (t in trains) {
-        if (t == null || t.orders.size < 2) continue
+    for (t in trains.filterNotNull() + roadVehicles.filterNotNull()) {
+        if (t.orders.size < 2) continue
         for (k in t.orders.indices) {
             val a = Order.station(t.orders[k])
             val b = Order.station(t.orders[(k + 1) % t.orders.size])
@@ -351,7 +351,7 @@ const val RESORT_HEIGHT = 12
 const val RESORT_REACH = 4
 
 /** The station train [t] calls at after the one it's at now, or -1. */
-private fun nextStop(t: Train): Int = if (t.orders.size < 2) -1 else Order.station(t.orders[(t.order + 1) % t.orders.size])
+private fun nextStop(t: Carrier): Int = if (t.orders.size < 2) -1 else Order.station(t.orders[(t.order + 1) % t.orders.size])
 
 /**
  * Train [t] standing at station [s] on order [o]: those who've arrived get
@@ -361,7 +361,7 @@ private fun nextStop(t: Train): Int = if (t.orders.size < 2) -1 else Order.stati
  * station takes it; one to transfer sets everything down to change trains;
  * one not to load takes nothing on.
  */
-internal fun World.callAt(t: Train, s: Station, o: Int = 0) {
+internal fun World.callAt(t: Carrier, s: Station, o: Int = 0) {
     val company = companies.getOrNull(t.owner) ?: return
     val next = nextStop(t)
     val days = { p: Packet -> ((tick - p.since) / Calendar.TICKS_PER_DAY).toInt() }
@@ -406,19 +406,20 @@ internal fun World.callAt(t: Train, s: Station, o: Int = 0) {
     }
     if (paid > 0) {
         earn(company, Books.INCOME, paid)
-        payments += Payment(s.tiles.first(), paid, tick)
+        payments += Payment((s.tiles.firstOrNull() ?: s.stops.first()), paid, tick)
     }
     if (!Order.has(o, Order.NO_LOAD)) loadAt(t, s)
 }
 
 /** Train [t] at station [s] takes on what's waiting for its next stop, as much as it has room for. */
-internal fun World.loadAt(t: Train, s: Station) {
+internal fun World.loadAt(t: Carrier, s: Station) {
     val next = nextStop(t)
     for (c in 0 until Cargo.COUNT) {
-        val capacity = t.capacity(c)
+        // Trucks go half loaded on the spring thaw's load limits.
+        val capacity = if (t is RoadVehicle && c > Cargo.MAIL && loadLimits()) t.capacity(c) / 2 else t.capacity(c)
         if (capacity > 0) {
             s.lastCall[c] = tick
-            s.lastSpeed[c] = t.engineInfo.speed
+            s.lastSpeed[c] = t.topSpeed
         }
         var room = capacity - t.load(c)
         val it = s.cargo[c].iterator()
@@ -487,3 +488,6 @@ internal fun World.passengersYear() {
 
 /** Payments shown rising over stations, kept this many ticks. */
 const val PAYMENT_TICKS = Calendar.TICKS_PER_DAY * 3L
+
+/** Whether spring load limits are on the roads: through the thaw, trucks carry half. */
+internal fun World.loadLimits() = settings.weather && lookToday() == Climate.EARLY_SPRING

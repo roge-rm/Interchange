@@ -42,6 +42,14 @@ class World(val settings: NewGame, val roster: Roster = Roster.BASE, generate: B
 
     /** Town roads on each tile, as [roadBit]s; buildings, packed by [packHouse], and the year each went up; and which town each is, or -1. */
     val road = ByteArray(width * height)
+    /** Each road tile's surface and one-way, by [roadKindOf], and who built it, -1 for a town. */
+    val roadKind = ByteArray(width * height)
+    val roadOwner = ByteArray(width * height) { -1 }
+    /** Road stop tiles to their station. */
+    val roadStops = HashMap<Int, Int>()
+    /** Buses, trucks and streetcars by id; a sold one leaves null. */
+    val roadVehicles = ArrayList<RoadVehicle?>()
+    internal var roadNetDirty = true
     val house = ShortArray(width * height)
     val houseYear = ShortArray(width * height)
     val townOf = ShortArray(width * height) { -1 }
@@ -207,6 +215,12 @@ class World(val settings: NewGame, val roster: Roster = Roster.BASE, generate: B
             is Command.Bridge -> buildBridge(company, command)
             is Command.Tunnel -> buildTunnel(company, command)
             is Command.Wire -> wire(company, command)
+            is Command.Road -> buildRoad(company, command)
+            is Command.RoadOneWay -> roadOneWay(company, command)
+            is Command.RoadStop -> buildRoadStop(company, command)
+            is Command.Garage -> buildGarage(company, command)
+            is Command.BuyRoadVehicle -> buyRoadVehicle(company, command)
+            is Command.RoadOrder -> roadVehicleCommand(company, command)
             is Command.SnowWorks -> snowWorks(company, command)
             is Command.SetUpkeep -> company.upkeep = command.level.coerceIn(Upkeep.LOW, Upkeep.HIGH)
             is Command.Clear -> clearTile(company, command)
@@ -226,11 +240,13 @@ class World(val settings: NewGame, val roster: Roster = Roster.BASE, generate: B
     fun step() {
         tick++
         moveTrains()
+        moveRoadVehicles()
         if (tick % Calendar.TICKS_PER_DAY == 0L) {
             weatherDay()
             trackDay()
             weatherLooks()
             trainsDay()
+            roadVehiclesDay()
             payRunningCosts()
             passengersDay()
             townsDay()
@@ -265,6 +281,7 @@ class World(val settings: NewGame, val roster: Roster = Roster.BASE, generate: B
                 h = (h xor trees[i].toLong()) * 0x100000001b3L
                 h = (h xor owner[i].toLong()) * 0x100000001b3L
                 h = (h xor road[i].toLong()) * 0x100000001b3L
+                h = (h xor (roadKind[i].toLong() shl 8 or roadOwner[i].toLong())) * 0x100000001b3L
                 h = (h xor house[i].toLong()) * 0x100000001b3L
                 h = (h xor industryOf[i].toLong()) * 0x100000001b3L
                 h = (h xor (weather.snow[i].toLong() or (weather.ice[i].toLong() shl 8) or (weather.wet[i].toLong() shl 16) or (weather.frost[i].toLong() shl 24))) * 0x100000001b3L
@@ -298,6 +315,8 @@ class World(val settings: NewGame, val roster: Roster = Roster.BASE, generate: B
         for (k in closed.keys.sorted()) mix(k.toLong() * 31 + closed.getValue(k))
         for (k in kinks.keys.sorted()) mix(k.toLong() * 31 + kinks.getValue(k))
         for (k in fences.sorted()) mix(k.toLong())
+        for (k in roadStops.keys.sorted()) mix(k.toLong() * 31 + roadStops.getValue(k))
+        for (v in roadVehicles) if (v != null) { mix(v.id.toLong()); mix(v.at.toLong()); mix(v.along.toLong()); mix(v.speed.toLong()); for (c in v.cargo) for (p in c) mix(p.count.toLong()) }
         for (k in sheds.sorted()) mix(-k.toLong())
         for (s in spans) if (s != null) { mix(s.x0.toLong()); mix(s.y0.toLong()); mix(s.x1.toLong()); mix(s.y1.toLong()); mix(s.height.toLong()) }
         for (t in trains) {

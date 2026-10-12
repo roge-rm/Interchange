@@ -111,6 +111,14 @@ for a in (0, 1):
     JOBS.append(("shadows", ("station_shadow", a), lambda a=a: scenery(f"station_{a}_shadow.png", base.cell), None))
     UP[("station", a)] = f"station_{a}.png"
 for e, edge in enumerate(EDGES):
+    JOBS.append(("static", ("garage", e), lambda edge=edge: scenery(f"garage_{edge}.png", base.cell), None))
+    JOBS.append(("shadows", ("garage_shadow", e), lambda edge=edge: scenery(f"garage_{edge}_shadow.png", base.cell), None))
+    UP[("garage", e)] = f"garage_{edge}.png"
+for a in (0, 1):
+    JOBS.append(("static", ("road_stop", a), lambda a=a: scenery(f"road_stop_{a}.png", base.cell), None))
+    JOBS.append(("shadows", ("road_stop_shadow", a), lambda a=a: scenery(f"road_stop_{a}_shadow.png", base.cell), None))
+    UP[("road_stop", a)] = f"road_stop_{a}.png"
+for e, edge in enumerate(EDGES):
     JOBS.append(("static", ("depot", e), lambda edge=edge: scenery(f"depot_{edge}.png", lambda: track.depot(edge)), None))
     JOBS.append(("shadows", ("depot_shadow", e), lambda edge=edge: scenery(f"depot_{edge}_shadow.png", base.cell), None))
     UP[("depot", e)] = f"depot_{edge}.png"
@@ -406,6 +414,12 @@ object Atlas {{
     /** A depot with its doors at view edge XM, XP, YM or YP, and its shadow, on the shadows sheet. On the static sheet. */
     val DEPOT = intArrayOf({", ".join(str(index[("depot", e)]) for e in range(4))})
     val DEPOT_SHADOW = intArrayOf({", ".join(str(index[("depot_shadow", e)]) for e in range(4))})
+
+    /** A garage with its door at view edge XM, XP, YM or YP, and a road stop along view u (0) or v (1), with their shadows. On the static sheet. */
+    val GARAGE = intArrayOf({", ".join(str(index[("garage", e)]) for e in range(4))})
+    val GARAGE_SHADOW = intArrayOf({", ".join(str(index[("garage_shadow", e)]) for e in range(4))})
+    val ROAD_STOP = intArrayOf({index[("road_stop", 0)]}, {index[("road_stop", 1)]})
+    val ROAD_STOP_SHADOW = intArrayOf({index[("road_stop_shadow", 0)]}, {index[("road_stop_shadow", 1)]})
 
     const val TREE_LOOKS = {ground.TREE_LOOKS}
     /** A tree, at kind * TREE_LOOKS + look, kinds in the order of the game's trees, and its shadow, on the shadows sheet. On the static sheet. */

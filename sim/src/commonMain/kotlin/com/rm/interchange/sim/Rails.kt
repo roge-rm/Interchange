@@ -108,7 +108,8 @@ fun World.planRail(c: Command.Rail): BooleanArray? {
         val piece = line[k] % 64
         val has = trackOf(i)
         // Town roads and buildings stay put; level crossings come with roads of the player's own.
-        val special = stationTiles.containsKey(i) || depotTiles.containsKey(i) || townBuilt(i) || spanHeads.containsKey(i)
+        // Across a road only on a level crossing.
+        val special = stationTiles.containsKey(i) || depotTiles.containsKey(i) || (townBuilt(i) && !(road[i].toInt() != 0 && crossable(i, piece))) || spanHeads.containsKey(i)
         val ok = !special && if (c.remove) {
             has and piece != 0 && owner[i].toInt() == c.company
         } else {
@@ -128,7 +129,7 @@ internal fun World.buildRail(company: Company, c: Command.Rail) {
         val y = i / width
         val has = track[i].toInt()
         // Platforms and depots are left for the Clear tool.
-        if (stationTiles.containsKey(i) || depotTiles.containsKey(i) || townBuilt(i) || spanHeads.containsKey(i)) continue
+        if (stationTiles.containsKey(i) || depotTiles.containsKey(i) || (townBuilt(i) && !(road[i].toInt() != 0 && crossable(i, piece) && !c.remove)) || spanHeads.containsKey(i)) continue
         if (c.remove) {
             if (has and piece == 0 || owner[i].toInt() != company.id || trainOnTile(i)) continue
             if (company.money < price(Prices.TRACK_REMOVE)) return

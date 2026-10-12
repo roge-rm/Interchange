@@ -56,6 +56,8 @@ class News(val kind: Int, val about: Int, val tick: Long) {
         const val FIRE = 8
         /** An avalanche across the line; [News.about] is the tile. */
         const val AVALANCHE = 9
+        /** A road vehicle slid off an icy road; [News.about] is the vehicle. */
+        const val SLID = 10
     }
 }
 

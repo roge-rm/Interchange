@@ -391,3 +391,57 @@ def decor(m, kind, look):
         for k in range(rng.randint(30, 45)):
             x, y = rng.uniform(-0.09, 0.09), rng.uniform(-0.09, 0.09)
             m.upright(x, y, 0, rng.uniform(1.4, 2.6), 0.009, 0.0, blades, segments=4)
+
+
+def road_stop(m, along_u):
+    """A drive-through stop beside the road: a glass shelter with a bench, and a sign on a post, on the right of each way."""
+    glass = material("shelter glass", "#a8c4d0", rough=0.1)
+    frame = material("shelter frame", "#4a5258", metal=0.5, rough=0.4)
+    roof = material("shelter roof", "#5a6066", metal=0.3, rough=0.5)
+    bench = material("bench", "#7a5636", rough=0.8)
+    sign = material("stop sign", "#2a6ab0", rough=0.5)
+
+    def b(x0, x1, y0, y1, z0, z1, mat, bevel=0.0):
+        if along_u:
+            m.box(x0, x1, y0, y1, z0, z1, mat, bevel)
+        else:
+            m.box(y0, y1, x0, x1, z0, z1, mat, bevel)
+
+    for side in (-1, 1):
+        x = side * 0.42
+        y0, y1 = (-0.3, 0.05) if side < 0 else (-0.05, 0.3)
+        b(x - 0.035, x + 0.035, y0, y1, 0.0, 0.05, frame)
+        b(x + side * 0.03 - 0.004, x + side * 0.03 + 0.004, y0, y1, 0.05, 1.2, glass)
+        for y in (y0, y1):
+            b(x - 0.035, x + 0.035, y - 0.004, y + 0.004, 0.05, 1.2, glass)
+            b(x + side * 0.03 - 0.006, x + side * 0.03 + 0.006, y - 0.006, y + 0.006, 0.0, 1.25, frame)
+        b(x - 0.05, x + 0.05, y0 - 0.01, y1 + 0.01, 1.2, 1.28, roof, 0.003)
+        b(x + side * 0.005 - 0.015, x + side * 0.005 + 0.015, y0 + 0.04, y1 - 0.04, 0.3, 0.36, bench)
+        sy = y1 + 0.08 if side < 0 else y0 - 0.08
+        b(x - 0.005, x + 0.005, sy - 0.005, sy + 0.005, 0.0, 1.5, frame)
+        b(x - 0.004, x + 0.004, sy - 0.03, sy + 0.03, 1.3, 1.55, sign)
+
+
+def garage(m, edge):
+    """A garage for buses and trucks: a long block-built shed with a big door at view edge [edge]."""
+    block = material("garage block", "#b0a898", rough=0.85)
+    roof = material("garage roof", "#4e5458", metal=0.4, rough=0.5)
+    door = material("garage door", "#5a6e7e", metal=0.4, rough=0.45)
+    trim = material("garage trim", "#7a2a22", rough=0.6)
+    along_u = edge in ("XM", "XP")
+    far = edge in ("XP", "YP")
+
+    def b(x0, x1, y0, y1, z0, z1, mat, bevel=0.0):
+        if along_u:
+            m.box(x0, x1, y0, y1, z0, z1, mat, bevel)
+        else:
+            m.box(y0, y1, x0, x1, z0, z1, mat, bevel)
+
+    b(-0.4, 0.4, -0.42, 0.42, 0.0, 2.3, block, 0.004)
+    b(-0.42, 0.42, -0.44, 0.44, 2.3, 2.45, roof, 0.004)
+    b(-0.41, 0.41, -0.43, 0.43, 2.1, 2.3, trim)
+    y = 0.42 if far else -0.42
+    b(-0.25, 0.25, y - 0.006, y + 0.006, 0.0, 1.7, door)
+    for k in range(1, 7):
+        z = k * 1.7 / 7
+        b(-0.25, 0.25, y - 0.008, y + 0.008, z - 0.01, z + 0.01, roof)

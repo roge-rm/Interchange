@@ -33,8 +33,8 @@ fun stepLength(s: Int) = Track.length(stepPiece(s)) * FIX
 class Train(
     /** The game's roster, which [engine] and [wagon] are places in. */
     val roster: Roster,
-    val id: Int,
-    val owner: Int,
+    override val id: Int,
+    override val owner: Int,
     val engine: Int,
     val wagon: Int,
     val wagons: Int,
@@ -42,7 +42,7 @@ class Train(
     var depot: Int,
     /** What its wagons are set to carry, a [Cargo] number among those they can, or -1 for their first. */
     val wagonCargo: Int = -1,
-) {
+) : Carrier {
     /** Its own name, or empty to be called by its number in the screen's language. */
     var name = ""
 
@@ -79,13 +79,13 @@ class Train(
     var speed = 0
 
     /** What it's carrying, as lots by [Cargo]. */
-    val cargo = Array(Cargo.COUNT) { ArrayList<Packet>() }
+    override val cargo = Array(Cargo.COUNT) { ArrayList<Packet>() }
     /** Fares less running costs, this year and last, in dollars. */
-    var profitThisYear = 0L
+    override var profitThisYear = 0L
     var profitLastYear = 0L
 
     /** How much of cargo [c] its cars hold. */
-    fun capacity(c: Int) = carEngines.sumOf { e -> roster[e].let { if (carCargo(it) == c) it.capacity else 0 } }
+    override fun capacity(c: Int) = carEngines.sumOf { e -> roster[e].let { if (carCargo(it) == c) it.capacity else 0 } }
 
     /** Full of everything it can carry. */
     fun full() = (0 until Cargo.COUNT).all { load(it) >= capacity(it) }
@@ -97,8 +97,8 @@ class Train(
     var shared = -1
 
     /** The stations it calls at in turn, and what to do at each, packed by [Order]. */
-    val orders = ArrayList<Int>()
-    var order = 0
+    override val orders = ArrayList<Int>()
+    override var order = 0
     var toDepot = false
 
     /** The way ahead, worked out by [planRoute], and how far along it the train has got. */
@@ -129,6 +129,7 @@ class Train(
     internal var onBlocks = IntArray(0)
 
     val engineInfo get() = roster[engine]
+    override val topSpeed get() = engineInfo.speed
     val wagonInfo get() = roster[wagon]
     val maxSpeed get() = engineInfo.speed * 4096 * 16 / 2700
     val weight get() = carEngines.sumOf { roster[it].weight }
@@ -165,11 +166,11 @@ fun World.trainOnTile(tile: Int) = (tileTrains[tile] ?: 0) > 0 || (tileTrains[-t
 /** Buys a train in a depot: an engine and [Command.BuyTrain.wagons] of one kind of wagon. */
 internal fun World.buyTrain(company: Company, c: Command.BuyTrain) {
     val depot = depots.getOrNull(c.depot) ?: return
-    if (depot.owner != company.id) return
+    if (depot.owner != company.id || depot.road) return
     val e = roster.getOrNull(c.engine) ?: return
     val w = roster.getOrNull(c.wagon) ?: return
     val year = Calendar.year(startYear, day)
-    if (!e.enabled || !w.enabled || !e.pulls || w.pulls || w.isTender || year < e.from || year >= e.until || year < w.from || year >= w.until) return
+    if (!e.enabled || !w.enabled || !e.pulls || w.pulls || w.isTender || w.kind == VehicleKind.ROAD || year < e.from || year >= e.until || year < w.from || year >= w.until) return
     if (c.wagons !in 0..MAX_WAGONS) return
     // An electric engine can't get out of a depot with no wires over it.
     if (e.traction == Traction.ELECTRIC && !depotWired(depot)) return

@@ -21,6 +21,12 @@ import com.rm.interchange.sim.surfaceHeight
 import com.rm.interchange.sim.Climate
 import com.rm.interchange.sim.mud
 import com.rm.interchange.sim.isPlatform
+import com.rm.interchange.sim.Surface
+import com.rm.interchange.sim.TRAM
+import com.rm.interchange.sim.oneWayOf
+import com.rm.interchange.sim.straightRoad
+import com.rm.interchange.sim.surfaceOf
+import com.rm.interchange.sim.iceRoadFits
 import com.rm.interchange.sim.BURNT
 import com.rm.interchange.sim.BURNT_FROM
 import com.rm.interchange.sim.VERY_WORN
@@ -162,9 +168,27 @@ internal class ChunkBaker(
         val edges = intArrayOf(kindOf(vx, vy - 1), kindOf(vx + 1, vy), kindOf(vx, vy + 1), kindOf(vx - 1, vy))
         // The town road here in view edges, and whether it's paved.
         val worldRoad = world.road[world.index(wx, wy)].toInt()
+        val here = world.index(wx, wy)
         var road = worldRoad and PAVED
-        if (worldRoad != 0 && downtown(world.index(wx, wy))) road = road or DOWNTOWN
-        for (e in 0 until 4) if (worldRoad and (1 shl e) != 0) road = road or (1 shl viewEdge(e))
+        // An ice road shows only while the ice will carry it.
+        if (worldRoad != 0 && world.isWater(wx, wy) && !world.iceRoadFits(here)) road = -1
+        if (road < 0) road = 0 else if (worldRoad != 0) {
+            if (downtown(here)) road = road or DOWNTOWN
+            if (world.townOf[here].toInt() >= 0) road = road or TOWN_ROAD
+            val kindHere = world.roadKind[here].toInt()
+            when (surfaceOf(kindHere)) {
+                Surface.GRAVEL -> road = road or GRAVEL
+                Surface.HIGHWAY -> road = road or HIGHWAY
+            }
+            if (kindHere and TRAM != 0) road = road or TRAM_RAILS
+            val way = oneWayOf(kindHere)
+            if (way != 0) {
+                val straight = world.straightRoad(here)
+                val exit = if (straight == Track.X) (if (way == 1) Track.XP else Track.XM) else (if (way == 1) Track.YP else Track.YM)
+                road = road or ONE_WAY or (viewEdge(exit) shl 10)
+            }
+        }
+        if (road != 0 || (worldRoad != 0 && !world.isWater(wx, wy))) for (e in 0 until 4) if (worldRoad and (1 shl e) != 0) road = road or (1 shl viewEdge(e))
         ground(vx, vy, t, r, b, l, kind, edges, road, weather = true)
         earthFaces(vx, vy, r, b, l)
 
@@ -217,6 +241,20 @@ internal class ChunkBaker(
         val pieces = world.trackAt(wx, wy)
         val kind = kindOf(vx, vy)
         if (pieces == 0) {
+            val base = minOf(minOf(cornerHeight(vx, vy), cornerHeight(vx + 1, vy)), minOf(cornerHeight(vx + 1, vy + 1), cornerHeight(vx, vy + 1)))
+            if (world.roadStops.containsKey(tile)) {
+                val a = if (viewEdge(if (world.straightRoad(tile) == Track.X) Track.XP else Track.YP) <= Track.XP) 0 else 1
+                sprite(if (shadow) Atlas.ROAD_STOP_SHADOW[a] else Atlas.ROAD_STOP[a], vx, vy, base, shadow)
+                return
+            }
+            world.depotTiles[tile]?.let { id ->
+                val d = world.depots.getOrNull(id)
+                if (d != null && d.road) {
+                    val e = viewEdge(d.edge)
+                    sprite(if (shadow) Atlas.GARAGE_SHADOW[e] else Atlas.GARAGE[e], vx, vy, base, shadow)
+                    return
+                }
+            }
             world.industryAt(tile)?.let { ind ->
                 val kind = world.roster.industries[ind.kind]
                 val art = partArt(kind.part(wx - ind.x, wy - ind.y, ind.turn))
@@ -425,15 +463,27 @@ internal class ChunkBaker(
      */
     private fun roadTexel(u: Float, v: Float, bits: Int, ti: Int, ground: Int): Int {
         val paved = bits and PAVED != 0
+        val highway = bits and HIGHWAY != 0
         val d = roadDistance(u, v, bits)
-        if (d < CARRIAGEWAY) {
-            if (!paved) return sheets.ground[Atlas.DIRT * size * size + ti]
+        val half = if (highway) HIGHWAY_HALF else CARRIAGEWAY
+        if (d < half) {
             val straightX = bits and 15 == (1 shl Track.XM) or (1 shl Track.XP)
             val straightY = bits and 15 == (1 shl Track.YM) or (1 shl Track.YP)
+            // Streetcar rails, a pair either side of the middle along each arm.
+            if (bits and TRAM_RAILS != 0 && tramRail(u, v, bits)) return TRAM_RAIL
+            if (bits and ONE_WAY != 0 && oneWayArrow(u, v, (bits shr 10) and 3)) return ROAD_ARROW
+            if (!paved) {
+                val dirt = sheets.ground[Atlas.DIRT * size * size + ti]
+                return if (bits and GRAVEL != 0) mix(dirt, GRAVEL_GREY, 0.45f) else dirt
+            }
+            if (highway && d > half - EDGE_LINE * 2 && d < half - EDGE_LINE) return EDGE_WHITE
             if ((straightX && abs(v - 0.5f) < LINE && (u * 5f) % 1f < 0.55f) || (straightY && abs(u - 0.5f) < LINE && (v * 5f) % 1f < 0.55f)) return ROAD_LINE
             return sheets.ground[Atlas.ASPHALT * size * size + ti]
         }
-        if (!paved) return ground
+        // Sidewalks and boulevards only in towns; a company's road out in the country has a gravel shoulder.
+        if (!paved || bits and TOWN_ROAD == 0) {
+            return if (paved && d < half + SHOULDER) mix(ground, GRAVEL_GREY, 0.5f) else ground
+        }
         val walk = sheets.ground[Atlas.PAVEMENT * size * size + ti]
         return when {
             d < CARRIAGEWAY + KERB -> lit(walk, 190)
@@ -442,6 +492,29 @@ internal class ChunkBaker(
             d < SIDEWALK -> walk
             else -> ground
         }
+    }
+
+    /** Whether ([u], [v]) is on a streetcar rail: a pair a little either side of the middle of each arm of the road. */
+    private fun tramRail(u: Float, v: Float, bits: Int): Boolean {
+        val du = abs(u - 0.5f)
+        val dv = abs(v - 0.5f)
+        val alongU = (u < 0.5f && bits and (1 shl Track.XM) != 0) || (u >= 0.5f && bits and (1 shl Track.XP) != 0)
+        val alongV = (v < 0.5f && bits and (1 shl Track.YM) != 0) || (v >= 0.5f && bits and (1 shl Track.YP) != 0)
+        return (alongU && abs(dv - TRAM_GAUGE) < TRAM_WIDTH) || (alongV && abs(du - TRAM_GAUGE) < TRAM_WIDTH)
+    }
+
+    /** Whether ([u], [v]) is on a white arrow in the middle of the tile pointing out through view edge [edge]. */
+    private fun oneWayArrow(u: Float, v: Float, edge: Int): Boolean {
+        // Into the arrow's own terms: along it towards its tip, and across.
+        val (along, across) = when (edge) {
+            Track.XP -> (u - 0.5f) to (v - 0.5f)
+            Track.XM -> (0.5f - u) to (v - 0.5f)
+            Track.YP -> (v - 0.5f) to (u - 0.5f)
+            else -> (0.5f - v) to (u - 0.5f)
+        }
+        if (along < -0.18f || along > 0.18f) return false
+        // A shaft, then a head narrowing to the tip.
+        return if (along < 0.04f) abs(across) < 0.025f else abs(across) < (0.18f - along) * 0.6f
     }
 
     /** How far ([u], [v]) is from the middle line of a road reaching the view edges in [bits], squarely round its middle. */
@@ -743,8 +816,23 @@ internal class ChunkBaker(
         private const val KERB = 0.015f
         private const val BOULEVARD = 0.33f
         private const val SIDEWALK = 0.47f
-        /** Added to a tile's road bits for the baker when it's downtown. */
+        /** Added to a tile's road bits for the baker: downtown, a gravel or highway surface, tram rails, one-way with the view edge it's
+         * towards in bits 10 and 11, and a town's road. */
         private const val DOWNTOWN = 32
+        private const val GRAVEL = 64
+        private const val HIGHWAY = 128
+        private const val TRAM_RAILS = 256
+        private const val ONE_WAY = 512
+        private const val TOWN_ROAD = 4096
+        private const val HIGHWAY_HALF = 0.3f
+        private const val SHOULDER = 0.05f
+        private const val EDGE_LINE = 0.012f
+        private const val TRAM_GAUGE = 0.06f
+        private const val TRAM_WIDTH = 0.008f
+        private const val GRAVEL_GREY = 0xff9a948a.toInt()
+        private const val EDGE_WHITE = 0xffe8e8e2.toInt()
+        private const val TRAM_RAIL = 0xff4a4846.toInt()
+        private const val ROAD_ARROW = 0xffeaeae4.toInt()
         /** Street trees are maples. */
         private const val STREET_TREE = 3
         /** The dashed line down a paved straight: its half width and colour. */

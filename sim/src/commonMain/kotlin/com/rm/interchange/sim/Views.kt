@@ -22,7 +22,10 @@ class VehicleView(val tick: Long, val cars: FloatArray) {
     fun length(i: Int) = cars[i * CAR_FIELDS + 6]
     /** How high it runs on a bridge, in steps, or -1 on the ground. */
     fun deck(i: Int) = cars[i * CAR_FIELDS + 7]
-    fun train(i: Int) = key(i) / 256
+    /** The train a car belongs to, or -1 for a road vehicle. */
+    fun train(i: Int) = if (key(i) >= 0) key(i) / 256 else -1
+    /** The road vehicle it is, or -1 for a train's car. */
+    fun roadVehicle(i: Int) = if (key(i) < 0) -key(i) / 256 - 1 else -1
 
     companion object {
         const val CAR_FIELDS = 8
@@ -66,6 +69,36 @@ class TrainView(
     val old: Boolean = false,
     /** An electric engine in a depot with no wires, so it can't leave. */
     val needsWires: Boolean = false,
+)
+
+/** A bus, truck or streetcar as the screen shows it. */
+class RoadVehicleView(
+    val id: Int,
+    val name: String,
+    val model: Int,
+    val depot: Int,
+    val inDepot: Boolean,
+    val running: Boolean,
+    val toDepot: Boolean,
+    val orders: IntArray,
+    val order: Int,
+    val kmh: Int,
+    val waiting: Boolean,
+    val lost: Boolean,
+    val carries: Int,
+    val load: Int,
+    val capacity: Int,
+    val profitThisYear: Long,
+    val profitLastYear: Long,
+    val age: Int,
+    val reliability: Int,
+    val broken: Boolean,
+    val slid: Boolean,
+    val service: Boolean,
+    val servicing: Boolean,
+    val tires: Int,
+    val seasonalTires: Boolean,
+    val renewCost: Long,
 )
 
 /** A station as the screen shows it. */
@@ -132,6 +165,7 @@ class WorldView(
     /** Snow sheds and snow fences, by tile. */
     val sheds: IntArray = IntArray(0),
     val fences: IntArray = IntArray(0),
+    val roadVehicles: List<RoadVehicleView> = emptyList(),
 )
 
 fun World.view(): WorldView {
@@ -167,6 +201,23 @@ fun World.view(): WorldView {
             cars += roster[t.carEngines[c]].length / 16f
             cars += span?.height?.toFloat() ?: -1f
         }
+    }
+    // Road vehicles, each a single car, keyed below zero.
+    for (v in roadVehicles) {
+        if (v == null || v.inDepot) continue
+        val p = roadPosition(v)
+        val tile = roadStepTile(v.at)
+        val x = tile % width
+        val y = tile / width
+        val rise = edgeHeight(x, y, 0, roadStepExit(v.at)) - edgeHeight(x, y, 0, roadStepEntry(v.at))
+        cars += (-(v.id + 1) * 256).toFloat()
+        cars += p[0]
+        cars += p[1]
+        cars += p[2]
+        cars += v.info.sprite.toFloat()
+        cars += rise.coerceIn(-1, 1).toFloat()
+        cars += v.info.length / 16f
+        cars += -1f
     }
     val trainViews = trains.filterNotNull().map { t ->
         TrainView(
@@ -204,7 +255,16 @@ fun World.view(): WorldView {
         companies.firstOrNull()?.let { c -> CompanyView(c.money, c.loan, maxLoan(), c.thisYear.copyOf(), c.lastYear.copyOf(), c.history.map { it.copyOf() }, c.upkeep) }, tick, weatherView(),
         stations.filterNotNull().filter { it.waypoint }.flatMap { it.tiles }.toIntArray(),
         spans.filterNotNull().map { SpanView(it.tunnel, it.style, it.x0, it.y0, it.x1, it.y1, it.height) },
-        sheds.toIntArray(), fences.toIntArray())
+        sheds.toIntArray(), fences.toIntArray(),
+        roadVehicles.filterNotNull().map { v ->
+            val c = v.carries
+            RoadVehicleView(
+                v.id, v.name, v.model, v.depot, v.inDepot, v.running, v.toDepot, v.orders.toIntArray(), v.order, v.speed / 16 * 2700 / 4096,
+                v.waiting > 0, v.running && !v.inDepot && v.lostUntil > tick, c, if (c >= 0) v.load(c) else 0, if (c >= 0) v.capacity(c) else 0,
+                v.profitThisYear, v.profitLastYear, (day - v.built).coerceAtLeast(0) / 365, v.reliability / 100, v.brokenFor > 0 && !v.slid, v.slid,
+                v.service, v.servicing, v.tires, v.seasonalTires, price(v.price) - roadValue(v),
+            )
+        })
 }
 
 /** The weather's copy for the screen, made again only once a day. */

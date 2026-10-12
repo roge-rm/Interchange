@@ -16,7 +16,7 @@ package com.rm.interchange.sim
  */
 object Save {
     private val MAGIC = "ICHG".encodeToByteArray()
-    const val VERSION = 15
+    const val VERSION = 16
 
     fun write(world: World): ByteArray {
         val w = ByteWriter(world.width * world.height * 6 + 4096)
@@ -48,7 +48,7 @@ object Save {
             for (s in stations) {
                 w.bool(s != null)
                 if (s == null) continue
-                w.int(s.owner); w.string(s.name); w.int(s.signX); w.int(s.signY); w.bool(s.waypoint); w.ints(s.tiles.toIntArray())
+                w.int(s.owner); w.string(s.name); w.int(s.signX); w.int(s.signY); w.bool(s.waypoint); w.ints(s.tiles.toIntArray()); w.ints(s.stops.toIntArray())
                 writeCargo(w, s.cargo)
                 w.ints(s.rating); w.uvar(s.lastCall.size.toLong()); for (v in s.lastCall) w.long(v); w.ints(s.lastSpeed)
             }
@@ -56,7 +56,7 @@ object Save {
             for (d in depots) {
                 w.bool(d != null)
                 if (d == null) continue
-                w.int(d.owner); w.int(d.tile); w.int(d.edge)
+                w.int(d.owner); w.int(d.tile); w.int(d.edge); w.bool(d.road)
             }
             val keys = signals.keys.sorted()
             w.uvar(keys.size.toLong())
@@ -103,6 +103,21 @@ object Save {
                 for (k in ks) { w.int(k); w.int(m.getValue(k)) }
             }
             w.ints(fences.sorted().toIntArray()); w.ints(sheds.sorted().toIntArray())
+            w.bytes(roadKind); w.bytes(roadOwner)
+            w.uvar(roadVehicles.size.toLong())
+            for (v in roadVehicles) {
+                w.bool(v != null)
+                if (v == null) continue
+                w.int(v.owner); w.int(v.model); w.int(v.depot); w.int(v.cargoChoice); w.string(v.name)
+                w.bool(v.inDepot); w.bool(v.running); w.int(v.waiting); w.int(v.at); w.int(v.along); w.int(v.speed)
+                writeCargo(w, v.cargo); w.long(v.profitThisYear); w.long(v.profitLastYear)
+                w.ints(v.orders.toIntArray()); w.int(v.order); w.bool(v.toDepot)
+                val r = v.route
+                w.bool(r != null)
+                if (r != null) w.ints(r)
+                w.int(v.routeAt); w.long(v.lostUntil); w.int(v.built); w.int(v.serviced); w.int(v.reliability); w.int(v.breakdowns); w.int(v.brokenFor)
+                w.bool(v.servicing); w.bool(v.service); w.int(v.tires); w.bool(v.seasonalTires); w.bool(v.slid)
+            }
             val held = reserved.keys.sorted()
             w.uvar(held.size.toLong())
             for (k in held) { w.int(k); w.int(reserved.getValue(k)) }
@@ -173,6 +188,7 @@ object Save {
                 if (!r.bool()) { stations += null; return@repeat }
                 val s = Station(id, r.int(), r.string(), r.int(), r.int(), if (version >= 12) r.bool() else false)
                 for (tile in r.ints()) { s.tiles += tile; stationTiles[tile] = id }
+                if (version >= 16) for (tile in r.ints()) { s.stops += tile; roadStops[tile] = id }
                 when {
                     version >= 5 -> readCargo(r, s.cargo, version)
                     // Before journeys, what waited could go anywhere.
@@ -189,7 +205,7 @@ object Save {
             }
             repeat(r.uvar().toInt()) { id ->
                 if (!r.bool()) { depots += null; return@repeat }
-                val d = Depot(id, r.int(), r.int(), r.int())
+                val d = Depot(id, r.int(), r.int(), r.int(), if (version >= 16) r.bool() else false)
                 depotTiles[d.tile] = id
                 depots += d
             }
@@ -283,6 +299,26 @@ object Save {
                 for (m in listOf(kinks, closed)) repeat(r.uvar().toInt().also { if (it > 10_000_000) throw BadData("too many closures") }) { m[r.int()] = r.int() }
             }
             if (version >= 15) { fences += r.ints().toList(); sheds += r.ints().toList() }
+            if (version >= 16) {
+                fill(roadKind, r.bytes()); fill(roadOwner, r.bytes())
+                repeat(r.uvar().toInt().also { if (it > 1_000_000) throw BadData("too many road vehicles") }) { id ->
+                    if (!r.bool()) { roadVehicles += null; return@repeat }
+                    val owner = r.int()
+                    val model = vehicle(r.int())
+                    val v = RoadVehicle(roster, id, owner, model, r.int(), r.int())
+                    v.name = r.string()
+                    v.inDepot = r.bool(); v.running = r.bool(); v.waiting = r.int(); v.at = r.int(); v.along = r.int(); v.speed = r.int()
+                    readCargo(r, v.cargo, version); v.profitThisYear = r.long(); v.profitLastYear = r.long()
+                    v.orders += r.ints().toList(); v.order = r.int(); v.toDepot = r.bool()
+                    v.route = if (r.bool()) r.ints() else null
+                    v.routeAt = r.int(); v.lostUntil = r.long(); v.built = r.int(); v.serviced = r.int(); v.reliability = r.int(); v.breakdowns = r.int(); v.brokenFor = r.int()
+                    v.servicing = r.bool(); v.service = r.bool(); v.tires = r.int(); v.seasonalTires = r.bool(); v.slid = r.bool()
+                    roadVehicles += v
+                }
+            } else {
+                // Before company roads, a town's paved road was paved and the rest dirt.
+                for (i in road.indices) if (road[i].toInt() and PAVED != 0) roadKind[i] = Surface.PAVED.toByte()
+            }
             if (version >= 12) repeat(r.uvar().toInt().also { if (it > 10_000_000) throw BadData("too many held pieces") }) { reserved[r.int()] = r.int() }
             if (version >= 10) {
                 val wx = weather

@@ -16,8 +16,9 @@ package com.rm.interchange.sim
 
 /** A station: a name, the platforms that make it up, and what's waiting there, by [Cargo]. */
 class Station(val id: Int, val owner: Int, var name: String, val signX: Int, val signY: Int, val waypoint: Boolean = false) {
-    /** Its platform tiles, as tile indexes, in the order they were built. */
+    /** Its platform tiles, as tile indexes, in the order they were built, and its road stops. */
     val tiles = ArrayList<Int>()
+    val stops = ArrayList<Int>()
     /** Lots waiting, oldest first, by cargo. */
     val cargo = Array(Cargo.COUNT) { ArrayList<Packet>() }
     /** How well it serves each cargo, 0 to 255, and when a train last called that could take it and how fast that train goes. */
@@ -27,7 +28,7 @@ class Station(val id: Int, val owner: Int, var name: String, val signX: Int, val
 }
 
 /** A train depot, open at [edge] of its tile. */
-class Depot(val id: Int, val owner: Int, val tile: Int, val edge: Int)
+class Depot(val id: Int, val owner: Int, val tile: Int, val edge: Int, val road: Boolean = false)
 
 /** What a signal does. */
 object Signals {
@@ -213,6 +214,35 @@ internal fun World.clearTile(company: Company, c: Command.Clear) {
     if (owner[i].toInt() != company.id || trainOnTile(i)) return
     depotAt(i)?.let { d -> if (trains.any { it != null && it.depot == d.id && it.inDepot }) return }
     if (company.money < price(Prices.CLEAR)) return
+    // A road stop comes off its road; a garage goes, with its bit of road.
+    roadStops[i]?.let { id ->
+        if (roadVehicleOn(i)) return
+        spend(company, Books.CONSTRUCTION, price(Prices.CLEAR))
+        roadStops.remove(i)
+        val s = stations[id]!!
+        s.stops.remove(i)
+        if (s.tiles.isEmpty() && s.stops.isEmpty()) {
+            stations[id] = null
+            for (t in trains) t?.orders?.removeAll { Order.station(it) == id }
+            for (v in roadVehicles) v?.orders?.removeAll { Order.station(it) == id }
+        }
+        touched(c.x, c.y)
+        networkChanged()
+        roadsChanged()
+        return
+    }
+    depotAt(i)?.takeIf { it.road }?.let { d ->
+        if (roadVehicles.any { it != null && it.depot == d.id }) return
+        spend(company, Books.CONSTRUCTION, price(Prices.CLEAR))
+        depotTiles.remove(i)
+        depots[d.id] = null
+        road[i] = 0; roadKind[i] = 0; roadOwner[i] = -1
+        val n = index(c.x + Track.dx(d.edge), c.y + Track.dy(d.edge))
+        road[n] = (road[n].toInt() and roadBit(Track.opposite(d.edge)).inv()).toByte()
+        touched(c.x, c.y)
+        roadsChanged()
+        return
+    }
     // A bridge or tunnel goes all at once, from either head.
     spanHeads[i]?.let { id ->
         val s = spans[id] ?: return
@@ -224,9 +254,10 @@ internal fun World.clearTile(company: Company, c: Command.Clear) {
     stationTiles.remove(i)?.let { id ->
         val s = stations[id]!!
         s.tiles.remove(i)
-        if (s.tiles.isEmpty()) {
+        if (s.tiles.isEmpty() && s.stops.isEmpty()) {
             stations[id] = null
             for (t in trains) t?.orders?.removeAll { Order.station(it) == id }
+            for (v in roadVehicles) v?.orders?.removeAll { Order.station(it) == id }
         }
     }
     depotTiles.remove(i)?.let { id -> depots[id] = null }
@@ -246,7 +277,7 @@ internal fun World.clearTile(company: Company, c: Command.Clear) {
  * "Centre", as the town's language writes them. Empty if none fits, and the
  * screen calls it by its number.
  */
-private fun World.stationName(x: Int, y: Int): String {
+internal fun World.stationName(x: Int, y: Int): String {
     val t = towns.minByOrNull { maxOf(kotlin.math.abs(it.x - x), kotlin.math.abs(it.y - y)) } ?: return ""
     if (maxOf(kotlin.math.abs(t.x - x), kotlin.math.abs(t.y - y)) > NAMING_REACH) return ""
     val taken = stations.mapNotNull { it?.name }.toSet()

@@ -367,22 +367,24 @@ fun signalPoint(world: World, tile: Int, piece: Int, facing: Int): Pair<Float, F
     return (ax + dx * 0.2f - dy * 0.3f) to (ay + dy * 0.2f + dx * 0.3f)
 }
 
-/** The train with a wagon under screen point ([px], [py]), or -1. */
-fun trainAt(world: World, view: View, moving: Moving?, px: Float, py: Float, w: Float, h: Float): Int {
-    val v = moving?.now?.vehicles ?: return -1
-    var best = -1
+/** The car key of the vehicle under screen point ([px], [py]): a train's car (its id times 256 and up) or a road vehicle (below zero); [NO_VEHICLE] for none. */
+fun vehicleAt(world: World, view: View, moving: Moving?, px: Float, py: Float, w: Float, h: Float): Int {
+    val v = moving?.now?.vehicles ?: return NO_VEHICLE
+    var best = NO_VEHICLE
     var bestD = view.halfWidth * view.halfWidth * 0.5f
     for (i in 0 until v.count) {
         val vx = view.toViewX(v.x(i), v.y(i))
         val vy = view.toViewY(v.x(i), v.y(i))
         val sx = view.screenX(vx, vy, w)
-        // Aimed at the wagon's middle, a little above the ground.
+        // Aimed at the car's middle, a little above the ground.
         val sy = view.screenY(vx, vy, groundHeight(world, v.x(i), v.y(i)) + 1f, h)
         val d = (sx - px) * (sx - px) + (sy - py) * (sy - py)
         if (d < bestD) {
             bestD = d
-            best = v.train(i)
+            best = v.key(i)
         }
     }
     return best
 }
+
+const val NO_VEHICLE = Int.MIN_VALUE

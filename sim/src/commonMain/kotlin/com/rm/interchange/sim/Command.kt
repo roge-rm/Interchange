@@ -38,6 +38,28 @@ sealed interface Command {
     /** Hangs wires over a line of track, as [Rail]'s line goes, or takes them down; a bridge or tunnel on the line is wired whole. */
     data class Wire(override val company: Int, val sx: Int, val sy: Int, val ex: Int, val ey: Int, val first: Int, val remove: Boolean) : Command
 
+    /** Lays road of [surface] along a straight line, or lifts the company's own. */
+    data class Road(override val company: Int, val sx: Int, val sy: Int, val ex: Int, val ey: Int, val surface: Int, val remove: Boolean, val tram: Boolean = false) : Command
+
+    /** Turns a straight road one-way, the other way, or back to both. */
+    data class RoadOneWay(override val company: Int, val x: Int, val y: Int) : Command
+
+    /** A drive-through road stop on straight road. */
+    data class RoadStop(override val company: Int, val x: Int, val y: Int) : Command
+
+    /** A garage for road vehicles, its door at [edge] onto a road. */
+    data class Garage(override val company: Int, val x: Int, val y: Int, val edge: Int) : Command
+
+    /** Buys road vehicle [model] in a garage, set to carry [cargo] if it can. */
+    data class BuyRoadVehicle(override val company: Int, val depot: Int, val model: Int, val cargo: Int = -1) : Command
+
+    /** Tells a road vehicle what to do, as [TrainOrder] does a train, or turns its seasonal tires on or off. */
+    class RoadOrder(override val company: Int, val vehicle: Int, val what: Int, val stations: IntArray = IntArray(0)) : Command {
+        companion object {
+            const val TIRES = 20
+        }
+    }
+
     /** Puts up a snow shed over track at ([x], [y]), or a snow fence on open land there; again takes it down. */
     data class SnowWorks(override val company: Int, val x: Int, val y: Int, val shed: Boolean) : Command
 

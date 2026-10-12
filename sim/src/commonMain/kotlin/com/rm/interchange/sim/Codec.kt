@@ -26,6 +26,13 @@ object Codec {
     private const val WIRE = 16
     private const val UPKEEP = 17
     private const val SNOW_WORKS = 18
+    private const val ROAD = 19
+    private const val ROAD_ONE_WAY = 20
+    private const val ROAD_STOP = 21
+    private const val GARAGE = 22
+    private const val BUY_ROAD_VEHICLE = 23
+    private const val ROAD_ORDER = 24
+    private const val TRAM_ROAD = 25
 
     fun write(w: ByteWriter, c: Command) {
         when (c) {
@@ -37,6 +44,12 @@ object Codec {
             is Command.Waypoint -> { w.byte(WAYPOINT); w.int(c.company); w.int(c.x); w.int(c.y) }
             is Command.Bridge -> { w.byte(BRIDGE); w.int(c.company); w.int(c.x0); w.int(c.y0); w.int(c.x1); w.int(c.y1); w.int(c.style) }
             is Command.Tunnel -> { w.byte(TUNNEL); w.int(c.company); w.int(c.x); w.int(c.y) }
+            is Command.Road -> { w.byte(TRAM_ROAD); w.int(c.company); w.int(c.sx); w.int(c.sy); w.int(c.ex); w.int(c.ey); w.int(c.surface); w.bool(c.remove); w.bool(c.tram) }
+            is Command.RoadOneWay -> { w.byte(ROAD_ONE_WAY); w.int(c.company); w.int(c.x); w.int(c.y) }
+            is Command.RoadStop -> { w.byte(ROAD_STOP); w.int(c.company); w.int(c.x); w.int(c.y) }
+            is Command.Garage -> { w.byte(GARAGE); w.int(c.company); w.int(c.x); w.int(c.y); w.int(c.edge) }
+            is Command.BuyRoadVehicle -> { w.byte(BUY_ROAD_VEHICLE); w.int(c.company); w.int(c.depot); w.int(c.model); w.int(c.cargo) }
+            is Command.RoadOrder -> { w.byte(ROAD_ORDER); w.int(c.company); w.int(c.vehicle); w.int(c.what); w.ints(c.stations) }
             is Command.SnowWorks -> { w.byte(SNOW_WORKS); w.int(c.company); w.int(c.x); w.int(c.y); w.bool(c.shed) }
             is Command.SetUpkeep -> { w.byte(UPKEEP); w.int(c.company); w.int(c.level) }
             is Command.Wire -> { w.byte(WIRE); w.int(c.company); w.int(c.sx); w.int(c.sy); w.int(c.ex); w.int(c.ey); w.int(c.first); w.bool(c.remove) }
@@ -66,6 +79,13 @@ object Codec {
         TUNNEL -> Command.Tunnel(r.int(), r.int(), r.int())
         UPKEEP -> Command.SetUpkeep(r.int(), r.int())
         SNOW_WORKS -> Command.SnowWorks(r.int(), r.int(), r.int(), r.bool())
+        ROAD -> Command.Road(r.int(), r.int(), r.int(), r.int(), r.int(), r.int(), r.bool())
+        TRAM_ROAD -> Command.Road(r.int(), r.int(), r.int(), r.int(), r.int(), r.int(), r.bool(), r.bool())
+        ROAD_ONE_WAY -> Command.RoadOneWay(r.int(), r.int(), r.int())
+        ROAD_STOP -> Command.RoadStop(r.int(), r.int(), r.int())
+        GARAGE -> Command.Garage(r.int(), r.int(), r.int(), r.int())
+        BUY_ROAD_VEHICLE -> Command.BuyRoadVehicle(r.int(), r.int(), r.int(), r.int())
+        ROAD_ORDER -> Command.RoadOrder(r.int(), r.int(), r.int(), r.ints())
         WIRE -> Command.Wire(r.int(), r.int(), r.int(), r.int(), r.int(), r.int(), r.bool())
         else -> throw BadData("no such command: $kind")
     }

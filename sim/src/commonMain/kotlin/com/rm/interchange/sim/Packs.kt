@@ -14,7 +14,7 @@ data class PackRef(val id: String, val version: Int, val hash: Long)
 /** What's wrong with a pack, every problem found, one to a line. */
 class BadPack(val problems: List<String>) : Exception(problems.joinToString("\n"))
 
-enum class VehicleKind { ENGINE, WAGON, TENDER }
+enum class VehicleKind { ENGINE, WAGON, TENDER, ROAD }
 
 /** A vehicle as a pack gives it. Only [id] is sure to be there: one that [replaces] another gives just what it changes. */
 class VehicleDef(
@@ -46,6 +46,8 @@ class VehicleDef(
     val reliability: Int? = null,
     /** wedge or rotary, for a snow plow. */
     val plow: String? = null,
+    /** A streetcar: a road vehicle that runs only on tram rails. */
+    val tram: Boolean? = null,
 )
 
 /** A town building as a pack gives it. [zones] are bits of [Zones], from the outskirts in to the centre. */
@@ -203,7 +205,7 @@ object Packs {
                 val replaces = f.string("replaces")
                 val fresh = replaces == null
                 val kind = f.string("kind", need = fresh)?.let { k ->
-                    VehicleKind.entries.firstOrNull { it.name.lowercase() == k } ?: run { problems += "$at: kind should be engine, wagon or tender"; null }
+                    VehicleKind.entries.firstOrNull { it.name.lowercase() == k } ?: run { problems += "$at: kind should be engine, wagon, tender or road"; null }
                 }
                 val def = VehicleDef(
                     id = vid,
@@ -214,8 +216,8 @@ object Packs {
                     types = f.words("type"),
                     from = f.int("from", 1700, 2300, need = fresh),
                     until = f.int("until", 1700, 2300, need = fresh),
-                    speed = f.int("speed", 1, 2000, need = fresh && kind == VehicleKind.ENGINE),
-                    power = f.int("power", 1, 100_000, need = fresh && kind == VehicleKind.ENGINE),
+                    speed = f.int("speed", 1, 2000, need = fresh && (kind == VehicleKind.ENGINE || kind == VehicleKind.ROAD)),
+                    power = f.int("power", 1, 100_000, need = fresh && (kind == VehicleKind.ENGINE || kind == VehicleKind.ROAD)),
                     weight = f.int("weight", 1, 5000, need = fresh),
                     cost = f.int("cost", 0, 1_000_000_000, need = fresh)?.toLong(),
                     running = f.int("running", 0, 1_000_000_000, need = fresh)?.toLong(),
@@ -229,14 +231,16 @@ object Packs {
                     life = f.int("life", 1, 200),
                     reliability = f.int("reliability", 1, 100),
                     plow = f.string("plow"),
+                    tram = f.bool("tram"),
                 )
                 f.done()
                 if (!fresh && kind != null) problems += "$at: a vehicle that replaces another keeps its kind"
                 if (def.from != null && def.until != null && def.from >= def.until) problems += "$at: from should be before until"
-                if (kind != null && kind != VehicleKind.ENGINE && (def.speed != null || def.power != null)) problems += "$at: only engines have speed and power"
-                if (kind != null && kind != VehicleKind.ENGINE && (def.tractive != null || def.traction != null)) problems += "$at: only engines have tractive effort and traction"
+                if (kind != null && kind != VehicleKind.ENGINE && kind != VehicleKind.ROAD && (def.speed != null || def.power != null)) problems += "$at: only engines and road vehicles have speed and power"
+                if (kind != null && kind != VehicleKind.ENGINE && kind != VehicleKind.ROAD && (def.tractive != null || def.traction != null)) problems += "$at: only engines and road vehicles have tractive effort and traction"
                 if (def.plow != null && def.plow !in Plows.NAMES) problems += "$at: plow should be ${Plows.NAMES.joinToString(" or ")}"
-                if (def.plow != null && kind != null && kind != VehicleKind.WAGON) problems += "$at: only wagons are plows"
+                if (def.plow != null && kind != null && kind != VehicleKind.WAGON && kind != VehicleKind.ROAD) problems += "$at: only wagons and road vehicles are plows"
+                if (def.tram != null && kind != null && kind != VehicleKind.ROAD) problems += "$at: only road vehicles are streetcars"
                 if (def.traction != null && def.traction !in Traction.NAMES) problems += "$at: traction should be ${Traction.NAMES.joinToString(", ")}"
                 if (def.tender != null && kind != null && kind != VehicleKind.ENGINE) problems += "$at: only engines have a tender"
                 if (def.capacity != null && def.capacity > 0 && def.carries == null) problems += "$at: capacity without carries"

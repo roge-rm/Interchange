@@ -230,6 +230,7 @@ internal fun World.growTown(t: Town, year: Int): Boolean {
             // Paving the old dirt roads as it goes, once it's the time for it.
             if (year >= PAVING_FROM && road[i].toInt() and PAVED == 0 && rng.below(4) == 0) {
                 road[i] = (road[i].toInt() or PAVED).toByte()
+                if (surfaceAt(i) < Surface.PAVED) roadKind[i] = roadKindOf(Surface.PAVED, oneWayOf(roadKind[i].toInt())).toByte()
                 touched(x, y)
             }
             x = nx
@@ -292,6 +293,10 @@ private fun World.extendRoad(t: Town, x: Int, y: Int, edge: Int, year: Int): Boo
     if (!roadFits(x, y, here) || !roadFits(nx, ny, there)) return false
     road[i] = here.toByte()
     road[ni] = there.toByte()
+    if (paved != 0) {
+        if (surfaceAt(i) < Surface.PAVED) roadKind[i] = Surface.PAVED.toByte()
+        roadKind[ni] = Surface.PAVED.toByte()
+    }
     townOf[i] = t.id.toShort()
     townOf[ni] = t.id.toShort()
     clearTrees(i)

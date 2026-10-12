@@ -147,6 +147,9 @@ def main():
         shot(out, f"station_{a}.png", lambda m, a=a: scenery.station(m, a == 0))
     for edge in EDGES:
         shot(out, f"depot_{edge}.png", lambda m, edge=edge: scenery.depot(m, edge))
+        shot(out, f"garage_{edge}.png", lambda m, edge=edge: scenery.garage(m, edge))
+    for a in (0, 1):
+        shot(out, f"road_stop_{a}.png", lambda m, a=a: scenery.road_stop(m, a == 0))
     for kind in houses.BUILDERS:
         for edge in EDGES:
             shot(out, f"house_{kind}_{edge}.png", lambda m, kind=kind: houses.house(m, kind), heading=houses.FACING[edge])
