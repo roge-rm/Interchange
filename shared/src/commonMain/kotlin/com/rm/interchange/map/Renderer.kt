@@ -6,6 +6,7 @@ import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.drawscope.CanvasDrawScope
 import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.IntOffset
@@ -27,8 +28,10 @@ import kotlin.math.roundToInt
 
 /**
  * Draws the land and track in chunks, each baked into a bitmap at one zoom
- * level for one view direction. A chunk is [CHUNK_PIXELS] wide at every level,
- * so it holds more tiles the further out the level.
+ * level for one view direction. A chunk is a [CHUNK_PIXELS] by [CHUNK_ROWS]
+ * rectangle of the map as drawn at its level, with view point 0, 0 at height 0
+ * at the picture's origin, so chunks meet without overlapping and four of one
+ * level make one of the next out. Each holds every tile that reaches into it.
  *
  * Chunks bake on background threads, the screen first, and a chunk whose part
  * of the world has changed goes on showing until its new bitmap is ready. A
@@ -43,8 +46,8 @@ internal class Renderer(private val world: World, private val sheets: Sheets, pr
     }
 
     /** A baked chunk: its picture, the world's and the weather's versions it shows, and when it was baked and last drawn. */
-    private class Entry(val image: ImageBitmap, val top: Int, val version: Int, val weather: Int, val baked: Long, var used: Long, val fades: Boolean = false) {
-        val bytes get() = image.width.toLong() * image.height * 4
+    private class Entry(val image: ImageBitmap?, val top: Int, val version: Int, val weather: Int, val baked: Long, var used: Long, val fades: Boolean = false) {
+        val bytes get() = if (image == null) 0L else image.width.toLong() * image.height * 4
     }
 
     private val cache = HashMap<Key, Entry>()
@@ -107,7 +110,7 @@ internal class Renderer(private val world: World, private val sheets: Sheets, pr
         val wanted = ArrayList<Pair<Key, Float>>()
         if (level != target) {
             var ready = true
-            forEachVisible(view, target) { key, _, _, _ ->
+            forEachVisible(view, target) { key, _, _, _, _ ->
                 if (key !in cache) {
                     ready = false
                     wanted += key to 1f
@@ -120,7 +123,7 @@ internal class Renderer(private val world: World, private val sheets: Sheets, pr
         // Hidden till the first screen is all baked, then shown at once.
         if (readyAt < 0) {
             var all = true
-            forEachVisible(view, level) { key, _, _, _ -> if (key !in cache) all = false }
+            forEachVisible(view, level) { key, _, _, _, _ -> if (key !in cache) all = false }
             if (all) readyAt = clock.elapsedNow().inWholeMilliseconds
         }
         val now = clock.elapsedNow().inWholeMilliseconds
@@ -131,7 +134,7 @@ internal class Renderer(private val world: World, private val sheets: Sheets, pr
         lastX = fx; lastY = fy; lastTurn = view.turn
         // Chunks whose weather is out of date, to bake again together now and then.
         val stale = ArrayList<Key>()
-        forEachVisible(view, level) { key, left, top, scale ->
+        forEachVisible(view, level) { key, left, top, right, bottom ->
             val entry = cache[key]
             val version = versionOf(view, level, key.cx, key.cy)
             if (entry != null) {
@@ -139,7 +142,7 @@ internal class Renderer(private val world: World, private val sheets: Sheets, pr
                 // A chunk just baked where nothing was fades in over what stood in for it.
                 val alpha = if (entry.fades) ((now - entry.baked) / FADE_MILLIS.toFloat()).coerceIn(0f, 1f) else 1f
                 if (alpha < 1f) drawFallback(view, level, key)
-                drawChunk(entry, left, top, scale, alpha)
+                drawChunk(entry, left, top, right, bottom, alpha)
                 if (entry.version != version) wanted += key to editDistance(view, key)
                 else if (entry.weather != weatherOf(view, level, key.cx, key.cy)) stale += key
             } else {
@@ -148,7 +151,7 @@ internal class Renderer(private val world: World, private val sheets: Sheets, pr
             }
         }
         // The coarsest level round about, a few chunks that always have something to show while sharper ones bake.
-        forEachNear(view, COARSE, COARSE_REACH) { key ->
+        forEachVisible(view, COARSE, margin = COARSE_REACH * view.halfWidth) { key, _, _, _, _ ->
             val entry = cache[key]
             if (entry != null) entry.used = frame
             if (entry == null) wanted += key to 1.5f
@@ -160,16 +163,16 @@ internal class Renderer(private val world: World, private val sheets: Sheets, pr
         if (wanted.none { it.second < 2f } && bytes < BUDGET * 3 / 4) {
             val cx = size.width / 2 + (driftX - driftY) * view.halfWidth * AHEAD
             val cy = size.height / 2 + (driftX + driftY) * view.halfHeight * AHEAD
-            forEachVisible(view, level, margin = size.width * (if (level >= FAR_LEVEL) FAR_RING else RING)) { key, left, top, scale ->
+            forEachVisible(view, level, margin = size.width * (if (level >= FAR_LEVEL) FAR_RING else RING)) { key, left, top, right, bottom ->
                 val entry = cache[key]
                 if (entry != null) entry.used = frame
                 if (entry == null) {
-                    val mx = left + CHUNK_PIXELS * scale / 2 - cx
-                    val my = top + chunkHeight(level, LEVELS[level]) * scale / 2 - cy
+                    val mx = (left + right) / 2 - cx
+                    val my = (top + bottom) / 2 - cy
                     wanted += key to 2f + kotlin.math.sqrt(mx * mx + my * my) / (size.width + size.height)
                 }
             }
-            if (level + 1 < LEVELS.size) forEachVisible(view, level + 1) { key, _, _, _ ->
+            if (level + 1 < LEVELS.size) forEachVisible(view, level + 1) { key, _, _, _, _ ->
                 val entry = cache[key]
                 if (entry != null) entry.used = frame
                 if (entry == null || entry.version != versionOf(view, level + 1, key.cx, key.cy)) wanted += key to 3f
@@ -209,44 +212,37 @@ internal class Renderer(private val world: World, private val sheets: Sheets, pr
         val x = lastEdit.first
         val y = lastEdit.second
         if (x < 0) return 0.5f
-        val tiles = chunkTiles(key.level)
-        val vx = view.toViewX(x + 0.5f, y + 0.5f) / tiles
-        val vy = view.toViewY(x + 0.5f, y + 0.5f) / tiles
-        val d = kotlin.math.abs(vx - (key.cx + 0.5f)) + kotlin.math.abs(vy - (key.cy + 0.5f))
+        val hw = LEVELS[key.level]
+        val vx = view.toViewX(x + 0.5f, y + 0.5f)
+        val vy = view.toViewY(x + 0.5f, y + 0.5f)
+        val d = kotlin.math.abs((vx - vy) * hw / CHUNK_PIXELS - (key.cx + 0.5f)) + kotlin.math.abs((vx + vy) * hw / 2 / CHUNK_ROWS - (key.cy + 0.5f))
         return (d / 8f).coerceAtMost(0.9f)
     }
 
     /** The tile last built on, so its chunk is baked again before the others its building touched. */
     var lastEdit = -1 to -1
 
-    /** Each chunk at [level] within [reach] view tiles of the screen's middle, on or off the screen. */
-    private inline fun forEachNear(view: View, level: Int, reach: Int, block: (Key) -> Unit) {
-        val tiles = chunkTiles(level)
-        val fx = view.focusViewX()
-        val fy = view.focusViewY()
-        val cx0 = max(0, floor((fx - reach) / tiles).toInt())
-        val cy0 = max(0, floor((fy - reach) / tiles).toInt())
-        val cx1 = min(ceil(view.viewWidth / tiles.toFloat()).toInt() - 1, floor((fx + reach) / tiles).toInt())
-        val cy1 = min(ceil(view.viewHeight / tiles.toFloat()).toInt() - 1, floor((fy + reach) / tiles).toInt())
-        for (cy in cy0..cy1) for (cx in cx0..cx1) block(Key(level, view.turn, cx, cy))
+    /** A chunk missing at this level, drawn from whichever other level has it, kept to the chunk's own rectangle. */
+    private fun DrawScope.drawFallback(view: View, level: Int, key: Key) {
+        placeChunk(view, level, key.cx, key.cy) { left, top, right, bottom ->
+            clipRect(left, top, right, bottom) { drawStandIn(view, level, key) }
+        }
     }
 
-    /** A chunk missing at this level, drawn from whichever other level has it. */
-    private fun DrawScope.drawFallback(view: View, level: Int, key: Key) {
-        val tiles = chunkTiles(level)
+    private fun DrawScope.drawStandIn(view: View, level: Int, key: Key) {
         for (other in LEVELS.indices.sortedBy { kotlin.math.abs(it - level) }) {
             if (other == level) continue
-            val otherTiles = chunkTiles(other)
-            if (otherTiles >= tiles) {
+            if (other > level) {
                 // A coarser level: one chunk covers this one and more.
-                val ok = Key(other, key.turn, key.cx * tiles / otherTiles, key.cy * tiles / otherTiles)
+                val n = 1 shl (other - level)
+                val ok = Key(other, key.turn, key.cx.floorDiv(n), key.cy.floorDiv(n))
                 val e = cache[ok] ?: continue
                 e.used = frame
-                placeChunk(view, other, ok.cx, ok.cy) { l, t, s -> drawChunk(e, l, t, s) }
+                placeChunk(view, other, ok.cx, ok.cy) { l, t, r, b -> drawChunk(e, l, t, r, b) }
                 return
             } else {
                 // A finer level: draw what of its chunks are here, if all are.
-                val n = tiles / otherTiles
+                val n = 1 shl (level - other)
                 val parts = ArrayList<Pair<Key, Entry>>()
                 for (j in 0 until n) for (i in 0 until n) {
                     val k = Key(other, key.turn, key.cx * n + i, key.cy * n + j)
@@ -255,68 +251,76 @@ internal class Renderer(private val world: World, private val sheets: Sheets, pr
                 if (parts.size < n * n) continue
                 for ((k, e) in parts) {
                     e.used = frame
-                    placeChunk(view, other, k.cx, k.cy) { l, t, s -> drawChunk(e, l, t, s) }
+                    placeChunk(view, other, k.cx, k.cy) { l, t, r, b -> drawChunk(e, l, t, r, b) }
                 }
                 return
             }
         }
     }
 
-    /** Draws [entry]'s picture with its chunk's top left at ([left], [top]), its trimmed rows left out above. */
-    private fun DrawScope.drawChunk(entry: Entry, left: Float, chunkTop: Float, scale: Float, alpha: Float = 1f) {
-        val image = entry.image
-        val top = chunkTop + entry.top * scale
+    /** Draws [entry]'s picture into its chunk's screen rectangle, its trimmed rows left out at the top. */
+    private fun DrawScope.drawChunk(entry: Entry, left: Float, top: Float, right: Float, bottom: Float, alpha: Float = 1f) {
+        val image = entry.image ?: return
         val l = left.roundToInt()
-        val t = top.roundToInt()
-        val r = (left + image.width * scale).roundToInt()
-        val b = (top + image.height * scale).roundToInt()
+        val t = (top + entry.top * (bottom - top) / CHUNK_ROWS).roundToInt()
+        val r = right.roundToInt()
+        val b = bottom.roundToInt()
         drawImage(
             image,
             dstOffset = IntOffset(l, t),
             dstSize = IntSize(r - l, b - t),
             alpha = alpha,
-            filterQuality = if (scale == 1f) FilterQuality.None else FilterQuality.Low,
+            filterQuality = if (r - l == image.width) FilterQuality.None else FilterQuality.Low,
         )
     }
 
-    /** Calls [block] with where chunk ([cx], [cy]) at [level] goes on screen and how much it's scaled. */
-    private inline fun DrawScope.placeChunk(view: View, level: Int, cx: Int, cy: Int, block: (left: Float, top: Float, scale: Float) -> Unit) {
-        val hw = LEVELS[level]
-        val tiles = chunkTiles(level)
-        val scale = view.halfWidth / hw
-        val vx = (cx * tiles).toFloat()
-        val vy = (cy * tiles).toFloat()
-        val sx = view.screenX(vx, vy, size.width)
-        val sy = view.screenY(vx, vy, 0f, size.height)
-        block(sx - tiles * hw * scale, sy - topPad(hw) * scale, scale)
+    /** Calls [block] with the screen edges of chunk ([cx], [cy]) at [level], each worked out the same way for every chunk so neighbours meet exactly. */
+    private inline fun DrawScope.placeChunk(view: View, level: Int, cx: Int, cy: Int, block: (left: Float, top: Float, right: Float, bottom: Float) -> Unit) {
+        val scale = view.halfWidth / LEVELS[level]
+        val w = CHUNK_PIXELS * scale
+        val h = CHUNK_ROWS * scale
+        val ox = view.screenX(0f, 0f, size.width)
+        val oy = view.screenY(0f, 0f, 0f, size.height)
+        block(ox + cx * w, oy + cy * h, ox + (cx + 1) * w, oy + (cy + 1) * h)
     }
 
-    /** Each chunk at [level] that's at least partly on screen, back to front. */
-    private inline fun DrawScope.forEachVisible(view: View, level: Int, margin: Float = 0f, block: (Key, left: Float, top: Float, scale: Float) -> Unit) {
-        val tiles = chunkTiles(level)
+    /** Each chunk at [level] that's at least partly within [margin] pixels of the screen and could hold some of the map. */
+    private inline fun DrawScope.forEachVisible(view: View, level: Int, margin: Float = 0f, block: (Key, left: Float, top: Float, right: Float, bottom: Float) -> Unit) {
         val hw = LEVELS[level]
         val scale = view.halfWidth / hw
-        val w = CHUNK_PIXELS * scale
-        val h = chunkHeight(level, hw) * scale
-        // The screen's corners on the map at sea level and at the highest land, which bound what can show.
-        var minX = Float.MAX_VALUE; var maxX = -Float.MAX_VALUE
-        var minY = Float.MAX_VALUE; var maxY = -Float.MAX_VALUE
-        for (px in floatArrayOf(-margin, size.width + margin)) for (py in floatArrayOf(-margin, size.height + margin)) for (ht in floatArrayOf(0f, World.MAX_HEIGHT.toFloat())) {
-            val a = (px - size.width / 2) / view.halfWidth
-            val b = (py - size.height / 2 + ht * view.step) / view.halfHeight
-            val vx = view.focusViewX() + (a + b) / 2
-            val vy = view.focusViewY() + (b - a) / 2
-            minX = min(minX, vx); maxX = max(maxX, vx); minY = min(minY, vy); maxY = max(maxY, vy)
-        }
-        val cx0 = max(0, floor(minX / tiles).toInt() - 1)
-        val cy0 = max(0, floor(minY / tiles).toInt() - 1)
-        val cx1 = min(ceil(view.viewWidth / tiles.toFloat()).toInt() - 1, ceil(maxX / tiles).toInt())
-        val cy1 = min(ceil(view.viewHeight / tiles.toFloat()).toInt() - 1, ceil(maxY / tiles).toInt())
+        val ox = view.screenX(0f, 0f, size.width)
+        val oy = view.screenY(0f, 0f, 0f, size.height)
+        // The map as drawn at this level, from the left and top of its far corners and highest land to its front edges.
+        val cx0 = max(floor((-margin - ox) / scale / CHUNK_PIXELS).toInt(), floor(-(view.viewHeight + 1) * hw / CHUNK_PIXELS).toInt())
+        val cx1 = min(floor((size.width + margin - ox) / scale / CHUNK_PIXELS).toInt(), floor((view.viewWidth + 1) * hw / CHUNK_PIXELS).toInt())
+        val cy0 = max(floor((-margin - oy) / scale / CHUNK_ROWS).toInt(), floor(-above(hw) / CHUNK_ROWS).toInt())
+        val cy1 = min(floor((size.height + margin - oy) / scale / CHUNK_ROWS).toInt(), floor(((view.viewWidth + view.viewHeight) * hw / 2 + hw) / CHUNK_ROWS).toInt())
         for (cy in cy0..cy1) for (cx in cx0..cx1) {
-            placeChunk(view, level, cx, cy) { left, top, s ->
-                if (left < size.width + margin && top < size.height + margin && left + w > -margin && top + h > -margin) block(Key(level, view.turn, cx, cy), left, top, s)
-            }
+            placeChunk(view, level, cx, cy) { left, top, right, bottom -> block(Key(level, view.turn, cx, cy), left, top, right, bottom) }
         }
+    }
+
+    /**
+     * The view tiles that can reach into chunk ([cx], [cy]) at [level], as a view rectangle vx0, vy0, vx1, vy1 (inclusive,
+     * possibly empty); [reaches] says which in it do. A tile can reach up from below by the highest land and what stands
+     * on it, and down by its earth.
+     */
+    private fun tileRange(view: View, level: Int, cx: Int, cy: Int): IntArray {
+        val r = reach(level, cx, cy)
+        return intArrayOf(
+            max(0, (r[0] + r[2]) / 2 - 1), max(0, (r[2] - r[1]) / 2 - 1),
+            min(view.viewWidth - 1, (r[1] + r[3]) / 2 + 1), min(view.viewHeight - 1, (r[3] - r[0]) / 2 + 1),
+        )
+    }
+
+    /** The range of vx - vy and of vx + vy of the tiles that can reach into chunk ([cx], [cy]) at [level]: a0, a1, b0, b1. */
+    private fun reach(level: Int, cx: Int, cy: Int): IntArray {
+        val hw = LEVELS[level]
+        val hh = hw / 2
+        return intArrayOf(
+            floor(cx * CHUNK_PIXELS / hw).toInt() - 3, ceil((cx + 1) * CHUNK_PIXELS / hw).toInt() + 3,
+            floor(cy * CHUNK_ROWS / hh).toInt() - 4, ceil(((cy + 1) * CHUNK_ROWS + above(hw)) / hh).toInt() + 1,
+        )
     }
 
     /** How many times the world under a chunk has changed, from the world's own blocks. */
@@ -327,12 +331,12 @@ internal class Renderer(private val world: World, private val sheets: Sheets, pr
 
     /** The sum of [versions] over the world's blocks under chunk ([cx], [cy]) at [level]. */
     private fun sumOf(versions: IntArray, view: View, level: Int, cx: Int, cy: Int): Int {
-        val tiles = chunkTiles(level)
-        // The chunk's own tiles and the ring round it it draws too.
-        val vx0 = max(0, cx * tiles - 1)
-        val vy0 = max(0, cy * tiles - 1)
-        val vx1 = min(view.viewWidth, cx * tiles + tiles + 1) - 1
-        val vy1 = min(view.viewHeight, cy * tiles + tiles + 1) - 1
+        val t = tileRange(view, level, cx, cy)
+        if (t[0] > t[2] || t[1] > t[3]) return 0
+        val vx0 = t[0]
+        val vy0 = t[1]
+        val vx1 = t[2]
+        val vy1 = t[3]
         val x0 = min(view.worldX(vx0, vy0), view.worldX(vx1, vy1)) / World.BLOCK
         val x1 = max(view.worldX(vx0, vy0), view.worldX(vx1, vy1)) / World.BLOCK
         val y0 = min(view.worldY(vx0, vy0), view.worldY(vx1, vy1)) / World.BLOCK
@@ -377,30 +381,30 @@ internal class Renderer(private val world: World, private val sheets: Sheets, pr
         bytes += entry.bytes
     }
 
-    /** Bakes chunk [key]: its picture with the clear rows above whatever's highest on it left off, and how many rows those were. */
-    private fun bakeChunk(view: View, key: Key, sheet: LevelSheets, overlays: Int, look: Int): Pair<ImageBitmap, Int> {
-        val hw = LEVELS[key.level]
-        val tiles = chunkTiles(key.level)
-        val height = chunkHeight(key.level, hw)
-        val buffer = takeBuffer(CHUNK_PIXELS * height)
-        val baker = ChunkBaker(world, view, key.level, sheet, CHUNK_PIXELS, height, overlays, look, buffer)
-        val vx0 = key.cx * tiles
-        val vy0 = key.cy * tiles
-        baker.originX = tiles * hw - (vx0 - vy0) * hw
-        baker.originY = topPad(hw) - (vx0 + vy0) * hw / 2
-        // A ring of the neighbours' tiles is drawn too, in order with the chunk's own, so where chunks meet both
-        // have the same solid pixels and no seam shows when they're drawn scaled. Ground first, then every
-        // shadow over it, then what stands up, so shadows fall across tile edges.
-        val ys = max(0, vy0 - 1) until min(vy0 + tiles + 1, view.viewHeight)
-        val xs = max(0, vx0 - 1) until min(vx0 + tiles + 1, view.viewWidth)
-        if (!xs.isEmpty() && !ys.isEmpty()) baker.prepare(xs.first, ys.first, xs.last + 1, ys.last + 1)
-        for (vy in ys) for (vx in xs) baker.ground(vx, vy)
-        for (vy in ys) for (vx in xs) baker.shadows(vx, vy)
-        for (vy in ys) for (vx in xs) baker.objects(vx, vy)
+    /** Bakes chunk [key]: its picture with the clear rows above whatever's highest on it left off, and how many rows those were; no picture if it's all clear. */
+    private fun bakeChunk(view: View, key: Key, sheet: LevelSheets, overlays: Int, look: Int): Pair<ImageBitmap?, Int> {
+        val buffer = takeBuffer(CHUNK_PIXELS * CHUNK_ROWS)
+        val baker = ChunkBaker(world, view, key.level, sheet, CHUNK_PIXELS, CHUNK_ROWS, overlays, look, buffer)
+        baker.originX = -key.cx * CHUNK_PIXELS.toFloat()
+        baker.originY = -key.cy * CHUNK_ROWS.toFloat()
+        // Every tile that reaches in, back to front: ground first, then every shadow over it, then what stands up, so
+        // shadows fall across tile edges and chunks join with no seam.
+        val t = tileRange(view, key.level, key.cx, key.cy)
+        val r = reach(key.level, key.cx, key.cy)
+        val tiles = ArrayList<Int>()
+        if (t[0] <= t[2] && t[1] <= t[3]) baker.prepare(t[0], t[1], t[2] + 1, t[3] + 1)
+        for (vy in t[1]..t[3]) for (vx in t[0]..t[2]) {
+            if (vx - vy in r[0]..r[1] && vx + vy in r[2]..r[3] && baker.reaches(vx, vy)) tiles += vy * view.viewWidth + vx
+        }
+        if (tiles.isNotEmpty()) {
+            for (i in tiles) baker.ground(i % view.viewWidth, i / view.viewWidth)
+            for (i in tiles) baker.shadows(i % view.viewWidth, i / view.viewWidth)
+            for (i in tiles) baker.objects(i % view.viewWidth, i / view.viewWidth)
+        }
         val pixels = baker.finish()
         var top = 0
-        while (top < height - 1 && (top * CHUNK_PIXELS until (top + 1) * CHUNK_PIXELS).all { pixels[it] ushr 24 == 0 }) top++
-        val image = chunkBitmapOf(pixels, CHUNK_PIXELS, top, height - top)
+        while (top < CHUNK_ROWS && (top * CHUNK_PIXELS until (top + 1) * CHUNK_PIXELS).all { pixels[it] ushr 24 == 0 }) top++
+        val image = if (top == CHUNK_ROWS) null else chunkBitmapOf(pixels, CHUNK_PIXELS, top, CHUNK_ROWS - top)
         giveBack(buffer)
         return image to top
     }
@@ -429,8 +433,9 @@ internal class Renderer(private val world: World, private val sheets: Sheets, pr
     companion object {
         /** Half a tile's width at each level, sharpest first. */
         val LEVELS = floatArrayOf(128f, 64f, 32f, 16f, 8f, 4f)
-        /** Small enough that a chunk bakes again quickly when something's built on it. */
+        /** A chunk's size, small enough that it bakes again quickly when something's built on it. */
         const val CHUNK_PIXELS = 512
+        const val CHUNK_ROWS = 256
         /** The sharpest level drawn. Level 0's sheets take some 130 MB, more than a small heap holds with everything else. */
         val SHARPEST = if (heapBytes() >= 400L * 1024 * 1024) 0 else 1
         /** Chunks baking at once, leaving cores for the screen and the game. */
@@ -447,17 +452,13 @@ internal class Renderer(private val world: World, private val sheets: Sheets, pr
         const val COARSE_REACH = 128
         /** How far round the screen chunks are baked ahead, as a share of its width, and how many frames of drift ahead the nearest are counted from. */
         const val RING = 0.4f
-        /** Zoomed out from this level, chunks are cheap and the screen crosses them fast, so the ring goes further. */
-        const val FAR_LEVEL = 3
+        /** From this level out, the ring goes a screen further, so a slow device has scrolled-to chunks ready. The sharpest level's chunks are too big for it. */
+        const val FAR_LEVEL = 1
         const val FAR_RING = 1f
         const val AHEAD = 30f
 
-        fun chunkTiles(level: Int) = (CHUNK_PIXELS / (2 * LEVELS[level])).toInt()
-
-        /** Room above the chunk's diamond for the highest land and what stands on it: trees, roofs. */
-        fun topPad(hw: Float) = World.MAX_HEIGHT * hw / 4 + 3 * hw + 2
-
-        fun chunkHeight(level: Int, hw: Float) = (chunkTiles(level) * hw + topPad(hw) + 2 * hw / 4 + 2).toInt()
+        /** How far above its place at height 0 a tile can draw: the highest land and what stands on it, trees and roofs. */
+        fun above(hw: Float) = World.MAX_HEIGHT * hw / 4 + 3 * hw + 2
 
         /** The level to draw at: the sharpest one no bigger than needed, so chunks only ever scale down, except past the sharpest. */
         fun levelFor(halfWidth: Float): Int {

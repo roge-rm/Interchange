@@ -214,6 +214,15 @@ internal class ChunkBaker(
         return if (t == 0 && r == 0 && b == 0 && l == 0) Atlas.WATER else Atlas.SAND
     }
 
+    /** Whether anything of view tile ([vx], [vy]) can land in the picture: its ground and the earth under it, or what stands on it. */
+    fun reaches(vx: Int, vy: Int): Boolean {
+        val cx = originX + (vx - vy) * hw
+        if (cx + 3 * hw < 0f || cx - 3 * hw > width) return false
+        val cy = originY + (vx + vy) * hh
+        val high = maxOf(maxOf(cornerHeight(vx, vy), cornerHeight(vx + 1, vy)), maxOf(cornerHeight(vx + 1, vy + 1), cornerHeight(vx, vy + 1)))
+        return cy + 2 * hh + 3 * step + 2 >= 0f && cy - high * step - 3 * hw - 2 <= height
+    }
+
     /**
      * The first pass, for every tile from the back: the ground, the earth under the map's edges, foundations and
      * track. Shadows come next, over all of it, then what stands up ([objects]).
@@ -467,146 +476,147 @@ internal class ChunkBaker(
         // The neighbours whose ground spreads in across each edge, -1 for none.
         val spread = IntArray(4) { e -> edges[e].let { if (it < 0 || it == kind || rank(it) <= rankHere) -1 else it } }
         val spreads = spread.any { it >= 0 }
-        for (py in y0..y1) {
-            val yRel = py + 0.5f - baseY
-            // Only the columns either half's plane can reach on this row, with a pixel to spare each side.
-            var dLo = Float.POSITIVE_INFINITY
-            var dHi = Float.NEGATIVE_INFINITY
-            for (q in 0 until 2) {
-                val pq = if (q == 0) p1 else p2
-                val c = hh - step * (pq[1] + pq[2]) / 2
-                if (c <= 0f) {
-                    dLo = -2f
-                    dHi = 2f
-                    break
-                }
-                val s0 = (yRel + step * pq[0]) / c
-                val s1 = step * (pq[1] - pq[2]) / 2 / c
-                var lo = -2f
-                var hi = 2f
-                // 0 <= s0 + b * d <= 2 for u (b = s1 + 1) and v (b = s1 - 1), as u and v are half of those.
-                for (b in floatArrayOf(s1 + 1f, s1 - 1f)) {
-                    if (b > 1e-6f) {
-                        lo = maxOf(lo, -s0 / b)
-                        hi = minOf(hi, (2f - s0) / b)
-                    } else if (b < -1e-6f) {
-                        lo = maxOf(lo, (2f - s0) / b)
-                        hi = minOf(hi, -s0 / b)
-                    } else if (s0 < 0f || s0 > 2f) {
-                        lo = 1f
-                        hi = -1f
-                    }
-                }
-                if (lo <= hi) {
-                    dLo = minOf(dLo, lo)
-                    dHi = maxOf(dHi, hi)
+        // Which pixels the tile covers and where each falls on it, the same for every tile of its shape.
+        val base = minOf(minOf(t, r), minOf(b, l))
+        val cover = coverOf(t - base, r - base, b - base, l - base)
+        val bx = baseX.toInt()
+        val by = (baseY - base * step).toInt()
+        for (k in 0 until cover.size) {
+            val px = bx + cover.dx[k]
+            val py = by + cover.dy[k]
+            if (px < x0 || px > x1 || py < y0 || py > y1) continue
+            val u = cover.u[k]
+            val v = cover.v[k]
+            val second = cover.second[k]
+            val f = if (second) f2 else f1
+            val p = if (second) p2 else p1
+            val sloped = if (second) sloped2 else sloped1
+            val tx = txBase + (u * texels).toInt()
+            val ty = tyBase + (v * texels).toInt()
+            val ti = ty * size + tx
+            var texel = sheets.ground[kindBase + ti]
+            val rag = (sheets.ground[ragBase + ti] and 255) / 255f
+            if (sloped && bare >= 0) {
+                // Patches of it, from the same noise read somewhere else so they don't follow the kinds' edges.
+                val patch = (sheets.ground[ragBase + ((ty + size / 2) % size) * size + (tx + size / 3) % size] and 255) / 255f
+                if (patch > BARE_FROM) texel = sheets.ground[bare * size * size + ti]
+            }
+            // Higher ranked ground next door spreads in across the edge with a ragged line; water gets foam at the shore.
+            if (spreads) for (e in 0 until 4) {
+                val other = spread[e]
+                if (other < 0) continue
+                val dist = when (e) { 0 -> v; 1 -> 1f - u; 2 -> 1f - v; else -> u }
+                val reach = 0.08f + rag * 0.26f
+                if (dist < reach) {
+                    texel = sheets.ground[other * size * size + ti]
+                } else if (kind == Atlas.WATER && dist < reach + 0.07f && !icy) {
+                    texel = FOAM
                 }
             }
-            if (dLo > dHi) continue
-            val rx0 = maxOf(x0, (dLo * hw + baseX).toInt() - 2)
-            val rx1 = minOf(x1, (dHi * hw + baseX).toInt() + 2)
-            for (px in rx0..rx1) {
-                val d = (px + 0.5f - baseX) / hw
-                // Try the first half's plane, then the second's.
-                var u: Float
-                var v: Float
-                var f: Int
-                var p = p1
-                var sloped = sloped1
+            if (gradeBy > 0f) texel = mix(texel, grade, gradeBy)
+            if (muddy > 0f) texel = mix(texel, MUD, muddy)
+            if (charred > 0f) texel = mix(texel, CHARCOAL, charred * (0.85f + rag * 0.15f))
+            if (road != 0) texel = roadTexel(u, v, road, ti, texel)
+            if (aero != 0) texel = airportTexel(u, v, aero, texel)
+            if (icy) {
+                val ice = iT * (1f - u) * (1f - v) + ir * u * (1f - v) + ib * u * v + il * (1f - u) * v
+                if (ice >= ICE_FROM) texel = mix(texel, mix(ICE, ICE_DARK, rag * 0.6f), (0.5f + ice / 60f).coerceAtMost(0.92f))
+            }
+            if (banks != 0) for (k in 0 until 4) {
+                if (banks and (1 shl k) == 0) continue
+                val dist = when (k) { 0 -> v; 1 -> 1f - u; 2 -> 1f - v; else -> u }
+                if (dist < BANK) texel = mix(STONE, sheets.ground[Atlas.ROCK * size * size + ti], 0.3f)
+            }
+            if (snowy && (!water || icy || banks != 0)) {
+                val depth = st * (1f - u) * (1f - v) + sr * u * (1f - v) + sb * u * v + sl * (1f - u) * v
+                // Thin snow lies in patches, from noise read somewhere else again; deeper, it covers everything.
+                val patch = (sheets.ground[ragBase + ((ty + size / 3) % size) * size + (tx + size / 2) % size] and 255) / 255f
+                val cover = ((depth - (0.5f + patch * 14f)) / 3f).coerceIn(0f, 1f)
+                if (cover > 0f) {
+                    // Traffic packs the snow on a road down to a greyer track, so the road still shows through.
+                    val onRoad = (road != 0 && roadTexel(u, v, road, ti, NOT_ROAD) != NOT_ROAD) || (aero != 0 && airportTexel(u, v, aero, NOT_ROAD) != NOT_ROAD)
+                    texel = mix(texel, sheets.ground[Atlas.SNOW * size * size + ti], if (onRoad) cover * 0.8f else cover)
+                    if (onRoad) texel = mix(texel, PACKED_SNOW, cover * 0.45f)
+                }
+            }
+            val rel = rt * (1f - u) * (1f - v) + rr * u * (1f - v) + rb * u * v + rl * (1f - u) * v
+            var shade = f * (1f + (rel * RELIEF_GAIN).coerceIn(-RELIEF_DARK, RELIEF_LIGHT))
+            if (worn >= 0) texel = mix(texel, if (worn < VERY_WORN) 0xffd03a2a.toInt() else if (worn < WORN) 0xffe8b030.toInt() else 0xff3aa048.toInt(), 0.6f)
+            if (overlays and SNOW != 0) {
+                val depth = st * (1f - u) * (1f - v) + sr * u * (1f - v) + sb * u * v + sl * (1f - u) * v
+                val band = when {
+                    icy -> ICE_BAND
+                    water || depth < 1f -> 0
+                    depth < 10f -> SNOW_BANDS[0]
+                    depth < 30f -> SNOW_BANDS[1]
+                    depth < 60f -> SNOW_BANDS[2]
+                    else -> SNOW_BANDS[3]
+                }
+                if (band != 0) texel = mix(texel, band, 0.6f)
+            }
+            if (heights) {
+                val h = p[0] + p[1] * u + p[2] * v
+                texel = mix(texel, HEIGHT_COLOURS[(h / HEIGHT_BAND).toInt().coerceIn(0, HEIGHT_COLOURS.size - 1)], 0.55f)
+                // A contour where a slope crosses a band's edge, about a pixel wide.
+                if (sloped && h % HEIGHT_BAND < 1.4f / hw) shade *= 0.55f
+            }
+            var out = lit(texel, shade.toInt())
+            // Grid lines light on dark ground and dark on light, so they show on both.
+            if (grid && (u < 1f / hw || v < 1f / hw)) {
+                val bright = ((out shr 16) and 255) + ((out shr 8) and 255) + (out and 255)
+                out = if (bright > 380) lit(out, 150) else mix(out, GRID_LIGHT, 0.4f)
+            }
+            pixels[py * width + px] = out
+        }
+    }
+
+    /** The pixels a tile covers, as offsets from its left corner's column and its top at height 0, with where each falls on the tile. */
+    private class Cover(val dx: IntArray, val dy: IntArray, val u: FloatArray, val v: FloatArray, val second: BooleanArray) {
+        val size get() = dx.size
+    }
+
+    /** The [Cover] of a tile with corner heights [t], [r], [b], [l] above its lowest, made the first time a shape's asked for. */
+    private fun coverOf(t: Int, r: Int, b: Int, l: Int): Cover {
+        val key = t or (r shl 8) or (b shl 16) or (l shl 24)
+        val made = COVERS[level]
+        synchronized(made) { made[key]?.let { return it } }
+        // A pixel is the tile's if its middle falls in it, on whichever half's plane, as the tile is split.
+        val alongRL = r == l
+        val p1 = if (alongRL) floatArrayOf(t.toFloat(), (r - t).toFloat(), (l - t).toFloat()) else floatArrayOf(t.toFloat(), (r - t).toFloat(), (b - r).toFloat())
+        val p2 = if (alongRL) floatArrayOf((r + l - b).toFloat(), (b - l).toFloat(), (b - r).toFloat()) else floatArrayOf(t.toFloat(), (b - l).toFloat(), (l - t).toFloat())
+        val top = minOf(minOf(-t * step, hh - r * step), minOf(hh - l * step, 2 * hh - b * step)).toInt() - 1
+        val bottom = maxOf(maxOf(-t * step, hh - r * step), maxOf(hh - l * step, 2 * hh - b * step)).toInt() + 1
+        val dx = ArrayList<Int>()
+        val dy = ArrayList<Int>()
+        val us = ArrayList<Float>()
+        val vs = ArrayList<Float>()
+        val second = ArrayList<Boolean>()
+        for (py in top..bottom) {
+            val yRel = py + 0.5f
+            for (px in -hw.toInt() - 1..hw.toInt() + 1) {
+                val d = (px + 0.5f) / hw
                 var s = (yRel + step * (p1[0] + (p1[1] - p1[2]) / 2 * d)) / (hh - step * (p1[1] + p1[2]) / 2)
-                u = (s + d) / 2
-                v = (s - d) / 2
-                val inFirst = if (alongRL) u + v <= 1f else u >= v
-                if (inFirst) {
-                    f = f1
-                } else {
+                var u = (s + d) / 2
+                var v = (s - d) / 2
+                var inSecond = false
+                if (!(if (alongRL) u + v <= 1f else u >= v)) {
                     s = (yRel + step * (p2[0] + (p2[1] - p2[2]) / 2 * d)) / (hh - step * (p2[1] + p2[2]) / 2)
                     u = (s + d) / 2
                     v = (s - d) / 2
-                    f = f2
-                    p = p2
-                    sloped = sloped2
+                    inSecond = true
                     if (if (alongRL) u + v < 1f else u > v) continue
                 }
                 if (u < 0f || v < 0f || u >= 1f || v >= 1f) continue
-                val tx = txBase + (u * texels).toInt()
-                val ty = tyBase + (v * texels).toInt()
-                val ti = ty * size + tx
-                var texel = sheets.ground[kindBase + ti]
-                val rag = (sheets.ground[ragBase + ti] and 255) / 255f
-                if (sloped && bare >= 0) {
-                    // Patches of it, from the same noise read somewhere else so they don't follow the kinds' edges.
-                    val patch = (sheets.ground[ragBase + ((ty + size / 2) % size) * size + (tx + size / 3) % size] and 255) / 255f
-                    if (patch > BARE_FROM) texel = sheets.ground[bare * size * size + ti]
-                }
-                // Higher ranked ground next door spreads in across the edge with a ragged line; water gets foam at the shore.
-                if (spreads) for (e in 0 until 4) {
-                    val other = spread[e]
-                    if (other < 0) continue
-                    val dist = when (e) { 0 -> v; 1 -> 1f - u; 2 -> 1f - v; else -> u }
-                    val reach = 0.08f + rag * 0.26f
-                    if (dist < reach) {
-                        texel = sheets.ground[other * size * size + ti]
-                    } else if (kind == Atlas.WATER && dist < reach + 0.07f && !icy) {
-                        texel = FOAM
-                    }
-                }
-                if (gradeBy > 0f) texel = mix(texel, grade, gradeBy)
-                if (muddy > 0f) texel = mix(texel, MUD, muddy)
-                if (charred > 0f) texel = mix(texel, CHARCOAL, charred * (0.85f + rag * 0.15f))
-                if (road != 0) texel = roadTexel(u, v, road, ti, texel)
-                if (aero != 0) texel = airportTexel(u, v, aero, texel)
-                if (icy) {
-                    val ice = iT * (1f - u) * (1f - v) + ir * u * (1f - v) + ib * u * v + il * (1f - u) * v
-                    if (ice >= ICE_FROM) texel = mix(texel, mix(ICE, ICE_DARK, rag * 0.6f), (0.5f + ice / 60f).coerceAtMost(0.92f))
-                }
-                if (banks != 0) for (k in 0 until 4) {
-                    if (banks and (1 shl k) == 0) continue
-                    val dist = when (k) { 0 -> v; 1 -> 1f - u; 2 -> 1f - v; else -> u }
-                    if (dist < BANK) texel = mix(STONE, sheets.ground[Atlas.ROCK * size * size + ti], 0.3f)
-                }
-                if (snowy && (!water || icy || banks != 0)) {
-                    val depth = st * (1f - u) * (1f - v) + sr * u * (1f - v) + sb * u * v + sl * (1f - u) * v
-                    // Thin snow lies in patches, from noise read somewhere else again; deeper, it covers everything.
-                    val patch = (sheets.ground[ragBase + ((ty + size / 3) % size) * size + (tx + size / 2) % size] and 255) / 255f
-                    val cover = ((depth - (0.5f + patch * 14f)) / 3f).coerceIn(0f, 1f)
-                    if (cover > 0f) {
-                        // Traffic packs the snow on a road down to a greyer track, so the road still shows through.
-                        val onRoad = (road != 0 && roadTexel(u, v, road, ti, NOT_ROAD) != NOT_ROAD) || (aero != 0 && airportTexel(u, v, aero, NOT_ROAD) != NOT_ROAD)
-                        texel = mix(texel, sheets.ground[Atlas.SNOW * size * size + ti], if (onRoad) cover * 0.8f else cover)
-                        if (onRoad) texel = mix(texel, PACKED_SNOW, cover * 0.45f)
-                    }
-                }
-                val rel = rt * (1f - u) * (1f - v) + rr * u * (1f - v) + rb * u * v + rl * (1f - u) * v
-                var shade = f * (1f + (rel * RELIEF_GAIN).coerceIn(-RELIEF_DARK, RELIEF_LIGHT))
-                if (worn >= 0) texel = mix(texel, if (worn < VERY_WORN) 0xffd03a2a.toInt() else if (worn < WORN) 0xffe8b030.toInt() else 0xff3aa048.toInt(), 0.6f)
-                if (overlays and SNOW != 0) {
-                    val depth = st * (1f - u) * (1f - v) + sr * u * (1f - v) + sb * u * v + sl * (1f - u) * v
-                    val band = when {
-                        icy -> ICE_BAND
-                        water || depth < 1f -> 0
-                        depth < 10f -> SNOW_BANDS[0]
-                        depth < 30f -> SNOW_BANDS[1]
-                        depth < 60f -> SNOW_BANDS[2]
-                        else -> SNOW_BANDS[3]
-                    }
-                    if (band != 0) texel = mix(texel, band, 0.6f)
-                }
-                if (heights) {
-                    val h = p[0] + p[1] * u + p[2] * v
-                    texel = mix(texel, HEIGHT_COLOURS[(h / HEIGHT_BAND).toInt().coerceIn(0, HEIGHT_COLOURS.size - 1)], 0.55f)
-                    // A contour where a slope crosses a band's edge, about a pixel wide.
-                    if (sloped && h % HEIGHT_BAND < 1.4f / hw) shade *= 0.55f
-                }
-                var out = lit(texel, shade.toInt())
-                // Grid lines light on dark ground and dark on light, so they show on both.
-                if (grid && (u < 1f / hw || v < 1f / hw)) {
-                    val bright = ((out shr 16) and 255) + ((out shr 8) and 255) + (out and 255)
-                    out = if (bright > 380) lit(out, 150) else mix(out, GRID_LIGHT, 0.4f)
-                }
-                pixels[py * width + px] = out
+                dx += px
+                dy += py
+                us += u
+                vs += v
+                second += inSecond
             }
         }
+        val cover = Cover(dx.toIntArray(), dy.toIntArray(), us.toFloatArray(), vs.toFloatArray(), second.toBooleanArray())
+        synchronized(made) { made[key] = cover }
+        return cover
     }
 
     /** Which side of a tile view edge [edge] is, as the ground's neighbours count them: up, right, down, left. */
@@ -1075,6 +1085,8 @@ internal class ChunkBaker(
 
         /** Corners each way looked at for ridges and hollows, and how much lighter or darker a step above or below makes them. */
         private const val RELIEF = 3
+        /** Each level's tile [Cover]s by shape, shared by every baker. */
+        private val COVERS = Array(Renderer.LEVELS.size) { HashMap<Int, Cover>() }
         private const val RELIEF_GAIN = 0.07f
         private const val RELIEF_DARK = 0.2f
         private const val RELIEF_LIGHT = 0.14f
