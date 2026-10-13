@@ -273,8 +273,20 @@ internal class ChunkBaker(
             return
         }
         val aero = world.airportTiles[here]?.let { id -> world.airports.getOrNull(id)?.let { airportGround(it, wx, wy) } } ?: 0
-        ground(vx, vy, t, r, b, l, kind, edges, road, weather = true, aero = aero)
+        // A road where the land doesn't suit it goes up on a foundation, as track does, the road on top.
+        val raised = road != 0 && world.trackAt(wx, wy) == 0 && world.hasFoundation(wx, wy)
+        ground(vx, vy, t, r, b, l, kind, edges, if (raised) 0 else road, weather = true, aero = aero)
         earthFaces(vx, vy, r, b, l)
+        if (raised) {
+            val st = world.surfaceHeight(wx, wy, 0, worldCorner(wx, wy, vx, vy))
+            val sr = world.surfaceHeight(wx, wy, 0, worldCorner(wx, wy, vx + 1, vy))
+            val sb = world.surfaceHeight(wx, wy, 0, worldCorner(wx, wy, vx + 1, vy + 1))
+            val sl = world.surfaceHeight(wx, wy, 0, worldCorner(wx, wy, vx, vy + 1))
+            val low = minOf(minOf(t, r), minOf(b, l))
+            sprite(Atlas.WALLS[shapeOf(t - low, r - low, b - low, l - low) * 16 + shapeOf(st - low, sr - low, sb - low, sl - low)], vx, vy, low)
+            ground(vx, vy, st, sr, sb, sl, kind, intArrayOf(-1, -1, -1, -1), road, weather = true)
+            return
+        }
 
         val tile = world.index(wx, wy)
         val pieces = world.trackAt(wx, wy)

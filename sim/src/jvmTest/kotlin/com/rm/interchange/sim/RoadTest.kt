@@ -45,6 +45,28 @@ class RoadTest {
     }
 
     @Test
+    fun aRoadGoesUpOnFoundationsOverUnevenLand() {
+        val w = World(64, 64, 1, startYear = 1965)
+        for (i in w.corners.indices) w.corners[i] = 3
+        w.companies[0].money = 10_000_000
+        // One corner raised, under the road's line, so the tiles either side of it slope across the road.
+        w.corners[w.corner(10, 20)] = 4
+        val plain = w.roadCost(w.companies[0], Command.Road(0, 5, 20, 15, 20, Surface.PAVED, remove = false))
+        val trees = (5..15).sumOf { w.treeCost(w.index(it, 20)) }
+        assertEquals(11 * w.price(Surface.COST[Surface.PAVED]) + 2 * w.price(Prices.FOUNDATION) + trees, plain)
+        w.apply(Command.Road(0, 5, 20, 15, 20, Surface.PAVED, remove = false))
+        for (x in 5..15) assertTrue(w.roadEdges(w.index(x, 20)) != 0, "no road at $x")
+        assertTrue(w.hasFoundation(9, 20) && w.hasFoundation(10, 20))
+        // Up to the raised corner and down again, with no step at any join.
+        assertEquals(4, w.edgeHeight(9, 20, 0, Track.XP))
+        assertEquals(4, w.edgeHeight(10, 20, 0, Track.XM))
+        assertEquals(3, w.edgeHeight(10, 20, 0, Track.XP))
+        // A junction there would be level with the raised corner all round and leave a step to the road either side.
+        w.apply(Command.Road(0, 10, 20, 10, 23, Surface.PAVED, remove = false))
+        assertEquals(roadBit(Track.XM) or roadBit(Track.XP), w.roadEdges(w.index(10, 20)))
+    }
+
+    @Test
     fun aBusRunsBetweenItsStops() {
         val w = road()
         val bus = w.buy("new_look")

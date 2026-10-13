@@ -13,6 +13,9 @@ package com.rm.interchange.sim
  * Where track crosses from one tile to the next, both sides have to be at the
  * same height there, or a train couldn't pass. A piece that would leave a step
  * at a join with track already there isn't built.
+ *
+ * A road goes up on a foundation by the same rules, lying as the track piece
+ * [roadPieces] says. On a tile with track, the track decides.
  */
 
 // The corners of a tile, in the order the surface heights come in.
@@ -21,8 +24,25 @@ const val CORNER_E = 1
 const val CORNER_S = 2
 const val CORNER_W = 3
 
-/** Whether track [pieces] on tile ([x], [y]) need a foundation. */
-fun World.needsFoundation(x: Int, y: Int, pieces: Int): Boolean {
+/** The track piece road [bits] lie like: straight or a dead end along x or y as that piece, anything else as a junction. 0 for none. */
+fun roadPieces(bits: Int): Int {
+    val b = bits and 15
+    if (b == 0) return 0
+    val alongX = roadBit(Track.XM) or roadBit(Track.XP)
+    val alongY = roadBit(Track.YM) or roadBit(Track.YP)
+    return when {
+        b and alongY == 0 -> Track.X
+        b and alongX == 0 -> Track.Y
+        else -> Track.X or Track.Y
+    }
+}
+
+/** Track [pieces] on tile ([x], [y]), or with none the road there as [roadPieces] has it. */
+private fun World.builtPieces(x: Int, y: Int, pieces: Int) = if (pieces != 0) pieces else roadPieces(road[index(x, y)].toInt())
+
+/** Whether track [trackPieces] on tile ([x], [y]), or with none its road, need a foundation. */
+fun World.needsFoundation(x: Int, y: Int, trackPieces: Int): Boolean {
+    val pieces = builtPieces(x, y, trackPieces)
     if (pieces == 0 || isFlat(x, y)) return false
     // Platforms are always level.
     if (stationTiles.containsKey(index(x, y))) return true
@@ -41,9 +61,11 @@ fun World.hasFoundation(x: Int, y: Int) = needsFoundation(x, y, trackAt(x, y))
 
 /**
  * The height of what track on tile ([x], [y]) lies on at [corner], with
- * [pieces] on it: the land, or the top of its foundation.
+ * [trackPieces] on it, or with none what its road lies on: the land, or the top of
+ * its foundation.
  */
-fun World.surfaceHeight(x: Int, y: Int, pieces: Int, corner: Int): Int {
+fun World.surfaceHeight(x: Int, y: Int, trackPieces: Int, corner: Int): Int {
+    val pieces = builtPieces(x, y, trackPieces)
     // A tunnel's portal runs level into the hill at the foot of its slope.
     spanHeads[index(x, y)]?.let { id -> spans[id]?.let { if (it.tunnel) return it.height } }
     val n = heightAt(x, y)

@@ -70,7 +70,33 @@ fun World.roadCost(company: Company, c: Command.Road): Long {
     val tiles = roadLine(c) ?: return -1
     if (c.remove) return tiles.size * price(Prices.TRACK_REMOVE)
     if (c.surface !in Surface.DIRT..Surface.HIGHWAY || Calendar.year(startYear, day) < Surface.FROM[c.surface]) return -1
-    return tiles.sumOf { (i, _) -> price(Surface.COST[c.surface]) + treeCost(i) }
+    return tiles.sumOf { (i, bits) -> price(Surface.COST[c.surface]) + treeCost(i) + foundationCost(i, (road[i].toInt() and 15) or bits) }
+}
+
+/** What road [bits] on tile [i] would add for a foundation the tile doesn't have yet. */
+private fun World.foundationCost(i: Int, bits: Int): Long {
+    val x = i % width
+    val y = i / width
+    return if (track[i].toInt() == 0 && !needsFoundation(x, y, 0) && needsFoundation(x, y, roadPieces(bits))) price(Prices.FOUNDATION) else 0L
+}
+
+/**
+ * Whether road [bits] on tile ([x], [y]) meet the road next door level at every edge they share, the tile up on a
+ * foundation where the land doesn't suit it, as track is.
+ */
+fun World.roadJoinsLevel(x: Int, y: Int, bits: Int): Boolean {
+    val pieces = roadPieces(bits)
+    for (edge in 0 until 4) {
+        if (bits and roadBit(edge) == 0) continue
+        val nx = x + Track.dx(edge)
+        val ny = y + Track.dy(edge)
+        if (!inside(nx, ny)) continue
+        val n = index(nx, ny)
+        val back = Track.opposite(edge)
+        if (road[n].toInt() and roadBit(back) == 0) continue
+        if (edgeHeight(nx, ny, track[n].toInt(), back) != edgeHeight(x, y, pieces, edge)) return false
+    }
+    return true
 }
 
 /** The tiles of [c]'s line and the road edges each gets, or null if it's not a straight line along x or y. */
@@ -94,8 +120,9 @@ private fun World.roadLine(c: Command.Road): List<Pair<Int, Int>>? {
 
 /**
  * Lays road along [c]'s line, joining what's there, or with [Command.Road.remove] lifts the company's own.
- * Each tile has to take the road: dry, the road along any slope, nothing built there but road, or track
- * the road can cross at right angles. A surface better than what's there is laid over it.
+ * Each tile has to take the road: dry, level with the road next door, nothing built there but road, or track
+ * the road can cross at right angles. Where the land doesn't suit it, it goes up on a foundation, as track
+ * does. A surface better than what's there is laid over it.
  */
 internal fun World.buildRoad(company: Company, c: Command.Road) {
     val line = roadLine(c) ?: return
@@ -121,7 +148,7 @@ internal fun World.buildRoad(company: Company, c: Command.Road) {
         if (isWater(x, y) && !iceRoadFits(i)) continue
         if (house[i].toInt() != 0 || industryOf[i].toInt() != 0 || stationTiles.containsKey(i) || depotTiles.containsKey(i) || deck.containsKey(i) || spanHeads.containsKey(i)) continue
         val joined = (has and 15) or bits
-        if (!roadFits(x, y, joined)) continue
+        if (!roadJoinsLevel(x, y, joined)) continue
         val t = track[i].toInt()
         if (t != 0) {
             // Only a level crossing: straight road over straight track at right angles, on the level.
@@ -132,7 +159,7 @@ internal fun World.buildRoad(company: Company, c: Command.Road) {
         val surface = if (has != 0) maxOf(c.surface, surfaceAt(i)) else c.surface
         val upgrading = has != 0 && surface > surfaceAt(i)
         if (has and 15 == joined && !upgrading) continue
-        val cost = price(Surface.COST[c.surface]) + treeCost(i)
+        val cost = price(Surface.COST[c.surface]) + treeCost(i) + if (t == 0) foundationCost(i, joined) else 0L
         if (company.money < cost) return
         spend(company, Books.CONSTRUCTION, cost)
         fellTrees(company, i)
