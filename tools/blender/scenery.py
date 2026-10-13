@@ -440,26 +440,50 @@ def _crossing(p, q, r, s):
     return None
 
 
+# A switch's blades: how far they run from the points, in tiles, and how far an open one's tip stands off its stock
+# rail, against a closed one's, across the rail's middle.
+BLADE = 0.3
+BLADE_OPEN = 0.06
+BLADE_SHUT = 0.021
+
+
+def _set_route(pieces):
+    """Of [pieces] leaving a tile by one edge, the one the switch is set for: the straight one, else the first."""
+    straight = [p for p in pieces if p in ("X", "Y")]
+    return straight[0] if straight else pieces[0]
+
+
 def rail_set(m, mask):
     """The ties and rails of every piece in [mask], on level ground, with a gap in each rail wherever another
-    piece's rail crosses it: a diamond where two lines cross, a frog at a switch. Their beds are built unseen for
-    the shade, as [track] does."""
+    piece's rail crosses it: a diamond where two lines cross, a frog at a switch. Where pieces leave by the same edge
+    each rail running on to the frog starts as a blade, shut against its stock rail for the route the switch is set
+    for and open for the others, with a bar across the tips and a lever stand beside them. Their beds are built
+    unseen for the shade, as [track] does."""
     pieces = [p for i, p in enumerate(PIECES) if mask & (1 << i)]
     rail = material("rail", "#6a6662", metal=0.9, rough=0.45)
     head = material("rail head", "#d8d4cc", metal=1.0, rough=0.2)
+    steel = material("switch rod", "#3e3c3a", metal=0.6, rough=0.6)
     # Each piece's ballast unseen and its ties seen, as a piece on its own has them.
     for piece in pieces:
         track(m, piece, 0, "ties")
     rails = [(piece, seg, ends) for piece in pieces for (seg, ends) in _rails_of(piece)]
+    # The pieces leaving by each edge, for the switches there.
+    by_edge = {}
+    for piece in pieces:
+        for e in PIECE_EDGES[piece]:
+            by_edge.setdefault(e, []).append(piece)
+    tips = {}
     for k, (piece, (ra, rb), ends) in enumerate(rails):
         length = math.hypot(rb[0] - ra[0], rb[1] - ra[1])
         cuts = []
+        crossed = set()
         for j, (other, (oa, ob), _) in enumerate(rails):
             if other == piece:
                 continue
             hit = _crossing(ra, rb, oa, ob)
             if hit:
                 cuts.append(hit[0])
+                crossed.add(other)
         # The rail in runs between the gaps: open where it meets a tile edge, ended where it stops at a gap.
         g = FLANGEWAY / length
         spans = []
@@ -470,12 +494,74 @@ def rail_set(m, mask):
             t = max(t, c + g)
         if t < 1.0:
             spans.append((t, 1.0))
+        # At points shared with a piece whose rail this one crosses, it starts as a blade.
+        blades = []
+        for end, e in enumerate(PIECE_EDGES[piece]):
+            sharing = [p for p in by_edge[e] if p != piece]
+            if not any(p in crossed for p in sharing):
+                continue
+            tb = min(BLADE / length, min((abs(c - end) for c in cuts), default=1.0) - g * 2)
+            if tb <= 0.0:
+                continue
+            blades.append((end, e, tb))
+        for (end, e, tb) in blades:
+            spans = [(max(t0, tb), t1) if end == 0 else (t0, min(t1, 1.0 - tb)) for (t0, t1) in spans]
+            spans = [(t0, t1) for (t0, t1) in spans if t1 > t0]
+            point = ra if end == 0 else rb
+            heel_t = tb if end == 0 else 1.0 - tb
+            heel = (ra[0] + (rb[0] - ra[0]) * heel_t, ra[1] + (rb[1] - ra[1]) * heel_t)
+            # In from the stock rail, towards the middle of its own piece.
+            mid = ((ra[0] + rb[0]) / 2, (ra[1] + rb[1]) / 2)
+            other = rails[k ^ 1][1]
+            cx = (other[0][0] + other[1][0]) / 2 - mid[0]
+            cy = (other[0][1] + other[1][1]) / 2 - mid[1]
+            way = ends[end]
+            inward = way if way[0] * cx + way[1] * cy > 0 else (-way[0], -way[1])
+            off = BLADE_SHUT if piece == _set_route(by_edge[e]) else BLADE_OPEN
+            tip = (point[0] + inward[0] * off + (heel[0] - point[0]) * 0.08, point[1] + inward[1] * off + (heel[1] - point[1]) * 0.08)
+            _strip(m, tip, heel, (0, 0, 0, 0), 0.009, 0.009, 0.225, 0.26, rail)
+            _strip(m, tip, heel, (0, 0, 0, 0), 0.004, 0.004, 0.26, 0.36, rail)
+            _strip(m, tip, heel, (0, 0, 0, 0), 0.006, 0.006, 0.36, 0.41, head)
+            tips.setdefault(e, []).append((tip, inward))
         for (t0, t1) in spans:
             caps = (t0 > 0.0, t1 < 1.0)
             span_ends = (ends[0] if t0 == 0.0 else None, ends[1] if t1 == 1.0 else None)
             _strip(m, ra, rb, (0, 0, 0, 0), 0.012, 0.012, 0.225, 0.26, rail, t0, t1, ends=span_ends, caps=caps)
             _strip(m, ra, rb, (0, 0, 0, 0), 0.004, 0.004, 0.26, 0.36, rail, t0, t1, ends=span_ends, caps=caps)
             _strip(m, ra, rb, (0, 0, 0, 0), 0.009, 0.009, 0.36, 0.42, head, t0, t1, ends=span_ends, caps=caps)
+    for e, ts in tips.items():
+        _switch_gear(m, e, ts, by_edge[e], steel)
+
+
+def _switch_gear(m, edge, tips, pieces, steel):
+    """The bar joining a switch's blade tips at [edge], and its lever stand beside the track, out past the end of the
+    ties on the side away from where the other routes turn off, with a rod over to the nearest tip."""
+    (x0, y0), (x1, y1) = tips[0][0], tips[-1][0]
+    if len(tips) > 1:
+        _strip(m, (x0, y0), (x1, y1), (0, 0, 0, 0), 0.008, 0.008, 0.2, 0.23, steel)
+    mx, my = EDGE_MID[edge]
+    along = (0.0, 1.0) if edge in ("XM", "XP") else (1.0, 0.0)
+    into = {"XM": (1.0, 0.0), "XP": (-1.0, 0.0), "YM": (0.0, 1.0), "YP": (0.0, -1.0)}[edge]
+    # Which way the turning routes go off along the edge, from their far ends.
+    turn = 0.0
+    for p in pieces:
+        if p == _set_route(pieces):
+            continue
+        far = EDGE_MID[[e for e in PIECE_EDGES[p] if e != edge][0]]
+        turn += (far[0] - mx) * along[0] + (far[1] - my) * along[1]
+    side = -1.0 if turn > 0 else 1.0
+    base = (mx + along[0] * side * 0.25 + into[0] * 0.07, my + along[1] * side * 0.25 + into[1] * 0.07)
+    near = min((t for (t, _) in tips), key=lambda t: math.hypot(t[0] - base[0], t[1] - base[1]))
+    _strip(m, near, base, (0, 0, 0, 0), 0.006, 0.006, 0.2, 0.23, steel)
+    # The stand: a low base, a post, and a red target on top that turns with the switch.
+    black = material("stand black", "#2a2826", rough=0.6)
+    red = material("target red", "#b8302a", rough=0.5)
+    _strip(m, (base[0] - into[0] * 0.025, base[1] - into[1] * 0.025), (base[0] + into[0] * 0.025, base[1] + into[1] * 0.025),
+           (0, 0, 0, 0), 0.024, 0.024, 0.0, 0.25, black)
+    _strip(m, (base[0] - into[0] * 0.008, base[1] - into[1] * 0.008), (base[0] + into[0] * 0.008, base[1] + into[1] * 0.008),
+           (0, 0, 0, 0), 0.007, 0.007, 0.25, 1.15, black)
+    _strip(m, (base[0] - into[0] * 0.004, base[1] - into[1] * 0.004), (base[0] + into[0] * 0.004, base[1] + into[1] * 0.004),
+           (0, 0, 0, 0), 0.026, 0.026, 0.9, 1.15, red)
 
 
 def _plate_strip(m, a, b, offs, across, half, z0, z1, mat, t0, t1):
