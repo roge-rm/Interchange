@@ -110,6 +110,13 @@ for p, piece in enumerate(track.PIECES):
     for s in TRACK_SURFACES.get(piece, [0]):
         JOBS.append(("static", ("track", p, s), lambda piece=piece, s=s: scenery(f"track_{piece}_{s}.png", lambda: track.track(piece, s)), None))
         UP[("track", p, s)] = f"track_{piece}_{s}.png"
+        JOBS.append(("static", ("rails", p, s), lambda piece=piece, s=s: scenery(f"rails_{piece}_{s}.png", base.cell), None))
+        UP[("rails", p, s)] = f"rails_{piece}_{s}.png"
+# The rails of two or more pieces on one tile, by the tile's piece bits.
+for mask in range(1, 64):
+    if bin(mask).count("1") >= 2:
+        JOBS.append(("static", ("railset", mask), lambda mask=mask: scenery(f"railset_{mask}.png", base.cell), None))
+        UP[("railset", mask)] = f"railset_{mask}.png"
 # Platforms and the engine house over their track, each with its shadow apart so the game can lay shadows first.
 for a in (0, 1):
     JOBS.append(("static", ("station", a), lambda a=a: over(track.track("X" if a == 0 else "Y", 0), scenery(f"station_{a}.png", lambda: track.station(a == 0))), None))
@@ -361,6 +368,8 @@ def main():
 
     walls = [index.get(("walls", g, s), -1) for g in range(16) for s in range(16)]
     tracks = [index.get(("track", p, s), -1) for p in range(6) for s in range(16)]
+    rails = [index.get(("rails", p, s), -1) for p in range(6) for s in range(16)]
+    railsets = [index.get(("railset", mask), -1) for mask in range(64)]
     trees = [index[("tree", t, lk)] for t in range(len(ground.TREES)) for lk in range(ground.TREE_LOOKS)]
     autumn = [index.get(("tree_autumn", t, lk), index[("tree", t, lk)]) for t in range(len(ground.TREES)) for lk in range(ground.TREE_LOOKS)]
     bare = [index.get(("tree_bare", t, lk), index[("tree", t, lk)]) for t in range(len(ground.TREES)) for lk in range(ground.TREE_LOOKS)]
@@ -435,9 +444,22 @@ object Atlas {{
         {arr(walls)},
     )
 
-    /** A track piece in the view, at piece index * 16 + the shape it lies on, or -1. On the static sheet. */
+    /** A track piece's bed in the view, at piece index * 16 + the shape it lies on, or -1. On the static sheet. */
     val TRACK = intArrayOf(
         {arr(tracks)},
+    )
+
+    /** A track piece's ties and rails, drawn over every piece's bed on the tile, as [TRACK]. On the static sheet. */
+    val RAILS = intArrayOf(
+        {arr(rails)},
+    )
+
+    /**
+     * The ties and rails of a level tile with two or more pieces, by its view piece bits, gapped where they cross: a
+     * diamond, a switch's frog. -1 for fewer than two. On the static sheet.
+     */
+    val RAIL_SETS = intArrayOf(
+        {arr(railsets)},
     )
 
     /** A platform with its track, along view u (0) or v (1), and its shadow, on the shadows sheet. On the static sheet. */

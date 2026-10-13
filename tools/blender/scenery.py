@@ -308,7 +308,7 @@ def _strip(m, a, b, offs, half_top, half_bottom, z0, z1, mat, t0=0.0, t1=1.0, en
 
     ring = []
     for k, (u, v) in enumerate(((sx, sy), (ex, ey))):
-        dx, dy = ends[k] if ends else (nx, ny)
+        dx, dy = ends[k] if ends and ends[k] else (nx, ny)
         ring.append([
             vert(u + dx * half_bottom, v + dy * half_bottom, z0),
             vert(u + dx * half_top, v + dy * half_top, z1),
@@ -316,8 +316,10 @@ def _strip(m, a, b, offs, half_top, half_bottom, z0, z1, mat, t0=0.0, t1=1.0, en
             vert(u - dx * half_bottom, v - dy * half_bottom, z0),
         ])
     s, e = ring
-    if caps:
+    cap_start, cap_end = caps if isinstance(caps, tuple) else (caps, caps)
+    if cap_start:
         bm.faces.new(list(reversed(s)))
+    if cap_end:
         bm.faces.new(e)
     for i in range(4):
         j = (i + 1) % 4
@@ -350,7 +352,11 @@ def gravel():
     return mat
 
 
-def track(m, piece, shape):
+def track(m, piece, shape, layer):
+    """A piece of track on ground of [shape], in two layers drawn apart, so where pieces cross every piece's rails go
+    over every piece's bed: [layer] "bed" is the ballast, with the rails' shade on it, and "rails" the ties, plates and
+    rails; "ties" is the rails layer without its running rails, for rail_set. What isn't in the layer is still built,
+    unseen, for the shade it casts."""
     offs = [(shape >> i) & 1 for i in range(4)]
     ea, eb = PIECE_EDGES[piece]
     a = EDGE_MID[ea]
@@ -364,34 +370,112 @@ def track(m, piece, shape):
     plate = material("tie plate", "#3e3c3a", metal=0.6, rough=0.6)
     rail = material("rail", "#6a6662", metal=0.9, rough=0.45)
     head = material("rail head", "#d8d4cc", metal=1.0, rough=0.2)
-    _strip(m, a, b, offs, 0.17, 0.23, 0.0, 0.14, gravel(), ends=ends)
+    bed = [_strip(m, a, b, offs, 0.17, 0.23, 0.0, 0.14, gravel(), ends=ends)]
+    rails = []
     ties = max(4, round(length * 9))
     for i in range(ties):
         t = (i + 0.5) / ties
         dt = 0.024 / length
-        _strip(m, a, b, offs, 0.165 * k, 0.165 * k, 0.12, 0.2, tie, t - dt, t + dt)
+        rails.append(_strip(m, a, b, offs, 0.165 * k, 0.165 * k, 0.12, 0.2, tie, t - dt, t + dt))
         for side in (-1, 1):
             # Plates under each rail, a touch wider than it.
-            _plate_strip(m, a, b, offs, side * 0.095 * k, 0.022, 0.2, 0.225, plate, t - dt * 0.8, t + dt * 0.8)
-    # The track going on past each end, which the camera doesn't see but which casts its shadow, so the shade of the
-    # rails and ballast runs on unbroken into the next piece.
-    for (p, q, e) in ((a, b, ends[0]), (b, a, ends[1])):
-        dx, dy = (p[0] - q[0]) / length, (p[1] - q[1]) / length
-        far = (p[0] + dx * GHOST, p[1] + dy * GHOST)
-        shade = [_strip(m, p, far, offs, 0.17, 0.23, 0.0, 0.14, gravel(), ends=(e, e))]
-        for side in (-1, 1):
-            r0 = (p[0] + e[0] * side * 0.095, p[1] + e[1] * side * 0.095)
-            r1 = (far[0] + e[0] * side * 0.095, far[1] + e[1] * side * 0.095)
-            shade.append(_strip(m, r0, r1, offs, 0.012, 0.012, 0.225, 0.42, rail, ends=(e, e)))
-        for obj in shade:
-            obj.visible_camera = False
-    for side in (-1, 1):
+            rails.append(_plate_strip(m, a, b, offs, side * 0.095 * k, 0.022, 0.2, 0.225, plate, t - dt * 0.8, t + dt * 0.8))
+    # With "ties" only the ties: rail_set lays the rails of all a tile's pieces together.
+    for side in ((-1, 1) if layer != "ties" else ()):
         # Each rail from where it meets one edge to where it meets the other.
         ra = (a[0] + ends[0][0] * side * 0.095, a[1] + ends[0][1] * side * 0.095)
         rb = (b[0] + ends[1][0] * side * 0.095, b[1] + ends[1][1] * side * 0.095)
-        _strip(m, ra, rb, offs, 0.012, 0.012, 0.225, 0.26, rail, ends=ends, caps=False)
-        _strip(m, ra, rb, offs, 0.004, 0.004, 0.26, 0.36, rail, ends=ends, caps=False)
-        _strip(m, ra, rb, offs, 0.009, 0.009, 0.36, 0.42, head, ends=ends, caps=False)
+        rails.append(_strip(m, ra, rb, offs, 0.012, 0.012, 0.225, 0.26, rail, ends=ends, caps=False))
+        rails.append(_strip(m, ra, rb, offs, 0.004, 0.004, 0.26, 0.36, rail, ends=ends, caps=False))
+        rails.append(_strip(m, ra, rb, offs, 0.009, 0.009, 0.36, 0.42, head, ends=ends, caps=False))
+    # The track going on past each end, unseen, so the shade of the rails and ballast runs on into the next piece.
+    unseen = rails if layer == "bed" else bed
+    for (p, q, e) in ((a, b, ends[0]), (b, a, ends[1])):
+        dx, dy = (p[0] - q[0]) / length, (p[1] - q[1]) / length
+        far = (p[0] + dx * GHOST, p[1] + dy * GHOST)
+        unseen.append(_strip(m, p, far, offs, 0.17, 0.23, 0.0, 0.14, gravel(), ends=(e, e)))
+        for side in (-1, 1):
+            r0 = (p[0] + e[0] * side * 0.095, p[1] + e[1] * side * 0.095)
+            r1 = (far[0] + e[0] * side * 0.095, far[1] + e[1] * side * 0.095)
+            unseen.append(_strip(m, r0, r1, offs, 0.012, 0.012, 0.225, 0.42, rail, ends=(e, e)))
+    for obj in unseen:
+        obj.visible_camera = False
+        obj["unseen"] = True
+
+
+# The pieces in the order the game numbers them, a bit each in a tile's track.
+PIECES = ["X", "Y", "N", "E", "S", "W"]
+# Each side of where one rail crosses another, the gap left in both for the wheel flanges, in tiles.
+FLANGEWAY = 0.028
+
+
+def _rails_of(piece):
+    """A piece's two running rails as ((start, end), (edge way at start, edge way at end)), from edge to edge."""
+    ea, eb = PIECE_EDGES[piece]
+    a = EDGE_MID[ea]
+    b = EDGE_MID[eb]
+    length = math.hypot(b[0] - a[0], b[1] - a[1])
+    n = (-(b[1] - a[1]) / length, (b[0] - a[0]) / length)
+    ends = (_edge_dir(ea, n), _edge_dir(eb, n))
+    out = []
+    for side in (-1, 1):
+        ra = (a[0] + ends[0][0] * side * 0.095, a[1] + ends[0][1] * side * 0.095)
+        rb = (b[0] + ends[1][0] * side * 0.095, b[1] + ends[1][1] * side * 0.095)
+        out.append(((ra, rb), ends))
+    return out
+
+
+def _crossing(p, q, r, s):
+    """Where segment p-q crosses segment r-s inside both, as (t along p-q, t along r-s), or None."""
+    dx1, dy1 = q[0] - p[0], q[1] - p[1]
+    dx2, dy2 = s[0] - r[0], s[1] - r[1]
+    den = dx1 * dy2 - dy1 * dx2
+    if abs(den) < 1e-9:
+        return None
+    t = ((r[0] - p[0]) * dy2 - (r[1] - p[1]) * dx2) / den
+    w = ((r[0] - p[0]) * dy1 - (r[1] - p[1]) * dx1) / den
+    # Rails that only meet where they start on a tile edge, as at a switch's points, run on together.
+    if 0.01 < t < 0.99 and 0.01 < w < 0.99:
+        return t, w
+    return None
+
+
+def rail_set(m, mask):
+    """The ties and rails of every piece in [mask], on level ground, with a gap in each rail wherever another
+    piece's rail crosses it: a diamond where two lines cross, a frog at a switch. Their beds are built unseen for
+    the shade, as [track] does."""
+    pieces = [p for i, p in enumerate(PIECES) if mask & (1 << i)]
+    rail = material("rail", "#6a6662", metal=0.9, rough=0.45)
+    head = material("rail head", "#d8d4cc", metal=1.0, rough=0.2)
+    # Each piece's ballast unseen and its ties seen, as a piece on its own has them.
+    for piece in pieces:
+        track(m, piece, 0, "ties")
+    rails = [(piece, seg, ends) for piece in pieces for (seg, ends) in _rails_of(piece)]
+    for k, (piece, (ra, rb), ends) in enumerate(rails):
+        length = math.hypot(rb[0] - ra[0], rb[1] - ra[1])
+        cuts = []
+        for j, (other, (oa, ob), _) in enumerate(rails):
+            if other == piece:
+                continue
+            hit = _crossing(ra, rb, oa, ob)
+            if hit:
+                cuts.append(hit[0])
+        # The rail in runs between the gaps: open where it meets a tile edge, ended where it stops at a gap.
+        g = FLANGEWAY / length
+        spans = []
+        t = 0.0
+        for c in sorted(cuts):
+            if c - g > t:
+                spans.append((t, c - g))
+            t = max(t, c + g)
+        if t < 1.0:
+            spans.append((t, 1.0))
+        for (t0, t1) in spans:
+            caps = (t0 > 0.0, t1 < 1.0)
+            span_ends = (ends[0] if t0 == 0.0 else None, ends[1] if t1 == 1.0 else None)
+            _strip(m, ra, rb, (0, 0, 0, 0), 0.012, 0.012, 0.225, 0.26, rail, t0, t1, ends=span_ends, caps=caps)
+            _strip(m, ra, rb, (0, 0, 0, 0), 0.004, 0.004, 0.26, 0.36, rail, t0, t1, ends=span_ends, caps=caps)
+            _strip(m, ra, rb, (0, 0, 0, 0), 0.009, 0.009, 0.36, 0.42, head, t0, t1, ends=span_ends, caps=caps)
 
 
 def _plate_strip(m, a, b, offs, across, half, z0, z1, mat, t0, t1):

@@ -305,6 +305,7 @@ internal class ChunkBaker(
         if (pieces == 0) return
         world.depotTiles[tile]?.let {
             sprite(Atlas.TRACK[viewPieceIndex(Track.index(pieces)) * 16], vx, vy, base)
+            sprite(Atlas.RAILS[viewPieceIndex(Track.index(pieces)) * 16], vx, vy, base)
             return
         }
         val st = world.surfaceHeight(wx, wy, pieces, worldCorner(wx, wy, vx, vy))
@@ -320,10 +321,16 @@ internal class ChunkBaker(
         }
         // Platforms bring their own track, drawn with them.
         if (world.isPlatform(tile)) return
+        // Every piece's bed, then the rails over them all: a single piece's own, or for two or more, which always lie
+        // level, the rails of them together, gapped where they cross.
+        var view = 0
         for ((i, p) in Track.PIECES.withIndex()) {
             if (pieces and p == 0) continue
             sprite(Atlas.TRACK[viewPieceIndex(i) * 16 + sShape], vx, vy, sBase)
+            view = view or (1 shl viewPieceIndex(i))
         }
+        if (view.countOneBits() >= 2) sprite(Atlas.RAIL_SETS[view], vx, vy, sBase)
+        else sprite(Atlas.RAILS[view.countTrailingZeroBits() * 16 + sShape], vx, vy, sBase)
     }
 
     /** The second pass: the shadows of what stands on a tile, laid over the ground of every tile before anything stands up. */

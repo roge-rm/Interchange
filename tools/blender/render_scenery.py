@@ -81,7 +81,7 @@ def up_pass(out, name, model):
     scene.cycles.samples = 12
     scene.world.node_tree.nodes["Background"].inputs[1].default_value = 0.0
     for o in model.objects:
-        o.visible_camera = True
+        o.visible_camera = not o.get("unseen", False)
         o.visible_shadow = False
     bpy.context.view_layer.material_override = up_material()
     rig.render(str(out / name.replace(".png", "_up.png")))
@@ -188,7 +188,12 @@ def main():
     # Track is built in the tile's own terms, already in place, and lies on the ground so needs no shadow apart.
     for p, piece in enumerate(PIECES):
         for shape in TRACK_SHAPES.get(piece, [0]):
-            shot(out, f"track_{piece}_{shape}.png", lambda m, piece=piece, shape=shape: scenery.track(m, piece, shape), shadow=False, placed=False)
+            shot(out, f"track_{piece}_{shape}.png", lambda m, piece=piece, shape=shape: scenery.track(m, piece, shape, "bed"), shadow=False, placed=False)
+            shot(out, f"rails_{piece}_{shape}.png", lambda m, piece=piece, shape=shape: scenery.track(m, piece, shape, "rails"), shadow=False, placed=False)
+    # The rails of two or more pieces on one tile, which is always level, with gaps where they cross.
+    for mask in range(1, 64):
+        if bin(mask).count("1") >= 2:
+            shot(out, f"railset_{mask}.png", lambda m, mask=mask: scenery.rail_set(m, mask), shadow=False, placed=False)
 
 
 main()
