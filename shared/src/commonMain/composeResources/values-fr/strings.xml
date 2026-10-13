@@ -270,7 +270,14 @@
     <string name="rivals">Concurrents</string>
     <string name="companies">Compagnies</string>
     <string name="your_company">Votre compagnie</string>
-    <string name="company_line">%1$s · %2$d véhicules · %3$d gares</string>
+    <string name="company_line">Valeur %1$s · %2$d véhicules · %3$d gares</string>
+    <string name="subsidies">Subventions</string>
+    <string name="subsidy_route">%1$s de %2$s à %3$s</string>
+    <string name="subsidy_offered_for">Offerte encore %1$d mois</string>
+    <string name="subsidy_won_by">%1$s, tarif double encore %2$d mois</string>
+    <string name="no_subsidies">Rien d’offert</string>
+    <string name="news_subsidy_offered">Subvention offerte : %1$s</string>
+    <string name="news_subsidy_won">%1$s remporte la subvention : %2$s</string>
     <string name="day_length_value">×%1$d</string>
 
     <!-- Autres ordres, et financer des industries -->

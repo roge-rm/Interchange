@@ -192,7 +192,8 @@ private fun World.newRoute(r: Rival, c: Company): Tried {
             if (townRefuses(c, t1.x, t1.y) || townRefuses(c, t2.x, t2.y)) continue
             // Bigger towns, closer together, nearer home.
             val score = minOf(t1.population, t2.population).toLong() * 1000 / (d + chebyshev(t1.x, t1.y, home.x, home.y) / 2 + 5)
-            pairs += Triple(t1, t2, score)
+            // A subsidy on offer makes it worth twice as much.
+            pairs += Triple(t1, t2, if (onOffer(Cargo.PASSENGERS, t1.id, t2.id, true)) score * 2 else score)
         }
     }
     pairs.sortWith(compareByDescending<Triple<Town, Town, Long>> { it.third }.thenBy { it.first.id }.thenBy { it.second.id })
@@ -238,7 +239,7 @@ private fun World.newFreightRoute(r: Rival, c: Company): Tried {
             val (ox, oy) = middle(to)
             if (townRefuses(c, cx, cy) || townRefuses(c, ox, oy)) continue
             val score = month.toLong() * 1000 / (best + chebyshev(cx, cy, home.x, home.y) / 2 + 5)
-            picks += Pick(ind, to, cg, model, score)
+            picks += Pick(ind, to, cg, model, if (onOffer(cg, ind.id, to.id, false)) score * 2 else score)
         }
     }
     picks.sortWith(compareByDescending<Pick> { it.score }.thenBy { it.from.id }.thenBy { it.cargo })

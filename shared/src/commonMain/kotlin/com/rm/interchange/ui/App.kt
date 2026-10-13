@@ -124,7 +124,7 @@ fun App() {
 private enum class Screen { Title, NewGame, Playing }
 
 /** A window open over the screen. */
-private enum class Win { Menu, Load, Settings, Packs, Overlays, Finances, Industries, Companies, Town }
+private enum class Win { Menu, Load, Settings, Packs, Overlays, Finances, Industries, Companies, Town, Subsidies }
 
 @Composable
 private fun Root(settings: Settings) {
@@ -253,6 +253,7 @@ private fun Root(settings: Settings) {
                 onSettings = { window = Win.Settings },
                 onIndustries = { window = Win.Industries },
                 onCompanies = { window = Win.Companies },
+                onSubsidies = { window = Win.Subsidies },
                 // Back to the title screen the game is saved and stopped; Continue loads it again.
                 onTitle = {
                     runner?.let { r ->
@@ -289,6 +290,7 @@ private fun Root(settings: Settings) {
             Win.Finances -> runner?.let { r -> FinanceWindow(r) { window = null } }
             Win.Industries -> runner?.game?.world?.let { w -> IndustriesWindow(w, { x, y -> goTo.value = x to y; window = null }, { runner?.request(it) }) { window = null } }
             Win.Companies -> runner?.game?.world?.let { w -> CompaniesWindow(w, { x, y -> goTo.value = x to y; window = null }) { window = null } }
+            Win.Subsidies -> runner?.game?.world?.let { w -> SubsidiesWindow(w, { x, y -> goTo.value = x to y; window = null }) { window = null } }
             Win.Town -> runner?.game?.world?.let { w -> w.towns.getOrNull(town)?.let { t -> TownWindow(w, t, { runner?.request(it) }) { window = null } } }
             null -> {}
         }
@@ -654,6 +656,7 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
                     if (n.kind == News.SNOWBOUND || n.kind == News.TRAIN_OLD) selected = Selection.Train(n.about)
                     if (n.kind == News.SLID) selected = Selection.RoadVehicle(n.about)
                     if (n.kind == News.DIVERTED) selected = Selection.Aircraft(n.about)
+                    if (n.kind == News.SUBSIDY_OFFERED || n.kind == News.SUBSIDY_AWARDED) subsidyStart(world, n.about).let { (x, y) -> view.focusX = x; view.focusY = y }
                     if (n.kind == News.WASHOUT || n.kind == News.FIRE || n.kind == News.AVALANCHE) {
                         view.focusX = n.about % world.width + 0.5f
                         view.focusY = n.about / world.width + 0.5f
@@ -915,6 +918,12 @@ private fun IndustryCard(world: World, ind: Industry, where: String, onClose: ()
 /** What a piece of news says. */
 @Composable
 private fun newsText(world: World, n: News): String {
+    if (n.kind == News.SUBSIDY_OFFERED) return stringResource(Res.string.news_subsidy_offered, subsidyRoute(world, n.about))
+    if (n.kind == News.SUBSIDY_AWARDED) {
+        val co = world.companies.getOrNull(world.subsidies.getOrNull(n.about)?.company ?: -1)
+        val name = if (co == null || co.id == 0) stringResource(Res.string.your_company) else co.name
+        return stringResource(Res.string.news_subsidy_won, name, subsidyRoute(world, n.about))
+    }
     if (n.kind == News.PROSPECTING_FAILED) return stringResource(Res.string.news_prospect_failed, world.roster.industries.getOrNull(n.about)?.name(languageCode()) ?: "")
     if (n.kind == News.WASHOUT || n.kind == News.FIRE || n.kind == News.AVALANCHE) return stringResource(when (n.kind) { News.FIRE -> Res.string.news_fire; News.AVALANCHE -> Res.string.news_avalanche; else -> Res.string.news_washout })
     if (n.kind == News.DIVERTED) {
@@ -946,6 +955,23 @@ private fun newsText(world: World, n: News): String {
  * An industry's name with its town's, as each language puts it: Elmbrook Coal
  * Mine, or Mine de charbon d'Elmbrook.
  */
+/** Subsidy [i]'s route as words: what, from where, to where. */
+@Composable
+fun subsidyRoute(world: World, i: Int): String {
+    val s = world.subsidies.getOrNull(i) ?: return ""
+    val lang = languageCode()
+    val cargo = stringArrayResource(Res.array.cargoes).getOrElse(s.cargo) { "" }
+    fun place(id: Int) = if (s.towns) world.towns.getOrNull(id)?.name ?: "" else world.industries.getOrNull(id)?.let { industryName(world, it, lang) } ?: ""
+    return stringResource(Res.string.subsidy_route, cargo, place(s.from), place(s.to))
+}
+
+/** Where subsidy [i]'s route starts, as a map spot to go to. */
+fun subsidyStart(world: World, i: Int): Pair<Float, Float> {
+    val s = world.subsidies.getOrNull(i) ?: return 0f to 0f
+    return if (s.towns) world.towns.getOrNull(s.from)?.let { it.x + 0.5f to it.y + 0.5f } ?: (0f to 0f)
+    else world.industries.getOrNull(s.from)?.let { it.x + 1f to it.y + 1f } ?: (0f to 0f)
+}
+
 fun industryName(world: World, ind: Industry, lang: String): String {
     // A second of a kind by the same town is numbered.
     val n = world.industries.count { it.id < ind.id && it.kind == ind.kind && it.town == ind.town } + 1

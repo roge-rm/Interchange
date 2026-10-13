@@ -2,6 +2,7 @@ package com.rm.interchange.ui
 
 import com.rm.interchange.sim.townActionCost
 import com.rm.interchange.sim.townActionOpen
+import com.rm.interchange.sim.companyValue
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -427,13 +428,14 @@ fun OverlaysWindow(settings: Settings, onClose: () -> Unit) {
 
 /** The in-game menu: save, load, start afresh, settings, or back to the title screen. */
 @Composable
-fun MenuWindow(saved: Boolean, onSave: () -> Unit, onLoad: () -> Unit, onNew: () -> Unit, onSettings: () -> Unit, onIndustries: () -> Unit, onCompanies: () -> Unit, onTitle: () -> Unit, onClose: () -> Unit) {
+fun MenuWindow(saved: Boolean, onSave: () -> Unit, onLoad: () -> Unit, onNew: () -> Unit, onSettings: () -> Unit, onIndustries: () -> Unit, onCompanies: () -> Unit, onSubsidies: () -> Unit, onTitle: () -> Unit, onClose: () -> Unit) {
     Window(stringResource(Res.string.menu), onClose, Glyph.Menu) {
         BigButton(stringResource(if (saved) Res.string.saved else Res.string.save), primary = !saved, glyph = Glyph.Save, onClick = onSave)
         BigButton(stringResource(Res.string.load), glyph = Glyph.Folder, onClick = onLoad)
         BigButton(stringResource(Res.string.new_game), glyph = Glyph.Plus, onClick = onNew)
         BigButton(stringResource(Res.string.industries), glyph = Glyph.Layers, onClick = onIndustries)
         BigButton(stringResource(Res.string.companies), glyph = Glyph.Home, onClick = onCompanies)
+        BigButton(stringResource(Res.string.subsidies), glyph = Glyph.Package, onClick = onSubsidies)
         BigButton(stringResource(Res.string.settings), glyph = Glyph.Gear, onClick = onSettings)
         BigButton(stringResource(Res.string.title_screen), glyph = Glyph.Home, onClick = onTitle)
     }
@@ -519,14 +521,16 @@ private fun MoneyGraph(history: List<LongArray>, modifier: Modifier) {
 @Composable
 fun CompaniesWindow(world: World, onGo: (Float, Float) -> Unit, onClose: () -> Unit) {
     Window(stringResource(Res.string.companies), onClose, Glyph.Home) {
-        for (co in world.companies.sortedWith(compareByDescending<com.rm.interchange.sim.Company> { it.money - it.loan }.thenBy { it.id })) {
+        // Best first, by what each is worth.
+        val worth = world.companies.associate { it.id to world.companyValue(it) }
+        for (co in world.companies.sortedWith(compareByDescending<com.rm.interchange.sim.Company> { worth.getValue(it.id) }.thenBy { it.id })) {
             val vehicles = world.trains.count { it?.owner == co.id } + world.roadVehicles.count { it?.owner == co.id } +
                 world.ships.count { it?.owner == co.id } + world.aircraft.count { it?.owner == co.id }
             val stations = world.stations.count { it != null && it.owner == co.id && !it.waypoint }
             val home = world.rivals.firstOrNull { it.company == co.id }?.let { world.towns.getOrNull(it.home) }
             val name = if (co.id == 0) stringResource(Res.string.your_company) else co.name
             ListRow(
-                Glyph.Home, name, stringResource(Res.string.company_line, money(co.money - co.loan), vehicles, stations),
+                Glyph.Home, name, stringResource(Res.string.company_line, money(worth.getValue(co.id)), vehicles, stations),
                 home?.let { t -> { onGo(t.x + 0.5f, t.y + 0.5f) } },
                 tint = com.rm.interchange.map.companyColour(co.id),
             )
@@ -567,6 +571,22 @@ fun TownWindow(world: World, t: com.rm.interchange.sim.Town, send: (com.rm.inter
                 send(com.rm.interchange.sim.Command.TownAction(0, t.id, a))
                 onClose()
             }) else null)
+        }
+    }
+}
+
+/** Subsidies on offer, and those won with whoever won them; a tap goes to where the route starts. */
+@Composable
+fun SubsidiesWindow(world: World, onGo: (Float, Float) -> Unit, onClose: () -> Unit) {
+    Window(stringResource(Res.string.subsidies), onClose, Glyph.Package) {
+        val open = world.subsidies.withIndex().filter { it.value.open }.sortedWith(compareBy({ it.value.company >= 0 }, { it.index }))
+        if (open.isEmpty()) Text(stringResource(Res.string.no_subsidies), color = LocalColors.current.textDim, fontSize = 14.sp)
+        for ((i, s) in open) {
+            val won = world.companies.getOrNull(s.company)
+            val line = if (won == null) stringResource(Res.string.subsidy_offered_for, s.months)
+                else stringResource(Res.string.subsidy_won_by, if (won.id == 0) stringResource(Res.string.your_company) else won.name, s.months)
+            val (x, y) = subsidyStart(world, i)
+            ListRow(Glyph.Package, subsidyRoute(world, i), line, { onGo(x, y) }, tint = won?.let { com.rm.interchange.map.companyColour(it.id) })
         }
     }
 }

@@ -379,7 +379,7 @@ internal fun World.callAt(t: Carrier, s: Station, o: Int = 0) {
             val arrived = !transfer && (p.dest == s.id || ((p.dest == -1 || unload) && p.origin != s.id && accepts(s, c)))
             when {
                 arrived && from != null -> {
-                    var full = pay(fare(c, p.count, from, s, days(p)))
+                    var full = subsidised(company.id, c, from, s, pay(fare(c, p.count, from, s, days(p))))
                     // Coal and fuel for a town's homes pay more in the cold.
                     if ((c == Cargo.COAL || c == Cargo.FUEL) && takerAt(s, c) == null) full = full * heating(s) / 100
                     paid += full

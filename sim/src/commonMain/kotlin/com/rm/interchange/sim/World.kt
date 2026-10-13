@@ -119,6 +119,8 @@ class World(val settings: NewGame, val roster: Roster = Roster.BASE, generate: B
 
     /** The companies the computer runs, by their place in [companies]. */
     val rivals = ArrayList<Rival>()
+    /** Every subsidy offered, open or run out, in the order offered. */
+    val subsidies = ArrayList<Subsidy>()
 
     // What's built on the track, by id; a removed one leaves null.
     val stations = ArrayList<Station?>()
@@ -305,6 +307,7 @@ class World(val settings: NewGame, val roster: Roster = Roster.BASE, generate: B
             rivalsDay()
             if (Calendar.dayOfMonth(startYear, day) == 1 && day > 0) {
                 companiesMonth()
+                subsidiesMonth()
                 passengersMonth()
                 industriesMonth()
             }
@@ -352,6 +355,7 @@ class World(val settings: NewGame, val roster: Roster = Roster.BASE, generate: B
         for (y in 0 until height) mix(heightAt(width, y).toLong())
         for (c in companies) { mix(c.money); mix(c.loan) }
         for (r in rivals) { mix(r.thinkOn.toLong()); mix(r.routes.size.toLong()); mix(r.failed.size.toLong()) }
+        for (s in subsidies) { mix(s.cargo.toLong()); mix(s.from.toLong()); mix(s.to.toLong()); mix(s.company.toLong()); mix(s.months.toLong()) }
         mix(costScale); mix(payScale)
         mix(weather.anomaly.toLong()); mix(weather.recent.toLong())
         for (f in weather.fronts) { mix(f.x.toLong()); mix(f.y.toLong()); mix(f.life.toLong()) }

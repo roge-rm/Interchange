@@ -60,6 +60,9 @@ class News(val kind: Int, val about: Int, val tick: Long) {
         const val SLID = 10
         /** An aircraft gave up holding and flew on to its next stop; [News.about] is the aircraft. */
         const val DIVERTED = 11
+        /** A subsidy offered, and won; [News.about] is its place in [World.subsidies]. */
+        const val SUBSIDY_OFFERED = 12
+        const val SUBSIDY_AWARDED = 13
     }
 }
 
