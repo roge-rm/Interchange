@@ -29,7 +29,7 @@ import com.rm.interchange.sim.TRAM
 import com.rm.interchange.sim.oneWayOf
 import com.rm.interchange.sim.straightRoad
 import com.rm.interchange.sim.surfaceOf
-import com.rm.interchange.sim.iceRoadFits
+import com.rm.interchange.sim.ICE_ROAD_CM
 import com.rm.interchange.sim.BURNT
 import com.rm.interchange.sim.BURNT_FROM
 import com.rm.interchange.sim.VERY_WORN
@@ -69,6 +69,8 @@ internal class ChunkBaker(
     private val look: Int = Climate.SUMMER,
     /** Where to draw, width by height, clear to start with. */
     private val pixels: IntArray = IntArray(width * height),
+    /** The snow, ice and mud to show. */
+    private val shown: WeatherCopy,
 ) {
     private val hw = Renderer.LEVELS[level]
     private val hh = hw / 2
@@ -165,7 +167,7 @@ internal class ChunkBaker(
     private fun snowAt(vx: Int, vy: Int): Int {
         val x = vx.coerceIn(0, view.viewWidth - 1)
         val y = vy.coerceIn(0, view.viewHeight - 1)
-        return world.weather.snow[world.index(view.worldX(x, y), view.worldY(x, y))].toInt() and 255
+        return shown.snow[world.index(view.worldX(x, y), view.worldY(x, y))].toInt() and 255
     }
 
     /** The snow at view corner ([vx], [vy]): the mean of the four tiles round it. */
@@ -182,7 +184,7 @@ internal class ChunkBaker(
             val wx = view.worldX(x, y)
             val wy = view.worldY(x, y)
             if (world.isWater(wx, wy) || world.canals.contains(world.index(wx, wy))) {
-                val ice = world.weather.ice[world.index(wx, wy)].toInt() and 255
+                val ice = shown.ice[world.index(wx, wy)].toInt() and 255
                 sum += ice
                 most = maxOf(most, ice)
             } else shore++
@@ -192,7 +194,7 @@ internal class ChunkBaker(
 
     /** How much of what faces the sky on world tile [i] is under snow, in 256ths. */
     private fun snowCover(i: Int): Int {
-        val d = world.weather.snow[i].toInt() and 255
+        val d = shown.snow[i].toInt() and 255
         return when {
             d == 0 -> 0
             d < 3 -> 90
@@ -241,7 +243,7 @@ internal class ChunkBaker(
         val here = world.index(wx, wy)
         var road = worldRoad and PAVED
         // An ice road shows only while the ice will carry it.
-        if (worldRoad != 0 && world.isWater(wx, wy) && !world.iceRoadFits(here)) road = -1
+        if (worldRoad != 0 && world.isWater(wx, wy) && (shown.ice[here].toInt() and 255) < ICE_ROAD_CM) road = -1
         if (road < 0) road = 0 else if (worldRoad != 0) {
             if (downtown(here)) road = road or DOWNTOWN
             if (world.townOf[here].toInt() >= 0) road = road or TOWN_ROAD
@@ -458,7 +460,7 @@ internal class ChunkBaker(
         val ib = if (water) cornerIce(vx + 1, vy + 1) else 0f
         val il = if (water) cornerIce(vx, vy + 1) else 0f
         val icy = water && iT + ir + ib + il > 0f
-        val muddy = if (weather && !water && kind != Atlas.SAND) world.mud(tile) / 255f * MUD_MOST else 0f
+        val muddy = if (weather && !water && kind != Atlas.SAND) (shown.mud[tile].toInt() and 255) / 255f * MUD_MOST else 0f
         // Burnt black, fading as the ground grows back.
         val fireAt = world.fire[tile].toInt() and 255
         val charred = if (fireAt >= BURNT_FROM) 0.25f + (fireAt - BURNT_FROM) / (BURNT - BURNT_FROM).toFloat() * 0.7f else if (fireAt > 0) 0.7f else 0f
