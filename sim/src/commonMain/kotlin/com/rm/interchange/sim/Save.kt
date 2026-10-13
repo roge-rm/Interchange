@@ -16,7 +16,7 @@ package com.rm.interchange.sim
  */
 object Save {
     private val MAGIC = "ICHG".encodeToByteArray()
-    const val VERSION = 19
+    const val VERSION = 20
 
     fun write(world: World): ByteArray {
         val w = ByteWriter(world.width * world.height * 6 + 4096)
@@ -132,7 +132,7 @@ object Save {
             for (rv in rivals) {
                 w.int(rv.company); w.int(rv.home); w.int(rv.thinkOn)
                 w.uvar(rv.routes.size.toLong())
-                for (rt in rv.routes) { w.int(rt.a); w.int(rt.b); w.int(rt.depot); w.int(rt.townA); w.int(rt.townB); w.int(rt.cargo) }
+                for (rt in rv.routes) { w.int(rt.a); w.int(rt.b); w.int(rt.depot); w.int(rt.townA); w.int(rt.townB); w.int(rt.cargo); w.bool(rt.rail) }
                 val failed = rv.failed.sorted()
                 w.uvar(failed.size.toLong())
                 for (f in failed) w.long(f)
@@ -349,7 +349,7 @@ object Save {
                 val rv = Rival(r.int(), r.int())
                 rv.thinkOn = r.int()
                 repeat(r.uvar().toInt().also { if (it > 1000) throw BadData("too many routes") }) {
-                    rv.routes += RivalRoute(r.int(), r.int(), r.int(), r.int(), r.int(), r.int())
+                    rv.routes += RivalRoute(r.int(), r.int(), r.int(), r.int(), r.int(), r.int(), version >= 20 && r.bool())
                 }
                 repeat(r.uvar().toInt().also { if (it > 100_000) throw BadData("too many tried pairs") }) { rv.failed += r.long() }
                 rivals += rv

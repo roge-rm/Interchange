@@ -32,6 +32,38 @@ class RivalTest {
     }
 
     @Test
+    fun rivalsRunRailways() {
+        val w = World(NewGame(160, 160, 5, 1930, Region.MIXED, towns = 3, industries = 4, rivals = 2))
+        // Past a railway's first year, while its stations' ratings and traffic build.
+        w.days(365 * 7)
+        val rail = w.rivals.flatMap { r -> r.routes.filter { it.rail }.map { r.company to it } }
+        assertTrue(rail.isNotEmpty(), "no rival built a railway")
+        for ((company, rt) in rail) {
+            assertEquals(company, w.stations[rt.a]!!.owner)
+            assertTrue(w.stations[rt.a]!!.tiles.isNotEmpty() && w.stations[rt.b]!!.tiles.isNotEmpty(), "a railway without platforms")
+            val train = w.trains.single { it != null && it.owner == company && Order.station(it.orders[0]) == rt.a }!!
+            assertTrue(train.profitThisYear + train.profitLastYear > 0, "its train doesn't pay")
+        }
+    }
+
+    @Test
+    fun rivalsGiveUpRoutesThatLose() {
+        val w = game()
+        w.days(400)
+        val r = w.rivals.first { it.routes.isNotEmpty() }
+        val route = r.routes.first()
+        // Every vehicle on it old and losing money.
+        for (v in w.roadVehicles) if (v != null && v.owner == r.company && Order.station(v.orders[0]) == route.a) {
+            v.built = w.day - 1000
+            v.profitLastYear = -100
+        }
+        w.days(120)
+        assertTrue(route !in r.routes, "the route is still run")
+        assertTrue(w.roadVehicles.none { it != null && it.owner == r.company && it.orders.isNotEmpty() && Order.station(it.orders[0]) == route.a }, "its vehicles weren't sold")
+        assertTrue(w.stations.getOrNull(route.a) == null || r.routes.any { it.a == route.a || it.b == route.a }, "its stop is still there")
+    }
+
+    @Test
     fun rivalsMakeTheSameMovesInEveryCopy() {
         val a = game()
         val b = game()
