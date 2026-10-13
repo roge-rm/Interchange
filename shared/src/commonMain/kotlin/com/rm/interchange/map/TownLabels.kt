@@ -4,8 +4,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.TextMeasurer
@@ -16,6 +18,7 @@ import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.sp
 import com.rm.interchange.sim.PAYMENT_TICKS
 import com.rm.interchange.sim.Payment
+import com.rm.interchange.sim.StationView
 import com.rm.interchange.sim.TownView
 import com.rm.interchange.sim.World
 
@@ -28,9 +31,13 @@ class TownLabels(private val measurer: TextMeasurer, private val back: Color, pr
     private val names = HashMap<String, TextLayoutResult>()
     private val counts = HashMap<String, TextLayoutResult>()
 
+    /** Where the town labels went this frame, so station signs keep clear of them. */
+    private val placed = ArrayList<Rect>()
+
     fun DrawScope.draw(world: World, view: View, towns: List<TownView>, population: (Int) -> String) {
         val close = view.halfWidth >= CLOSE
         val pad = 6f * density
+        placed.clear()
         for (t in towns) {
             val x = t.x + 0.5f
             val y = t.y + 0.5f
@@ -47,8 +54,42 @@ class TownLabels(private val measurer: TextMeasurer, private val back: Color, pr
             val left = sx - w / 2
             val top = sy - h
             drawRoundRect(back, Offset(left, top), Size(w, h), CornerRadius(8f * density))
+            placed += Rect(left, top, left + w, top + h)
             drawText(name, topLeft = Offset(sx - name.size.width / 2f, top + pad / 2))
             if (count != null) drawText(count, topLeft = Offset(sx - count.size.width / 2f, top + pad / 2 + name.size.height))
+        }
+    }
+
+    private val signs = HashMap<String, TextLayoutResult>()
+
+    /**
+     * Each station's name on a small pill in its company's colour, just above its tiles: lighter and smaller than a
+     * town's label, and left off where it would cover one, or another sign, or when the map's too far out to read it.
+     * Call after [draw]. Waypoints and buoys have none.
+     */
+    fun DrawScope.drawStations(world: World, view: View, stations: List<StationView>, name: (StationView) -> String) {
+        if (view.halfWidth < SIGNS_FROM) return
+        val padX = 5f * density
+        val padY = 2f * density
+        val taken = ArrayList(placed)
+        for (st in stations) {
+            if (st.waypoint) continue
+            val vx = view.toViewX(st.x, st.y)
+            val vy = view.toViewY(st.x, st.y)
+            val sx = view.screenX(vx, vy, size.width)
+            val sy = view.screenY(vx, vy, groundHeight(world, st.x, st.y), size.height) - view.halfWidth * 0.8f
+            if (sx < -200f || sx > size.width + 200f || sy < -60f || sy > size.height + 60f) continue
+            val colour = companyColour(st.owner)
+            val ink = if (colour.luminance() > 0.5f) Color(0xFF1E1E20) else Color.White
+            val label = name(st)
+            val text = signs.getOrPut("$label\u0000${st.owner}") { measurer.measure(label, TextStyle(color = ink, fontSize = 11.sp, fontWeight = FontWeight.Medium)) }
+            val w = text.size.width + padX * 2
+            val h = text.size.height + padY * 2
+            val r = Rect(sx - w / 2, sy - h, sx + w / 2, sy)
+            if (taken.any { it.overlaps(r) }) continue
+            taken += r
+            drawRoundRect(colour.copy(alpha = 0.85f), r.topLeft, r.size, CornerRadius(h / 2))
+            drawText(text, topLeft = Offset(r.left + padX, r.top + padY))
         }
     }
 
@@ -76,8 +117,18 @@ class TownLabels(private val measurer: TextMeasurer, private val back: Color, pr
     companion object {
         /** From this close, in half a tile's width on screen, the population shows too. */
         private const val CLOSE = 16f
+        /** From this close, station signs show. */
+        private const val SIGNS_FROM = 8f
     }
 }
+
+/** Each company's colour, by its id, for its station signs; the player's company is the first. */
+private val COMPANY_COLOURS = listOf(
+    Color(0xFF2E6FB0), Color(0xFFC0392B), Color(0xFF2E8B57), Color(0xFFE0B020),
+    Color(0xFF8E44AD), Color(0xFFE67E22), Color(0xFF16A085), Color(0xFF7F8C8D),
+)
+
+fun companyColour(company: Int): Color = COMPANY_COLOURS[company.mod(COMPANY_COLOURS.size)]
 
 @Composable
 fun rememberTownLabels(back: Color, text: Color, dim: Color): TownLabels {

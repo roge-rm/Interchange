@@ -48,6 +48,9 @@ const val APPROVAL_REFUSES = -200
 /** What a felled tree near a town costs a company in its approval. */
 const val TREE_APPROVAL = 5
 
+/** What pulling down one of its buildings costs a company in a town's approval. */
+const val DEMOLISH_APPROVAL = 60
+
 /** What a town thinks of a company before it's done anything: Good. */
 const val START_APPROVAL = 300
 

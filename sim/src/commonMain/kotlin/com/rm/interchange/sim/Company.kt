@@ -55,6 +55,8 @@ object Prices {
     const val CLEAR = 50L
     /** Clearing a tree to build. */
     const val TREE = 40L
+    /** Pulling down a town building, for each of the people who lived or worked in it. */
+    const val DEMOLISH_PER_PERSON = 30L
     const val START_MONEY = 250_000L
     /** The most a company can borrow, and the steps it borrows and repays in. */
     const val MAX_LOAN = 300_000L

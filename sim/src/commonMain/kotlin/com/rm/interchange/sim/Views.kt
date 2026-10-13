@@ -195,6 +195,11 @@ class StationView(
     val rating: IntArray = IntArray(Cargo.COUNT),
     /** The cargo it deals in, as bits: what's waiting or what a train has called for. */
     val served: Int = 0,
+    /** The company it's for, and the middle of its tiles on the map, for its sign. */
+    val owner: Int = 0,
+    val x: Float = 0f,
+    val y: Float = 0f,
+    val waypoint: Boolean = false,
 )
 
 /** Passengers and mail waiting at a station for [dest] (-1 for anywhere), changing at [via] on the way or -1 if it's the next stop. */
@@ -346,7 +351,10 @@ fun World.view(): WorldView {
         }
         var served = 0
         for (c in 0 until Cargo.COUNT) if (s.lastCall[c] >= 0 || s.waiting(c) > 0) served = served or (1 shl c)
-        StationView(s.id, s.name, s.tiles.size, IntArray(Cargo.COUNT) { s.waiting(it) }, list, s.rating.copyOf(), served)
+        val places = s.places
+        val mx = if (places.isEmpty()) s.signX + 0.5f else places.sumOf { it % width } / places.size.toFloat() + 0.5f
+        val my = if (places.isEmpty()) s.signY + 0.5f else places.sumOf { it / width } / places.size.toFloat() + 0.5f
+        StationView(s.id, s.name, s.tiles.size, IntArray(Cargo.COUNT) { s.waiting(it) }, list, s.rating.copyOf(), served, s.owner, mx, my, s.waypoint)
     }
     val signalViews = signals.entries.sortedBy { it.key }.map { (k, s) ->
         val tile = k / 8

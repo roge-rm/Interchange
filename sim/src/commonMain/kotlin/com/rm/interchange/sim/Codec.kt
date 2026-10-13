@@ -43,6 +43,7 @@ object Codec {
     private const val AIRPORT_UPGRADE = 33
     private const val BUY_CRAFT = 34
     private const val CRAFT_ORDER = 35
+    private const val CLEAR_AREA = 36
 
     fun write(w: ByteWriter, c: Command) {
         when (c) {
@@ -74,6 +75,7 @@ object Codec {
             is Command.SetUpkeep -> { w.byte(UPKEEP); w.int(c.company); w.int(c.level) }
             is Command.Wire -> { w.byte(WIRE); w.int(c.company); w.int(c.sx); w.int(c.sy); w.int(c.ex); w.int(c.ey); w.int(c.first); w.bool(c.remove) }
             is Command.Clear -> { w.byte(CLEAR); w.int(c.company); w.int(c.x); w.int(c.y) }
+            is Command.ClearArea -> { w.byte(CLEAR_AREA); w.int(c.company); w.int(c.x0); w.int(c.y0); w.int(c.x1); w.int(c.y1) }
             is Command.BuyTrain -> { w.byte(BUY_TRAIN_CARGO); w.int(c.company); w.int(c.depot); w.int(c.engine); w.int(c.wagon); w.int(c.wagons); w.int(c.cargo) }
             is Command.Loan -> { w.byte(LOAN); w.int(c.company); w.bool(c.borrow) }
             is Command.FundIndustry -> { w.byte(FUND_INDUSTRY); w.int(c.company); w.int(c.kind) }
@@ -88,6 +90,7 @@ object Codec {
         DEPOT -> Command.Depot(r.int(), r.int(), r.int(), r.int())
         SIGNAL -> Command.Signal(r.int(), r.int(), r.int(), r.int(), r.int())
         CLEAR -> Command.Clear(r.int(), r.int(), r.int())
+        CLEAR_AREA -> Command.ClearArea(r.int(), r.int(), r.int(), r.int(), r.int())
         BUY_TRAIN -> Command.BuyTrain(r.int(), r.int(), r.int(), r.int(), r.int())
         TRAIN_ORDER -> Command.TrainOrder(r.int(), r.int(), r.int(), r.ints())
         BUY_TRAIN_CARGO -> Command.BuyTrain(r.int(), r.int(), r.int(), r.int(), r.int(), r.int())

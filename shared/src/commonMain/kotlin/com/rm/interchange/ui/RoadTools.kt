@@ -65,3 +65,12 @@ fun DrawScope.drawCanalPlan(world: World, painter: LandPainter, plan: Command.Ca
 }
 
 private val CANAL_OK = Color(0x993A7AB0)
+
+/** The tiles a clearing [plan] covers, red. */
+fun DrawScope.drawClearPlan(world: World, painter: LandPainter, plan: Command.ClearArea) {
+    for (y in minOf(plan.y0, plan.y1)..maxOf(plan.y0, plan.y1)) for (x in minOf(plan.x0, plan.x1)..maxOf(plan.x0, plan.x1)) {
+        if (world.inside(x, y)) with(painter) { tile(x, y, CLEAR_PLAN) }
+    }
+}
+
+private val CLEAR_PLAN = Color(0x66E05A4E)

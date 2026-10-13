@@ -53,6 +53,7 @@ import com.rm.interchange.sim.railCost
 import com.rm.interchange.sim.canalCost
 import com.rm.interchange.sim.bridgeCost
 import com.rm.interchange.sim.roadCost
+import com.rm.interchange.sim.clearCost
 import com.rm.interchange.map.View
 import com.rm.interchange.map.buildingAt
 import com.rm.interchange.server.Game
@@ -384,6 +385,7 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
     // A ship (false) or aircraft (true) having stops added by tapping, and which.
     var addingCraftStops by remember { mutableStateOf<Pair<Boolean, Int>?>(null) }
     var canalPlan by remember { mutableStateOf<Command.Canal?>(null) }
+    var clearPlan by remember { mutableStateOf<Command.ClearArea?>(null) }
     // The track tool lays lines on its own (0), or one piece, a view piece, at a time; and where the drag is now.
     var trackPiece by remember { mutableIntStateOf(0) }
     var dragAt by remember { mutableStateOf<Pick?>(null) }
@@ -403,7 +405,7 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
         object : MapInput {
             var start: Pick? = null
             override val drags get() = addingStops == null && addingRoadStops == null && addingCraftStops == null &&
-                (tool == Tool.Track || tool == Tool.Wires || tool == Tool.Station || tool == Tool.Bridge || tool == Tool.Road || tool == Tool.TramRails || tool == Tool.Canal)
+                (tool == Tool.Track || tool == Tool.Wires || tool == Tool.Station || tool == Tool.Bridge || tool == Tool.Road || tool == Tool.TramRails || tool == Tool.Canal || tool == Tool.Clear)
             override fun tap(at: Pick) {
                 val tile = world.index(at.tileX, at.tileY)
                 addingStops?.let { id ->
@@ -497,6 +499,7 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
                     Tool.Station -> stationPlan = stationPlan(0, s, at, stationAlongX)
                     Tool.Bridge -> bridgePlan = bridgePlan(0, s, at, bridgeStyle)
                     Tool.Canal -> canalPlan = roadLine(0, s, at, 0, removing).let { Command.Canal(0, it.sx, it.sy, it.ex, it.ey, removing) }
+                    Tool.Clear -> clearPlan = Command.ClearArea(0, s.tileX, s.tileY, at.tileX, at.tileY)
                     else -> plan = railFor(s, at)
                 }
             }
@@ -506,6 +509,7 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
                 bridgePlan?.let { runner.request(it); built() }
                 roadPlan?.let { runner.request(it); built() }
                 canalPlan?.let { runner.request(it); built() }
+                clearPlan?.let { runner.request(it); built() }
                 dragCancel()
             }
             override fun dragCancel() {
@@ -514,6 +518,7 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
                 bridgePlan = null
                 roadPlan = null
                 canalPlan = null
+                clearPlan = null
                 dragAt = null
                 start = null
             }
@@ -528,6 +533,7 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
         else world.railCost(p).let { (cost, n) -> if (cost < 0) null else n to cost }
     } ?: roadPlan?.let { p -> world.roadCost(company, p).takeIf { it >= 0 }?.let { (maxOf(kotlin.math.abs(p.ex - p.sx), kotlin.math.abs(p.ey - p.sy)) + 1) to it } }
         ?: canalPlan?.let { p -> world.canalCost(company, p).let { (cost, n) -> n to cost } }
+        ?: clearPlan?.let { p -> world.clearCost(0, p).let { (cost, n) -> n to cost } }
         ?: stationPlan?.let { p -> ((kotlin.math.abs(p.x1 - p.x0) + 1) * (kotlin.math.abs(p.y1 - p.y0) + 1)).let { n -> n to n * world.price(Prices.PLATFORM) } }
         ?: bridgePlan?.let { p -> world.bridgeCost(company, p).takeIf { it >= 0 }?.let { (maxOf(kotlin.math.abs(p.x1 - p.x0), kotlin.math.abs(p.y1 - p.y0)) + 1) to it } }
     val dragText = dragged?.takeIf { it.first > 0 }?.let { (n, cost) ->
@@ -537,6 +543,7 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
     val measurer = rememberTextMeasurer()
     // Money as the language writes it, for drawing over the map outside composition.
     val moneyPattern = stringResource(Res.string.money, "%s")
+    val stationNumber = stringResource(Res.string.station_n, "%d")
     BoxWithConstraints(Modifier.fillMaxSize().background(c.page)) {
         val layout = screenLayout(maxWidth, maxHeight)
         val gap = if (layout.compact) 6.dp else 10.dp
@@ -550,7 +557,8 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
                 ?: stationPlan?.let { p -> { painter -> drawStationPlan(world, painter, p) } }
                 ?: bridgePlan?.let { p -> { painter -> drawBridgePlan(world, painter, p) } }
                 ?: roadPlan?.let { p -> { painter -> drawRoadPlan(world, painter, p) } }
-                ?: canalPlan?.let { p -> { painter -> drawCanalPlan(world, painter, p) } },
+                ?: canalPlan?.let { p -> { painter -> drawCanalPlan(world, painter, p) } }
+                ?: clearPlan?.let { p -> { painter -> drawClearPlan(world, painter, p) } },
             label = dragAt?.takeIf { dragText != null }?.let { at -> { drawDragLabel(world, view, measurer, dragText!!, shortOf, at) } },
             page = c.page,
             overlays = (if (settings.grid) ChunkBaker.GRID else 0) or (if (settings.heights) ChunkBaker.HEIGHTS else 0) or (if (settings.snow) ChunkBaker.SNOW else 0) or (if (settings.condition) ChunkBaker.CONDITION else 0),
@@ -558,6 +566,7 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
                 val wv = worldView.value
                 with(townLabels) {
                     draw(world, view, wv?.towns.orEmpty()) { Numbers.grouped(it.toLong()) }
+                    if (wv != null) drawStations(world, view, wv.stations) { it.name.ifEmpty { stationNumber.replace("%d", (it.id + 1).toString()) } }
                     if (wv != null) drawPayments(world, view, wv.payments, runner.tick, c.good) { moneyPattern.replace("%s", Numbers.grouped(it)) }
                 }
             },
@@ -750,7 +759,6 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
                     Tool.Tunnel -> stringResource(Res.string.cost_tile, money(world.price(Spans.COST[Spans.TUNNEL])))
                     Tool.Station -> stringResource(Res.string.cost_tile, money(world.price(Prices.PLATFORM)))
                     Tool.Depot -> money(world.price(Prices.DEPOT))
-                    Tool.Clear -> stringResource(Res.string.cost_tile, money(world.price(Prices.CLEAR)))
                     Tool.Raise, Tool.Lower -> stringResource(Res.string.cost_corner, money(world.price(Prices.TERRAFORM)))
                     else -> null
                 }
