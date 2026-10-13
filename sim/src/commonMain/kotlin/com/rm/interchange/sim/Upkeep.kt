@@ -43,19 +43,20 @@ internal fun World.trainsDay() {
                 t.breakdowns++
             }
         }
-        if (t.service && t.running && !t.toDepot && day - t.serviced >= SERVICE_DAYS && depots.getOrNull(t.depot) != null) {
+        if (t.service && t.running && !t.toDepot && workDay - t.serviced >= SERVICE_DAYS && depots.getOrNull(t.depot) != null) {
             t.toDepot = true
             t.servicing = true
             t.route = null
         }
-        if (day - t.built == t.engineInfo.life * 365) news += News(News.TRAIN_OLD, t.id, tick)
+        // Once, on the calendar day it comes of age, though this runs each work day.
+        if (day - t.built == t.engineInfo.life * 365 && tick % dayTicks == 0L) news += News(News.TRAIN_OLD, t.id, tick)
     }
 }
 
 /** A train in for a service comes out as good as it can be, and goes back to its orders. */
 internal fun World.serviced(t: Train) {
     t.reliability = bestReliability(t)
-    t.serviced = day
+    t.serviced = workDay
     t.servicing = false
     t.running = true
 }

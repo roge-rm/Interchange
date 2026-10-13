@@ -36,8 +36,14 @@ data class NewGame(
     val inflation: Boolean = true,
     /** Weather crossing the map, with snow, ice and mud; without it every day is fair. */
     val weather: Boolean = true,
+    /**
+     * How many work days of [Calendar.TICKS_PER_DAY] ticks each day on the calendar lasts. Vehicles, cargo, running
+     * costs and breakdowns go by work days, so the calendar, seasons and weather pass more slowly against them.
+     */
+    val dayLength: Int = 1,
 ) {
     companion object {
+        val DAY_LENGTHS = intArrayOf(1, 2, 4, 6, 10, 16)
         val SIZES = intArrayOf(64, 128, 256, 512, 1024, 2048, 4096)
         const val FIRST_YEAR = 1836
         const val LAST_YEAR = 2050

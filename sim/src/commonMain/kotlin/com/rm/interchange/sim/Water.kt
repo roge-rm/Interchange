@@ -341,7 +341,7 @@ internal fun World.buyShip(company: Company, depot: Depot, e: Engine, cargo: Int
     if (company.money < price(v.price)) return
     spend(company, Books.NEW_TRAINS, price(v.price))
     v.built = day
-    v.serviced = day
+    v.serviced = workDay
     v.reliability = e.reliability * 100
     ships += v
 }
@@ -369,7 +369,7 @@ internal fun World.shipCommand(company: Company, c: Command.CraftOrder) {
             if (company.money < cost) return
             spend(company, Books.NEW_TRAINS, cost)
             v.built = day
-            v.serviced = day
+            v.serviced = workDay
             v.reliability = v.info.reliability * 100
         }
     }
@@ -510,7 +510,7 @@ private fun World.arriveShip(v: Ship) {
         v.toDepot = false
         if (v.servicing) {
             v.reliability = v.info.reliability * 100
-            v.serviced = day
+            v.serviced = workDay
             v.servicing = false
             v.running = true
         }
@@ -624,7 +624,7 @@ internal fun World.shipsDay() {
             v.brokenFor = Calendar.TICKS_PER_DAY
             v.breakdowns++
         }
-        if (v.service && day - v.serviced >= SERVICE_DAYS && v.running && !v.toDepot && depots.getOrNull(v.depot) != null) {
+        if (v.service && workDay - v.serviced >= SERVICE_DAYS && v.running && !v.toDepot && depots.getOrNull(v.depot) != null) {
             v.toDepot = true
             v.servicing = true
             v.route = null

@@ -147,7 +147,7 @@ internal fun World.buyRoadVehicle(company: Company, c: Command.BuyRoadVehicle) {
     if (company.money < price(v.price)) return
     spend(company, Books.NEW_TRAINS, price(v.price))
     v.built = day
-    v.serviced = day
+    v.serviced = workDay
     v.reliability = e.reliability * 100
     if (year >= Tires.WINTER_FROM && Climate.look(settings.region, year, Calendar.dayOfYear(startYear, day)) == Climate.WINTER) v.tires = Tires.WINTER
     roadVehicles += v
@@ -177,7 +177,7 @@ internal fun World.roadVehicleCommand(company: Company, c: Command.RoadOrder) {
             if (company.money < cost) return
             spend(company, Books.NEW_TRAINS, cost)
             v.built = day
-            v.serviced = day
+            v.serviced = workDay
             v.reliability = v.info.reliability * 100
         }
         Command.RoadOrder.TIRES -> v.seasonalTires = !v.seasonalTires
@@ -310,7 +310,7 @@ private fun World.arrive(v: RoadVehicle) {
         v.route = null
         if (v.servicing) {
             v.reliability = v.info.reliability * 100
-            v.serviced = day
+            v.serviced = workDay
             v.servicing = false
             v.running = true
             fitTires(v)
@@ -441,7 +441,7 @@ internal fun World.roadVehiclesDay() {
             v.brokenFor = Calendar.TICKS_PER_DAY / 2
             v.breakdowns++
         }
-        val due = v.service && day - v.serviced >= SERVICE_DAYS
+        val due = v.service && workDay - v.serviced >= SERVICE_DAYS
         val tires = v.seasonalTires && v.tires != want
         if ((due || tires) && v.running && !v.toDepot && depots.getOrNull(v.depot) != null) {
             v.toDepot = true

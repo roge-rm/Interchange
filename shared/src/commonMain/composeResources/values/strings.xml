@@ -272,6 +272,8 @@
     <string name="book_total">Profit</string>
     <string name="money_graph">Money, last two years</string>
     <string name="inflation">Inflation</string>
+    <string name="day_length">Day length</string>
+    <string name="day_length_value">×%1$d</string>
 
     <!-- More orders, and funding industries -->
     <string name="go_via">Go via</string>

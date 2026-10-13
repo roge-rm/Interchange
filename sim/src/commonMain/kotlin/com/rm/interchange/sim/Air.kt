@@ -264,7 +264,7 @@ internal fun World.buyAircraft(company: Company, depot: Depot, e: Engine, cargo:
     if (company.money < price(v.price)) return
     spend(company, Books.NEW_TRAINS, price(v.price))
     v.built = day
-    v.serviced = day
+    v.serviced = workDay
     v.reliability = e.reliability * 100
     v.at = a.id
     if (e.floats) v.gear = wantedGear(v, a)
@@ -293,7 +293,7 @@ internal fun World.aircraftCommand(company: Company, c: Command.CraftOrder) {
             if (company.money < cost) return
             spend(company, Books.NEW_TRAINS, cost)
             v.built = day
-            v.serviced = day
+            v.serviced = workDay
             v.reliability = v.info.reliability * 100
         }
         Command.CraftOrder.GEAR -> v.seasonalGear = !v.seasonalGear
@@ -620,7 +620,7 @@ private fun World.intoHangar(v: Aircraft) {
     v.toDepot = false
     if (v.servicing) {
         v.reliability = v.info.reliability * 100
-        v.serviced = day
+        v.serviced = workDay
         v.servicing = false
         v.running = true
         if (v.seasonalGear && v.info.floats) v.gear = wantedGear(v, airports.getOrNull(v.at))
@@ -637,7 +637,7 @@ internal fun World.aircraftDay() {
             v.brokenFor = Calendar.TICKS_PER_DAY
             v.breakdowns++
         }
-        val due = v.service && day - v.serviced >= SERVICE_DAYS
+        val due = v.service && workDay - v.serviced >= SERVICE_DAYS
         val gear = v.seasonalGear && v.info.floats && v.gear != wantedGear(v)
         if ((due || gear) && v.running && !v.toDepot && depots.getOrNull(v.depot) != null) {
             v.toDepot = true

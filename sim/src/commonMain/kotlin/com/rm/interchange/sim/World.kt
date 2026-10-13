@@ -167,7 +167,13 @@ class World(val settings: NewGame, val roster: Roster = Roster.BASE, generate: B
     var tick = 0L
         internal set
 
-    val day get() = (tick / Calendar.TICKS_PER_DAY).toInt()
+    val day get() = (tick / dayTicks).toInt()
+
+    /** Ticks in a day on the calendar. */
+    val dayTicks get() = Calendar.TICKS_PER_DAY * settings.dayLength
+
+    /** Work days so far, each [Calendar.TICKS_PER_DAY] ticks: what vehicles, cargo and running costs go by. */
+    val workDay get() = (tick / Calendar.TICKS_PER_DAY).toInt()
 
     /**
      * How many times each [CHUNK] by [CHUNK] block of tiles has changed, so the
@@ -273,18 +279,23 @@ class World(val settings: NewGame, val roster: Roster = Roster.BASE, generate: B
         moveRoadVehicles()
         moveShips()
         moveAircraft()
+        // Each work day: vehicles, running costs, passengers and cargo.
         if (tick % Calendar.TICKS_PER_DAY == 0L) {
-            weatherDay()
-            airSkies.clear()
-            trackDay()
-            weatherLooks()
             trainsDay()
             roadVehiclesDay()
-            roadsDay()
             shipsDay()
             aircraftDay()
             payRunningCosts()
             passengersDay()
+            payments.removeAll { tick - it.tick > PAYMENT_TICKS }
+        }
+        // Each day on the calendar: the weather and what it does, towns, and the months and years turning.
+        if (tick % dayTicks == 0L) {
+            weatherDay()
+            airSkies.clear()
+            trackDay()
+            weatherLooks()
+            roadsDay()
             townsDay()
             if (Calendar.dayOfMonth(startYear, day) == 1 && day > 0) {
                 companiesMonth()
@@ -295,7 +306,6 @@ class World(val settings: NewGame, val roster: Roster = Roster.BASE, generate: B
                 passengersYear()
                 companiesYear()
             }
-            payments.removeAll { tick - it.tick > PAYMENT_TICKS }
         }
     }
 

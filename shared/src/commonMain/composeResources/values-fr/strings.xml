@@ -255,6 +255,8 @@
     <string name="book_total">Bénéfice</string>
     <string name="money_graph">Argent, deux dernières années</string>
     <string name="inflation">Inflation</string>
+    <string name="day_length">Durée du jour</string>
+    <string name="day_length_value">×%1$d</string>
 
     <!-- Autres ordres, et financer des industries -->
     <string name="go_via">Passer par</string>

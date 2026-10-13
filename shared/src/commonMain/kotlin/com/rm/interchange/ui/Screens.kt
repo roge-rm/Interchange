@@ -149,8 +149,9 @@ fun NewGameScreen(packs: List<Pack>, onStart: (NewGame, List<Pack>) -> Unit, onB
     var industries by remember { mutableIntStateOf(2) }
     var inflation by remember { mutableStateOf(true) }
     var weather by remember { mutableStateOf(true) }
+    var dayLength by remember { mutableIntStateOf(10) }
     var off by remember { mutableStateOf(emptySet<String>()) }
-    val settings = NewGame(width, height, seed, year, region, sea, hills, trees, towns, industries, inflation, weather)
+    val settings = NewGame(width, height, seed, year, region, sea, hills, trees, towns, industries, inflation, weather, dayLength)
     val chosen = packs.filter { it.id !in off }
     val clash = remember(chosen) {
         try {
@@ -230,6 +231,7 @@ fun NewGameScreen(packs: List<Pack>, onStart: (NewGame, List<Pack>) -> Unit, onB
         }, {
             StepSlider(stringResource(Res.string.industries), (0..3).toList(), industries, { townNames.getOrElse(it) { "$it" } }) { industries = it }
         })
+        StepSlider(stringResource(Res.string.day_length), NewGame.DAY_LENGTHS.toList(), dayLength, { stringResource(Res.string.day_length_value, it) }) { dayLength = it }
         Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             TogglePill(stringResource(Res.string.inflation), inflation, Modifier.weight(1f).fillMaxHeight()) { inflation = it }
             TogglePill(stringResource(Res.string.weather), weather, Modifier.weight(1f).fillMaxHeight()) { weather = it }

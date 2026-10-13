@@ -7,7 +7,6 @@ import androidx.compose.ui.graphics.PointMode
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.withTransform
-import com.rm.interchange.sim.Calendar
 import com.rm.interchange.sim.Front
 import com.rm.interchange.sim.World
 import com.rm.interchange.sim.skyAt
@@ -33,7 +32,7 @@ private fun slid(fronts: List<Front>, dayPart: Float): List<Front> = fronts.map 
  */
 internal fun DrawScope.drawSky(world: World, view: View, moving: Moving) {
     val weather = moving.now.weather ?: return
-    val dayPart = ((moving.now.tick % Calendar.TICKS_PER_DAY) + moving.between) / Calendar.TICKS_PER_DAY
+    val dayPart = ((moving.now.tick % world.dayTicks) + moving.between) / world.dayTicks
     val fronts = slid(weather.fronts, dayPart)
     val w = size.width
     val h = size.height

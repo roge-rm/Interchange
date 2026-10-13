@@ -106,7 +106,8 @@ internal fun World.loanCommand(company: Company, c: Command.Loan) {
 /** The end of each month: interest on the loan, and the month's money put in the history. */
 internal fun World.companiesMonth() {
     for (c in companies) {
-        val interest = c.loan * Prices.INTEREST / 10_000 / 12
+        // A month's interest for each work day in it, so a loan costs the same against the work done whatever the day length.
+        val interest = c.loan * Prices.INTEREST / 10_000 / 12 * settings.dayLength
         if (interest > 0) spend(c, Books.INTEREST, interest)
         c.history += longArrayOf(c.money, c.monthIn, c.monthOut)
         while (c.history.size > HISTORY_MONTHS) c.history.removeAt(0)
