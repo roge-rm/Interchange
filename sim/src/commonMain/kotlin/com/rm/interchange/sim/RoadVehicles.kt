@@ -285,7 +285,7 @@ private fun World.driveRoadVehicle(v: RoadVehicle, on: HashMap<Int, ArrayList<Ro
         v.brokenFor = Calendar.TICKS_PER_DAY
         v.slid = true
         v.speed = 0
-        news += News(News.SLID, v.id, tick)
+        tell(News.SLID, v.id)
         return
     }
     while (move > 0) {

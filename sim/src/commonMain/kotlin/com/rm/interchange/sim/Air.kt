@@ -569,7 +569,7 @@ private fun World.hold(v: Aircraft) {
         // Diverted: on to its next stop with what it carries.
         v.order = (v.order + 1) % v.orders.size
         v.state = Flight.CRUISE
-        news += News(News.DIVERTED, v.id, tick)
+        tell(News.DIVERTED, v.id)
     }
 }
 

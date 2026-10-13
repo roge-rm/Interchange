@@ -98,6 +98,11 @@ class World(val settings: NewGame, val roster: Roster = Roster.BASE, generate: B
 
     /** Recent news for the screen. Not saved; nothing in the game depends on it. */
     val news = ArrayList<News>()
+    /**
+     * Everything that's been news, oldest first, for the chronicle. Replaced whole when a story's added, never changed,
+     * so the screen can read it while the game runs.
+     */
+    @kotlin.concurrent.Volatile var chronicle: List<Story> = emptyList()
     /** Set when a town grows, so its summary for the screen is made again. Not part of the game. */
     var townsChanged = true
     internal var townViews: List<TownView> = emptyList()

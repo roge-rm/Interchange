@@ -362,7 +362,7 @@ private fun World.moveTrain(t: Train) {
         }
         if (!t.snowbound) {
             t.snowbound = true
-            news += News(News.SNOWBOUND, t.id, tick)
+            tell(News.SNOWBOUND, t.id)
         }
         t.speed = 0
         return

@@ -30,12 +30,12 @@ internal fun World.troubleMonth() {
         if (inTrouble(c)) c.trouble++ else c.trouble = 0
         when {
             c.trouble == 0 -> {}
-            c.id == 0 -> if (c.trouble % TROUBLE_WARN == 0) news += News(News.COMPANY_TROUBLE, c.id, tick)
-            c.trouble == TROUBLE_WARN -> news += News(News.COMPANY_TROUBLE, c.id, tick)
-            c.trouble == TROUBLE_FOR_SALE -> news += News(News.COMPANY_FOR_SALE, c.id, tick)
+            c.id == 0 -> if (c.trouble % TROUBLE_WARN == 0) tell(News.COMPANY_TROUBLE, c.id)
+            c.trouble == TROUBLE_WARN -> tell(News.COMPANY_TROUBLE, c.id)
+            c.trouble == TROUBLE_FOR_SALE -> tell(News.COMPANY_FOR_SALE, c.id)
             c.trouble >= TROUBLE_BANKRUPT -> {
                 dissolve(c)
-                news += News(News.COMPANY_BANKRUPT, c.id, tick)
+                tell(News.COMPANY_BANKRUPT, c.id)
             }
         }
     }
@@ -48,7 +48,7 @@ internal fun World.buyCompany(buyer: Company, c: Command.BuyCompany) {
     if (buyer.money < cost) return
     spend(buyer, Books.CONSTRUCTION, cost)
     takeOver(target, buyer)
-    news += News(News.COMPANY_BOUGHT, target.id or (buyer.id shl 8), tick)
+    tell(News.COMPANY_BOUGHT, target.id or (buyer.id shl 8))
 }
 
 /** Everything [from] has goes to [to], its money and debts with it, and [from] is gone. */

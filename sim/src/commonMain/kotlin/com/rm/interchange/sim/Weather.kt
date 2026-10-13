@@ -447,7 +447,7 @@ private fun World.avalanche(i: Int) {
         touched(x, y)
         if (track[best].toInt() != 0) buried = true
     }
-    if (buried) news += News(News.AVALANCHE, index(x, y), tick)
+    if (buried) tell(News.AVALANCHE, index(x, y))
 }
 
 /** Whether trees stand next to ([x], [y]) to break the wind. */

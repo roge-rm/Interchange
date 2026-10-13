@@ -124,7 +124,7 @@ fun App() {
 private enum class Screen { Title, NewGame, Playing }
 
 /** A window open over the screen. */
-private enum class Win { Menu, Load, Settings, Packs, Overlays, Finances, Industries, Companies, Town, Subsidies }
+private enum class Win { Menu, Load, Settings, Packs, Overlays, Finances, Industries, Companies, Town, Subsidies, Chronicle }
 
 @Composable
 private fun Root(settings: Settings) {
@@ -254,6 +254,7 @@ private fun Root(settings: Settings) {
                 onIndustries = { window = Win.Industries },
                 onCompanies = { window = Win.Companies },
                 onSubsidies = { window = Win.Subsidies },
+                onChronicle = { window = Win.Chronicle },
                 // Back to the title screen the game is saved and stopped; Continue loads it again.
                 onTitle = {
                     runner?.let { r ->
@@ -290,6 +291,7 @@ private fun Root(settings: Settings) {
             Win.Finances -> runner?.let { r -> FinanceWindow(r) { window = null } }
             Win.Industries -> runner?.game?.world?.let { w -> IndustriesWindow(w, { x, y -> goTo.value = x to y; window = null }, { runner?.request(it) }) { window = null } }
             Win.Companies -> runner?.game?.world?.let { w -> CompaniesWindow(w, { x, y -> goTo.value = x to y; window = null }, { runner?.request(it) }) { window = null } }
+            Win.Chronicle -> runner?.game?.world?.let { w -> ChronicleWindow(w, { x, y -> goTo.value = x to y; window = null }) { window = null } }
             Win.Subsidies -> runner?.game?.world?.let { w -> SubsidiesWindow(w, { x, y -> goTo.value = x to y; window = null }) { window = null } }
             Win.Town -> runner?.game?.world?.let { w -> w.towns.getOrNull(town)?.let { t -> TownWindow(w, t, { runner?.request(it) }) { window = null } } }
             null -> {}
@@ -917,7 +919,12 @@ private fun IndustryCard(world: World, ind: Industry, where: String, onClose: ()
 
 /** What a piece of news says. */
 @Composable
-private fun newsText(world: World, n: News): String {
+internal fun newsText(world: World, n: News): String {
+    if (n.kind == News.NEW_VEHICLE) {
+        val e = world.roster.getOrNull(n.about) ?: return ""
+        val lang = languageCode()
+        return stringResource(Res.string.news_new_vehicle, e.name(lang), e.type(lang).lowercase())
+    }
     if (n.kind in News.COMPANY_TROUBLE..News.COMPANY_BANKRUPT) {
         @Composable fun name(id: Int) = if (id == 0) stringResource(Res.string.your_company) else world.companies.getOrNull(id)?.name ?: ""
         return when (n.kind) {

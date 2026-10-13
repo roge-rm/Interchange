@@ -71,7 +71,22 @@ class News(val kind: Int, val about: Int, val tick: Long) {
         const val COMPANY_FOR_SALE = 15
         const val COMPANY_BOUGHT = 16
         const val COMPANY_BANKRUPT = 17
+        /** A vehicle goes on sale; [News.about] is its place in the roster. */
+        const val NEW_VEHICLE = 18
     }
+}
+
+/** A story in the chronicle: news of [kind] about [about], as [News] has them, in [year] and [month] (0 is January). */
+class Story(val year: Int, val month: Int, val kind: Int, val about: Int)
+
+/** The most stories the chronicle keeps; the oldest go first. */
+const val CHRONICLE_MOST = 4000
+
+/** Puts news of [kind] about [about] on the screen and in the chronicle. */
+internal fun World.tell(kind: Int, about: Int) {
+    news += News(kind, about, tick)
+    val story = Story(Calendar.year(startYear, day), Calendar.month(startYear, day), kind, about)
+    chronicle = (if (chronicle.size >= CHRONICLE_MOST) chronicle.drop(chronicle.size - CHRONICLE_MOST + 1) else chronicle) + story
 }
 
 /** An industry's size on the map, its layout turned by [turn]. */
@@ -274,11 +289,11 @@ internal fun World.industriesMonth() {
             val up = rng.below(100) < 25 + share / 2
             if (up && ind.level < MAX_LEVEL) {
                 ind.level = minOf(MAX_LEVEL, ind.level * 3 / 2)
-                news += News(News.PRODUCTION_UP, ind.id, tick)
+                tell(News.PRODUCTION_UP, ind.id)
             } else if (!up) {
                 if (ind.level <= MIN_LEVEL || year >= kind.until) closeIndustry(ind) else {
                     ind.level = maxOf(MIN_LEVEL, ind.level * 2 / 3)
-                    news += News(News.PRODUCTION_DOWN, ind.id, tick)
+                    tell(News.PRODUCTION_DOWN, ind.id)
                 }
             }
         }
@@ -297,7 +312,7 @@ internal fun World.industriesMonth() {
             var roll = rng.below(total)
             var i = 0
             while (roll >= kinds[i].weight(settings.region)) roll -= kinds[i++].weight(settings.region)
-            if (placeIndustry(kinds[i])) news += News(News.INDUSTRY_OPENS, industries.last().id, tick)
+            if (placeIndustry(kinds[i])) tell(News.INDUSTRY_OPENS, industries.last().id)
         }
     }
     news.removeAll { tick - it.tick > NEWS_TICKS }
@@ -323,12 +338,12 @@ internal fun World.fundIndustry(company: Company, c: Command.FundIndustry) {
     val prospect = kind.produces.any { it > 0 } && kind.accepts == 0
     if (prospect && rng.below(PROSPECT_FAILS) == 0) {
         spend(company, Books.CONSTRUCTION, cost)
-        news += News(News.PROSPECTING_FAILED, kind.id, tick)
+        tell(News.PROSPECTING_FAILED, kind.id)
         return
     }
     if (!placeIndustry(kind)) return
     spend(company, Books.CONSTRUCTION, cost)
-    news += News(News.INDUSTRY_OPENS, industries.last().id, tick)
+    tell(News.INDUSTRY_OPENS, industries.last().id)
 }
 
 /** Shuts [ind] down: its tiles cleared, its stations no longer reaching it. */
@@ -340,7 +355,7 @@ internal fun World.closeIndustry(ind: Industry) {
         touched(tx, ty)
     }
     catchmentDirty = true
-    news += News(News.INDUSTRY_CLOSES, ind.id, tick)
+    tell(News.INDUSTRY_CLOSES, ind.id)
 }
 
 /** An industry's level in sixteenths: at most 4 times and at least a quarter of its kind's. */

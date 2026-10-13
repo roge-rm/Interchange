@@ -16,7 +16,7 @@ package com.rm.interchange.sim
  */
 object Save {
     private val MAGIC = "ICHG".encodeToByteArray()
-    const val VERSION = 23
+    const val VERSION = 24
 
     fun write(world: World): ByteArray {
         val w = ByteWriter(world.width * world.height * 6 + 4096)
@@ -141,6 +141,9 @@ object Save {
             }
             w.uvar(subsidies.size.toLong())
             for (s in subsidies) { w.int(s.cargo); w.int(s.from); w.int(s.to); w.bool(s.towns); w.int(s.company); w.int(s.months) }
+            val told = chronicle
+            w.uvar(told.size.toLong())
+            for (t in told) { w.int(t.year); w.int(t.month); w.int(t.kind); w.int(t.about) }
         }
         val body = Squeeze.pack(w.toByteArray())
         val out = ByteWriter(body.size + 16)
@@ -365,6 +368,9 @@ object Save {
             }
             if (version >= 22) repeat(r.uvar().toInt().also { if (it > 100_000) throw BadData("too many subsidies") }) {
                 subsidies += Subsidy(r.int(), r.int(), r.int(), r.bool()).also { it.company = r.int(); it.months = r.int() }
+            }
+            if (version >= 24) chronicle = List(r.uvar().toInt().also { if (it > CHRONICLE_MOST) throw BadData("too long a chronicle") }) {
+                Story(r.int(), r.int(), r.int(), r.int())
             }
         }
         // Signal blocks and who's on which tile are worked out afresh before the next move.

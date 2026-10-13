@@ -131,6 +131,12 @@ internal fun World.companiesYear() {
         c.thisYear.copyInto(c.lastYear)
         c.thisYear.fill(0)
     }
+    // What goes on sale this year, engines and the vehicles that run on their own, not wagons.
+    val year = Calendar.year(startYear, day)
+    for (e in roster.engines) {
+        if (!e.enabled || e.from != year || e.kind == VehicleKind.WAGON || e.kind == VehicleKind.TENDER) continue
+        tell(News.NEW_VEHICLE, e.id)
+    }
     if (settings.inflation && Calendar.year(startYear, day) <= startYear + INFLATION_YEARS) {
         costScale += costScale * 2 / 100
         payScale += payScale * 15 / 1000

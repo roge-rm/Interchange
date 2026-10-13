@@ -49,7 +49,7 @@ internal fun World.trainsDay() {
             t.route = null
         }
         // Once, on the calendar day it comes of age, though this runs each work day.
-        if (day - t.built == t.engineInfo.life * 365 && tick % dayTicks == 0L) news += News(News.TRAIN_OLD, t.id, tick)
+        if (day - t.built == t.engineInfo.life * 365 && tick % dayTicks == 0L) tell(News.TRAIN_OLD, t.id)
     }
 }
 

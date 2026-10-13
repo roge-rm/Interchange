@@ -430,7 +430,7 @@ fun OverlaysWindow(settings: Settings, onClose: () -> Unit) {
 
 /** The in-game menu: save, load, start afresh, settings, or back to the title screen. */
 @Composable
-fun MenuWindow(saved: Boolean, onSave: () -> Unit, onLoad: () -> Unit, onNew: () -> Unit, onSettings: () -> Unit, onIndustries: () -> Unit, onCompanies: () -> Unit, onSubsidies: () -> Unit, onTitle: () -> Unit, onClose: () -> Unit) {
+fun MenuWindow(saved: Boolean, onSave: () -> Unit, onLoad: () -> Unit, onNew: () -> Unit, onSettings: () -> Unit, onIndustries: () -> Unit, onCompanies: () -> Unit, onSubsidies: () -> Unit, onChronicle: () -> Unit, onTitle: () -> Unit, onClose: () -> Unit) {
     Window(stringResource(Res.string.menu), onClose, Glyph.Menu) {
         BigButton(stringResource(if (saved) Res.string.saved else Res.string.save), primary = !saved, glyph = Glyph.Save, onClick = onSave)
         BigButton(stringResource(Res.string.load), glyph = Glyph.Folder, onClick = onLoad)
@@ -438,6 +438,7 @@ fun MenuWindow(saved: Boolean, onSave: () -> Unit, onLoad: () -> Unit, onNew: ()
         BigButton(stringResource(Res.string.industries), glyph = Glyph.Layers, onClick = onIndustries)
         BigButton(stringResource(Res.string.companies), glyph = Glyph.Home, onClick = onCompanies)
         BigButton(stringResource(Res.string.subsidies), glyph = Glyph.Package, onClick = onSubsidies)
+        BigButton(stringResource(Res.string.chronicle), glyph = Glyph.Folder, onClick = onChronicle)
         BigButton(stringResource(Res.string.settings), glyph = Glyph.Gear, onClick = onSettings)
         BigButton(stringResource(Res.string.title_screen), glyph = Glyph.Home, onClick = onTitle)
     }

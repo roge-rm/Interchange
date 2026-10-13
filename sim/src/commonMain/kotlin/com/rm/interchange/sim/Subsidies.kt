@@ -41,7 +41,7 @@ internal fun World.subsidiesMonth() {
     val offer = if (rng.below(2) == 0) passengerSubsidy() else freightSubsidy()
     if (offer != null) {
         subsidies += offer
-        news += News(News.SUBSIDY_OFFERED, subsidies.size - 1, tick)
+        tell(News.SUBSIDY_OFFERED, subsidies.size - 1)
     }
 }
 
@@ -102,7 +102,7 @@ internal fun World.subsidised(company: Int, cargo: Int, from: Station, to: Stati
         if (s.company < 0) {
             s.company = company
             s.months = SUBSIDY_MONTHS
-            news += News(News.SUBSIDY_AWARDED, i, tick)
+            tell(News.SUBSIDY_AWARDED, i)
         }
         return paid * SUBSIDY_PAYS
     }

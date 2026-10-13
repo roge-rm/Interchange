@@ -123,7 +123,7 @@ internal fun World.trackDay() {
             EVENT_KINK -> kinks[i] = KINK_DAYS
             EVENT_WASHOUT -> if (!closed.containsKey(i)) {
                 closed[i] = Closure.WASHOUT shl 16 or (WASHOUT_DAYS_FROM + rng.below(6))
-                news += News(News.WASHOUT, i, tick)
+                tell(News.WASHOUT, i)
             }
             EVENT_FIRE -> if (u(fire[i]) == 0) {
                 fire[i] = FIRE_DAYS.toByte()
@@ -144,7 +144,7 @@ internal fun World.trackDay() {
             val n = index(x + dx, y + dy)
             if (track[n].toInt() != 0 && !closed.containsKey(n)) {
                 closed[n] = Closure.FIRE shl 16 or (FIRE_DAYS + 2)
-                news += News(News.FIRE, n, tick)
+                tell(News.FIRE, n)
             }
         }
     }
