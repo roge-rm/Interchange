@@ -268,7 +268,9 @@ def colour_light(m, red):
 # ---- track --------------------------------------------------------------------------------
 #
 # Built in the tile's own terms, from its corner: the piece runs between the middles of two of the tile's
-# edges, in game (u, v), lifted to the shape it lies on. Rail ends land exactly on the edges, so pieces join up.
+# edges, in game (u, v), lifted to the shape it lies on. Each piece's ends are cut along the tile's edges, and its
+# ballast and rails meet each edge at the same points whatever way it runs, as OpenTTD's do, so a corner piece joins
+# a straight one, or the next corner piece, with no step or gap. A corner piece is narrower across for it.
 
 EDGE_MID = {"XM": (0.0, 0.5), "XP": (1.0, 0.5), "YM": (0.5, 0.0), "YP": (0.5, 1.0)}
 PIECE_EDGES = {"X": ("XM", "XP"), "Y": ("YM", "YP"), "N": ("YM", "XM"), "E": ("YM", "XP"), "S": ("XP", "YP"), "W": ("XM", "YP")}
@@ -279,8 +281,20 @@ def _height(offs, u, v):
     return (t * (1 - u) + r * u) * (1 - v) + (l * (1 - u) + b * u) * v
 
 
-def _strip(m, a, b, offs, half_top, half_bottom, z0, z1, mat, t0=0.0, t1=1.0):
-    """A prism along a piece from t0 to t1, its cross section a trapezoid half_bottom wide at z0 and half_top at z1 steps above the ground."""
+# How far past each end the unseen track that casts shadows goes, in tiles.
+GHOST = 0.35
+
+
+def _edge_dir(edge, n):
+    """Along tile edge [edge], the way that's to the left of a piece whose left normal is [n]."""
+    d = (0.0, 1.0) if edge in ("XM", "XP") else (1.0, 0.0)
+    return d if d[0] * n[0] + d[1] * n[1] > 0 else (-d[0], -d[1])
+
+
+def _strip(m, a, b, offs, half_top, half_bottom, z0, z1, mat, t0=0.0, t1=1.0, ends=None, caps=True):
+    """A prism along a piece from t0 to t1, its cross section a trapezoid half_bottom wide at z0 and half_top at z1 steps
+    above the ground. With [ends], two ways along the edges at a and b, its ends are cut along them and its widths
+    measured along them there. Without [caps] its ends are left open, for a rail that runs on into the next piece's."""
     ax, ay = a
     bx, by = b
     length = math.hypot(bx - ax, by - ay)
@@ -293,16 +307,18 @@ def _strip(m, a, b, offs, half_top, half_bottom, z0, z1, mat, t0=0.0, t1=1.0):
         return bm.verts.new(rig.game(u, v, _height(offs, u, v) + lift))
 
     ring = []
-    for (u, v) in ((sx, sy), (ex, ey)):
+    for k, (u, v) in enumerate(((sx, sy), (ex, ey))):
+        dx, dy = ends[k] if ends else (nx, ny)
         ring.append([
-            vert(u + nx * half_bottom, v + ny * half_bottom, z0),
-            vert(u + nx * half_top, v + ny * half_top, z1),
-            vert(u - nx * half_top, v - ny * half_top, z1),
-            vert(u - nx * half_bottom, v - ny * half_bottom, z0),
+            vert(u + dx * half_bottom, v + dy * half_bottom, z0),
+            vert(u + dx * half_top, v + dy * half_top, z1),
+            vert(u - dx * half_top, v - dy * half_top, z1),
+            vert(u - dx * half_bottom, v - dy * half_bottom, z0),
         ])
     s, e = ring
-    bm.faces.new(list(reversed(s)))
-    bm.faces.new(e)
+    if caps:
+        bm.faces.new(list(reversed(s)))
+        bm.faces.new(e)
     for i in range(4):
         j = (i + 1) % 4
         bm.faces.new((s[i], s[j], e[j], e[i]))
@@ -336,26 +352,46 @@ def gravel():
 
 def track(m, piece, shape):
     offs = [(shape >> i) & 1 for i in range(4)]
-    a = EDGE_MID[PIECE_EDGES[piece][0]]
-    b = EDGE_MID[PIECE_EDGES[piece][1]]
+    ea, eb = PIECE_EDGES[piece]
+    a = EDGE_MID[ea]
+    b = EDGE_MID[eb]
     length = math.hypot(b[0] - a[0], b[1] - a[1])
+    n = (-(b[1] - a[1]) / length, (b[0] - a[0]) / length)
+    ends = (_edge_dir(ea, n), _edge_dir(eb, n))
+    # How much narrower across the piece it is than along the edges it meets: 1 straight, 0.71 for a corner piece.
+    k = abs(ends[0][0] * n[0] + ends[0][1] * n[1])
     tie = material("tie", "#4e3626", rough=0.9)
     plate = material("tie plate", "#3e3c3a", metal=0.6, rough=0.6)
     rail = material("rail", "#6a6662", metal=0.9, rough=0.45)
     head = material("rail head", "#d8d4cc", metal=1.0, rough=0.2)
-    _strip(m, a, b, offs, 0.17, 0.23, 0.0, 0.14, gravel())
+    _strip(m, a, b, offs, 0.17, 0.23, 0.0, 0.14, gravel(), ends=ends)
     ties = max(4, round(length * 9))
     for i in range(ties):
         t = (i + 0.5) / ties
         dt = 0.024 / length
-        _strip(m, a, b, offs, 0.165, 0.165, 0.12, 0.2, tie, t - dt, t + dt)
+        _strip(m, a, b, offs, 0.165 * k, 0.165 * k, 0.12, 0.2, tie, t - dt, t + dt)
         for side in (-1, 1):
             # Plates under each rail, a touch wider than it.
-            _plate_strip(m, a, b, offs, side * 0.095, 0.022, 0.2, 0.225, plate, t - dt * 0.8, t + dt * 0.8)
+            _plate_strip(m, a, b, offs, side * 0.095 * k, 0.022, 0.2, 0.225, plate, t - dt * 0.8, t + dt * 0.8)
+    # The track going on past each end, which the camera doesn't see but which casts its shadow, so the shade of the
+    # rails and ballast runs on unbroken into the next piece.
+    for (p, q, e) in ((a, b, ends[0]), (b, a, ends[1])):
+        dx, dy = (p[0] - q[0]) / length, (p[1] - q[1]) / length
+        far = (p[0] + dx * GHOST, p[1] + dy * GHOST)
+        shade = [_strip(m, p, far, offs, 0.17, 0.23, 0.0, 0.14, gravel(), ends=(e, e))]
+        for side in (-1, 1):
+            r0 = (p[0] + e[0] * side * 0.095, p[1] + e[1] * side * 0.095)
+            r1 = (far[0] + e[0] * side * 0.095, far[1] + e[1] * side * 0.095)
+            shade.append(_strip(m, r0, r1, offs, 0.012, 0.012, 0.225, 0.42, rail, ends=(e, e)))
+        for obj in shade:
+            obj.visible_camera = False
     for side in (-1, 1):
-        _plate_strip(m, a, b, offs, side * 0.095, 0.012, 0.225, 0.26, rail, 0.0, 1.0)
-        _plate_strip(m, a, b, offs, side * 0.095, 0.004, 0.26, 0.36, rail, 0.0, 1.0)
-        _plate_strip(m, a, b, offs, side * 0.095, 0.009, 0.36, 0.42, head, 0.0, 1.0)
+        # Each rail from where it meets one edge to where it meets the other.
+        ra = (a[0] + ends[0][0] * side * 0.095, a[1] + ends[0][1] * side * 0.095)
+        rb = (b[0] + ends[1][0] * side * 0.095, b[1] + ends[1][1] * side * 0.095)
+        _strip(m, ra, rb, offs, 0.012, 0.012, 0.225, 0.26, rail, ends=ends, caps=False)
+        _strip(m, ra, rb, offs, 0.004, 0.004, 0.26, 0.36, rail, ends=ends, caps=False)
+        _strip(m, ra, rb, offs, 0.009, 0.009, 0.36, 0.42, head, ends=ends, caps=False)
 
 
 def _plate_strip(m, a, b, offs, across, half, z0, z1, mat, t0, t1):
