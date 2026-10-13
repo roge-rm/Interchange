@@ -265,7 +265,7 @@ private fun World.driveRoadVehicle(v: RoadVehicle, on: HashMap<Int, ArrayList<Ro
         return
     }
     // Ice under summer tires: now and then it slides off into the ditch.
-    if (slippery(tile) && v.tires == Tires.SUMMER && v.speed > SLIDE_SPEED && rng.below(SLIDE_ODDS) == 0) {
+    if (slippery(tile) && v.tires == Tires.SUMMER && v.info.traction != Traction.HORSE && v.speed > SLIDE_SPEED && rng.below(SLIDE_ODDS) == 0) {
         v.brokenFor = Calendar.TICKS_PER_DAY
         v.slid = true
         v.speed = 0
@@ -377,12 +377,12 @@ private fun World.trainNear(tile: Int): Boolean {
 }
 
 /** The fastest [v] may go on [tile]: its own top speed, the road's surface, snow and ice for its tires, potholes. */
-private fun World.roadLimit(v: RoadVehicle, tile: Int): Int {
+internal fun World.roadLimit(v: RoadVehicle, tile: Int): Int {
     var kmh = minOf(v.info.speed, Surface.SPEED[surfaceAt(tile)])
     if (mud(tile) > 60 && surfaceAt(tile) <= Surface.GRAVEL) kmh = minOf(kmh, MUD_KMH)
     val snow = weather.snow[tile].toInt() and 255
     if (slippery(tile) || snow >= 5) kmh = minOf(kmh, when (v.tires) { Tires.CHAINS -> 40; Tires.WINTER -> 55; else -> 35 })
-    if (snow >= DEEP_ROAD_SNOW && v.info.plow == Plows.NONE) kmh = minOf(kmh, 10)
+    if (snow >= DEEP_ROAD_SNOW && v.info.plow == Plows.NONE && v.info.traction != Traction.HORSE) kmh = minOf(kmh, 10)
     val c = condition[tile].toInt() and 255
     if (track[tile].toInt() == 0 && c < POTHOLES) kmh = minOf(kmh, POTHOLE_KMH)
     if (crossing(tile)) kmh = minOf(kmh, 40)
@@ -410,7 +410,7 @@ private fun World.nextRoadOrder(v: RoadVehicle) {
 
 /** Changes [v]'s tires for the season in its garage, if it's set to and they're to be had, for what a set costs. */
 private fun World.fitTires(v: RoadVehicle) {
-    if (!v.seasonalTires) return
+    if (!v.seasonalTires || v.info.traction == Traction.HORSE) return
     val want = wantedTires()
     if (want == v.tires) return
     val c = companies.getOrNull(v.owner) ?: return

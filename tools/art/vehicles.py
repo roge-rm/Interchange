@@ -373,6 +373,12 @@ ROSTER = [
     ("coach_streamline", 14, lambda f: coach(f, L(14), True)),
     ("well_car", 14, lambda f: flatcar(f, L(14))),
     # Road vehicles, drawn plain until their Blender models are there.
+    ("horse_omnibus", 7, lambda f: coach(f, L(7), False)),
+    ("stagecoach", 7, lambda f: coach(f, L(7), False)),
+    ("mail_coach", 6, lambda f: coach(f, L(6), False)),
+    ("freight_wagon", 7, lambda f: boxcar(f, L(7), False)),
+    ("red_river_cart", 4, lambda f: flatcar(f, L(4))),
+    ("horsecar", 7, lambda f: coach(f, L(7), False)),
     ("motor_bus", 6, lambda f: coach(f, L(6), True)),
     ("brill_bus", 7, lambda f: coach(f, L(7), True)),
     ("new_look", 8, lambda f: coach(f, L(8), True)),

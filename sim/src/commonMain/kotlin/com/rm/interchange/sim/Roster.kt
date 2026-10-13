@@ -70,12 +70,16 @@ object Plows {
     val NAMES = listOf("wedge", "rotary")
 }
 
-/** How an engine is driven. Electric ones need wires over the track. */
+/**
+ * How an engine is driven. Electric ones need wires over the track. Horses pull road vehicles: shod, they need no
+ * winter tires, and in winter their vehicles go on sleigh runners, so deep snow doesn't hold them up.
+ */
 object Traction {
     const val STEAM = 0
     const val DIESEL = 1
     const val ELECTRIC = 2
-    val NAMES = listOf("steam", "diesel", "electric")
+    const val HORSE = 3
+    val NAMES = listOf("steam", "diesel", "electric", "horse")
 }
 
 /**

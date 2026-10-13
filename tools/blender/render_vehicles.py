@@ -21,6 +21,7 @@ import rig  # noqa: E402
 import steam  # noqa: E402
 import diesel  # noqa: E402
 import roadcars  # noqa: E402
+import horses  # noqa: E402
 import ships  # noqa: E402
 import aircraft  # noqa: E402
 
@@ -79,6 +80,12 @@ MODELS = {
     "charger": (14, lambda m: diesel.charger(m, L(14))),
     "coach_streamline": (14, lambda m: cars.coach_streamline(m, L(14))),
     "well_car": (14, lambda m: cars.well_car(m, L(14))),
+    "horse_omnibus": (7, lambda m: horses.omnibus(m, L(7))),
+    "stagecoach": (7, lambda m: horses.coach(m, L(7), False)),
+    "mail_coach": (6, lambda m: horses.coach(m, L(6), True)),
+    "freight_wagon": (7, lambda m: horses.freight_wagon(m, L(7))),
+    "red_river_cart": (4, lambda m: horses.red_river_cart(m, L(4))),
+    "horsecar": (7, lambda m: horses.horsecar(m, L(7))),
     "motor_bus": (6, lambda m: roadcars.bus(m, L(6), "motor")),
     "brill_bus": (7, lambda m: roadcars.bus(m, L(7), "brill")),
     "new_look": (8, lambda m: roadcars.bus(m, L(8), "newlook")),
@@ -119,7 +126,7 @@ for _key, (_n, _build) in list(SHIPS.items()) + list(AIRCRAFT.items()):
 
 
 # Road vehicles stand alone; everything else runs coupled in trains.
-ROAD = {"motor_bus", "brill_bus", "new_look", "low_floor", "electric_bus", "highway_coach", "mail_truck", "stake_truck", "dump_truck",
+ROAD = {"horse_omnibus", "stagecoach", "mail_coach", "freight_wagon", "red_river_cart", "horsecar", "motor_bus", "brill_bus", "new_look", "low_floor", "electric_bus", "highway_coach", "mail_truck", "stake_truck", "dump_truck",
         "tank_truck", "log_truck", "cattle_truck", "semi_van", "plow_truck", "streetcar", "pcc", "clrv", "flexity",
         "step_van", "electric_van", "flatbed_truck", "tandem_dump", "quad_dump", "fuel_truck", "tandem_plow", "highway_tractor",
         "aero_tractor", "tanker_train", "grain_train", "cattle_liner", "logger"}

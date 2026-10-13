@@ -17,6 +17,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.unit.dp
+import com.rm.interchange.sim.Traction
 import com.rm.interchange.sim.VehicleKind
 import com.rm.interchange.sim.Command
 import com.rm.interchange.sim.Order
@@ -94,8 +95,9 @@ fun RoadVehicleCard(view: WorldView, roster: Roster, v: RoadVehicleView, addingS
         if (v.capacity > 0) Text(stringResource(Res.string.cargo_load, names.getOrElse(v.carries) { "" }, v.load, v.capacity), color = c.text, fontSize = 13.sp)
         Text(stringResource(Res.string.profit_line, money(v.profitThisYear), money(v.profitLastYear)), color = if (v.profitThisYear < 0) c.bad else c.textDim, fontSize = 13.sp)
         Text(stringResource(Res.string.age_line_road, v.age, v.reliability), color = c.textDim, fontSize = 13.sp)
+        val horses = roster[v.model].traction == Traction.HORSE
         val tires = stringArrayResource(Res.array.tire_kinds)
-        Text(stringResource(Res.string.tires_line, tires.getOrElse(v.tires) { "" }), color = c.textDim, fontSize = 13.sp)
+        if (!horses) Text(stringResource(Res.string.tires_line, tires.getOrElse(v.tires) { "" }), color = c.textDim, fontSize = 13.sp)
         FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             for ((i, o) in v.orders.withIndex()) {
                 Chip("${i + 1}. ${stationName(view, Order.station(o))}", i == v.order % v.orders.size) {
@@ -114,7 +116,7 @@ fun RoadVehicleCard(view: WorldView, roster: Roster, v: RoadVehicleView, addingS
                 ActionButton(stringResource(Res.string.sell)) { send(Command.RoadOrder(0, v.id, Command.TrainOrder.SELL)) }
             }
             Chip(stringResource(Res.string.servicing), v.service) { send(Command.RoadOrder(0, v.id, Command.TrainOrder.SERVICE)) }
-            Chip(stringResource(Res.string.seasonal_tires), v.seasonalTires) { send(Command.RoadOrder(0, v.id, Command.RoadOrder.TIRES)) }
+            if (!horses) Chip(stringResource(Res.string.seasonal_tires), v.seasonalTires) { send(Command.RoadOrder(0, v.id, Command.RoadOrder.TIRES)) }
         }
     }
 }

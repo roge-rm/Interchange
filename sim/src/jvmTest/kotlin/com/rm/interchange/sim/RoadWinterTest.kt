@@ -39,6 +39,24 @@ class RoadWinterTest {
     }
 
     @Test
+    fun horsesGoOnRunnersThroughDeepSnow() {
+        val w = World(64, 64, 1, startYear = 1850)
+        for (i in w.corners.indices) w.corners[i] = 3
+        w.companies[0].money = 1_000_000
+        w.apply(Command.Road(0, 5, 20, 40, 20, Surface.DIRT, remove = false))
+        w.apply(Command.Road(0, 5, 20, 5, 22, Surface.DIRT, remove = false))
+        w.apply(Command.Garage(0, 5, 23, Track.YM))
+        val model = w.roster.availableRoad(1850).first { it.key == "base:horse_omnibus" }
+        assertEquals(Traction.HORSE, model.traction)
+        w.apply(Command.BuyRoadVehicle(0, 0, model.id))
+        val v = w.roadVehicles[0]!!
+        val clear = w.index(20, 20)
+        val deep = w.index(21, 20)
+        w.weather.snow[deep] = 80
+        assertEquals(w.roadLimit(v, clear), w.roadLimit(v, deep))
+    }
+
+    @Test
     fun trucksGoHalfLoadedInTheThawAndTiresChangeWithTheSeason() {
         val w = World(NewGame(64, 64, 1, 1960, Region.MIXED, towns = 0, industries = 0))
         // Into early spring.
