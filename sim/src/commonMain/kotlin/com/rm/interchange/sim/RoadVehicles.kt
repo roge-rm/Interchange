@@ -616,6 +616,6 @@ const val ROAD_WEAR_ODDS = 4000
 const val U_TURN = 40
 const val MAX_ROAD_LOOK = 100_000
 /** A set of tires, in dollars before inflation. */
-const val TIRE_COST = 120L
+const val TIRE_COST = 40L
 /** A tram rail in a road tile's [World.roadKind]. */
 const val TRAM = 16

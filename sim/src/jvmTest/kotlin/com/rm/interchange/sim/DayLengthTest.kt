@@ -27,10 +27,10 @@ class DayLengthTest {
             w.apply(Command.BuyRoadVehicle(0, 0, w.roster.engines.first { it.key == "base:freight_wagon" }.id))
             w.apply(Command.RoadOrder(0, 0, Command.TrainOrder.START_STOP))
             val before = w.companies[0].thisYear[Books.RUNNING]
-            repeat(Calendar.TICKS_PER_DAY * 20) { w.step() }
+            repeat(Calendar.TICKS_PER_DAY * 360) { w.step() }
             before - w.companies[0].thisYear[Books.RUNNING]
         }
-        // Twenty work days cost the same whether that's twenty calendar days or two.
+        // 360 work days cost the same whether that's 360 calendar days or 36.
         assertTrue(spent[0] > 0)
         assertEquals(spent[0], spent[1])
     }

@@ -161,7 +161,7 @@ fun World.nextHop(from: Int, dest: Int): Int {
 }
 
 /** Adds [n] to station [s]'s cargo [c] for [dest], with the lot from the same place already waiting if there is one. */
-private fun World.addWaiting(s: Station, c: Int, dest: Int, origin: Int, n: Int, since: Long, credit: Long = 0) {
+internal fun World.addWaiting(s: Station, c: Int, dest: Int, origin: Int, n: Int, since: Long, credit: Long = 0) {
     if (n <= 0) return
     val same = s.cargo[c].firstOrNull { it.dest == dest && it.origin == origin }
     if (same != null) {
@@ -441,12 +441,13 @@ internal fun World.loadAt(t: Carrier, s: Station) {
 
 /**
  * What [n] of cargo [c] pays carried from [from] to [to] in [days]: by the
- * distance between the stations, full if it came as fast as that cargo needs,
- * then less each day after, down to a third.
+ * distance between the stations, full if it came at a tile a day or better
+ * (about 40 km/h) and within that cargo's grace, then less each day after,
+ * down to a third.
  */
 fun fare(c: Int, n: Int, from: Station, to: Station, days: Int): Long {
     val dist = kotlin.math.abs(from.signX - to.signX) + kotlin.math.abs(from.signY - to.signY)
-    val quick = dist / 2 + Cargo.GRACE[c]
+    val quick = dist + Cargo.GRACE[c]
     val share = (100 - maxOf(0, days - quick) * Cargo.DECAY[c]).coerceAtLeast(33)
     return n.toLong() * dist * Cargo.RATE[c] * share / 10_000
 }
