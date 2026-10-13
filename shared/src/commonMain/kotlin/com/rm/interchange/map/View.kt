@@ -6,6 +6,7 @@ import com.rm.interchange.sim.CORNER_S
 import com.rm.interchange.sim.CORNER_W
 import com.rm.interchange.sim.World
 import com.rm.interchange.sim.surfaceHeight
+import kotlin.math.abs
 import kotlin.math.floor
 
 /**
@@ -144,6 +145,35 @@ class View(val mapWidth: Int, val mapHeight: Int) {
         const val MAX_HALF_WIDTH = 192f
     }
 }
+
+/**
+ * The tile whose building is under [picked]'s screen point: the picked tile, or one in front of it whose building
+ * reaches up over it, the frontmost first. [stands] says which tiles have one. Picking goes by the land, so a tap on a
+ * roof would otherwise land on the tile behind. Null if none is there.
+ */
+fun View.buildingAt(world: World, picked: Pick, w: Float, hgt: Float, stands: (Int) -> Boolean): Int? {
+    val vx0 = floor(toViewX(picked.x, picked.y)).toInt()
+    val vy0 = floor(toViewY(picked.x, picked.y)).toInt()
+    for ((dx, dy) in FRONT) {
+        val vx = vx0 + dx
+        val vy = vy0 + dy
+        if (vx < 0 || vy < 0 || vx >= viewWidth || vy >= viewHeight) continue
+        val tx = worldX(vx, vy)
+        val ty = worldY(vx, vy)
+        val i = world.index(tx, ty)
+        if (!stands(i)) continue
+        val cx = screenX(vx + 0.5f, vy + 0.5f, w)
+        val ground = screenY(vx + 0.5f, vy + 0.5f, groundHeight(world, tx + 0.5f, ty + 0.5f), hgt)
+        if (abs(picked.screenX - cx) <= halfWidth && picked.screenY <= ground + halfHeight && picked.screenY >= ground - BUILDING_TALL * halfWidth) return i
+    }
+    return null
+}
+
+/** The view tiles a building could reach up over a picked tile from, frontmost first, the picked tile last. */
+private val FRONT = listOf(2 to 2, 2 to 1, 1 to 2, 1 to 1, 1 to 0, 0 to 1, 0 to 0)
+
+/** How tall a building can be, in half tile widths: the control tower's cab. */
+private const val BUILDING_TALL = 1.6f
 
 /** A world point picked on the land, in tiles, and the screen point it was picked at. */
 class Pick(val x: Float, val y: Float, val screenX: Float = 0f, val screenY: Float = 0f) {

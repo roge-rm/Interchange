@@ -17,6 +17,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.unit.dp
+import com.rm.interchange.sim.VehicleKind
 import com.rm.interchange.sim.Command
 import com.rm.interchange.sim.Order
 import com.rm.interchange.sim.RoadVehicleView
@@ -38,6 +39,7 @@ fun GarageCard(view: WorldView, roster: Roster, depot: Int, year: Int, funds: Lo
     var cargo by remember { mutableIntStateOf(-1) }
     val names = stringArrayResource(Res.array.cargoes)
     Card(stringResource(Res.string.garage), onClose, modifier) {
+        if (models.isEmpty()) NoneOnSale(roster, VehicleKind.ROAD, year)
         FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             for (e in models) Chip(stringResource(Res.string.engine_speed, e.name(lang), e.type(lang), e.speed), e.id == model) { model = e.id; cargo = -1 }
         }

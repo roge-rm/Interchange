@@ -323,6 +323,8 @@
     <string name="garage">Garage</string>
     <string name="road_vehicle_n">Véhicule %1$d</string>
     <string name="needs_tram_rails">Circule seulement sur des rails de tramway</string>
+    <string name="none_on_sale_until">Aucun en vente pour l'instant. Les premiers arrivent en %1$d.</string>
+    <string name="none_on_sale">Aucun en vente ici</string>
     <string name="in_the_ditch">Sorti de la route, attend une dépanneuse</string>
     <string name="in_garage">Au garage</string>
     <string name="going_to_garage">En route pour le garage, %1$d km/h</string>

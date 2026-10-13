@@ -169,6 +169,9 @@ class Roster(
     /** The road vehicles on sale in [year]. */
     fun availableRoad(year: Int) = availableOf(VehicleKind.ROAD, year)
 
+    /** The first year anything of [kind] is on sale, or null if nothing ever is. */
+    fun firstOf(kind: VehicleKind): Int? = engines.filter { it.enabled && it.kind == kind }.minOfOrNull { it.from }
+
     /** What of [kind] is on sale in [year]. */
     fun availableOf(kind: VehicleKind, year: Int) = engines.filter { it.enabled && it.kind == kind && year >= it.from && year < it.until }
 

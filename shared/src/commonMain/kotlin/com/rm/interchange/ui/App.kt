@@ -54,6 +54,7 @@ import com.rm.interchange.sim.canalCost
 import com.rm.interchange.sim.bridgeCost
 import com.rm.interchange.sim.roadCost
 import com.rm.interchange.map.View
+import com.rm.interchange.map.buildingAt
 import com.rm.interchange.server.Game
 import com.rm.interchange.server.GameThread
 import com.rm.interchange.map.VehicleSource
@@ -429,6 +430,10 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
                 when (tool) {
                     Tool.Inspect -> {
                         val key = vehicleAt(world, view, moving(runner), at.screenX, at.screenY, mapSize.width, mapSize.height)
+                        val tile = view.buildingAt(world, at, mapSize.width, mapSize.height) {
+                            world.depotTiles.containsKey(it) || world.stationTiles.containsKey(it) || world.roadStops.containsKey(it) ||
+                                world.docks.containsKey(it) || world.airportTiles.containsKey(it)
+                        } ?: tile
                         selected = when {
                             key != NO_VEHICLE && key >= 0 -> Selection.Train(key / 256)
                             key != NO_VEHICLE && VehicleView.craft(key, VehicleView.SHIP) >= 0 -> Selection.Ship(VehicleView.craft(key, VehicleView.SHIP))

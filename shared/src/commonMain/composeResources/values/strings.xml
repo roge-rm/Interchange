@@ -340,6 +340,8 @@
     <string name="garage">Garage</string>
     <string name="road_vehicle_n">Vehicle %1$d</string>
     <string name="needs_tram_rails">Runs only on tram rails</string>
+    <string name="none_on_sale_until">None on sale yet. The first come in %1$d.</string>
+    <string name="none_on_sale">None on sale here</string>
     <string name="in_the_ditch">Slid off the road, waiting for a tow</string>
     <string name="in_garage">In the garage</string>
     <string name="going_to_garage">Going to the garage, %1$d km/h</string>

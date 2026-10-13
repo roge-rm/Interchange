@@ -42,6 +42,16 @@ fun shipName(v: ShipView): String = v.name.takeIf { it.isNotEmpty() } ?: stringR
 @Composable
 fun aircraftName(v: AircraftView): String = v.name.takeIf { it.isNotEmpty() } ?: stringResource(Res.string.aircraft_n, v.id + 1)
 
+/** What a buying card says when there's nothing of [kind] to buy: when the first come, if that's still ahead. */
+@Composable
+fun NoneOnSale(roster: Roster, kind: VehicleKind, year: Int) {
+    val first = roster.firstOf(kind)
+    Text(
+        if (first != null && first > year) stringResource(Res.string.none_on_sale_until, first) else stringResource(Res.string.none_on_sale),
+        color = LocalColors.current.textDim, fontSize = 13.sp,
+    )
+}
+
 /** The models of [kind] on sale this year that [fits] lets in, to buy as a shipyard or hangar card offers them. */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -49,6 +59,10 @@ private fun BuyRow(roster: Roster, kind: VehicleKind, year: Int, funds: Long, pr
     val c = LocalColors.current
     val lang = languageCode()
     val models = roster.availableOf(kind, year).filter(fits)
+    if (models.isEmpty()) {
+        NoneOnSale(roster, kind, year)
+        return
+    }
     var model by remember { mutableIntStateOf(models.firstOrNull()?.id ?: -1) }
     var cargo by remember { mutableIntStateOf(-1) }
     val names = stringArrayResource(Res.array.cargoes)
