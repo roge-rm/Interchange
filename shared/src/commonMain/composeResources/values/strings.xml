@@ -273,6 +273,10 @@
     <string name="money_graph">Money, last two years</string>
     <string name="inflation">Inflation</string>
     <string name="day_length">Day length</string>
+    <string name="rivals">Rivals</string>
+    <string name="companies">Companies</string>
+    <string name="your_company">Your company</string>
+    <string name="company_line">%1$s · %2$d vehicles · %3$d stations</string>
     <string name="day_length_value">×%1$d</string>
 
     <!-- More orders, and funding industries -->

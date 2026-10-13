@@ -150,8 +150,9 @@ fun NewGameScreen(packs: List<Pack>, onStart: (NewGame, List<Pack>) -> Unit, onB
     var inflation by remember { mutableStateOf(true) }
     var weather by remember { mutableStateOf(true) }
     var dayLength by remember { mutableIntStateOf(10) }
+    var rivals by remember { mutableIntStateOf(2) }
     var off by remember { mutableStateOf(emptySet<String>()) }
-    val settings = NewGame(width, height, seed, year, region, sea, hills, trees, towns, industries, inflation, weather, dayLength)
+    val settings = NewGame(width, height, seed, year, region, sea, hills, trees, towns, industries, inflation, weather, dayLength, rivals)
     val chosen = packs.filter { it.id !in off }
     val clash = remember(chosen) {
         try {
@@ -231,6 +232,7 @@ fun NewGameScreen(packs: List<Pack>, onStart: (NewGame, List<Pack>) -> Unit, onB
         }, {
             StepSlider(stringResource(Res.string.industries), (0..3).toList(), industries, { townNames.getOrElse(it) { "$it" } }) { industries = it }
         })
+        StepSlider(stringResource(Res.string.rivals), (0..NewGame.MOST_RIVALS).toList(), rivals, { "$it" }) { rivals = it }
         StepSlider(stringResource(Res.string.day_length), NewGame.DAY_LENGTHS.toList(), dayLength, { stringResource(Res.string.day_length_value, it) }) { dayLength = it }
         Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             TogglePill(stringResource(Res.string.inflation), inflation, Modifier.weight(1f).fillMaxHeight()) { inflation = it }
@@ -423,12 +425,13 @@ fun OverlaysWindow(settings: Settings, onClose: () -> Unit) {
 
 /** The in-game menu: save, load, start afresh, settings, or back to the title screen. */
 @Composable
-fun MenuWindow(saved: Boolean, onSave: () -> Unit, onLoad: () -> Unit, onNew: () -> Unit, onSettings: () -> Unit, onIndustries: () -> Unit, onTitle: () -> Unit, onClose: () -> Unit) {
+fun MenuWindow(saved: Boolean, onSave: () -> Unit, onLoad: () -> Unit, onNew: () -> Unit, onSettings: () -> Unit, onIndustries: () -> Unit, onCompanies: () -> Unit, onTitle: () -> Unit, onClose: () -> Unit) {
     Window(stringResource(Res.string.menu), onClose, Glyph.Menu) {
         BigButton(stringResource(if (saved) Res.string.saved else Res.string.save), primary = !saved, glyph = Glyph.Save, onClick = onSave)
         BigButton(stringResource(Res.string.load), glyph = Glyph.Folder, onClick = onLoad)
         BigButton(stringResource(Res.string.new_game), glyph = Glyph.Plus, onClick = onNew)
         BigButton(stringResource(Res.string.industries), glyph = Glyph.Layers, onClick = onIndustries)
+        BigButton(stringResource(Res.string.companies), glyph = Glyph.Home, onClick = onCompanies)
         BigButton(stringResource(Res.string.settings), glyph = Glyph.Gear, onClick = onSettings)
         BigButton(stringResource(Res.string.title_screen), glyph = Glyph.Home, onClick = onTitle)
     }
@@ -507,6 +510,25 @@ private fun MoneyGraph(history: List<LongArray>, modifier: Modifier) {
         val path = androidx.compose.ui.graphics.Path()
         for ((k, h) in history.withIndex()) if (k == 0) path.moveTo(0f, y(h[0])) else path.lineTo(k * step, y(h[0]))
         drawPath(path, c.accent, style = androidx.compose.ui.graphics.drawscope.Stroke(2.dp.toPx()))
+    }
+}
+
+/** Every company, the richest first, in its colour, with its money, vehicles and stations; a tap goes to a rival's home town. */
+@Composable
+fun CompaniesWindow(world: World, onGo: (Float, Float) -> Unit, onClose: () -> Unit) {
+    Window(stringResource(Res.string.companies), onClose, Glyph.Home) {
+        for (co in world.companies.sortedWith(compareByDescending<com.rm.interchange.sim.Company> { it.money - it.loan }.thenBy { it.id })) {
+            val vehicles = world.trains.count { it?.owner == co.id } + world.roadVehicles.count { it?.owner == co.id } +
+                world.ships.count { it?.owner == co.id } + world.aircraft.count { it?.owner == co.id }
+            val stations = world.stations.count { it != null && it.owner == co.id && !it.waypoint }
+            val home = world.rivals.firstOrNull { it.company == co.id }?.let { world.towns.getOrNull(it.home) }
+            val name = if (co.id == 0) stringResource(Res.string.your_company) else co.name
+            ListRow(
+                Glyph.Home, name, stringResource(Res.string.company_line, money(co.money - co.loan), vehicles, stations),
+                home?.let { t -> { onGo(t.x + 0.5f, t.y + 0.5f) } },
+                tint = com.rm.interchange.map.companyColour(co.id),
+            )
+        }
     }
 }
 

@@ -242,7 +242,8 @@ internal fun World.buildGarage(company: Company, c: Command.Garage) {
     if (!inside(nx, ny)) return
     val n = index(nx, ny)
     val joined = road[n].toInt() and 15 or roadBit(Track.opposite(c.edge))
-    if (road[n].toInt() == 0 || !roadFits(nx, ny, joined) || track[n].toInt() != 0 || roadStops.containsKey(n)) return
+    // Onto road vehicles can drive along: not another garage's own bit of road.
+    if (road[n].toInt() == 0 || !roadFits(nx, ny, joined) || track[n].toInt() != 0 || roadStops.containsKey(n) || depotTiles.containsKey(n)) return
     if (company.money < price(Prices.DEPOT) + treeCost(i)) return
     spend(company, Books.CONSTRUCTION, price(Prices.DEPOT) + fellTrees(company, i))
     val d = Depot(depots.size, company.id, i, c.edge, Depots.ROAD)

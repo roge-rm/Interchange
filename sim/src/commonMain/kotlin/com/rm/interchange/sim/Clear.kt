@@ -6,11 +6,16 @@ package com.rm.interchange.sim
  * for it. Industries stay put.
  */
 
+/** Whether [company] has something on tile [i]: what it built there, or its road stop or garage. */
+fun World.owns(company: Int, i: Int): Boolean = owner[i].toInt() == company ||
+    roadStops[i]?.let { stations.getOrNull(it)?.owner == company } == true ||
+    depotTiles[i]?.let { depots.getOrNull(it)?.owner == company } == true
+
 /** Clears tile ([x], [y]) for [company]: its own track and the rest, then its road, the trees, or a town building. */
 internal fun World.clearAll(company: Company, x: Int, y: Int) {
     if (!inside(x, y)) return
     val i = index(x, y)
-    if (owner[i].toInt() == company.id) clearTile(company, Command.Clear(company.id, x, y))
+    if (owns(company.id, i)) clearTile(company, Command.Clear(company.id, x, y))
     clearRoad(company, x, y)
     if (Trees.count(trees[i].toInt()) > 0) {
         val cost = treeCost(i)
@@ -95,7 +100,7 @@ fun World.clearCost(company: Int, c: Command.ClearArea): Pair<Long, Int> {
         val i = index(x, y)
         var here = 0L
         var any = false
-        if (owner[i].toInt() == company) {
+        if (owns(company, i)) {
             here += price(Prices.CLEAR)
             any = true
         }

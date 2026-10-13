@@ -117,6 +117,9 @@ class World(val settings: NewGame, val roster: Roster = Roster.BASE, generate: B
 
     val companies = mutableListOf(Company(0, "Company", Prices.START_MONEY))
 
+    /** The companies the computer runs, by their place in [companies]. */
+    val rivals = ArrayList<Rival>()
+
     // What's built on the track, by id; a removed one leaves null.
     val stations = ArrayList<Station?>()
     val depots = ArrayList<Depot?>()
@@ -192,6 +195,7 @@ class World(val settings: NewGame, val roster: Roster = Roster.BASE, generate: B
             generateTowns(this)
             generateIndustries(this)
             startWeather()
+            startRivals(settings.rivals)
         }
     }
 
@@ -297,6 +301,7 @@ class World(val settings: NewGame, val roster: Roster = Roster.BASE, generate: B
             weatherLooks()
             roadsDay()
             townsDay()
+            rivalsDay()
             if (Calendar.dayOfMonth(startYear, day) == 1 && day > 0) {
                 companiesMonth()
                 passengersMonth()
@@ -345,6 +350,7 @@ class World(val settings: NewGame, val roster: Roster = Roster.BASE, generate: B
         for (x in 0..width) mix(heightAt(x, height).toLong())
         for (y in 0 until height) mix(heightAt(width, y).toLong())
         for (c in companies) { mix(c.money); mix(c.loan) }
+        for (r in rivals) { mix(r.thinkOn.toLong()); mix(r.routes.size.toLong()); mix(r.failed.size.toLong()) }
         mix(costScale); mix(payScale)
         mix(weather.anomaly.toLong()); mix(weather.recent.toLong())
         for (f in weather.fronts) { mix(f.x.toLong()); mix(f.y.toLong()); mix(f.life.toLong()) }

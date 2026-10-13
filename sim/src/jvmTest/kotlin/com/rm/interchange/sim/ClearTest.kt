@@ -39,6 +39,18 @@ class ClearTest {
     }
 
     @Test
+    fun aRoadStopAndAGarageClear() {
+        val w = flat()
+        w.apply(Command.Road(0, 5, 20, 20, 20, Surface.DIRT, remove = false))
+        w.apply(Command.RoadStop(0, 10, 20))
+        w.apply(Command.Garage(0, 12, 21, Track.YM))
+        assertTrue(w.roadStops.containsKey(w.index(10, 20)) && w.depotTiles.containsKey(w.index(12, 21)))
+        w.apply(Command.Clear(0, 10, 20))
+        w.apply(Command.Clear(0, 12, 21))
+        assertTrue(!w.roadStops.containsKey(w.index(10, 20)) && !w.depotTiles.containsKey(w.index(12, 21)))
+    }
+
+    @Test
     fun aTownBuildingComesDownForAPriceAndTheTownMinds() {
         val w = World(NewGame(64, 64, 1, 1900, Region.MIXED, towns = 1, industries = 0))
         w.companies[0].money = 1_000_000

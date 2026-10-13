@@ -256,6 +256,10 @@
     <string name="money_graph">Argent, deux dernières années</string>
     <string name="inflation">Inflation</string>
     <string name="day_length">Durée du jour</string>
+    <string name="rivals">Concurrents</string>
+    <string name="companies">Compagnies</string>
+    <string name="your_company">Votre compagnie</string>
+    <string name="company_line">%1$s · %2$d véhicules · %3$d gares</string>
     <string name="day_length_value">×%1$d</string>
 
     <!-- Autres ordres, et financer des industries -->

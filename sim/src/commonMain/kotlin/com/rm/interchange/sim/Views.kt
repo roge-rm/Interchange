@@ -369,7 +369,7 @@ fun World.view(): WorldView {
         townViews = towns.map { TownView(it.id, it.name, it.x, it.y, it.population, it.houses) }
         townsChanged = false
     }
-    return WorldView(VehicleView(tick, cars.toFloatArray()), trainViews, stationViews, signalViews, depotViews, townViews, payments.toList(), news.toList(),
+    return WorldView(VehicleView(tick, cars.toFloatArray()), trainViews, stationViews, signalViews, depotViews, townViews, payments.filter { it.company == 0 }, news.toList(),
         companies.firstOrNull()?.let { c -> CompanyView(c.money, c.loan, maxLoan(), c.thisYear.copyOf(), c.lastYear.copyOf(), c.history.map { it.copyOf() }, c.upkeep) }, tick, weatherView(),
         stations.filterNotNull().filter { it.waypoint }.flatMap { it.tiles }.toIntArray(),
         spans.filterNotNull().map { SpanView(it.tunnel, it.style, it.x0, it.y0, it.x1, it.y1, it.height) },

@@ -124,7 +124,7 @@ fun App() {
 private enum class Screen { Title, NewGame, Playing }
 
 /** A window open over the screen. */
-private enum class Win { Menu, Load, Settings, Packs, Overlays, Finances, Industries }
+private enum class Win { Menu, Load, Settings, Packs, Overlays, Finances, Industries, Companies }
 
 @Composable
 private fun Root(settings: Settings) {
@@ -251,6 +251,7 @@ private fun Root(settings: Settings) {
                 onNew = { window = null; screen = Screen.NewGame },
                 onSettings = { window = Win.Settings },
                 onIndustries = { window = Win.Industries },
+                onCompanies = { window = Win.Companies },
                 // Back to the title screen the game is saved and stopped; Continue loads it again.
                 onTitle = {
                     runner?.let { r ->
@@ -286,6 +287,7 @@ private fun Root(settings: Settings) {
             Win.Overlays -> OverlaysWindow(settings) { window = null }
             Win.Finances -> runner?.let { r -> FinanceWindow(r) { window = null } }
             Win.Industries -> runner?.game?.world?.let { w -> IndustriesWindow(w, { x, y -> goTo.value = x to y; window = null }, { runner?.request(it) }) { window = null } }
+            Win.Companies -> runner?.game?.world?.let { w -> CompaniesWindow(w, { x, y -> goTo.value = x to y; window = null }) { window = null } }
             null -> {}
         }
     }

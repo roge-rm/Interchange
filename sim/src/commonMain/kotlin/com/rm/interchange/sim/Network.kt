@@ -228,7 +228,7 @@ internal fun World.buildWaypoint(company: Company, c: Command.Waypoint) {
 internal fun World.clearTile(company: Company, c: Command.Clear) {
     if (!inside(c.x, c.y)) return
     val i = index(c.x, c.y)
-    if (owner[i].toInt() != company.id || trainOnTile(i)) return
+    if (!owns(company.id, i) || trainOnTile(i)) return
     depotAt(i)?.let { d -> if (trains.any { it != null && it.depot == d.id && it.inDepot }) return }
     if (company.money < price(Prices.CLEAR)) return
     // A road stop comes off its road; a garage goes, with its bit of road.

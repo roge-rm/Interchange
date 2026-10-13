@@ -41,7 +41,7 @@ const val CHANGE_COST = 16
 const val START_RATING = 175
 
 /** A payment where cargo got off, kept a while for the screen to show rising over the station. */
-class Payment(val tile: Int, val amount: Long, val tick: Long)
+class Payment(val tile: Int, val amount: Long, val tick: Long, val company: Int = 0)
 
 fun Station.waiting(c: Int) = cargo[c].sumOf { it.count }
 fun Carrier.load(c: Int) = cargo[c].sumOf { it.count }
@@ -406,7 +406,7 @@ internal fun World.callAt(t: Carrier, s: Station, o: Int = 0) {
     }
     if (paid > 0) {
         earn(company, Books.INCOME, paid)
-        payments += Payment(s.places.first(), paid, tick)
+        payments += Payment(s.places.first(), paid, tick, company.id)
     }
     if (!Order.has(o, Order.NO_LOAD)) loadAt(t, s)
 }

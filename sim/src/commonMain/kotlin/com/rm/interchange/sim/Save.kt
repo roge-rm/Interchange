@@ -16,14 +16,14 @@ package com.rm.interchange.sim
  */
 object Save {
     private val MAGIC = "ICHG".encodeToByteArray()
-    const val VERSION = 18
+    const val VERSION = 19
 
     fun write(world: World): ByteArray {
         val w = ByteWriter(world.width * world.height * 6 + 4096)
         with(world) {
             val g = settings
             w.int(g.width); w.int(g.height); w.long(g.seed); w.int(g.startYear); w.int(g.region.ordinal)
-            w.int(g.sea); w.int(g.hills); w.int(g.trees); w.int(g.towns); w.int(g.industries); w.bool(g.inflation); w.bool(g.weather); w.int(g.dayLength)
+            w.int(g.sea); w.int(g.hills); w.int(g.trees); w.int(g.towns); w.int(g.industries); w.bool(g.inflation); w.bool(g.weather); w.int(g.dayLength); w.int(g.rivals)
             w.uvar(roster.packs.size.toLong())
             for (p in roster.packs) { w.string(p.id); w.int(p.version); w.long(p.hash) }
             w.uvar(roster.engines.size.toLong())
@@ -128,6 +128,15 @@ object Save {
             w.uvar(wx.fronts.size.toLong())
             for (f in wx.fronts) { w.int(f.kind); w.int(f.x); w.int(f.y); w.int(f.dx); w.int(f.dy); w.int(f.radius); w.int(f.strength); w.int(f.warmth); w.int(f.life); w.bool(f.freezing) }
             writeWaterAndAir(w, this)
+            w.uvar(rivals.size.toLong())
+            for (rv in rivals) {
+                w.int(rv.company); w.int(rv.home); w.int(rv.thinkOn)
+                w.uvar(rv.routes.size.toLong())
+                for (rt in rv.routes) { w.int(rt.a); w.int(rt.b); w.int(rt.depot); w.int(rt.townA); w.int(rt.townB); w.int(rt.cargo) }
+                val failed = rv.failed.sorted()
+                w.uvar(failed.size.toLong())
+                for (f in failed) w.long(f)
+            }
         }
         val body = Squeeze.pack(w.toByteArray())
         val out = ByteWriter(body.size + 16)
@@ -336,6 +345,15 @@ object Save {
                 }
             }
             if (version >= 17) readWaterAndAir(r, this, ::vehicle, version)
+            if (version >= 19) repeat(r.uvar().toInt().also { if (it > NewGame.MOST_RIVALS) throw BadData("too many rivals") }) {
+                val rv = Rival(r.int(), r.int())
+                rv.thinkOn = r.int()
+                repeat(r.uvar().toInt().also { if (it > 1000) throw BadData("too many routes") }) {
+                    rv.routes += RivalRoute(r.int(), r.int(), r.int(), r.int(), r.int(), r.int())
+                }
+                repeat(r.uvar().toInt().also { if (it > 100_000) throw BadData("too many tried pairs") }) { rv.failed += r.long() }
+                rivals += rv
+            }
         }
         // Signal blocks and who's on which tile are worked out afresh before the next move.
         world.networkChangedKeepingRoutes()
@@ -361,6 +379,7 @@ object Save {
             inflation = if (version >= 8) r.bool() else false,
             weather = if (version >= 10) r.bool() else true,
             dayLength = if (version >= 18) r.int().coerceIn(1, 64) else 1,
+            rivals = if (version >= 19) r.int().coerceIn(0, NewGame.MOST_RIVALS) else 0,
         )
         if (settings.width !in 16..4096 || settings.height !in 16..4096) throw BadData("map size out of range")
         return settings

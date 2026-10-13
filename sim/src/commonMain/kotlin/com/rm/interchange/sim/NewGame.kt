@@ -41,9 +41,12 @@ data class NewGame(
      * costs and breakdowns go by work days, so the calendar, seasons and weather pass more slowly against them.
      */
     val dayLength: Int = 1,
+    /** How many companies the computer runs against the player. */
+    val rivals: Int = 0,
 ) {
     companion object {
         val DAY_LENGTHS = intArrayOf(1, 2, 4, 6, 10, 16)
+        const val MOST_RIVALS = 7
         val SIZES = intArrayOf(64, 128, 256, 512, 1024, 2048, 4096)
         const val FIRST_YEAR = 1836
         const val LAST_YEAR = 2050
