@@ -33,3 +33,4 @@ CLAUDE.local.md
 
 # Core dumps from crashed tools.
 /core.[0-9]*
+/HANDOFF.md
