@@ -332,6 +332,67 @@ internal class ChunkBaker(
     /** The third pass, from the back: trees, boulders and shrubs, platforms and engine houses. */
     fun objects(vx: Int, vy: Int) = standing(vx, vy, shadow = false)
 
+    /**
+     * The building on view tile ([vx], [vy]) with no track: a house, an industry's piece, a dock, a lock, an airport's,
+     * a garage, a shipyard, a salt dome or a road stop, as its sprite (or its shadow's) in the high half and the height
+     * it stands at in the low; [NO_ART] for something there with no drawing, or [NOTHING].
+     */
+    fun building(vx: Int, vy: Int, shadow: Boolean = false): Long {
+        val wx = view.worldX(vx, vy)
+        val wy = view.worldY(vx, vy)
+        val tile = world.index(wx, wy)
+        val base = minOf(minOf(cornerHeight(vx, vy), cornerHeight(vx + 1, vy)), minOf(cornerHeight(vx + 1, vy + 1), cornerHeight(vx, vy + 1)))
+        if (world.saltDepots.contains(tile)) {
+            return art(if (shadow) Atlas.SALT_DOME_SHADOW else Atlas.SALT_DOME, base)
+        }
+        world.docks[tile]?.let {
+            val e = viewEdge(world.dockFacing[tile] ?: 0)
+            return art(if (shadow) Atlas.DOCK_SHADOW[e] else Atlas.DOCK[e], base)
+        }
+        world.locks[tile]?.let { axis ->
+            // Drawn rising to its higher end.
+            val high = if (axis == Track.X) (if (world.heightAt(wx + 1, wy) > world.heightAt(wx, wy)) Track.XP else Track.XM)
+            else (if (world.heightAt(wx, wy + 1) > world.heightAt(wx, wy)) Track.YP else Track.YM)
+            val e = viewEdge(high)
+            return art(if (shadow) Atlas.LOCK_SHADOW[e] else Atlas.LOCK[e], base)
+        }
+        if (world.canals.contains(tile)) return NO_ART
+        world.airportTiles[tile]?.let { id ->
+            val a = world.airports.getOrNull(id) ?: return NO_ART
+            return art(airportArt(a, wx, wy, shadow), base)
+        }
+        if (world.roadStops.containsKey(tile)) {
+            val a = if (viewEdge(if (world.straightRoad(tile) == Track.X) Track.XP else Track.YP) <= Track.XP) 0 else 1
+            return art(if (shadow) Atlas.ROAD_STOP_SHADOW[a] else Atlas.ROAD_STOP[a], base)
+        }
+        world.depotTiles[tile]?.let { id ->
+            val d = world.depots.getOrNull(id)
+            if (d != null && d.road) {
+                val e = viewEdge(d.edge)
+                return art(if (shadow) Atlas.GARAGE_SHADOW[e] else Atlas.GARAGE[e], base)
+            }
+            if (d != null && d.kind == Depots.SHIPYARD) {
+                val e = viewEdge(d.edge)
+                return art(if (shadow) Atlas.SHIPYARD_SHADOW[e] else Atlas.SHIPYARD[e], base)
+            }
+        }
+        world.industryAt(tile)?.let { ind ->
+            val kind = world.roster.industries[ind.kind]
+            val art = partArt(kind.part(wx - ind.x, wy - ind.y, ind.turn))
+            val base = maxOf(maxOf(cornerHeight(vx, vy), cornerHeight(vx + 1, vy)), maxOf(cornerHeight(vx + 1, vy + 1), cornerHeight(vx, vy + 1)))
+            return if (art >= 0) art((if (shadow) Atlas.PART_SHADOW else Atlas.PART)[art * 4 + viewEdge(INDUSTRY_FACING[ind.turn])], base) else NO_ART
+        }
+        val built = world.house[tile].toInt()
+        if (built != 0) {
+            val art = houseArt(houseOf(built))
+            val base = maxOf(maxOf(cornerHeight(vx, vy), cornerHeight(vx + 1, vy)), maxOf(cornerHeight(vx + 1, vy + 1), cornerHeight(vx, vy + 1)))
+            return if (art >= 0) art((if (shadow) Atlas.HOUSE_SHADOW else Atlas.HOUSE)[art * 4 + viewEdge(houseFacing(built))], base) else NO_ART
+        }
+        return NOTHING
+    }
+
+    private fun art(cell: Int, base: Int): Long = if (cell < 0) NO_ART else (cell.toLong() shl 32) or base.toLong()
+
     private fun standing(vx: Int, vy: Int, shadow: Boolean) {
         val wx = view.worldX(vx, vy)
         val wy = view.worldY(vx, vy)
@@ -339,61 +400,9 @@ internal class ChunkBaker(
         val pieces = world.trackAt(wx, wy)
         val kind = kindOf(vx, vy)
         if (pieces == 0) {
-            val base = minOf(minOf(cornerHeight(vx, vy), cornerHeight(vx + 1, vy)), minOf(cornerHeight(vx + 1, vy + 1), cornerHeight(vx, vy + 1)))
-            if (world.saltDepots.contains(tile)) {
-                sprite(if (shadow) Atlas.SALT_DOME_SHADOW else Atlas.SALT_DOME, vx, vy, base, shadow)
-                return
-            }
-            world.docks[tile]?.let {
-                val e = viewEdge(world.dockFacing[tile] ?: 0)
-                sprite(if (shadow) Atlas.DOCK_SHADOW[e] else Atlas.DOCK[e], vx, vy, base, shadow)
-                return
-            }
-            world.locks[tile]?.let { axis ->
-                // Drawn rising to its higher end.
-                val high = if (axis == Track.X) (if (world.heightAt(wx + 1, wy) > world.heightAt(wx, wy)) Track.XP else Track.XM)
-                else (if (world.heightAt(wx, wy + 1) > world.heightAt(wx, wy)) Track.YP else Track.YM)
-                val e = viewEdge(high)
-                sprite(if (shadow) Atlas.LOCK_SHADOW[e] else Atlas.LOCK[e], vx, vy, base, shadow)
-                return
-            }
-            if (world.canals.contains(tile)) return
-            world.airportTiles[tile]?.let { id ->
-                val a = world.airports.getOrNull(id) ?: return
-                val art = airportArt(a, wx, wy, shadow)
-                if (art >= 0) sprite(art, vx, vy, base, shadow)
-                return
-            }
-            if (world.roadStops.containsKey(tile)) {
-                val a = if (viewEdge(if (world.straightRoad(tile) == Track.X) Track.XP else Track.YP) <= Track.XP) 0 else 1
-                sprite(if (shadow) Atlas.ROAD_STOP_SHADOW[a] else Atlas.ROAD_STOP[a], vx, vy, base, shadow)
-                return
-            }
-            world.depotTiles[tile]?.let { id ->
-                val d = world.depots.getOrNull(id)
-                if (d != null && d.road) {
-                    val e = viewEdge(d.edge)
-                    sprite(if (shadow) Atlas.GARAGE_SHADOW[e] else Atlas.GARAGE[e], vx, vy, base, shadow)
-                    return
-                }
-                if (d != null && d.kind == Depots.SHIPYARD) {
-                    val e = viewEdge(d.edge)
-                    sprite(if (shadow) Atlas.SHIPYARD_SHADOW[e] else Atlas.SHIPYARD[e], vx, vy, base, shadow)
-                    return
-                }
-            }
-            world.industryAt(tile)?.let { ind ->
-                val kind = world.roster.industries[ind.kind]
-                val art = partArt(kind.part(wx - ind.x, wy - ind.y, ind.turn))
-                val base = maxOf(maxOf(cornerHeight(vx, vy), cornerHeight(vx + 1, vy)), maxOf(cornerHeight(vx + 1, vy + 1), cornerHeight(vx, vy + 1)))
-                if (art >= 0) sprite((if (shadow) Atlas.PART_SHADOW else Atlas.PART)[art * 4 + viewEdge(INDUSTRY_FACING[ind.turn])], vx, vy, base, shadow)
-                return
-            }
-            val built = world.house[tile].toInt()
-            if (built != 0) {
-                val art = houseArt(houseOf(built))
-                val base = maxOf(maxOf(cornerHeight(vx, vy), cornerHeight(vx + 1, vy)), maxOf(cornerHeight(vx + 1, vy + 1), cornerHeight(vx, vy + 1)))
-                if (art >= 0) sprite((if (shadow) Atlas.HOUSE_SHADOW else Atlas.HOUSE)[art * 4 + viewEdge(houseFacing(built))], vx, vy, base, shadow)
+            val b = building(vx, vy, shadow)
+            if (b != NOTHING) {
+                if (b >= 0) sprite((b shr 32).toInt(), vx, vy, b.toInt(), shadow)
                 return
             }
             if (world.road[tile].toInt() != 0) {
@@ -1099,6 +1108,9 @@ internal class ChunkBaker(
 
         /** Corners each way looked at for ridges and hollows, and how much lighter or darker a step above or below makes them. */
         private const val RELIEF = 3
+        /** What [building] gives for no building, and for one with no drawing. */
+        const val NOTHING = -1L
+        const val NO_ART = -2L
         /** Each level's tile [Cover]s by shape, shared by every baker. */
         private val COVERS = Array(Renderer.LEVELS.size) { HashMap<Int, Cover>() }
         private const val RELIEF_GAIN = 0.07f

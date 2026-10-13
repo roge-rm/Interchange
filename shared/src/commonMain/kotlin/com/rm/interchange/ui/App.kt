@@ -407,7 +407,13 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
             override val drags get() = addingStops == null && addingRoadStops == null && addingCraftStops == null &&
                 (tool == Tool.Track || tool == Tool.Wires || tool == Tool.Station || tool == Tool.Bridge || tool == Tool.Road || tool == Tool.TramRails || tool == Tool.Canal || tool == Tool.Clear)
             override fun tap(at: Pick) {
-                val tile = world.index(at.tileX, at.tileY)
+                val ground = world.index(at.tileX, at.tileY)
+                // Adding stops or looking, a tap on a building's roof means the building, not the land behind it.
+                val picking = addingStops != null || addingRoadStops != null || addingCraftStops != null || tool == Tool.Inspect
+                val tile = if (!picking) ground else view.buildingAt(world, at, mapSize.width, mapSize.height) {
+                    world.depotTiles.containsKey(it) || world.stationTiles.containsKey(it) || world.roadStops.containsKey(it) ||
+                        world.docks.containsKey(it) || world.airportTiles.containsKey(it) || world.buoys.containsKey(it)
+                } ?: ground
                 addingStops?.let { id ->
                     val station = world.stationTiles[tile]
                     val t = worldView.value?.trains?.firstOrNull { it.id == id }
@@ -432,10 +438,6 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
                 when (tool) {
                     Tool.Inspect -> {
                         val key = vehicleAt(world, view, moving(runner), at.screenX, at.screenY, mapSize.width, mapSize.height)
-                        val tile = view.buildingAt(world, at, mapSize.width, mapSize.height) {
-                            world.depotTiles.containsKey(it) || world.stationTiles.containsKey(it) || world.roadStops.containsKey(it) ||
-                                world.docks.containsKey(it) || world.airportTiles.containsKey(it)
-                        } ?: tile
                         selected = when {
                             key != NO_VEHICLE && key >= 0 -> Selection.Train(key / 256)
                             key != NO_VEHICLE && VehicleView.craft(key, VehicleView.SHIP) >= 0 -> Selection.Ship(VehicleView.craft(key, VehicleView.SHIP))

@@ -1,10 +1,13 @@
 package com.rm.interchange.map
 
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.ClipOp
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.graphics.drawscope.Stroke
 import com.rm.interchange.sim.Signals
 import com.rm.interchange.sim.Spans
@@ -175,6 +178,7 @@ internal fun DrawScope.drawMoving(world: World, view: View, sheets: Sheets, movi
         if (level + 1 < Renderer.LEVELS.size) sheets.vehicle(model, level + 1)
     }
     items.sortBy { it[0] }
+    val cover = Cover(world, view, level, sheets.get(level) ?: return)
     with(painter) {
         for (it in items) {
             val model = it[4].toInt()
@@ -195,7 +199,11 @@ internal fun DrawScope.drawMoving(world: World, view: View, sheets: Sheets, movi
             } else {
                 // Its own sheet at this level, unpacked the first time it's on screen; it shows a frame or two later.
                 val sheet = sheets.vehicle(model, level) ?: continue
-                spriteAt(sheet, sheets.vehicleRects(model) ?: continue, it[3].toInt(), it[1], it[2], scale, shadow = it.size > 5)
+                val rects = sheets.vehicleRects(model) ?: continue
+                // Behind a building in front of it, cut away where the building stands.
+                val hidden = if (it[6] >= 0f) with(cover) { covering(it[6], it[7], Rect(it[1] - view.halfWidth * 1.5f, it[2] - view.halfWidth * 2f, it[1] + view.halfWidth * 1.5f, it[2] + view.halfWidth)) } else null
+                if (hidden != null) clipPath(hidden, ClipOp.Difference) { spriteAt(sheet, rects, it[3].toInt(), it[1], it[2], scale, shadow = it[5] == 1f) }
+                else spriteAt(sheet, rects, it[3].toInt(), it[1], it[2], scale, shadow = it[5] == 1f)
             }
         }
     }
@@ -379,7 +387,9 @@ private fun DrawScope.add(items: ArrayList<FloatArray>, world: World, view: View
     val sy = view.screenY(vx, vy, if (deck >= 0f) deck else groundHeight(world, x, y), size.height)
     val margin = view.halfWidth * 2
     if (sx < -margin || sx > size.width + margin || sy < -margin || sy > size.height + margin * 2) return
-    items += if (shadow) floatArrayOf(vx + vy + reach, sx, sy, cell, model.toFloat(), 1f) else floatArrayOf(vx + vy + reach, sx, sy, cell, model.toFloat())
+    // Where it stands in the view, for cutting away what's behind a building; up off the ground, nothing's in front.
+    val low = !shadow && deck < 0f
+    items += floatArrayOf(vx + vy + reach, sx, sy, cell, model.toFloat(), if (shadow) 1f else 0f, if (low) vx else -1f, if (low) vy else -1f)
 }
 
 /** Where a signal on [piece] of [tile] facing [facing] stands: just in from that edge, beside the track on the right of trains it faces. */
