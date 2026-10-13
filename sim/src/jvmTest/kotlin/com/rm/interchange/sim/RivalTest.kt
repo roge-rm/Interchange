@@ -21,6 +21,17 @@ class RivalTest {
     }
 
     @Test
+    fun rivalsHaulFreight() {
+        val w = World(NewGame(128, 128, 1, 1930, Region.MIXED, towns = 3, industries = 4, rivals = 2))
+        w.days(365 * 4 + 200)
+        val freight = w.rivals.flatMap { it.routes }.filter { it.freight }
+        assertTrue(freight.isNotEmpty(), "no rival built a freight route")
+        // The industry it loads at is sending it cargo.
+        assertTrue(freight.any { rt -> w.industries[rt.townA].let { it.movedLastMonth[rt.cargo] + it.moved[rt.cargo] } > 0 }, "no freight moved")
+        assertTrue(freight.any { rt -> w.industries[rt.townB].broughtLastMonth + w.industries[rt.townB].broughtThisMonth > 0 }, "no freight delivered")
+    }
+
+    @Test
     fun rivalsMakeTheSameMovesInEveryCopy() {
         val a = game()
         val b = game()

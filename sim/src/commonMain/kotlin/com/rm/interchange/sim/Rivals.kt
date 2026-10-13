@@ -4,7 +4,8 @@ package com.rm.interchange.sim
  * Companies run by the computer. Each starts from a home town and, every
  * month or so, looks after its routes and opens new ones: a road between two
  * towns where there isn't one, a stop in each, a garage, and buses or coaches
- * of the day running between them. It builds only through the same commands a
+ * of the day running between them; or the same from an industry to one that
+ * takes what it makes, with trucks. It builds only through the same commands a
  * player does, inside the sim, so every copy of a game makes the same moves.
  */
 
@@ -17,10 +18,18 @@ class Rival(val company: Int, val home: Int) {
     val failed = HashSet<Long>()
 }
 
-/** A route a rival runs: its two stations, the garage its vehicles come from, the towns, and what they carry. */
-class RivalRoute(val a: Int, val b: Int, val depot: Int, val townA: Int, val townB: Int, val cargo: Int)
+/**
+ * A route a rival runs: its two stations, the garage its vehicles come from, the towns, and what they carry. A
+ * freight route's [townA] and [townB] are the industry it loads at and the one it takes the cargo to.
+ */
+class RivalRoute(val a: Int, val b: Int, val depot: Int, val townA: Int, val townB: Int, val cargo: Int) {
+    val freight get() = cargo != Cargo.PASSENGERS
+}
 
 private fun pairKey(a: Int, b: Int): Long = minOf(a, b).toLong() shl 32 or maxOf(a, b).toLong()
+
+/** A freight route from industry [from] to [to] carrying [cargo], packed apart from town pairs, for [Rival.failed]. */
+private fun freightKey(from: Int, to: Int, cargo: Int): Long = (1L shl 62) or (cargo.toLong() shl 48) or (from.toLong() shl 24) or to.toLong()
 
 /** Sets up [n] rivals, each on its own home town, the biggest towns first and kept apart. */
 internal fun World.startRivals(n: Int) {
@@ -62,7 +71,11 @@ private fun World.think(r: Rival, c: Company) {
     while (c.money < 0 && c.loan < maxLoan()) apply(Command.Loan(c.id, true))
     while (c.loan > 0 && c.money > price(Prices.LOAN_STEP) * 4) apply(Command.Loan(c.id, false))
     for (route in r.routes) growRoute(c, route)
-    if (r.routes.size < maxRoutes(r)) newRoute(r, c)
+    if (r.routes.size >= maxRoutes(r)) return
+    // Freight about every other route, once there are industries to serve.
+    val freightFirst = r.routes.count { it.freight } * 2 < r.routes.size
+    val tried = if (freightFirst) newFreightRoute(r, c) else newRoute(r, c)
+    if (tried == Tried.CANT) if (freightFirst) newRoute(r, c) else newFreightRoute(r, c)
 }
 
 /** More routes as the years go by. */
@@ -82,7 +95,16 @@ private fun World.growRoute(c: Company, route: RivalRoute) {
     val waiting = maxOf(a.waiting(route.cargo), b.waiting(route.cargo))
     if (waiting < (model.capacity * 3 / 2).coerceAtLeast(10)) return
     if (!afford(c, price(model.cost) * 2)) return
-    buyAndStart(c, route, model)
+    buyAndStart(c, route, model, sourceWait(route, model))
+}
+
+/** Days a truck waits at the industry for its load: about as long as the industry takes to make one. */
+private fun World.sourceWait(route: RivalRoute, model: Engine): Int {
+    if (!route.freight) return 0
+    val ind = industries.getOrNull(route.townA) ?: return 0
+    val month = roster.industries[ind.kind].produces[route.cargo] * ind.level / 16
+    if (month <= 0) return 1
+    return (model.capacity * 30 / month).coerceIn(1, MAX_SOURCE_WAIT)
 }
 
 /** Whether [c] has [cost] or can borrow it, borrowing what it needs. */
@@ -99,19 +121,21 @@ private fun World.bestModel(cargo: Int): Engine? {
         .maxWithOrNull(compareBy<Engine> { it.capacity.toLong() * it.speed }.thenBy { -it.id })
 }
 
-private fun World.buyAndStart(c: Company, route: RivalRoute, model: Engine) {
+private fun World.buyAndStart(c: Company, route: RivalRoute, model: Engine, wait: Int = 0) {
     val before = roadVehicles.size
     apply(Command.BuyRoadVehicle(c.id, route.depot, model.id, route.cargo))
     if (roadVehicles.size == before) return
     val id = roadVehicles.size - 1
-    apply(Command.RoadOrder(c.id, id, Command.TrainOrder.ORDERS, intArrayOf(route.a, route.b)))
+    // Freight loads at the first stop and comes back empty.
+    val orders = if (route.freight) intArrayOf(Order.withWait(route.a, wait), route.b or Order.NO_LOAD) else intArrayOf(route.a, route.b)
+    apply(Command.RoadOrder(c.id, id, Command.TrainOrder.ORDERS, orders))
     apply(Command.RoadOrder(c.id, id, Command.TrainOrder.START_STOP))
 }
 
 /** Tries the most promising pairs of towns not yet joined by this rival, nearest its home first. */
-private fun World.newRoute(r: Rival, c: Company) {
-    val model = bestModel(Cargo.PASSENGERS) ?: return
-    val home = towns.getOrNull(r.home) ?: return
+private fun World.newRoute(r: Rival, c: Company): Tried {
+    val model = bestModel(Cargo.PASSENGERS) ?: return Tried.CANT
+    val home = towns.getOrNull(r.home) ?: return Tried.CANT
     val served = r.routes.map { pairKey(it.townA, it.townB) }.toSet()
     val pairs = ArrayList<Triple<Town, Town, Long>>()
     for (t1 in towns) {
@@ -122,6 +146,8 @@ private fun World.newRoute(r: Rival, c: Company) {
             if (d < MIN_APART || d > MAX_APART) continue
             val key = pairKey(t1.id, t2.id)
             if (key in served || key in r.failed) continue
+            // A town that won't have it at either end now may later.
+            if (townRefuses(c, t1.x, t1.y) || townRefuses(c, t2.x, t2.y)) continue
             // Bigger towns, closer together, nearer home.
             val score = minOf(t1.population, t2.population).toLong() * 1000 / (d + chebyshev(t1.x, t1.y, home.x, home.y) / 2 + 5)
             pairs += Triple(t1, t2, score)
@@ -129,12 +155,103 @@ private fun World.newRoute(r: Rival, c: Company) {
     }
     pairs.sortWith(compareByDescending<Triple<Town, Town, Long>> { it.third }.thenBy { it.first.id }.thenBy { it.second.id })
     for ((t1, t2, _) in pairs.take(TRIES)) {
-        when (tryRoute(r, c, t1, t2, model)) {
-            Tried.BUILT -> return
+        when (val t = tryRoute(r, c, t1, t2, model)) {
             Tried.CANT -> r.failed += pairKey(t1.id, t2.id)
-            Tried.POOR -> return
+            else -> return t
         }
     }
+    return Tried.CANT
+}
+
+/**
+ * Tries the most promising industries near home not yet served by this rival, each to the nearest that takes what
+ * it makes, by how much it makes and how near.
+ */
+private fun World.newFreightRoute(r: Rival, c: Company): Tried {
+    val home = towns.getOrNull(r.home) ?: return Tried.CANT
+    val served = r.routes.filter { it.freight }.map { it.townA to it.cargo }.toSet()
+    class Pick(val from: Industry, val to: Industry, val cargo: Int, val model: Engine, val score: Long)
+    val picks = ArrayList<Pick>()
+    for (ind in industries) {
+        if (ind.closed) continue
+        val kind = roster.industries[ind.kind]
+        val (cx, cy) = middle(ind)
+        if (chebyshev(cx, cy, home.x, home.y) > HOME_REACH) continue
+        for (cg in 0 until Cargo.COUNT) {
+            val month = kind.produces[cg] * ind.level / 16
+            if (month <= 0 || (ind.id to cg) in served) continue
+            val model = bestModel(cg) ?: continue
+            // The nearest that takes it, far enough to be worth the trip.
+            var to: Industry? = null
+            var best = Int.MAX_VALUE
+            for (o in industries) {
+                if (o.closed || o.id == ind.id || !roster.industries[o.kind].takes(cg)) continue
+                val (ox, oy) = middle(o)
+                val d = chebyshev(cx, cy, ox, oy)
+                if (d < MIN_APART || d > MAX_APART || d >= best || freightKey(ind.id, o.id, cg) in r.failed) continue
+                to = o
+                best = d
+            }
+            if (to == null) continue
+            val (ox, oy) = middle(to)
+            if (townRefuses(c, cx, cy) || townRefuses(c, ox, oy)) continue
+            val score = month.toLong() * 1000 / (best + chebyshev(cx, cy, home.x, home.y) / 2 + 5)
+            picks += Pick(ind, to, cg, model, score)
+        }
+    }
+    picks.sortWith(compareByDescending<Pick> { it.score }.thenBy { it.from.id }.thenBy { it.cargo })
+    for (p in picks.take(TRIES)) {
+        when (val t = tryFreight(r, c, p.from, p.to, p.cargo, p.model)) {
+            Tried.CANT -> r.failed += freightKey(p.from.id, p.to.id, p.cargo)
+            else -> return t
+        }
+    }
+    return Tried.CANT
+}
+
+/** The tile in the middle of [ind]. */
+private fun World.middle(ind: Industry): Pair<Int, Int> {
+    val kind = roster.industries[ind.kind]
+    return ind.x + kind.across(ind.turn) / 2 to ind.y + kind.along(ind.turn) / 2
+}
+
+/** Joins industries [from] and [to] by road with a stop at each, a garage and two trucks for [cargo]. */
+private fun World.tryFreight(r: Rival, c: Company, from: Industry, to: Industry, cargo: Int, model: Engine): Tried {
+    val (tx, ty) = middle(to)
+    val path = roadPath(around(from), around(to).toHashSet(), tx, ty) ?: return Tried.CANT
+    val year = Calendar.year(startYear, day)
+    val surface = Surface.entries(year).firstOrNull { Surface.SPEED[it] >= model.speed } ?: Surface.entries(year).last()
+    val runs = runs(c.id, path, surface)
+    val roadCost = runs.sumOf { roadCost(c, it).coerceAtLeast(0) }
+    val cost = roadCost + price(Prices.ROAD_STOP) * 2 + price(Prices.DEPOT) + price(model.cost) * 2
+    if (!afford(c, cost * 6 / 5)) return Tried.POOR
+    for (run in runs) apply(run)
+    val stopA = placeStopBy(c, from, path, true) ?: return Tried.CANT
+    val stopB = placeStopBy(c, to, path, false) ?: return undo(c, stopA)
+    if (!roadConnected(stopA, stopB)) return undo(c, stopA, stopB)
+    val depot = placeGarage(c, stopA) ?: return undo(c, stopA, stopB)
+    val a = roadStops.getValue(stopA)
+    val b = roadStops.getValue(stopB)
+    if (catchmentDirty) workOutCatchment()
+    // A stop that's another of this rival's stations already, or that doesn't reach the industry it's for, won't do.
+    if (a == b || stationIndustries[a]?.contains(from.id) != true || stationIndustries[b]?.contains(to.id) != true) return undo(c, stopA, stopB)
+    val route = RivalRoute(a, b, depot, from.id, to.id, cargo)
+    r.routes += route
+    repeat(2) { buyAndStart(c, route, model, sourceWait(route, model)) }
+    return Tried.BUILT
+}
+
+/** Where a road to [ind] can end: road a step or two outside it, or flat land there a road can be laid on. */
+private fun World.around(ind: Industry): List<Int> {
+    val kind = roster.industries[ind.kind]
+    val out = ArrayList<Int>()
+    for (y in ind.y - 2..ind.y + kind.along(ind.turn) + 1) for (x in ind.x - 2..ind.x + kind.across(ind.turn) + 1) {
+        if (!inside(x, y)) continue
+        val i = index(x, y)
+        if (industryOf[i].toInt() != 0) continue
+        if (roadEdges(i) != 0 || (isFlat(x, y) && stepCost(i, Track.XM) != null)) out += i
+    }
+    return out
 }
 
 private enum class Tried { BUILT, CANT, POOR }
@@ -191,11 +308,50 @@ private fun dirOf(a: Int, b: Int): Int {
 }
 
 /** A drive-through stop on a straight, flat road near [t]'s middle, tried from the end of the new road [end] out; its tile. */
-private fun World.placeStop(c: Company, t: Town, end: Int): Int? {
+private fun World.placeStop(c: Company, t: Town, end: Int): Int? =
+    placeStop(c, t.x - STOP_REACH, t.y - STOP_REACH, t.x + STOP_REACH, t.y + STOP_REACH, end)
+
+/**
+ * A drive-through stop close enough to [ind] to serve it, tried from the [start] or far end of the new road [path]
+ * out; its tile. With no straight road there it lays a short spur off the new road to put one on.
+ */
+private fun World.placeStopBy(c: Company, ind: Industry, path: IntArray, start: Boolean): Int? {
+    val kind = roster.industries[ind.kind]
+    val reach = CATCHMENT - 1
+    val x0 = ind.x - reach
+    val y0 = ind.y - reach
+    val x1 = ind.x + kind.across(ind.turn) - 1 + reach
+    val y1 = ind.y + kind.along(ind.turn) - 1 + reach
+    val end = if (start) path.first() else path.last()
+    placeStop(c, x0, y0, x1, y1, end)?.let { return it }
+    val near = (if (start) path.asList() else path.asList().asReversed()).take(SPUR_TRIES)
+    for (p in near) {
+        val px = p and 0xffff
+        val py = p ushr 16
+        if (px !in x0..x1 || py !in y0..y1) continue
+        for (e in 0 until 4) {
+            val mx = px + Track.dx(e)
+            val my = py + Track.dy(e)
+            val fx = mx + Track.dx(e)
+            val fy = my + Track.dy(e)
+            if (mx !in x0..x1 || my !in y0..y1 || !inside(fx, fy) || !isFlat(mx, my) || !isFlat(fx, fy)) continue
+            if (roadEdges(index(mx, my)) != 0 || roadEdges(index(fx, fy)) != 0) continue
+            if (stepCost(index(mx, my), e) == null || stepCost(index(fx, fy), e) == null) continue
+            apply(Command.Road(c.id, px, py, fx, fy, Surface.entries(Calendar.year(startYear, day)).first(), remove = false))
+            if (straightRoad(index(mx, my)) == 0) continue
+            apply(Command.RoadStop(c.id, mx, my))
+            if (roadStops.containsKey(index(mx, my))) return index(mx, my)
+        }
+    }
+    return null
+}
+
+/** A drive-through stop on a straight, flat road from ([x0], [y0]) to ([x1], [y1]), nearest [end] first; its tile. */
+private fun World.placeStop(c: Company, x0: Int, y0: Int, x1: Int, y1: Int, end: Int): Int? {
     val ex = end and 0xffff
     val ey = end ushr 16
     val tried = ArrayList<Int>()
-    for (y in t.y - STOP_REACH..t.y + STOP_REACH) for (x in t.x - STOP_REACH..t.x + STOP_REACH) {
+    for (y in y0..y1) for (x in x0..x1) {
         if (!inside(x, y)) continue
         val i = index(x, y)
         if (straightRoad(i) == 0 || track[i].toInt() != 0 || roadStops.containsKey(i) || !isFlat(x, y)) continue
@@ -268,31 +424,37 @@ fun World.roadConnected(a: Int, b: Int): Boolean {
     return false
 }
 
-/**
- * A way for a road from near [from]'s middle to near [to]'s, as packed tiles (x in the low 16 bits, y above), over
- * ground a road can be laid on and along roads already there. It turns only on level ground, and on a slope keeps
- * straight, so the road it lays meets itself level at every join. Null if there's none within reach.
- */
+/** A road's way from near [from]'s middle to near [to]'s, along the towns' own roads at each end. */
 private fun World.roadPath(from: Town, to: Town): IntArray? {
-    val goals = HashSet<Int>()
-    for (y in to.y - STOP_REACH..to.y + STOP_REACH) for (x in to.x - STOP_REACH..to.x + STOP_REACH) {
-        if (inside(x, y) && roadEdges(index(x, y)) != 0 && townOf[index(x, y)].toInt() == to.id) goals += index(x, y)
+    fun ends(t: Town): List<Int> {
+        val out = ArrayList<Int>()
+        for (y in t.y - STOP_REACH..t.y + STOP_REACH) for (x in t.x - STOP_REACH..t.x + STOP_REACH) {
+            if (inside(x, y) && roadEdges(index(x, y)) != 0 && townOf[index(x, y)].toInt() == t.id) out += index(x, y)
+        }
+        return out
     }
-    if (goals.isEmpty()) return null
+    return roadPath(ends(from), ends(to).toHashSet(), to.x, to.y)
+}
+
+/**
+ * A way for a road from one of tiles [starts] to one of [goals], heading for ([gx], [gy]), as packed tiles (x in the
+ * low 16 bits, y above), over ground a road can be laid on and along roads already there. It turns only on level
+ * ground, and on a slope keeps straight, so the road it lays meets itself level at every join. Null if there's none
+ * within reach.
+ */
+private fun World.roadPath(starts: List<Int>, goals: Set<Int>, gx: Int, gy: Int): IntArray? {
+    if (starts.isEmpty() || goals.isEmpty()) return null
     // States are a tile and the edge it was come into by, 4 for a start.
     val best = HashMap<Int, Int>()
     val back = HashMap<Int, Int>()
     val heap = LongHeap()
-    fun h(i: Int) = (kotlin.math.abs(i % width - to.x) + kotlin.math.abs(i / width - to.y)) * MOVE_ROAD
-    for (y in from.y - STOP_REACH..from.y + STOP_REACH) for (x in from.x - STOP_REACH..from.x + STOP_REACH) {
-        if (!inside(x, y)) continue
-        val i = index(x, y)
-        if (roadEdges(i) == 0 || townOf[i].toInt() != from.id) continue
+    fun h(i: Int) = (kotlin.math.abs(i % width - gx) + kotlin.math.abs(i / width - gy)) * MOVE_ROAD
+    for (i in starts) {
         val s = i * 5 + 4
         best[s] = 0
         heap.push(h(i).toLong() shl 32 or s.toLong())
     }
-    val limit = (chebyshev(from.x, from.y, to.x, to.y) + 10).let { it * it * 12 }.coerceAtMost(PATH_LIMIT)
+    val limit = (chebyshev(starts[0] % width, starts[0] / width, gx, gy) + 10).let { it * it * 12 }.coerceAtMost(PATH_LIMIT)
     var expanded = 0
     while (!heap.isEmpty() && expanded < limit) {
         val top = heap.pop()
@@ -407,6 +569,10 @@ private const val HOME_REACH = 48
 private const val RIVAL_APART = 20
 /** Pairs tried at each look. */
 private const val TRIES = 3
+/** Most days a truck waits at an industry for its load. */
+private const val MAX_SOURCE_WAIT = 10
+/** Tiles of a new road, from its end, tried for a spur to put an industry's stop on. */
+private const val SPUR_TRIES = 8
 /** How far from a town's middle its stop and the road's ends go, and from a stop its garage. */
 private const val STOP_REACH = 4
 private const val GARAGE_REACH = 3

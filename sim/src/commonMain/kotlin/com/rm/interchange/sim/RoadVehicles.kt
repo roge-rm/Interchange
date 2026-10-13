@@ -354,8 +354,8 @@ private fun World.roadFreeAhead(v: RoadVehicle, on: HashMap<Int, ArrayList<RoadV
         if (o === v) continue
         // Someone ahead in the same lane, close in.
         if (roadStepEntry(o.at) == entry && o.along < o.size() + GAP) return free
-        // On a junction, anyone come in another way holds it.
-        if (roadEdges(n).countOneBits() >= 3 && roadStepEntry(o.at) != entry) return free
+        // On a junction, anyone come in another way holds it, unless they're leaving towards us in the other lane.
+        if (roadEdges(n).countOneBits() >= 3 && roadStepEntry(o.at) != entry && roadStepExit(o.at) != entry) return free
     }
     return free + roadStepLength(roadStep(n, entry, Track.opposite(entry)))
 }
