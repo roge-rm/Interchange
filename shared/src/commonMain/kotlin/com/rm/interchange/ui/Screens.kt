@@ -1,5 +1,7 @@
 package com.rm.interchange.ui
 
+import com.rm.interchange.sim.townActionCost
+import com.rm.interchange.sim.townActionOpen
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -528,6 +530,43 @@ fun CompaniesWindow(world: World, onGo: (Float, Float) -> Unit, onClose: () -> U
                 home?.let { t -> { onGo(t.x + 0.5f, t.y + 0.5f) } },
                 tint = com.rm.interchange.map.companyColour(co.id),
             )
+        }
+    }
+}
+
+/**
+ * A town's hall: what it thinks of each company, what's been paid for and has time to run, and what the player can
+ * pay for, at today's prices. Paying closes it.
+ */
+@Composable
+fun TownWindow(world: World, t: com.rm.interchange.sim.Town, send: (com.rm.interchange.sim.Command) -> Unit, onClose: () -> Unit) {
+    val levels = stringArrayResource(Res.array.approval_levels)
+    val actions = stringArrayResource(Res.array.town_actions)
+    Window(t.name, onClose, Glyph.Home) {
+        for (co in world.companies) {
+            val name = if (co.id == 0) stringResource(Res.string.your_company) else co.name
+            ListRow(Glyph.Home, name, levels.getOrElse(com.rm.interchange.sim.approvalLevel(t.approval[co.id])) { "" }, null, tint = com.rm.interchange.map.companyColour(co.id))
+        }
+        if (t.roadWorks > 0) ListRow(Glyph.Road, stringResource(Res.string.road_works_left, t.roadWorks), null, null)
+        if (t.funded > 0) ListRow(Glyph.Home, stringResource(Res.string.funded_left, t.funded), null, null)
+        world.companies.getOrNull(t.exclusive)?.let { co ->
+            val name = if (co.id == 0) stringResource(Res.string.your_company) else co.name
+            ListRow(Glyph.Station, stringResource(Res.string.exclusive_left, name, t.exclusiveDays), null, null, tint = com.rm.interchange.map.companyColour(co.id))
+        }
+        val money = world.companies.firstOrNull()?.money ?: 0L
+        for (a in 0 until com.rm.interchange.sim.TownActions.COUNT) {
+            val cost = world.townActionCost(a)
+            val open = world.townActionOpen(0, t, a)
+            val line = when {
+                open -> money(cost)
+                a == com.rm.interchange.sim.TownActions.STATUE && t.statue[0] >= 0 -> stringResource(Res.string.town_statue_up)
+                a == com.rm.interchange.sim.TownActions.STATUE -> stringResource(Res.string.town_no_room)
+                else -> stringResource(Res.string.town_action_running)
+            }
+            ListRow(Glyph.Plus, actions.getOrElse(a) { "" }, line, if (open && money >= cost) ({
+                send(com.rm.interchange.sim.Command.TownAction(0, t.id, a))
+                onClose()
+            }) else null)
         }
     }
 }

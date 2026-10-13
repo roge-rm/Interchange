@@ -402,6 +402,7 @@ internal fun World.roadLimit(v: RoadVehicle, tile: Int): Int {
     val c = condition[tile].toInt() and 255
     if (track[tile].toInt() == 0 && c < POTHOLES) kmh = minOf(kmh, POTHOLE_KMH)
     if (crossing(tile)) kmh = minOf(kmh, 40)
+    if (underRoadWorks(tile)) kmh = minOf(kmh, ROAD_WORKS_KMH)
     return kmh * 4096 * 16 / 2700
 }
 

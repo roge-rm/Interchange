@@ -222,6 +222,17 @@
         <item>Appalling</item><item>Very poor</item><item>Poor</item><item>Mediocre</item><item>Good</item><item>Very good</item><item>Excellent</item><item>Outstanding</item>
     </string-array>
     <string name="picked_up">Picked up last month: %1$d</string>
+    <string name="town_hall">Town hall</string>
+    <string-array name="town_actions">
+        <item>Small advertising campaign</item><item>Medium advertising campaign</item><item>Large advertising campaign</item>
+        <item>Road works</item><item>Statue</item><item>Fund new buildings</item><item>Exclusive transport rights</item>
+    </string-array>
+    <string name="town_action_running">Under way</string>
+    <string name="town_statue_up">Already put up</string>
+    <string name="town_no_room">No room near the middle</string>
+    <string name="road_works_left">Road works: %1$d days left</string>
+    <string name="funded_left">New building: %1$d days left</string>
+    <string name="exclusive_left">Exclusive rights for %1$s: %2$d days left</string>
     <string-array name="weekdays">
         <item>Mon</item><item>Tue</item><item>Wed</item><item>Thu</item><item>Fri</item><item>Sat</item><item>Sun</item>
     </string-array>

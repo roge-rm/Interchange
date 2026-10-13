@@ -179,15 +179,18 @@ internal fun World.passengersDay() {
     if (catchmentDirty) workOutCatchment()
     if (linksDirty) workOutLinks()
     val made = HashMap<Int, IntArray>()
+    // Stations another company's exclusive rights shut out get nothing.
+    val shut = shutOut()
     // Freight, rated by each station as it's shared out.
     val freight = HashMap<Int, IntArray>()
-    industriesDay(freight)
+    industriesDay(freight, shut)
     val c = catchment
     var k = 0
     while (k < c.size) {
         val tile = c[k]
         val sid = c[k + 1]
         k += 2
+        if (sid in shut) continue
         val h = roster.houses.getOrNull(houseOf(house[tile].toInt())) ?: continue
         val people = h.residents + h.jobs
         val passengers = (people * 8 + rng.below(256)) / 256
@@ -241,12 +244,13 @@ internal fun World.passengersDay() {
             for (i in reach.indices) addWaiting(s, cg, reach[i], sid, counts[i], tick)
         }
     }
+    val statues = nearStatues()
     for (s in stations) {
         if (s == null) continue
         for (cg in 0 until Cargo.COUNT) {
             s.cargo[cg].removeAll { tick - it.waitingFrom > GIVE_UP_DAYS * Calendar.TICKS_PER_DAY.toLong() }
             // The rating creeps towards what the service deserves, a little a day.
-            val target = ratingTarget(s, cg)
+            val target = (ratingTarget(s, cg) + if (s.id in statues) STATUE_RATING else 0).coerceAtMost(255)
             s.rating[cg] += (target - s.rating[cg]).coerceIn(-RATING_STEP, RATING_STEP)
         }
     }

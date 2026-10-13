@@ -268,6 +268,7 @@ class World(val settings: NewGame, val roster: Roster = Roster.BASE, generate: B
             is Command.TrainOrder -> trainCommand(company, command)
             is Command.Loan -> loanCommand(company, command)
             is Command.FundIndustry -> fundIndustry(company, command)
+            is Command.TownAction -> townAction(company, command)
         }
     }
 
@@ -354,7 +355,8 @@ class World(val settings: NewGame, val roster: Roster = Roster.BASE, generate: B
         mix(costScale); mix(payScale)
         mix(weather.anomaly.toLong()); mix(weather.recent.toLong())
         for (f in weather.fronts) { mix(f.x.toLong()); mix(f.y.toLong()); mix(f.life.toLong()) }
-        for (t in towns) { mix(t.population.toLong()); mix(t.growIn.toLong()); mix(t.servedThisMonth.toLong()); for (a in t.approval) mix(a.toLong()) }
+        for (t in towns) { mix(t.population.toLong()); mix(t.growIn.toLong()); mix(t.servedThisMonth.toLong()); for (a in t.approval) mix(a.toLong())
+            mix(t.roadWorks.toLong()); mix(t.funded.toLong()); mix(t.exclusive.toLong()); mix(t.exclusiveDays.toLong()); for (a in t.statue) mix(a.toLong()) }
         for (ind in industries) { mix(if (ind.closed) 1L else 0L); mix(ind.level.toLong()); mix(ind.brought.toLong()); for (m in ind.made) mix(m.toLong()) }
         for (s in stations) if (s != null) {
             for (c in s.cargo) for (p in c) { mix(p.dest.toLong()); mix(p.count.toLong()); mix(p.credit) }

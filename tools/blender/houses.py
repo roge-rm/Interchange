@@ -573,6 +573,39 @@ def apartment_tower(m):
     yard_tree(m, -0.38, -0.32, 0.8, seed=12, kind="elm")
 
 
+def statue(m):
+    """A company's statue in a small square: a bronze figure on a granite plinth with a plaque facing the road, paving,
+    flower beds, benches and shrubs."""
+    granite = material("plinth granite", "#8e8a84", rough=0.8)
+    bronze = material("statue bronze", "#5e7a62", metal=0.7, rough=0.45, grime=0.6)
+    paved(m, -0.42, 0.42, -0.42, 0.42, "#b4ada0")
+    path(m, 0.0, 0.42, 0.5, 0.08)
+    # The plinth in three steps, and the plaque on its front.
+    m.box(-0.08, 0.08, -0.08, 0.08, 0.02, 0.25, granite, 0.004)
+    m.box(-0.055, 0.055, -0.055, 0.055, 0.25, 1.05, granite, 0.003)
+    m.box(-0.068, 0.068, -0.068, 0.068, 1.05, 1.15, granite, 0.003)
+    m.box(-0.03, 0.03, 0.055, 0.059, 0.55, 0.85, bronze)
+    # The figure: a long coat, shoulders and head, one arm out towards the town.
+    m.lathe(0.0, 0.0, 1.15, [(0.042, 0.0), (0.042, 0.12), (0.036, 0.9), (0.03, 1.35), (0.036, 1.45), (0.016, 1.52), (0.022, 1.57),
+                              (0.022, 1.76), (0.0, 1.84)], bronze)
+    m.box(0.025, 0.1, -0.011, 0.011, 2.5, 2.58, bronze)
+    m.box(-0.044, -0.026, -0.011, 0.011, 1.85, 2.6, bronze)
+    # Flower beds at the corners, benches facing it from either side, and low shrubs at the back, which keep out of the
+    # figure's way from every side.
+    for (x0, x1, y0, y1) in ((-0.38, -0.22, 0.22, 0.38), (0.22, 0.38, 0.22, 0.38)):
+        flowers(m, x0, x1, y0, y1)
+    wood = material("bench slats", "#7a5a3a", rough=0.8)
+    iron = material("bench iron", "#2a2a2a", metal=0.5, rough=0.6)
+    for x in (-0.25, 0.25):
+        m.box(x - 0.025, x + 0.025, -0.1, 0.1, 0.2, 0.25, wood)
+        m.box(x - 0.008 + (0.02 if x > 0 else -0.02), x + 0.008 + (0.02 if x > 0 else -0.02), -0.1, 0.1, 0.25, 0.5, wood)
+        for y in (-0.09, 0.09):
+            m.box(x - 0.02, x + 0.02, y - 0.004, y + 0.004, 0.02, 0.2, iron)
+    shrub = scenery.leafy("square shrubs", "#3e6a2a", "#6a9a3e")
+    for k, (x, y) in enumerate(((-0.34, -0.34), (-0.22, -0.36), (0.34, -0.34), (0.22, -0.36))):
+        scenery.blob(m, x, y, 0.25, 0.06, shrub, 30 + k)
+
+
 BUILDERS = {
     "log_cabin": log_cabin,
     "farmhouse": farmhouse,
@@ -586,6 +619,7 @@ BUILDERS = {
     "split_level": split_level,
     "office_block": office_block,
     "apartment_tower": apartment_tower,
+    "statue": statue,
 }
 
 # Which way each view edge is, as a heading in eighths for place(): the front faces +y, the game's +u.

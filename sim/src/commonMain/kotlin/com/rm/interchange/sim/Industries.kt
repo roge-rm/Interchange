@@ -206,9 +206,9 @@ private fun World.industryFits(kind: IndustryKind, x: Int, y: Int, w: Int, h: In
  * A day of industry: each makes its share of a month's cargo, or turns what's
  * been brought into its own, and sends it to the stations that serve it.
  * Returns what each station got, by station and cargo, to be given
- * destinations with everything else made that day.
+ * destinations with everything else made that day. Stations in [shut] get nothing.
  */
-internal fun World.industriesDay(made: HashMap<Int, IntArray>) {
+internal fun World.industriesDay(made: HashMap<Int, IntArray>, shut: Set<Int> = emptySet()) {
     for (ind in industries) {
         if (ind.closed) continue
         val kind = roster.industries[ind.kind]
@@ -229,7 +229,7 @@ internal fun World.industriesDay(made: HashMap<Int, IntArray>) {
             if (out[c] == 0) continue
             ind.made[c] += out[c]
             // The two best rated stations that have had a train for it, sharing by their ratings.
-            val served = industryStations[ind.id].orEmpty().mapNotNull { stations.getOrNull(it) }.filter { it.lastCall[c] >= 0 }
+            val served = industryStations[ind.id].orEmpty().mapNotNull { stations.getOrNull(it) }.filter { it.lastCall[c] >= 0 && it.id !in shut }
                 .sortedWith(compareByDescending<Station> { it.rating[c] }.thenBy { it.id }).take(2)
             if (served.isEmpty()) continue
             val total = served.sumOf { it.rating[c] }.coerceAtLeast(1)

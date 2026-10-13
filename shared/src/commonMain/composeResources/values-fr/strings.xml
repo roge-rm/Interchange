@@ -205,6 +205,17 @@
         <item>Épouvantable</item><item>Très mauvaise</item><item>Mauvaise</item><item>Médiocre</item><item>Bonne</item><item>Très bonne</item><item>Excellente</item><item>Exceptionnelle</item>
     </string-array>
     <string name="picked_up">Pris en charge le mois dernier : %1$d</string>
+    <string name="town_hall">Hôtel de ville</string>
+    <string-array name="town_actions">
+        <item>Petite campagne publicitaire</item><item>Campagne publicitaire moyenne</item><item>Grande campagne publicitaire</item>
+        <item>Travaux de voirie</item><item>Statue</item><item>Financer de nouveaux bâtiments</item><item>Droits de transport exclusifs</item>
+    </string-array>
+    <string name="town_action_running">En cours</string>
+    <string name="town_statue_up">Déjà érigée</string>
+    <string name="town_no_room">Pas de place près du centre</string>
+    <string name="road_works_left">Travaux de voirie : encore %1$d jours</string>
+    <string name="funded_left">Nouveaux bâtiments : encore %1$d jours</string>
+    <string name="exclusive_left">Droits exclusifs à %1$s : encore %2$d jours</string>
     <string-array name="weekdays">
         <item>lun.</item><item>mar.</item><item>mer.</item><item>jeu.</item><item>ven.</item><item>sam.</item><item>dim.</item>
     </string-array>

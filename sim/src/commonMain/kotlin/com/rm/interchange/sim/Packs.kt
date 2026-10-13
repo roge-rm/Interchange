@@ -71,6 +71,7 @@ class HouseDef(
     val zones: Int,
     val minPopulation: Int,
     val weight: Int,
+    val monument: Boolean = false,
 )
 
 /**
@@ -288,12 +289,13 @@ object Packs {
                     val k = Zones.NAMES.indexOf(z)
                     if (k < 0) problems += "${f.where}: zone \"$z\" should be outskirts, suburbs, inner or centre" else zones = zones or (1 shl k)
                 }
-                if (zones == 0) problems += "${f.where}: \"zones\" needs at least one zone"
+                val monument = f.bool("monument") ?: false
+                if (zones == 0 && !monument) problems += "${f.where}: \"zones\" needs at least one zone"
                 houses += HouseDef(
                     hid, f.words("name", need = true) ?: emptyMap(),
                     f.int("from", 1700, 2300, need = true) ?: 0, f.int("until", 1700, 2300, need = true) ?: 0,
                     f.int("residents", 0, 10_000, need = true) ?: 0, f.int("jobs", 0, 10_000, need = true) ?: 0,
-                    zones, f.int("min_population", 0, 10_000_000) ?: 0, f.int("weight", 1, 100) ?: 1,
+                    zones, f.int("min_population", 0, 10_000_000) ?: 0, f.int("weight", 1, 100) ?: 1, monument,
                 )
                 f.done()
             }

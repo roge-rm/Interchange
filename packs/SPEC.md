@@ -96,7 +96,7 @@ A saved game names each pack and its version, and loads with that version or a n
 
 ## Town buildings
 
-The base pack lists its town buildings in `houses.json`: who lives and works in each, the years it's built in, how far into a town it goes (`outskirts`, `suburbs`, `inner`, `centre`) and how big a town has to be first. Packs can't add town buildings yet; that comes with a later format, along with their sprites.
+The base pack lists its town buildings in `houses.json`: who lives and works in each, the years it's built in, how far into a town it goes (`outskirts`, `suburbs`, `inner`, `centre`) and how big a town has to be first. One with `"monument": true` and no zones, the statue, is never built by a town; it goes up when a company pays for it. Packs can't add town buildings yet; that comes with a later format, along with their sprites.
 
 ## Sprite sheets
 

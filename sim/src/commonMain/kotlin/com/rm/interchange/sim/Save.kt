@@ -16,7 +16,7 @@ package com.rm.interchange.sim
  */
 object Save {
     private val MAGIC = "ICHG".encodeToByteArray()
-    const val VERSION = 20
+    const val VERSION = 21
 
     fun write(world: World): ByteArray {
         val w = ByteWriter(world.width * world.height * 6 + 4096)
@@ -79,7 +79,8 @@ object Save {
                 w.int(t.built); w.int(t.serviced); w.int(t.reliability); w.int(t.breakdowns); w.int(t.brokenFor); w.bool(t.servicing); w.bool(t.service)
             }
             w.uvar(towns.size.toLong())
-            for (t in towns) { w.string(t.name); w.int(t.x); w.int(t.y); w.int(t.grid); w.bool(t.french); w.int(t.population); w.int(t.houses); w.int(t.growIn); w.int(t.servedThisMonth); w.int(t.servedLastMonth); w.ints(t.approval) }
+            for (t in towns) { w.string(t.name); w.int(t.x); w.int(t.y); w.int(t.grid); w.bool(t.french); w.int(t.population); w.int(t.houses); w.int(t.growIn); w.int(t.servedThisMonth); w.int(t.servedLastMonth); w.ints(t.approval)
+                w.int(t.roadWorks); w.int(t.funded); w.int(t.exclusive); w.int(t.exclusiveDays); w.ints(t.statue) }
             w.bytes(road); w.shorts(house); w.shorts(houseYear); w.shorts(townOf)
             w.uvar(roster.industries.size.toLong())
             for (k in roster.industries) w.string(k.key)
@@ -269,6 +270,10 @@ object Save {
                     t.population = r.int(); t.houses = r.int(); t.growIn = r.int()
                     if (version >= 4) { t.servedThisMonth = r.int(); t.servedLastMonth = r.int() }
                     if (version >= 6) r.ints().let { a -> a.copyInto(t.approval, endIndex = minOf(a.size, MAX_COMPANIES)) }
+                    if (version >= 21) {
+                        t.roadWorks = r.int(); t.funded = r.int(); t.exclusive = r.int(); t.exclusiveDays = r.int()
+                        r.ints().let { a -> a.copyInto(t.statue, endIndex = minOf(a.size, MAX_COMPANIES)) }
+                    }
                     towns += t
                 }
                 fill(road, r.bytes())

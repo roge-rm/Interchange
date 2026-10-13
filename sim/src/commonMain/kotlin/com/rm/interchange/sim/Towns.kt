@@ -35,6 +35,15 @@ class Town(
     var servedLastMonth = 0
     /** What it thinks of each company, from -1000 to 1000, by company id; it starts out thinking well of them. */
     val approval = IntArray(MAX_COMPANIES) { START_APPROVAL }
+    /** Calendar days left of road works someone paid for, holding road vehicles to a crawl on its streets. */
+    var roadWorks = 0
+    /** Calendar days left of new building someone paid for, the town growing fast. */
+    var funded = 0
+    /** The company with exclusive transport rights here, -1 for none, and the calendar days they've left to run. */
+    var exclusive = -1
+    var exclusiveDays = 0
+    /** The tile of each company's statue here, by company id, -1 for none. */
+    val statue = IntArray(MAX_COMPANIES) { -1 }
 }
 
 const val MAX_COMPANIES = 8
@@ -207,11 +216,12 @@ private const val TOWN_SPACING = 14
 internal fun World.townsDay() {
     val year = Calendar.year(startYear, day)
     for (t in towns) {
+        townActionsDay(t)
         if (--t.growIn > 0) continue
         growTown(t, year)
-        // A town with a station taking its people somewhere grows three times as fast.
+        // A town with a station taking its people somewhere grows three times as fast, and one paid to build faster still.
         val days = (40 - t.houses / 8).coerceIn(10, 40) + rng.below(10)
-        t.growIn = if (t.servedLastMonth > 0) (days / 3).coerceAtLeast(3) else days
+        t.growIn = if (t.funded > 0) FUNDED_GROW_DAYS else if (t.servedLastMonth > 0) (days / 3).coerceAtLeast(3) else days
     }
 }
 
@@ -373,6 +383,7 @@ private fun World.buildHouse(t: Town, x: Int, y: Int, facing: Int, year: Int): B
 private fun World.renew(t: Town, x: Int, y: Int, year: Int): Boolean {
     val i = index(x, y)
     val old = roster.houses.getOrNull(houseOf(house[i].toInt())) ?: return false
+    if (old.monument) return false
     val h = pickHouse(t, x, y, year)
     if (h < 0 || h == old.id) return false
     val new = roster.houses[h]

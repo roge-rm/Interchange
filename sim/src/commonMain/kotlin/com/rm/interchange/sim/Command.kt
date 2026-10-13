@@ -115,6 +115,9 @@ sealed interface Command {
     /** Pays for a new industry of [kind] somewhere on the map: built for sure if it takes cargo, prospected if not. */
     data class FundIndustry(override val company: Int, val kind: Int) : Command
 
+    /** Pays town [town]'s authority for [action], a [TownActions] kind. */
+    data class TownAction(override val company: Int, val town: Int, val action: Int) : Command
+
     /** Borrows a step more from the bank, or repays one. */
     data class Loan(override val company: Int, val borrow: Boolean) : Command
 

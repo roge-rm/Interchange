@@ -69,6 +69,7 @@ fun World.demolishCost(company: Int, i: Int): Long {
     val t = buildingTown(i) ?: return -1
     if (t.approval[company] <= APPROVAL_REFUSES) return -1
     val h = roster.houses.getOrNull(houseOf(house[i].toInt())) ?: return -1
+    if (h.monument) return -1
     return price(Prices.DEMOLISH_PER_PERSON) * maxOf(1, h.residents + h.jobs)
 }
 

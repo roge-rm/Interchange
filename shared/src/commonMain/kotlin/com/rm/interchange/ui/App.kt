@@ -124,7 +124,7 @@ fun App() {
 private enum class Screen { Title, NewGame, Playing }
 
 /** A window open over the screen. */
-private enum class Win { Menu, Load, Settings, Packs, Overlays, Finances, Industries, Companies }
+private enum class Win { Menu, Load, Settings, Packs, Overlays, Finances, Industries, Companies, Town }
 
 @Composable
 private fun Root(settings: Settings) {
@@ -133,6 +133,7 @@ private fun Root(settings: Settings) {
     val sheets = remember(packed) { packed?.let { Sheets(it, scope) } }
     var screen by remember { mutableStateOf(Screen.Title) }
     var window by remember { mutableStateOf<Win?>(null) }
+    var town by remember { mutableIntStateOf(-1) }
     // A world point for the map to go to, set from a window and taken by the game screen.
     val goTo = remember { mutableStateOf<Pair<Float, Float>?>(null) }
     // Saved from the menu since it was opened.
@@ -239,7 +240,7 @@ private fun Root(settings: Settings) {
                 if (r == null || s == null) {
                     Box(Modifier.fillMaxSize().background(LocalColors.current.page))
                 } else {
-                    Playing(r, s, settings, onMenu = { saved = false; window = Win.Menu }, onOverlays = { window = Win.Overlays }, onFinances = { window = Win.Finances }, goTo = goTo)
+                    Playing(r, s, settings, onMenu = { saved = false; window = Win.Menu }, onOverlays = { window = Win.Overlays }, onFinances = { window = Win.Finances }, onTown = { town = it; window = Win.Town }, goTo = goTo)
                 }
             }
         }
@@ -288,6 +289,7 @@ private fun Root(settings: Settings) {
             Win.Finances -> runner?.let { r -> FinanceWindow(r) { window = null } }
             Win.Industries -> runner?.game?.world?.let { w -> IndustriesWindow(w, { x, y -> goTo.value = x to y; window = null }, { runner?.request(it) }) { window = null } }
             Win.Companies -> runner?.game?.world?.let { w -> CompaniesWindow(w, { x, y -> goTo.value = x to y; window = null }) { window = null } }
+            Win.Town -> runner?.game?.world?.let { w -> w.towns.getOrNull(town)?.let { t -> TownWindow(w, t, { runner?.request(it) }) { window = null } } }
             null -> {}
         }
     }
@@ -295,7 +297,7 @@ private fun Root(settings: Settings) {
 
 /** A game being played: waits for the world to be made, then shows it. */
 @Composable
-private fun Playing(runner: GameThread, sheets: Sheets, settings: Settings, onMenu: () -> Unit, onOverlays: () -> Unit, onFinances: () -> Unit, goTo: MutableState<Pair<Float, Float>?>) {
+private fun Playing(runner: GameThread, sheets: Sheets, settings: Settings, onMenu: () -> Unit, onOverlays: () -> Unit, onFinances: () -> Unit, onTown: (Int) -> Unit, goTo: MutableState<Pair<Float, Float>?>) {
     var game by remember(runner) { mutableStateOf<Game?>(null) }
     // Redraws every display frame, and picks up the game once it's made.
     val frame = remember(runner) { mutableLongStateOf(0L) }
@@ -310,11 +312,11 @@ private fun Playing(runner: GameThread, sheets: Sheets, settings: Settings, onMe
         Box(Modifier.fillMaxSize().background(LocalColors.current.page))
         return
     }
-    key(runner) { GameScreen(runner, g.world, sheets, frame, settings, onMenu, onOverlays, onFinances, goTo) }
+    key(runner) { GameScreen(runner, g.world, sheets, frame, settings, onMenu, onOverlays, onFinances, onTown, goTo) }
 }
 
 @Composable
-private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: State<Long>, settings: Settings, onMenu: () -> Unit, onOverlays: () -> Unit, onFinances: () -> Unit, goTo: MutableState<Pair<Float, Float>?>) {
+private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: State<Long>, settings: Settings, onMenu: () -> Unit, onOverlays: () -> Unit, onFinances: () -> Unit, onTown: (Int) -> Unit, goTo: MutableState<Pair<Float, Float>?>) {
     val c = LocalColors.current
     // The drawings of this game's vehicles: the base pack's come with the app, the others from their packs.
     remember(world) {
@@ -694,7 +696,7 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
             val trayWidth = Modifier.widthIn(max = TRAY_WIDTH.dp).fillMaxWidth()
             val wv = worldView.value
             when (val sel = selected) {
-                is Selection.Tile -> InspectCard(world, sel.x, sel.y, { selected = null }, trayWidth)
+                is Selection.Tile -> InspectCard(world, sel.x, sel.y, onTown, { selected = null }, trayWidth)
                 Selection.Weather -> wv?.weather?.let { w ->
                     WeatherCard(world, w, view.focusX.toInt().coerceIn(0, world.width - 1), view.focusY.toInt().coerceIn(0, world.height - 1), { selected = null }, trayWidth)
                 }
@@ -827,7 +829,7 @@ private sealed interface Selection {
 private fun moving(runner: GameThread): Moving? = runner.view?.let { Moving(it, runner.lastView, runner.sinceTick()) }
 
 @Composable
-private fun InspectCard(world: World, x: Int, y: Int, onClose: () -> Unit, modifier: Modifier) {
+private fun InspectCard(world: World, x: Int, y: Int, onTown: (Int) -> Unit, onClose: () -> Unit, modifier: Modifier) {
     val water = world.isWater(x, y)
     val t = world.trackAt(x, y)
     val i = world.index(x, y)
@@ -884,7 +886,9 @@ private fun InspectCard(world: World, x: Int, y: Int, onClose: () -> Unit, modif
         water -> stringResource(Res.string.kind_water)
         else -> stringResource(Res.string.kind_land)
     }
-    InfoCard(title, lines, onClose, modifier)
+    InfoCard(title, lines, onClose, modifier) {
+        if (town != null) ActionButton(stringResource(Res.string.town_hall)) { onTown(town.id) }
+    }
 }
 
 /** An industry: what it made last month and how much was carried, and what it takes. */

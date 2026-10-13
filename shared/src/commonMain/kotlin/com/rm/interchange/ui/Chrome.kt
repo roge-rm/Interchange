@@ -342,7 +342,7 @@ fun TrayToggle(glyph: Glyph, label: String, on: Boolean, onClick: () -> Unit) {
 
 /** A panel of facts about something on the map, with a close button. */
 @Composable
-fun InfoCard(title: String, lines: List<String>, onClose: () -> Unit, modifier: Modifier = Modifier) {
+fun InfoCard(title: String, lines: List<String>, onClose: () -> Unit, modifier: Modifier = Modifier, actions: @Composable () -> Unit = {}) {
     val c = LocalColors.current
     ChromeBox(modifier) {
         Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
@@ -351,6 +351,7 @@ fun InfoCard(title: String, lines: List<String>, onClose: () -> Unit, modifier: 
                 SquareButton(Glyph.Remove, stringResource(Res.string.close), 28.dp, onClick = onClose)
             }
             for (l in lines) Text(l, color = c.textDim, fontSize = 13.sp)
+            actions()
         }
     }
 }

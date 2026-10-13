@@ -124,6 +124,15 @@
       "zones": ["inner", "centre"],
       "min_population": 4000,
       "weight": 4
+    },
+    {
+      "id": "statue",
+      "name": { "en": "Statue", "fr": "Statue" },
+      "from": 1836,
+      "until": 2300,
+      "residents": 0,
+      "jobs": 0,
+      "monument": true
     }
   ]
 }

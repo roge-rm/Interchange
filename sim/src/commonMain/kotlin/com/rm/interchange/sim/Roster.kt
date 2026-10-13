@@ -100,6 +100,8 @@ class House(
     val zones: Int,
     val minPopulation: Int,
     val weight: Int,
+    /** A statue and the like: put up when a company pays for it, never built, rebuilt or pulled down by the town. */
+    val monument: Boolean = false,
 ) {
     fun name(language: String) = names[language] ?: names["en"] ?: key
 }
@@ -232,7 +234,7 @@ class Roster(
                 )
             }
             val houses = packs.flatMap { p -> p.houses.map { p.id to it } }.mapIndexed { i, (pack, h) ->
-                House(i, "$pack:${h.id}", h.names, h.from, h.until, h.residents, h.jobs, h.zones, h.minPopulation, h.weight)
+                House(i, "$pack:${h.id}", h.names, h.from, h.until, h.residents, h.jobs, h.zones, h.minPopulation, h.weight, h.monument)
             }
             val industries = packs.flatMap { p -> p.industries.map { p.id to it } }.mapIndexed { i, (pack, d) ->
                 IndustryKind(
