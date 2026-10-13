@@ -289,7 +289,7 @@ private fun Root(settings: Settings) {
             Win.Overlays -> OverlaysWindow(settings) { window = null }
             Win.Finances -> runner?.let { r -> FinanceWindow(r) { window = null } }
             Win.Industries -> runner?.game?.world?.let { w -> IndustriesWindow(w, { x, y -> goTo.value = x to y; window = null }, { runner?.request(it) }) { window = null } }
-            Win.Companies -> runner?.game?.world?.let { w -> CompaniesWindow(w, { x, y -> goTo.value = x to y; window = null }) { window = null } }
+            Win.Companies -> runner?.game?.world?.let { w -> CompaniesWindow(w, { x, y -> goTo.value = x to y; window = null }, { runner?.request(it) }) { window = null } }
             Win.Subsidies -> runner?.game?.world?.let { w -> SubsidiesWindow(w, { x, y -> goTo.value = x to y; window = null }) { window = null } }
             Win.Town -> runner?.game?.world?.let { w -> w.towns.getOrNull(town)?.let { t -> TownWindow(w, t, { runner?.request(it) }) { window = null } } }
             null -> {}
@@ -918,6 +918,15 @@ private fun IndustryCard(world: World, ind: Industry, where: String, onClose: ()
 /** What a piece of news says. */
 @Composable
 private fun newsText(world: World, n: News): String {
+    if (n.kind in News.COMPANY_TROUBLE..News.COMPANY_BANKRUPT) {
+        @Composable fun name(id: Int) = if (id == 0) stringResource(Res.string.your_company) else world.companies.getOrNull(id)?.name ?: ""
+        return when (n.kind) {
+            News.COMPANY_TROUBLE -> if (n.about == 0) stringResource(Res.string.news_your_trouble) else stringResource(Res.string.news_company_trouble, name(n.about))
+            News.COMPANY_FOR_SALE -> stringResource(Res.string.news_company_for_sale, name(n.about))
+            News.COMPANY_BOUGHT -> stringResource(Res.string.news_company_bought, name(n.about shr 8), name(n.about and 255))
+            else -> stringResource(Res.string.news_company_bankrupt, name(n.about))
+        }
+    }
     if (n.kind == News.SUBSIDY_OFFERED) return stringResource(Res.string.news_subsidy_offered, subsidyRoute(world, n.about))
     if (n.kind == News.SUBSIDY_AWARDED) {
         val co = world.companies.getOrNull(world.subsidies.getOrNull(n.about)?.company ?: -1)

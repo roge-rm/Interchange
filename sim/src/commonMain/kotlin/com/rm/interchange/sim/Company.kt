@@ -21,6 +21,10 @@ class Company(val id: Int, var name: String, var money: Long) {
     /** How much it spends keeping its track up, an [Upkeep] level, and what it owes short of a dollar, in cents. */
     var upkeep = Upkeep.NORMAL
     var upkeepOwed = 0L
+    /** Months running it's been unable to pay its way, even borrowing all it can. */
+    var trouble = 0
+    /** Bought out or gone under: it owns nothing and does nothing. Kept so ids stay put. */
+    var gone = false
 }
 
 /** What money is booked to: what it was spent on or where it came from. */
@@ -109,11 +113,13 @@ internal fun World.companiesMonth() {
         // A month's interest for each work day in it, so a loan costs the same against the work done whatever the day length.
         val interest = c.loan * Prices.INTEREST / 10_000 / 12 * settings.dayLength
         if (interest > 0) spend(c, Books.INTEREST, interest)
+        if (c.gone) continue
         c.history += longArrayOf(c.money, c.monthIn, c.monthOut)
         while (c.history.size > HISTORY_MONTHS) c.history.removeAt(0)
         c.monthIn = 0
         c.monthOut = 0
     }
+    troubleMonth()
 }
 
 /**

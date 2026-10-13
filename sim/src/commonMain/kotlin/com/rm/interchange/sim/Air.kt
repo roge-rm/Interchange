@@ -53,7 +53,7 @@ object Airports {
 
 class Airport(
     val id: Int,
-    val owner: Int,
+    var owner: Int,
     val station: Int,
     val kind: Int,
     /** Its corner nearest the map's origin, its runway's way ([Track.X] or [Track.Y]; a seaplane base's, the edge facing its water), and its hangar. */
@@ -82,7 +82,7 @@ object Gear {
 class Aircraft(
     val roster: Roster,
     override val id: Int,
-    override val owner: Int,
+    override var owner: Int,
     val model: Int,
     var depot: Int,
     val cargoChoice: Int = -1,

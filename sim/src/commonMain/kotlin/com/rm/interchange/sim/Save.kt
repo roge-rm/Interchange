@@ -16,7 +16,7 @@ package com.rm.interchange.sim
  */
 object Save {
     private val MAGIC = "ICHG".encodeToByteArray()
-    const val VERSION = 22
+    const val VERSION = 23
 
     fun write(world: World): ByteArray {
         val w = ByteWriter(world.width * world.height * 6 + 4096)
@@ -41,6 +41,7 @@ object Save {
                 w.int(c.upkeep); w.long(c.upkeepOwed)
                 w.uvar(c.history.size.toLong())
                 for (h in c.history) for (v in h) w.long(v)
+                w.int(c.trouble); w.bool(c.gone)
             }
             w.long(costScale); w.long(payScale)
             w.bytes(corners); w.bytes(ground); w.bytes(trees); w.bytes(track); w.bytes(owner)
@@ -194,6 +195,7 @@ object Save {
                     if (version >= 14) { c.upkeep = r.int(); c.upkeepOwed = r.long() }
                     repeat(r.uvar().toInt().also { if (it > HISTORY_MONTHS) throw BadData("too long a history") }) { c.history += LongArray(3) { r.long() } }
                 }
+                if (version >= 23) { c.trouble = r.int(); c.gone = r.bool() }
                 companies += c
             }
             if (version >= 8) { costScale = r.long(); payScale = r.long() }

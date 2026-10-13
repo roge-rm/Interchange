@@ -15,7 +15,7 @@ package com.rm.interchange.sim
  */
 
 /** A station: a name, the platforms that make it up, and what's waiting there, by [Cargo]. */
-class Station(val id: Int, val owner: Int, var name: String, val signX: Int, val signY: Int, val waypoint: Boolean = false) {
+class Station(val id: Int, var owner: Int, var name: String, val signX: Int, val signY: Int, val waypoint: Boolean = false) {
     /** Its platform tiles, as tile indexes, in the order they were built, its road stops, its docks and its airports' tiles. */
     val tiles = ArrayList<Int>()
     val stops = ArrayList<Int>()
@@ -36,7 +36,7 @@ val Station.places get() = tiles + stops + docks + aero
 val Station.empty get() = tiles.isEmpty() && stops.isEmpty() && docks.isEmpty() && aero.isEmpty()
 
 /** A depot, open at [edge] of its tile: an engine house, a garage, a shipyard or a hangar, by [Depots] kind. */
-class Depot(val id: Int, val owner: Int, val tile: Int, val edge: Int, val kind: Int = Depots.RAIL) {
+class Depot(val id: Int, var owner: Int, val tile: Int, val edge: Int, val kind: Int = Depots.RAIL) {
     val road get() = kind == Depots.ROAD
 }
 

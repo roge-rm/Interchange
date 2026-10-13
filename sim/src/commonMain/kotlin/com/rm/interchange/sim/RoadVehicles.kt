@@ -44,7 +44,7 @@ fun roadStepLength(s: Int): Int = when {
 class RoadVehicle(
     val roster: Roster,
     override val id: Int,
-    override val owner: Int,
+    override var owner: Int,
     /** Its place in the roster. */
     val model: Int,
     var depot: Int,

@@ -16,7 +16,7 @@ package com.rm.interchange.sim
 /** A bridge or a tunnel from head ([x0], [y0]) to head ([x1], [y1]), its track at [height] steps. */
 class Span(
     val id: Int,
-    val owner: Int,
+    var owner: Int,
     val tunnel: Boolean,
     /** A [Spans] style. */
     val style: Int,

@@ -68,8 +68,9 @@ private fun World.rivalName(t: Town): String {
 
 /** Each calendar day: any rival due to think does. */
 internal fun World.rivalsDay() {
-    for (r in rivals) {
-        if (day < r.thinkOn) continue
+    // A copy, as one may buy out another while it thinks.
+    for (r in rivals.toList()) {
+        if (day < r.thinkOn || r !in rivals) continue
         r.thinkOn = day + THINK_DAYS
         val c = companies.getOrNull(r.company) ?: continue
         think(r, c)
@@ -80,6 +81,8 @@ private fun World.think(r: Rival, c: Company) {
     // Out of money: borrow, a step at a time. Well off: pay the loan back.
     while (c.money < 0 && c.loan < maxLoan()) apply(Command.Loan(c.id, true))
     while (c.loan > 0 && c.money > price(Prices.LOAN_STEP) * 4) apply(Command.Loan(c.id, false))
+    buyStruggling(c)
+    if (c.gone) return
     sellLosers(r, c)
     for (route in r.routes) growRoute(c, route)
     if (r.routes.size >= maxRoutes(r)) return
@@ -147,6 +150,16 @@ private fun World.growRoute(c: Company, route: RivalRoute) {
     if (waiting < (model.capacity * 3 / 2).coerceAtLeast(10)) return
     if (!afford(c, price(model.cost) * 2)) return
     buyAndStart(c, route, model)
+}
+
+/** Buys a company up for sale when it's well able to, getting its routes and vehicles cheap. */
+private fun World.buyStruggling(c: Company) {
+    for (o in companies) {
+        if (o.id == c.id || !forSale(o)) continue
+        val cost = salePrice(o)
+        if (companyValue(c) < cost * 3 || !afford(c, cost * 2)) continue
+        apply(Command.BuyCompany(c.id, o.id))
+    }
 }
 
 /** Whether [c] has [cost] or can borrow it, borrowing what it needs. */

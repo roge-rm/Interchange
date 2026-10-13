@@ -45,6 +45,7 @@ object Codec {
     private const val CRAFT_ORDER = 35
     private const val CLEAR_AREA = 36
     private const val TOWN_ACTION = 37
+    private const val BUY_COMPANY = 38
 
     fun write(w: ByteWriter, c: Command) {
         when (c) {
@@ -81,6 +82,7 @@ object Codec {
             is Command.Loan -> { w.byte(LOAN); w.int(c.company); w.bool(c.borrow) }
             is Command.FundIndustry -> { w.byte(FUND_INDUSTRY); w.int(c.company); w.int(c.kind) }
             is Command.TownAction -> { w.byte(TOWN_ACTION); w.int(c.company); w.int(c.town); w.int(c.action) }
+            is Command.BuyCompany -> { w.byte(BUY_COMPANY); w.int(c.company); w.int(c.target) }
             is Command.TrainOrder -> { w.byte(TRAIN_ORDER); w.int(c.company); w.int(c.train); w.int(c.what); w.ints(c.stations) }
         }
     }
@@ -99,6 +101,7 @@ object Codec {
         LOAN -> Command.Loan(r.int(), r.bool())
         FUND_INDUSTRY -> Command.FundIndustry(r.int(), r.int())
         TOWN_ACTION -> Command.TownAction(r.int(), r.int(), r.int())
+        BUY_COMPANY -> Command.BuyCompany(r.int(), r.int())
         SIGNAL_KIND -> Command.Signal(r.int(), r.int(), r.int(), r.int(), r.int(), r.int())
         WAYPOINT -> Command.Waypoint(r.int(), r.int(), r.int())
         BRIDGE -> Command.Bridge(r.int(), r.int(), r.int(), r.int(), r.int(), r.int())

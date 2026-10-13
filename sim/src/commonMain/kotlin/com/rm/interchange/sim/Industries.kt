@@ -63,6 +63,14 @@ class News(val kind: Int, val about: Int, val tick: Long) {
         /** A subsidy offered, and won; [News.about] is its place in [World.subsidies]. */
         const val SUBSIDY_OFFERED = 12
         const val SUBSIDY_AWARDED = 13
+        /**
+         * A company that can't pay its way, one offered for sale, one bought and one gone under; [News.about] is the
+         * company, and for one bought, the buyer's id times 256 added.
+         */
+        const val COMPANY_TROUBLE = 14
+        const val COMPANY_FOR_SALE = 15
+        const val COMPANY_BOUGHT = 16
+        const val COMPANY_BANKRUPT = 17
     }
 }
 

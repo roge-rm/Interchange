@@ -23,7 +23,7 @@ package com.rm.interchange.sim
 class Ship(
     val roster: Roster,
     override val id: Int,
-    override val owner: Int,
+    override var owner: Int,
     /** Its place in the roster. */
     val model: Int,
     var depot: Int,

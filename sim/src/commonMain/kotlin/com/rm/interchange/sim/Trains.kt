@@ -34,7 +34,7 @@ class Train(
     /** The game's roster, which [engine] and [wagon] are places in. */
     val roster: Roster,
     override val id: Int,
-    override val owner: Int,
+    override var owner: Int,
     val engine: Int,
     val wagon: Int,
     val wagons: Int,

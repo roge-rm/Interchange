@@ -118,6 +118,9 @@ sealed interface Command {
     /** Pays town [town]'s authority for [action], a [TownActions] kind. */
     data class TownAction(override val company: Int, val town: Int, val action: Int) : Command
 
+    /** Buys company [target], offered for sale, with all it has and owes. */
+    data class BuyCompany(override val company: Int, val target: Int) : Command
+
     /** Borrows a step more from the bank, or repays one. */
     data class Loan(override val company: Int, val borrow: Boolean) : Command
 

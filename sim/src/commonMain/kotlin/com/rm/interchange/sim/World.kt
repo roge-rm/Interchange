@@ -236,6 +236,7 @@ class World(val settings: NewGame, val roster: Roster = Roster.BASE, generate: B
     /** Runs one command. What can't be done is left undone. */
     fun apply(command: Command) {
         val company = companies.getOrNull(command.company) ?: return
+        if (company.gone) return
         when (command) {
             is Command.Terraform -> terraform(company, command.x, command.y, command.up)
             is Command.Rail -> buildRail(company, command)
@@ -271,6 +272,7 @@ class World(val settings: NewGame, val roster: Roster = Roster.BASE, generate: B
             is Command.Loan -> loanCommand(company, command)
             is Command.FundIndustry -> fundIndustry(company, command)
             is Command.TownAction -> townAction(company, command)
+            is Command.BuyCompany -> buyCompany(company, command)
         }
     }
 
@@ -355,6 +357,7 @@ class World(val settings: NewGame, val roster: Roster = Roster.BASE, generate: B
         for (y in 0 until height) mix(heightAt(width, y).toLong())
         for (c in companies) { mix(c.money); mix(c.loan) }
         for (r in rivals) { mix(r.thinkOn.toLong()); mix(r.routes.size.toLong()); mix(r.failed.size.toLong()) }
+        for (c in companies) { mix(c.money); mix(c.loan); mix(c.trouble.toLong()); mix(if (c.gone) 1 else 0) }
         for (s in subsidies) { mix(s.cargo.toLong()); mix(s.from.toLong()); mix(s.to.toLong()); mix(s.company.toLong()); mix(s.months.toLong()) }
         mix(costScale); mix(payScale)
         mix(weather.anomaly.toLong()); mix(weather.recent.toLong())

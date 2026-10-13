@@ -3,6 +3,8 @@ package com.rm.interchange.ui
 import com.rm.interchange.sim.townActionCost
 import com.rm.interchange.sim.townActionOpen
 import com.rm.interchange.sim.companyValue
+import com.rm.interchange.sim.salePrice
+import com.rm.interchange.sim.forSale
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -519,21 +521,33 @@ private fun MoneyGraph(history: List<LongArray>, modifier: Modifier) {
 
 /** Every company, the richest first, in its colour, with its money, vehicles and stations; a tap goes to a rival's home town. */
 @Composable
-fun CompaniesWindow(world: World, onGo: (Float, Float) -> Unit, onClose: () -> Unit) {
+fun CompaniesWindow(world: World, onGo: (Float, Float) -> Unit, send: (com.rm.interchange.sim.Command) -> Unit, onClose: () -> Unit) {
     Window(stringResource(Res.string.companies), onClose, Glyph.Home) {
-        // Best first, by what each is worth.
+        // Best first, by what each is worth, those gone at the end.
         val worth = world.companies.associate { it.id to world.companyValue(it) }
-        for (co in world.companies.sortedWith(compareByDescending<com.rm.interchange.sim.Company> { worth.getValue(it.id) }.thenBy { it.id })) {
+        val mine = world.companies.firstOrNull()?.money ?: 0L
+        for (co in world.companies.sortedWith(compareBy<com.rm.interchange.sim.Company> { it.gone }.thenByDescending { worth.getValue(it.id) }.thenBy { it.id })) {
             val vehicles = world.trains.count { it?.owner == co.id } + world.roadVehicles.count { it?.owner == co.id } +
                 world.ships.count { it?.owner == co.id } + world.aircraft.count { it?.owner == co.id }
             val stations = world.stations.count { it != null && it.owner == co.id && !it.waypoint }
             val home = world.rivals.firstOrNull { it.company == co.id }?.let { world.towns.getOrNull(it.home) }
             val name = if (co.id == 0) stringResource(Res.string.your_company) else co.name
+            val price = world.salePrice(co)
+            val line = when {
+                co.gone -> stringResource(Res.string.company_gone)
+                world.forSale(co) -> stringResource(Res.string.company_for_sale, money(price))
+                else -> stringResource(Res.string.company_line, money(worth.getValue(co.id)), vehicles, stations)
+            }
             ListRow(
-                Glyph.Home, name, stringResource(Res.string.company_line, money(worth.getValue(co.id)), vehicles, stations),
+                Glyph.Home, name, line,
                 home?.let { t -> { onGo(t.x + 0.5f, t.y + 0.5f) } },
-                tint = com.rm.interchange.map.companyColour(co.id),
-            )
+                tint = if (co.gone) null else com.rm.interchange.map.companyColour(co.id),
+            ) {
+                if (world.forSale(co)) ActionButton(stringResource(Res.string.buy_company), enabled = mine >= price, strong = true) {
+                    send(com.rm.interchange.sim.Command.BuyCompany(0, co.id))
+                    onClose()
+                }
+            }
         }
     }
 }
@@ -547,7 +561,7 @@ fun TownWindow(world: World, t: com.rm.interchange.sim.Town, send: (com.rm.inter
     val levels = stringArrayResource(Res.array.approval_levels)
     val actions = stringArrayResource(Res.array.town_actions)
     Window(t.name, onClose, Glyph.Home) {
-        for (co in world.companies) {
+        for (co in world.companies.filter { !it.gone }) {
             val name = if (co.id == 0) stringResource(Res.string.your_company) else co.name
             ListRow(Glyph.Home, name, levels.getOrElse(com.rm.interchange.sim.approvalLevel(t.approval[co.id])) { "" }, null, tint = com.rm.interchange.map.companyColour(co.id))
         }
