@@ -84,6 +84,7 @@ private fun World.think(r: Rival, c: Company) {
     buyStruggling(c)
     if (c.gone) return
     sellLosers(r, c)
+    townWork(r, c)
     for (route in r.routes) growRoute(c, route)
     if (r.routes.size >= maxRoutes(r)) return
     // Buses, then trucks, then a railway, round again; anything it can't do this time, the next kind.
@@ -131,7 +132,51 @@ private fun World.sellLosers(r: Rival, c: Company) {
 private fun onRoute(v: Carrier, route: RivalRoute) = v.orders.size == 2 && Order.station(v.orders[0]) == route.a && Order.station(v.orders[1]) == route.b
 
 /** More routes as the years go by. */
-private fun World.maxRoutes(r: Rival): Int = (1 + (Calendar.year(startYear, day) - startYear) / 2).coerceAtMost(MAX_ROUTES)
+private fun World.maxRoutes(r: Rival): Int {
+    val years = Calendar.year(startYear, day) - startYear
+    return when (settings.rivalLevel) {
+        RivalLevel.EASY -> (1 + years / 3).coerceAtMost(MAX_ROUTES - 2)
+        RivalLevel.HARD -> (1 + years * 2 / 3).coerceAtMost(MAX_ROUTES + 4)
+        else -> (1 + years / 2).coerceAtMost(MAX_ROUTES)
+    }
+}
+
+/** Whether the player has a station within [PLAYER_REACH] of ([x], [y]), which easy rivals keep clear of. */
+private fun World.playerNear(x: Int, y: Int): Boolean =
+    stations.any { it != null && it.owner == 0 && !it.waypoint && chebyshev(it.signX, it.signY, x, y) <= PLAYER_REACH }
+
+/** Easy rivals keep clear of towns the player serves. */
+private fun World.leaveAlone(t: Town) = settings.rivalLevel == RivalLevel.EASY && playerNear(t.x, t.y)
+
+/**
+ * Now and then, what a rival pays a town for, as its difficulty allows: a statue at home and advertising where its
+ * stations are poorly rated; and when hard, exclusive rights and road works where the player runs. One a month at most,
+ * and only what it can well afford.
+ */
+private fun World.townWork(r: Rival, c: Company) {
+    val level = settings.rivalLevel
+    if (level == RivalLevel.EASY || rng.below(3) != 0) return
+    fun rich(action: Int) = c.money > townActionCost(action) * 3 && companyValue(c) > townActionCost(action) * 5
+    fun go(t: Town, action: Int): Boolean {
+        if (!townActionOpen(c.id, t, action) || !rich(action)) return false
+        apply(Command.TownAction(c.id, t.id, action))
+        return true
+    }
+    val mine = stations.filter { it != null && it.owner == c.id && !it.waypoint }.map { it!! }
+    fun near(t: Town, owner: Int, stops: Boolean = false) = stations.any {
+        it != null && it.owner == owner && !it.waypoint && (!stops || it.stops.isNotEmpty()) && chebyshev(it.signX, it.signY, t.x, t.y) <= TOWN_AREA / 2
+    }
+    if (level == RivalLevel.HARD) {
+        // Shutting the player out of a town both run in, or holding up the player's buses where it has none of its own.
+        for (t in towns) if (near(t, 0) && near(t, c.id) && go(t, TownActions.EXCLUSIVE)) return
+        for (t in towns) if (near(t, 0, stops = true) && !near(t, c.id, stops = true) && go(t, TownActions.ROAD_WORKS)) return
+    }
+    towns.getOrNull(r.home)?.let { if (go(it, TownActions.STATUE)) return }
+    val ad = if (level == RivalLevel.HARD) TownActions.AD_MEDIUM else TownActions.AD_SMALL
+    val poor = mine.firstOrNull { it.lastCall[Cargo.PASSENGERS] >= 0 && it.rating[Cargo.PASSENGERS] < POOR_RATING } ?: return
+    val t = towns.minByOrNull { chebyshev(it.x, it.y, poor.signX, poor.signY) } ?: return
+    if (chebyshev(t.x, t.y, poor.signX, poor.signY) <= TownActions.AD_REACH[ad]) go(t, ad)
+}
 
 /** Adds a vehicle to [route] when it's leaving people behind at either end. */
 private fun World.growRoute(c: Company, route: RivalRoute) {
@@ -202,7 +247,7 @@ private fun World.newRoute(r: Rival, c: Company): Tried {
             val key = pairKey(t1.id, t2.id)
             if (key in served || key in r.failed) continue
             // A town that won't have it at either end now may later.
-            if (townRefuses(c, t1.x, t1.y) || townRefuses(c, t2.x, t2.y)) continue
+            if (townRefuses(c, t1.x, t1.y) || townRefuses(c, t2.x, t2.y) || leaveAlone(t1) || leaveAlone(t2)) continue
             // Bigger towns, closer together, nearer home.
             val score = minOf(t1.population, t2.population).toLong() * 1000 / (d + chebyshev(t1.x, t1.y, home.x, home.y) / 2 + 5)
             // A subsidy on offer makes it worth twice as much.
@@ -312,7 +357,7 @@ private fun World.newRailRoute(r: Rival, c: Company): Tried {
             if (d < RAIL_MIN || d > RAIL_MAX) continue
             val key = railKey(minOf(t1.id, t2.id), maxOf(t1.id, t2.id), Cargo.PASSENGERS)
             if (key in served || key in r.failed || t2.id < t1.id && chebyshev(t2.x, t2.y, home.x, home.y) <= HOME_REACH) continue
-            if (townRefuses(c, t1.x, t1.y) || townRefuses(c, t2.x, t2.y)) continue
+            if (townRefuses(c, t1.x, t1.y) || townRefuses(c, t2.x, t2.y) || leaveAlone(t1) || leaveAlone(t2)) continue
             // Passengers go both ways, so a town's worth about a mine's month.
             picks += Pick(minOf(t1.id, t2.id), maxOf(t1.id, t2.id), Cargo.PASSENGERS, minOf(t1.population, t2.population) / 4, railSite(t1, t2.x, t2.y), railSite(t2, t1.x, t1.y),
                 minOf(t1.population, t2.population).toLong() / 4 * minOf(d, RAIL_BEST) * 100 / (fromHome + 10))
@@ -333,8 +378,13 @@ private fun World.newRailRoute(r: Rival, c: Company): Tried {
 }
 
 /** Whether another company's station already takes cargo [cg] from [ind]. */
-private fun World.servedByOthers(ind: Industry, cg: Int, company: Int): Boolean =
-    industryStations[ind.id].orEmpty().any { id -> stations.getOrNull(id)?.let { it.owner != company && it.lastCall[cg] >= 0 } == true }
+private fun World.servedByOthers(ind: Industry, cg: Int, company: Int): Boolean {
+    // Hard rivals go after what the player carries.
+    val hard = settings.rivalLevel == RivalLevel.HARD
+    return industryStations[ind.id].orEmpty().any { id ->
+        stations.getOrNull(id)?.let { it.owner != company && !(hard && it.owner == 0) && it.lastCall[cg] >= 0 } == true
+    }
+}
 
 /** The tile in the middle of [ind]. */
 internal fun World.middle(ind: Industry): Pair<Int, Int> {
@@ -696,6 +746,10 @@ private const val RAIL_TRIES = 2
 /** Calendar days between a rival's looks at its business. */
 private const val THINK_DAYS = 30
 private const val MAX_ROUTES = 8
+/** How near the player's stations easy rivals keep away from, in tiles. */
+private const val PLAYER_REACH = 10
+/** A station rating, out of 255, poor enough for a rival to advertise. */
+private const val POOR_RATING = 110
 private const val MAX_PER_ROUTE = 6
 /** Calendar days a vehicle runs before it's sold for losing money: two years, so last year's figure is a whole year. */
 private const val SELL_AGE = 730

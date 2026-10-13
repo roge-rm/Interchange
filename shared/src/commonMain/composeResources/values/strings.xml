@@ -290,6 +290,10 @@
     <string name="company_line">Worth %1$s · %2$d vehicles · %3$d stations</string>
     <string name="subsidies">Subsidies</string>
     <string name="shared_track">Shared track</string>
+    <string name="rival_level">Rival difficulty</string>
+    <string-array name="rival_levels"><item>Easy</item><item>Normal</item><item>Hard</item></string-array>
+    <string name="news_you_were_bought">%1$s has bought your company</string>
+    <string name="news_you_restart">Your company went under, and the bank has set you up with a new one</string>
     <string name="chronicle">Chronicle</string>
     <string name="chronicle_headlines">Headlines</string>
     <string name="chronicle_all">Everything</string>

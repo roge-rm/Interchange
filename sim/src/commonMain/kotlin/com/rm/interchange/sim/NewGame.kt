@@ -45,6 +45,8 @@ data class NewGame(
     val rivals: Int = 0,
     /** Trains may run on other companies' track, paying the owner [SHARE_FEE] a tile; without it each keeps to its own. */
     val sharing: Boolean = true,
+    /** How hard the computer's companies play, a [RivalLevel]. */
+    val rivalLevel: Int = RivalLevel.NORMAL,
 ) {
     companion object {
         val DAY_LENGTHS = intArrayOf(1, 2, 4, 6, 10, 16)
@@ -53,4 +55,11 @@ data class NewGame(
         const val FIRST_YEAR = 1836
         const val LAST_YEAR = 2050
     }
+}
+
+/** How hard rivals play: easy ones leave the player alone, hard ones use everything they can. */
+object RivalLevel {
+    const val EASY = 0
+    const val NORMAL = 1
+    const val HARD = 2
 }

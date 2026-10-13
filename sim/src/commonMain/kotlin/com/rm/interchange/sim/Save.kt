@@ -16,14 +16,14 @@ package com.rm.interchange.sim
  */
 object Save {
     private val MAGIC = "ICHG".encodeToByteArray()
-    const val VERSION = 25
+    const val VERSION = 26
 
     fun write(world: World): ByteArray {
         val w = ByteWriter(world.width * world.height * 6 + 4096)
         with(world) {
             val g = settings
             w.int(g.width); w.int(g.height); w.long(g.seed); w.int(g.startYear); w.int(g.region.ordinal)
-            w.int(g.sea); w.int(g.hills); w.int(g.trees); w.int(g.towns); w.int(g.industries); w.bool(g.inflation); w.bool(g.weather); w.int(g.dayLength); w.int(g.rivals); w.bool(g.sharing)
+            w.int(g.sea); w.int(g.hills); w.int(g.trees); w.int(g.towns); w.int(g.industries); w.bool(g.inflation); w.bool(g.weather); w.int(g.dayLength); w.int(g.rivals); w.bool(g.sharing); w.int(g.rivalLevel)
             w.uvar(roster.packs.size.toLong())
             for (p in roster.packs) { w.string(p.id); w.int(p.version); w.long(p.hash) }
             w.uvar(roster.engines.size.toLong())
@@ -399,6 +399,7 @@ object Save {
             dayLength = if (version >= 18) r.int().coerceIn(1, 64) else 1,
             rivals = if (version >= 19) r.int().coerceIn(0, NewGame.MOST_RIVALS) else 0,
             sharing = if (version >= 25) r.bool() else true,
+            rivalLevel = if (version >= 26) r.int().coerceIn(RivalLevel.EASY, RivalLevel.HARD) else RivalLevel.NORMAL,
         )
         if (settings.width !in 16..4096 || settings.height !in 16..4096) throw BadData("map size out of range")
         return settings

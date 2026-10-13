@@ -30,7 +30,7 @@ import org.jetbrains.compose.resources.stringResource
 /** The news that makes the headlines; the rest is only in the full chronicle. */
 private val HEADLINES = setOf(
     News.INDUSTRY_OPENS, News.INDUSTRY_CLOSES, News.WASHOUT, News.FIRE, News.AVALANCHE, News.SUBSIDY_AWARDED,
-    News.COMPANY_FOR_SALE, News.COMPANY_BOUGHT, News.COMPANY_BANKRUPT, News.NEW_VEHICLE,
+    News.COMPANY_FOR_SALE, News.COMPANY_BOUGHT, News.COMPANY_BANKRUPT, News.COMPANY_RESTARTED, News.NEW_VEHICLE,
 )
 
 /** The most months the chronicle shows at once, newest first. */

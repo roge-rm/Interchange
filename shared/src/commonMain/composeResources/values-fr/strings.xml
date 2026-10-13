@@ -273,6 +273,10 @@
     <string name="company_line">Valeur %1$s · %2$d véhicules · %3$d gares</string>
     <string name="subsidies">Subventions</string>
     <string name="shared_track">Voies partagées</string>
+    <string name="rival_level">Difficulté des rivaux</string>
+    <string-array name="rival_levels"><item>Facile</item><item>Normale</item><item>Difficile</item></string-array>
+    <string name="news_you_were_bought">%1$s a racheté votre compagnie</string>
+    <string name="news_you_restart">Votre compagnie a fait faillite, et la banque vous en a monté une nouvelle</string>
     <string name="chronicle">Chronique</string>
     <string name="chronicle_headlines">Manchettes</string>
     <string name="chronicle_all">Tout</string>

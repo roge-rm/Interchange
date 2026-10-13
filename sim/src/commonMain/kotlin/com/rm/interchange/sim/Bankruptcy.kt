@@ -2,23 +2,25 @@ package com.rm.interchange.sim
 
 /*
  * Companies that can't pay their way, as in OpenTTD. One that couldn't
- * cover its bills even borrowing all it can is in trouble; after a few months
- * the news says so, then a computer company is offered for sale, and if
- * nobody buys it, it goes under: its vehicles are gone and its track,
- * stations and depots taken up, its roads left to everyone. The player's
- * company is only warned.
+ * cover its bills even borrowing all it can is in trouble; after four months
+ * the news says so, after seven it's offered for sale, and a computer company
+ * nobody buys goes under at ten: its vehicles are gone and its track,
+ * stations and depots taken up, its roads left to everyone. The player is
+ * warned at four, seven and ten months and goes under after a year, or when
+ * a hard rival buys it, and the bank sets them up with a new company.
  */
 
-/** Months in trouble before the news warns, a company is offered for sale, and it goes under. */
-const val TROUBLE_WARN = 3
-const val TROUBLE_FOR_SALE = 6
-const val TROUBLE_BANKRUPT = 9
+/** Months in trouble before the news warns, a company is offered for sale, a rival goes under, and the player does. */
+const val TROUBLE_WARN = 4
+const val TROUBLE_FOR_SALE = 7
+const val TROUBLE_BANKRUPT = 10
+const val TROUBLE_PLAYER = 12
 
 /** Whether [c] couldn't pay its way even borrowing all the bank will lend. */
 fun World.inTrouble(c: Company): Boolean = c.money + (maxLoan() - c.loan) < 0
 
-/** Whether [c] is up for sale: a computer company long in trouble. */
-fun World.forSale(c: Company): Boolean = !c.gone && c.id != 0 && c.trouble >= TROUBLE_FOR_SALE
+/** Whether [c] is up for sale: long in trouble, and if it's the player's, only to hard rivals. */
+fun World.forSale(c: Company): Boolean = !c.gone && c.trouble >= TROUBLE_FOR_SALE && (c.id != 0 || settings.rivalLevel == RivalLevel.HARD)
 
 /** What buying [c] costs: what it's worth, debts and all, or nothing if it owes more than it has. */
 fun World.salePrice(c: Company): Long = companyValue(c).coerceAtLeast(0)
@@ -30,7 +32,14 @@ internal fun World.troubleMonth() {
         if (inTrouble(c)) c.trouble++ else c.trouble = 0
         when {
             c.trouble == 0 -> {}
-            c.id == 0 -> if (c.trouble % TROUBLE_WARN == 0) tell(News.COMPANY_TROUBLE, c.id)
+            c.id == 0 -> when (c.trouble) {
+                TROUBLE_WARN, TROUBLE_BANKRUPT -> tell(News.COMPANY_TROUBLE, c.id)
+                TROUBLE_FOR_SALE -> tell(if (forSale(c)) News.COMPANY_FOR_SALE else News.COMPANY_TROUBLE, c.id)
+                TROUBLE_PLAYER -> {
+                    dissolve(c)
+                    restart(c)
+                }
+            }
             c.trouble == TROUBLE_WARN -> tell(News.COMPANY_TROUBLE, c.id)
             c.trouble == TROUBLE_FOR_SALE -> tell(News.COMPANY_FOR_SALE, c.id)
             c.trouble >= TROUBLE_BANKRUPT -> {
@@ -49,6 +58,31 @@ internal fun World.buyCompany(buyer: Company, c: Command.BuyCompany) {
     spend(buyer, Books.CONSTRUCTION, cost)
     takeOver(target, buyer)
     tell(News.COMPANY_BOUGHT, target.id or (buyer.id shl 8))
+    if (target.id == 0) restart(target)
+}
+
+/**
+ * The player's company, gone under or bought out, starts again: the bank's start money and no loan, its books
+ * clean, every town thinking of it as of a stranger. A statue it had stays up as the town's own.
+ */
+internal fun World.restart(c: Company) {
+    c.gone = false
+    c.trouble = 0
+    c.money = price(Prices.START_MONEY)
+    c.loan = 0
+    c.runningOwed = 0
+    c.upkeepOwed = 0
+    c.thisYear.fill(0)
+    c.lastYear.fill(0)
+    c.history.clear()
+    c.monthIn = 0
+    c.monthOut = 0
+    for (t in towns) {
+        t.approval[c.id] = START_APPROVAL
+        t.statue[c.id] = -1
+        if (t.exclusive == c.id) { t.exclusive = -1; t.exclusiveDays = 0 }
+    }
+    tell(News.COMPANY_RESTARTED, c.id)
 }
 
 /** Everything [from] has goes to [to], its money and debts with it, and [from] is gone. */

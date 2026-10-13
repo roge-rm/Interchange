@@ -71,6 +71,8 @@ class News(val kind: Int, val about: Int, val tick: Long) {
         const val COMPANY_FOR_SALE = 15
         const val COMPANY_BOUGHT = 16
         const val COMPANY_BANKRUPT = 17
+        /** The player's company starts again after going under or being bought; [News.about] is 0. */
+        const val COMPANY_RESTARTED = 19
         /** A vehicle goes on sale; [News.about] is its place in the roster. */
         const val NEW_VEHICLE = 18
     }

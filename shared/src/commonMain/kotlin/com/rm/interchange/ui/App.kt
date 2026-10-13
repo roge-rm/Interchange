@@ -920,6 +920,7 @@ private fun IndustryCard(world: World, ind: Industry, where: String, onClose: ()
 /** What a piece of news says. */
 @Composable
 internal fun newsText(world: World, n: News): String {
+    if (n.kind == News.COMPANY_RESTARTED) return stringResource(Res.string.news_you_restart)
     if (n.kind == News.NEW_VEHICLE) {
         val e = world.roster.getOrNull(n.about) ?: return ""
         val lang = languageCode()
@@ -930,7 +931,8 @@ internal fun newsText(world: World, n: News): String {
         return when (n.kind) {
             News.COMPANY_TROUBLE -> if (n.about == 0) stringResource(Res.string.news_your_trouble) else stringResource(Res.string.news_company_trouble, name(n.about))
             News.COMPANY_FOR_SALE -> stringResource(Res.string.news_company_for_sale, name(n.about))
-            News.COMPANY_BOUGHT -> stringResource(Res.string.news_company_bought, name(n.about shr 8), name(n.about and 255))
+            News.COMPANY_BOUGHT -> if (n.about and 255 == 0) stringResource(Res.string.news_you_were_bought, name(n.about shr 8))
+                else stringResource(Res.string.news_company_bought, name(n.about shr 8), name(n.about and 255))
             else -> stringResource(Res.string.news_company_bankrupt, name(n.about))
         }
     }

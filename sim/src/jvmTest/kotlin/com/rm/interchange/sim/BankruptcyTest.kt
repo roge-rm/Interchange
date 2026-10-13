@@ -5,7 +5,8 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 class BankruptcyTest {
-    private fun game(rivals: Int = 1) = World(NewGame(128, 128, 7, 1930, Region.MIXED, towns = 3, industries = 0, rivals = rivals))
+    private fun game(rivals: Int = 1, level: Int = RivalLevel.NORMAL) =
+        World(NewGame(128, 128, 7, 1930, Region.MIXED, towns = 3, industries = 0, rivals = rivals, rivalLevel = level))
 
     private fun World.days(n: Int) = repeat(Calendar.TICKS_PER_DAY * n) { step() }
 
@@ -86,14 +87,36 @@ class BankruptcyTest {
     }
 
     @Test
-    fun thePlayerIsOnlyWarned() {
+    fun thePlayerGoesUnderAfterAYearAndStartsAgain() {
         val w = game()
         val c = w.companies[0]
         c.loan = w.maxLoan()
         c.money = -w.maxLoan() * 3
-        w.days(31 * TROUBLE_BANKRUPT + 40)
-        assertTrue(!c.gone)
+        w.days(31 * TROUBLE_FOR_SALE + 5)
+        // Not for sale on normal, only warned.
         assertTrue(!w.forSale(c))
-        assertTrue(c.trouble >= TROUBLE_BANKRUPT)
+        assertTrue(w.chronicle.any { it.kind == News.COMPANY_TROUBLE && it.about == 0 })
+        w.days(31 * (TROUBLE_PLAYER - TROUBLE_FOR_SALE))
+        assertTrue(!c.gone)
+        assertEquals(0, c.trouble)
+        assertEquals(0L, c.loan)
+        assertTrue(c.money > 0)
+        assertTrue(w.chronicle.any { it.kind == News.COMPANY_RESTARTED })
+    }
+
+    @Test
+    fun aHardRivalBuysThePlayerUpForSale() {
+        val w = game(level = RivalLevel.HARD)
+        w.days(200)
+        val c = w.companies[0]
+        c.loan = w.maxLoan()
+        c.money = -w.maxLoan() * 3
+        w.days(31 * TROUBLE_FOR_SALE + 40)
+        val buyer = w.rivals.first().company
+        assertTrue(w.chronicle.any { it.kind == News.COMPANY_BOUGHT && it.about == (0 or (buyer shl 8)) }, "nobody bought the player")
+        // The player carries on with a new company.
+        assertTrue(!c.gone)
+        assertEquals(0L, c.loan)
+        assertTrue(c.money > 0)
     }
 }
