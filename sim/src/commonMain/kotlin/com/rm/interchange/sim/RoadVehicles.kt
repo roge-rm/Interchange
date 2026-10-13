@@ -230,12 +230,28 @@ internal fun World.moveRoadVehicles() {
     for (v in list) if (!v.inDepot) driveRoadVehicle(v, on)
 }
 
+/** Whether [v] has all it can carry, or all the spring load limits let it. */
+private fun World.roadFull(v: RoadVehicle): Boolean = (0 until Cargo.COUNT).all { c ->
+    v.load(c) >= if (c > Cargo.MAIL && loadLimits()) v.capacity(c) / 2 else v.capacity(c)
+}
+
 /** How long a road vehicle is, in the trains' units. */
 private fun RoadVehicle.size() = info.length * FIX
 
 private fun World.driveRoadVehicle(v: RoadVehicle, on: HashMap<Int, ArrayList<RoadVehicle>>) {
     if (v.waiting > 0) {
         if (--v.waiting == 0) {
+            // A full load order keeps it there, loading as more comes, till it's full, unless it's due at its garage:
+            // standing in a drive-through stop it would hold up everyone behind it.
+            val o = v.orders.getOrNull(v.order % v.orders.size.coerceAtLeast(1)) ?: 0
+            val s = stations.getOrNull(Order.station(o))
+            if (Order.has(o, Order.FULL_LOAD) && s != null && !v.toDepot && !roadFull(v)) {
+                loadAt(v, s)
+                if (!roadFull(v)) {
+                    v.waiting = FULL_LOAD_RETRY
+                    return
+                }
+            }
             nextRoadOrder(v)
             v.route = null
         }

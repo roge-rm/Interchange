@@ -858,7 +858,7 @@
       "power": 6,
       "weight": 3,
       "cost": 200,
-      "running": 8,
+      "running": 12,
       "length": 7,
       "carries": [
         "goods",
@@ -866,7 +866,7 @@
         "lumber",
         "grain"
       ],
-      "capacity": 4,
+      "capacity": 6,
       "traction": "horse"
     },
     {
@@ -881,13 +881,13 @@
       "power": 3,
       "weight": 1,
       "cost": 200,
-      "running": 5,
+      "running": 8,
       "length": 4,
       "carries": [
         "grain",
         "food"
       ],
-      "capacity": 2,
+      "capacity": 3,
       "traction": "horse"
     },
     {
@@ -1023,11 +1023,11 @@
       "speed": 70,
       "power": 90,
       "weight": 4,
-      "cost": 1300,
-      "running": 260,
+      "cost": 2150,
+      "running": 430,
       "length": 5,
       "carries": "mail",
-      "capacity": 12
+      "capacity": 20
     },
     {
       "id": "stake_truck",
@@ -1040,8 +1040,8 @@
       "speed": 50,
       "power": 60,
       "weight": 4,
-      "cost": 250,
-      "running": 50,
+      "cost": 600,
+      "running": 120,
       "length": 6,
       "carries": [
         "goods",
@@ -1049,7 +1049,7 @@
         "food",
         "paper"
       ],
-      "capacity": 5
+      "capacity": 12
     },
     {
       "id": "dump_truck",
@@ -1062,8 +1062,8 @@
       "speed": 65,
       "power": 160,
       "weight": 8,
-      "cost": 300,
-      "running": 60,
+      "cost": 600,
+      "running": 120,
       "length": 6,
       "carries": [
         "coal",
@@ -1073,7 +1073,7 @@
         "bauxite",
         "grain"
       ],
-      "capacity": 10
+      "capacity": 20
     },
     {
       "id": "tank_truck",
@@ -1086,14 +1086,14 @@
       "speed": 65,
       "power": 150,
       "weight": 7,
-      "cost": 400,
-      "running": 80,
+      "cost": 700,
+      "running": 140,
       "length": 6,
       "carries": [
         "oil",
         "fuel"
       ],
-      "capacity": 10
+      "capacity": 18
     },
     {
       "id": "log_truck",
@@ -1106,11 +1106,11 @@
       "speed": 60,
       "power": 220,
       "weight": 9,
-      "cost": 550,
-      "running": 110,
+      "cost": 750,
+      "running": 150,
       "length": 9,
       "carries": "timber",
-      "capacity": 18
+      "capacity": 25
     },
     {
       "id": "cattle_truck",
@@ -1123,11 +1123,11 @@
       "speed": 65,
       "power": 180,
       "weight": 8,
-      "cost": 650,
-      "running": 130,
+      "cost": 800,
+      "running": 160,
       "length": 8,
       "carries": "livestock",
-      "capacity": 12
+      "capacity": 15
     },
     {
       "id": "semi_van",
@@ -1140,8 +1140,8 @@
       "speed": 100,
       "power": 400,
       "weight": 15,
-      "cost": 2200,
-      "running": 440,
+      "cost": 2500,
+      "running": 500,
       "length": 11,
       "carries": [
         "goods",
@@ -1152,7 +1152,7 @@
         "aluminium",
         "steel"
       ],
-      "capacity": 22
+      "capacity": 25
     },
     {
       "id": "plow_truck",
@@ -1181,11 +1181,11 @@
       "speed": 90,
       "power": 130,
       "weight": 4,
-      "cost": 2250,
-      "running": 450,
+      "cost": 3100,
+      "running": 620,
       "length": 6,
       "carries": "mail",
-      "capacity": 16
+      "capacity": 22
     },
     {
       "id": "electric_van",
@@ -1198,11 +1198,11 @@
       "speed": 110,
       "power": 200,
       "weight": 5,
-      "cost": 3450,
-      "running": 690,
+      "cost": 4300,
+      "running": 860,
       "length": 6,
       "carries": "mail",
-      "capacity": 20
+      "capacity": 25
     },
     {
       "id": "flatbed_truck",
@@ -1215,8 +1215,8 @@
       "speed": 85,
       "power": 200,
       "weight": 7,
-      "cost": 750,
-      "running": 150,
+      "cost": 1850,
+      "running": 370,
       "length": 7,
       "carries": [
         "goods",
@@ -1225,7 +1225,7 @@
         "paper",
         "steel"
       ],
-      "capacity": 9
+      "capacity": 22
     },
     {
       "id": "tandem_dump",
@@ -1238,8 +1238,8 @@
       "speed": 85,
       "power": 250,
       "weight": 10,
-      "cost": 550,
-      "running": 110,
+      "cost": 900,
+      "running": 180,
       "length": 7,
       "carries": [
         "coal",
@@ -1249,7 +1249,7 @@
         "bauxite",
         "grain"
       ],
-      "capacity": 15
+      "capacity": 25
     },
     {
       "id": "quad_dump",
@@ -1262,8 +1262,8 @@
       "speed": 100,
       "power": 400,
       "weight": 13,
-      "cost": 1000,
-      "running": 200,
+      "cost": 1350,
+      "running": 270,
       "length": 8,
       "carries": [
         "coal",
@@ -1273,7 +1273,7 @@
         "bauxite",
         "grain"
       ],
-      "capacity": 22
+      "capacity": 30
     },
     {
       "id": "fuel_truck",
@@ -1286,14 +1286,14 @@
       "speed": 85,
       "power": 230,
       "weight": 9,
-      "cost": 750,
-      "running": 150,
+      "cost": 1250,
+      "running": 250,
       "length": 7,
       "carries": [
         "oil",
         "fuel"
       ],
-      "capacity": 15
+      "capacity": 25
     },
     {
       "id": "tanker_train",
@@ -1346,11 +1346,11 @@
       "speed": 80,
       "power": 450,
       "weight": 16,
-      "cost": 1350,
-      "running": 270,
+      "cost": 1400,
+      "running": 280,
       "length": 12,
       "carries": "timber",
-      "capacity": 34
+      "capacity": 35
     },
     {
       "id": "cattle_liner",
@@ -1380,8 +1380,8 @@
       "speed": 105,
       "power": 450,
       "weight": 15,
-      "cost": 2900,
-      "running": 580,
+      "cost": 3100,
+      "running": 620,
       "length": 12,
       "carries": [
         "goods",
@@ -1392,7 +1392,7 @@
         "aluminium",
         "steel"
       ],
-      "capacity": 28
+      "capacity": 30
     },
     {
       "id": "aero_tractor",
@@ -1405,8 +1405,8 @@
       "speed": 110,
       "power": 500,
       "weight": 15,
-      "cost": 3250,
-      "running": 650,
+      "cost": 3450,
+      "running": 690,
       "length": 12,
       "carries": [
         "goods",
@@ -1417,7 +1417,7 @@
         "aluminium",
         "steel"
       ],
-      "capacity": 30
+      "capacity": 32
     },
     {
       "id": "tandem_plow",

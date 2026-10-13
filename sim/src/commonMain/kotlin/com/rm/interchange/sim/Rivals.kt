@@ -97,7 +97,9 @@ private fun World.sellLosers(r: Rival, c: Company) {
     for (v in roadVehicles) {
         if (v == null || v.owner != c.id) continue
         if (v.inDepot && !v.running) apply(Command.RoadOrder(c.id, v.id, Command.TrainOrder.SELL))
-        else if (!v.inDepot && !v.toDepot && day - v.built >= SELL_AGE && v.profitLastYear < 0) {
+        else if (!v.inDepot && (!v.toDepot || v.servicing) && day - v.built >= SELL_AGE && v.profitLastYear < 0) {
+            // One on its way for a service is turned off that first, then sent to stay.
+            if (v.toDepot) apply(Command.RoadOrder(c.id, v.id, Command.TrainOrder.TO_DEPOT))
             apply(Command.RoadOrder(c.id, v.id, Command.TrainOrder.TO_DEPOT))
         }
     }
@@ -144,16 +146,7 @@ private fun World.growRoute(c: Company, route: RivalRoute) {
     val waiting = maxOf(a.waiting(route.cargo), b.waiting(route.cargo))
     if (waiting < (model.capacity * 3 / 2).coerceAtLeast(10)) return
     if (!afford(c, price(model.cost) * 2)) return
-    buyAndStart(c, route, model, sourceWait(route, model))
-}
-
-/** Days a truck waits at the industry for its load: about as long as the industry takes to make one. */
-private fun World.sourceWait(route: RivalRoute, model: Engine): Int {
-    if (!route.freight) return 0
-    val ind = industries.getOrNull(route.townA) ?: return 0
-    val month = roster.industries[ind.kind].produces[route.cargo] * ind.level / 16
-    if (month <= 0) return 1
-    return (model.capacity * 30 / month).coerceIn(1, MAX_SOURCE_WAIT)
+    buyAndStart(c, route, model)
 }
 
 /** Whether [c] has [cost] or can borrow it, borrowing what it needs. */
@@ -170,13 +163,13 @@ private fun World.bestModel(cargo: Int): Engine? {
         .maxWithOrNull(compareBy<Engine> { it.capacity.toLong() * it.speed }.thenBy { -it.id })
 }
 
-private fun World.buyAndStart(c: Company, route: RivalRoute, model: Engine, wait: Int = 0) {
+private fun World.buyAndStart(c: Company, route: RivalRoute, model: Engine) {
     val before = roadVehicles.size
     apply(Command.BuyRoadVehicle(c.id, route.depot, model.id, route.cargo))
     if (roadVehicles.size == before) return
     val id = roadVehicles.size - 1
-    // Freight loads at the first stop and comes back empty.
-    val orders = if (route.freight) intArrayOf(Order.withWait(route.a, wait), route.b or Order.NO_LOAD) else intArrayOf(route.a, route.b)
+    // Freight waits for a full load at the first stop and comes back empty.
+    val orders = if (route.freight) intArrayOf(route.a or Order.FULL_LOAD, route.b or Order.NO_LOAD) else intArrayOf(route.a, route.b)
     apply(Command.RoadOrder(c.id, id, Command.TrainOrder.ORDERS, orders))
     apply(Command.RoadOrder(c.id, id, Command.TrainOrder.START_STOP))
 }
@@ -357,7 +350,7 @@ private fun World.tryFreight(r: Rival, c: Company, from: Industry, to: Industry,
     if (a == b || stationIndustries[a]?.contains(from.id) != true || stationIndustries[b]?.contains(to.id) != true) return undo(c, stopA, stopB)
     val route = RivalRoute(a, b, depot, from.id, to.id, cargo)
     r.routes += route
-    repeat(2) { buyAndStart(c, route, model, sourceWait(route, model)) }
+    repeat(2) { buyAndStart(c, route, model) }
     return Tried.BUILT
 }
 
@@ -702,8 +695,6 @@ private const val HOME_REACH = 48
 private const val RIVAL_APART = 20
 /** Pairs tried at each look. */
 private const val TRIES = 3
-/** Most days a truck waits at an industry for its load. */
-private const val MAX_SOURCE_WAIT = 10
 /** Tiles of a new road, from its end, tried for a spur to put an industry's stop on. */
 private const val SPUR_TRIES = 8
 /** How far from a town's middle its stop and the road's ends go, and from a stop its garage. */

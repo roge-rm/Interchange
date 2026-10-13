@@ -478,13 +478,12 @@ internal fun World.passengersMonth() {
     }
 }
 
-/** The first of each year: trains' profit moves to last year's. */
+/** The first of each year: every vehicle's profit moves to last year's. */
 internal fun World.passengersYear() {
-    for (t in trains) {
-        if (t == null) continue
-        t.profitLastYear = t.profitThisYear
-        t.profitThisYear = 0
-    }
+    for (t in trains) if (t != null) { t.profitLastYear = t.profitThisYear; t.profitThisYear = 0 }
+    for (v in roadVehicles) if (v != null) { v.profitLastYear = v.profitThisYear; v.profitThisYear = 0 }
+    for (v in ships) if (v != null) { v.profitLastYear = v.profitThisYear; v.profitThisYear = 0 }
+    for (v in aircraft) if (v != null) { v.profitLastYear = v.profitThisYear; v.profitThisYear = 0 }
 }
 
 /** Payments shown rising over stations, kept this many ticks. */

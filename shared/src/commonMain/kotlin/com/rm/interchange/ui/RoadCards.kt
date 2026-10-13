@@ -98,13 +98,28 @@ fun RoadVehicleCard(view: WorldView, roster: Roster, v: RoadVehicleView, addingS
         val horses = roster[v.model].traction == Traction.HORSE
         val tires = stringArrayResource(Res.array.tire_kinds)
         if (!horses) Text(stringResource(Res.string.tires_line, tires.getOrElse(v.tires) { "" }), color = c.textDim, fontSize = 13.sp)
+        // The stops, the one it's heading for lit; a tap opens what to do there.
+        var open by remember(v.id) { mutableIntStateOf(-1) }
         FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             for ((i, o) in v.orders.withIndex()) {
-                Chip("${i + 1}. ${stationName(view, Order.station(o))}", i == v.order % v.orders.size) {
-                    send(Command.RoadOrder(0, v.id, Command.TrainOrder.ORDERS, v.orders.filterIndexed { j, _ -> j != i }.toIntArray()))
+                val marks = buildString {
+                    if (Order.has(o, Order.FULL_LOAD)) append(" ⬤")
+                    if (Order.has(o, Order.NO_LOAD)) append(" ⊘")
                 }
+                Chip("${i + 1}. ${stationName(view, Order.station(o))}$marks", i == v.order % v.orders.size || i == open) { open = if (open == i) -1 else i }
             }
             Chip(stringResource(if (addingStops) Res.string.done_adding else Res.string.add_stops), addingStops, onClick = onAddStops)
+        }
+        v.orders.getOrNull(open)?.let { o ->
+            fun change(new: Int) = send(Command.RoadOrder(0, v.id, Command.TrainOrder.ORDERS, v.orders.copyOf().also { it[open] = new }))
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Chip(stringResource(Res.string.full_load), Order.has(o, Order.FULL_LOAD)) { change(Order.toggle(o, Order.FULL_LOAD)) }
+                Chip(stringResource(Res.string.no_loading), Order.has(o, Order.NO_LOAD)) { change(Order.toggle(o, Order.NO_LOAD)) }
+                ActionButton(stringResource(Res.string.remove_stop)) {
+                    send(Command.RoadOrder(0, v.id, Command.TrainOrder.ORDERS, v.orders.filterIndexed { j, _ -> j != open }.toIntArray()))
+                    open = -1
+                }
+            }
         }
         FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             ActionButton(stringResource(if (v.running) Res.string.stop else Res.string.start), strong = !v.running) { send(Command.RoadOrder(0, v.id, Command.TrainOrder.START_STOP)) }

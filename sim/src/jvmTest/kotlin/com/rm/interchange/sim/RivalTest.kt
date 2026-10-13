@@ -18,6 +18,8 @@ class RivalTest {
         assertTrue(w.rivals.any { r -> w.companies[r.company].let { it.thisYear[Books.INCOME] + it.lastYear[Books.INCOME] } > 0 }, "no rival earned anything")
         // What they built is theirs.
         for (r in w.rivals) for (rt in r.routes) assertEquals(r.company, w.stations[rt.a]!!.owner)
+        // A new year moved road vehicles' profit to last year's.
+        assertTrue(w.roadVehicles.any { it != null && it.profitLastYear != 0L }, "no road vehicle has last year's profit")
     }
 
     @Test
