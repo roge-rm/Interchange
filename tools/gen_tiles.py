@@ -11,11 +11,11 @@ build/renders) are used in place of the plain ones where they exist.
 
 Three kinds of sheet, one of each per zoom level, sharpest first, each level
 half the last:
-- files/ground_<level>.png: the ground textures, which the game paints the land with
-- files/static_<level>.png: what the game bakes into the map: track, buildings, trees, with how
+- files/ground_<level>.webp: the ground textures, which the game paints the land with
+- files/static_<level>.webp: what the game bakes into the map: track, buildings, trees, with how
   much each pixel faces the sky in the low two bits of its blue, for snow
-- files/signals_<level>.png: signals, drawn over the map each frame
-- files/vehicle_<key>_<level>.png: one sheet for each vehicle, so only those on
+- files/signals_<level>.webp: signals, drawn over the map each frame
+- files/vehicle_<key>_<level>.webp: one sheet for each vehicle, so only those on
   screen are unpacked, as packs will add many
 
 Each sprite is drawn on a cell, shrunk to the sharpest level, trimmed to what it
@@ -50,6 +50,11 @@ RENDERS = ROOT / "build/renders"
 # Trees, platforms, the engine house, signals, track and decorations rendered by tools/blender/render_scenery.py.
 SCENERY = RENDERS / "scenery"
 OUT_PNG = ROOT / "shared/src/commonMain/composeResources/files"
+
+
+def save_sheet(img, path):
+    """A sheet for the game, as lossless WebP: about a third smaller than PNG, every pixel the same."""
+    img.save(path.with_suffix(".webp"), "WEBP", lossless=True, quality=100, method=6, exact=True)
 OUT_KT = ROOT / "shared/src/commonMain/kotlin/com/rm/interchange/map/Atlas.kt"
 PACKS = ROOT / "packs"
 BUILD_PACKS = ROOT / "build/packs"
@@ -297,7 +302,7 @@ def write_sheet(name, done, sheet_w=SHEET_W):
         if name == "static":
             out = with_up(out, ups if f == 1 else ups.resize((ups.width // f, ups.height // f), Image.BOX))
         # Shadows are black, so their sheet keeps only how dark each pixel is, a byte each.
-        (out.getchannel("A") if name == "shadows" else out).save(OUT_PNG / f"{name}_{level}.png", optimize=True)
+        save_sheet(out.getchannel("A") if name == "shadows" else out, OUT_PNG / f"{name}_{level}.png")
     rects = []
     for (_, im, (l, t, r, b), _, _), p in zip(done, pos):
         rects += [p[0], p[1], r - l, b - t, l - base.HW, t - base.TOP]
@@ -327,7 +332,8 @@ def main():
     with multiprocessing.get_context("fork").Pool() as pool:
         done = sorted(pool.map(render, range(len(JOBS)), chunksize=4))
     OUT_PNG.mkdir(parents=True, exist_ok=True)
-    for pattern in ("atlas_*.png", "static_*.png", "shadows_*.png", "moving_*.png", "signals_*.png", "vehicle_*.png", "ground_*.png"):
+    for pattern in ("atlas_*.png", "static_*.png", "shadows_*.png", "moving_*.png", "signals_*.png", "vehicle_*.png", "ground_*.png",
+                    "static_*.webp", "shadows_*.webp", "signals_*.webp", "vehicle_*.webp", "ground_*.webp"):
         for old in OUT_PNG.glob(pattern):
             old.unlink()
 
@@ -351,7 +357,7 @@ def main():
     tex = textures.sheet().convert("RGB")
     for level in range(LEVELS):
         f = 1 << level
-        tex.resize((tex.width // f, tex.height // f), Image.BOX).save(OUT_PNG / f"ground_{level}.png", optimize=True)
+        save_sheet(tex.resize((tex.width // f, tex.height // f), Image.BOX), OUT_PNG / f"ground_{level}.png")
 
     walls = [index.get(("walls", g, s), -1) for g in range(16) for s in range(16)]
     tracks = [index.get(("track", p, s), -1) for p in range(6) for s in range(16)]
@@ -378,9 +384,9 @@ def main():
 
 /**
  * Where everything is in the sheets, sharpest level first, each level half the
- * last: files/ground_<level>.png, the ground textures; files/static_<level>.png,
- * what's baked into the map; files/signals_<level>.png and a sheet for each
- * vehicle, files/vehicle_<key>_<level>.png, what's drawn over it.
+ * last: files/ground_<level>.webp, the ground textures; files/static_<level>.webp,
+ * what's baked into the map; files/signals_<level>.webp and a sheet for each
+ * vehicle, files/vehicle_<key>_<level>.webp, what's drawn over it.
  *
  * The rects hold six numbers a sprite at level 0: x, y, width and height on its
  * sheet, then where its top left sits from its anchor. The anchor is the tile's
@@ -410,12 +416,12 @@ object Atlas {{
     /** Each sprite's place on its sheet and where it sits from its anchor, six numbers each. */
     val STATIC_RECTS = ints("{",".join(str(x) for x in rects["static"])}")
 
-    /** Shadows, on files/shadows_<level>.png: how dark, a byte a pixel, to darken what's under them. */
+    /** Shadows, on files/shadows_<level>.webp: how dark, a byte a pixel, to darken what's under them. */
     val SHADOW_RECTS = ints("{",".join(str(x) for x in rects["shadows"])}")
 
     val SIGNAL_RECTS = ints("{",".join(str(x) for x in rects["signals"])}")
 
-    /** Each vehicle's sheet is files/vehicle_<key>_<level>.png. */
+    /** Each vehicle's sheet is files/vehicle_<key>_<level>.webp. */
     val VEHICLE_KEYS = listOf({vehicle_keys})
 
     /**

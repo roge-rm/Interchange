@@ -32,3 +32,9 @@ compose.resources {
     packageOfResClass = "com.rm.interchange.res"
     publicResClass = false
 }
+
+// The resource copy only adds and replaces files, so art taken out of composeResources would stay in the APK. Start
+// each copy from an empty folder.
+tasks.matching { it.name == "copyAndroidMainComposeResourcesToAndroidAssets" }.configureEach {
+    doFirst { outputs.files.forEach { it.deleteRecursively() } }
+}

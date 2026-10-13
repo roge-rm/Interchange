@@ -136,7 +136,7 @@ class Sheets(private val packed: PackedSheets, private val scope: CoroutineScope
 @Composable
 fun rememberPackedSheets(): State<PackedSheets?> = produceState<PackedSheets?>(null) {
     value = withContext(Dispatchers.Default) {
-        suspend fun read(name: String) = (0 until Atlas.LEVELS).map { Res.readBytes("files/${name}_$it.png") }
+        suspend fun read(name: String) = (0 until Atlas.LEVELS).map { Res.readBytes("files/${name}_$it.webp") }
         PackedSheets(read("ground"), read("static"), read("shadows"), read("signals"), Atlas.VEHICLE_KEYS.map { read("vehicle_$it") })
     }
 }
