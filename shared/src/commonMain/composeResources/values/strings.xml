@@ -289,6 +289,7 @@
     <string name="your_company">Your company</string>
     <string name="company_line">Worth %1$s · %2$d vehicles · %3$d stations</string>
     <string name="subsidies">Subsidies</string>
+    <string name="shared_track">Shared track</string>
     <string name="chronicle">Chronicle</string>
     <string name="chronicle_headlines">Headlines</string>
     <string name="chronicle_all">Everything</string>

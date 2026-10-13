@@ -473,8 +473,10 @@ private fun World.freeAhead(t: Train, brake: Int = BRAKE): Pair<Int, Stop> {
 /** The step after [cur]: the route's, if it has one there, else where plain track leads with no choice to make. */
 private fun World.nextFrom(t: Train, cur: Int, at: Int): Int {
     val r = t.route
-    if (r != null && at < r.size) return r[at]
-    return onlyWayOn(cur)
+    val next = if (r != null && at < r.size) r[at] else onlyWayOn(cur)
+    // Without sharing, another company's track is the end of the line.
+    if (!settings.sharing && next >= 0 && owner[stepTile(next)].toInt() != t.owner) return -1
+    return next
 }
 
 /** The next step from [cur] when the track doesn't branch, or -1. */
@@ -572,6 +574,21 @@ private fun World.reserveThrough(t: Train, first: Int, at: Int): Boolean {
     return true
 }
 
+/** A train running onto [tile] of another company's track pays that company for it, out of its own profit. */
+private fun World.shareFee(t: Train, tile: Int) {
+    val o = owner[tile].toInt()
+    if (o < 0 || o == t.owner) return
+    val payer = companies.getOrNull(t.owner) ?: return
+    val owner = companies.getOrNull(o)?.takeIf { !it.gone } ?: return
+    val fee = price(SHARE_FEE)
+    spend(payer, Books.RUNNING, fee)
+    earn(owner, Books.INCOME, fee)
+    t.profitThisYear -= fee
+}
+
+/** What a train pays another company for each tile of its track it runs onto, before inflation. */
+const val SHARE_FEE = 3L
+
 /** Lets go of what train [t] holds ahead of it, keeping only the pieces it stands on. */
 internal fun World.releaseAhead(t: Train) {
     val under = t.steps.map { stepKey(it) }.toSet()
@@ -592,6 +609,7 @@ private fun World.advance(t: Train, move: Int, free: Int) {
         }
         t.nose -= stepLength(t.steps.last())
         t.steps += next
+        shareFee(t, stepTile(next))
         // The engine's pilot pushes the snow off the line as it goes.
         val tile = stepTile(next)
         val snow = weather.snow[tile].toInt() and 255

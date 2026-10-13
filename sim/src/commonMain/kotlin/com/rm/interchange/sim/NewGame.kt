@@ -43,6 +43,8 @@ data class NewGame(
     val dayLength: Int = 1,
     /** How many companies the computer runs against the player. */
     val rivals: Int = 0,
+    /** Trains may run on other companies' track, paying the owner [SHARE_FEE] a tile; without it each keeps to its own. */
+    val sharing: Boolean = true,
 ) {
     companion object {
         val DAY_LENGTHS = intArrayOf(1, 2, 4, 6, 10, 16)

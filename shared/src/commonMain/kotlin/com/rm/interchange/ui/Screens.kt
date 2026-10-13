@@ -153,11 +153,12 @@ fun NewGameScreen(packs: List<Pack>, onStart: (NewGame, List<Pack>) -> Unit, onB
     var towns by remember { mutableIntStateOf(2) }
     var industries by remember { mutableIntStateOf(2) }
     var inflation by remember { mutableStateOf(true) }
+    var sharing by remember { mutableStateOf(true) }
     var weather by remember { mutableStateOf(true) }
     var dayLength by remember { mutableIntStateOf(10) }
     var rivals by remember { mutableIntStateOf(2) }
     var off by remember { mutableStateOf(emptySet<String>()) }
-    val settings = NewGame(width, height, seed, year, region, sea, hills, trees, towns, industries, inflation, weather, dayLength, rivals)
+    val settings = NewGame(width, height, seed, year, region, sea, hills, trees, towns, industries, inflation, weather, dayLength, rivals, sharing)
     val chosen = packs.filter { it.id !in off }
     val clash = remember(chosen) {
         try {
@@ -242,6 +243,7 @@ fun NewGameScreen(packs: List<Pack>, onStart: (NewGame, List<Pack>) -> Unit, onB
         Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             TogglePill(stringResource(Res.string.inflation), inflation, Modifier.weight(1f).fillMaxHeight()) { inflation = it }
             TogglePill(stringResource(Res.string.weather), weather, Modifier.weight(1f).fillMaxHeight()) { weather = it }
+            TogglePill(stringResource(Res.string.shared_track), sharing, Modifier.weight(1f).fillMaxHeight()) { sharing = it }
         }
         if (packs.isNotEmpty()) {
             Text(stringResource(Res.string.packs), color = c.text, fontSize = 15.sp)
