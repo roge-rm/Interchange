@@ -20,7 +20,7 @@ const val TROUBLE_PLAYER = 12
 fun World.inTrouble(c: Company): Boolean = c.money + (maxLoan() - c.loan) < 0
 
 /** Whether [c] is up for sale: long in trouble, and if it's the player's, only to hard rivals. */
-fun World.forSale(c: Company): Boolean = !c.gone && c.trouble >= TROUBLE_FOR_SALE && (c.id != 0 || settings.rivalLevel == RivalLevel.HARD)
+fun World.forSale(c: Company): Boolean = !c.gone && c.trouble >= TROUBLE_FOR_SALE && (!human(c.id) || settings.rivalLevel == RivalLevel.HARD)
 
 /** What buying [c] costs: what it's worth, debts and all, or nothing if it owes more than it has. */
 fun World.salePrice(c: Company): Long = companyValue(c).coerceAtLeast(0)
@@ -32,7 +32,7 @@ internal fun World.troubleMonth() {
         if (inTrouble(c)) c.trouble++ else c.trouble = 0
         when {
             c.trouble == 0 -> {}
-            c.id == 0 -> when (c.trouble) {
+            human(c.id) -> when (c.trouble) {
                 TROUBLE_WARN, TROUBLE_BANKRUPT -> tell(News.COMPANY_TROUBLE, c.id)
                 TROUBLE_FOR_SALE -> tell(if (forSale(c)) News.COMPANY_FOR_SALE else News.COMPANY_TROUBLE, c.id)
                 TROUBLE_PLAYER -> {
@@ -55,17 +55,18 @@ internal fun World.buyCompany(buyer: Company, c: Command.BuyCompany) {
     if (target.id == buyer.id || !forSale(target)) return
     val cost = salePrice(target)
     if (buyer.money < cost) return
+    val player = human(target.id)
     spend(buyer, Books.CONSTRUCTION, cost)
     takeOver(target, buyer)
     tell(News.COMPANY_BOUGHT, target.id or (buyer.id shl 8))
-    if (target.id == 0) restart(target)
+    if (player) restart(target)
 }
 
 /**
- * The player's company, gone under or bought out, starts again: the bank's start money and no loan, its books
+ * A player's company, gone under or bought out, starts again: the bank's start money and no loan, its books
  * clean, every town thinking of it as of a stranger. A statue it had stays up as the town's own.
  */
-internal fun World.restart(c: Company) {
+internal fun World.restart(c: Company, news: Boolean = true) {
     c.gone = false
     c.trouble = 0
     c.money = price(Prices.START_MONEY)
@@ -82,7 +83,7 @@ internal fun World.restart(c: Company) {
         t.statue[c.id] = -1
         if (t.exclusive == c.id) { t.exclusive = -1; t.exclusiveDays = 0 }
     }
-    tell(News.COMPANY_RESTARTED, c.id)
+    if (news) tell(News.COMPANY_RESTARTED, c.id)
 }
 
 /** Everything [from] has goes to [to], its money and debts with it, and [from] is gone. */
@@ -145,4 +146,22 @@ internal fun World.dissolve(c: Company) {
     rivals.removeAll { it.company == c.id }
     roadsChanged()
     catchmentDirty = true
+}
+
+/** Whether company [id] is a player's, not the computer's. A rival gone under or bought out counts, as a player may take its slot. */
+fun World.human(id: Int): Boolean = id in companies.indices && rivals.none { it.company == id }
+
+/** Starts a player's company named [c].name in slot [c].company, if that slot is free. */
+internal fun World.newCompany(c: Command.NewCompany) {
+    val id = c.company
+    when {
+        id == companies.size && id < MAX_COMPANIES -> companies += Company(id, c.name, price(Prices.START_MONEY))
+        companies.getOrNull(id)?.gone == true -> {
+            companies[id].name = c.name
+            restart(companies[id], news = false)
+        }
+        else -> return
+    }
+    for (t in towns) t.approval[id] = START_APPROVAL
+    tell(News.COMPANY_STARTED, id)
 }

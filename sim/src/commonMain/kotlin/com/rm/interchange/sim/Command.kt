@@ -121,6 +121,12 @@ sealed interface Command {
     /** Buys company [target], offered for sale, with all it has and owes. */
     data class BuyCompany(override val company: Int, val target: Int) : Command
 
+    /**
+     * A player's company in a multiplayer game, in slot [company]: the next one after the last, or one gone under
+     * or bought out, started again. Only the server gives it.
+     */
+    data class NewCompany(override val company: Int, val name: String) : Command
+
     /** Borrows a step more from the bank, or repays one. */
     data class Loan(override val company: Int, val borrow: Boolean) : Command
 

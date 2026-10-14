@@ -240,6 +240,7 @@ class World(val settings: NewGame, val roster: Roster = Roster.BASE, generate: B
 
     /** Runs one command. What can't be done is left undone. */
     fun apply(command: Command) {
+        if (command is Command.NewCompany) return newCompany(command)
         val company = companies.getOrNull(command.company) ?: return
         if (company.gone) return
         when (command) {
@@ -278,6 +279,7 @@ class World(val settings: NewGame, val roster: Roster = Roster.BASE, generate: B
             is Command.FundIndustry -> fundIndustry(company, command)
             is Command.TownAction -> townAction(company, command)
             is Command.BuyCompany -> buyCompany(company, command)
+            is Command.NewCompany -> {}
         }
     }
 

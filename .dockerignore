@@ -1,0 +1,13 @@
+# The server image needs the Gradle wrapper, the server modules and the base pack's data.
+.git
+.gradle
+.idea
+.kotlin
+build
+*/build
+app
+shared
+local.properties
+docs
+tools
+*.apk

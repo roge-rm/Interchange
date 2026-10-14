@@ -8,14 +8,18 @@ import com.rm.interchange.sim.view
 import java.util.concurrent.ConcurrentLinkedQueue
 
 /**
- * Runs a [Game] on a thread of its own, at its tick rate times [speed]. The
- * game thread is the only one that changes the world. Other threads hand it
- * commands with [request] and read what it publishes after each tick.
+ * Runs a [Game] on a thread of its own, a frame at a time at its frame rate,
+ * each frame [speed] ticks. The game thread is the only one that changes the
+ * world. Other threads hand it commands with [request] and read what it
+ * publishes after each frame.
  *
  * The world is made on the game thread too, by [make], so making a big map
  * doesn't hold up the screen; [game] is null until it's ready.
+ *
+ * Following a server, with [remote], frames run as the server sends them,
+ * and [paused] and [speed] are the server's to set.
  */
-class GameThread(private val make: () -> World) {
+class GameThread(private val make: () -> World, val remote: Remote? = null) {
     @Volatile var game: Game? = null
         private set
 
@@ -30,6 +34,8 @@ class GameThread(private val make: () -> World) {
         private set
     @Volatile var money = 0L
         private set
+    /** The company played here, whose money is [money]; -1 watching. */
+    @Volatile var company = 0
     /** What the screen draws and lists, as of the last tick, and the tick before for smoothing moves between them. */
     @Volatile var view: WorldView? = null
         private set
@@ -42,10 +48,6 @@ class GameThread(private val make: () -> World) {
         val period = 1_000_000_000f / Game.TICKS_PER_SECOND
         return ((System.nanoTime() - viewAt) / period).coerceIn(0f, 1f)
     }
-
-    /** The world's checksum, worked out every [CHECKSUM_TICKS] ticks. */
-    @Volatile var checksum = 0L
-        private set
 
     private val incoming = ConcurrentLinkedQueue<Command>()
     private val tasks = ConcurrentLinkedQueue<(Game) -> Unit>()
@@ -83,6 +85,7 @@ class GameThread(private val make: () -> World) {
 
     private fun loop() {
         val g = Game(make())
+        remote?.let { r -> r.welcome?.let { w -> g.follow(w.frame, w.pending, r::send) } }
         game = g
         publish(g)
         val tickNanos = 1_000_000_000L / Game.TICKS_PER_SECOND
@@ -91,9 +94,12 @@ class GameThread(private val make: () -> World) {
         while (running) {
             while (true) g.request(incoming.poll() ?: break)
             while (true) (tasks.poll() ?: break)(g)
-            if (!paused) repeat(speed) {
-                g.step()
-                if (g.world.tick % CHECKSUM_TICKS == 0L) checksum = g.world.checksum()
+            if (remote != null) {
+                while (true) g.receive(remote.inbox.poll() ?: break)
+                // Well behind, as on joining, it runs many frames each time round to catch up.
+                g.catchUp(if (g.behind > 4) CATCH_UP_TICKS else FOLLOW_TICKS)
+            } else {
+                g.frame(if (paused) 0 else speed)
             }
             val every = autosaveDays
             if (every > 0 && g.world.day - lastAutosaveDay >= every) {
@@ -118,10 +124,12 @@ class GameThread(private val make: () -> World) {
         viewAt = System.nanoTime()
         tick = g.world.tick
         day = g.world.day
-        money = g.world.companies[0].money
+        money = g.world.companies.getOrNull(company)?.money ?: 0L
     }
 
     companion object {
-        const val CHECKSUM_TICKS = 256L
+        /** The most ticks a follower runs each time round when it isn't behind. */
+        const val FOLLOW_TICKS = 64
+        const val CATCH_UP_TICKS = 1024
     }
 }

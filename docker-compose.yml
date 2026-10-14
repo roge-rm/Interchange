@@ -1,0 +1,39 @@
+# An Interchange dedicated server.
+#
+#     docker compose up --build
+#
+# Host networking lets phones on the same network find the game by themselves,
+# as the game is announced by UDP broadcast, which doesn't cross a bridge
+# network. Without it, publish 45688/tcp and players type the address.
+#
+# Settings go in a .env file next to this one, or the environment:
+#   SERVER_NAME, GAME_PORT, PASSWORD, LAN_DISCOVERY (false to stay off the list),
+#   and for a new game MAP_SIZE, SEED, START_YEAR, REGION, RIVALS, DAY_LENGTH.
+
+services:
+  server:
+    build:
+      context: .
+      dockerfile: docker/server.Dockerfile
+    image: interchange-server
+    container_name: interchange-server
+    network_mode: host
+    restart: unless-stopped
+    stop_grace_period: 40s
+    environment:
+      INTERCHANGE_NAME: "${SERVER_NAME:-Interchange}"
+      INTERCHANGE_PORT: "${GAME_PORT:-45688}"
+      INTERCHANGE_PASSWORD: "${PASSWORD:-}"
+      INTERCHANGE_LAN_DISCOVERY: "${LAN_DISCOVERY:-true}"
+      INTERCHANGE_MAP_SIZE: "${MAP_SIZE:-256}"
+      INTERCHANGE_SEED: "${SEED:-}"
+      INTERCHANGE_START_YEAR: "${START_YEAR:-1930}"
+      INTERCHANGE_REGION: "${REGION:-MIXED}"
+      INTERCHANGE_RIVALS: "${RIVALS:-2}"
+      INTERCHANGE_DAY_LENGTH: "${DAY_LENGTH:-10}"
+    volumes:
+      # The game and who plays which company. Delete it and the next start makes a new map.
+      - state:/state
+
+volumes:
+  state:

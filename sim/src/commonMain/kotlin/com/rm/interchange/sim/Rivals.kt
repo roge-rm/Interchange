@@ -141,9 +141,9 @@ private fun World.maxRoutes(r: Rival): Int {
     }
 }
 
-/** Whether the player has a station within [PLAYER_REACH] of ([x], [y]), which easy rivals keep clear of. */
+/** Whether a player has a station within [PLAYER_REACH] of ([x], [y]), which easy rivals keep clear of. */
 private fun World.playerNear(x: Int, y: Int): Boolean =
-    stations.any { it != null && it.owner == 0 && !it.waypoint && chebyshev(it.signX, it.signY, x, y) <= PLAYER_REACH }
+    stations.any { it != null && human(it.owner) && !it.waypoint && chebyshev(it.signX, it.signY, x, y) <= PLAYER_REACH }
 
 /** Easy rivals keep clear of towns the player serves. */
 private fun World.leaveAlone(t: Town) = settings.rivalLevel == RivalLevel.EASY && playerNear(t.x, t.y)
@@ -382,7 +382,7 @@ private fun World.servedByOthers(ind: Industry, cg: Int, company: Int): Boolean 
     // Hard rivals go after what the player carries.
     val hard = settings.rivalLevel == RivalLevel.HARD
     return industryStations[ind.id].orEmpty().any { id ->
-        stations.getOrNull(id)?.let { it.owner != company && !(hard && it.owner == 0) && it.lastCall[cg] >= 0 } == true
+        stations.getOrNull(id)?.let { it.owner != company && !(hard && human(it.owner)) && it.lastCall[cg] >= 0 } == true
     }
 }
 
