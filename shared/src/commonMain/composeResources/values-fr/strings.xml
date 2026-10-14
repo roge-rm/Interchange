@@ -276,6 +276,8 @@
     <string name="rival_level">Difficulté des rivaux</string>
     <string-array name="rival_levels"><item>Facile</item><item>Normale</item><item>Difficile</item></string-array>
     <string name="news_you_were_bought">%1$s a racheté votre compagnie</string>
+    <string name="news_company_restart">%1$s a fait faillite et repart de zéro</string>
+    <string name="news_company_started">%1$s se joint à la partie avec une nouvelle compagnie</string>
     <string name="news_you_restart">Votre compagnie a fait faillite, et la banque vous en a monté une nouvelle</string>
     <string name="chronicle">Chronique</string>
     <string name="chronicle_headlines">Manchettes</string>

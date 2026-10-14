@@ -53,6 +53,7 @@ fun TrainCard(
     onClose: () -> Unit,
     modifier: Modifier,
 ) {
+    val me = LocalCompany.current
     val c = LocalColors.current
     Card(trainName(t), onClose, modifier) {
         val target = if (t.orders.isEmpty()) null else Order.station(t.orders[t.order % t.orders.size])
@@ -86,6 +87,11 @@ fun TrainCard(
             stringResource(Res.string.profit_line, money(t.profitThisYear), money(t.profitLastYear)),
             color = if (t.profitThisYear < 0) c.bad else c.textDim, fontSize = 13.sp,
         )
+        // Someone else's: what it is, but none of the controls.
+        if (t.owner != me) {
+            Text(stringResource(Res.string.owned_by, view.companies.getOrElse(t.owner) { "" }), color = c.textDim, fontSize = 13.sp)
+            return@Card
+        }
         // The stops, the one it's heading for lit; a tap opens what to do there.
         var open by remember(t.id) { mutableIntStateOf(-1) }
         FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -103,7 +109,7 @@ fun TrainCard(
             Chip(stringResource(if (addingStops) Res.string.done_adding else Res.string.add_stops), addingStops, onClick = onAddStops)
         }
         t.orders.getOrNull(open)?.let { o ->
-            fun change(new: Int) = send(Command.TrainOrder(0, t.id, Command.TrainOrder.ORDERS, t.orders.copyOf().also { it[open] = new }))
+            fun change(new: Int) = send(Command.TrainOrder(me, t.id, Command.TrainOrder.ORDERS, t.orders.copyOf().also { it[open] = new }))
             FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 for ((flag, label) in listOf(
                     Order.FULL_LOAD to Res.string.full_load, Order.UNLOAD to Res.string.unload_all, Order.TRANSFER to Res.string.transfer,
@@ -118,38 +124,38 @@ fun TrainCard(
                 SquareButton(Glyph.Raise, stringResource(Res.string.wait_more), 32.dp, enabled = Order.waitDays(o) < Order.MAX_WAIT_DAYS) { change(Order.withWait(o, Order.waitDays(o) + 1)) }
                 Box(Modifier.weight(1f))
                 ActionButton(stringResource(Res.string.remove_stop)) {
-                    send(Command.TrainOrder(0, t.id, Command.TrainOrder.ORDERS, t.orders.filterIndexed { j, _ -> j != open }.toIntArray()))
+                    send(Command.TrainOrder(me, t.id, Command.TrainOrder.ORDERS, t.orders.filterIndexed { j, _ -> j != open }.toIntArray()))
                     open = -1
                 }
             }
         }
         // Sharing orders with another train: pick which, or stop sharing.
         var sharing by remember(t.id) { mutableStateOf(false) }
-        val others = view.trains.filter { it.id != t.id }
+        val others = view.trains.filter { it.id != t.id && it.owner == me }
         if (t.shared >= 0) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(stringResource(Res.string.orders_shared), color = c.textDim, fontSize = 13.sp, modifier = Modifier.weight(1f))
-                ActionButton(stringResource(Res.string.stop_sharing)) { send(Command.TrainOrder(0, t.id, Command.TrainOrder.UNSHARE)) }
+                ActionButton(stringResource(Res.string.stop_sharing)) { send(Command.TrainOrder(me, t.id, Command.TrainOrder.UNSHARE)) }
             }
         } else if (others.isNotEmpty()) {
             FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Chip(stringResource(Res.string.share_orders), sharing) { sharing = !sharing }
                 if (sharing) for (o in others) Chip(trainName(o), false) {
-                    send(Command.TrainOrder(0, t.id, Command.TrainOrder.SHARE, intArrayOf(o.id)))
+                    send(Command.TrainOrder(me, t.id, Command.TrainOrder.SHARE, intArrayOf(o.id)))
                     sharing = false
                 }
             }
         }
         FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            ActionButton(stringResource(if (t.running) Res.string.stop else Res.string.start), strong = !t.running) { send(Command.TrainOrder(0, t.id, Command.TrainOrder.START_STOP)) }
+            ActionButton(stringResource(if (t.running) Res.string.stop else Res.string.start), strong = !t.running) { send(Command.TrainOrder(me, t.id, Command.TrainOrder.START_STOP)) }
             if (!t.inDepot) {
-                ActionButton(stringResource(if (t.toDepot) Res.string.carry_on else Res.string.to_depot)) { send(Command.TrainOrder(0, t.id, Command.TrainOrder.TO_DEPOT)) }
-                ActionButton(stringResource(Res.string.turn_round)) { send(Command.TrainOrder(0, t.id, Command.TrainOrder.TURN)) }
+                ActionButton(stringResource(if (t.toDepot) Res.string.carry_on else Res.string.to_depot)) { send(Command.TrainOrder(me, t.id, Command.TrainOrder.TO_DEPOT)) }
+                ActionButton(stringResource(Res.string.turn_round)) { send(Command.TrainOrder(me, t.id, Command.TrainOrder.TURN)) }
             } else {
-                ActionButton(stringResource(Res.string.renew_for, money(t.renewCost))) { send(Command.TrainOrder(0, t.id, Command.TrainOrder.RENEW)) }
-                ActionButton(stringResource(Res.string.sell)) { send(Command.TrainOrder(0, t.id, Command.TrainOrder.SELL)) }
+                ActionButton(stringResource(Res.string.renew_for, money(t.renewCost))) { send(Command.TrainOrder(me, t.id, Command.TrainOrder.RENEW)) }
+                ActionButton(stringResource(Res.string.sell)) { send(Command.TrainOrder(me, t.id, Command.TrainOrder.SELL)) }
             }
-            Chip(stringResource(Res.string.servicing), t.service) { send(Command.TrainOrder(0, t.id, Command.TrainOrder.SERVICE)) }
+            Chip(stringResource(Res.string.servicing), t.service) { send(Command.TrainOrder(me, t.id, Command.TrainOrder.SERVICE)) }
         }
     }
 }
@@ -158,6 +164,7 @@ fun TrainCard(
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun DepotCard(view: WorldView, roster: Roster, depot: Int, year: Int, funds: Long, price: (Long) -> Long, send: (Command) -> Unit, onTrain: (Int) -> Unit, onClose: () -> Unit, modifier: Modifier) {
+    val me = LocalCompany.current
     val c = LocalColors.current
     val lang = languageCode()
     val engines = roster.available(year, pulls = true)
@@ -191,7 +198,7 @@ fun DepotCard(view: WorldView, roster: Roster, depot: Int, year: Int, funds: Lon
             Text(stringResource(Res.string.wagons_count, count), color = c.text, fontSize = 13.sp)
             SquareButton(Glyph.Raise, stringResource(Res.string.more_wagons), 32.dp, enabled = count < MAX_WAGONS) { count++ }
             ActionButton(stringResource(Res.string.buy_for, money(cost)), enabled = funds >= cost && !unwired, strong = true) {
-                send(Command.BuyTrain(0, depot, engine, wagon, count, if (cargo in choices) cargo else -1))
+                send(Command.BuyTrain(me, depot, engine, wagon, count, if (cargo in choices) cargo else -1))
             }
         }
         val here = view.trains.filter { it.depot == depot && it.inDepot }
@@ -199,7 +206,7 @@ fun DepotCard(view: WorldView, roster: Roster, depot: Int, year: Int, funds: Lon
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(trainName(t), color = c.text, fontSize = 13.sp, modifier = Modifier.weight(1f))
                 ActionButton(stringResource(Res.string.orders)) { onTrain(t.id) }
-                ActionButton(stringResource(if (t.running) Res.string.stop else Res.string.start), strong = !t.running) { send(Command.TrainOrder(0, t.id, Command.TrainOrder.START_STOP)) }
+                ActionButton(stringResource(if (t.running) Res.string.stop else Res.string.start), strong = !t.running) { send(Command.TrainOrder(me, t.id, Command.TrainOrder.START_STOP)) }
             }
         }
     }

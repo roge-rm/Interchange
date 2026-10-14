@@ -120,7 +120,7 @@ class GameThread(private val make: () -> World, val remote: Remote? = null) {
 
     private fun publish(g: Game) {
         lastView = view
-        view = g.world.view()
+        view = g.world.view(company)
         viewAt = System.nanoTime()
         tick = g.world.tick
         day = g.world.day

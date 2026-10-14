@@ -212,7 +212,7 @@ private fun Root(settings: Settings) {
         }
     }
 
-    Box(Modifier.fillMaxSize()) {
+    CompositionLocalProvider(LocalCompany provides (runner?.company ?: 0)) { Box(Modifier.fillMaxSize()) {
         when (screen) {
             Screen.Title -> TitleScreen(
                 continueLine = saves.firstOrNull()?.let { date(it.day, it.startYear) + " · " + saveLine(it) },
@@ -296,31 +296,32 @@ private fun Root(settings: Settings) {
             Win.Town -> runner?.game?.world?.let { w -> w.towns.getOrNull(town)?.let { t -> TownWindow(w, t, { runner?.request(it) }) { window = null } } }
             null -> {}
         }
-    }
+    } }
 }
 
 /** A game being played: waits for the world to be made, then shows it. */
 @Composable
 private fun Playing(runner: GameThread, sheets: Sheets, settings: Settings, onMenu: () -> Unit, onOverlays: () -> Unit, onFinances: () -> Unit, onTown: (Int) -> Unit, goTo: MutableState<Pair<Float, Float>?>) {
-    var game by remember(runner) { mutableStateOf<Game?>(null) }
-    // Redraws every display frame, and picks up the game once it's made.
+    var world by remember(runner) { mutableStateOf<World?>(null) }
+    // Redraws every display frame, and picks up the world once it's made, or when a server sends it again.
     val frame = remember(runner) { mutableLongStateOf(0L) }
     LaunchedEffect(runner) {
         while (true) withFrameNanos {
             frame.longValue++
-            if (game == null) game = runner.game
+            runner.game?.world?.let { if (it !== world) world = it }
         }
     }
-    val g = game
-    if (g == null) {
+    val w = world
+    if (w == null) {
         Box(Modifier.fillMaxSize().background(LocalColors.current.page))
         return
     }
-    key(runner) { GameScreen(runner, g.world, sheets, frame, settings, onMenu, onOverlays, onFinances, onTown, goTo) }
+    key(runner, w) { GameScreen(runner, w, sheets, frame, settings, onMenu, onOverlays, onFinances, onTown, goTo) }
 }
 
 @Composable
 private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: State<Long>, settings: Settings, onMenu: () -> Unit, onOverlays: () -> Unit, onFinances: () -> Unit, onTown: (Int) -> Unit, goTo: MutableState<Pair<Float, Float>?>) {
+    val me = runner.company
     val c = LocalColors.current
     // The drawings of this game's vehicles: the base pack's come with the app, the others from their packs.
     remember(world) {
@@ -406,8 +407,8 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
     fun built() { folded = true }
 
     fun railFor(start: Pick, end: Pick): Command.Rail =
-        if (trackPiece == 0 || tool != Tool.Track) trackLine(0, start, end, removing)
-        else pieceLine(world, 0, start, end, worldPiece(LandPainter(world, view, view.halfWidth), trackPiece), removing)
+        if (trackPiece == 0 || tool != Tool.Track) trackLine(me, start, end, removing)
+        else pieceLine(world, me, start, end, worldPiece(LandPainter(world, view, view.halfWidth), trackPiece), removing)
 
     val input = remember(tool, removing, stationAlongX, addingStops, addingRoadStops, addingCraftStops, signalKind, bridgeStyle, roadSurface, airportKind, runwayAlongX, trackPiece) {
         object : MapInput {
@@ -425,13 +426,13 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
                 addingStops?.let { id ->
                     val station = world.stationTiles[tile]
                     val t = worldView.value?.trains?.firstOrNull { it.id == id }
-                    if (station != null && t != null) runner.request(Command.TrainOrder(0, id, Command.TrainOrder.ORDERS, t.orders + station))
+                    if (station != null && t != null) runner.request(Command.TrainOrder(me, id, Command.TrainOrder.ORDERS, t.orders + station))
                     return
                 }
                 addingRoadStops?.let { id ->
                     val station = world.roadStops[tile] ?: world.stationTiles[tile]
                     val v = worldView.value?.roadVehicles?.firstOrNull { it.id == id }
-                    if (station != null && v != null) runner.request(Command.RoadOrder(0, id, Command.TrainOrder.ORDERS, v.orders + station))
+                    if (station != null && v != null) runner.request(Command.RoadOrder(me, id, Command.TrainOrder.ORDERS, v.orders + station))
                     return
                 }
                 addingCraftStops?.let { (air, id) ->
@@ -439,7 +440,7 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
                     else world.docks[tile] ?: world.buoys[tile]
                     if (station != null) {
                         val orders = if (air) worldView.value?.aircraft?.firstOrNull { it.id == id }?.orders else worldView.value?.ships?.firstOrNull { it.id == id }?.orders
-                        if (orders != null) runner.request(Command.CraftOrder(0, air, id, Command.TrainOrder.ORDERS, orders + station))
+                        if (orders != null) runner.request(Command.CraftOrder(me, air, id, Command.TrainOrder.ORDERS, orders + station))
                     }
                     return
                 }
@@ -451,12 +452,16 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
                             key != NO_VEHICLE && VehicleView.craft(key, VehicleView.SHIP) >= 0 -> Selection.Ship(VehicleView.craft(key, VehicleView.SHIP))
                             key != NO_VEHICLE && VehicleView.craft(key, VehicleView.AIRCRAFT) >= 0 -> Selection.Aircraft(VehicleView.craft(key, VehicleView.AIRCRAFT))
                             key != NO_VEHICLE -> Selection.RoadVehicle(VehicleView.craft(key, VehicleView.ROAD))
-                            world.airportTiles.containsKey(tile) -> Selection.Airport(world.airportTiles.getValue(tile))
+                            // Another company's airport shows as its station, without buying or building.
+                            world.airportTiles.containsKey(tile) -> world.airports.getOrNull(world.airportTiles.getValue(tile))?.let {
+                                if (it.owner == me) Selection.Airport(it.id) else Selection.Station(it.station)
+                            } ?: Selection.Tile(at.tileX, at.tileY)
                             world.docks.containsKey(tile) -> Selection.Station(world.docks.getValue(tile))
                             world.stationTiles.containsKey(tile) -> Selection.Station(world.stationTiles.getValue(tile))
                             world.roadStops.containsKey(tile) -> Selection.Station(world.roadStops.getValue(tile))
                             world.depotTiles.containsKey(tile) -> world.depotTiles.getValue(tile).let {
-                                when (world.depots[it]?.kind) {
+                                if (world.depots[it]?.owner != me) Selection.Tile(at.tileX, at.tileY)
+                                else when (world.depots[it]?.kind) {
                                     Depots.ROAD -> Selection.Garage(it)
                                     Depots.SHIPYARD -> Selection.Shipyard(it)
                                     else -> Selection.Depot(it)
@@ -466,31 +471,31 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
                         }
                     }
                     Tool.Track -> { runner.request(railFor(at, at)); built() }
-                    Tool.Road -> { runner.request(roadLine(0, at, at, roadSurface, removing)); built() }
-                    Tool.TramRails -> { runner.request(roadLine(0, at, at, roadSurface, removing, tram = true)); built() }
-                    Tool.RoadStop -> { runner.request(Command.RoadStop(0, at.tileX, at.tileY)); built() }
-                    Tool.Garage -> { runner.request(garageAt(world, 0, at)); built() }
-                    Tool.OneWay -> { runner.request(Command.RoadOneWay(0, at.tileX, at.tileY)); built() }
-                    Tool.SaltDepot -> { runner.request(Command.SaltDepot(0, at.tileX, at.tileY)); built() }
-                    Tool.Canal -> { runner.request(Command.Canal(0, at.tileX, at.tileY, at.tileX, at.tileY, removing)); built() }
-                    Tool.Lock -> { runner.request(Command.Lock(0, at.tileX, at.tileY)); built() }
-                    Tool.Dock -> { runner.request(Command.Dock(0, at.tileX, at.tileY)); built() }
-                    Tool.Shipyard -> { runner.request(Command.Shipyard(0, at.tileX, at.tileY)); built() }
-                    Tool.Buoy -> { runner.request(Command.Buoy(0, at.tileX, at.tileY)); built() }
-                    Tool.Airport -> { runner.request(Command.Airport(0, at.tileX, at.tileY, airportKind, if (runwayAlongX) Track.X else Track.Y)); built() }
-                    Tool.Wires -> { runner.request(trackLine(0, at, at, removing).let { Command.Wire(0, it.sx, it.sy, it.ex, it.ey, it.first, it.remove) }); built() }
-                    Tool.Signals -> signalAt(world, 0, at)?.let { runner.request(it.copy(kind = Signals.PLACED[signalKind])); built() }
-                    Tool.Waypoint -> { runner.request(Command.Waypoint(0, at.tileX, at.tileY)); built() }
-                    Tool.Tunnel -> { runner.request(Command.Tunnel(0, at.tileX, at.tileY)); built() }
-                    Tool.SnowShed, Tool.SnowFence -> { runner.request(Command.SnowWorks(0, at.tileX, at.tileY, shed = tool == Tool.SnowShed)); built() }
-                    Tool.Station -> { runner.request(stationPlan(0, at, at, stationAlongX)); built() }
+                    Tool.Road -> { runner.request(roadLine(me, at, at, roadSurface, removing)); built() }
+                    Tool.TramRails -> { runner.request(roadLine(me, at, at, roadSurface, removing, tram = true)); built() }
+                    Tool.RoadStop -> { runner.request(Command.RoadStop(me, at.tileX, at.tileY)); built() }
+                    Tool.Garage -> { runner.request(garageAt(world, me, at)); built() }
+                    Tool.OneWay -> { runner.request(Command.RoadOneWay(me, at.tileX, at.tileY)); built() }
+                    Tool.SaltDepot -> { runner.request(Command.SaltDepot(me, at.tileX, at.tileY)); built() }
+                    Tool.Canal -> { runner.request(Command.Canal(me, at.tileX, at.tileY, at.tileX, at.tileY, removing)); built() }
+                    Tool.Lock -> { runner.request(Command.Lock(me, at.tileX, at.tileY)); built() }
+                    Tool.Dock -> { runner.request(Command.Dock(me, at.tileX, at.tileY)); built() }
+                    Tool.Shipyard -> { runner.request(Command.Shipyard(me, at.tileX, at.tileY)); built() }
+                    Tool.Buoy -> { runner.request(Command.Buoy(me, at.tileX, at.tileY)); built() }
+                    Tool.Airport -> { runner.request(Command.Airport(me, at.tileX, at.tileY, airportKind, if (runwayAlongX) Track.X else Track.Y)); built() }
+                    Tool.Wires -> { runner.request(trackLine(me, at, at, removing).let { Command.Wire(me, it.sx, it.sy, it.ex, it.ey, it.first, it.remove) }); built() }
+                    Tool.Signals -> signalAt(world, me, at)?.let { runner.request(it.copy(kind = Signals.PLACED[signalKind])); built() }
+                    Tool.Waypoint -> { runner.request(Command.Waypoint(me, at.tileX, at.tileY)); built() }
+                    Tool.Tunnel -> { runner.request(Command.Tunnel(me, at.tileX, at.tileY)); built() }
+                    Tool.SnowShed, Tool.SnowFence -> { runner.request(Command.SnowWorks(me, at.tileX, at.tileY, shed = tool == Tool.SnowShed)); built() }
+                    Tool.Station -> { runner.request(stationPlan(me, at, at, stationAlongX)); built() }
                     Tool.Depot -> {
-                        runner.request(depotAt(world, 0, at))
+                        runner.request(depotAt(world, me, at))
                         built()
                     }
-                    Tool.Clear -> { runner.request(Command.Clear(0, at.tileX, at.tileY)); built() }
+                    Tool.Clear -> { runner.request(Command.Clear(me, at.tileX, at.tileY)); built() }
                     Tool.Raise, Tool.Lower -> {
-                        runner.request(Command.Terraform(0, at.x.roundToInt(), at.y.roundToInt(), tool == Tool.Raise))
+                        runner.request(Command.Terraform(me, at.x.roundToInt(), at.y.roundToInt(), tool == Tool.Raise))
                         built()
                     }
                     else -> {}
@@ -504,17 +509,17 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
                 val s = start ?: return
                 dragAt = at
                 when (tool) {
-                    Tool.Road -> roadPlan = roadLine(0, s, at, roadSurface, removing)
-                    Tool.TramRails -> roadPlan = roadLine(0, s, at, roadSurface, removing, tram = true)
-                    Tool.Station -> stationPlan = stationPlan(0, s, at, stationAlongX)
-                    Tool.Bridge -> bridgePlan = bridgePlan(0, s, at, bridgeStyle)
-                    Tool.Canal -> canalPlan = roadLine(0, s, at, 0, removing).let { Command.Canal(0, it.sx, it.sy, it.ex, it.ey, removing) }
-                    Tool.Clear -> clearPlan = Command.ClearArea(0, s.tileX, s.tileY, at.tileX, at.tileY)
+                    Tool.Road -> roadPlan = roadLine(me, s, at, roadSurface, removing)
+                    Tool.TramRails -> roadPlan = roadLine(me, s, at, roadSurface, removing, tram = true)
+                    Tool.Station -> stationPlan = stationPlan(me, s, at, stationAlongX)
+                    Tool.Bridge -> bridgePlan = bridgePlan(me, s, at, bridgeStyle)
+                    Tool.Canal -> canalPlan = roadLine(me, s, at, 0, removing).let { Command.Canal(me, it.sx, it.sy, it.ex, it.ey, removing) }
+                    Tool.Clear -> clearPlan = Command.ClearArea(me, s.tileX, s.tileY, at.tileX, at.tileY)
                     else -> plan = railFor(s, at)
                 }
             }
             override fun dragEnd() {
-                plan?.let { runner.request(if (tool == Tool.Wires) Command.Wire(0, it.sx, it.sy, it.ex, it.ey, it.first, it.remove) else it); built() }
+                plan?.let { runner.request(if (tool == Tool.Wires) Command.Wire(me, it.sx, it.sy, it.ex, it.ey, it.first, it.remove) else it); built() }
                 stationPlan?.let { runner.request(it); built() }
                 bridgePlan?.let { runner.request(it); built() }
                 roadPlan?.let { runner.request(it); built() }
@@ -537,13 +542,13 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
 
     val townLabels = rememberTownLabels(c.chrome, c.text, c.textDim)
     // What the drag would take, how long it is, and whether there's the money: drawn by the finger.
-    val company = world.companies[0]
+    val company = world.companies[me.coerceAtLeast(0)]
     val dragged: Pair<Int, Long>? = plan?.let { p ->
         if (tool == Tool.Wires) Track.line(world, p.sx, p.sy, p.ex, p.ey, p.first)?.let { it.size to it.size * world.price(Prices.WIRE) }
         else world.railCost(p).let { (cost, n) -> if (cost < 0) null else n to cost }
     } ?: roadPlan?.let { p -> world.roadCost(company, p).takeIf { it >= 0 }?.let { (maxOf(kotlin.math.abs(p.ex - p.sx), kotlin.math.abs(p.ey - p.sy)) + 1) to it } }
         ?: canalPlan?.let { p -> world.canalCost(company, p).let { (cost, n) -> n to cost } }
-        ?: clearPlan?.let { p -> world.clearCost(0, p).let { (cost, n) -> n to cost } }
+        ?: clearPlan?.let { p -> world.clearCost(me, p).let { (cost, n) -> n to cost } }
         ?: stationPlan?.let { p -> ((kotlin.math.abs(p.x1 - p.x0) + 1) * (kotlin.math.abs(p.y1 - p.y0) + 1)).let { n -> n to n * world.price(Prices.PLATFORM) } }
         ?: bridgePlan?.let { p -> world.bridgeCost(company, p).takeIf { it >= 0 }?.let { (maxOf(kotlin.math.abs(p.x1 - p.x0), kotlin.math.abs(p.y1 - p.y0)) + 1) to it } }
     val dragText = dragged?.takeIf { it.first > 0 }?.let { (n, cost) ->
@@ -874,7 +879,7 @@ private fun InspectCard(world: World, x: Int, y: Int, onTown: (Int) -> Unit, onC
             val limit = world.trackLimit(i)
             if (limit > 0) add(stringResource(Res.string.slow_order, limit))
             world.closed[i]?.let { v -> add(stringResource(if (v shr 16 == Closure.FIRE) Res.string.closed_fire else Res.string.closed_washout, v and 0xffff)) }
-            if (world.owner[i].toInt() == 0) add(stringResource(Res.string.owned_by, stringResource(Res.string.company)))
+            if (world.owner[i].toInt() == LocalCompany.current) add(stringResource(Res.string.owned_by, stringResource(Res.string.company)))
         }
     }
     val industry = world.industryAt(i)
@@ -920,18 +925,21 @@ private fun IndustryCard(world: World, ind: Industry, where: String, onClose: ()
 /** What a piece of news says. */
 @Composable
 internal fun newsText(world: World, n: News): String {
-    if (n.kind == News.COMPANY_RESTARTED) return stringResource(Res.string.news_you_restart)
+    val me = LocalCompany.current
+    if (n.kind == News.COMPANY_RESTARTED) return if (n.about == me) stringResource(Res.string.news_you_restart)
+        else stringResource(Res.string.news_company_restart, world.companies.getOrNull(n.about)?.name ?: "")
+    if (n.kind == News.COMPANY_STARTED) return if (n.about == me) "" else stringResource(Res.string.news_company_started, world.companies.getOrNull(n.about)?.name ?: "")
     if (n.kind == News.NEW_VEHICLE) {
         val e = world.roster.getOrNull(n.about) ?: return ""
         val lang = languageCode()
         return stringResource(Res.string.news_new_vehicle, e.name(lang), e.type(lang).lowercase())
     }
     if (n.kind in News.COMPANY_TROUBLE..News.COMPANY_BANKRUPT) {
-        @Composable fun name(id: Int) = if (id == 0) stringResource(Res.string.your_company) else world.companies.getOrNull(id)?.name ?: ""
+        @Composable fun name(id: Int) = if (id == me) stringResource(Res.string.your_company) else world.companies.getOrNull(id)?.name ?: ""
         return when (n.kind) {
-            News.COMPANY_TROUBLE -> if (n.about == 0) stringResource(Res.string.news_your_trouble) else stringResource(Res.string.news_company_trouble, name(n.about))
+            News.COMPANY_TROUBLE -> if (n.about == me) stringResource(Res.string.news_your_trouble) else stringResource(Res.string.news_company_trouble, name(n.about))
             News.COMPANY_FOR_SALE -> stringResource(Res.string.news_company_for_sale, name(n.about))
-            News.COMPANY_BOUGHT -> if (n.about and 255 == 0) stringResource(Res.string.news_you_were_bought, name(n.about shr 8))
+            News.COMPANY_BOUGHT -> if (n.about and 255 == me) stringResource(Res.string.news_you_were_bought, name(n.about shr 8))
                 else stringResource(Res.string.news_company_bought, name(n.about shr 8), name(n.about and 255))
             else -> stringResource(Res.string.news_company_bankrupt, name(n.about))
         }
@@ -939,20 +947,23 @@ internal fun newsText(world: World, n: News): String {
     if (n.kind == News.SUBSIDY_OFFERED) return stringResource(Res.string.news_subsidy_offered, subsidyRoute(world, n.about))
     if (n.kind == News.SUBSIDY_AWARDED) {
         val co = world.companies.getOrNull(world.subsidies.getOrNull(n.about)?.company ?: -1)
-        val name = if (co == null || co.id == 0) stringResource(Res.string.your_company) else co.name
+        val name = if (co == null || co.id == me) stringResource(Res.string.your_company) else co.name
         return stringResource(Res.string.news_subsidy_won, name, subsidyRoute(world, n.about))
     }
     if (n.kind == News.PROSPECTING_FAILED) return stringResource(Res.string.news_prospect_failed, world.roster.industries.getOrNull(n.about)?.name(languageCode()) ?: "")
     if (n.kind == News.WASHOUT || n.kind == News.FIRE || n.kind == News.AVALANCHE) return stringResource(when (n.kind) { News.FIRE -> Res.string.news_fire; News.AVALANCHE -> Res.string.news_avalanche; else -> Res.string.news_washout })
     if (n.kind == News.DIVERTED) {
+        if (world.aircraft.getOrNull(n.about)?.owner != me) return ""
         val name = world.aircraft.getOrNull(n.about)?.name?.takeIf { it.isNotEmpty() } ?: stringResource(Res.string.aircraft_n, n.about + 1)
         return stringResource(Res.string.news_diverted, name)
     }
     if (n.kind == News.SLID) {
+        if (world.roadVehicles.getOrNull(n.about)?.owner != me) return ""
         val name = world.roadVehicles.getOrNull(n.about)?.name?.takeIf { it.isNotEmpty() } ?: stringResource(Res.string.road_vehicle_n, n.about + 1)
         return stringResource(Res.string.news_slid, name)
     }
     if (n.kind == News.SNOWBOUND || n.kind == News.TRAIN_OLD) {
+        if (world.trains.getOrNull(n.about)?.owner != me) return ""
         val name = world.trains.getOrNull(n.about)?.name?.takeIf { it.isNotEmpty() } ?: stringResource(Res.string.train_n, n.about + 1)
         return stringResource(if (n.kind == News.SNOWBOUND) Res.string.news_snowbound else Res.string.news_old, name)
     }

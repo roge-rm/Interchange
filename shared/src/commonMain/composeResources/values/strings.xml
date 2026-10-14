@@ -293,6 +293,8 @@
     <string name="rival_level">Rival difficulty</string>
     <string-array name="rival_levels"><item>Easy</item><item>Normal</item><item>Hard</item></string-array>
     <string name="news_you_were_bought">%1$s has bought your company</string>
+    <string name="news_company_restart">%1$s went under and starts again</string>
+    <string name="news_company_started">%1$s joins the game with a new company</string>
     <string name="news_you_restart">Your company went under, and the bank has set you up with a new one</string>
     <string name="chronicle">Chronicle</string>
     <string name="chronicle_headlines">Headlines</string>

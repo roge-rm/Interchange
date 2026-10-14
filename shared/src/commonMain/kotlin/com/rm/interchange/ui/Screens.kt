@@ -452,6 +452,7 @@ fun MenuWindow(saved: Boolean, onSave: () -> Unit, onLoad: () -> Unit, onNew: ()
 /** The company's money: its loan, borrowing and repaying, this year's and last year's books and a graph of the last two years. */
 @Composable
 fun FinanceWindow(runner: com.rm.interchange.server.GameThread, onClose: () -> Unit) {
+    val me = LocalCompany.current
     val c = LocalColors.current
     // The game's latest figures, picked up each frame.
     val company by produceState(runner.view?.company, runner) {
@@ -464,8 +465,8 @@ fun FinanceWindow(runner: com.rm.interchange.server.GameThread, onClose: () -> U
                 Text(stringResource(Res.string.money_line, money(co.money)), color = if (co.money < 0) c.bad else c.text, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
                 Text(stringResource(Res.string.loan_line, money(co.loan), money(co.maxLoan)), color = c.textDim, fontSize = 13.sp)
             }
-            ActionButton(stringResource(Res.string.borrow), enabled = co.loan < co.maxLoan) { runner.request(com.rm.interchange.sim.Command.Loan(0, borrow = true)) }
-            ActionButton(stringResource(Res.string.repay), enabled = co.loan > 0 && co.money >= com.rm.interchange.sim.Prices.LOAN_STEP) { runner.request(com.rm.interchange.sim.Command.Loan(0, borrow = false)) }
+            ActionButton(stringResource(Res.string.borrow), enabled = co.loan < co.maxLoan) { runner.request(com.rm.interchange.sim.Command.Loan(me, borrow = true)) }
+            ActionButton(stringResource(Res.string.repay), enabled = co.loan > 0 && co.money >= com.rm.interchange.sim.Prices.LOAN_STEP) { runner.request(com.rm.interchange.sim.Command.Loan(me, borrow = false)) }
         }
         Head(stringResource(Res.string.the_books))
         val rows = listOf(
@@ -491,7 +492,7 @@ fun FinanceWindow(runner: com.rm.interchange.server.GameThread, onClose: () -> U
         line(stringResource(Res.string.book_total), money(total), money(co.lastYear.sum()), strong = true, colour = if (total < 0) c.bad else c.good)
         Head(stringResource(Res.string.track_upkeep))
         val levels = stringArrayResource(Res.array.upkeep_levels)
-        FillChips(listOf(0, 1, 2), co.upkeep, { levels.getOrElse(it) { "" } }) { runner.request(com.rm.interchange.sim.Command.SetUpkeep(0, it)) }
+        FillChips(listOf(0, 1, 2), co.upkeep, { levels.getOrElse(it) { "" } }) { runner.request(com.rm.interchange.sim.Command.SetUpkeep(me, it)) }
         if (co.history.size >= 2) {
             Head(stringResource(Res.string.money_graph))
             MoneyGraph(co.history, Modifier.fillMaxWidth().height(120.dp))
@@ -528,6 +529,7 @@ private fun MoneyGraph(history: List<LongArray>, modifier: Modifier) {
 /** Every company, the richest first, in its colour, with its money, vehicles and stations; a tap goes to a rival's home town. */
 @Composable
 fun CompaniesWindow(world: World, onGo: (Float, Float) -> Unit, send: (com.rm.interchange.sim.Command) -> Unit, onClose: () -> Unit) {
+    val me = LocalCompany.current
     Window(stringResource(Res.string.companies), onClose, Glyph.Home) {
         // Best first, by what each is worth, those gone at the end.
         val worth = world.companies.associate { it.id to world.companyValue(it) }
@@ -537,7 +539,7 @@ fun CompaniesWindow(world: World, onGo: (Float, Float) -> Unit, send: (com.rm.in
                 world.ships.count { it?.owner == co.id } + world.aircraft.count { it?.owner == co.id }
             val stations = world.stations.count { it != null && it.owner == co.id && !it.waypoint }
             val home = world.rivals.firstOrNull { it.company == co.id }?.let { world.towns.getOrNull(it.home) }
-            val name = if (co.id == 0) stringResource(Res.string.your_company) else co.name
+            val name = if (co.id == me) stringResource(Res.string.your_company) else co.name
             val price = world.salePrice(co)
             val line = when {
                 co.gone -> stringResource(Res.string.company_gone)
@@ -550,7 +552,7 @@ fun CompaniesWindow(world: World, onGo: (Float, Float) -> Unit, send: (com.rm.in
                 tint = if (co.gone) null else com.rm.interchange.map.companyColour(co.id),
             ) {
                 if (world.forSale(co)) ActionButton(stringResource(Res.string.buy_company), enabled = mine >= price, strong = true) {
-                    send(com.rm.interchange.sim.Command.BuyCompany(0, co.id))
+                    send(com.rm.interchange.sim.Command.BuyCompany(me, co.id))
                     onClose()
                 }
             }
@@ -564,23 +566,24 @@ fun CompaniesWindow(world: World, onGo: (Float, Float) -> Unit, send: (com.rm.in
  */
 @Composable
 fun TownWindow(world: World, t: com.rm.interchange.sim.Town, send: (com.rm.interchange.sim.Command) -> Unit, onClose: () -> Unit) {
+    val me = LocalCompany.current
     val levels = stringArrayResource(Res.array.approval_levels)
     val actions = stringArrayResource(Res.array.town_actions)
     Window(t.name, onClose, Glyph.Home) {
         for (co in world.companies.filter { !it.gone }) {
-            val name = if (co.id == 0) stringResource(Res.string.your_company) else co.name
+            val name = if (co.id == me) stringResource(Res.string.your_company) else co.name
             ListRow(Glyph.Home, name, levels.getOrElse(com.rm.interchange.sim.approvalLevel(t.approval[co.id])) { "" }, null, tint = com.rm.interchange.map.companyColour(co.id))
         }
         if (t.roadWorks > 0) ListRow(Glyph.Road, stringResource(Res.string.road_works_left, t.roadWorks), null, null)
         if (t.funded > 0) ListRow(Glyph.Home, stringResource(Res.string.funded_left, t.funded), null, null)
         world.companies.getOrNull(t.exclusive)?.let { co ->
-            val name = if (co.id == 0) stringResource(Res.string.your_company) else co.name
+            val name = if (co.id == me) stringResource(Res.string.your_company) else co.name
             ListRow(Glyph.Station, stringResource(Res.string.exclusive_left, name, t.exclusiveDays), null, null, tint = com.rm.interchange.map.companyColour(co.id))
         }
         val money = world.companies.firstOrNull()?.money ?: 0L
         for (a in 0 until com.rm.interchange.sim.TownActions.COUNT) {
             val cost = world.townActionCost(a)
-            val open = world.townActionOpen(0, t, a)
+            val open = world.townActionOpen(me, t, a)
             val line = when {
                 open -> money(cost)
                 a == com.rm.interchange.sim.TownActions.STATUE && t.statue[0] >= 0 -> stringResource(Res.string.town_statue_up)
@@ -588,7 +591,7 @@ fun TownWindow(world: World, t: com.rm.interchange.sim.Town, send: (com.rm.inter
                 else -> stringResource(Res.string.town_action_running)
             }
             ListRow(Glyph.Plus, actions.getOrElse(a) { "" }, line, if (open && money >= cost) ({
-                send(com.rm.interchange.sim.Command.TownAction(0, t.id, a))
+                send(com.rm.interchange.sim.Command.TownAction(me, t.id, a))
                 onClose()
             }) else null)
         }
@@ -604,7 +607,7 @@ fun SubsidiesWindow(world: World, onGo: (Float, Float) -> Unit, onClose: () -> U
         for ((i, s) in open) {
             val won = world.companies.getOrNull(s.company)
             val line = if (won == null) stringResource(Res.string.subsidy_offered_for, s.months)
-                else stringResource(Res.string.subsidy_won_by, if (won.id == 0) stringResource(Res.string.your_company) else won.name, s.months)
+                else stringResource(Res.string.subsidy_won_by, if (won.id == LocalCompany.current) stringResource(Res.string.your_company) else won.name, s.months)
             val (x, y) = subsidyStart(world, i)
             ListRow(Glyph.Package, subsidyRoute(world, i), line, { onGo(x, y) }, tint = won?.let { com.rm.interchange.map.companyColour(it.id) })
         }
@@ -614,6 +617,7 @@ fun SubsidiesWindow(world: World, onGo: (Float, Float) -> Unit, onClose: () -> U
 /** Every industry open on the map, by kind then name, with what it made last month; a tap goes to it. */
 @Composable
 fun IndustriesWindow(world: World, onGo: (Float, Float) -> Unit, send: (com.rm.interchange.sim.Command) -> Unit, onClose: () -> Unit) {
+    val me = LocalCompany.current
     val lang = languageCode()
     val names = stringArrayResource(Res.array.cargoes)
     var funding by remember { mutableStateOf(false) }
@@ -625,7 +629,7 @@ fun IndustriesWindow(world: World, onGo: (Float, Float) -> Unit, send: (com.rm.i
             for (kind in world.roster.industries.filter { year >= it.from && year < it.until }) {
                 val prospect = kind.produces.any { it > 0 } && kind.accepts == 0
                 ListRow(Glyph.Plus, kind.name(lang), stringResource(if (prospect) Res.string.prospect_for else Res.string.build_for, money(world.price(com.rm.interchange.sim.fundCost(kind)))), {
-                    send(com.rm.interchange.sim.Command.FundIndustry(0, kind.id))
+                    send(com.rm.interchange.sim.Command.FundIndustry(me, kind.id))
                     onClose()
                 })
             }

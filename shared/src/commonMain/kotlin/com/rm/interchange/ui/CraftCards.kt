@@ -85,14 +85,15 @@ private fun BuyRow(roster: Roster, kind: VehicleKind, year: Int, funds: Long, pr
 /** A shipyard: buying a ship, and those in it. */
 @Composable
 fun ShipyardCard(view: WorldView, roster: Roster, depot: Int, year: Int, funds: Long, price: (Long) -> Long, send: (Command) -> Unit, onShip: (Int) -> Unit, onClose: () -> Unit, modifier: Modifier) {
+    val me = LocalCompany.current
     val c = LocalColors.current
     Card(stringResource(Res.string.tool_shipyard), onClose, modifier) {
-        BuyRow(roster, VehicleKind.SHIP, year, funds, price, { true }) { model, cargo -> send(Command.BuyCraft(0, depot, model, cargo)) }
+        BuyRow(roster, VehicleKind.SHIP, year, funds, price, { true }) { model, cargo -> send(Command.BuyCraft(me, depot, model, cargo)) }
         for (v in view.ships.filter { it.depot == depot && it.inDepot }) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(shipName(v), color = c.text, fontSize = 13.sp, modifier = Modifier.weight(1f))
                 ActionButton(stringResource(Res.string.orders)) { onShip(v.id) }
-                ActionButton(stringResource(if (v.running) Res.string.stop else Res.string.start), strong = !v.running) { send(Command.CraftOrder(0, false, v.id, Command.TrainOrder.START_STOP)) }
+                ActionButton(stringResource(if (v.running) Res.string.stop else Res.string.start), strong = !v.running) { send(Command.CraftOrder(me, false, v.id, Command.TrainOrder.START_STOP)) }
             }
         }
     }
@@ -101,6 +102,7 @@ fun ShipyardCard(view: WorldView, roster: Roster, depot: Int, year: Int, funds: 
 /** An airport: what it has, adding landing aids and de-icing, buying an aircraft that can use it, and those in its hangar. */
 @Composable
 fun AirportCard(view: WorldView, roster: Roster, airport: AirportView, year: Int, funds: Long, price: (Long) -> Long, send: (Command) -> Unit, onAircraft: (Int) -> Unit, onClose: () -> Unit, modifier: Modifier) {
+    val me = LocalCompany.current
     val c = LocalColors.current
     val kinds = stringArrayResource(Res.array.airport_kinds)
     val station = view.stations.firstOrNull { it.id == airport.station }
@@ -117,19 +119,19 @@ fun AirportCard(view: WorldView, roster: Roster, airport: AirportView, year: Int
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             if (!airport.ils && year >= ILS_FROM && Airports.CLASS[airport.kind] >= Runways.REGIONAL) {
                 val cost = price(ILS_COST)
-                ActionButton(stringResource(Res.string.landing_aids_for, money(cost)), enabled = funds >= cost) { send(Command.AirportUpgrade(0, airport.id, 0)) }
+                ActionButton(stringResource(Res.string.landing_aids_for, money(cost)), enabled = funds >= cost) { send(Command.AirportUpgrade(me, airport.id, 0)) }
             }
             if (!airport.deice && year >= DEICE_FROM && airport.kind != Airports.SEAPLANE) {
                 val cost = price(DEICE_COST)
-                ActionButton(stringResource(Res.string.deicing_for, money(cost)), enabled = funds >= cost) { send(Command.AirportUpgrade(0, airport.id, 1)) }
+                ActionButton(stringResource(Res.string.deicing_for, money(cost)), enabled = funds >= cost) { send(Command.AirportUpgrade(me, airport.id, 1)) }
             }
         }
-        BuyRow(roster, VehicleKind.AIRCRAFT, year, funds, price, { stand.serves(it) }) { model, cargo -> send(Command.BuyCraft(0, airport.depot, model, cargo)) }
+        BuyRow(roster, VehicleKind.AIRCRAFT, year, funds, price, { stand.serves(it) }) { model, cargo -> send(Command.BuyCraft(me, airport.depot, model, cargo)) }
         for (v in view.aircraft.filter { it.depot == airport.depot && it.inDepot }) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(aircraftName(v), color = c.text, fontSize = 13.sp, modifier = Modifier.weight(1f))
                 ActionButton(stringResource(Res.string.orders)) { onAircraft(v.id) }
-                ActionButton(stringResource(if (v.running) Res.string.stop else Res.string.start), strong = !v.running) { send(Command.CraftOrder(0, true, v.id, Command.TrainOrder.START_STOP)) }
+                ActionButton(stringResource(if (v.running) Res.string.stop else Res.string.start), strong = !v.running) { send(Command.CraftOrder(me, true, v.id, Command.TrainOrder.START_STOP)) }
             }
         }
     }
@@ -151,9 +153,10 @@ private fun StopsRow(view: WorldView, orders: IntArray, order: Int, adding: Bool
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun ShipCard(view: WorldView, roster: Roster, v: ShipView, addingStops: Boolean, onAddStops: () -> Unit, send: (Command) -> Unit, onClose: () -> Unit, modifier: Modifier) {
+    val me = LocalCompany.current
     val c = LocalColors.current
     val lang = languageCode()
-    fun order(what: Int, stations: IntArray = IntArray(0)) = send(Command.CraftOrder(0, false, v.id, what, stations))
+    fun order(what: Int, stations: IntArray = IntArray(0)) = send(Command.CraftOrder(me, false, v.id, what, stations))
     Card(shipName(v), onClose, modifier) {
         val target = if (v.orders.isEmpty()) null else Order.station(v.orders[v.order % v.orders.size])
         val doing = when {
@@ -175,6 +178,11 @@ fun ShipCard(view: WorldView, roster: Roster, v: ShipView, addingStops: Boolean,
         val names = stringArrayResource(Res.array.cargoes)
         if (v.capacity > 0) Text(stringResource(Res.string.cargo_load, names.getOrElse(v.carries) { "" }, v.load, v.capacity), color = c.text, fontSize = 13.sp)
         Text(stringResource(Res.string.profit_line, money(v.profitThisYear), money(v.profitLastYear)), color = if (v.profitThisYear < 0) c.bad else c.textDim, fontSize = 13.sp)
+        // Someone else's: what it is, but none of the controls.
+        if (v.owner != me) {
+            Text(stringResource(Res.string.owned_by, view.companies.getOrElse(v.owner) { "" }), color = c.textDim, fontSize = 13.sp)
+            return@Card
+        }
         Text(stringResource(Res.string.age_line_road, v.age, v.reliability), color = c.textDim, fontSize = 13.sp)
         StopsRow(view, v.orders, v.order, addingStops, onAddStops) { order(Command.TrainOrder.ORDERS, it) }
         FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -194,10 +202,11 @@ fun ShipCard(view: WorldView, roster: Roster, v: ShipView, addingStops: Boolean,
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun AircraftCard(view: WorldView, roster: Roster, v: AircraftView, addingStops: Boolean, onAddStops: () -> Unit, send: (Command) -> Unit, onClose: () -> Unit, modifier: Modifier) {
+    val me = LocalCompany.current
     val c = LocalColors.current
     val lang = languageCode()
     val e = roster[v.model]
-    fun order(what: Int, stations: IntArray = IntArray(0)) = send(Command.CraftOrder(0, true, v.id, what, stations))
+    fun order(what: Int, stations: IntArray = IntArray(0)) = send(Command.CraftOrder(me, true, v.id, what, stations))
     Card(aircraftName(v), onClose, modifier) {
         val target = if (v.orders.isEmpty()) null else Order.station(v.orders[v.order % v.orders.size])
         val reasons = stringArrayResource(Res.array.hold_reasons)
@@ -220,6 +229,11 @@ fun AircraftCard(view: WorldView, roster: Roster, v: AircraftView, addingStops: 
         val names = stringArrayResource(Res.array.cargoes)
         if (v.capacity > 0) Text(stringResource(Res.string.cargo_load, names.getOrElse(v.carries) { "" }, v.load, v.capacity), color = c.text, fontSize = 13.sp)
         Text(stringResource(Res.string.profit_line, money(v.profitThisYear), money(v.profitLastYear)), color = if (v.profitThisYear < 0) c.bad else c.textDim, fontSize = 13.sp)
+        // Someone else's: what it is, but none of the controls.
+        if (v.owner != me) {
+            Text(stringResource(Res.string.owned_by, view.companies.getOrElse(v.owner) { "" }), color = c.textDim, fontSize = 13.sp)
+            return@Card
+        }
         Text(stringResource(Res.string.age_line_road, v.age, v.reliability), color = c.textDim, fontSize = 13.sp)
         if (e.range > 0) Text(stringResource(Res.string.range_line, e.range), color = c.textDim, fontSize = 13.sp)
         if (e.floats) {

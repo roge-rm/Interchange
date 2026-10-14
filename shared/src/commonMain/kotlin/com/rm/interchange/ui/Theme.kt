@@ -40,3 +40,6 @@ val DarkColors = Colors(
 )
 
 val LocalColors = staticCompositionLocalOf { DarkColors }
+
+/** The company played on this screen, whose orders the cards give; -1 watching someone else's game. */
+val LocalCompany = staticCompositionLocalOf { 0 }

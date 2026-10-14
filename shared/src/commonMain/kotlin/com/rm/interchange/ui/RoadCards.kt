@@ -33,6 +33,7 @@ fun roadVehicleName(v: RoadVehicleView): String = v.name.takeIf { it.isNotEmpty(
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun GarageCard(view: WorldView, roster: Roster, depot: Int, year: Int, funds: Long, price: (Long) -> Long, send: (Command) -> Unit, onVehicle: (Int) -> Unit, onClose: () -> Unit, modifier: Modifier) {
+    val me = LocalCompany.current
     val c = LocalColors.current
     val lang = languageCode()
     val models = roster.availableRoad(year)
@@ -55,14 +56,14 @@ fun GarageCard(view: WorldView, roster: Roster, depot: Int, year: Int, funds: Lo
             val cost = price(e.cost)
             if (e.tram) Text(stringResource(Res.string.needs_tram_rails), color = c.textDim, fontSize = 13.sp)
             ActionButton(stringResource(Res.string.buy_for, money(cost)), enabled = funds >= cost, strong = true) {
-                send(Command.BuyRoadVehicle(0, depot, e.id, if (cargo in choices) cargo else -1))
+                send(Command.BuyRoadVehicle(me, depot, e.id, if (cargo in choices) cargo else -1))
             }
         }
         for (v in view.roadVehicles.filter { it.depot == depot && it.inDepot }) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(roadVehicleName(v), color = c.text, fontSize = 13.sp, modifier = Modifier.weight(1f))
                 ActionButton(stringResource(Res.string.orders)) { onVehicle(v.id) }
-                ActionButton(stringResource(if (v.running) Res.string.stop else Res.string.start), strong = !v.running) { send(Command.RoadOrder(0, v.id, Command.TrainOrder.START_STOP)) }
+                ActionButton(stringResource(if (v.running) Res.string.stop else Res.string.start), strong = !v.running) { send(Command.RoadOrder(me, v.id, Command.TrainOrder.START_STOP)) }
             }
         }
     }
@@ -72,6 +73,7 @@ fun GarageCard(view: WorldView, roster: Roster, depot: Int, year: Int, funds: Lo
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun RoadVehicleCard(view: WorldView, roster: Roster, v: RoadVehicleView, addingStops: Boolean, onAddStops: () -> Unit, send: (Command) -> Unit, onClose: () -> Unit, modifier: Modifier) {
+    val me = LocalCompany.current
     val c = LocalColors.current
     val lang = languageCode()
     Card(roadVehicleName(v), onClose, modifier) {
@@ -94,6 +96,11 @@ fun RoadVehicleCard(view: WorldView, roster: Roster, v: RoadVehicleView, addingS
         val names = stringArrayResource(Res.array.cargoes)
         if (v.capacity > 0) Text(stringResource(Res.string.cargo_load, names.getOrElse(v.carries) { "" }, v.load, v.capacity), color = c.text, fontSize = 13.sp)
         Text(stringResource(Res.string.profit_line, money(v.profitThisYear), money(v.profitLastYear)), color = if (v.profitThisYear < 0) c.bad else c.textDim, fontSize = 13.sp)
+        // Someone else's: what it is, but none of the controls.
+        if (v.owner != me) {
+            Text(stringResource(Res.string.owned_by, view.companies.getOrElse(v.owner) { "" }), color = c.textDim, fontSize = 13.sp)
+            return@Card
+        }
         Text(stringResource(Res.string.age_line_road, v.age, v.reliability), color = c.textDim, fontSize = 13.sp)
         val horses = roster[v.model].traction == Traction.HORSE
         val tires = stringArrayResource(Res.array.tire_kinds)
@@ -111,27 +118,27 @@ fun RoadVehicleCard(view: WorldView, roster: Roster, v: RoadVehicleView, addingS
             Chip(stringResource(if (addingStops) Res.string.done_adding else Res.string.add_stops), addingStops, onClick = onAddStops)
         }
         v.orders.getOrNull(open)?.let { o ->
-            fun change(new: Int) = send(Command.RoadOrder(0, v.id, Command.TrainOrder.ORDERS, v.orders.copyOf().also { it[open] = new }))
+            fun change(new: Int) = send(Command.RoadOrder(me, v.id, Command.TrainOrder.ORDERS, v.orders.copyOf().also { it[open] = new }))
             FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Chip(stringResource(Res.string.full_load), Order.has(o, Order.FULL_LOAD)) { change(Order.toggle(o, Order.FULL_LOAD)) }
                 Chip(stringResource(Res.string.no_loading), Order.has(o, Order.NO_LOAD)) { change(Order.toggle(o, Order.NO_LOAD)) }
                 ActionButton(stringResource(Res.string.remove_stop)) {
-                    send(Command.RoadOrder(0, v.id, Command.TrainOrder.ORDERS, v.orders.filterIndexed { j, _ -> j != open }.toIntArray()))
+                    send(Command.RoadOrder(me, v.id, Command.TrainOrder.ORDERS, v.orders.filterIndexed { j, _ -> j != open }.toIntArray()))
                     open = -1
                 }
             }
         }
         FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            ActionButton(stringResource(if (v.running) Res.string.stop else Res.string.start), strong = !v.running) { send(Command.RoadOrder(0, v.id, Command.TrainOrder.START_STOP)) }
+            ActionButton(stringResource(if (v.running) Res.string.stop else Res.string.start), strong = !v.running) { send(Command.RoadOrder(me, v.id, Command.TrainOrder.START_STOP)) }
             if (!v.inDepot) {
-                ActionButton(stringResource(if (v.toDepot) Res.string.carry_on else Res.string.to_garage)) { send(Command.RoadOrder(0, v.id, Command.TrainOrder.TO_DEPOT)) }
-                ActionButton(stringResource(Res.string.turn_round)) { send(Command.RoadOrder(0, v.id, Command.TrainOrder.TURN)) }
+                ActionButton(stringResource(if (v.toDepot) Res.string.carry_on else Res.string.to_garage)) { send(Command.RoadOrder(me, v.id, Command.TrainOrder.TO_DEPOT)) }
+                ActionButton(stringResource(Res.string.turn_round)) { send(Command.RoadOrder(me, v.id, Command.TrainOrder.TURN)) }
             } else {
-                ActionButton(stringResource(Res.string.renew_for, money(v.renewCost))) { send(Command.RoadOrder(0, v.id, Command.TrainOrder.RENEW)) }
-                ActionButton(stringResource(Res.string.sell)) { send(Command.RoadOrder(0, v.id, Command.TrainOrder.SELL)) }
+                ActionButton(stringResource(Res.string.renew_for, money(v.renewCost))) { send(Command.RoadOrder(me, v.id, Command.TrainOrder.RENEW)) }
+                ActionButton(stringResource(Res.string.sell)) { send(Command.RoadOrder(me, v.id, Command.TrainOrder.SELL)) }
             }
-            Chip(stringResource(Res.string.servicing), v.service) { send(Command.RoadOrder(0, v.id, Command.TrainOrder.SERVICE)) }
-            if (!horses) Chip(stringResource(Res.string.seasonal_tires), v.seasonalTires) { send(Command.RoadOrder(0, v.id, Command.RoadOrder.TIRES)) }
+            Chip(stringResource(Res.string.servicing), v.service) { send(Command.RoadOrder(me, v.id, Command.TrainOrder.SERVICE)) }
+            if (!horses) Chip(stringResource(Res.string.seasonal_tires), v.seasonalTires) { send(Command.RoadOrder(me, v.id, Command.RoadOrder.TIRES)) }
         }
     }
 }

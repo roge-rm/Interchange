@@ -87,6 +87,8 @@ class TrainView(
     val old: Boolean = false,
     /** An electric engine in a depot with no wires, so it can't leave. */
     val needsWires: Boolean = false,
+    /** The company it belongs to. */
+    val owner: Int = 0,
 )
 
 /** A bus, truck or streetcar as the screen shows it. */
@@ -117,6 +119,8 @@ class RoadVehicleView(
     val tires: Int,
     val seasonalTires: Boolean,
     val renewCost: Long,
+    /** The company it belongs to. */
+    val owner: Int = 0,
 )
 
 /** A ship as the screen shows it. */
@@ -147,6 +151,8 @@ class ShipView(
     /** Held up by ice it can't break, or in port for a storm. */
     val iced: Boolean,
     val stormbound: Boolean,
+    /** The company it belongs to. */
+    val owner: Int = 0,
 )
 
 /** An aircraft as the screen shows it. */
@@ -178,6 +184,8 @@ class AircraftView(
     val seasonalGear: Boolean,
     /** Why it's holding, as [cantLand] says, or null. */
     val holdingFor: String?,
+    /** The company it belongs to. */
+    val owner: Int = 0,
 )
 
 /** An airport as the screen shows it. */
@@ -258,9 +266,12 @@ class WorldView(
     val airports: List<AirportView> = emptyList(),
     /** Buoys, by tile. */
     val buoys: IntArray = IntArray(0),
+    /** Each company's name, by id. */
+    val companies: List<String> = emptyList(),
 )
 
-fun World.view(): WorldView {
+/** What the screen shows a player of [company]: their payments and money, and everything on the map. */
+fun World.view(company: Int = 0): WorldView {
     val cars = ArrayList<Float>()
     for (t in trains) {
         if (t == null || t.inDepot) continue
@@ -340,6 +351,7 @@ fun World.view(): WorldView {
             IntArray(Cargo.COUNT) { t.load(it) }, IntArray(Cargo.COUNT) { t.capacity(it) }, t.profitThisYear, t.profitLastYear, t.shared,
             age(t), t.reliability / 100, t.brokenFor > 0, t.breakdowns, t.service, t.servicing, price(t.price) - value(t), age(t) >= t.engineInfo.life,
             t.inDepot && t.engineInfo.traction == Traction.ELECTRIC && depots.getOrNull(t.depot)?.let { !depotWired(it) } == true,
+            owner = t.owner,
         )
     }
     val stationViews = stations.filterNotNull().map { s ->
@@ -369,8 +381,8 @@ fun World.view(): WorldView {
         townViews = towns.map { TownView(it.id, it.name, it.x, it.y, it.population, it.houses) }
         townsChanged = false
     }
-    return WorldView(VehicleView(tick, cars.toFloatArray()), trainViews, stationViews, signalViews, depotViews, townViews, payments.filter { it.company == 0 }, news.toList(),
-        companies.firstOrNull()?.let { c -> CompanyView(c.money, c.loan, maxLoan(), c.thisYear.copyOf(), c.lastYear.copyOf(), c.history.map { it.copyOf() }, c.upkeep) }, tick, weatherView(),
+    return WorldView(VehicleView(tick, cars.toFloatArray()), trainViews, stationViews, signalViews, depotViews, townViews, payments.filter { it.company == company }, news.toList(),
+        companies.getOrNull(company)?.let { c -> CompanyView(c.money, c.loan, maxLoan(), c.thisYear.copyOf(), c.lastYear.copyOf(), c.history.map { it.copyOf() }, c.upkeep) }, tick, weatherView(),
         stations.filterNotNull().filter { it.waypoint }.flatMap { it.tiles }.toIntArray(),
         spans.filterNotNull().map { SpanView(it.tunnel, it.style, it.x0, it.y0, it.x1, it.y1, it.height) },
         sheds.toIntArray(), fences.toIntArray(),
@@ -381,6 +393,7 @@ fun World.view(): WorldView {
                 v.waiting > 0, v.running && !v.inDepot && v.lostUntil > tick, c, if (c >= 0) v.load(c) else 0, if (c >= 0) v.capacity(c) else 0,
                 v.profitThisYear, v.profitLastYear, (day - v.built).coerceAtLeast(0) / 365, v.reliability / 100, v.brokenFor > 0 && !v.slid, v.slid,
                 v.service, v.servicing, v.tires, v.seasonalTires, price(v.price) - roadValue(v),
+                owner = v.owner,
             )
         },
         ships.filterNotNull().map { v ->
@@ -393,6 +406,7 @@ fun World.view(): WorldView {
                 v.profitThisYear, v.profitLastYear, (day - v.built).coerceAtLeast(0) / 365, v.reliability / 100, v.brokenFor > 0,
                 v.service, v.servicing, price(v.price) - craftValue(v.price, v.built, v.info.life),
                 iced && (weather.ice[shipTile(v)].toInt() and 255) > 0, v.waiting == 1 && weather.wind >= STORM_WIND,
+                owner = v.owner,
             )
         },
         aircraft.filterNotNull().map { v ->
@@ -404,10 +418,12 @@ fun World.view(): WorldView {
                 v.profitThisYear, v.profitLastYear, (day - v.built).coerceAtLeast(0) / 365, v.reliability / 100, v.brokenFor > 0,
                 v.service, v.servicing, price(v.price) - craftValue(v.price, v.built, v.info.life), v.gear, v.seasonalGear,
                 if (v.state == Flight.HOLD && dest != null) cantLand(v, dest) else null,
+                owner = v.owner,
             )
         },
         airports.filterNotNull().map { AirportView(it.id, it.station, it.kind, it.x, it.y, it.w, it.h, it.axis, it.depot, it.ils, it.deice) },
         buoys.keys.sorted().toIntArray(),
+        companies.map { it.name },
     )
 }
 

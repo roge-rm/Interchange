@@ -19,11 +19,17 @@ class Settings {
     var snow by mutableStateOf(false)
     /** Track coloured by its condition. */
     var condition by mutableStateOf(false)
+    /** The name other players see, and the address last joined. */
+    var playerName by mutableStateOf("")
+    var lastAddress by mutableStateOf("")
+    /** Made once, so a server knows this phone again and gives back its company. */
+    var client = ""
 
     val autosaveDays get() = AUTOSAVE_DAYS[autosave.coerceIn(0, AUTOSAVE_DAYS.size - 1)]
 
     fun save() {
-        files.write(FILE, "language=$language\nautosave=$autosave\ngrid=$grid\nheights=$heights\nsnow=$snow\ncondition=$condition\n".encodeToByteArray())
+        files.write(FILE, ("language=$language\nautosave=$autosave\ngrid=$grid\nheights=$heights\nsnow=$snow\ncondition=$condition\n" +
+            "player=${playerName.replace('\n', ' ')}\naddress=${lastAddress.replace('\n', ' ')}\nclient=$client\n").encodeToByteArray())
     }
 
     companion object {
@@ -34,7 +40,7 @@ class Settings {
 
         fun load(): Settings {
             val s = Settings()
-            val text = files.read(FILE)?.decodeToString() ?: return s
+            val text = files.read(FILE)?.decodeToString() ?: ""
             for (line in text.lines()) {
                 val (k, v) = line.split("=", limit = 2).takeIf { it.size == 2 } ?: continue
                 when (k) {
@@ -44,7 +50,14 @@ class Settings {
                     "heights" -> s.heights = v == "true"
                     "snow" -> s.snow = v == "true"
                     "condition" -> s.condition = v == "true"
+                    "player" -> s.playerName = v
+                    "address" -> s.lastAddress = v
+                    "client" -> s.client = v
                 }
+            }
+            if (s.client.isEmpty()) {
+                s.client = kotlin.random.Random.nextBytes(12).joinToString("") { (it.toInt() and 255).toString(16).padStart(2, '0') }
+                s.save()
             }
             return s
         }
