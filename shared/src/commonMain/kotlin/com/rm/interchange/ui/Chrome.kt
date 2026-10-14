@@ -101,6 +101,13 @@ fun StatusStrip(
     twoLines: Boolean,
     modifier: Modifier = Modifier,
     cameras: List<ClosedFloatingPointRange<Float>> = emptyList(),
+    /** Off for a player who joined: the server keeps the time. */
+    timeControls: Boolean = true,
+    /** Off for someone watching, who has no money. */
+    showMoney: Boolean = true,
+    /** Opens the chat, in multiplayer only; lit when there's something not read. */
+    onChat: (() -> Unit)? = null,
+    chatUnread: Boolean = false,
 ) {
     val c = LocalColors.current
     val side = if (compact) 36.dp else 40.dp
@@ -108,12 +115,15 @@ fun StatusStrip(
     val gap = if (compact) 6.dp else 8.dp
     val time = @Composable {
         SquareButton(Glyph.Menu, stringResource(Res.string.menu), side, onClick = onMenu)
-        SquareButton(if (paused) Glyph.Play else Glyph.Pause, stringResource(if (paused) Res.string.play else Res.string.pause), side, selected = paused, onClick = onPause)
-        Box(contentAlignment = Alignment.BottomEnd) {
-            SquareButton(Glyph.Speed, stringResource(Res.string.speed), side, onClick = onSpeed)
-            Text("${SPEEDS[speed]}×", color = c.textDim, fontSize = 9.sp, modifier = Modifier.padding(end = 3.dp))
+        if (timeControls) {
+            SquareButton(if (paused) Glyph.Play else Glyph.Pause, stringResource(if (paused) Res.string.play else Res.string.pause), side, selected = paused, onClick = onPause)
+            Box(contentAlignment = Alignment.BottomEnd) {
+                SquareButton(Glyph.Speed, stringResource(Res.string.speed), side, onClick = onSpeed)
+                Text("${SPEEDS[speed]}×", color = c.textDim, fontSize = 9.sp, modifier = Modifier.padding(end = 3.dp))
+            }
         }
         SquareButton(Glyph.Layers, stringResource(Res.string.overlays), side, selected = overlaysOn, onClick = onOverlays)
+        onChat?.let { SquareButton(Glyph.Chat, stringResource(Res.string.chat), side, selected = chatUnread, onClick = it) }
     }
     val readings = @Composable {
         Text(date, color = c.text, fontSize = textSize, fontWeight = FontWeight.SemiBold, maxLines = 1)
@@ -121,7 +131,7 @@ fun StatusStrip(
             weather, color = c.text, fontSize = textSize, maxLines = 1,
             modifier = Modifier.clip(RoundedCornerShape(6.dp)).clickable(onClickLabel = stringResource(Res.string.weather), role = Role.Button, onClick = onWeather).padding(2.dp),
         )
-        Text(
+        if (showMoney) Text(
             money, color = if (moneyLow) c.bad else c.text, fontSize = textSize, maxLines = 1,
             modifier = Modifier.clip(RoundedCornerShape(6.dp)).clickable(onClickLabel = stringResource(Res.string.finances), role = Role.Button, onClick = onMoney).padding(2.dp),
         )

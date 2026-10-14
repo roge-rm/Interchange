@@ -443,4 +443,42 @@
         <item quantity="one">%1$d case</item>
         <item quantity="other">%1$d cases</item>
     </plurals>
+    <string name="multiplayer">Multijoueur</string>
+    <string name="your_name">Votre nom</string>
+    <string name="player">Joueur</string>
+    <string name="new_company">Nouvelle compagnie</string>
+    <string name="watch">Regarder</string>
+    <string name="games_nearby">Parties à proximité</string>
+    <string name="looking_for_games">Recherche de parties sur ce réseau…</string>
+    <string name="join_by_address">Rejoindre par adresse</string>
+    <string name="address">Adresse</string>
+    <string name="join">Rejoindre</string>
+    <string name="joining">Connexion…</string>
+    <string name="password">Mot de passe</string>
+    <string name="needs_password">Cette partie demande un mot de passe.</string>
+    <string name="wrong_password">Mot de passe incorrect.</string>
+    <string name="refused_version">Sur une autre version d'Interchange</string>
+    <string name="refused_full">Cette partie est complète.</string>
+    <string name="refused_company">Cette compagnie ne peut pas être jouée.</string>
+    <string name="refused_kicked">L'hôte vous a renvoyé.</string>
+    <string name="cant_reach">Impossible de joindre %1$s.</string>
+    <string name="players">Joueurs</string>
+    <plurals name="players_count">
+        <item quantity="one">%1$d joueur</item>
+        <item quantity="other">%1$d joueurs</item>
+    </plurals>
+    <string name="watching">Spectateur</string>
+    <string name="game_of">Partie de %1$s</string>
+    <string name="open_to_players">Ouvrir aux joueurs</string>
+    <string name="close_to_players">Fermer aux joueurs</string>
+    <string name="cant_open">Impossible d'ouvrir la partie : %1$s</string>
+    <string name="players_join_at">Les joueurs rejoignent à</string>
+    <string name="no_network">Aucun réseau</string>
+    <string name="leave">Quitter</string>
+    <string name="chat">Discussion</string>
+    <string name="no_chat">Rien n'a encore été dit</string>
+    <string name="message">Message</string>
+    <string name="send">Envoyer</string>
+    <string name="connection_lost">Connexion perdue</string>
+    <string name="connection_lost_line">La partie rejointe n'est plus joignable.</string>
 </resources>

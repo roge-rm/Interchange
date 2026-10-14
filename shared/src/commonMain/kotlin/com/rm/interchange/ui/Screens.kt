@@ -101,9 +101,9 @@ private fun rememberBackdrop(): ImageBitmap? = produceState<ImageBitmap?>(null) 
     value = withContext(Dispatchers.Default) { mapPicture(World(NewGame(width = 256, height = 256, seed = 1867, hills = 2, trees = 3))) }
 }.value
 
-/** The first screen: carry on, start a new game, load one, add packs or change settings. */
+/** The first screen: carry on, start a new game, load one, join one on the network, add packs or change settings. */
 @Composable
-fun TitleScreen(continueLine: String?, onContinue: () -> Unit, onNew: () -> Unit, onLoad: () -> Unit, onPacks: () -> Unit, onSettings: () -> Unit) {
+fun TitleScreen(continueLine: String?, onContinue: () -> Unit, onNew: () -> Unit, onLoad: () -> Unit, onMultiplayer: () -> Unit, onPacks: () -> Unit, onSettings: () -> Unit) {
     val c = LocalColors.current
     Page(rememberBackdrop()) {
         Row(Modifier.padding(bottom = 16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
@@ -116,6 +116,7 @@ fun TitleScreen(continueLine: String?, onContinue: () -> Unit, onNew: () -> Unit
         }
         BigButton(stringResource(Res.string.new_game), primary = continueLine == null, glyph = Glyph.Plus, onClick = onNew)
         BigButton(stringResource(Res.string.load), glyph = Glyph.Folder, onClick = onLoad)
+        BigButton(stringResource(Res.string.multiplayer), glyph = Glyph.People, onClick = onMultiplayer)
         BigButton(stringResource(Res.string.packs), glyph = Glyph.Package, onClick = onPacks)
         BigButton(stringResource(Res.string.settings), glyph = Glyph.Gear, onClick = onSettings)
     }
@@ -433,17 +434,18 @@ fun OverlaysWindow(settings: Settings, onClose: () -> Unit) {
     Window(stringResource(Res.string.overlays), onClose, Glyph.Layers) { OverlayToggles(settings) }
 }
 
-/** The in-game menu: save, load, start afresh, settings, or back to the title screen. */
+/** The in-game menu: save, load, start afresh, play with others, settings, or back to the title screen. A game joined isn't saved here. */
 @Composable
-fun MenuWindow(saved: Boolean, onSave: () -> Unit, onLoad: () -> Unit, onNew: () -> Unit, onSettings: () -> Unit, onIndustries: () -> Unit, onCompanies: () -> Unit, onSubsidies: () -> Unit, onChronicle: () -> Unit, onTitle: () -> Unit, onClose: () -> Unit) {
+fun MenuWindow(saved: Boolean, canSave: Boolean, onSave: () -> Unit, onLoad: () -> Unit, onNew: () -> Unit, onPlayers: () -> Unit, onSettings: () -> Unit, onIndustries: () -> Unit, onCompanies: () -> Unit, onSubsidies: () -> Unit, onChronicle: () -> Unit, onTitle: () -> Unit, onClose: () -> Unit) {
     Window(stringResource(Res.string.menu), onClose, Glyph.Menu) {
-        BigButton(stringResource(if (saved) Res.string.saved else Res.string.save), primary = !saved, glyph = Glyph.Save, onClick = onSave)
+        if (canSave) BigButton(stringResource(if (saved) Res.string.saved else Res.string.save), primary = !saved, glyph = Glyph.Save, onClick = onSave)
         BigButton(stringResource(Res.string.load), glyph = Glyph.Folder, onClick = onLoad)
         BigButton(stringResource(Res.string.new_game), glyph = Glyph.Plus, onClick = onNew)
         BigButton(stringResource(Res.string.industries), glyph = Glyph.Layers, onClick = onIndustries)
         BigButton(stringResource(Res.string.companies), glyph = Glyph.Home, onClick = onCompanies)
         BigButton(stringResource(Res.string.subsidies), glyph = Glyph.Package, onClick = onSubsidies)
         BigButton(stringResource(Res.string.chronicle), glyph = Glyph.Folder, onClick = onChronicle)
+        BigButton(stringResource(Res.string.multiplayer), glyph = Glyph.People, onClick = onPlayers)
         BigButton(stringResource(Res.string.settings), glyph = Glyph.Gear, onClick = onSettings)
         BigButton(stringResource(Res.string.title_screen), glyph = Glyph.Home, onClick = onTitle)
     }
@@ -533,7 +535,7 @@ fun CompaniesWindow(world: World, onGo: (Float, Float) -> Unit, send: (com.rm.in
     Window(stringResource(Res.string.companies), onClose, Glyph.Home) {
         // Best first, by what each is worth, those gone at the end.
         val worth = world.companies.associate { it.id to world.companyValue(it) }
-        val mine = world.companies.firstOrNull()?.money ?: 0L
+        val mine = world.companies.getOrNull(me)?.money ?: 0L
         for (co in world.companies.sortedWith(compareBy<com.rm.interchange.sim.Company> { it.gone }.thenByDescending { worth.getValue(it.id) }.thenBy { it.id })) {
             val vehicles = world.trains.count { it?.owner == co.id } + world.roadVehicles.count { it?.owner == co.id } +
                 world.ships.count { it?.owner == co.id } + world.aircraft.count { it?.owner == co.id }
@@ -580,7 +582,7 @@ fun TownWindow(world: World, t: com.rm.interchange.sim.Town, send: (com.rm.inter
             val name = if (co.id == me) stringResource(Res.string.your_company) else co.name
             ListRow(Glyph.Station, stringResource(Res.string.exclusive_left, name, t.exclusiveDays), null, null, tint = com.rm.interchange.map.companyColour(co.id))
         }
-        val money = world.companies.firstOrNull()?.money ?: 0L
+        val money = world.companies.getOrNull(me)?.money ?: 0L
         for (a in 0 until com.rm.interchange.sim.TownActions.COUNT) {
             val cost = world.townActionCost(a)
             val open = world.townActionOpen(me, t, a)

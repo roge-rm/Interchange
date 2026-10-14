@@ -1,6 +1,7 @@
 package com.rm.interchange
 
 import android.net.Uri
+import android.net.wifi.WifiManager
 import android.os.Build
 import android.os.Bundle
 import android.view.WindowManager
@@ -15,6 +16,7 @@ import androidx.core.view.WindowInsetsControllerCompat
 import com.rm.interchange.platform.AndroidFiles
 import com.rm.interchange.platform.AndroidPictures
 import com.rm.interchange.platform.Lifecycle
+import com.rm.interchange.platform.Network
 import com.rm.interchange.platform.Picker
 import com.rm.interchange.platform.files
 import com.rm.interchange.platform.picker
@@ -76,6 +78,10 @@ class MainActivity : ComponentActivity(), Picker {
         files = AndroidFiles(filesDir)
         picker = this
         pictures = AndroidPictures
+        // Wi-Fi drops broadcasts unless something holds a multicast lock, so one is held while listening for games nearby.
+        val wifi = applicationContext.getSystemService(WIFI_SERVICE) as? WifiManager
+        val lock = wifi?.createMulticastLock("interchange-discover")?.apply { setReferenceCounted(false) }
+        Network.listening = { on -> lock?.let { if (on) it.acquire() else if (it.isHeld) it.release() } }
         setContent { App() }
     }
 

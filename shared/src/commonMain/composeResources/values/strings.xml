@@ -460,4 +460,42 @@
         <item quantity="one">%1$d tile</item>
         <item quantity="other">%1$d tiles</item>
     </plurals>
+    <string name="multiplayer">Multiplayer</string>
+    <string name="your_name">Your name</string>
+    <string name="player">Player</string>
+    <string name="new_company">New company</string>
+    <string name="watch">Watch</string>
+    <string name="games_nearby">Games nearby</string>
+    <string name="looking_for_games">Looking for games on this network…</string>
+    <string name="join_by_address">Join by address</string>
+    <string name="address">Address</string>
+    <string name="join">Join</string>
+    <string name="joining">Joining…</string>
+    <string name="password">Password</string>
+    <string name="needs_password">This game needs a password.</string>
+    <string name="wrong_password">Wrong password.</string>
+    <string name="refused_version">On another version of Interchange</string>
+    <string name="refused_full">This game is full.</string>
+    <string name="refused_company">That company can't be played.</string>
+    <string name="refused_kicked">The host sent you away.</string>
+    <string name="cant_reach">Can't reach %1$s.</string>
+    <string name="players">Players</string>
+    <plurals name="players_count">
+        <item quantity="one">%1$d player</item>
+        <item quantity="other">%1$d players</item>
+    </plurals>
+    <string name="watching">Watching</string>
+    <string name="game_of">%1$s's game</string>
+    <string name="open_to_players">Open to players</string>
+    <string name="close_to_players">Close to players</string>
+    <string name="cant_open">Can't open the game: %1$s</string>
+    <string name="players_join_at">Players join at</string>
+    <string name="no_network">Not on a network</string>
+    <string name="leave">Leave</string>
+    <string name="chat">Chat</string>
+    <string name="no_chat">Nothing said yet</string>
+    <string name="message">Message</string>
+    <string name="send">Send</string>
+    <string name="connection_lost">Connection lost</string>
+    <string name="connection_lost_line">The game you joined can't be reached any more.</string>
 </resources>

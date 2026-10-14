@@ -58,6 +58,9 @@ import com.rm.interchange.map.View
 import com.rm.interchange.map.buildingAt
 import com.rm.interchange.server.Game
 import com.rm.interchange.server.GameThread
+import com.rm.interchange.server.Host
+import com.rm.interchange.server.ChatLine
+import com.rm.interchange.server.Remote
 import com.rm.interchange.map.VehicleSource
 import com.rm.interchange.platform.cameraCutouts
 import com.rm.interchange.platform.picker
@@ -124,7 +127,7 @@ fun App() {
 private enum class Screen { Title, NewGame, Playing }
 
 /** A window open over the screen. */
-private enum class Win { Menu, Load, Settings, Packs, Overlays, Finances, Industries, Companies, Town, Subsidies, Chronicle }
+private enum class Win { Menu, Load, Settings, Packs, Overlays, Finances, Industries, Companies, Town, Subsidies, Chronicle, Multiplayer, Players, Chat }
 
 @Composable
 private fun Root(settings: Settings) {
@@ -139,6 +142,14 @@ private fun Root(settings: Settings) {
     // Saved from the menu since it was opened.
     var saved by remember { mutableStateOf(false) }
     var runner by remember { mutableStateOf<GameThread?>(null) }
+    // The game opened to players on the network, while it is; and whether it's being opened, or why it couldn't be.
+    var host by remember { mutableStateOf<Host?>(null) }
+    var opening by remember { mutableStateOf(false) }
+    var hostProblem by remember { mutableStateOf<String?>(null) }
+    // The game joined stopped answering.
+    var lost by remember { mutableStateOf(false) }
+    val cantOpen = stringResource(Res.string.cant_open, "%s")
+    val gameOf = stringResource(Res.string.game_of, "%s")
     var saves by remember { mutableStateOf(SavedGames.list()) }
     var loadError by remember { mutableStateOf<String?>(null) }
     val cantLoad = stringResource(Res.string.cant_load, "%s")
@@ -157,22 +168,118 @@ private fun Root(settings: Settings) {
 
     // The game saves itself when the app is put away.
     DisposableEffect(Unit) {
-        Lifecycle.onHide = { runner?.let { SavedGames.save(it, SavedGames.AUTOSAVE) } }
+        Lifecycle.onHide = { runner?.takeIf { it.remote == null }?.let { SavedGames.save(it, SavedGames.AUTOSAVE) } }
         onDispose { Lifecycle.onHide = null }
     }
     // Autosave follows the setting while a game runs.
-    LaunchedEffect(runner, settings.autosave) { runner?.autosaveDays = settings.autosaveDays }
+    LaunchedEffect(runner, settings.autosave) { runner?.takeIf { it.remote == null }?.autosaveDays = settings.autosaveDays }
+
+    // The host last closed, stopping on a thread of its own; opening again waits for it so the port is free.
+    val closing = remember { java.util.concurrent.atomic.AtomicReference<Thread?>(null) }
+
+    /** Closes the game to players, off the main thread. */
+    fun closeHost() {
+        val h = host ?: return
+        host = null
+        closing.set(Thread { h.stop() }.apply { start() })
+    }
+
+    /** Stops the game running: closes it to players or leaves the game joined, then stops its thread. */
+    fun stopGame() {
+        closeHost()
+        hostProblem = null
+        lost = false
+        runner?.remote?.leave()
+        runner?.stop()
+        runner = null
+    }
+
+    // The app closing stops the game too. The stop waits behind anything already asked of the game thread, such as
+    // the save made when the app was put away.
+    DisposableEffect(Unit) {
+        onDispose {
+            closeHost()
+            runner?.let { r ->
+                r.remote?.leave()
+                r.onGameThread { r.stop() }
+            }
+            runner = null
+        }
+    }
 
     fun play(make: () -> World) {
-        runner?.stop()
+        stopGame()
         val r = GameThread(make)
         r.autosaveDays = settings.autosaveDays
-        r.onAutosave = { bytes -> r.game?.let { SavedGames.writeAutosave(bytes, it.world) } }
+        r.onAutosave = { bytes -> r.game?.let { SavedGames.writeAutosave(bytes, it.world, r.company) } }
         r.start()
         runner = r
         screen = Screen.Playing
         window = null
     }
+
+    /** Follows a game joined on the network, playing the company it gave us, with no autosaves. */
+    fun joined(remote: Remote, world: World) {
+        stopGame()
+        val r = GameThread({ world }, remote)
+        r.company = remote.company
+        r.autosaveDays = 0
+        // A world sent again after going out of step needs the same packs found.
+        r.onGameThread { g -> g.findPack = InstalledPacks::find }
+        r.start()
+        runner = r
+        lost = false
+        screen = Screen.Playing
+        window = null
+    }
+
+    /** Opens the game to players on the network, as the company played here; the port is taken off the main thread. */
+    fun openToPlayers(password: String) {
+        val r = runner ?: return
+        if (opening || host != null || r.remote != null) return
+        opening = true
+        hostProblem = null
+        val company = r.game?.world?.companies?.getOrNull(r.company)?.name ?: "Interchange"
+        val player = settings.playerName.trim()
+        // Listed by the host's name, or the company's if there's none.
+        val name = if (player.isEmpty()) company else gameOf.replace("%s", player)
+        val me = player.ifBlank { company }
+        scope.launch {
+            var made: Host? = null
+            var kept = false
+            try {
+                val result = withContext(Dispatchers.IO) {
+                    closing.get()?.join()
+                    runCatching { Host(r, name, password = password, hostName = me, hostCompany = r.company).also { made = it; it.start() } }
+                }
+                // Kept only if the game it was opened for is still running.
+                result.onSuccess { h -> if (runner === r) { host = h; kept = true } }
+                    .onFailure { hostProblem = cantOpen.replace("%s", it.message ?: "") }
+            } finally {
+                opening = false
+                if (!kept) made?.let { h -> Thread { h.stop() }.start() }
+            }
+        }
+    }
+
+    // Watches a game joined for its connection dropping.
+    LaunchedEffect(runner) {
+        val r = runner ?: return@LaunchedEffect
+        val remote = r.remote ?: return@LaunchedEffect
+        while (remote.lost == null) delay(500)
+        if (runner === r) lost = true
+    }
+
+    // The latest line of chat, and the latest one read, for lighting the strip's chat button.
+    val lastChat by androidx.compose.runtime.produceState<ChatLine?>(null, runner, host) {
+        while (true) {
+            value = (host?.chat ?: runner?.remote?.chat)?.lastOrNull()
+            delay(500)
+        }
+    }
+    var readChat by remember { mutableStateOf<ChatLine?>(null) }
+    LaunchedEffect(window, lastChat) { if (window == Win.Chat) readChat = lastChat }
+    val inMultiplayer = host != null || runner?.remote != null
 
     /** Reads a save off the main thread, with the packs it needs, and plays it, or says why it can't. */
     fun load(entry: SavedGames.Entry) {
@@ -219,6 +326,7 @@ private fun Root(settings: Settings) {
                 onContinue = { saves.firstOrNull()?.let { load(it) } },
                 onNew = { screen = Screen.NewGame },
                 onLoad = { saves = SavedGames.list(); window = Win.Load },
+                onMultiplayer = { window = Win.Multiplayer },
                 onPacks = { packMessage = null; window = Win.Packs },
                 onSettings = { window = Win.Settings },
             )
@@ -240,16 +348,19 @@ private fun Root(settings: Settings) {
                 if (r == null || s == null) {
                     Box(Modifier.fillMaxSize().background(LocalColors.current.page))
                 } else {
-                    Playing(r, s, settings, onMenu = { saved = false; window = Win.Menu }, onOverlays = { window = Win.Overlays }, onFinances = { window = Win.Finances }, onTown = { town = it; window = Win.Town }, goTo = goTo)
+                    Playing(r, s, settings, onMenu = { saved = false; window = Win.Menu }, onOverlays = { window = Win.Overlays }, onFinances = { window = Win.Finances }, onTown = { town = it; window = Win.Town }, goTo = goTo,
+                        onChat = if (inMultiplayer) ({ window = Win.Chat }) else null, chatUnread = lastChat != null && lastChat !== readChat)
                 }
             }
         }
         when (window) {
             Win.Menu -> MenuWindow(
                 saved,
+                canSave = runner?.remote == null,
                 onSave = { runner?.let { r -> SavedGames.save(r) { scope.launch { saves = SavedGames.list(); saved = true } } } },
                 onLoad = { saves = SavedGames.list(); window = Win.Load },
                 onNew = { window = null; screen = Screen.NewGame },
+                onPlayers = { hostProblem = null; window = Win.Players },
                 onSettings = { window = Win.Settings },
                 onIndustries = { window = Win.Industries },
                 onCompanies = { window = Win.Companies },
@@ -257,13 +368,16 @@ private fun Root(settings: Settings) {
                 onChronicle = { window = Win.Chronicle },
                 // Back to the title screen the game is saved and stopped; Continue loads it again.
                 onTitle = {
-                    runner?.let { r ->
+                    val r = runner
+                    if (r != null && r.remote == null) {
+                        // Saved first, stopped after; closing to players can't wait for it.
+                        closeHost()
                         SavedGames.save(r, SavedGames.AUTOSAVE) {
                             r.stop()
                             scope.launch { saves = SavedGames.list() }
                         }
-                    }
-                    runner = null
+                        runner = null
+                    } else stopGame()
                     window = null
                     screen = Screen.Title
                 },
@@ -294,14 +408,43 @@ private fun Root(settings: Settings) {
             Win.Chronicle -> runner?.game?.world?.let { w -> ChronicleWindow(w, { x, y -> goTo.value = x to y; window = null }) { window = null } }
             Win.Subsidies -> runner?.game?.world?.let { w -> SubsidiesWindow(w, { x, y -> goTo.value = x to y; window = null }) { window = null } }
             Win.Town -> runner?.game?.world?.let { w -> w.towns.getOrNull(town)?.let { t -> TownWindow(w, t, { runner?.request(it) }) { window = null } } }
+            Win.Multiplayer -> MultiplayerWindow(settings, ::joined) { window = null }
+            Win.Players -> runner?.let { r ->
+                PlayersWindow(
+                    r, host, settings, opening, hostProblem,
+                    onOpen = ::openToPlayers,
+                    onShut = {
+                        closeHost()
+                    },
+                    onLeave = {
+                        stopGame()
+                        window = null
+                        screen = Screen.Title
+                    },
+                    onClose = { window = null },
+                )
+            }
+            Win.Chat -> {
+                val h = host
+                val remote = runner?.remote
+                if (h != null) ChatWindow({ h.chat }, h::say) { window = null }
+                else if (remote != null) ChatWindow({ remote.chat }, { remote.say(it) }) { window = null }
+            }
             null -> {}
+        }
+        // Over the game only: a new game being set up stays, and the window waits for the game to come back.
+        if (lost && screen == Screen.Playing) LostWindow {
+            lost = false
+            stopGame()
+            window = null
+            screen = Screen.Title
         }
     } }
 }
 
 /** A game being played: waits for the world to be made, then shows it. */
 @Composable
-private fun Playing(runner: GameThread, sheets: Sheets, settings: Settings, onMenu: () -> Unit, onOverlays: () -> Unit, onFinances: () -> Unit, onTown: (Int) -> Unit, goTo: MutableState<Pair<Float, Float>?>) {
+private fun Playing(runner: GameThread, sheets: Sheets, settings: Settings, onMenu: () -> Unit, onOverlays: () -> Unit, onFinances: () -> Unit, onTown: (Int) -> Unit, goTo: MutableState<Pair<Float, Float>?>, onChat: (() -> Unit)?, chatUnread: Boolean) {
     var world by remember(runner) { mutableStateOf<World?>(null) }
     // Redraws every display frame, and picks up the world once it's made, or when a server sends it again.
     val frame = remember(runner) { mutableLongStateOf(0L) }
@@ -316,11 +459,11 @@ private fun Playing(runner: GameThread, sheets: Sheets, settings: Settings, onMe
         Box(Modifier.fillMaxSize().background(LocalColors.current.page))
         return
     }
-    key(runner, w) { GameScreen(runner, w, sheets, frame, settings, onMenu, onOverlays, onFinances, onTown, goTo) }
+    key(runner, w) { GameScreen(runner, w, sheets, frame, settings, onMenu, onOverlays, onFinances, onTown, goTo, onChat, chatUnread) }
 }
 
 @Composable
-private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: State<Long>, settings: Settings, onMenu: () -> Unit, onOverlays: () -> Unit, onFinances: () -> Unit, onTown: (Int) -> Unit, goTo: MutableState<Pair<Float, Float>?>) {
+private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: State<Long>, settings: Settings, onMenu: () -> Unit, onOverlays: () -> Unit, onFinances: () -> Unit, onTown: (Int) -> Unit, goTo: MutableState<Pair<Float, Float>?>, onChat: (() -> Unit)?, chatUnread: Boolean) {
     val me = runner.company
     val c = LocalColors.current
     // The drawings of this game's vehicles: the base pack's come with the app, the others from their packs.
@@ -542,7 +685,8 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
 
     val townLabels = rememberTownLabels(c.chrome, c.text, c.textDim)
     // What the drag would take, how long it is, and whether there's the money: drawn by the finger.
-    val company = world.companies[me.coerceAtLeast(0)]
+    // A player who just joined may be drawn a frame or two before their company is made; costs go by the first till then.
+    val company = world.companies.getOrNull(me) ?: world.companies[0]
     val dragged: Pair<Int, Long>? = plan?.let { p ->
         if (tool == Tool.Wires) Track.line(world, p.sx, p.sy, p.ex, p.ey, p.first)?.let { it.size to it.size * world.price(Prices.WIRE) }
         else world.railCost(p).let { (cost, n) -> if (cost < 0) null else n to cost }
@@ -613,6 +757,10 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
             compact = layout.compact || layout.narrow,
             twoLines = twoLines,
             cameras = cameras,
+            timeControls = runner.remote == null,
+            showMoney = me >= 0,
+            onChat = onChat,
+            chatUnread = chatUnread,
             modifier = if (cameras.isNotEmpty()) {
                 // Up into the band the camera takes, across the screen, the camera sitting on it with the buttons clear of it.
                 Modifier
@@ -683,7 +831,8 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
             if (g != ToolGroup.Inspect) selected = null
         }
 
-        if (layout.sideTools) {
+        // Someone watching only looks, so the building tools are left out.
+        if (layout.sideTools && me >= 0) {
             ToolBar(
                 tool.group, ::pickGroup, vertical = true, compact = compactTools,
                 modifier = Modifier
@@ -815,7 +964,7 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
                     }
                 }
             }
-            if (!layout.sideTools) ToolBar(tool.group, ::pickGroup, vertical = false, compact = compactTools, modifier = trayWidth)
+            if (!layout.sideTools && me >= 0) ToolBar(tool.group, ::pickGroup, vertical = false, compact = compactTools, modifier = trayWidth)
         }
     }
 }

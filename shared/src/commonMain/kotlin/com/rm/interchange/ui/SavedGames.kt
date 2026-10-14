@@ -17,7 +17,7 @@ object SavedGames {
     fun save(runner: GameThread, name: String? = null, done: () -> Unit = {}) {
         runner.onGameThread { g ->
             val bytes = com.rm.interchange.sim.Save.write(g.world)
-            val info = info(g.world)
+            val info = info(g.world, runner.company)
             val file = name ?: nextName()
             files.write("$file.ichg", bytes)
             files.write("$file.info", info)
@@ -32,14 +32,15 @@ object SavedGames {
     }
 
     /** The bytes of an autosave handed over by the game thread, written with its notes. */
-    fun writeAutosave(bytes: ByteArray, world: World) {
+    fun writeAutosave(bytes: ByteArray, world: World, company: Int) {
         files.write("$AUTOSAVE.ichg", bytes)
-        files.write("$AUTOSAVE.info", info(world))
+        files.write("$AUTOSAVE.info", info(world, company))
     }
 
-    fun info(world: World): ByteArray {
+    /** A save's notes for the list, with the money of [company], the one played. */
+    fun info(world: World, company: Int): ByteArray {
         val g = world.settings
-        return ("day=${world.day}\nstartYear=${g.startYear}\nmoney=${world.companies[0].money}\n" +
+        return ("day=${world.day}\nstartYear=${g.startYear}\nmoney=${world.companies.getOrNull(company)?.money ?: 0L}\n" +
             "width=${g.width}\nheight=${g.height}\nregion=${g.region.ordinal}\n").encodeToByteArray()
     }
 

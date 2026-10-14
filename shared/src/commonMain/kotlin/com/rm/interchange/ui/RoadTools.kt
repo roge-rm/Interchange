@@ -20,7 +20,7 @@ fun roadLine(company: Int, start: Pick, end: Pick, surface: Int, remove: Boolean
 
 /** The tiles [plan] covers, lit if any of it can be built and red if not. */
 fun DrawScope.drawRoadPlan(world: World, painter: LandPainter, plan: Command.Road) {
-    val ok = world.roadCost(world.companies[plan.company], plan) >= 0
+    val ok = world.companies.getOrNull(plan.company)?.let { world.roadCost(it, plan) >= 0 } ?: false
     val dx = (plan.ex - plan.sx).coerceIn(-1, 1)
     val dy = (plan.ey - plan.sy).coerceIn(-1, 1)
     val n = maxOf(abs(plan.ex - plan.sx), abs(plan.ey - plan.sy))

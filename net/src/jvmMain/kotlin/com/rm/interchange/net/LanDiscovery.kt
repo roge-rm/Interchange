@@ -81,6 +81,19 @@ object LanDiscovery {
         }
     }, "interchange-discover").apply { isDaemon = true; start() }
 
+    /** This device's IPv4 addresses on its networks, for players to join by. */
+    fun addresses(): List<String> {
+        val out = ArrayList<String>()
+        try {
+            for (n in NetworkInterface.getNetworkInterfaces()) {
+                if (!n.isUp || n.isLoopback) continue
+                for (a in n.interfaceAddresses) if (a.address is java.net.Inet4Address) a.address.hostAddress?.let { out += it }
+            }
+        } catch (_: Exception) {
+        }
+        return out.distinct()
+    }
+
     /** Every network's broadcast address, and the all-networks one. */
     private fun broadcastAddresses(): List<InetAddress> {
         val out = ArrayList<InetAddress>()

@@ -111,7 +111,7 @@ fun bridgePlan(company: Int, start: Pick, end: Pick, style: Int): Command.Bridge
 
 /** The tiles [plan] would span, head to head, lit if it can be built and red if not. */
 fun DrawScope.drawBridgePlan(world: World, painter: LandPainter, plan: Command.Bridge) {
-    val ok = world.bridgeCost(world.companies[plan.company], plan) >= 0
+    val ok = world.companies.getOrNull(plan.company)?.let { world.bridgeCost(it, plan) >= 0 } ?: false
     val dx = (plan.x1 - plan.x0).coerceIn(-1, 1)
     val dy = (plan.y1 - plan.y0).coerceIn(-1, 1)
     val n = maxOf(abs(plan.x1 - plan.x0), abs(plan.y1 - plan.y0))
