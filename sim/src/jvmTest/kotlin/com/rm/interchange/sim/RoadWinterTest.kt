@@ -69,4 +69,23 @@ class RoadWinterTest {
         val old = World(NewGame(64, 64, 1, 1910, Region.MIXED, towns = 0, industries = 0))
         assertEquals(Tires.CHAINS, old.wantedTires())
     }
+
+    @Test
+    fun theProvincePlowsACompanysCountryRoad() {
+        val w = World(NewGame(64, 64, 1, 1960, Region.MIXED, towns = 0, industries = 0))
+        for (i in w.corners.indices) w.corners[i] = 3
+        w.companies[0].money = 1_000_000
+        w.apply(Command.Road(0, 5, 20, 58, 20, Surface.PAVED, remove = false))
+        val road = (5..58).map { w.index(it, 20) }
+        val ground = (5..58).map { w.index(it, 21) }
+        var onRoad = 0
+        var offRoad = 0
+        repeat(60) {
+            w.days(1)
+            onRoad += road.count { (w.weather.snow[it].toInt() and 255) >= DEEP_ROAD_SNOW }
+            offRoad += ground.count { (w.weather.snow[it].toInt() and 255) >= DEEP_ROAD_SNOW }
+        }
+        assertTrue(offRoad > 0, "no deep snow")
+        assertTrue(onRoad * 2 < offRoad, "road $onRoad, ground $offRoad")
+    }
 }

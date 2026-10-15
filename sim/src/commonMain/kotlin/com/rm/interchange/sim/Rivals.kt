@@ -151,6 +151,19 @@ private fun World.playerNear(x: Int, y: Int): Boolean =
 /** Easy rivals keep clear of towns the player serves. */
 private fun World.leaveAlone(t: Town) = settings.rivalLevel == RivalLevel.EASY && playerNear(t.x, t.y)
 
+/** Whether a company other than [company] already has a passenger station in both [t1] and [t2], so the pair's taken. */
+private fun World.pairTaken(company: Int, t1: Town, t2: Town): Boolean {
+    // A rival's new stops count before anyone's called at them.
+    val rivalStops = HashSet<Int>()
+    for (r in rivals) for (route in r.routes) if (!route.freight) { rivalStops += route.a; rivalStops += route.b }
+    fun owners(t: Town) = stations.filter {
+        it != null && it.owner != company && !it.waypoint && chebyshev(it.signX, it.signY, t.x, t.y) <= TOWN_AREA / 2 &&
+            (it.lastCall[Cargo.PASSENGERS] >= 0 || it.id in rivalStops)
+    }.map { it!!.owner }.toSet()
+    val a = owners(t1)
+    return a.isNotEmpty() && owners(t2).any { it in a }
+}
+
 /**
  * Now and then, what a rival pays a town for, as its difficulty allows: a statue at home and advertising where its
  * stations are poorly rated; and when hard, exclusive rights and road works where the player runs. One a month at most,
@@ -248,7 +261,7 @@ private fun World.newRoute(r: Rival, c: Company): Tried {
             val d = chebyshev(t1.x, t1.y, t2.x, t2.y)
             if (d < MIN_APART || d > MAX_APART) continue
             val key = pairKey(t1.id, t2.id)
-            if (key in served || key in r.failed) continue
+            if (key in served || key in r.failed || pairTaken(c.id, t1, t2)) continue
             // A town that won't have it at either end now may later.
             if (townRefuses(c, t1.x, t1.y) || townRefuses(c, t2.x, t2.y) || leaveAlone(t1) || leaveAlone(t2)) continue
             // Bigger towns, closer together, nearer home.
@@ -360,6 +373,7 @@ private fun World.newRailRoute(r: Rival, c: Company): Tried {
             if (d < RAIL_MIN || d > RAIL_MAX) continue
             val key = railKey(minOf(t1.id, t2.id), maxOf(t1.id, t2.id), Cargo.PASSENGERS)
             if (key in served || key in r.failed || t2.id < t1.id && chebyshev(t2.x, t2.y, home.x, home.y) <= HOME_REACH) continue
+            if (pairTaken(c.id, t1, t2)) continue
             if (townRefuses(c, t1.x, t1.y) || townRefuses(c, t2.x, t2.y) || leaveAlone(t1) || leaveAlone(t2)) continue
             // Passengers go both ways, so a town's worth about a mine's month.
             picks += Pick(minOf(t1.id, t2.id), maxOf(t1.id, t2.id), Cargo.PASSENGERS, minOf(t1.population, t2.population) / 4, railSite(t1, t2.x, t2.y), railSite(t2, t1.x, t1.y),
@@ -404,12 +418,21 @@ private fun World.tryFreight(r: Rival, c: Company, from: Industry, to: Industry,
     val runs = runs(c.id, path, surface)
     val roadCost = runs.sumOf { roadCost(c, it).coerceAtLeast(0) }
     val cost = roadCost + price(Prices.ROAD_STOP) * 2 + price(Prices.DEPOT) + price(model.cost) * 2
+    // Where the stops and garage go is found before anything's spent.
+    val laid = laidEdges(path)
+    val joined = joinedBy(path, laid)
+    val siteA = stopSiteBy(c, from, path, true, laid, joined, -1) ?: return Tried.CANT
+    siteA.spur?.let { addSpur(laid, it) }
+    val siteB = stopSiteBy(c, to, path, false, laid, joined, siteA.tile) ?: return Tried.CANT
+    siteB.spur?.let { addSpur(laid, it) }
+    val garage = garageSite(siteA.tile, laid, joined) ?: return Tried.CANT
     if (!afford(c, cost * 6 / 5)) return Tried.POOR
     for (run in runs) apply(run)
-    val stopA = placeStopBy(c, from, path, true) ?: return Tried.CANT
-    val stopB = placeStopBy(c, to, path, false) ?: return undo(c, stopA)
+    // Something that fails even so comes down again; the road stays, as anyone can use it.
+    val stopA = stopAt(c, siteA) ?: placeStopBy(c, from, path, true) ?: return Tried.CANT
+    val stopB = stopAt(c, siteB) ?: placeStopBy(c, to, path, false) ?: return undo(c, stopA)
     if (!roadConnected(stopA, stopB)) return undo(c, stopA, stopB)
-    val depot = placeGarage(c, stopA) ?: return undo(c, stopA, stopB)
+    val depot = garageAt(c, garage, stopA) ?: placeGarage(c, stopA) ?: return undo(c, stopA, stopB)
     val a = roadStops.getValue(stopA)
     val b = roadStops.getValue(stopB)
     if (catchmentDirty) workOutCatchment()
@@ -445,13 +468,19 @@ private fun World.tryRoute(r: Rival, c: Company, t1: Town, t2: Town, model: Engi
     val runs = runs(c.id, path, surface)
     val roadCost = runs.sumOf { roadCost(c, it).coerceAtLeast(0) }
     val cost = roadCost + price(Prices.ROAD_STOP) * 2 + price(Prices.DEPOT) + price(model.cost) * 2
+    // Where the stops and garage go is found before anything's spent.
+    val laid = laidEdges(path)
+    val joined = joinedBy(path, laid)
+    val siteA = stopSite(c, t1.x - STOP_REACH, t1.y - STOP_REACH, t1.x + STOP_REACH, t1.y + STOP_REACH, path.first(), laid, joined, -1) ?: return Tried.CANT
+    val siteB = stopSite(c, t2.x - STOP_REACH, t2.y - STOP_REACH, t2.x + STOP_REACH, t2.y + STOP_REACH, path.last(), laid, joined, siteA) ?: return Tried.CANT
+    val garage = garageSite(siteA, laid, joined) ?: return Tried.CANT
     if (!afford(c, cost * 6 / 5)) return Tried.POOR
     for (run in runs) apply(run)
-    // What's built before it turns out it can't be done comes down again; the road stays, as anyone can use it.
-    val stopA = placeStop(c, t1, path.first()) ?: return Tried.CANT
-    val stopB = placeStop(c, t2, path.last()) ?: return undo(c, stopA)
+    // Something that fails even so comes down again; the road stays, as anyone can use it.
+    val stopA = stopAt(c, StopSite(siteA, null)) ?: placeStop(c, t1, path.first()) ?: return Tried.CANT
+    val stopB = stopAt(c, StopSite(siteB, null)) ?: placeStop(c, t2, path.last()) ?: return undo(c, stopA)
     if (!roadConnected(stopA, stopB)) return undo(c, stopA, stopB)
-    val depot = placeGarage(c, stopA) ?: return undo(c, stopA, stopB)
+    val depot = garageAt(c, garage, stopA) ?: placeGarage(c, stopA) ?: return undo(c, stopA, stopB)
     val a = roadStops.getValue(stopA)
     val b = roadStops.getValue(stopB)
     val route = RivalRoute(a, b, depot, t1.id, t2.id, Cargo.PASSENGERS)
@@ -546,6 +575,160 @@ private fun World.placeStop(c: Company, x0: Int, y0: Int, x1: Int, y1: Int, end:
         if (roadStops.containsKey(i)) return i
     }
     return null
+}
+
+/** Packed tile [p] (x in the low 16 bits, y above) as a tile index. */
+private fun World.tileOf(p: Int) = index(p and 0xffff, p ushr 16)
+
+/** Whether road edges [edges] make a straight road. */
+private fun straightEdges(edges: Int) =
+    edges == roadBit(Track.XM) or roadBit(Track.XP) || edges == roadBit(Track.YM) or roadBit(Track.YP)
+
+/** The road edges each tile of [path] will have once it's laid, by tile index. */
+private fun World.laidEdges(path: IntArray): HashMap<Int, Int> {
+    val out = HashMap<Int, Int>()
+    for (k in path.indices) {
+        val i = tileOf(path[k])
+        var e = out[i] ?: roadEdges(i)
+        if (k > 0) e = e or roadBit(dirOf(path[k], path[k - 1]))
+        if (k < path.size - 1) e = e or roadBit(dirOf(path[k], path[k + 1]))
+        out[i] = e
+    }
+    return out
+}
+
+/** Whether tile [i] will be on the road [path] joins once [laid] is built: on it, or on road leading to either end. */
+private fun World.joinedBy(path: IntArray, laid: Map<Int, Int>): (Int) -> Boolean {
+    val first = tileOf(path.first())
+    val last = tileOf(path.last())
+    return { i -> i in laid || roadConnected(first, i) || roadConnected(last, i) }
+}
+
+/** A stop's tile and the spur of road to lay first to put it on, if any. */
+private class StopSite(val tile: Int, val spur: Command.Road?)
+
+/** Adds the edges [spur] lays to [laid]. */
+private fun World.addSpur(laid: HashMap<Int, Int>, spur: Command.Road) {
+    val e = dirOf(spur.sx or (spur.sy shl 16), spur.ex or (spur.ey shl 16))
+    val o = Track.opposite(e)
+    var x = spur.sx
+    var y = spur.sy
+    while (true) {
+        val i = index(x, y)
+        var bits = laid[i] ?: roadEdges(i)
+        if (x != spur.sx || y != spur.sy) bits = bits or roadBit(o)
+        if (x != spur.ex || y != spur.ey) bits = bits or roadBit(e)
+        laid[i] = bits
+        if (x == spur.ex && y == spur.ey) break
+        x += Track.dx(e)
+        y += Track.dy(e)
+    }
+}
+
+/**
+ * Where a drive-through stop can go once [laid] is built: straight, flat road from ([x0], [y0]) to ([x1], [y1]) that
+ * [joined] says is on the new road's network, nearest [end] first, not next to tile [apart]; its tile.
+ */
+private fun World.stopSite(c: Company, x0: Int, y0: Int, x1: Int, y1: Int, end: Int, laid: Map<Int, Int>, joined: (Int) -> Boolean, apart: Int): Int? {
+    val ex = end and 0xffff
+    val ey = end ushr 16
+    val tried = ArrayList<Int>()
+    for (y in y0..y1) for (x in x0..x1) {
+        if (!inside(x, y)) continue
+        val i = index(x, y)
+        if (!straightEdges(laid[i] ?: roadEdges(i)) || track[i].toInt() != 0 || roadStops.containsKey(i) || depotTiles.containsKey(i) || !isFlat(x, y)) continue
+        val owned = roadOwner[i].toInt()
+        if (roadEdges(i) != 0 && owned >= 0 && owned != c.id) continue
+        if (apart >= 0 && chebyshev(x, y, apart % width, apart / width) <= 1) continue
+        if (townRefuses(c, x, y)) continue
+        tried += i
+    }
+    tried.sortWith(compareBy<Int> { chebyshev(it % width, it / width, ex, ey) }.thenBy { it })
+    return tried.take(6).firstOrNull { joined(it) }
+}
+
+/** As [stopSite] round [ind], from the [start] or far end of [path], or on a short spur off the new road if there's no straight road there. */
+private fun World.stopSiteBy(c: Company, ind: Industry, path: IntArray, start: Boolean, laid: Map<Int, Int>, joined: (Int) -> Boolean, apart: Int): StopSite? {
+    val kind = roster.industries[ind.kind]
+    val reach = CATCHMENT - 1
+    val x0 = ind.x - reach
+    val y0 = ind.y - reach
+    val x1 = ind.x + kind.across(ind.turn) - 1 + reach
+    val y1 = ind.y + kind.along(ind.turn) - 1 + reach
+    val end = if (start) path.first() else path.last()
+    stopSite(c, x0, y0, x1, y1, end, laid, joined, apart)?.let { return StopSite(it, null) }
+    val near = (if (start) path.asList() else path.asList().asReversed()).take(SPUR_TRIES)
+    for (p in near) {
+        val px = p and 0xffff
+        val py = p ushr 16
+        if (px !in x0..x1 || py !in y0..y1) continue
+        val pi = index(px, py)
+        for (e in 0 until 4) {
+            val mx = px + Track.dx(e)
+            val my = py + Track.dy(e)
+            val fx = mx + Track.dx(e)
+            val fy = my + Track.dy(e)
+            if (mx !in x0..x1 || my !in y0..y1 || !inside(fx, fy) || !isFlat(mx, my) || !isFlat(fx, fy)) continue
+            val m = index(mx, my)
+            val f = index(fx, fy)
+            if (roadEdges(m) != 0 || roadEdges(f) != 0 || m in laid || f in laid) continue
+            if (stepCost(m, e) == null || stepCost(f, e) == null || track[m].toInt() != 0) continue
+            if (roadStops.containsKey(pi) || !roadFits(px, py, (laid[pi] ?: roadEdges(pi)) or roadBit(e))) continue
+            if (apart >= 0 && chebyshev(mx, my, apart % width, apart / width) <= 1) continue
+            if (townRefuses(c, mx, my)) continue
+            return StopSite(m, Command.Road(c.id, px, py, fx, fy, Surface.entries(Calendar.year(startYear, day)).first(), remove = false))
+        }
+    }
+    return null
+}
+
+/** Lays [site]'s spur and puts the stop on it; its tile, or null if it didn't go. */
+private fun World.stopAt(c: Company, site: StopSite): Int? {
+    site.spur?.let { apply(it) }
+    apply(Command.RoadStop(c.id, site.tile % width, site.tile / width))
+    return site.tile.takeIf { roadStops.containsKey(it) }
+}
+
+/**
+ * Where a garage can go on free flat land beside the road near [stop] once [laid] is built, its door onto road
+ * [joined] says is on the new road's network; its tile and door edge.
+ */
+private fun World.garageSite(stop: Int, laid: Map<Int, Int>, joined: (Int) -> Boolean): Pair<Int, Int>? {
+    val sx = stop % width
+    val sy = stop / width
+    fun edges(i: Int) = laid[i] ?: roadEdges(i)
+    val spots = ArrayList<Pair<Int, Int>>()
+    for (y in sy - GARAGE_REACH..sy + GARAGE_REACH) for (x in sx - GARAGE_REACH..sx + GARAGE_REACH) {
+        if (!inside(x, y)) continue
+        for (e in 0 until 4) {
+            val nx = x + Track.dx(e)
+            val ny = y + Track.dy(e)
+            if (inside(nx, ny) && edges(index(nx, ny)) != 0) spots += index(x, y) to e
+        }
+    }
+    spots.sortWith(compareBy<Pair<Int, Int>> { chebyshev(it.first % width, it.first / width, sx, sy) }.thenBy { it.first }.thenBy { it.second })
+    for ((i, e) in spots.take(24)) {
+        val x = i % width
+        val y = i / width
+        if (!isFlat(x, y) || edges(i) != 0 || house[i].toInt() != 0 || track[i].toInt() != 0 || isWater(x, y)) continue
+        if (stationTiles.containsKey(i) || depotTiles.containsKey(i) || industryOf[i].toInt() != 0) continue
+        val nx = x + Track.dx(e)
+        val ny = y + Track.dy(e)
+        val n = index(nx, ny)
+        if (n == stop || track[n].toInt() != 0 || roadStops.containsKey(n) || depotTiles.containsKey(n)) continue
+        if (!roadFits(nx, ny, edges(n) or roadBit(Track.opposite(e))) || !joined(n)) continue
+        return i to e
+    }
+    return null
+}
+
+/** Builds garage [site] from [garageSite]; its depot id, or null if it didn't go or doesn't reach [stop]. */
+private fun World.garageAt(c: Company, site: Pair<Int, Int>, stop: Int): Int? {
+    val (i, e) = site
+    if (!roadConnected(index(i % width + Track.dx(e), i / width + Track.dy(e)), stop)) return null
+    val before = depots.size
+    apply(Command.Garage(c.id, i % width, i / width, e))
+    return if (depots.size > before) depots.size - 1 else null
 }
 
 /** A garage on free flat land beside the road near [stop]; its depot id. */

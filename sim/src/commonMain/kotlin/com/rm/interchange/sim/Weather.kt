@@ -195,8 +195,8 @@ internal fun World.weatherDay(today: Int = day) {
         val y = height * (2 * gy + 1) / (2 * grid)
         sampled += skyAt(region, year, doy, w.anomaly, w.fronts, height, x, y, Climate.BASE_HEIGHT).precipitation
     }
-    val today = (sampled / (grid * grid)).toInt()
-    w.recent = if (w.recent < 0) target else (w.recent * 29 + today) / 30
+    val fallen = (sampled / (grid * grid)).toInt()
+    w.recent = if (w.recent < 0) target else (w.recent * 29 + fallen) / 30
     if (w.recent < target) {
         val short = (target - w.recent) * 100 / target.coerceAtLeast(1)
         if (rng.below(100) < 50 + short) newFront(normal, winter, target)
@@ -321,7 +321,7 @@ internal fun World.shoreChanged() {
  * Every tile's day: snow falls, settles and melts, faster on slopes facing
  * south; rain and melt soak in and drain; frost goes deeper in the cold,
  * slower under snow; freezing rain glazes; lakes and the sea freeze from the
- * shore out and thaw in spring. Towns clear their roads a few days after it
+ * shore out and thaw in spring. Towns and the province clear roads a few days after it
  * stops snowing, or roll the snow flat before motor plows. Each band of rows
  * writes only its own tiles.
  */
@@ -403,10 +403,11 @@ private fun World.tileWeather(year: Int, doy: Int, today: Int) {
                 }
                 // Deep snow on steep high ground lets go in a thaw or under heavy snow.
                 if (snow >= AVALANCHE_SNOW && tileHeight(x, y) >= AVALANCHE_HEIGHT && !isFlat(x, y) && (t > 0 || p >= 1500) && cellDice(x, y, salt + 9) < 6) slides[band] += i
-                // Town roads cleared some days after the snow stops, by plow, or rolled flat before; a company's are its own to clear.
-                if (road[i].toInt() != 0 && roadOwner[i].toInt() < 0 && snow > 4 && p == 0) {
-                    val town = towns.getOrNull(townOf[i].toInt())
-                    val busy = if (town != null && town.population > 5000) 128 else 70
+                // Roads cleared some days after the snow stops, by plow, or rolled flat before.
+                // Towns do their own; the province does the rest, any owner's, less often.
+                if (road[i].toInt() != 0 && snow > 4 && p == 0) {
+                    val town = if (roadOwner[i].toInt() < 0) towns.getOrNull(townOf[i].toInt()) else null
+                    val busy = if (town == null) COUNTRY_PLOW else if (town.population > 5000) 128 else 70
                     if (cellDice(x, y, salt + 7) < busy) snow = if (plows) 2 else snow * 2 / 3
                 }
                 if (sheds.contains(i)) snow = 0
@@ -552,3 +553,5 @@ internal fun World.weatherLooks() {
 const val WARM_UP_DAYS = 75
 /** The year towns start plowing their streets. */
 const val PLOW_YEAR = 1920
+/** Chance out of 256 a day that a road away from towns is cleared, about a third of a small town's. */
+const val COUNTRY_PLOW = 24

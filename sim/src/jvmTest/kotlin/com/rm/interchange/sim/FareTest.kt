@@ -69,6 +69,8 @@ class FareTest {
         pays("a 1960 train", train(1960, "gp9", "coach_steel", 6, 60), 30)
         pays("a motor bus", run(false, 1930, "motor_bus", 25), 15)
         pays("a New Look bus", run(false, 1965, "new_look", 25), 20)
+        // Between towns in winter, on a company road the province plows.
+        pays("a New Look bus in winter", run(true, 1965, "new_look", 25), 20)
         pays("a horse omnibus", run(false, 1850, "horse_omnibus", 15), 15)
         pays("a stagecoach", run(false, 1850, "stagecoach", 25), 15)
     }
