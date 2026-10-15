@@ -3,6 +3,7 @@ package com.rm.interchange.server
 import com.rm.interchange.net.Message
 import com.rm.interchange.net.Reject
 import com.rm.interchange.sim.Command
+import com.rm.interchange.sim.Insignia
 import com.rm.interchange.sim.NewGame
 import com.rm.interchange.sim.Prices
 import com.rm.interchange.sim.Region
@@ -12,6 +13,7 @@ import java.util.concurrent.CompletableFuture
 import java.util.concurrent.TimeUnit
 import kotlin.test.AfterTest
 import kotlin.test.Test
+import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertNotEquals
@@ -100,6 +102,14 @@ class HostTest {
         assertEquals("Ann's Lines", on(b) { it.world.companies[a.company].name })
         assertEquals("Ann's Lines", host.companies.first { it.id == a.company }.name)
         assertEquals("Ann's Lines", b.remote!!.companies.first { it.id == a.company }.name)
+        // So does a new insignia, in the game and in the list of companies.
+        val star = Insignia.presets.first { p -> on(a) { g -> g.world.companies.none { it.insignia.contentEquals(p) } } }
+        a.request(Command.SetInsignia(a.company, star))
+        Thread.sleep(800)
+        inStep(runner, a, b)
+        assertContentEquals(star, on(b) { it.world.companies[a.company].insignia })
+        assertContentEquals(star, on(runner) { it.world.companies[a.company].insignia })
+        assertContentEquals(star, b.remote!!.companies.first { it.id == a.company }.insignia)
     }
 
     @Test

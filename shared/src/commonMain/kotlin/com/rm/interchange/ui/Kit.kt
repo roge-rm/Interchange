@@ -131,9 +131,15 @@ fun Head(text: String, glyph: Glyph? = null) {
     }
 }
 
-/** A row for a list in a window: a glyph in a tile, a title and a line under it, and what can be done with it at the end. */
+/**
+ * A row for a list in a window: a glyph in a tile, or a company's [insignia] in its colour [tint], a title and a line
+ * under it, and what can be done with it at the end.
+ */
 @Composable
-fun ListRow(glyph: Glyph, title: String, line: String?, onClick: (() -> Unit)?, tint: Color? = null, end: @Composable () -> Unit = {}) {
+fun ListRow(
+    glyph: Glyph, title: String, line: String?, onClick: (() -> Unit)?, tint: Color? = null, insignia: ByteArray? = null,
+    end: @Composable () -> Unit = {},
+) {
     val c = LocalColors.current
     Row(
         Modifier
@@ -145,7 +151,11 @@ fun ListRow(glyph: Glyph, title: String, line: String?, onClick: (() -> Unit)?, 
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        Box(Modifier.size(36.dp).clip(RoundedCornerShape(8.dp)).background(tint ?: c.accent), contentAlignment = Alignment.Center) {
+        if (tint != null && insignia != null && com.rm.interchange.sim.Insignia.valid(insignia)) {
+            Box(Modifier.size(36.dp).clip(RoundedCornerShape(8.dp)).background(c.page), contentAlignment = Alignment.Center) {
+                InsigniaImage(insignia, tint, Modifier.size(32.dp))
+            }
+        } else Box(Modifier.size(36.dp).clip(RoundedCornerShape(8.dp)).background(tint ?: c.accent), contentAlignment = Alignment.Center) {
             GlyphIcon(glyph, if (tint != null) Color.White else c.onAccent, Modifier.size(18.dp))
         }
         Column(Modifier.weight(1f)) {

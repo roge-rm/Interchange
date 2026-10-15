@@ -390,10 +390,14 @@ fun weekdayDate(day: Int, startYear: Int): String {
 
 /** A message over the map under the strip, which does [onClick] when tapped. */
 @Composable
-fun MessageChip(text: String, onClick: () -> Unit) {
+fun MessageChip(text: String, lead: (@Composable () -> Unit)? = null, onClick: () -> Unit) {
     val c = LocalColors.current
     ChromeBox(Modifier.clickable(role = Role.Button, onClick = onClick)) {
-        Text(text, color = c.text, fontSize = 14.sp, modifier = Modifier.padding(horizontal = 14.dp, vertical = 9.dp))
+        if (lead == null) Text(text, color = c.text, fontSize = 14.sp, modifier = Modifier.padding(horizontal = 14.dp, vertical = 9.dp))
+        else Row(Modifier.padding(start = 8.dp, end = 14.dp, top = 5.dp, bottom = 5.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            lead()
+            Text(text, color = c.text, fontSize = 14.sp)
+        }
     }
 }
 

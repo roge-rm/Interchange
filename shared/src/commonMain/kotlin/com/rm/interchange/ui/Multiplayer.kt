@@ -241,7 +241,7 @@ fun MultiplayerWindow(settings: Settings, onJoined: (Remote, World) -> Unit, onC
                 val names = game.players.filter { it.company == co.id }.joinToString(", ") { it.name }
                 val line = listOfNotNull(names.ifEmpty { pluralStringResource(Res.plurals.players_count, co.players, co.players) }, passwordLabel.takeIf { co.locked })
                     .joinToString(" · ")
-                ListRow(Glyph.People, co.name.ifBlank { fallbackName }, line, if (busy == null) ({ join(game, co.id) }) else null, tint = companyColour(co.id))
+                ListRow(Glyph.People, co.name.ifBlank { fallbackName }, line, if (busy == null) ({ join(game, co.id) }) else null, tint = companyColour(co.id), insignia = co.insignia)
             }
             ListRow(Glyph.Inspect, stringResource(Res.string.watch), null, if (busy == null) ({ join(game, Message.SPECTATE) }) else null)
             if (asked) Field(password, passwordLabel, { password = it }, secret = true)
@@ -286,7 +286,7 @@ private fun PlayerRows(players: List<Player>, world: World?) {
     val watching = stringResource(Res.string.watching)
     for (p in players) {
         val co = world?.companies?.getOrNull(p.company)
-        ListRow(Glyph.People, p.name, co?.name ?: watching, null, tint = co?.let { companyColour(it.id) })
+        ListRow(Glyph.People, p.name, co?.name ?: watching, null, tint = co?.let { companyColour(it.id) }, insignia = co?.insignia)
     }
 }
 

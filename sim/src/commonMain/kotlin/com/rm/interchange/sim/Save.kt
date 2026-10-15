@@ -16,9 +16,10 @@ package com.rm.interchange.sim
  */
 object Save {
     private val MAGIC = "ICHG".encodeToByteArray()
-    const val VERSION = 26
+    const val VERSION = 27
 
-    fun write(world: World): ByteArray {
+    /** [world] as a save; [version] older than [VERSION] only for tests reading older saves. */
+    fun write(world: World, version: Int = VERSION): ByteArray {
         val w = ByteWriter(world.width * world.height * 6 + 4096)
         with(world) {
             val g = settings
@@ -144,11 +145,12 @@ object Save {
             val told = chronicle
             w.uvar(told.size.toLong())
             for (t in told) { w.int(t.year); w.int(t.month); w.int(t.kind); w.int(t.about) }
+            if (version >= 27) for (c in companies) w.bytes(c.insignia)
         }
         val body = Squeeze.pack(w.toByteArray())
         val out = ByteWriter(body.size + 16)
         for (b in MAGIC) out.byte(b.toInt())
-        out.int(VERSION)
+        out.int(version)
         out.bytes(body)
         return out.toByteArray()
     }
@@ -372,6 +374,9 @@ object Save {
             if (version >= 24) chronicle = List(r.uvar().toInt().also { if (it > CHRONICLE_MOST) throw BadData("too long a chronicle") }) {
                 Story(r.int(), r.int(), r.int(), r.int())
             }
+            // Before version 27 there were no insignia: each company is given one, in order.
+            if (version >= 27) for (c in companies) c.insignia = r.bytes().also { if (!Insignia.valid(it)) throw BadData("a bad insignia") }
+            else for (c in companies) giveInsignia(c)
         }
         // Signal blocks and who's on which tile are worked out afresh before the next move.
         world.networkChangedKeepingRoutes()

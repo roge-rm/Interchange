@@ -11,6 +11,7 @@ import com.rm.interchange.net.Reject
 import com.rm.interchange.net.Wire
 import com.rm.interchange.sim.Calendar
 import com.rm.interchange.sim.Command
+import com.rm.interchange.sim.Insignia
 import com.rm.interchange.sim.MAX_COMPANIES
 import com.rm.interchange.sim.World
 import com.rm.interchange.sim.human
@@ -76,7 +77,7 @@ class Host(
     private val free = ArrayList(free)
     /** Slots promised to new companies whose commands haven't run yet, with the frame each runs in. */
     private val promised = HashMap<Int, Long>()
-    /** The last frame a company is renamed in, so the companies are sent again once it's run; -1 if none. Game thread only. */
+    /** The last frame a company is renamed or given a new insignia in, so the companies are sent again once it's run; -1 if none. Game thread only. */
     private var renamedIn = -1L
     private val listener = Listener(port, ::connected)
     private val id = UUID.randomUUID().toString()
@@ -175,7 +176,9 @@ class Host(
             is Message.Lock -> if (s.joined && s.company >= 0) lock(s.company, m.password.take(PASSWORD_MOST))
             is Message.Request -> {
                 val c = m.command
-                if (s.joined && s.company >= 0 && c.company == s.company && c !is Command.NewCompany) runner.request(c)
+                if (s.joined && s.company >= 0 && c.company == s.company && c !is Command.NewCompany &&
+                    (c !is Command.SetInsignia || Insignia.valid(c.pixels))
+                ) runner.request(c)
             }
             is Message.Say -> if (s.joined) tell(Message.Chat(s.name, s.company, m.text.take(CHAT_MOST)))
             Message.Resync -> if (s.joined) runner.onGameThread { g ->
@@ -256,9 +259,10 @@ class Host(
         val joined = sessions.filter { it.joined }
         val ids = (w.companies.filter { playable(w, it.id) }.map { it.id } + promised.keys.filter { !playable(w, it) }).sorted()
         return ids.map { id ->
-            val name = w.companies.getOrNull(id)?.takeIf { !it.gone }?.name ?: joined.firstOrNull { it.company == id }?.name ?: ""
+            val co = w.companies.getOrNull(id)?.takeIf { !it.gone }
+            val name = co?.name ?: joined.firstOrNull { it.company == id }?.name ?: ""
             val on = joined.count { it.company == id } + if (id == hostCompany) 1 else 0
-            CompanyInfo(id, name, on, passwords.containsKey(id))
+            CompanyInfo(id, name, on, passwords.containsKey(id), co?.insignia?.copyOf() ?: ByteArray(0))
         }
     }
 
@@ -277,7 +281,7 @@ class Host(
 
     /** On the game thread: sends [m] to everyone in. A player far behind on reading is let go. */
     private fun broadcast(m: Message) {
-        if (m is Message.Scheduled && m.command is Command.RenameCompany) renamedIn = maxOf(renamedIn, m.frame)
+        if (m is Message.Scheduled && (m.command is Command.RenameCompany || m.command is Command.SetInsignia)) renamedIn = maxOf(renamedIn, m.frame)
         if (m is Message.Frame && renamedIn in 0..m.frame) {
             renamedIn = -1
             sendPlayers()

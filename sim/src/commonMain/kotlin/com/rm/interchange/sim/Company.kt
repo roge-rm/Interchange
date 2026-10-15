@@ -25,6 +25,8 @@ class Company(val id: Int, var name: String, var money: Long) {
     var trouble = 0
     /** Bought out or gone under: it owns nothing and does nothing. Kept so ids stay put. */
     var gone = false
+    /** Its insignia, [Insignia.BYTES] bytes; see-through all over until it's given one. */
+    var insignia = ByteArray(Insignia.BYTES)
 }
 
 /** What money is booked to: what it was spent on or where it came from. */

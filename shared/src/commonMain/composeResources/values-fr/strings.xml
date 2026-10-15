@@ -273,6 +273,22 @@
     <string name="company_line">Valeur %1$s · %2$d véhicules · %3$d gares</string>
     <string name="company_name">Nom de la compagnie</string>
     <string name="rename">Renommer</string>
+    <string name="insignia">Insigne</string>
+    <string name="insignia_paint">Peindre</string>
+    <string name="insignia_fill">Remplir</string>
+    <string name="insignia_undo">Annuler</string>
+    <string name="insignia_clear">Effacer</string>
+    <string name="insignia_set">Appliquer</string>
+    <string-array name="insignia_colours">
+        <item>Transparent</item>
+        <item>Couleur de la compagnie</item>
+        <item>Plus claire</item>
+        <item>Plus foncée</item>
+        <item>Blanc</item>
+        <item>Noir</item>
+        <item>Gris</item>
+        <item>Or</item>
+    </string-array>
     <string name="subsidies">Subventions</string>
     <string name="shared_track">Voies partagées</string>
     <string name="rival_level">Difficulté des rivaux</string>

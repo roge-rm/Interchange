@@ -13,6 +13,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontFamily
@@ -80,7 +81,21 @@ fun ChronicleWindow(world: World, onGo: (Float, Float) -> Unit, onClose: () -> U
                     val text = newsText(world, News(t.kind, t.about, 0))
                     if (text.isEmpty()) continue
                     val place = storyPlace(world, t)
-                    Text(
+                    val about = newsCompany(world, News(t.kind, t.about, 0))
+                    if (about != null) Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        CompanyInsignia(about, 24.dp)
+                        Text(
+                            when {
+                                gazette -> text
+                                star -> text.uppercase()
+                                else -> text
+                            },
+                            color = c.text, fontFamily = family,
+                            fontSize = if (star) 13.sp else 14.sp,
+                            fontWeight = if (star) FontWeight.Bold else FontWeight.Normal,
+                            modifier = Modifier.weight(1f).padding(vertical = 2.dp),
+                        )
+                    } else Text(
                         when {
                             gazette -> text
                             star -> text.uppercase()

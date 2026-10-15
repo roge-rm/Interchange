@@ -160,9 +160,10 @@ internal fun World.newCompany(c: Command.NewCompany) {
     val given = cleanCompanyName(c.name)
     fun name() = if (given.isNotEmpty() && companyNameFree(given, id)) given else playerCompanyName(id)
     when {
-        id == companies.size && id < MAX_COMPANIES -> companies += Company(id, name(), price(Prices.START_MONEY))
+        id == companies.size && id < MAX_COMPANIES -> companies += Company(id, name(), price(Prices.START_MONEY)).also { giveInsignia(it) }
         companies.getOrNull(id)?.gone == true -> {
             companies[id].name = name()
+            giveInsignia(companies[id])
             restart(companies[id], news = false)
         }
         else -> return

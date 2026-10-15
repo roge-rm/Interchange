@@ -55,7 +55,7 @@ internal fun World.startRivals(n: Int) {
     while (homes.size < n) homes += towns[k++ % towns.size]
     for ((i, home) in homes.withIndex()) {
         val id = companies.size
-        companies += Company(id, rivalName(home, id), Prices.START_MONEY)
+        companies += Company(id, rivalName(home, id), Prices.START_MONEY).also { giveInsignia(it) }
         rivals += Rival(id, home.id).also { it.thinkOn = day + 3 + i * 9 }
     }
 }

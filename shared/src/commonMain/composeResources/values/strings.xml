@@ -290,6 +290,22 @@
     <string name="company_line">Worth %1$s · %2$d vehicles · %3$d stations</string>
     <string name="company_name">Company name</string>
     <string name="rename">Rename</string>
+    <string name="insignia">Insignia</string>
+    <string name="insignia_paint">Paint</string>
+    <string name="insignia_fill">Fill</string>
+    <string name="insignia_undo">Undo</string>
+    <string name="insignia_clear">Clear</string>
+    <string name="insignia_set">Set</string>
+    <string-array name="insignia_colours">
+        <item>See-through</item>
+        <item>Company colour</item>
+        <item>Lighter</item>
+        <item>Darker</item>
+        <item>White</item>
+        <item>Black</item>
+        <item>Grey</item>
+        <item>Gold</item>
+    </string-array>
     <string name="subsidies">Subsidies</string>
     <string name="shared_track">Shared track</string>
     <string name="rival_level">Rival difficulty</string>

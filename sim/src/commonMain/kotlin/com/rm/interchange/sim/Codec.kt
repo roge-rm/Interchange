@@ -48,6 +48,7 @@ object Codec {
     private const val BUY_COMPANY = 38
     private const val NEW_COMPANY = 39
     private const val RENAME_COMPANY = 40
+    private const val SET_INSIGNIA = 41
 
     fun write(w: ByteWriter, c: Command) {
         when (c) {
@@ -87,6 +88,7 @@ object Codec {
             is Command.BuyCompany -> { w.byte(BUY_COMPANY); w.int(c.company); w.int(c.target) }
             is Command.NewCompany -> { w.byte(NEW_COMPANY); w.int(c.company); w.string(c.name) }
             is Command.RenameCompany -> { w.byte(RENAME_COMPANY); w.int(c.company); w.string(c.name) }
+            is Command.SetInsignia -> { w.byte(SET_INSIGNIA); w.int(c.company); w.bytes(c.pixels) }
             is Command.TrainOrder -> { w.byte(TRAIN_ORDER); w.int(c.company); w.int(c.train); w.int(c.what); w.ints(c.stations) }
         }
     }
@@ -108,6 +110,7 @@ object Codec {
         BUY_COMPANY -> Command.BuyCompany(r.int(), r.int())
         NEW_COMPANY -> Command.NewCompany(r.int(), r.string())
         RENAME_COMPANY -> Command.RenameCompany(r.int(), r.string())
+        SET_INSIGNIA -> Command.SetInsignia(r.int(), r.bytes())
         SIGNAL_KIND -> Command.Signal(r.int(), r.int(), r.int(), r.int(), r.int(), r.int())
         WAYPOINT -> Command.Waypoint(r.int(), r.int(), r.int())
         BRIDGE -> Command.Bridge(r.int(), r.int(), r.int(), r.int(), r.int(), r.int())

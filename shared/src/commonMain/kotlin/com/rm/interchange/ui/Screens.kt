@@ -534,7 +534,7 @@ private fun MoneyGraph(history: List<LongArray>, modifier: Modifier) {
  * home town. The player's own company can be renamed at the top.
  */
 @Composable
-fun CompaniesWindow(world: World, onGo: (Float, Float) -> Unit, send: (com.rm.interchange.sim.Command) -> Unit, onClose: () -> Unit) {
+fun CompaniesWindow(world: World, onGo: (Float, Float) -> Unit, send: (com.rm.interchange.sim.Command) -> Unit, onInsignia: () -> Unit, onClose: () -> Unit) {
     val me = LocalCompany.current
     Window(stringResource(Res.string.companies), onClose, Glyph.Home) {
         world.companies.getOrNull(me)?.takeIf { !it.gone }?.let { own -> RenameCompany(world, own, send) }
@@ -557,7 +557,9 @@ fun CompaniesWindow(world: World, onGo: (Float, Float) -> Unit, send: (com.rm.in
                 Glyph.Home, name, line,
                 home?.let { t -> { onGo(t.x + 0.5f, t.y + 0.5f) } },
                 tint = if (co.gone) null else com.rm.interchange.map.companyColour(co.id),
+                insignia = co.insignia,
             ) {
+                if (co.id == me && !co.gone) ActionButton(stringResource(Res.string.insignia), onClick = onInsignia)
                 if (world.forSale(co)) ActionButton(stringResource(Res.string.buy_company), enabled = mine >= price, strong = true) {
                     send(com.rm.interchange.sim.Command.BuyCompany(me, co.id))
                     onClose()
@@ -595,7 +597,7 @@ fun TownWindow(world: World, t: com.rm.interchange.sim.Town, send: (com.rm.inter
     Window(t.name, onClose, Glyph.Home) {
         for (co in world.companies.filter { !it.gone }) {
             val name = if (co.id == me) stringResource(Res.string.your_company) else co.name
-            ListRow(Glyph.Home, name, levels.getOrElse(com.rm.interchange.sim.approvalLevel(t.approval[co.id])) { "" }, null, tint = com.rm.interchange.map.companyColour(co.id))
+            ListRow(Glyph.Home, name, levels.getOrElse(com.rm.interchange.sim.approvalLevel(t.approval[co.id])) { "" }, null, tint = com.rm.interchange.map.companyColour(co.id), insignia = co.insignia)
         }
         if (t.roadWorks > 0) ListRow(Glyph.Road, stringResource(Res.string.road_works_left, t.roadWorks), null, null)
         if (t.funded > 0) ListRow(Glyph.Home, stringResource(Res.string.funded_left, t.funded), null, null)

@@ -5,6 +5,7 @@ import com.rm.interchange.sim.ByteReader
 import com.rm.interchange.sim.ByteWriter
 import com.rm.interchange.sim.Codec
 import com.rm.interchange.sim.Command
+import com.rm.interchange.sim.Insignia
 
 /**
  * Lockstep, as OpenTTD does it: players send commands to the server, the
@@ -74,8 +75,15 @@ sealed interface Message {
 /** Someone in the game: their [name] and the [company] they play, -1 watching. */
 data class Player(val name: String, val company: Int)
 
-/** A company players can play: its [id], [name], how many [players] are on it and whether it needs a password. */
-data class CompanyInfo(val id: Int, val name: String, val players: Int, val locked: Boolean)
+/**
+ * A company players can play: its [id], [name], how many [players] are on it, whether it needs a password, and its
+ * [insignia], empty for one not started yet.
+ */
+data class CompanyInfo(val id: Int, val name: String, val players: Int, val locked: Boolean, val insignia: ByteArray = ByteArray(0)) {
+    override fun equals(other: Any?) = other is CompanyInfo && other.id == id && other.name == name && other.players == players &&
+        other.locked == locked && other.insignia.contentEquals(insignia)
+    override fun hashCode() = ((id * 31 + name.hashCode()) * 31 + players) * 31 + insignia.contentHashCode()
+}
 
 /** Why a player wasn't let in. */
 object Reject {
@@ -100,7 +108,7 @@ object Reject {
  */
 object Wire {
     /** The version of the protocol and the sim together; players and servers must match. */
-    const val PROTOCOL = 3
+    const val PROTOCOL = 4
 
     private const val HELLO = 1
     private const val REQUEST = 2
@@ -137,7 +145,7 @@ object Wire {
                 w.byte(PLAYERS); w.int(m.players.size)
                 for (p in m.players) { w.string(p.name); w.int(p.company) }
                 w.int(m.companies.size)
-                for (c in m.companies) { w.int(c.id); w.string(c.name); w.int(c.players); w.bool(c.locked) }
+                for (c in m.companies) { w.int(c.id); w.string(c.name); w.int(c.players); w.bool(c.locked); w.bytes(c.insignia) }
             }
         }
         return w.toByteArray()
@@ -171,7 +179,9 @@ object Wire {
                 val n = r.int().also { if (it !in 0..256) throw BadData("too many players") }
                 val players = List(n) { Player(r.string(), r.int()) }
                 val k = r.int().also { if (it !in 0..256) throw BadData("too many companies") }
-                Message.Players(players, List(k) { CompanyInfo(r.int(), r.string(), r.int(), r.bool()) })
+                Message.Players(players, List(k) {
+                    CompanyInfo(r.int(), r.string(), r.int(), r.bool(), r.bytes().also { if (it.isNotEmpty() && !Insignia.valid(it)) throw BadData("a bad insignia") })
+                })
             }
             else -> throw BadData("no such message: $kind")
         }

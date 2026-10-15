@@ -127,7 +127,7 @@ fun App() {
 private enum class Screen { Title, NewGame, Playing }
 
 /** A window open over the screen. */
-private enum class Win { Menu, Load, Settings, Packs, Overlays, Finances, Industries, Companies, Town, Subsidies, Chronicle, Multiplayer, Players, Chat }
+private enum class Win { Menu, Load, Settings, Packs, Overlays, Finances, Industries, Companies, Insignia, Town, Subsidies, Chronicle, Multiplayer, Players, Chat }
 
 @Composable
 private fun Root(settings: Settings) {
@@ -410,7 +410,12 @@ private fun Root(settings: Settings) {
             Win.Overlays -> OverlaysWindow(settings) { window = null }
             Win.Finances -> runner?.let { r -> FinanceWindow(r) { window = null } }
             Win.Industries -> runner?.game?.world?.let { w -> IndustriesWindow(w, { x, y -> goTo.value = x to y; window = null }, { runner?.request(it) }) { window = null } }
-            Win.Companies -> runner?.game?.world?.let { w -> CompaniesWindow(w, { x, y -> goTo.value = x to y; window = null }, { runner?.request(it) }) { window = null } }
+            Win.Companies -> runner?.game?.world?.let { w -> CompaniesWindow(w, { x, y -> goTo.value = x to y; window = null }, { runner?.request(it) }, { window = Win.Insignia }) { window = null } }
+            Win.Insignia -> runner?.game?.world?.let { w ->
+                val own = w.companies.getOrNull(LocalCompany.current)?.takeIf { !it.gone }
+                if (own != null) InsigniaWindow(own, { runner?.request(it) }) { window = Win.Companies }
+                else LaunchedEffect(Unit) { window = null }
+            }
             Win.Chronicle -> runner?.game?.world?.let { w -> ChronicleWindow(w, { x, y -> goTo.value = x to y; window = null }) { window = null } }
             Win.Subsidies -> runner?.game?.world?.let { w -> SubsidiesWindow(w, { x, y -> goTo.value = x to y; window = null }) { window = null } }
             Win.Town -> runner?.game?.world?.let { w -> w.towns.getOrNull(town)?.let { t -> TownWindow(w, t, { runner?.request(it) }) { window = null } } }
@@ -809,7 +814,8 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
                     .windowInsetsPadding(safe.only(WindowInsetsSides.Horizontal))
                     .padding(horizontal = gap),
             ) {
-                MessageChip(text) {
+                val about = newsCompany(world, n)
+                MessageChip(text, about?.let { co -> { CompanyInsignia(co, 28.dp) } }) {
                     if (ind != null) {
                         view.focusX = ind.x + 1f
                         view.focusY = ind.y + 1f
@@ -1075,6 +1081,14 @@ private fun IndustryCard(world: World, ind: Industry, where: String, onClose: ()
         }
     }
     InfoCard(industryName(world, ind, lang), lines, onClose, modifier)
+}
+
+/** The company a piece of news is about, if it's about one: for one bought, the buyer. */
+internal fun newsCompany(world: World, n: News): com.rm.interchange.sim.Company? = when (n.kind) {
+    News.COMPANY_TROUBLE, News.COMPANY_FOR_SALE, News.COMPANY_BANKRUPT, News.COMPANY_RESTARTED, News.COMPANY_STARTED -> world.companies.getOrNull(n.about)
+    News.COMPANY_BOUGHT -> world.companies.getOrNull(n.about shr 8)
+    News.SUBSIDY_AWARDED -> world.companies.getOrNull(world.subsidies.getOrNull(n.about)?.company ?: -1)
+    else -> null
 }
 
 /** What a piece of news says. */

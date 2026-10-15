@@ -130,6 +130,12 @@ sealed interface Command {
     /** Renames the company giving it; a blank name or one another company has is left undone. */
     data class RenameCompany(override val company: Int, val name: String) : Command
 
+    /** Sets the company's insignia to [pixels], packed as [Insignia] has them; any that aren't one is left undone. */
+    class SetInsignia(override val company: Int, val pixels: ByteArray) : Command {
+        override fun equals(other: Any?) = other is SetInsignia && other.company == company && other.pixels.contentEquals(pixels)
+        override fun hashCode() = company * 31 + pixels.contentHashCode()
+    }
+
     /** Borrows a step more from the bank, or repays one. */
     data class Loan(override val company: Int, val borrow: Boolean) : Command
 
