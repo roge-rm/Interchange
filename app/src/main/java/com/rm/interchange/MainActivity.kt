@@ -1,5 +1,7 @@
 package com.rm.interchange
 
+import android.Manifest
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.net.wifi.WifiManager
 import android.os.Build
@@ -50,6 +52,9 @@ class MainActivity : ComponentActivity(), Picker {
         }.start()
     }
 
+    private var askedNotifications = false
+    private val notifications = registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
+
     override fun pickFile(onPicked: (ByteArray?) -> Unit) {
         this.onPicked = onPicked
         chooser.launch(arrayOf("*/*"))
@@ -82,6 +87,20 @@ class MainActivity : ComponentActivity(), Picker {
         val wifi = applicationContext.getSystemService(WIFI_SERVICE) as? WifiManager
         val lock = wifi?.createMulticastLock("interchange-discover")?.apply { setReferenceCounted(false) }
         Network.listening = { on -> lock?.let { if (on) it.acquire() else if (it.isHeld) it.release() } }
+        // The game keeps hosting in the background through a foreground service. Notifications are asked for once, and hosting goes ahead if refused.
+        Network.hosting = { name, players ->
+            if (name == null) {
+                HostingService.stop(this)
+            } else {
+                if (Build.VERSION.SDK_INT >= 33 && !askedNotifications &&
+                    checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+                ) {
+                    askedNotifications = true
+                    notifications.launch(Manifest.permission.POST_NOTIFICATIONS)
+                }
+                HostingService.start(this, name, players)
+            }
+        }
         setContent { App() }
     }
 

@@ -409,11 +409,14 @@ internal fun World.roadLimit(v: RoadVehicle, tile: Int): Int {
 /** Whether tile [i]'s road is icy or under packed snow. */
 fun World.slippery(i: Int) = (weather.ice[i].toInt() and 255) > 2 || (weather.snow[i].toInt() and 255) in 3..40
 
-/** Wear on a road from a vehicle running onto it: trucks more than buses; plows clear the snow. */
+/** Wear on a road from a vehicle running onto it: trucks more than buses; plows clear the snow, the rest pack deep snow down a little. */
 private fun World.roadWearBy(tile: Int, v: RoadVehicle) {
+    val snow = weather.snow[tile].toInt() and 255
     if (v.info.plow != Plows.NONE) {
-        weather.snow[tile] = minOf(weather.snow[tile].toInt() and 255, 2).toByte()
+        weather.snow[tile] = minOf(snow, 2).toByte()
         weather.ice[tile] = 0
+    } else if (snow >= DEEP_ROAD_SNOW) {
+        weather.snow[tile] = (snow - PACKED_SNOW).toByte()
     }
     if (track[tile].toInt() != 0) return
     if (rng.below(ROAD_WEAR_ODDS) < v.info.weight) condition[tile] = ((condition[tile].toInt() and 255) - 1).coerceAtLeast(0).toByte()
@@ -624,6 +627,8 @@ const val POTHOLE_KMH = 30
 const val POTHOLES = 90
 /** Snow, in cm, too deep for anything but a plow to get through at more than a crawl. */
 const val DEEP_ROAD_SNOW = 40
+/** Deep snow, in cm, packed down by each vehicle that runs onto a tile. */
+const val PACKED_SNOW = 6
 /** Above this speed, in the trains' units, summer tires on ice can slide off: one time in [SLIDE_ODDS] a tick. */
 const val SLIDE_SPEED = 600
 const val SLIDE_ODDS = 3000

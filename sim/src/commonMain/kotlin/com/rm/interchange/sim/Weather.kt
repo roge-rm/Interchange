@@ -403,9 +403,9 @@ private fun World.tileWeather(year: Int, doy: Int, today: Int) {
                 }
                 // Deep snow on steep high ground lets go in a thaw or under heavy snow.
                 if (snow >= AVALANCHE_SNOW && tileHeight(x, y) >= AVALANCHE_HEIGHT && !isFlat(x, y) && (t > 0 || p >= 1500) && cellDice(x, y, salt + 9) < 6) slides[band] += i
-                // Roads cleared some days after the snow stops, by plow, or rolled flat before.
+                // Roads cleared some days after the snow stops, or while it's still falling once it's deep, by plow, or rolled flat before.
                 // Towns do their own and any left without an owner; the province does companies' roads, less often.
-                if (road[i].toInt() != 0 && snow > 4 && p == 0) {
+                if (road[i].toInt() != 0 && snow > 2 && (p == 0 || snow >= DEEP_ROAD_SNOW)) {
                     val owned = roadOwner[i].toInt() >= 0
                     val town = if (owned) null else towns.getOrNull(townOf[i].toInt())
                     val busy = if (owned) COUNTRY_PLOW else if (town != null && town.population > 5000) 128 else 70
@@ -554,5 +554,5 @@ internal fun World.weatherLooks() {
 const val WARM_UP_DAYS = 75
 /** The year towns start plowing their streets. */
 const val PLOW_YEAR = 1920
-/** Chance out of 256 a day that a road away from towns is cleared, about a third of a small town's. */
-const val COUNTRY_PLOW = 24
+/** Chance out of 256 a day that a road away from towns is cleared, a bit less than a small town's. */
+const val COUNTRY_PLOW = 64

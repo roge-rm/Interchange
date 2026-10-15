@@ -59,6 +59,7 @@ import com.rm.interchange.map.buildingAt
 import com.rm.interchange.platform.logLine
 import com.rm.interchange.server.Game
 import com.rm.interchange.server.GameThread
+import com.rm.interchange.platform.Network
 import com.rm.interchange.server.Host
 import com.rm.interchange.server.ChatLine
 import com.rm.interchange.server.Remote
@@ -188,7 +189,23 @@ private fun Root(settings: Settings) {
     fun closeHost() {
         val h = host ?: return
         host = null
+        Network.hosting(null, 0)
         stopHost(h)
+    }
+
+    // The platform keeps the app running while the game is open to players, and shows how many are playing.
+    DisposableEffect(Unit) {
+        Network.stopHosting = ::closeHost
+        onDispose { Network.stopHosting = null; Network.hosting(null, 0) }
+    }
+    LaunchedEffect(host) {
+        val h = host
+        if (h == null) { Network.hosting(null, 0); return@LaunchedEffect }
+        // Checks host itself, since this effect isn't restarted while the app is in the background.
+        while (host === h) {
+            Network.hosting(h.name, h.players.size)
+            delay(5000)
+        }
     }
 
     /** Stops the game running: closes it to players or leaves the game joined, then stops its thread. */

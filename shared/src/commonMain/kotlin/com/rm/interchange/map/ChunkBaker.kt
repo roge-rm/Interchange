@@ -35,6 +35,7 @@ import com.rm.interchange.sim.BURNT_FROM
 import com.rm.interchange.sim.VERY_WORN
 import com.rm.interchange.sim.WORN
 import kotlin.math.sqrt
+import kotlin.math.tanh
 
 /**
  * Bakes a chunk of the map into pixels, tile by tile from the back: the
@@ -277,7 +278,7 @@ internal class ChunkBaker(
         val aero = world.airportTiles[here]?.let { id -> world.airports.getOrNull(id)?.let { airportGround(it, wx, wy) } } ?: 0
         // A road where the land doesn't suit it goes up on a foundation, as track does, the road on top.
         val raised = road != 0 && world.trackAt(wx, wy) == 0 && world.hasFoundation(wx, wy)
-        ground(vx, vy, t, r, b, l, kind, edges, if (raised) 0 else road, weather = true, aero = aero)
+        ground(vx, vy, t, r, b, l, kind, edges, if (raised) 0 else road, weather = true, aero = aero, soft = true)
         earthFaces(vx, vy, r, b, l)
         if (raised) {
             val st = world.surfaceHeight(wx, wy, 0, worldCorner(wx, wy, vx, vy))
@@ -441,8 +442,9 @@ internal class ChunkBaker(
     /**
      * Paints a tile's top with corner heights [t], [r], [b], [l] (view order) in [kind]'s texture, letting the
      * kinds of its neighbours across each edge ([edges], -1 for none) spread in where they rank higher.
+     * [soft] for the land's own corners: slopes no lighter than flat take their light from the corners, so it fades across the tile.
      */
-    private fun ground(vx: Int, vy: Int, t: Int, r: Int, b: Int, l: Int, kind: Int, edges: IntArray, road: Int = 0, weather: Boolean = false, banks: Int = 0, aero: Int = 0) {
+    private fun ground(vx: Int, vy: Int, t: Int, r: Int, b: Int, l: Int, kind: Int, edges: IntArray, road: Int = 0, weather: Boolean = false, banks: Int = 0, aero: Int = 0, soft: Boolean = false) {
         // Split along whichever diagonal has its ends level, as the slopes are drawn. Each half is a plane
         // h = h0 + gu * u + gv * v over the tile's own u and v.
         val alongRL = r == l
@@ -454,6 +456,13 @@ internal class ChunkBaker(
         val sloped2 = p2[1] != 0f || p2[2] != 0f
         // Ridges and hollows, from each corner, spread across the tile; none on the water.
         val water = kind == Atlas.WATER
+        // Light at each corner, from the slope round it, for halves no lighter than flat ground.
+        val shaded = soft && !water && (f1 <= 256 || f2 <= 256)
+        val lt = if (shaded) cornerLight(vx, vy) else 256f
+        val lr = if (shaded) cornerLight(vx + 1, vy) else 256f
+        val lb = if (shaded) cornerLight(vx + 1, vy + 1) else 256f
+        val ll = if (shaded) cornerLight(vx, vy + 1) else 256f
+        val smooth = shaded && (lt != 256f || lr != 256f || lb != 256f || ll != 256f || f1 != 256 || f2 != 256)
         val rt = if (water) 0f else relief(vx, vy)
         val rr = if (water) 0f else relief(vx + 1, vy)
         val rb = if (water) 0f else relief(vx + 1, vy + 1)
@@ -570,7 +579,10 @@ internal class ChunkBaker(
                 }
             }
             val rel = rt * (1f - u) * (1f - v) + rr * u * (1f - v) + rb * u * v + rl * (1f - u) * v
-            var shade = f * (1f + (rel * RELIEF_GAIN).coerceIn(-RELIEF_DARK, RELIEF_LIGHT))
+            val sun = if (smooth && f <= 256) minOf(256f, lt * (1f - u) * (1f - v) + lr * u * (1f - v) + lb * u * v + ll * (1f - u) * v) else f.toFloat()
+            // Hollows darken less on slopes already in shadow.
+            val dark = RELIEF_DARK - (256f - sun).coerceAtLeast(0f) * RELIEF_DARK_SLOPE
+            var shade = sun * (1f + (rel * RELIEF_GAIN).coerceIn(-dark, RELIEF_LIGHT))
             if (worn >= 0) texel = mix(texel, if (worn < VERY_WORN) 0xffd03a2a.toInt() else if (worn < WORN) 0xffe8b030.toInt() else 0xff3aa048.toInt(), 0.6f)
             if (overlays and SNOW != 0) {
                 val depth = st * (1f - u) * (1f - v) + sr * u * (1f - v) + sb * u * v + sl * (1f - u) * v
@@ -899,7 +911,21 @@ internal class ChunkBaker(
         val n = sqrt(nx * nx + ny * ny + nz * nz)
         val d = (nx * LX + ny * LY + nz * LZ) / (n * LL)
         val flat = LZ / LL
-        return ((1f + LIGHT_GAIN * (d / flat - 1f)).coerceIn(LIGHT_LOW, LIGHT_HIGH) * 256).toInt()
+        val raw = 1f + LIGHT_GAIN * (d / flat - 1f)
+        // Slopes away from the light ease off towards LIGHT_LOW rather than all stopping at it.
+        val f = if (raw >= 1f) minOf(raw, LIGHT_HIGH) else 1f - (1f - LIGHT_LOW) * tanh((1f - raw) / (1f - LIGHT_LOW))
+        return (f * 256).toInt()
+    }
+
+    /** The [light] at view corner ([vx], [vy]), from the slope across the corners either side of it. */
+    private fun cornerLight(vx: Int, vy: Int): Float {
+        val x0 = maxOf(0, vx - 1)
+        val x1 = minOf(view.viewWidth, vx + 1)
+        val y0 = maxOf(0, vy - 1)
+        val y1 = minOf(view.viewHeight, vy + 1)
+        val gu = (cornerHeight(x1, vy) - cornerHeight(x0, vy)).toFloat() / maxOf(1, x1 - x0)
+        val gv = (cornerHeight(vx, y1) - cornerHeight(vx, y0)).toFloat() / maxOf(1, y1 - y0)
+        return if (gu == 0f && gv == 0f) 256f else light(gu, gv).toFloat()
     }
 
     private fun lit(texel: Int, f: Int): Int {
@@ -1110,7 +1136,7 @@ internal class ChunkBaker(
         private const val LZ = 1.2f
         private val LL = sqrt(LX * LX + LY * LY + LZ * LZ)
         private const val LIGHT_GAIN = 0.8f
-        private const val LIGHT_LOW = 0.66f
+        private const val LIGHT_LOW = 0.76f
         private const val LIGHT_HIGH = 1.24f
 
         /** Corners each way looked at for ridges and hollows, and how much lighter or darker a step above or below makes them. */
@@ -1122,6 +1148,8 @@ internal class ChunkBaker(
         private val COVERS = Array(Renderer.LEVELS.size) { HashMap<Int, Cover>() }
         private const val RELIEF_GAIN = 0.07f
         private const val RELIEF_DARK = 0.2f
+        /** How much less [RELIEF_DARK] darkens for each 256th a slope is in shadow. */
+        private const val RELIEF_DARK_SLOPE = 0.4f / 256f
         private const val RELIEF_LIGHT = 0.14f
 
         /** Where the noise has to be past for bare ground to show on a slope: about a quarter of a slope shows it. */

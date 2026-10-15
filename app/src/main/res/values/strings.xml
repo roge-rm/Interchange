@@ -1,3 +1,10 @@
 <resources>
     <string name="app_name">Interchange</string>
+    <string name="hosting_channel">Hosting</string>
+    <string name="hosting_title">Hosting %1$s</string>
+    <plurals name="hosting_players">
+        <item quantity="one">%d player</item>
+        <item quantity="other">%d players</item>
+    </plurals>
+    <string name="hosting_stop">Stop hosting</string>
 </resources>
