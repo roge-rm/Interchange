@@ -30,6 +30,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.rm.interchange.map.companyColour
 import com.rm.interchange.net.Beacon
+import com.rm.interchange.net.CompanyInfo
 import com.rm.interchange.net.LanDiscovery
 import com.rm.interchange.net.Message
 import com.rm.interchange.net.Player
@@ -81,6 +82,9 @@ private sealed interface Joining {
     class Unreachable(val why: String) : Joining
 }
 
+/** A game looked at, to pick what to join as: where it is, its name and the companies in it. */
+private class Looked(val address: String, val port: Int, val name: String, val companies: List<CompanyInfo>)
+
 /** The address and port typed, "host" or "host:port". */
 private fun parseAddress(text: String): Pair<String, Int> {
     val t = text.trim()
@@ -92,21 +96,24 @@ private fun parseAddress(text: String): Pair<String, Int> {
 
 /**
  * Joining a game on the network, from the title screen: your name, the games
- * heard nearby, or one by its address, as a new company or watching. A game
- * that wants a password asks for it once it's turned you away. Joined, the
- * remote and the world it sent go to [onJoined].
+ * heard nearby, or one by its address. Picking a game lists its companies, to
+ * join one, start a new one or watch. A game or company that wants a password
+ * asks for it once it's turned you away. Joined, the remote and the world it
+ * sent go to [onJoined].
  */
 @Composable
 fun MultiplayerWindow(settings: Settings, onJoined: (Remote, World) -> Unit, onClose: () -> Unit) {
     val c = LocalColors.current
     val scope = rememberCoroutineScope()
-    var joining by remember { mutableStateOf(false) }
+    var busy by remember { mutableStateOf<String?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
+    var looked by remember { mutableStateOf<Looked?>(null) }
+    // What was last asked to join as, so a password goes with it.
+    var choice by remember { mutableStateOf(Message.NEW_COMPANY) }
     var asked by remember { mutableStateOf(false) }
     var password by remember { mutableStateOf("") }
-    var watch by remember { mutableStateOf(false) }
-    // The game last tried, so the password goes to it.
-    var target by remember { mutableStateOf<Pair<String, Int>?>(null) }
+    var askedCompany by remember { mutableStateOf(false) }
+    var companyPassword by remember { mutableStateOf("") }
 
     // Games heard, by their host's id, with when each was last heard.
     val heard = remember { mutableStateMapOf<String, Pair<Beacon, Long>>() }
@@ -129,6 +136,7 @@ fun MultiplayerWindow(settings: Settings, onJoined: (Remote, World) -> Unit, onC
 
     val fallbackName = stringResource(Res.string.player)
     val needsPassword = stringResource(Res.string.needs_password)
+    val needsCompanyPassword = stringResource(Res.string.needs_company_password)
     val wrongPassword = stringResource(Res.string.wrong_password)
     val otherVersion = stringResource(Res.string.refused_version)
     val full = stringResource(Res.string.refused_full)
@@ -137,16 +145,42 @@ fun MultiplayerWindow(settings: Settings, onJoined: (Remote, World) -> Unit, onC
     val cantReach = stringResource(Res.string.cant_reach, "%s")
     val needsPacks = stringResource(Res.string.needs_packs, "%s")
     val cantLoad = stringResource(Res.string.cant_load, "%s")
+    val lookingText = stringResource(Res.string.looking)
+    val joiningText = stringResource(Res.string.joining)
 
-    fun join(address: String, port: Int) {
-        if (joining || address.isBlank()) return
+    fun where(address: String, port: Int) = if (port == LanDiscovery.GAME_PORT) address else "$address:$port"
+
+    /** Asks the game what companies it has, to pick one. */
+    fun look(address: String, port: Int, name: String) {
+        if (busy != null || address.isBlank()) return
         settings.save()
-        if (target != address to port) { asked = false; password = "" }
-        target = address to port
-        joining = true
+        busy = lookingText
         error = null
-        val hello = Message.Hello(Wire.PROTOCOL, settings.client, settings.playerName.trim().ifBlank { fallbackName }, password,
-            if (watch) Message.SPECTATE else Message.NEW_COMPANY)
+        scope.launch {
+            try {
+                val seen = withContext(Dispatchers.IO) { runCatching { Remote.look(address, port) } }
+                seen.onSuccess { m ->
+                    if (looked?.let { it.address == address && it.port == port } != true) {
+                        asked = false; password = ""; askedCompany = false; companyPassword = ""
+                    }
+                    looked = Looked(address, port, name, m.companies)
+                }.onFailure { e ->
+                    error = if ((e as? Refused)?.reason == Reject.VERSION) otherVersion else cantReach.replace("%s", where(address, port))
+                }
+            } finally {
+                busy = null
+            }
+        }
+    }
+
+    fun join(game: Looked, join: Int) {
+        if (busy != null) return
+        settings.save()
+        if (join != choice) { askedCompany = false; companyPassword = "" }
+        choice = join
+        busy = joiningText
+        error = null
+        val hello = Message.Hello(Wire.PROTOCOL, settings.client, settings.playerName.trim().ifBlank { fallbackName }, password, join, companyPassword)
         scope.launch {
             var got: Remote? = null
             var handed = false
@@ -154,7 +188,7 @@ fun MultiplayerWindow(settings: Settings, onJoined: (Remote, World) -> Unit, onC
                 // Connecting and reading the world both take a while, so neither holds up the screen.
                 val outcome = withContext(Dispatchers.IO) {
                     try {
-                        val r = Remote.join(address, port, hello).also { got = it }
+                        val r = Remote.join(game.address, game.port, hello).also { got = it }
                         val w = Save.read(r.welcome!!.save, InstalledPacks::find)
                         InstalledPacks.prepare(w.roster)
                         Joining.In(r, w)
@@ -165,60 +199,81 @@ fun MultiplayerWindow(settings: Settings, onJoined: (Remote, World) -> Unit, onC
                     } catch (e: BadData) {
                         Joining.Unreachable(cantLoad.replace("%s", e.message ?: ""))
                     } catch (e: Exception) {
-                        Joining.Unreachable(cantReach.replace("%s", if (port == LanDiscovery.GAME_PORT) address else "$address:$port"))
+                        Joining.Unreachable(cantReach.replace("%s", where(game.address, game.port)))
                     }
                 }
-                joining = false
                 when (outcome) {
                     is Joining.In -> { handed = true; onJoined(outcome.remote, outcome.world) }
-                    is Joining.Turned -> {
-                        if (outcome.reason == Reject.PASSWORD) {
+                    is Joining.Turned -> when (outcome.reason) {
+                        Reject.PASSWORD -> {
                             error = if (asked && password.isNotEmpty()) wrongPassword else needsPassword
                             asked = true
-                        } else error = when (outcome.reason) {
-                            Reject.VERSION -> otherVersion
-                            Reject.FULL -> full
-                            Reject.NO_COMPANY -> noCompany
-                            Reject.KICKED -> kicked
-                            else -> cantReach.replace("%s", address)
                         }
+                        Reject.COMPANY_PASSWORD -> {
+                            error = if (askedCompany && companyPassword.isNotEmpty()) wrongPassword else needsCompanyPassword
+                            askedCompany = true
+                        }
+                        Reject.VERSION -> error = otherVersion
+                        Reject.FULL -> error = full
+                        Reject.NO_COMPANY -> error = noCompany
+                        Reject.KICKED -> error = kicked
+                        else -> error = cantReach.replace("%s", where(game.address, game.port))
                     }
                     is Joining.NeedsPacks -> error = needsPacks.replace("%s", outcome.packs)
                     is Joining.Unreachable -> error = outcome.why
                 }
             } finally {
                 if (!handed) got?.leave()
-                joining = false
+                busy = null
             }
         }
     }
 
     Window(stringResource(Res.string.multiplayer), onClose, Glyph.People) {
         Field(settings.playerName, stringResource(Res.string.your_name), { settings.playerName = it.take(Host.NAME_MOST) })
-        FillChips(listOf(false, true), watch, { stringResource(if (it) Res.string.watch else Res.string.new_company) }) { watch = it }
-        if (asked) Field(password, stringResource(Res.string.password), { password = it }, secret = true)
-        if (error != null) Text(error ?: "", color = c.bad, fontSize = 14.sp)
-        if (joining) Text(stringResource(Res.string.joining), color = c.textDim, fontSize = 14.sp)
-        if (asked) target?.let { (a, p) -> BigButton(stringResource(Res.string.join), primary = true, enabled = !joining, glyph = Glyph.Play) { join(a, p) } }
+        val game = looked
+        if (game != null) {
+            val passwordLabel = stringResource(Res.string.password)
+            Head(game.name)
+            ListRow(Glyph.Plus, stringResource(Res.string.new_company), null, if (busy == null) ({ join(game, Message.NEW_COMPANY) }) else null)
+            for (co in game.companies) {
+                val line = listOfNotNull(pluralStringResource(Res.plurals.players_count, co.players, co.players), passwordLabel.takeIf { co.locked })
+                    .joinToString(" · ")
+                ListRow(Glyph.People, co.name.ifBlank { fallbackName }, line, if (busy == null) ({ join(game, co.id) }) else null, tint = companyColour(co.id))
+            }
+            ListRow(Glyph.Inspect, stringResource(Res.string.watch), null, if (busy == null) ({ join(game, Message.SPECTATE) }) else null)
+            if (asked) Field(password, passwordLabel, { password = it }, secret = true)
+            if (askedCompany) Field(companyPassword, stringResource(Res.string.company_password), { companyPassword = it.take(Host.PASSWORD_MOST) }, secret = true)
+            if (error != null) Text(error ?: "", color = c.bad, fontSize = 14.sp)
+            busy?.let { Text(it, color = c.textDim, fontSize = 14.sp) }
+            if (asked || askedCompany) BigButton(stringResource(Res.string.join), primary = true, enabled = busy == null, glyph = Glyph.Play) { join(game, choice) }
+            BigButton(stringResource(Res.string.back), enabled = busy == null, glyph = Glyph.Back) {
+                looked = null
+                error = null
+            }
+        } else {
+            if (error != null) Text(error ?: "", color = c.bad, fontSize = 14.sp)
+            busy?.let { Text(it, color = c.textDim, fontSize = 14.sp) }
 
-        Head(stringResource(Res.string.games_nearby))
-        if (heard.isEmpty()) Text(stringResource(Res.string.looking_for_games), color = c.textDim, fontSize = 14.sp)
-        for ((b, _) in heard.values.sortedBy { it.first.name }) {
-            val line = listOfNotNull(
-                b.address,
-                b.year.takeIf { it > 0 }?.toString(),
-                pluralStringResource(Res.plurals.players_count, b.players, b.players),
-                if (b.locked) stringResource(Res.string.password) else null,
-                if (b.protocol != Wire.PROTOCOL) otherVersion else null,
-            ).joinToString(" · ")
-            ListRow(Glyph.People, b.name, line, if (joining) null else ({ join(b.address, b.port) }))
-        }
+            Head(stringResource(Res.string.games_nearby))
+            if (heard.isEmpty()) Text(stringResource(Res.string.looking_for_games), color = c.textDim, fontSize = 14.sp)
+            for ((b, _) in heard.values.sortedBy { it.first.name }) {
+                val line = listOfNotNull(
+                    b.address,
+                    b.year.takeIf { it > 0 }?.toString(),
+                    pluralStringResource(Res.plurals.players_count, b.players, b.players),
+                    if (b.locked) stringResource(Res.string.password) else null,
+                    if (b.protocol != Wire.PROTOCOL) otherVersion else null,
+                ).joinToString(" · ")
+                ListRow(Glyph.People, b.name, line, if (busy != null) null else ({ look(b.address, b.port, b.name) }))
+            }
 
-        Head(stringResource(Res.string.join_by_address))
-        Field(settings.lastAddress, stringResource(Res.string.address), { settings.lastAddress = it.trim() }, keyboard = KeyboardType.Uri)
-        BigButton(stringResource(Res.string.join), enabled = !joining && settings.lastAddress.isNotBlank(), glyph = Glyph.Play) {
-            val (a, p) = parseAddress(settings.lastAddress)
-            join(a, p)
+            Head(stringResource(Res.string.join_by_address))
+            Field(settings.lastAddress, stringResource(Res.string.address), { settings.lastAddress = it.trim() }, keyboard = KeyboardType.Uri)
+            BigButton(stringResource(Res.string.join), enabled = busy == null && settings.lastAddress.isNotBlank(), glyph = Glyph.Play) {
+                val (a, p) = parseAddress(settings.lastAddress)
+                look(a, p, where(a, p))
+            }
         }
     }
 }
@@ -230,6 +285,25 @@ private fun PlayerRows(players: List<Player>, world: World?) {
     for (p in players) {
         val co = world?.companies?.getOrNull(p.company)
         ListRow(Glyph.People, p.name, co?.name ?: watching, null, tint = co?.let { companyColour(it.id) })
+    }
+}
+
+/** The password for the company played here: whether it has one, and setting or clearing it. */
+@Composable
+private fun CompanyPassword(locked: Boolean, lock: (String) -> Unit) {
+    val c = LocalColors.current
+    var text by remember { mutableStateOf("") }
+    Head(stringResource(Res.string.company_password))
+    Text(stringResource(if (locked) Res.string.has_password else Res.string.no_password), color = c.textDim, fontSize = 14.sp)
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        androidx.compose.foundation.layout.Box(Modifier.weight(1f)) {
+            Field(text, stringResource(Res.string.password), { text = it.take(Host.PASSWORD_MOST) }, secret = true)
+        }
+        ActionButton(stringResource(Res.string.set_password), enabled = text.isNotEmpty(), strong = true) {
+            lock(text)
+            text = ""
+        }
+        ActionButton(stringResource(Res.string.clear_password), enabled = locked) { lock("") }
     }
 }
 
@@ -246,7 +320,8 @@ private fun <T> polled(key: Any?, read: () -> T): T = produceState(read(), key) 
  * Playing with others, from the game menu. Alone, opening the game to
  * players on the network, with a password if wanted. Hosting, the addresses
  * players can join at and who's in, and closing it again. Joined, the
- * server's name, who's in and leaving.
+ * server's name, who's in and leaving. Playing a company with others, its
+ * password.
  */
 @Composable
 fun PlayersWindow(
@@ -269,6 +344,10 @@ fun PlayersWindow(
                 Text(remote.server, color = c.text, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
                 Head(stringResource(Res.string.players))
                 PlayerRows(polled(remote) { remote.players }, world)
+                if (runner.company >= 0) {
+                    val locked = polled(remote) { remote.companies.any { it.id == runner.company && it.locked } }
+                    CompanyPassword(locked) { remote.lock(it) }
+                }
                 BigButton(stringResource(Res.string.leave), glyph = Glyph.Home, onClick = onLeave)
             }
             host != null -> {
@@ -285,6 +364,10 @@ fun PlayersWindow(
                 }
                 Head(stringResource(Res.string.players))
                 PlayerRows(polled(host) { host.players }, world)
+                if (runner.company >= 0) {
+                    val locked = polled(host) { host.companies.any { it.id == runner.company && it.locked } }
+                    CompanyPassword(locked) { host.lock(runner.company, it) }
+                }
                 BigButton(stringResource(Res.string.close_to_players), glyph = Glyph.Remove, onClick = onShut)
             }
             else -> {

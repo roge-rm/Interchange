@@ -4,6 +4,7 @@ import com.rm.interchange.net.Message
 import com.rm.interchange.net.Reject
 import com.rm.interchange.sim.Command
 import com.rm.interchange.sim.NewGame
+import com.rm.interchange.sim.Prices
 import com.rm.interchange.sim.Region
 import com.rm.interchange.sim.Save
 import com.rm.interchange.sim.World
@@ -33,8 +34,10 @@ class HostTest {
         return runner to host
     }
 
-    private fun joining(host: Host, client: String, name: String, password: String = "", join: Int = Message.NEW_COMPANY): GameThread {
-        val remote = Remote.join("127.0.0.1", host.port, Message.Hello(0, client, name, password, join))
+    private fun joining(
+        host: Host, client: String, name: String, password: String = "", join: Int = Message.NEW_COMPANY, companyPassword: String = "",
+    ): GameThread {
+        val remote = Remote.join("127.0.0.1", host.port, Message.Hello(0, client, name, password, join, companyPassword))
         val runner = GameThread({ Save.read(remote.welcome!!.save) }, remote)
         runner.company = remote.company
         runner.start()
@@ -92,6 +95,21 @@ class HostTest {
     }
 
     @Test
+    fun theHostsBuildingReachesPlayersWhilePaused() {
+        val (runner, host) = hosting()
+        runner.paused = true
+        val a = joining(host, "a", "Ann")
+        Thread.sleep(500)
+        val before = on(a) { it.world.chunkVersions.sum() }
+        runner.request(Command.Loan(0, true))
+        runner.request(Command.Terraform(0, 10, 10, true))
+        Thread.sleep(1_000)
+        assertTrue(on(a) { it.world.companies[0].loan } > 0, "the loan didn't reach the player")
+        assertTrue(on(a) { it.world.chunkVersions.sum() } > before, "the building didn't reach the player")
+        assertEquals(on(runner) { it.world.checksum() }, on(a) { it.world.checksum() })
+    }
+
+    @Test
     fun aPlayerCantGiveOrdersForAnotherCompany() {
         val (runner, host) = hosting()
         val a = joining(host, "a", "Ann")
@@ -122,9 +140,52 @@ class HostTest {
         val first = remote.company
         remote.leave()
         Thread.sleep(2_500)
-        val again = Remote.join("127.0.0.1", host.port, Message.Hello(0, "a", "Ann", "", Message.NEW_COMPANY))
+        val again = Remote.join("127.0.0.1", host.port, Message.Hello(0, "a", "Ann", "", first))
         stops += { again.leave() }
         assertEquals(first, again.company)
+    }
+
+    @Test
+    fun aNewCompanyIsNewEvenForAPlayerComingBack() {
+        val (_, host) = hosting()
+        val remote = Remote.join("127.0.0.1", host.port, Message.Hello(0, "a", "Ann", "", Message.NEW_COMPANY))
+        val first = remote.company
+        remote.leave()
+        Thread.sleep(500)
+        val again = Remote.join("127.0.0.1", host.port, Message.Hello(0, "a", "Ann", "", Message.NEW_COMPANY))
+        stops += { again.leave() }
+        assertNotEquals(first, again.company)
+        assertEquals(again.company, host.claimsNow["a"])
+    }
+
+    @Test
+    fun aSlotGivenToANewCompanyStartsClean() {
+        val (runner, host) = hosting()
+        val a = joining(host, "a", "Ann")
+        a.remote!!.lock("ours")
+        Thread.sleep(1_000)
+        val slot = a.company
+        on(runner) { it.world.companies[slot].gone = true }
+        val b = joining(host, "b", "Bo")
+        assertEquals(slot, b.company)
+        for (i in 0 until 100) if (a.company != -1) Thread.sleep(50)
+        assertEquals(-1, a.company)
+        assertEquals(mapOf("b" to slot), host.claimsNow)
+        assertTrue(host.passwordsNow.isEmpty())
+    }
+
+    @Test
+    fun aNewPasswordKeepsOldPartnersOut() {
+        val (_, host) = hosting()
+        val a = joining(host, "a", "Ann")
+        val b = Remote.join("127.0.0.1", host.port, Message.Hello(0, "b", "Bo", "", a.company))
+        b.leave()
+        Thread.sleep(500)
+        a.remote!!.lock("ours")
+        Thread.sleep(500)
+        val hello = Message.Hello(0, "b", "Bo", "", a.company)
+        assertEquals(Reject.COMPANY_PASSWORD, assertFailsWith<Refused> { Remote.join("127.0.0.1", host.port, hello) }.reason)
+        assertEquals(a.company, host.claimsNow["a"])
     }
 
     @Test
@@ -150,5 +211,78 @@ class HostTest {
         assertEquals(listOf("hello", "welcome"), b.chat.map { it.text })
         assertEquals("Ann", b.chat[0].name)
         assertEquals(listOf("hello", "welcome"), host.chat.map { it.text })
+    }
+
+    @Test
+    fun twoPlayersCanShareACompany() {
+        val (runner, host) = hosting()
+        val a = joining(host, "a", "Ann")
+        Thread.sleep(500)
+        val seen = Remote.look("127.0.0.1", host.port)
+        assertEquals(listOf(0, a.company), seen.companies.map { it.id })
+        assertEquals("Ann", seen.companies[1].name)
+        val b = joining(host, "b", "Bo", join = a.company)
+        assertEquals(a.company, b.company)
+        Thread.sleep(500)
+        val before = on(runner) { it.world.companies[a.company].loan }
+        a.request(Command.Loan(a.company, true))
+        b.request(Command.Loan(b.company, true))
+        Thread.sleep(800)
+        inStep(runner, a, b)
+        assertEquals(before + 2 * Prices.LOAN_STEP, on(runner) { it.world.companies[a.company].loan })
+        assertEquals(2, host.companies.first { it.id == a.company }.players)
+        // The host's own company can be shared too.
+        val c = joining(host, "c", "Cy", join = 0)
+        assertEquals(0, c.company)
+    }
+
+    @Test
+    fun aCompanyPasswordKeepsOthersOut() {
+        val (_, host) = hosting()
+        val a = joining(host, "a", "Ann")
+        a.remote!!.lock("ours")
+        host.lock(0, "mine")
+        Thread.sleep(500)
+        assertEquals(listOf(true, true), Remote.look("127.0.0.1", host.port).companies.map { it.locked })
+        val hello = Message.Hello(0, "b", "Bo", "", a.company)
+        assertEquals(Reject.COMPANY_PASSWORD, assertFailsWith<Refused> { Remote.join("127.0.0.1", host.port, hello) }.reason)
+        assertEquals(Reject.COMPANY_PASSWORD, assertFailsWith<Refused> { Remote.join("127.0.0.1", host.port, hello.copy(companyPassword = "wrong")) }.reason)
+        assertEquals(Reject.COMPANY_PASSWORD, assertFailsWith<Refused> { Remote.join("127.0.0.1", host.port, hello.copy(join = 0, companyPassword = "ours")) }.reason)
+        val b = Remote.join("127.0.0.1", host.port, hello.copy(companyPassword = "ours"))
+        stops += { b.leave() }
+        assertEquals(a.company, b.company)
+        // Bo can't move to the host's company without its password, but can come back to Ann's.
+        b.leave()
+        Thread.sleep(500)
+        assertEquals(Reject.COMPANY_PASSWORD, assertFailsWith<Refused> { Remote.join("127.0.0.1", host.port, hello.copy(join = 0)) }.reason)
+        val again = Remote.join("127.0.0.1", host.port, hello)
+        stops += { again.leave() }
+        assertEquals(a.company, again.company)
+        // Cleared, anyone may join.
+        a.remote.lock("")
+        Thread.sleep(500)
+        val c = joining(host, "c", "Cy", join = a.company)
+        assertEquals(a.company, c.company)
+    }
+
+    @Test
+    fun companyPasswordsAreKeptForNextTime() {
+        val (runner, host) = hosting()
+        val a = joining(host, "a", "Ann")
+        a.remote!!.lock("ours")
+        Thread.sleep(500)
+        val kept = host.passwordsNow
+        assertEquals(setOf(a.company), kept.keys)
+        assertTrue("ours" !in kept.values)
+        host.stop()
+        // As the dedicated server does on starting again: the same world, claims and passwords.
+        val next = Host(runner, "Test", port = 0, hostName = "Host", claimed = host.claimsNow, passwords = kept, announce = false)
+        next.start()
+        stops += { next.stop() }
+        val hello = Message.Hello(0, "b", "Bo", "", a.company)
+        assertEquals(Reject.COMPANY_PASSWORD, assertFailsWith<Refused> { Remote.join("127.0.0.1", next.port, hello) }.reason)
+        val b = Remote.join("127.0.0.1", next.port, hello.copy(companyPassword = "ours"))
+        stops += { b.leave() }
+        assertEquals(a.company, b.company)
     }
 }

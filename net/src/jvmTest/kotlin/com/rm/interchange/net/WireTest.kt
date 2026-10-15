@@ -1,6 +1,7 @@
 package com.rm.interchange.net
 
 import com.rm.interchange.sim.BadData
+import com.rm.interchange.sim.ByteWriter
 import com.rm.interchange.sim.Command
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
@@ -13,6 +14,9 @@ class WireTest {
     fun messagesComeBackAsTheyWent() {
         val all = listOf(
             Message.Hello(Wire.PROTOCOL, "abc", "Ann", "pw", Message.NEW_COMPANY),
+            Message.Hello(Wire.PROTOCOL, "abc", "Ann", "", 2, "ours"),
+            Message.Look(Wire.PROTOCOL),
+            Message.Lock("ours"),
             Message.Request(Command.Loan(2, true)),
             Message.Say("bonjour, ça va"),
             Message.Resync,
@@ -21,6 +25,7 @@ class WireTest {
             Message.Frame(99, 16, -42),
             Message.Chat("Ann", 3, "hi"),
             Message.Players(listOf(Player("Host", 0), Player("Ann", 3), Player("Bo", -1))),
+            Message.Players(listOf(Player("Ann", 3)), listOf(CompanyInfo(0, "Host & Co", 1, false), CompanyInfo(3, "Ann", 2, true))),
         )
         for (m in all) assertEquals(m, Wire.decode(Wire.encode(m)))
         val w = Message.Welcome(3, "Game", 77, byteArrayOf(1, 2, 3), listOf(Message.Scheduled(78, Command.Loan(3, false))))
@@ -29,6 +34,14 @@ class WireTest {
         assertEquals(77L, back.frame)
         assertContentEquals(w.save, back.save)
         assertEquals(w.pending, back.pending)
+    }
+
+    @Test
+    fun anOldHelloIsReadAsAnotherVersion() {
+        // A hello as protocol 1 wrote it, without the company password.
+        val w = ByteWriter(64)
+        w.byte(1); w.int(1); w.string("abc"); w.string("Ann"); w.string(""); w.int(Message.NEW_COMPANY)
+        assertEquals(1, assertIs<Message.Hello>(Wire.decode(w.toByteArray())).protocol)
     }
 
     @Test

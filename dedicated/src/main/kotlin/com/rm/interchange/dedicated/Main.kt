@@ -36,6 +36,11 @@ fun main() {
     val claimed = if (players.exists()) players.readLines().mapNotNull { l ->
         l.split('\t').takeIf { it.size == 2 }?.let { (client, company) -> company.toIntOrNull()?.let { client to it } }
     }.toMap() else emptyMap()
+    // Company passwords, hashed.
+    val locks = File(state, "passwords.tsv")
+    val passwords = if (locks.exists()) locks.readLines().mapNotNull { l ->
+        l.split('\t').takeIf { it.size == 2 }?.let { (company, hash) -> company.toIntOrNull()?.let { it to hash } }
+    }.toMap() else emptyMap()
 
     val make = {
         if (saved.exists()) {
@@ -64,12 +69,13 @@ fun main() {
     // Players' companies nobody has played, as a new world's first, go to the first new players.
     val world = runner.game!!.world
     val free = world.companies.filter { !it.gone && world.human(it.id) && it.id !in claimed.values }.map { it.id }
-    val host = Host(runner, name, port, env["INTERCHANGE_PASSWORD"] ?: "", hostCompany = -1, free = free, claimed = claimed,
+    val host = Host(runner, name, port, env["INTERCHANGE_PASSWORD"] ?: "", hostCompany = -1, free = free, claimed = claimed, passwords = passwords,
         announce = env["INTERCHANGE_LAN_DISCOVERY"] != "false")
     val keepAll = { bytes: ByteArray ->
         try {
             keep(saved, bytes)
             keep(players, host.claimsNow.entries.joinToString("") { "${it.key}\t${it.value}\n" }.toByteArray())
+            keep(locks, host.passwordsNow.entries.joinToString("") { "${it.key}\t${it.value}\n" }.toByteArray())
         } catch (e: java.io.IOException) {
             log("Couldn't save: ${e.message}")
         }

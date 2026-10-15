@@ -95,6 +95,7 @@ class GameThread(private val make: () -> World, val remote: Remote? = null) {
             while (true) g.request(incoming.poll() ?: break)
             while (true) (tasks.poll() ?: break)(g)
             if (remote != null) {
+                company = remote.company
                 while (true) g.receive(remote.inbox.poll() ?: break)
                 // Well behind, as on joining, it runs many frames each time round to catch up.
                 g.catchUp(if (g.behind > 4) CATCH_UP_TICKS else FOLLOW_TICKS)

@@ -1,13 +1,18 @@
 package com.rm.interchange.server
 
+import com.rm.interchange.net.CompanyInfo
 import com.rm.interchange.net.Connection
 import com.rm.interchange.net.Message
 import com.rm.interchange.net.Player
+import com.rm.interchange.net.Reject
 import com.rm.interchange.net.Wire
 import java.io.IOException
+import java.util.concurrent.CompletableFuture
+import java.util.concurrent.ExecutionException
 import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.TimeoutException
 
 /** A server wouldn't let us in, for a [com.rm.interchange.net.Reject] reason. */
 class Refused(val reason: Int) : IOException("refused: $reason")
@@ -27,11 +32,16 @@ class Remote private constructor(private val connection: Connection) {
     @Volatile var welcome: Message.Welcome? = null
         private set
 
-    /** The company we play, -1 watching, and the server's name. */
-    val company get() = welcome?.company ?: -1
+    /** The company we play, -1 watching, as the latest welcome says; the server may move us to watching. */
+    @Volatile var company = -1
+        private set
+    /** The server's name. */
     val server get() = welcome?.server ?: ""
 
     @Volatile var players: List<Player> = emptyList()
+        private set
+    /** The companies players can play, with how many are on each and which need a password. */
+    @Volatile var companies: List<CompanyInfo> = emptyList()
         private set
     @Volatile var chat: List<ChatLine> = emptyList()
         private set
@@ -47,11 +57,15 @@ class Remote private constructor(private val connection: Connection) {
 
     fun say(text: String) = send(Message.Say(text))
 
+    /** Sets the password for the company we play, or clears it with an empty one. */
+    fun lock(password: String) = send(Message.Lock(password))
+
     fun leave() = connection.close("left")
 
     private fun take(m: Message) {
         when (m) {
             is Message.Welcome -> {
+                company = m.company
                 if (welcome == null) {
                     welcome = m
                     answered.countDown()
@@ -64,7 +78,7 @@ class Remote private constructor(private val connection: Connection) {
                 answered.countDown()
             }
             is Message.Chat -> chat = (chat + ChatLine(m.name, m.company, m.text)).takeLast(CHAT_KEPT)
-            is Message.Players -> players = m.players
+            is Message.Players -> { players = m.players; companies = m.companies }
             else -> inbox.add(m)
         }
     }
@@ -72,6 +86,32 @@ class Remote private constructor(private val connection: Connection) {
     companion object {
         /** Lines of chat kept. */
         const val CHAT_KEPT = 100
+
+        /**
+         * Asks the game at [host] on [port] who's playing what, without joining, for picking a company to join.
+         * Throws [Refused] if it's another version, or [IOException] if the server can't be reached.
+         */
+        fun look(host: String, port: Int, timeoutMillis: Long = 15_000): Message.Players {
+            val c = Connection.connect(host, port)
+            val answer = CompletableFuture<Message>()
+            c.onMessage = { m -> answer.complete(m) }
+            c.onClosed = { why -> answer.completeExceptionally(IOException(why)) }
+            c.start()
+            c.send(Message.Look(Wire.PROTOCOL))
+            try {
+                return when (val m = answer.get(timeoutMillis, TimeUnit.MILLISECONDS)) {
+                    is Message.Players -> m
+                    is Message.Rejected -> throw Refused(m.reason)
+                    else -> throw Refused(Reject.VERSION)
+                }
+            } catch (e: TimeoutException) {
+                throw IOException("timed out")
+            } catch (e: ExecutionException) {
+                throw e.cause as? IOException ?: IOException(e.cause)
+            } finally {
+                c.close("looked")
+            }
+        }
 
         /**
          * Connects to [host] on [port] and asks to join as [hello] says, waiting up to [timeoutMillis] to be let in.

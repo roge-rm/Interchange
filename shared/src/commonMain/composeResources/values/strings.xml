@@ -498,4 +498,11 @@
     <string name="send">Send</string>
     <string name="connection_lost">Connection lost</string>
     <string name="connection_lost_line">The game you joined can't be reached any more.</string>
+    <string name="looking">Looking…</string>
+    <string name="company_password">Company password</string>
+    <string name="needs_company_password">This company needs a password.</string>
+    <string name="has_password">Has a password</string>
+    <string name="no_password">No password</string>
+    <string name="set_password">Set</string>
+    <string name="clear_password">Clear</string>
 </resources>

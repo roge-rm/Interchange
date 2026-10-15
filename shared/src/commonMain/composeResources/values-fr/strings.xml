@@ -481,4 +481,11 @@
     <string name="send">Envoyer</string>
     <string name="connection_lost">Connexion perdue</string>
     <string name="connection_lost_line">La partie rejointe n'est plus joignable.</string>
+    <string name="looking">Recherche…</string>
+    <string name="company_password">Mot de passe de la compagnie</string>
+    <string name="needs_company_password">Cette compagnie demande un mot de passe.</string>
+    <string name="has_password">Protégée par un mot de passe</string>
+    <string name="no_password">Aucun mot de passe</string>
+    <string name="set_password">Définir</string>
+    <string name="clear_password">Effacer</string>
 </resources>
