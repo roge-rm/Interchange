@@ -24,12 +24,15 @@ class Settings {
     var lastAddress by mutableStateOf("")
     /** Made once, so a server knows this phone again and gives back its company. */
     var client = ""
+    /** The campaign chapters won, by id. */
+    var chaptersWon by mutableStateOf(emptySet<String>())
 
     val autosaveDays get() = AUTOSAVE_DAYS[autosave.coerceIn(0, AUTOSAVE_DAYS.size - 1)]
 
     fun save() {
         files.write(FILE, ("language=$language\nautosave=$autosave\ngrid=$grid\nheights=$heights\nsnow=$snow\ncondition=$condition\n" +
-            "player=${playerName.replace('\n', ' ')}\naddress=${lastAddress.replace('\n', ' ')}\nclient=$client\n").encodeToByteArray())
+            "player=${playerName.replace('\n', ' ')}\naddress=${lastAddress.replace('\n', ' ')}\nclient=$client\n" +
+            "chapters=${chaptersWon.sorted().joinToString(",")}\n").encodeToByteArray())
     }
 
     companion object {
@@ -53,6 +56,7 @@ class Settings {
                     "player" -> s.playerName = v
                     "address" -> s.lastAddress = v
                     "client" -> s.client = v
+                    "chapters" -> s.chaptersWon = v.split(",").filter { it.isNotBlank() }.toSet()
                 }
             }
             if (s.client.isEmpty()) {

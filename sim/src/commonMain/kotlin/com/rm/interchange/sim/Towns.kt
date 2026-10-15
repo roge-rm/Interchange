@@ -23,9 +23,11 @@ class Town(
     val y: Int,
     /** Tiles from one street to the next. */
     val grid: Int,
-    /** Its name is French, so its stations' names follow French ways. */
-    val french: Boolean = false,
+    french: Boolean = false,
 ) {
+    /** Its name is French, so its stations' names follow French ways. */
+    var french = french
+        internal set
     var population = 0
     var houses = 0
     /** Days until it next grows. */

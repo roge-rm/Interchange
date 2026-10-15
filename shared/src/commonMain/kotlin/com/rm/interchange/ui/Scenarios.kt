@@ -134,7 +134,7 @@ object SavedScenarios {
 }
 
 /**
- * The scenarios to play: the one being edited to carry on with if there is one, a new one to make in the editor, then each with its start year. A tap shows its intro, with
+ * The scenarios to play: the one being edited to carry on with if there is one, the campaign, a new one to make in the editor, then each with its start year. A tap shows its intro, with
  * Play, and for the player's own Edit and Delete. Deleting asks once more.
  */
 @Composable
@@ -142,6 +142,7 @@ fun ScenariosWindow(
     list: List<SavedScenarios.Entry>,
     error: String?,
     onContinue: (() -> Unit)?,
+    onCampaign: () -> Unit,
     onNew: () -> Unit,
     onPlay: (SavedScenarios.Entry) -> Unit,
     onEdit: (SavedScenarios.Entry) -> Unit,
@@ -172,7 +173,8 @@ fun ScenariosWindow(
     Window(stringResource(Res.string.scenarios), onClose, Glyph.Flag) {
         if (error != null) Text(error, color = c.bad, fontSize = 14.sp)
         onContinue?.let { BigButton(stringResource(Res.string.continue_editing), primary = true, glyph = Glyph.Land, onClick = it) }
-        BigButton(stringResource(Res.string.new_scenario), primary = list.isEmpty() && onContinue == null, glyph = Glyph.Plus, onClick = onNew)
+        BigButton(stringResource(Res.string.campaign), primary = onContinue == null, glyph = Glyph.Flag, onClick = onCampaign)
+        BigButton(stringResource(Res.string.new_scenario), glyph = Glyph.Plus, onClick = onNew)
         if (list.isEmpty()) Text(stringResource(Res.string.no_scenarios), color = c.textDim, fontSize = 14.sp)
         val builtIn = stringResource(Res.string.scenario_built_in)
         for (e in list) {

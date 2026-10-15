@@ -57,7 +57,7 @@ data class NewGame(
         const val MOST_RIVALS = 7
         val SIZES = intArrayOf(64, 128, 256, 512, 1024, 2048, 4096)
         const val FIRST_YEAR = 1836
-        const val LAST_YEAR = 2050
+        const val LAST_YEAR = 2100
     }
 }
 

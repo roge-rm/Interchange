@@ -86,6 +86,7 @@ import com.rm.interchange.sim.houseOf
 import com.rm.interchange.sim.Industry
 import com.rm.interchange.sim.News
 import com.rm.interchange.sim.Goal
+import com.rm.interchange.sim.Campaign
 import com.rm.interchange.sim.Scenario
 import com.rm.interchange.sim.Scenarios
 import com.rm.interchange.sim.TownSize
@@ -139,7 +140,7 @@ fun App() {
 private enum class Screen { Title, NewGame, Playing }
 
 /** A window open over the screen. */
-private enum class Win { Menu, Load, Settings, Packs, Overlays, Finances, Industries, Companies, Insignia, Town, Subsidies, Goals, Chronicle, Multiplayer, Players, Chat, Scenarios, Scenario, SaveScenario, Intro, Outcome }
+private enum class Win { Menu, Load, Settings, Packs, Overlays, Finances, Industries, Companies, Insignia, Town, Subsidies, Goals, Chronicle, Multiplayer, Players, Chat, Scenarios, Campaign, Scenario, SaveScenario, Intro, Outcome }
 
 /** Picking a place by tapping the map: what to tell the player, what a tapped tile does (false if nothing there will do), and giving up. */
 class MapPick(val prompt: String, val onTile: (Int) -> Boolean, val onCancel: () -> Unit)
@@ -397,6 +398,25 @@ private fun Root(settings: Settings) {
         }
     }
 
+    /** Makes campaign chapter [id] off the main thread, called [title] with [intro], and plays it from its intro. */
+    fun playChapter(id: String, title: String, intro: String) {
+        scope.launch {
+            val world = withContext(Dispatchers.Default) {
+                try {
+                    val w = Campaign.play(id, title, intro, InstalledPacks::find) ?: throw BadData("no chapter $id")
+                    InstalledPacks.prepare(w.roster)
+                    Result.success(w)
+                } catch (e: BadData) {
+                    Result.failure(e)
+                }
+            }
+            world.onSuccess { w -> scenarioError = null; play({ w }, intro = true) }.onFailure {
+                scenarioError = if (it is MissingPacks) needsPacks.replace("%s", it.packs.joinToString { p -> "${p.id} ${p.version}" })
+                else cantOpenScenario.replace("%s", it.message ?: "")
+            }
+        }
+    }
+
     /**
      * Back to the title screen: a game is saved and stopped, so Continue loads it again. A world being edited, or a
      * scenario tried from it, is only stopped, and the editor's autosave goes.
@@ -427,7 +447,15 @@ private fun Root(settings: Settings) {
             delay(500)
             val w = r.game?.world ?: continue
             val o = w.scenario?.outcome ?: continue
-            if (last == Scenario.OPEN && o != Scenario.OPEN && !w.editor) window = Win.Outcome
+            if (last == Scenario.OPEN && o != Scenario.OPEN && !w.editor) {
+                window = Win.Outcome
+                // A campaign chapter won in your own game opens the next.
+                val chapter = w.scenario?.chapter.orEmpty()
+                if (o == Scenario.WON && testing == null && r.remote == null && Campaign.chapter(chapter) != null && chapter !in settings.chaptersWon) {
+                    settings.chaptersWon = settings.chaptersWon + chapter
+                    settings.save()
+                }
+            }
             last = o
         }
     }
@@ -578,12 +606,14 @@ private fun Root(settings: Settings) {
             Win.Scenarios -> ScenariosWindow(
                 scenarios, scenarioError,
                 onContinue = if (editorKept) ({ openScenario(SavedScenarios::readEditor, edit = true) }) else null,
+                onCampaign = { scenarioError = null; window = Win.Campaign },
                 onNew = { window = null; editorNew = true; screen = Screen.NewGame },
                 onPlay = { e -> openScenario({ SavedScenarios.read(e) }, edit = false) },
                 onEdit = { e -> openScenario({ SavedScenarios.read(e) }, edit = true) },
                 onDelete = { e -> SavedScenarios.delete(e.name); scenarios = SavedScenarios.list() },
                 onClose = { scenarioError = null; window = null },
             )
+            Win.Campaign -> CampaignWindow(settings.chaptersWon, scenarioError, ::playChapter) { scenarioError = null; window = Win.Scenarios }
             Win.Scenario -> runner?.game?.world?.let { w -> ScenarioWindow(w, { runner?.request(it) }) { window = Win.Menu } }
             Win.SaveScenario -> runner?.let { r ->
                 r.game?.world?.let { w ->
