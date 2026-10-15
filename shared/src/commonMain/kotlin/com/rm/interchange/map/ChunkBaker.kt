@@ -1051,23 +1051,54 @@ internal class ChunkBaker(
         else blit(cell, ax, ay, snowCover(world.index(tx.toInt().coerceIn(0, world.width - 1), ty.toInt().coerceIn(0, world.height - 1))))
     }
 
-    /** The trees on a tile, or their shadows, each where the tile's own dice put it, the furthest first. */
+    /**
+     * The trees on a tile, or their shadows, each where the tile's own dice put it, the furthest first. Deep in a
+     * forest they close up and are older; on its edges and in thin woods they stand in a clump with open ground
+     * round it and are younger. Some take the kind of a wooded neighbour, so stands mix where they meet.
+     */
     private fun trees(wx: Int, wy: Int, shadow: Boolean) {
         val packed = world.trees[world.index(wx, wy)].toInt()
-        val n = Trees.count(packed)
+        // Each of the sim's trees (0 to 3) is drawn as two, so a full tile reads as forest.
+        val n = Trees.count(packed) * TREE_SPRITES
         if (n == 0) return
         val kind = Trees.kind(packed)
+        val wooded = IntArray(8)
+        var around = 0
+        for (dy in -1..1) for (dx in -1..1) {
+            if (dx == 0 && dy == 0) continue
+            val x = wx + dx
+            val y = wy + dy
+            if (x < 0 || y < 0 || x >= world.width || y >= world.height) continue
+            val p = world.trees[world.index(x, y)].toInt()
+            if (Trees.count(p) > 0) wooded[around++] = Trees.kind(p)
+        }
+        val deep = Trees.count(packed) == 3 && around >= 6
+        val age = if (around >= 7) 1 else if (around <= 3) -1 else 0
+        val c = LandPainter.dice(wx, wy, 97)
+        val cx = 0.3f + (c and 255) / 255f * 0.4f
+        val cy = 0.3f + ((c shr 8) and 255) / 255f * 0.4f
         val spots = ArrayList<FloatArray>(n)
         for (k in 0 until n) {
             val d = LandPainter.dice(wx, wy, k)
-            // Spread over the middle of the tile so they don't crowd onto the track next door.
-            val tx = wx + 0.22f + (d and 255) / 255f * 0.56f
-            val ty = wy + 0.22f + ((d shr 8) and 255) / 255f * 0.56f
-            spots += floatArrayOf(view.toViewX(tx, ty) + view.toViewY(tx, ty), tx, ty, ((d shr 16) and 255).toFloat())
+            val jx = (d and 255) / 255f
+            val jy = ((d shr 8) and 255) / 255f
+            // Kept off the tile's edges so they don't crowd onto the track next door.
+            val (ux, uy) = if (deep) {
+                // Close canopy: a loose three by two grid.
+                0.14f + (k % 3 + jx) * 0.24f to 0.14f + (k / 3 % 2 + jy) * 0.36f
+            } else {
+                (cx + (jx - 0.5f) * 0.5f).coerceIn(0.12f, 0.88f) to (cy + (jy - 0.5f) * 0.5f).coerceIn(0.12f, 0.88f)
+            }
+            val tx = wx + ux
+            val ty = wy + uy
+            val look = ((d shr 16) and 255) % Atlas.TREE_LOOKS + age
+            val mixed = ((d shr 24) and 3) == 0 && around > 0
+            val own = if (mixed) wooded[((d shr 26) and 7) % around] else kind
+            spots += floatArrayOf(view.toViewX(tx, ty) + view.toViewY(tx, ty), tx, ty, look.coerceIn(0, Atlas.TREE_LOOKS - 1).toFloat(), own.toFloat())
         }
         spots.sortBy { it[0] }
         val cells = treeCells(shadow)
-        for (sp in spots) standing(cells[kind * Atlas.TREE_LOOKS + sp[3].toInt() % Atlas.TREE_LOOKS], sp[1], sp[2], shadow)
+        for (sp in spots) standing(cells[sp[4].toInt() * Atlas.TREE_LOOKS + sp[3].toInt()], sp[1], sp[2], shadow)
     }
 
     /** The trees for the time of year: leafy ones turning in autumn and bare from late autumn till spring. */
@@ -1130,6 +1161,8 @@ internal class ChunkBaker(
     }
 
     companion object {
+        /** Tree sprites drawn for each of the sim's trees on a tile. */
+        private const val TREE_SPRITES = 2
         // Light from the top left of the screen and above, in (u, v, up), and how strongly slopes take it.
         private const val LX = -1f
         private const val LY = -0.55f
