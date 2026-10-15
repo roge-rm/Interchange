@@ -389,11 +389,14 @@ def track(m, piece, shape, layer):
         rails.append(_strip(m, ra, rb, offs, 0.004, 0.004, 0.26, 0.36, rail, ends=ends, caps=False))
         rails.append(_strip(m, ra, rb, offs, 0.009, 0.009, 0.36, 0.42, head, ends=ends, caps=False))
     # The track going on past each end, unseen, so the shade of the rails and ballast runs on into the next piece.
+    # The bed layer gets no ballast past its ends: it would shut the light off the ballast's end face, which shows
+    # black at a dead end. Where the track runs on, the next piece's ballast covers that face.
     unseen = rails if layer == "bed" else bed
     for (p, q, e) in ((a, b, ends[0]), (b, a, ends[1])):
         dx, dy = (p[0] - q[0]) / length, (p[1] - q[1]) / length
         far = (p[0] + dx * GHOST, p[1] + dy * GHOST)
-        unseen.append(_strip(m, p, far, offs, 0.17, 0.23, 0.0, 0.14, gravel(), ends=(e, e)))
+        if layer != "bed":
+            unseen.append(_strip(m, p, far, offs, 0.17, 0.23, 0.0, 0.14, gravel(), ends=(e, e)))
         for side in (-1, 1):
             r0 = (p[0] + e[0] * side * 0.095, p[1] + e[1] * side * 0.095)
             r1 = (far[0] + e[0] * side * 0.095, far[1] + e[1] * side * 0.095)
