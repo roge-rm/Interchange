@@ -177,11 +177,17 @@ private fun Root(settings: Settings) {
     // The host last closed, stopping on a thread of its own; opening again waits for it so the port is free.
     val closing = remember { java.util.concurrent.atomic.AtomicReference<Thread?>(null) }
 
+    /** Stops [h] off the main thread, after any host already stopping, so waiting on the last waits on them all. */
+    fun stopHost(h: Host) {
+        val before = closing.get()
+        closing.set(Thread { before?.join(); h.stop() }.apply { start() })
+    }
+
     /** Closes the game to players, off the main thread. */
     fun closeHost() {
         val h = host ?: return
         host = null
-        closing.set(Thread { h.stop() }.apply { start() })
+        stopHost(h)
     }
 
     /** Stops the game running: closes it to players or leaves the game joined, then stops its thread. */
@@ -257,7 +263,7 @@ private fun Root(settings: Settings) {
                     .onFailure { hostProblem = cantOpen.replace("%s", it.message ?: "") }
             } finally {
                 opening = false
-                if (!kept) made?.let { h -> Thread { h.stop() }.start() }
+                if (!kept) made?.let { stopHost(it) }
             }
         }
     }
