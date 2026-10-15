@@ -79,6 +79,8 @@ internal class Renderer(private val world: World, private val sheets: Sheets, pr
     /** A weather batch's chunks baked so far and how many are still to come. */
     private val held = HashMap<Key, Entry>()
     private var batch = 0
+    /** The chunks in the weather batch. */
+    private val batchKeys = HashSet<Key>()
     /**
      * The weather as the map shows it, every chunk baked from the same copy so neighbours agree; the next copy, while
      * the chunks on screen bake from it to be swapped in together; and when the last copy was asked for.
@@ -156,6 +158,7 @@ internal class Renderer(private val world: World, private val sheets: Sheets, pr
         // Chunks on screen from another copy of the weather than the one they'll show with, to bake again together.
         val showing = next ?: weather
         val stale = ArrayList<Key>()
+        var missing = false
         forEachVisible(view, level) { key, left, top, right, bottom ->
             val entry = cache[key]
             val version = versionOf(view, level, key.cx, key.cy)
@@ -170,6 +173,7 @@ internal class Renderer(private val world: World, private val sheets: Sheets, pr
             } else {
                 drawFallback(view, level, key)
                 wanted += key to 1f
+                missing = true
             }
         }
         // The coarsest level round about, a few chunks that always have something to show while sharper ones bake.
@@ -178,7 +182,7 @@ internal class Renderer(private val world: World, private val sheets: Sheets, pr
             if (entry != null) entry.used = frame
             if (entry == null) wanted += key to 1.5f
             else if (entry.version != versionOf(view, COARSE, key.cx, key.cy)) wanted += key to 4f
-            else if (entry.weather != weather.id) wanted += key to 4f
+            else if (entry.weather != showing.id) wanted += key to 4f
         }
         // Once the screen has all it needs: a ring round it at this level, the way it's moving first, then the next level
         // out for zooming out, while there's room for them.
@@ -200,9 +204,10 @@ internal class Renderer(private val world: World, private val sheets: Sheets, pr
                 if (entry == null || entry.version != versionOf(view, level + 1, key.cx, key.cy)) wanted += key to 3f
             }
         }
-        // Once the screen has all it needs: every chunk on it from another copy of the weather, shown all at once when
-        // the last is done, so no seams show between chunks of different days. A new copy is shown from then on.
-        if (held.isEmpty() && batch == 0 && wanted.none { it.second < 2f }) {
+        // Once every chunk on screen is there: every one from another copy of the weather, shown all at once when the
+        // last is done, so no seams show between chunks of different days. A new copy is shown from then on. Chunks
+        // baking again for building don't hold it up, or a busy screen would keep old weather beside new for good.
+        if (held.isEmpty() && batch == 0 && !missing) {
             val sheet = sheets.get(level)
             if (sheet != null) {
                 if (stale.isEmpty()) {
@@ -210,12 +215,15 @@ internal class Renderer(private val world: World, private val sheets: Sheets, pr
                     next = null
                 } else {
                     batch = stale.size
+                    batchKeys += stale
                     for (key in stale) bake(key, sheet, hold = true, weather = showing)
                 }
             }
         }
         for ((key, priority) in wanted.sortedBy { it.second }) {
             if (key in baking) continue
+            // Building on a chunk in the weather batch waits till the batch is in, so the batch always ends.
+            if (key in batchKeys) continue
             val ahead = priority >= 2f
             if (if (ahead) behind.size >= BACKGROUND else baking.size - behind.size >= BAKERS) continue
             // Waits for its level's sheet to be unpacked; asking starts that.
@@ -373,8 +381,11 @@ internal class Renderer(private val world: World, private val sheets: Sheets, pr
         return sum
     }
 
-    /** Bakes [key] off the main thread and puts it in the cache, or with [hold] keeps it till the rest of its batch is done. */
-    private fun bake(key: Key, sheet: LevelSheets, hold: Boolean = false, ahead: Boolean = hold, weather: WeatherCopy = shown!!) {
+    /**
+     * Bakes [key] off the main thread and puts it in the cache, or with [hold] keeps it till the rest of its batch is
+     * done. It bakes from the newest copy of the weather, so it's never left behind the batch that's showing it.
+     */
+    private fun bake(key: Key, sheet: LevelSheets, hold: Boolean = false, ahead: Boolean = hold, weather: WeatherCopy = next ?: shown!!) {
         // The view as it is now, kept apart so turning while this bakes doesn't change it.
         val bakeView = View(world.width, world.height).also { it.turnBy(key.turn) }
         val version = versionOf(bakeView, key.level, key.cx, key.cy)
@@ -395,6 +406,7 @@ internal class Renderer(private val world: World, private val sheets: Sheets, pr
                 if (--batch == 0) {
                     for ((k, e) in held) install(k, e)
                     held.clear()
+                    batchKeys.clear()
                 }
             }
             revision.intValue++
