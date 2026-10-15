@@ -78,12 +78,20 @@ class GameThread(private val make: () -> World, val remote: Remote? = null) {
         thread.interrupt()
     }
 
+    /** Waits up to [millis] for the thread to end. */
+    fun join(millis: Long) = thread.join(millis)
+
     /** Asks for [command] to run, from any thread. */
     fun request(command: Command) {
         incoming.add(command)
     }
 
+    /** Stopping interrupts the thread wherever it is; that ends it quietly, and the step it was in isn't published. */
     private fun loop() {
+        try { run() } catch (_: InterruptedException) {}
+    }
+
+    private fun run() {
         val g = Game(make())
         remote?.let { r -> r.welcome?.let { w -> g.follow(w.frame, w.pending, r::send) } }
         game = g

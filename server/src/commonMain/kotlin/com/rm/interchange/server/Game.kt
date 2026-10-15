@@ -118,6 +118,9 @@ class Game(world: World) {
     /** Hears when this copy goes out of step. */
     var log: (String) -> Unit = {}
 
+    /** Called after each frame runs, with [frame] already the next; lets a test compare copies at the same frame. */
+    var afterFrame: ((Game) -> Unit)? = null
+
     private fun outOfStep(why: String) {
         outOfStep = true
         outOfStepWhy = why
@@ -131,6 +134,7 @@ class Game(world: World) {
         while (pending.isNotEmpty() && pending.first().frame <= frame) run(pending.removeFirst().command)
         repeat(ticks) { world.step() }
         frame++
+        afterFrame?.invoke(this)
     }
 
     /** Runs [command]; one that throws, from a broken or hostile player, is left half done the same everywhere. */

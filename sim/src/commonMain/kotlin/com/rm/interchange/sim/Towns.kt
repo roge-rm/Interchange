@@ -391,6 +391,8 @@ private fun World.renew(t: Town, x: Int, y: Int, year: Int): Boolean {
     house[i] = packHouse(h, houseFacing(house[i].toInt())).toShort()
     houseYear[i] = year.toShort()
     t.population += new.residents - old.residents
+    // The people round a station change with it; a loaded copy works them out afresh.
+    catchmentDirty = true
     touched(x, y)
     townsChanged = true
     return true

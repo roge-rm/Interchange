@@ -84,9 +84,12 @@ private fun World.freightSubsidy(): Subsidy? {
 }
 
 /** Whether station [s] serves [place] of a subsidy: an industry it reaches, or a town it's near the middle of. */
-private fun World.serves(s: Station, place: Int, town: Boolean): Boolean =
-    if (town) towns.getOrNull(place)?.let { chebyshev(s.signX, s.signY, it.x, it.y) <= SUBSIDY_TOWN_REACH } == true
-    else stationIndustries[s.id]?.contains(place) == true
+private fun World.serves(s: Station, place: Int, town: Boolean): Boolean {
+    if (town) return towns.getOrNull(place)?.let { chebyshev(s.signX, s.signY, it.x, it.y) <= SUBSIDY_TOWN_REACH } == true
+    // Asked as cargo's paid for, at any tick, so on a just loaded copy the reach may not be worked out yet.
+    if (catchmentDirty) workOutCatchment()
+    return stationIndustries[s.id]?.contains(place) == true
+}
 
 /**
  * What [paid] for [cargo] carried from [from] to [to] by [company] comes to with subsidies: an open one it matches

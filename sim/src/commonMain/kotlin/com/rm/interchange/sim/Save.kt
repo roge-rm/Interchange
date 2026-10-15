@@ -16,7 +16,7 @@ package com.rm.interchange.sim
  */
 object Save {
     private val MAGIC = "ICHG".encodeToByteArray()
-    const val VERSION = 27
+    const val VERSION = 28
 
     /** [world] as a save; [version] older than [VERSION] only for tests reading older saves. */
     fun write(world: World, version: Int = VERSION): ByteArray {
@@ -79,6 +79,7 @@ object Save {
                 writeCargo(w, t.cargo); w.long(t.profitThisYear); w.long(t.profitLastYear)
                 w.int(t.shared)
                 w.int(t.built); w.int(t.serviced); w.int(t.reliability); w.int(t.breakdowns); w.int(t.brokenFor); w.bool(t.servicing); w.bool(t.service)
+                if (version >= 28) w.bool(t.snowbound)
             }
             w.uvar(towns.size.toLong())
             for (t in towns) { w.string(t.name); w.int(t.x); w.int(t.y); w.int(t.grid); w.bool(t.french); w.int(t.population); w.int(t.houses); w.int(t.growIn); w.int(t.servedThisMonth); w.int(t.servedLastMonth); w.ints(t.approval)
@@ -146,6 +147,8 @@ object Save {
             w.uvar(told.size.toLong())
             for (t in told) { w.int(t.year); w.int(t.month); w.int(t.kind); w.int(t.about) }
             if (version >= 27) for (c in companies) w.bytes(c.insignia)
+            // Which ice roads were open at the last roads' day, so a copy doesn't drop every route on its first.
+            if (version >= 28) { val open = iceRoadsOpen; w.bool(open != null); if (open != null) w.bytes(ByteArray(open.size) { if (open[it]) 1 else 0 }) }
         }
         val body = Squeeze.pack(w.toByteArray())
         val out = ByteWriter(body.size + 16)
@@ -259,6 +262,7 @@ object Save {
                     if (version >= 11) {
                         t.built = r.int(); t.serviced = r.int(); t.reliability = r.int(); t.breakdowns = r.int(); t.brokenFor = r.int()
                         t.servicing = r.bool(); t.service = r.bool()
+                        if (version >= 28) t.snowbound = r.bool()
                     } else {
                         t.built = (tick / Calendar.TICKS_PER_DAY).toInt()
                         t.serviced = t.built
@@ -377,9 +381,11 @@ object Save {
             // Before version 27 there were no insignia: each company is given one, in order.
             if (version >= 27) for (c in companies) c.insignia = r.bytes().also { if (!Insignia.valid(it)) throw BadData("a bad insignia") }
             else for (c in companies) giveInsignia(c)
+            if (version >= 28 && r.bool()) iceRoadsOpen = r.bytes().let { b -> BooleanArray(b.size) { b[it].toInt() != 0 } }
         }
-        // Signal blocks and who's on which tile are worked out afresh before the next move.
+        // Signal blocks and who's on which tile are worked out afresh now, as a command can ask before the next move.
         world.networkChangedKeepingRoutes()
+        world.workOutBlocks()
         return world
     }
 

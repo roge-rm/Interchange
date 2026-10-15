@@ -108,7 +108,7 @@ class Train(
     var turnRound = false
     /** No way to where it's going; it tries again at this tick. */
     var lostUntil = 0L
-    /** Stuck in a drift, so the news is told once. Not saved. */
+    /** Stuck in a drift, so the news is told once. */
     var snowbound = false
 
     /** The day it was bought or last renewed, and last serviced. */

@@ -376,8 +376,11 @@ private const val OPEN_ODDS = 6
 const val NEWS_TICKS = Calendar.TICKS_PER_DAY * 10L
 
 /** The industry in reach of station [s] that takes cargo [c], the first by id, or null. */
-internal fun World.takerAt(s: Station, c: Int): Industry? =
-    stationIndustries[s.id].orEmpty().map { industries[it] }.firstOrNull { !it.closed && roster.industries[it.kind].takes(c) && !iceBound(it) }
+internal fun World.takerAt(s: Station, c: Int): Industry? {
+    // Asked at any tick, so on a just loaded copy the reach may not be worked out yet.
+    if (catchmentDirty) workOutCatchment()
+    return stationIndustries[s.id].orEmpty().map { industries[it] }.firstOrNull { !it.closed && roster.industries[it.kind].takes(c) && !iceBound(it) }
+}
 
 /** Whether [ind] is shut by ice: the water by it frozen hard enough to stop boats. */
 fun World.iceBound(ind: Industry): Boolean {

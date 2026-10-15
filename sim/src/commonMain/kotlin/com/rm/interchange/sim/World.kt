@@ -50,7 +50,7 @@ class World(val settings: NewGame, val roster: Roster = Roster.BASE, generate: B
     /** Buses, trucks and streetcars by id; a sold one leaves null. */
     val roadVehicles = ArrayList<RoadVehicle?>()
     internal var roadNetDirty = true
-    /** Salt depots by tile; and which ice roads were open yesterday, not saved. */
+    /** Salt depots by tile; and which ice roads were open yesterday. */
     val saltDepots = HashSet<Int>()
     internal var iceRoadsOpen: BooleanArray? = null
     /** Canals and locks (by tile, to the way they run) the companies have dug; docks to their station and the edge each faces; buoys to theirs. */

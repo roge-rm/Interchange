@@ -40,7 +40,12 @@ actual object Workers {
         }
         repeat(helpers) { pool.execute { try { work() } finally { done.countDown() } } }
         work()
-        done.await()
+        // Waits it out if interrupted, so no helper is still on the world when this returns; the interrupt is put back.
+        var interrupted = false
+        while (true) {
+            try { done.await(); break } catch (_: InterruptedException) { interrupted = true }
+        }
+        if (interrupted) Thread.currentThread().interrupt()
         failed.get()?.let { throw it }
     }
 }
