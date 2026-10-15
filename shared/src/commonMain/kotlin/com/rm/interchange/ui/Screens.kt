@@ -2,12 +2,16 @@ package com.rm.interchange.ui
 
 import com.rm.interchange.sim.townActionCost
 import com.rm.interchange.sim.townActionOpen
-import com.rm.interchange.sim.companyValue
 import com.rm.interchange.sim.salePrice
 import com.rm.interchange.sim.forSale
 import com.rm.interchange.sim.canTakeOver
 import com.rm.interchange.sim.takeoverPrice
 import com.rm.interchange.sim.companyNameFree
+import com.rm.interchange.sim.Goal
+import com.rm.interchange.sim.goalProgress
+import com.rm.interchange.sim.human
+import com.rm.interchange.sim.townNeeds
+import com.rm.interchange.sim.townSupplied
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -162,8 +166,12 @@ fun NewGameScreen(packs: List<Pack>, onStart: (NewGame, List<Pack>) -> Unit, onB
     var weather by remember { mutableStateOf(true) }
     var dayLength by remember { mutableIntStateOf(10) }
     var rivals by remember { mutableIntStateOf(2) }
+    var townGrowth by remember { mutableStateOf(com.rm.interchange.sim.TownGrowth.NORMAL) }
+    var goals by remember { mutableStateOf(com.rm.interchange.sim.GoalSet.NONE) }
     var off by remember { mutableStateOf(emptySet<String>()) }
-    val settings = NewGame(width, height, seed, year, region, sea, hills, trees, towns, industries, inflation, weather, dayLength, rivals, sharing, rivalLevel)
+    val settings = NewGame(width, height, seed, year, region, sea, hills, trees, towns, industries, inflation, weather, dayLength, rivals, sharing, rivalLevel, townGrowth, goals)
+    // The map's the same whatever the goals and growth, so changing them doesn't make it again.
+    val land = settings.copy(townGrowth = com.rm.interchange.sim.TownGrowth.NORMAL, goals = com.rm.interchange.sim.GoalSet.NONE)
     val chosen = packs.filter { it.id !in off }
     val clash = remember(chosen) {
         try {
@@ -174,10 +182,10 @@ fun NewGameScreen(packs: List<Pack>, onStart: (NewGame, List<Pack>) -> Unit, onB
         }
     }
     var preview by remember { mutableStateOf<ImageBitmap?>(null) }
-    LaunchedEffect(settings) {
+    LaunchedEffect(land) {
         // A moment's wait, so sliding through sizes doesn't make a map for every stop.
         delay(150)
-        preview = if (width.toLong() * height > PREVIEW_MOST) null else withContext(Dispatchers.Default) { mapPicture(World(settings)) }
+        preview = if (width.toLong() * height > PREVIEW_MOST) null else withContext(Dispatchers.Default) { mapPicture(World(land)) }
     }
     val newSeed = stringResource(Res.string.new_seed)
     val title: @Composable () -> Unit = { Text(stringResource(Res.string.new_game), color = c.text, fontSize = 24.sp, fontWeight = FontWeight.SemiBold) }
@@ -247,6 +255,19 @@ fun NewGameScreen(packs: List<Pack>, onStart: (NewGame, List<Pack>) -> Unit, onB
         val levels = stringArrayResource(Res.array.rival_levels)
         if (rivals > 0) StepSlider(stringResource(Res.string.rival_level), (0..2).toList(), rivalLevel, { levels.getOrElse(it) { "" } }) { rivalLevel = it }
         StepSlider(stringResource(Res.string.day_length), NewGame.DAY_LENGTHS.toList(), dayLength, { stringResource(Res.string.day_length_value, it) }) { dayLength = it }
+        val growthNames = stringArrayResource(Res.array.town_growth_levels)
+        val goalNames = stringArrayResource(Res.array.goal_sets)
+        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text(stringResource(Res.string.town_growth), color = c.text, fontSize = 15.sp)
+            FillChips(com.rm.interchange.sim.TownGrowth.entries, townGrowth, { g -> growthNames.getOrElse(g.ordinal) { g.name } }) { townGrowth = it }
+        }
+        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text(stringResource(Res.string.goals), color = c.text, fontSize = 15.sp)
+            val sets = com.rm.interchange.sim.GoalSet.entries
+            // Narrow, none and mixed above the three of one kind.
+            val rows = if (wide) listOf(sets) else listOf(listOf(sets.first(), sets.last()), sets.subList(1, sets.size - 1))
+            for (row in rows) FillChips(row, goals, { g -> goalNames.getOrElse(g.ordinal) { g.name } }) { goals = it }
+        }
         Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             TogglePill(stringResource(Res.string.inflation), inflation, Modifier.weight(1f).fillMaxHeight()) { inflation = it }
             TogglePill(stringResource(Res.string.weather), weather, Modifier.weight(1f).fillMaxHeight()) { weather = it }
@@ -439,7 +460,7 @@ fun OverlaysWindow(settings: Settings, onClose: () -> Unit) {
 
 /** The in-game menu: save, load, start afresh, play with others, settings, or back to the title screen. A game joined isn't saved here. */
 @Composable
-fun MenuWindow(saved: Boolean, canSave: Boolean, onSave: () -> Unit, onLoad: () -> Unit, onNew: () -> Unit, onPlayers: () -> Unit, onSettings: () -> Unit, onIndustries: () -> Unit, onCompanies: () -> Unit, onSubsidies: () -> Unit, onChronicle: () -> Unit, onTitle: () -> Unit, onClose: () -> Unit) {
+fun MenuWindow(saved: Boolean, canSave: Boolean, onSave: () -> Unit, onLoad: () -> Unit, onNew: () -> Unit, onPlayers: () -> Unit, onSettings: () -> Unit, onIndustries: () -> Unit, onCompanies: () -> Unit, onSubsidies: () -> Unit, onGoals: () -> Unit, onChronicle: () -> Unit, onTitle: () -> Unit, onClose: () -> Unit) {
     Window(stringResource(Res.string.menu), onClose, Glyph.Menu) {
         if (canSave) BigButton(stringResource(if (saved) Res.string.saved else Res.string.save), primary = !saved, glyph = Glyph.Save, onClick = onSave)
         BigButton(stringResource(Res.string.load), glyph = Glyph.Folder, onClick = onLoad)
@@ -447,6 +468,7 @@ fun MenuWindow(saved: Boolean, canSave: Boolean, onSave: () -> Unit, onLoad: () 
         BigButton(stringResource(Res.string.industries), glyph = Glyph.Layers, onClick = onIndustries)
         BigButton(stringResource(Res.string.companies), glyph = Glyph.Home, onClick = onCompanies)
         BigButton(stringResource(Res.string.subsidies), glyph = Glyph.Package, onClick = onSubsidies)
+        BigButton(stringResource(Res.string.goals), glyph = Glyph.Flag, onClick = onGoals)
         BigButton(stringResource(Res.string.chronicle), glyph = Glyph.Folder, onClick = onChronicle)
         BigButton(stringResource(Res.string.multiplayer), glyph = Glyph.People, onClick = onPlayers)
         BigButton(stringResource(Res.string.settings), glyph = Glyph.Gear, onClick = onSettings)
@@ -541,9 +563,10 @@ fun CompaniesWindow(world: World, onGo: (Float, Float) -> Unit, send: (com.rm.in
     Window(stringResource(Res.string.companies), onClose, Glyph.Home) {
         world.companies.getOrNull(me)?.takeIf { !it.gone }?.let { own -> RenameCompany(world, own, send) }
         // Best first, by what each is worth, those gone at the end.
-        val worth = world.companies.associate { it.id to world.companyValue(it) }
+        val worth = world.worth
         val mine = world.companies.getOrNull(me)?.money ?: 0L
-        for (co in world.companies.sortedWith(compareBy<com.rm.interchange.sim.Company> { it.gone }.thenByDescending { worth.getValue(it.id) }.thenBy { it.id })) {
+        // By index, as the game may add a company while this runs.
+        for (co in List(world.companies.size) { world.companies[it] }.sortedWith(compareBy<com.rm.interchange.sim.Company> { it.gone }.thenByDescending { worth[it.id] }.thenBy { it.id })) {
             val vehicles = world.trains.count { it?.owner == co.id } + world.roadVehicles.count { it?.owner == co.id } +
                 world.ships.count { it?.owner == co.id } + world.aircraft.count { it?.owner == co.id }
             val stations = world.stations.count { it != null && it.owner == co.id && !it.waypoint }
@@ -554,8 +577,8 @@ fun CompaniesWindow(world: World, onGo: (Float, Float) -> Unit, send: (com.rm.in
             val line = when {
                 co.gone -> stringResource(Res.string.company_gone)
                 world.forSale(co) -> stringResource(Res.string.company_for_sale, money(price))
-                takeover -> stringResource(Res.string.company_line_takeover, money(worth.getValue(co.id)), vehicles, stations, money(price))
-                else -> stringResource(Res.string.company_line, money(worth.getValue(co.id)), vehicles, stations)
+                takeover -> stringResource(Res.string.company_line_takeover, money(worth[co.id]), vehicles, stations, money(price))
+                else -> stringResource(Res.string.company_line, money(worth[co.id]), vehicles, stations)
             }
             ListRow(
                 Glyph.Home, name, line,
@@ -616,6 +639,10 @@ fun TownWindow(world: World, t: com.rm.interchange.sim.Town, send: (com.rm.inter
             val name = if (co.id == me) stringResource(Res.string.your_company) else co.name
             ListRow(Glyph.Station, stringResource(Res.string.exclusive_left, name, t.exclusiveDays), null, null, tint = com.rm.interchange.map.companyColour(co.id))
         }
+        if (world.settings.townGrowth == com.rm.interchange.sim.TownGrowth.SUPPLIED) {
+            TownNeeds(world, t)
+            Head(stringResource(Res.string.town_pay_for))
+        }
         val money = world.companies.getOrNull(me)?.money ?: 0L
         for (a in 0 until com.rm.interchange.sim.TownActions.COUNT) {
             val cost = world.townActionCost(a)
@@ -631,6 +658,103 @@ fun TownWindow(world: World, t: com.rm.interchange.sim.Town, send: (com.rm.inter
                 onClose()
             }) else null)
         }
+    }
+}
+
+/** What [t] needs each month to grow, when towns grow only supplied: what it got last month against what it needs, and whether it's growing. */
+@Composable
+private fun TownNeeds(world: World, t: com.rm.interchange.sim.Town) {
+    val c = LocalColors.current
+    val cargoes = stringArrayResource(Res.array.cargoes)
+    Head(stringResource(Res.string.town_needs))
+    val growing = t.funded > 0 || world.townSupplied(t)
+    ListRow(Glyph.Home, stringResource(if (growing) Res.string.town_growing else Res.string.town_not_growing), null, null, tint = if (growing) c.good else c.warn)
+    for (n in world.townNeeds(t)) {
+        val name = if (n.heating) stringResource(Res.string.town_heating) else cargoes.getOrElse(n.cargo) { "" }
+        val glyph = if (n.cargo == com.rm.interchange.sim.Cargo.PASSENGERS) Glyph.People else Glyph.Package
+        ListRow(glyph, name, stringResource(Res.string.town_need_got, Numbers.grouped(n.got.toLong()), Numbers.grouped(n.needed.toLong())), null) {
+            if (n.met) GlyphIcon(Glyph.Tick, c.good, Modifier.size(22.dp))
+        }
+    }
+}
+
+/**
+ * The game's goals, open ones first: what each asks, how far the company played here has got, or the leader for
+ * someone watching, and who met it and when, or that it was missed. A tap on one with a place goes there.
+ */
+@Composable
+fun GoalsWindow(world: World, onGo: (Float, Float) -> Unit, onClose: () -> Unit) {
+    val c = LocalColors.current
+    val me = LocalCompany.current
+    val months = stringArrayResource(Res.array.months)
+    Window(stringResource(Res.string.goals), onClose, Glyph.Flag) {
+        if (world.goals.isEmpty()) Text(stringResource(Res.string.no_goals), color = c.textDim, fontSize = 14.sp)
+        val order = world.goals.withIndex().sortedWith(compareBy({ it.value.status != Goal.OPEN }, { it.index }))
+        for ((i, g) in order) {
+            val place = goalPlace(world, i)
+            val by = world.companies.getOrNull(g.by)
+            // Watching, the players' company furthest on.
+            val viewer = if (me >= 0) me else List(world.companies.size) { world.companies[it] }.filter { !it.gone && world.human(it.id) }.maxByOrNull { world.goalProgress(g, it.id) }?.id ?: -1
+            val status = when (g.status) {
+                Goal.MET -> stringResource(
+                    Res.string.goal_met_by, if (g.by == me) stringResource(Res.string.your_company) else by?.name ?: "",
+                    stringResource(Res.string.month_year, months.getOrElse(g.doneMonth) { "" }, g.doneYear),
+                )
+                Goal.FAILED -> stringResource(Res.string.goal_missed, g.deadline)
+                else -> if (viewer >= 0) goalCount(world, g, viewer, me < 0) else ""
+            }
+            val glyph = when (g.kind) {
+                Goal.TOWN_POP -> Glyph.Home
+                Goal.DELIVER -> Glyph.Package
+                Goal.CONNECT -> Glyph.Station
+                else -> Glyph.Flag
+            }
+            Column(
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(c.button)
+                    .then(if (place != null) Modifier.clickable(role = Role.Button) { onGo(place.first, place.second) } else Modifier)
+                    .padding(horizontal = 10.dp, vertical = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    val tint = when (g.status) {
+                        Goal.MET -> by?.let { com.rm.interchange.map.companyColour(it.id) } ?: c.good
+                        Goal.FAILED -> c.textDim
+                        else -> null
+                    }
+                    Box(Modifier.size(36.dp).clip(RoundedCornerShape(8.dp)).background(tint ?: c.accent), contentAlignment = Alignment.Center) {
+                        GlyphIcon(glyph, if (tint != null) androidx.compose.ui.graphics.Color.White else c.onAccent, Modifier.size(18.dp))
+                    }
+                    Column(Modifier.weight(1f)) {
+                        Text(goalText(world, g), color = if (g.status == Goal.FAILED) c.textDim else c.text, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                        if (status.isNotEmpty()) Text(status, color = if (g.status == Goal.FAILED) c.bad else c.textDim, fontSize = 13.sp)
+                    }
+                    if (g.status == Goal.MET) GlyphIcon(Glyph.Tick, c.good, Modifier.size(22.dp))
+                }
+                if (g.status == Goal.OPEN && viewer >= 0) GoalBar(world, g, viewer)
+            }
+        }
+    }
+}
+
+/** How far [company] has got with [g], against its amount, the company named when [named]. */
+@Composable
+private fun goalCount(world: World, g: Goal, company: Int, named: Boolean): String {
+    val got = world.goalProgress(g, company).coerceAtLeast(0L)
+    val cash = g.kind == Goal.COMPANY_VALUE || g.kind == Goal.YEAR_PROFIT
+    val count = stringResource(Res.string.goal_progress, if (cash) money(got) else Numbers.grouped(got), if (cash) money(g.amount) else Numbers.grouped(g.amount))
+    // A town's people are the same for everyone.
+    return if (named && g.kind != Goal.TOWN_POP) stringResource(Res.string.goal_leader, world.companies.getOrNull(company)?.name ?: "", count) else count
+}
+
+/** How far [company] has got with [g], as a bar in its colour. */
+@Composable
+private fun GoalBar(world: World, g: Goal, company: Int) {
+    val c = LocalColors.current
+    val got = world.goalProgress(g, company).coerceAtLeast(0L)
+    val done = if (g.amount > 0) (got.toFloat() / g.amount).coerceIn(0f, 1f) else 1f
+    // Lined up under the goal's words, past its glyph.
+    Box(Modifier.fillMaxWidth().padding(start = 46.dp, bottom = 2.dp).height(8.dp).clip(RoundedCornerShape(4.dp)).background(c.page)) {
+        if (done > 0f) Box(Modifier.fillMaxHeight().fillMaxWidth(done).clip(RoundedCornerShape(4.dp)).background(com.rm.interchange.map.companyColour(company)))
     }
 }
 

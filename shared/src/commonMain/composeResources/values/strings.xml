@@ -339,6 +339,28 @@
     <string name="no_subsidies">Nothing on offer</string>
     <string name="news_subsidy_offered">Subsidy offered: %1$s</string>
     <string name="news_subsidy_won">%1$s wins the subsidy: %2$s</string>
+    <string name="goal_town">Grow %1$s to %2$s people by %3$d</string>
+    <string name="goal_deliver">%2$s: deliver %1$s to %3$s by %4$d</string>
+    <string name="goal_connect">Carry %1$s passengers between %2$s and %3$s in a year, by %4$d</string>
+    <string name="goal_value">A company worth %1$s by %2$d</string>
+    <string name="goal_profit">A year's profit of %1$s by %2$d</string>
+    <string name="news_goal_met">%1$s meets a goal: %2$s</string>
+    <string name="news_goal_failed">Goal missed: %1$s</string>
+    <string name="town_growth">Town growth</string>
+    <string-array name="town_growth_levels"><item>Normal</item><item>Supplied</item></string-array>
+    <string name="goals">Goals</string>
+    <string-array name="goal_sets"><item>None</item><item>Towns</item><item>Deliveries</item><item>Connections</item><item>Mixed</item></string-array>
+    <string name="no_goals">No goals in this game.</string>
+    <string name="goal_met_by">Met by %1$s, %2$s</string>
+    <string name="goal_missed">Missed at the end of %1$d</string>
+    <string name="goal_progress">%1$s of %2$s</string>
+    <string name="goal_leader">%1$s: %2$s</string>
+    <string name="town_needs">To grow each month</string>
+    <string name="town_need_got">%1$s of %2$s last month</string>
+    <string name="town_heating">Heating, coal or fuel</string>
+    <string name="town_growing">Growing</string>
+    <string name="town_not_growing">Not growing</string>
+    <string name="town_pay_for">Pay for</string>
     <string name="day_length_value">×%1$d</string>
 
     <!-- More orders, and funding industries -->

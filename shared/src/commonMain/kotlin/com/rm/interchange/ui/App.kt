@@ -85,6 +85,7 @@ import com.rm.interchange.sim.PAVED
 import com.rm.interchange.sim.houseOf
 import com.rm.interchange.sim.Industry
 import com.rm.interchange.sim.News
+import com.rm.interchange.sim.Goal
 import androidx.compose.ui.layout.onSizeChanged
 import com.rm.interchange.sim.industryAt
 import com.rm.interchange.sim.approvalLevel
@@ -129,7 +130,7 @@ fun App() {
 private enum class Screen { Title, NewGame, Playing }
 
 /** A window open over the screen. */
-private enum class Win { Menu, Load, Settings, Packs, Overlays, Finances, Industries, Companies, Insignia, Town, Subsidies, Chronicle, Multiplayer, Players, Chat }
+private enum class Win { Menu, Load, Settings, Packs, Overlays, Finances, Industries, Companies, Insignia, Town, Subsidies, Goals, Chronicle, Multiplayer, Players, Chat }
 
 @Composable
 private fun Root(settings: Settings) {
@@ -389,6 +390,7 @@ private fun Root(settings: Settings) {
                 onIndustries = { window = Win.Industries },
                 onCompanies = { window = Win.Companies },
                 onSubsidies = { window = Win.Subsidies },
+                onGoals = { window = Win.Goals },
                 onChronicle = { window = Win.Chronicle },
                 // Back to the title screen the game is saved and stopped; Continue loads it again.
                 onTitle = {
@@ -436,6 +438,7 @@ private fun Root(settings: Settings) {
             }
             Win.Chronicle -> runner?.game?.world?.let { w -> ChronicleWindow(w, { x, y -> goTo.value = x to y; window = null }) { window = null } }
             Win.Subsidies -> runner?.game?.world?.let { w -> SubsidiesWindow(w, { x, y -> goTo.value = x to y; window = null }) { window = null } }
+            Win.Goals -> runner?.game?.world?.let { w -> GoalsWindow(w, { x, y -> goTo.value = x to y; window = null }) { window = null } }
             Win.Town -> runner?.game?.world?.let { w -> w.towns.getOrNull(town)?.let { t -> TownWindow(w, t, { runner?.request(it) }) { window = null } } }
             Win.Multiplayer -> MultiplayerWindow(settings, ::joined) { window = null }
             Win.Players -> runner?.let { r ->
@@ -842,6 +845,7 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
                     if (n.kind == News.SLID) selected = Selection.RoadVehicle(n.about)
                     if (n.kind == News.DIVERTED) selected = Selection.Aircraft(n.about)
                     if (n.kind == News.SUBSIDY_OFFERED || n.kind == News.SUBSIDY_AWARDED) subsidyStart(world, n.about).let { (x, y) -> view.focusX = x; view.focusY = y }
+                    if (n.kind == News.GOAL_MET || n.kind == News.GOAL_FAILED) goalPlace(world, n.about)?.let { (x, y) -> view.focusX = x; view.focusY = y }
                     if (n.kind == News.WASHOUT || n.kind == News.FIRE || n.kind == News.AVALANCHE) {
                         view.focusX = n.about % world.width + 0.5f
                         view.focusY = n.about / world.width + 0.5f
@@ -1106,6 +1110,7 @@ internal fun newsCompany(world: World, n: News): com.rm.interchange.sim.Company?
     News.COMPANY_TROUBLE, News.COMPANY_FOR_SALE, News.COMPANY_BANKRUPT, News.COMPANY_RESTARTED, News.COMPANY_STARTED -> world.companies.getOrNull(n.about)
     News.COMPANY_BOUGHT -> world.companies.getOrNull(n.about shr 8)
     News.SUBSIDY_AWARDED -> world.companies.getOrNull(world.subsidies.getOrNull(n.about)?.company ?: -1)
+    News.GOAL_MET -> world.companies.getOrNull(world.goals.getOrNull(n.about)?.by ?: -1)
     else -> null
 }
 
@@ -1136,6 +1141,12 @@ internal fun newsText(world: World, n: News): String {
         val co = world.companies.getOrNull(world.subsidies.getOrNull(n.about)?.company ?: -1)
         val name = if (co == null || co.id == me) stringResource(Res.string.your_company) else co.name
         return stringResource(Res.string.news_subsidy_won, name, subsidyRoute(world, n.about))
+    }
+    if (n.kind == News.GOAL_MET || n.kind == News.GOAL_FAILED) {
+        val g = world.goals.getOrNull(n.about) ?: return ""
+        if (n.kind == News.GOAL_FAILED) return stringResource(Res.string.news_goal_failed, goalText(world, g))
+        val name = if (g.by == me) stringResource(Res.string.your_company) else world.companies.getOrNull(g.by)?.name ?: ""
+        return stringResource(Res.string.news_goal_met, name, goalText(world, g))
     }
     if (n.kind == News.PROSPECTING_FAILED) return stringResource(Res.string.news_prospect_failed, world.roster.industries.getOrNull(n.about)?.name(languageCode()) ?: "")
     if (n.kind == News.WASHOUT || n.kind == News.FIRE || n.kind == News.AVALANCHE) return stringResource(when (n.kind) { News.FIRE -> Res.string.news_fire; News.AVALANCHE -> Res.string.news_avalanche; else -> Res.string.news_washout })
@@ -1179,6 +1190,31 @@ fun subsidyRoute(world: World, i: Int): String {
     val cargo = stringArrayResource(Res.array.cargoes).getOrElse(s.cargo) { "" }
     fun place(id: Int) = if (s.towns) world.towns.getOrNull(id)?.name ?: "" else world.industries.getOrNull(id)?.let { industryName(world, it, lang) } ?: ""
     return stringResource(Res.string.subsidy_route, cargo, place(s.from), place(s.to))
+}
+
+/** What goal [g] asks, as words: the town to grow, what to deliver where, and so on, and by when. */
+@Composable
+fun goalText(world: World, g: Goal): String {
+    fun town(id: Int) = world.towns.getOrNull(id)?.name ?: ""
+    val amount = Numbers.grouped(g.amount)
+    return when (g.kind) {
+        Goal.TOWN_POP -> stringResource(Res.string.goal_town, town(g.town), amount, g.deadline)
+        Goal.DELIVER -> {
+            val cargo = stringArrayResource(Res.array.cargoes).getOrElse(g.cargo) { "" }
+            val place = if (g.industry >= 0) world.industries.getOrNull(g.industry)?.let { industryName(world, it, languageCode()) } ?: "" else town(g.town)
+            stringResource(Res.string.goal_deliver, amount, cargo, place, g.deadline)
+        }
+        Goal.CONNECT -> stringResource(Res.string.goal_connect, amount, town(g.town), town(g.town2), g.deadline)
+        Goal.COMPANY_VALUE -> stringResource(Res.string.goal_value, money(g.amount), g.deadline)
+        else -> stringResource(Res.string.goal_profit, money(g.amount), g.deadline)
+    }
+}
+
+/** Where goal [i] is on the map, its town or industry, or null for one about a company. */
+fun goalPlace(world: World, i: Int): Pair<Float, Float>? {
+    val g = world.goals.getOrNull(i) ?: return null
+    if (g.industry >= 0) return world.industries.getOrNull(g.industry)?.let { it.x + 1f to it.y + 1f }
+    return world.towns.getOrNull(g.town)?.let { it.x + 0.5f to it.y + 0.5f }
 }
 
 /** Where subsidy [i]'s route starts, as a map spot to go to. */

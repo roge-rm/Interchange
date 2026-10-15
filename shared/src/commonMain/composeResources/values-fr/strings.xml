@@ -322,6 +322,28 @@
     <string name="no_subsidies">Rien d’offert</string>
     <string name="news_subsidy_offered">Subvention offerte : %1$s</string>
     <string name="news_subsidy_won">%1$s remporte la subvention : %2$s</string>
+    <string name="goal_town">Faire grandir %1$s à %2$s habitants d’ici %3$d</string>
+    <string name="goal_deliver">%2$s : livrer %1$s à %3$s d’ici %4$d</string>
+    <string name="goal_connect">Transporter %1$s passagers entre %2$s et %3$s en un an, d’ici %4$d</string>
+    <string name="goal_value">Une compagnie qui vaut %1$s d’ici %2$d</string>
+    <string name="goal_profit">Un bénéfice annuel de %1$s d’ici %2$d</string>
+    <string name="news_goal_met">%1$s atteint un objectif : %2$s</string>
+    <string name="news_goal_failed">Objectif manqué : %1$s</string>
+    <string name="town_growth">Croissance des villes</string>
+    <string-array name="town_growth_levels"><item>Normale</item><item>Approvisionnée</item></string-array>
+    <string name="goals">Objectifs</string>
+    <string-array name="goal_sets"><item>Aucun</item><item>Villes</item><item>Livraisons</item><item>Liaisons</item><item>Mélange</item></string-array>
+    <string name="no_goals">Aucun objectif dans cette partie.</string>
+    <string name="goal_met_by">Atteint par %1$s, %2$s</string>
+    <string name="goal_missed">Manqué à la fin de %1$d</string>
+    <string name="goal_progress">%1$s sur %2$s</string>
+    <string name="goal_leader">%1$s : %2$s</string>
+    <string name="town_needs">Pour grandir, chaque mois</string>
+    <string name="town_need_got">%1$s sur %2$s le mois dernier</string>
+    <string name="town_heating">Chauffage, charbon ou carburant</string>
+    <string name="town_growing">En croissance</string>
+    <string name="town_not_growing">Ne grandit pas</string>
+    <string name="town_pay_for">Payer pour</string>
     <string name="day_length_value">×%1$d</string>
 
     <!-- Autres ordres, et financer des industries -->

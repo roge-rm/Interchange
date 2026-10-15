@@ -17,6 +17,7 @@
 # Settings go in a .env file next to this one, or the environment:
 #   SERVER_NAME, GAME_PORT, PASSWORD, LAN_DISCOVERY (false to stay off the list),
 #   for a new game MAP_SIZE, SEED, START_YEAR, REGION, RIVALS, DAY_LENGTH,
+#   TOWN_GROWTH, GOALS,
 #   and for the admin page ADMIN_PASSWORD (needed, your own), WEB_PORT, WEB_BIND,
 #   HTTPS and FORWARDED_ALLOW_IPS (the reverse proxy's address, 127.0.0.1 unless set).
 
@@ -41,6 +42,8 @@ services:
       INTERCHANGE_REGION: "${REGION:-MIXED}"
       INTERCHANGE_RIVALS: "${RIVALS:-2}"
       INTERCHANGE_DAY_LENGTH: "${DAY_LENGTH:-10}"
+      INTERCHANGE_TOWN_GROWTH: "${TOWN_GROWTH:-NORMAL}"
+      INTERCHANGE_GOALS: "${GOALS:-NONE}"
     volumes:
       # The game and who plays which company. Delete it and the next start makes a new map.
       - state:/state

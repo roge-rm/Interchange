@@ -126,6 +126,12 @@ class World(val settings: NewGame, val roster: Roster = Roster.BASE, generate: B
     val rivals = ArrayList<Rival>()
     /** Every subsidy offered, open or run out, in the order offered. */
     val subsidies = ArrayList<Subsidy>()
+    /** The game's goals, met, failed or open, in the order set. */
+    val goals = ArrayList<Goal>()
+    /** What each company is worth, as of the day's start. Worked out in the game, not saved, so the screen can read it. */
+    val worth = LongArray(MAX_COMPANIES)
+    /** The town each station sign's tile delivers to, by [stationTown], or -1. Worked out as needed and not saved. */
+    internal val stationTowns = HashMap<Int, Int>()
 
     // What's built on the track, by id; a removed one leaves null.
     val stations = ArrayList<Station?>()
@@ -205,6 +211,7 @@ class World(val settings: NewGame, val roster: Roster = Roster.BASE, generate: B
             companies[0].name = playerCompanyName(0)
             giveInsignia(companies[0])
             startRivals(settings.rivals)
+            makeGoals()
         }
     }
 
@@ -318,11 +325,13 @@ class World(val settings: NewGame, val roster: Roster = Roster.BASE, generate: B
             roadsDay()
             townsDay()
             rivalsDay()
+            worthDay()
             if (Calendar.dayOfMonth(startYear, day) == 1 && day > 0) {
                 companiesMonth()
                 subsidiesMonth()
                 passengersMonth()
                 industriesMonth()
+                goalsMonth()
             }
             if (Calendar.newYear(startYear, day) && day > 0) {
                 passengersYear()
@@ -378,6 +387,8 @@ class World(val settings: NewGame, val roster: Roster = Roster.BASE, generate: B
         for (f in weather.fronts) { mix(f.x.toLong()); mix(f.y.toLong()); mix(f.life.toLong()) }
         for (t in towns) { mix(t.population.toLong()); mix(t.growIn.toLong()); mix(t.servedThisMonth.toLong()); for (a in t.approval) mix(a.toLong())
             mix(t.roadWorks.toLong()); mix(t.funded.toLong()); mix(t.exclusive.toLong()); mix(t.exclusiveDays.toLong()); for (a in t.statue) mix(a.toLong()) }
+        for (t in towns) { mix(t.mailThisMonth.toLong()); mix(t.mailLastMonth.toLong()); mix(t.servedLastMonth.toLong()); for (v in t.delivered) mix(v.toLong()); for (v in t.deliveredLastMonth) mix(v.toLong()) }
+        for (g in goals) { mix(g.kind.toLong()); mix(g.amount); mix(g.deadline.toLong()); mix(g.status.toLong()); mix(g.by.toLong()); mix(g.doneYear.toLong()); mix(g.doneMonth.toLong()); mix(g.cargo.toLong()); mix(g.town.toLong()); mix(g.town2.toLong()); mix(g.industry.toLong()); mix(g.from.toLong()); for (v in g.count) mix(v) }
         for (ind in industries) { mix(if (ind.closed) 1L else 0L); mix(ind.level.toLong()); mix(ind.brought.toLong()); for (m in ind.made) mix(m.toLong()) }
         for (s in stations) if (s != null) {
             for (c in s.cargo) for (p in c) { mix(p.dest.toLong()); mix(p.count.toLong()); mix(p.credit) }

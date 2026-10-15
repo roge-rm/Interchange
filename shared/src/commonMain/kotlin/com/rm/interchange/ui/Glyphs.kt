@@ -21,7 +21,7 @@ enum class Glyph {
     Pause, Play, Speed, TurnLeft, TurnRight, Remove, Lift, Menu,
     Save, Folder, Plus, Gear, Home, Package, Layers, Grid, Heights, Renew, Back, Waypoint, Wires, Shed, Fence, OneWay, Dome,
     TrackAuto, PieceX, PieceY, PieceN, PieceE, PieceS, PieceW,
-    Chat, People,
+    Chat, People, Flag, Tick,
 }
 
 /** [glyph] drawn in [tint] on a 24 unit square scaled to fit. */
@@ -134,6 +134,9 @@ private class GlyphPen(val scope: DrawScope, val u: Float, val dx: Float, val dy
             Glyph.Chat -> { shape(false, 4f, 5f, 20f, 5f, 20f, 16f, 11f, 16f, 6f, 20f, 7f, 16f, 4f, 16f); line(8f, 9f, 16f, 9f, 1.5f); line(8f, 12.5f, 13f, 12.5f, 1.5f) }
             // Two people, one a little behind the other.
             Glyph.People -> { circle(9f, 8f, 3f); arc(9f, 20f, 6f, 180f, 180f); circle(16f, 7f, 2.5f); arc(16f, 18f, 5f, 200f, 120f) }
+            // A flag on a pole, its free edge cut in.
+            Glyph.Flag -> { line(6f, 3f, 6f, 21f); shape(false, 6f, 4f, 19f, 4f, 16f, 8.5f, 19f, 13f, 6f, 13f) }
+            Glyph.Tick -> open(5f, 12.5f, 10f, 17.5f, 19f, 7f)
             // A tile seen from above as the map shows it, and the piece across it, between the middles of two edges.
             Glyph.PieceX -> { tile(); line(7.5f, 8f, 16.5f, 16f, 3f) }
             Glyph.PieceY -> { tile(); line(16.5f, 8f, 7.5f, 16f, 3f) }

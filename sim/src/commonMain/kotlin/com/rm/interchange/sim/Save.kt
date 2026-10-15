@@ -16,7 +16,7 @@ package com.rm.interchange.sim
  */
 object Save {
     private val MAGIC = "ICHG".encodeToByteArray()
-    const val VERSION = 28
+    const val VERSION = 29
 
     /** [world] as a save; [version] older than [VERSION] only for tests reading older saves. */
     fun write(world: World, version: Int = VERSION): ByteArray {
@@ -25,6 +25,7 @@ object Save {
             val g = settings
             w.int(g.width); w.int(g.height); w.long(g.seed); w.int(g.startYear); w.int(g.region.ordinal)
             w.int(g.sea); w.int(g.hills); w.int(g.trees); w.int(g.towns); w.int(g.industries); w.bool(g.inflation); w.bool(g.weather); w.int(g.dayLength); w.int(g.rivals); w.bool(g.sharing); w.int(g.rivalLevel)
+            if (version >= 29) { w.int(g.townGrowth.ordinal); w.int(g.goals.ordinal) }
             w.uvar(roster.packs.size.toLong())
             for (p in roster.packs) { w.string(p.id); w.int(p.version); w.long(p.hash) }
             w.uvar(roster.engines.size.toLong())
@@ -149,6 +150,15 @@ object Save {
             if (version >= 27) for (c in companies) w.bytes(c.insignia)
             // Which ice roads were open at the last roads' day, so a copy doesn't drop every route on its first.
             if (version >= 28) { val open = iceRoadsOpen; w.bool(open != null); if (open != null) w.bytes(ByteArray(open.size) { if (open[it]) 1 else 0 }) }
+            if (version >= 29) {
+                for (t in towns) { w.int(t.mailThisMonth); w.int(t.mailLastMonth); w.ints(t.delivered); w.ints(t.deliveredLastMonth) }
+                w.uvar(goals.size.toLong())
+                for (g in goals) {
+                    w.int(g.kind); w.long(g.amount); w.int(g.deadline); w.int(g.cargo); w.int(g.town); w.int(g.town2); w.int(g.industry); w.int(g.from)
+                    w.int(g.status); w.int(g.by); w.int(g.doneYear); w.int(g.doneMonth)
+                    for (v in g.count) w.long(v)
+                }
+            }
         }
         val body = Squeeze.pack(w.toByteArray())
         val out = ByteWriter(body.size + 16)
@@ -382,6 +392,20 @@ object Save {
             if (version >= 27) for (c in companies) c.insignia = r.bytes().also { if (!Insignia.valid(it)) throw BadData("a bad insignia") }
             else for (c in companies) giveInsignia(c)
             if (version >= 28 && r.bool()) iceRoadsOpen = r.bytes().let { b -> BooleanArray(b.size) { b[it].toInt() != 0 } }
+            // Before version 29 there were no goals, and towns kept no tallies of mail and deliveries.
+            if (version >= 29) {
+                for (t in towns) {
+                    t.mailThisMonth = r.int(); t.mailLastMonth = r.int()
+                    for (into in listOf(t.delivered, t.deliveredLastMonth)) r.ints().let { a -> a.copyInto(into, endIndex = minOf(a.size, Cargo.COUNT)) }
+                }
+                repeat(r.uvar().toInt().also { if (it > 1000) throw BadData("too many goals") }) {
+                    val kind = r.int().also { if (it !in 0 until Goal.KINDS) throw BadData("a goal of an unknown kind") }
+                    val g = Goal(kind, r.long(), r.int(), cargo = r.int(), town = r.int(), town2 = r.int(), industry = r.int(), from = r.int())
+                    g.status = r.int(); g.by = r.int(); g.doneYear = r.int(); g.doneMonth = r.int()
+                    for (k in g.count.indices) g.count[k] = r.long()
+                    goals += g
+                }
+            }
         }
         // Signal blocks and who's on which tile are worked out afresh now, as a command can ask before the next move.
         world.networkChangedKeepingRoutes()
@@ -411,6 +435,8 @@ object Save {
             rivals = if (version >= 19) r.int().coerceIn(0, NewGame.MOST_RIVALS) else 0,
             sharing = if (version >= 25) r.bool() else true,
             rivalLevel = if (version >= 26) r.int().coerceIn(RivalLevel.EASY, RivalLevel.HARD) else RivalLevel.NORMAL,
+            townGrowth = if (version >= 29) TownGrowth.entries.getOrElse(r.int()) { TownGrowth.NORMAL } else TownGrowth.NORMAL,
+            goals = if (version >= 29) GoalSet.entries.getOrElse(r.int()) { GoalSet.NONE } else GoalSet.NONE,
         )
         if (settings.width !in 16..4096 || settings.height !in 16..4096) throw BadData("map size out of range")
         return settings

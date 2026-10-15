@@ -47,6 +47,10 @@ data class NewGame(
     val sharing: Boolean = true,
     /** How hard the computer's companies play, a [RivalLevel]. */
     val rivalLevel: Int = RivalLevel.NORMAL,
+    /** Whether towns grow by themselves or only when supplied, by [townNeeds]. */
+    val townGrowth: TownGrowth = TownGrowth.NORMAL,
+    /** The goals the game is made with, by [makeGoals]. */
+    val goals: GoalSet = GoalSet.NONE,
 ) {
     companion object {
         val DAY_LENGTHS = intArrayOf(1, 2, 4, 6, 10, 16)
@@ -56,6 +60,12 @@ data class NewGame(
         const val LAST_YEAR = 2050
     }
 }
+
+/** How towns grow: by themselves, faster when served, or only in months they were supplied with what they need. */
+enum class TownGrowth { NORMAL, SUPPLIED }
+
+/** Which goals a new game is given: none, towns to grow, deliveries to make, towns to connect, or some of each. */
+enum class GoalSet { NONE, TOWNS, DELIVERIES, CONNECTIONS, MIXED }
 
 /** How hard rivals play: easy ones leave the player alone, hard ones use everything they can. */
 object RivalLevel {

@@ -120,6 +120,11 @@ fun World.onOffer(cargo: Int, from: Int, to: Int, towns: Boolean): Boolean = sub
 /** What a won subsidy multiplies the fare by. */
 const val SUBSIDY_PAYS = 2
 
+/** Works out every company's worth for [World.worth], on the game thread, for the screen to read. */
+internal fun World.worthDay() {
+    for (i in companies.indices) if (i < worth.size) worth[i] = companyValue(companies[i])
+}
+
 /**
  * What [c] is worth: its money less its loan, and what its vehicles would sell for. Track, stations and the rest
  * aren't counted, as nobody would buy them.

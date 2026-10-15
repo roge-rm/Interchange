@@ -33,6 +33,12 @@ class Town(
     /** Passengers and mail picked up from its buildings this month and last. */
     var servedThisMonth = 0
     var servedLastMonth = 0
+    /** The mail among those, this month and last. */
+    var mailThisMonth = 0
+    var mailLastMonth = 0
+    /** Cargo delivered to it by cargo, this month and last: at stations it's the nearest town to, and not taken by an industry there. */
+    val delivered = IntArray(Cargo.COUNT)
+    val deliveredLastMonth = IntArray(Cargo.COUNT)
     /** What it thinks of each company, from -1000 to 1000, by company id; it starts out thinking well of them. */
     val approval = IntArray(MAX_COMPANIES) { START_APPROVAL }
     /** Calendar days left of road works someone paid for, holding road vehicles to a crawl on its streets. */
@@ -218,7 +224,8 @@ internal fun World.townsDay() {
     for (t in towns) {
         townActionsDay(t)
         if (--t.growIn > 0) continue
-        growTown(t, year)
+        // Growing only when supplied, a town that wasn't last month waits, unless it's paid to build.
+        if (settings.townGrowth == TownGrowth.NORMAL || t.funded > 0 || townSupplied(t)) growTown(t, year)
         // A town with a station taking its people somewhere grows three times as fast, and one paid to build faster still.
         val days = (40 - t.houses / 8).coerceIn(10, 40) + rng.below(10)
         t.growIn = if (t.funded > 0) FUNDED_GROW_DAYS else if (t.servedLastMonth > 0) (days / 3).coerceAtLeast(3) else days

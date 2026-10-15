@@ -32,6 +32,7 @@ import org.jetbrains.compose.resources.stringResource
 private val HEADLINES = setOf(
     News.INDUSTRY_OPENS, News.INDUSTRY_CLOSES, News.WASHOUT, News.FIRE, News.AVALANCHE, News.SUBSIDY_AWARDED,
     News.COMPANY_FOR_SALE, News.COMPANY_BOUGHT, News.COMPANY_BANKRUPT, News.COMPANY_RESTARTED, News.NEW_VEHICLE,
+    News.GOAL_MET, News.GOAL_FAILED,
 )
 
 /** The most months the chronicle shows at once, newest first. */
@@ -121,5 +122,6 @@ private fun storyPlace(world: World, t: Story): Pair<Float, Float>? = when (t.ki
         world.industries.getOrNull(t.about)?.let { it.x + 1f to it.y + 1f }
     News.WASHOUT, News.FIRE, News.AVALANCHE -> t.about % world.width + 0.5f to t.about / world.width + 0.5f
     News.SUBSIDY_OFFERED, News.SUBSIDY_AWARDED -> subsidyStart(world, t.about)
+    News.GOAL_MET, News.GOAL_FAILED -> goalPlace(world, t.about)
     else -> null
 }

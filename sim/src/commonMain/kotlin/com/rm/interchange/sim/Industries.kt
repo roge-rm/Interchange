@@ -77,6 +77,9 @@ class News(val kind: Int, val about: Int, val tick: Long) {
         const val NEW_VEHICLE = 18
         /** A player starts a company in a multiplayer game; [News.about] is the company. */
         const val COMPANY_STARTED = 20
+        /** A goal met, and one failed; [News.about] is its place in [World.goals]. */
+        const val GOAL_MET = 21
+        const val GOAL_FAILED = 22
     }
 }
 
@@ -360,6 +363,7 @@ internal fun World.closeIndustry(ind: Industry) {
     }
     catchmentDirty = true
     tell(News.INDUSTRY_CLOSES, ind.id)
+    failGoalsFor(ind)
 }
 
 /** An industry's level in sixteenths: at most 4 times and at least a quarter of its kind's. */
@@ -375,11 +379,15 @@ private const val OPEN_ODDS = 6
 /** How long news is kept for the screen. */
 const val NEWS_TICKS = Calendar.TICKS_PER_DAY * 10L
 
-/** The industry in reach of station [s] that takes cargo [c], the first by id, or null. */
+/** The industry in reach of station [s] that takes cargo [c], one an open delivery goal is for first, then the first by id, or null. */
 internal fun World.takerAt(s: Station, c: Int): Industry? {
     // Asked at any tick, so on a just loaded copy the reach may not be worked out yet.
     if (catchmentDirty) workOutCatchment()
-    return stationIndustries[s.id].orEmpty().map { industries[it] }.firstOrNull { !it.closed && roster.industries[it.kind].takes(c) && !iceBound(it) }
+    val takers = stationIndustries[s.id].orEmpty().map { industries[it] }.filter { !it.closed && roster.industries[it.kind].takes(c) && !iceBound(it) }
+    if (takers.size > 1 && goals.isNotEmpty()) {
+        takers.firstOrNull { t -> goals.any { it.status == Goal.OPEN && it.kind == Goal.DELIVER && it.cargo == c && it.industry == t.id } }?.let { return it }
+    }
+    return takers.firstOrNull()
 }
 
 /** Whether [ind] is shut by ice: the water by it frozen hard enough to stop boats. */

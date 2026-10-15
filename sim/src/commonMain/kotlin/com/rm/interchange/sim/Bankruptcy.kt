@@ -90,6 +90,7 @@ internal fun World.restart(c: Company, news: Boolean = true) {
     c.history.clear()
     c.monthIn = 0
     c.monthOut = 0
+    for (g in goals) g.count[c.id] = 0
     for (t in towns) {
         t.approval[c.id] = START_APPROVAL
         t.statue[c.id] = -1
@@ -106,6 +107,7 @@ internal fun World.takeOver(from: Company, to: Company) {
         if (owner[i] == a) { owner[i] = b; touched(i % width, i / width) }
         if (roadOwner[i] == a) { roadOwner[i] = b; touched(i % width, i / width) }
     }
+    for (g in goals) g.count[from.id] = 0
     for (s in stations) if (s != null && s.owner == from.id) s.owner = to.id
     for (d in depots) if (d != null && d.owner == from.id) d.owner = to.id
     for (s in spans) if (s != null && s.owner == from.id) s.owner = to.id

@@ -198,7 +198,7 @@ internal fun World.passengersDay() {
         val m = made.getOrPut(sid) { IntArray(Cargo.COUNT) }
         m[Cargo.PASSENGERS] += passengers
         m[Cargo.MAIL] += mail
-        towns.getOrNull(townOf[tile].toInt())?.let { it.servedThisMonth += passengers + mail }
+        towns.getOrNull(townOf[tile].toInt())?.let { it.servedThisMonth += passengers + mail; it.mailThisMonth += mail }
     }
     val travel = Calendar.travel(startYear, day)
     val post = Calendar.mail(startYear, day)
@@ -380,14 +380,16 @@ internal fun World.callAt(t: Carrier, s: Station, o: Int = 0) {
             when {
                 arrived && from != null -> {
                     var full = subsidised(company.id, c, from, s, pay(fare(c, p.count, from, s, days(p))))
+                    val taker = takerAt(s, c)
                     // Coal and fuel for a town's homes pay more in the cold.
-                    if ((c == Cargo.COAL || c == Cargo.FUEL) && takerAt(s, c) == null) full = full * heating(s) / 100
+                    if ((c == Cargo.COAL || c == Cargo.FUEL) && taker == null) full = full * heating(s) / 100
                     paid += full
                     // Freight for an industry here goes to it to be made into its own.
-                    takerAt(s, c)?.let { ind ->
+                    taker?.let { ind ->
                         ind.brought += p.count
                         ind.broughtThisMonth += p.count
                     }
+                    delivered(company.id, c, p.count, from, s, taker)
                     // The legs before were credited to the trains that carried them; this one gets the rest.
                     t.profitThisYear += full - p.credit
                 }
@@ -466,6 +468,10 @@ internal fun World.passengersMonth() {
     for (t in towns) {
         t.servedLastMonth = t.servedThisMonth
         t.servedThisMonth = 0
+        t.mailLastMonth = t.mailThisMonth
+        t.mailThisMonth = 0
+        t.delivered.copyInto(t.deliveredLastMonth)
+        t.delivered.fill(0)
         for (c in companies) {
             val near = stations.filter { s -> s != null && s.owner == c.id && maxOf(kotlin.math.abs(s.signX - t.x), kotlin.math.abs(s.signY - t.y)) <= TOWN_AREA }
             val a = t.approval[c.id]
