@@ -24,4 +24,7 @@ application {
 dependencies {
     implementation(project(":server"))
     implementation(libs.kotlinx.coroutines.core)
+    // JSON for the admin channel; no serialization plugin, as only JsonElement is used.
+    implementation(libs.kotlinx.serialization.json)
+    testImplementation(kotlin("test"))
 }

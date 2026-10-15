@@ -55,15 +55,18 @@ internal fun World.startRivals(n: Int) {
     while (homes.size < n) homes += towns[k++ % towns.size]
     for ((i, home) in homes.withIndex()) {
         val id = companies.size
-        companies += Company(id, rivalName(home), Prices.START_MONEY)
+        companies += Company(id, rivalName(home, id), Prices.START_MONEY)
         rivals += Rival(id, home.id).also { it.thinkOn = day + 3 + i * 9 }
     }
 }
 
-/** A name from the home town, in its own language. */
-private fun World.rivalName(t: Town): String {
-    val names = if (t.french) listOf("Transports %s", "Messageries %s", "Diligences %s") else listOf("%s Transport", "%s Coach Lines", "%s & District")
-    return names[rng.below(names.size)].replace("%s", t.name)
+/**
+ * A name from the home town in its own language, or from the nearest town no company is named after if another
+ * company has the home town's, and that no other company has.
+ */
+private fun World.rivalName(home: Town, id: Int): String {
+    val kind = rng.below(TOWN_NAME_KINDS)
+    return townCompanyName(nameTown(home, id), kind, id)
 }
 
 /** Each calendar day: any rival due to think does. */

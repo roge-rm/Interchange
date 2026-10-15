@@ -1,0 +1,6 @@
+fastapi==0.115.6
+# Plain uvicorn: uvloop and httptools are compiled extensions this page doesn't need.
+uvicorn==0.34.0
+jinja2==3.1.5
+itsdangerous==2.2.0
+python-multipart==0.0.20

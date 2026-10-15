@@ -151,13 +151,18 @@ internal fun World.dissolve(c: Company) {
 /** Whether company [id] is a player's, not the computer's. A rival gone under or bought out counts, as a player may take its slot. */
 fun World.human(id: Int): Boolean = id in companies.indices && rivals.none { it.company == id }
 
-/** Starts a player's company named [c].name in slot [c].company, if that slot is free. */
+/**
+ * Starts a player's company in slot [c].company, if that slot is free, named [c].name, or after a town if that's
+ * blank or taken.
+ */
 internal fun World.newCompany(c: Command.NewCompany) {
     val id = c.company
+    val given = cleanCompanyName(c.name)
+    fun name() = if (given.isNotEmpty() && companyNameFree(given, id)) given else playerCompanyName(id)
     when {
-        id == companies.size && id < MAX_COMPANIES -> companies += Company(id, c.name, price(Prices.START_MONEY))
+        id == companies.size && id < MAX_COMPANIES -> companies += Company(id, name(), price(Prices.START_MONEY))
         companies.getOrNull(id)?.gone == true -> {
-            companies[id].name = c.name
+            companies[id].name = name()
             restart(companies[id], news = false)
         }
         else -> return

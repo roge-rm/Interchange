@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block title %}Sign in - Interchange Server{% endblock %}
+{% block content %}
+<div class="panel narrow">
+  <h1>Sign in</h1>
+  {% if bad == 2 %}<p class="error">Too many wrong passwords. Try again in 15 minutes.</p>
+  {% elif bad %}<p class="error">That password wasn't right.</p>{% endif %}
+  <form method="post" action="/login">
+    <label for="password">Admin password</label>
+    <input id="password" name="password" type="password" autocomplete="current-password" autofocus>
+    <button type="submit" class="primary">Sign in</button>
+  </form>
+</div>
+{% endblock %}

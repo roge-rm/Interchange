@@ -271,6 +271,8 @@
     <string name="companies">Compagnies</string>
     <string name="your_company">Votre compagnie</string>
     <string name="company_line">Valeur %1$s · %2$d véhicules · %3$d gares</string>
+    <string name="company_name">Nom de la compagnie</string>
+    <string name="rename">Renommer</string>
     <string name="subsidies">Subventions</string>
     <string name="shared_track">Voies partagées</string>
     <string name="rival_level">Difficulté des rivaux</string>

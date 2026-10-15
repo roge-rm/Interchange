@@ -88,10 +88,18 @@ class HostTest {
         Thread.sleep(1_000)
         inStep(runner, a, b)
         val (names, loans) = on(runner) { g -> g.world.companies.map { it.name } to g.world.companies.map { it.loan } }
-        assertEquals("Ann", names[a.company])
-        assertEquals("Bo", names[b.company])
+        // Each company is named after a town, none the same.
+        assertEquals(names.size, names.toSet().size)
+        assertTrue(names.none { it == "Ann" || it == "Bo" || it.isBlank() })
         assertTrue(loans[0] > 0 && loans[a.company] > 0)
         assertEquals(3, host.players.size)
+        // A rename goes through like any command and every player sees it.
+        a.request(Command.RenameCompany(a.company, "  Ann's Lines "))
+        Thread.sleep(800)
+        inStep(runner, a, b)
+        assertEquals("Ann's Lines", on(b) { it.world.companies[a.company].name })
+        assertEquals("Ann's Lines", host.companies.first { it.id == a.company }.name)
+        assertEquals("Ann's Lines", b.remote!!.companies.first { it.id == a.company }.name)
     }
 
     @Test
@@ -220,7 +228,7 @@ class HostTest {
         Thread.sleep(500)
         val seen = Remote.look("127.0.0.1", host.port)
         assertEquals(listOf(0, a.company), seen.companies.map { it.id })
-        assertEquals("Ann", seen.companies[1].name)
+        assertEquals(on(runner) { it.world.companies[a.company].name }, seen.companies[1].name)
         val b = joining(host, "b", "Bo", join = a.company)
         assertEquals(a.company, b.company)
         Thread.sleep(500)

@@ -1,5 +1,6 @@
 # The Interchange dedicated server: the same game host a phone uses, with no
-# screen, keeping its game in /state. The build context is the repository root:
+# screen, keeping its game in /state, with its admin channel's socket in
+# /run/interchange. The build context is the repository root:
 #
 #     docker compose up --build
 
@@ -34,10 +35,10 @@ RUN set -eu; \
 RUN set -eu; \
     groupadd --gid 10003 interchange; \
     useradd --uid 10003 --gid 10003 --no-create-home --shell /usr/sbin/nologin interchange; \
-    mkdir -p /stage/opt/interchange /stage/state /stage/tmp; \
+    mkdir -p /stage/opt/interchange /stage/state /stage/run/interchange /stage/tmp; \
     cp -a /src/dedicated/build/install/interchange-server/lib /stage/opt/interchange/lib; \
     chmod -R a+rX /stage/opt/interchange; \
-    chown -R 10003:10003 /stage/state /stage/tmp; \
+    chown -R 10003:10003 /stage/state /stage/run /stage/tmp; \
     chmod 1777 /stage/tmp
 
 # A static busybox, for the healthcheck and a shell to look round with.
@@ -48,6 +49,7 @@ FROM gcr.io/distroless/base-debian12
 COPY --from=build /javaruntime /opt/java
 COPY --from=build /stage/opt/interchange /opt/interchange
 COPY --from=build --chown=10003:10003 /stage/state /state
+COPY --from=build --chown=10003:10003 /stage/run /run
 COPY --from=build /stage/tmp /tmp
 COPY --from=build /etc/passwd /etc/passwd
 COPY --from=build /etc/group /etc/group
@@ -55,9 +57,10 @@ COPY --from=busybox /bin/busybox /bin/busybox
 
 ENV JAVA_HOME=/opt/java \
     INTERCHANGE_STATE_DIR=/state \
-    INTERCHANGE_PORT=45688
+    INTERCHANGE_PORT=45688 \
+    INTERCHANGE_CONTROL_SOCKET=/run/interchange/control.sock
 
-VOLUME ["/state"]
+VOLUME ["/state", "/run/interchange"]
 EXPOSE 45688/tcp 45687/udp
 
 USER 10003:10003

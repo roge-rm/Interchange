@@ -1,14 +1,24 @@
-# An Interchange dedicated server.
+# An Interchange dedicated server, in two containers:
 #
+#     server  the game, listening on 45688 and keeping it in the state volume
+#     web     an admin page: the game, players, companies and the log, with
+#             pause, speed, chat, kick, clearing a company's password, save
+#             and a new game
+#
+#     cp .env.example .env     # and set ADMIN_PASSWORD
 #     docker compose up --build
+#
+# Then open http://<this machine>:8088.
 #
 # Host networking lets phones on the same network find the game by themselves,
 # as the game is announced by UDP broadcast, which doesn't cross a bridge
-# network. Without it, publish 45688/tcp and players type the address.
+# network. Without it, publish 45688/tcp and 8088/tcp and players type the address.
 #
 # Settings go in a .env file next to this one, or the environment:
 #   SERVER_NAME, GAME_PORT, PASSWORD, LAN_DISCOVERY (false to stay off the list),
-#   and for a new game MAP_SIZE, SEED, START_YEAR, REGION, RIVALS, DAY_LENGTH.
+#   for a new game MAP_SIZE, SEED, START_YEAR, REGION, RIVALS, DAY_LENGTH,
+#   and for the admin page ADMIN_PASSWORD (needed, your own), WEB_PORT, WEB_BIND,
+#   HTTPS and FORWARDED_ALLOW_IPS (the reverse proxy's address, 127.0.0.1 unless set).
 
 services:
   server:
@@ -34,6 +44,29 @@ services:
     volumes:
       # The game and who plays which company. Delete it and the next start makes a new map.
       - state:/state
+      # The admin channel's socket, shared with the web admin and never on the network.
+      - control:/run/interchange
+
+  web:
+    build:
+      context: .
+      dockerfile: docker/web.Dockerfile
+    image: interchange-web
+    container_name: interchange-web
+    network_mode: host
+    restart: unless-stopped
+    depends_on:
+      - server
+    environment:
+      ADMIN_PASSWORD: "${ADMIN_PASSWORD:?ADMIN_PASSWORD must be set, see .env.example}"
+      WEB_PORT: "${WEB_PORT:-8088}"
+      WEB_BIND: "${WEB_BIND:-0.0.0.0}"
+      # 1 only when something in front of it serves HTTPS, or the sign-in cookie never comes back.
+      HTTPS: "${HTTPS:-0}"
+      FORWARDED_ALLOW_IPS: "${FORWARDED_ALLOW_IPS:-127.0.0.1}"
+    volumes:
+      - control:/run/interchange
 
 volumes:
   state:
+  control:

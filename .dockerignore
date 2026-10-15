@@ -11,3 +11,4 @@ local.properties
 docs
 tools
 *.apk
+__pycache__

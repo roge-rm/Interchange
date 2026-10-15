@@ -127,6 +127,9 @@ sealed interface Command {
      */
     data class NewCompany(override val company: Int, val name: String) : Command
 
+    /** Renames the company giving it; a blank name or one another company has is left undone. */
+    data class RenameCompany(override val company: Int, val name: String) : Command
+
     /** Borrows a step more from the bank, or repays one. */
     data class Loan(override val company: Int, val borrow: Boolean) : Command
 

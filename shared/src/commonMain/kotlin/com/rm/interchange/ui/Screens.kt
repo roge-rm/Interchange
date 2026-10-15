@@ -5,6 +5,7 @@ import com.rm.interchange.sim.townActionOpen
 import com.rm.interchange.sim.companyValue
 import com.rm.interchange.sim.salePrice
 import com.rm.interchange.sim.forSale
+import com.rm.interchange.sim.companyNameFree
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -528,11 +529,15 @@ private fun MoneyGraph(history: List<LongArray>, modifier: Modifier) {
     }
 }
 
-/** Every company, the richest first, in its colour, with its money, vehicles and stations; a tap goes to a rival's home town. */
+/**
+ * Every company, the richest first, in its colour, with its money, vehicles and stations; a tap goes to a rival's
+ * home town. The player's own company can be renamed at the top.
+ */
 @Composable
 fun CompaniesWindow(world: World, onGo: (Float, Float) -> Unit, send: (com.rm.interchange.sim.Command) -> Unit, onClose: () -> Unit) {
     val me = LocalCompany.current
     Window(stringResource(Res.string.companies), onClose, Glyph.Home) {
+        world.companies.getOrNull(me)?.takeIf { !it.gone }?.let { own -> RenameCompany(world, own, send) }
         // Best first, by what each is worth, those gone at the end.
         val worth = world.companies.associate { it.id to world.companyValue(it) }
         val mine = world.companies.getOrNull(me)?.money ?: 0L
@@ -541,7 +546,7 @@ fun CompaniesWindow(world: World, onGo: (Float, Float) -> Unit, send: (com.rm.in
                 world.ships.count { it?.owner == co.id } + world.aircraft.count { it?.owner == co.id }
             val stations = world.stations.count { it != null && it.owner == co.id && !it.waypoint }
             val home = world.rivals.firstOrNull { it.company == co.id }?.let { world.towns.getOrNull(it.home) }
-            val name = if (co.id == me) stringResource(Res.string.your_company) else co.name
+            val name = co.name
             val price = world.salePrice(co)
             val line = when {
                 co.gone -> stringResource(Res.string.company_gone)
@@ -558,6 +563,22 @@ fun CompaniesWindow(world: World, onGo: (Float, Float) -> Unit, send: (com.rm.in
                     onClose()
                 }
             }
+        }
+    }
+}
+
+/** A field with the company's name and a button that renames it, if the name is new and no other company has it. */
+@Composable
+private fun RenameCompany(world: World, own: com.rm.interchange.sim.Company, send: (com.rm.interchange.sim.Command) -> Unit) {
+    var text by remember(own.id) { mutableStateOf(own.name) }
+    val clean = com.rm.interchange.sim.cleanCompanyName(text)
+    val ok = clean.isNotEmpty() && clean != own.name && world.companyNameFree(clean, own.id)
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Box(Modifier.weight(1f)) {
+            Field(text, stringResource(Res.string.company_name), { text = com.rm.interchange.sim.capCompanyName(it) })
+        }
+        ActionButton(stringResource(Res.string.rename), enabled = ok, strong = true) {
+            send(com.rm.interchange.sim.Command.RenameCompany(own.id, clean))
         }
     }
 }

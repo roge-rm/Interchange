@@ -60,7 +60,7 @@ private const val HEARD_NANOS = 4_000_000_000L
 
 /** A text box in the game's colours. */
 @Composable
-private fun Field(value: String, label: String, onChange: (String) -> Unit, secret: Boolean = false, keyboard: KeyboardType = KeyboardType.Text) {
+internal fun Field(value: String, label: String, onChange: (String) -> Unit, secret: Boolean = false, keyboard: KeyboardType = KeyboardType.Text) {
     val c = LocalColors.current
     OutlinedTextField(
         value, onChange, label = { Text(label) }, singleLine = true,
@@ -82,8 +82,8 @@ private sealed interface Joining {
     class Unreachable(val why: String) : Joining
 }
 
-/** A game looked at, to pick what to join as: where it is, its name and the companies in it. */
-private class Looked(val address: String, val port: Int, val name: String, val companies: List<CompanyInfo>)
+/** A game looked at, to pick what to join as: where it is, its name, the companies in it and who's playing. */
+private class Looked(val address: String, val port: Int, val name: String, val companies: List<CompanyInfo>, val players: List<Player>)
 
 /** The address and port typed, "host" or "host:port". */
 private fun parseAddress(text: String): Pair<String, Int> {
@@ -163,7 +163,7 @@ fun MultiplayerWindow(settings: Settings, onJoined: (Remote, World) -> Unit, onC
                     if (looked?.let { it.address == address && it.port == port } != true) {
                         asked = false; password = ""; askedCompany = false; companyPassword = ""
                     }
-                    looked = Looked(address, port, name, m.companies)
+                    looked = Looked(address, port, name, m.companies, m.players)
                 }.onFailure { e ->
                     error = if ((e as? Refused)?.reason == Reject.VERSION) otherVersion else cantReach.replace("%s", where(address, port))
                 }
@@ -237,7 +237,9 @@ fun MultiplayerWindow(settings: Settings, onJoined: (Remote, World) -> Unit, onC
             Head(game.name)
             ListRow(Glyph.Plus, stringResource(Res.string.new_company), null, if (busy == null) ({ join(game, Message.NEW_COMPANY) }) else null)
             for (co in game.companies) {
-                val line = listOfNotNull(pluralStringResource(Res.plurals.players_count, co.players, co.players), passwordLabel.takeIf { co.locked })
+                // Who's playing it.
+                val names = game.players.filter { it.company == co.id }.joinToString(", ") { it.name }
+                val line = listOfNotNull(names.ifEmpty { pluralStringResource(Res.plurals.players_count, co.players, co.players) }, passwordLabel.takeIf { co.locked })
                     .joinToString(" · ")
                 ListRow(Glyph.People, co.name.ifBlank { fallbackName }, line, if (busy == null) ({ join(game, co.id) }) else null, tint = companyColour(co.id))
             }

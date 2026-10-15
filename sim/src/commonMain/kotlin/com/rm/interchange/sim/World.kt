@@ -202,6 +202,7 @@ class World(val settings: NewGame, val roster: Roster = Roster.BASE, generate: B
             generateTowns(this)
             generateIndustries(this)
             startWeather()
+            companies[0].name = playerCompanyName(0)
             startRivals(settings.rivals)
         }
     }
@@ -279,6 +280,7 @@ class World(val settings: NewGame, val roster: Roster = Roster.BASE, generate: B
             is Command.FundIndustry -> fundIndustry(company, command)
             is Command.TownAction -> townAction(company, command)
             is Command.BuyCompany -> buyCompany(company, command)
+            is Command.RenameCompany -> renameCompany(company, command.name)
             is Command.NewCompany -> {}
         }
     }
@@ -364,7 +366,7 @@ class World(val settings: NewGame, val roster: Roster = Roster.BASE, generate: B
         for (y in 0 until height) mix(heightAt(width, y).toLong())
         for (c in companies) { mix(c.money); mix(c.loan) }
         for (r in rivals) { mix(r.thinkOn.toLong()); mix(r.routes.size.toLong()); mix(r.failed.size.toLong()) }
-        for (c in companies) { mix(c.money); mix(c.loan); mix(c.trouble.toLong()); mix(if (c.gone) 1 else 0) }
+        for (c in companies) { mix(c.money); mix(c.loan); mix(c.trouble.toLong()); mix(if (c.gone) 1 else 0); for (ch in c.name) mix(ch.code.toLong()) }
         for (s in subsidies) { mix(s.cargo.toLong()); mix(s.from.toLong()); mix(s.to.toLong()); mix(s.company.toLong()); mix(s.months.toLong()) }
         mix(costScale); mix(payScale)
         mix(weather.anomaly.toLong()); mix(weather.recent.toLong())

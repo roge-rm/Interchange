@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+{% block header_actions %}
+<form method="post" action="/logout" class="inline right">
+  <button type="submit" class="quiet">Sign out</button>
+</form>
+{% endblock %}
+{% block content %}
+
+<div id="offline" class="panel warning" hidden>
+  <h2>Server not reachable</h2>
+  <p id="offline-reason"></p>
+  <p class="hint">Still trying.</p>
+</div>
+
+<div id="online" hidden>
+  <div class="grid">
+    <div class="panel">
+      <h2 id="server-name">&nbsp;</h2>
+      <p id="making" class="hint" hidden>Making a new map&hellip;</p>
+      <dl class="readout">
+        <dt>Date</dt><dd id="s-date">-</dd>
+        <dt>Speed</dt><dd id="s-speed">-</dd>
+        <dt>Map</dt><dd id="s-map">-</dd>
+        <dt>Region</dt><dd id="s-region">-</dd>
+        <dt>Seed</dt><dd id="s-seed">-</dd>
+        <dt>Players</dt><dd id="s-players">-</dd>
+        <dt>Last save</dt><dd id="s-save">-</dd>
+        <dt>Uptime</dt><dd id="s-uptime">-</dd>
+        <dt>Port</dt><dd id="s-port">-</dd>
+      </dl>
+    </div>
+
+    <div class="panel">
+      <h2>Players</h2>
+      <table id="players"><tbody></tbody></table>
+      <p id="nobody" class="hint">Nobody is playing.</p>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>Companies</h2>
+    <table id="companies">
+      <thead><tr><th>Company</th><th class="numeric">Money</th><th class="numeric">Value</th><th class="numeric">Players</th><th class="act">Password</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </div>
+
+  <div class="panel">
+    <h2>Game</h2>
+    <div class="actions">
+      <button id="pause" class="primary">Pause</button>
+      <div class="segmented" id="speeds">
+        <button data-speed="1">1&times;</button>
+        <button data-speed="2">2&times;</button>
+        <button data-speed="4">4&times;</button>
+        <button data-speed="8">8&times;</button>
+      </div>
+      <button id="save">Save now</button>
+      <form id="chat-form" class="inline grow">
+        <input id="chat" name="message" placeholder="Say to everyone&hellip;" maxlength="300">
+        <button type="submit">Send</button>
+      </form>
+    </div>
+    <p id="action-result" class="hint"></p>
+  </div>
+
+  <div class="panel">
+    <h2>New game</h2>
+    <form id="new-game" class="fields">
+      <label>Map size<select name="size" id="n-size"></select></label>
+      <label>Seed<input name="seed" id="n-seed" inputmode="numeric" placeholder="Random"></label>
+      <label>Start year<input name="year" id="n-year" type="number"></label>
+      <label>Region<select name="region" id="n-region"></select></label>
+      <label>Rivals<input name="rivals" id="n-rivals" type="number" min="0"></label>
+      <label>Day length<select name="dayLength" id="n-day-length"></select></label>
+      <button type="submit" class="danger">Start new game</button>
+    </form>
+  </div>
+
+  <div class="panel">
+    <h2>Log</h2>
+    <pre id="log"></pre>
+  </div>
+</div>
+
+<script src="/static/app.js"></script>
+{% endblock %}

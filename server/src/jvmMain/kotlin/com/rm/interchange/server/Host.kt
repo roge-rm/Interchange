@@ -76,6 +76,8 @@ class Host(
     private val free = ArrayList(free)
     /** Slots promised to new companies whose commands haven't run yet, with the frame each runs in. */
     private val promised = HashMap<Int, Long>()
+    /** The last frame a company is renamed in, so the companies are sent again once it's run; -1 if none. Game thread only. */
+    private var renamedIn = -1L
     private val listener = Listener(port, ::connected)
     private val id = UUID.randomUUID().toString()
     @Volatile private var closed = false
@@ -112,9 +114,9 @@ class Host(
         runner.onGameThread { g -> g.broadcast = null }
     }
 
-    /** Says [text] to everyone, from the host. */
-    fun say(text: String) {
-        tell(Message.Chat(hostName, hostCompany, text.take(CHAT_MOST)))
+    /** Says [text] to everyone, from the host, or as [from] with no company. */
+    fun say(text: String, from: String? = null) {
+        tell(if (from != null) Message.Chat(from, -1, text.take(CHAT_MOST)) else Message.Chat(hostName, hostCompany, text.take(CHAT_MOST)))
     }
 
     /** Keeps [m] and sends it to everyone in, in the same order for all. */
@@ -210,7 +212,7 @@ class Host(
                 (free.removeFirstOrNull() ?: newSlot(w).let { slot ->
                     if (slot < 0) return refuse(s, Reject.FULL)
                     promised[slot] = g.frame + Game.DELAY
-                    g.request(Command.NewCompany(slot, s.name))
+                    g.request(Command.NewCompany(slot, ""))
                     slot
                 }).also { forget(it, g) }
             }
@@ -275,6 +277,11 @@ class Host(
 
     /** On the game thread: sends [m] to everyone in. A player far behind on reading is let go. */
     private fun broadcast(m: Message) {
+        if (m is Message.Scheduled && m.command is Command.RenameCompany) renamedIn = maxOf(renamedIn, m.frame)
+        if (m is Message.Frame && renamedIn in 0..m.frame) {
+            renamedIn = -1
+            sendPlayers()
+        }
         for (s in sessions) {
             if (!s.joined) continue
             if (s.connection.backlog > MAX_BACKLOG) {
