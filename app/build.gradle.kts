@@ -13,8 +13,8 @@ android {
         applicationId = "com.rm.interchange"
         minSdk = 27
         targetSdk = 37
-        versionCode = 42
-        versionName = "0.10.2"
+        versionCode = 43
+        versionName = "0.11.0"
     }
 
     buildTypes {
