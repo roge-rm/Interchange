@@ -8,6 +8,8 @@ package com.rm.interchange.sim
  * stations and depots taken up, its roads left to everyone. The player is
  * warned at four, seven and ten months and goes under after a year, or when
  * a hard rival buys it, and the bank sets them up with a new company.
+ * A player can also buy any computer company outright at a premium, as in
+ * OpenTTD's hostile takeover.
  */
 
 /** Months in trouble before the news warns, a company is offered for sale, a rival goes under, and the player does. */
@@ -24,6 +26,12 @@ fun World.forSale(c: Company): Boolean = !c.gone && c.trouble >= TROUBLE_FOR_SAL
 
 /** What buying [c] costs: what it's worth, debts and all, or nothing if it owes more than it has. */
 fun World.salePrice(c: Company): Long = companyValue(c).coerceAtLeast(0)
+
+/** What buying computer company [c] outright costs when it isn't for sale: half again what it's worth. */
+fun World.takeoverPrice(c: Company): Long = salePrice(c) * 3 / 2
+
+/** Whether a player can buy [c] outright: a computer company still running and not up for sale. */
+fun World.canTakeOver(c: Company): Boolean = !c.gone && !human(c.id) && !forSale(c)
 
 /** The end of each month, after interest: who's in trouble, warned, for sale or gone under. */
 internal fun World.troubleMonth() {
@@ -52,8 +60,12 @@ internal fun World.troubleMonth() {
 
 internal fun World.buyCompany(buyer: Company, c: Command.BuyCompany) {
     val target = companies.getOrNull(c.target) ?: return
-    if (target.id == buyer.id || !forSale(target)) return
-    val cost = salePrice(target)
+    if (target.id == buyer.id) return
+    val cost = when {
+        forSale(target) -> salePrice(target)
+        canTakeOver(target) && human(buyer.id) -> takeoverPrice(target)
+        else -> return
+    }
     if (buyer.money < cost) return
     val player = human(target.id)
     spend(buyer, Books.CONSTRUCTION, cost)

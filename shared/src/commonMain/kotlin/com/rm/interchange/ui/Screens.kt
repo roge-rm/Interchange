@@ -5,6 +5,8 @@ import com.rm.interchange.sim.townActionOpen
 import com.rm.interchange.sim.companyValue
 import com.rm.interchange.sim.salePrice
 import com.rm.interchange.sim.forSale
+import com.rm.interchange.sim.canTakeOver
+import com.rm.interchange.sim.takeoverPrice
 import com.rm.interchange.sim.companyNameFree
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -547,10 +549,12 @@ fun CompaniesWindow(world: World, onGo: (Float, Float) -> Unit, send: (com.rm.in
             val stations = world.stations.count { it != null && it.owner == co.id && !it.waypoint }
             val home = world.rivals.firstOrNull { it.company == co.id }?.let { world.towns.getOrNull(it.home) }
             val name = co.name
-            val price = world.salePrice(co)
+            val takeover = co.id != me && world.canTakeOver(co)
+            val price = if (takeover) world.takeoverPrice(co) else world.salePrice(co)
             val line = when {
                 co.gone -> stringResource(Res.string.company_gone)
                 world.forSale(co) -> stringResource(Res.string.company_for_sale, money(price))
+                takeover -> stringResource(Res.string.company_line_takeover, money(worth.getValue(co.id)), vehicles, stations, money(price))
                 else -> stringResource(Res.string.company_line, money(worth.getValue(co.id)), vehicles, stations)
             }
             ListRow(
@@ -560,9 +564,16 @@ fun CompaniesWindow(world: World, onGo: (Float, Float) -> Unit, send: (com.rm.in
                 insignia = co.insignia,
             ) {
                 if (co.id == me && !co.gone) ActionButton(stringResource(Res.string.insignia), onClick = onInsignia)
-                if (world.forSale(co)) ActionButton(stringResource(Res.string.buy_company), enabled = mine >= price, strong = true) {
-                    send(com.rm.interchange.sim.Command.BuyCompany(me, co.id))
-                    onClose()
+                if (world.forSale(co) || takeover) {
+                    var sure by remember(co.id) { mutableStateOf(false) }
+                    // A takeover asks again before paying.
+                    ActionButton(stringResource(if (sure) Res.string.buy_company_sure else Res.string.buy_company), enabled = mine >= price, strong = true) {
+                        if (takeover && !sure) sure = true
+                        else {
+                            send(com.rm.interchange.sim.Command.BuyCompany(me, co.id))
+                            onClose()
+                        }
+                    }
                 }
             }
         }

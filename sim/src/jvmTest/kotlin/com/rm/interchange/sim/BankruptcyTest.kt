@@ -119,4 +119,32 @@ class BankruptcyTest {
         assertEquals(0L, c.loan)
         assertTrue(c.money > 0)
     }
+
+    @Test
+    fun aPlayerCanBuyARivalOutrightAtAPremium() {
+        val w = game()
+        w.days(200)
+        val c = w.companies[w.rivals.first { it.routes.isNotEmpty() }.company]
+        assertTrue(!w.forSale(c) && w.canTakeOver(c))
+        assertTrue(!w.canTakeOver(w.companies[0]))
+        val price = w.takeoverPrice(c)
+        assertEquals(w.salePrice(c) * 3 / 2, price)
+        val me = w.companies[0]
+        // Not enough money, nothing happens.
+        me.money = price - 1
+        w.apply(Command.BuyCompany(0, c.id))
+        assertTrue(!c.gone)
+        me.money = price + 1000
+        val owed = c.money - c.loan
+        w.apply(Command.BuyCompany(0, c.id))
+        assertTrue(c.gone)
+        assertEquals(1000 + owed, me.money)
+        // Rivals can't take over a player that isn't for sale.
+        val other = World(NewGame(128, 128, 7, 1930, Region.MIXED, towns = 3, industries = 0, rivals = 1))
+        other.days(200)
+        val rival = other.rivals.first().company
+        other.companies[rival].money = Long.MAX_VALUE / 8
+        other.apply(Command.BuyCompany(rival, 0))
+        assertTrue(!other.companies[0].gone)
+    }
 }

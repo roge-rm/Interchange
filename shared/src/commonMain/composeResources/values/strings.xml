@@ -288,6 +288,7 @@
     <string name="companies">Companies</string>
     <string name="your_company">Your company</string>
     <string name="company_line">Worth %1$s · %2$d vehicles · %3$d stations</string>
+    <string name="company_line_takeover">Worth %1$s · %2$d vehicles · %3$d stations · buy for %4$s</string>
     <string name="company_name">Company name</string>
     <string name="rename">Rename</string>
     <string name="insignia">Insignia</string>
@@ -326,6 +327,7 @@
     <string name="company_gone">Bought out or gone under</string>
     <string name="company_for_sale">For sale for %1$s</string>
     <string name="buy_company">Buy</string>
+    <string name="buy_company_sure">Buy it?</string>
     <string name="news_company_trouble">%1$s can't pay its way</string>
     <string name="news_your_trouble">Your company can't pay its way, even borrowing all the bank will lend</string>
     <string name="news_company_for_sale">%1$s is for sale</string>
