@@ -22,6 +22,8 @@ Play on your own against computer companies, or with friends over your network o
 
 **Rivals.** Computer companies that run buses, trucks and railways, buy up companies in trouble and deal with town councils as you do. Easy, normal or hard.
 
+**Your company.** Name it and give it an insignia: pick one of 24 drawn ones or draw your own in the pixel editor.
+
 **Town councils.** Advertise, fund buildings, put up a statue, do road works or buy exclusive rights.
 
 **The chronicle.** Every bit of news kept in an era newspaper you can read back through.
