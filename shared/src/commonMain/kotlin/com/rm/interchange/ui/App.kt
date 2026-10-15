@@ -86,6 +86,15 @@ import com.rm.interchange.sim.houseOf
 import com.rm.interchange.sim.Industry
 import com.rm.interchange.sim.News
 import com.rm.interchange.sim.Goal
+import com.rm.interchange.sim.Scenario
+import com.rm.interchange.sim.Scenarios
+import com.rm.interchange.sim.TownSize
+import com.rm.interchange.sim.newEditor
+import com.rm.interchange.sim.industryFitsAt
+import androidx.compose.ui.graphics.drawscope.DrawScope
+import com.rm.interchange.sim.across
+import com.rm.interchange.sim.along
+import androidx.compose.foundation.layout.size
 import androidx.compose.ui.layout.onSizeChanged
 import com.rm.interchange.sim.industryAt
 import com.rm.interchange.sim.approvalLevel
@@ -130,7 +139,10 @@ fun App() {
 private enum class Screen { Title, NewGame, Playing }
 
 /** A window open over the screen. */
-private enum class Win { Menu, Load, Settings, Packs, Overlays, Finances, Industries, Companies, Insignia, Town, Subsidies, Goals, Chronicle, Multiplayer, Players, Chat }
+private enum class Win { Menu, Load, Settings, Packs, Overlays, Finances, Industries, Companies, Insignia, Town, Subsidies, Goals, Chronicle, Multiplayer, Players, Chat, Scenarios, Scenario, SaveScenario, Intro, Outcome }
+
+/** Picking a place by tapping the map: what to tell the player, what a tapped tile does (false if nothing there will do), and giving up. */
+class MapPick(val prompt: String, val onTile: (Int) -> Boolean, val onCancel: () -> Unit)
 
 @Composable
 private fun Root(settings: Settings) {
@@ -154,6 +166,17 @@ private fun Root(settings: Settings) {
     val cantOpen = stringResource(Res.string.cant_open, "%s")
     val gameOf = stringResource(Res.string.game_of, "%s")
     var saves by remember { mutableStateOf(SavedGames.list()) }
+    // The scenario editor: whether the new game screen makes a map to edit, whether the game running is one being
+    // edited, and the scenario being tried from it, to go back to.
+    var editorNew by remember { mutableStateOf(false) }
+    var editing by remember { mutableStateOf(false) }
+    var testing by remember { mutableStateOf<ByteArray?>(null) }
+    var scenarios by remember { mutableStateOf(emptyList<SavedScenarios.Entry>()) }
+    var editorKept by remember { mutableStateOf(false) }
+    var scenarioError by remember { mutableStateOf<String?>(null) }
+    // A goal being added in the editor, and which of its places the map is being tapped for.
+    var goalDraft by remember { mutableStateOf<GoalDraft?>(null) }
+    var picking by remember { mutableStateOf<GoalSlot?>(null) }
     var loadError by remember { mutableStateOf<String?>(null) }
     val cantLoad = stringResource(Res.string.cant_load, "%s")
     val needsPacks = stringResource(Res.string.needs_packs, "%s")
@@ -171,11 +194,26 @@ private fun Root(settings: Settings) {
 
     // The game saves itself when the app is put away.
     DisposableEffect(Unit) {
-        Lifecycle.onHide = { runner?.takeIf { it.remote == null }?.let { SavedGames.save(it, SavedGames.AUTOSAVE) } }
+        // A world being edited goes to the editor's own autosave, and a scenario being tried isn't saved at all.
+        Lifecycle.onHide = {
+            runner?.takeIf { it.remote == null }?.let { r ->
+                if (editing) r.onGameThread { g -> SavedScenarios.autosaveEditor(g.world) }
+                else if (testing == null) SavedGames.save(r, SavedGames.AUTOSAVE)
+            }
+        }
         onDispose { Lifecycle.onHide = null }
     }
     // Autosave follows the setting while a game runs.
-    LaunchedEffect(runner, settings.autosave) { runner?.takeIf { it.remote == null }?.autosaveDays = settings.autosaveDays }
+    LaunchedEffect(runner, settings.autosave) { runner?.takeIf { it.remote == null && !editing && testing == null }?.autosaveDays = settings.autosaveDays }
+    // The world being edited is kept every few minutes, in case the app's closed.
+    LaunchedEffect(runner, editing) {
+        val r = runner ?: return@LaunchedEffect
+        if (!editing) return@LaunchedEffect
+        while (true) {
+            delay(EDITOR_AUTOSAVE_MILLIS)
+            r.onGameThread { g -> SavedScenarios.autosaveEditor(g.world) }
+        }
+    }
 
     // The host last closed, stopping on a thread of its own; opening again waits for it so the port is free.
     val closing = remember { java.util.concurrent.atomic.AtomicReference<Thread?>(null) }
@@ -232,20 +270,31 @@ private fun Root(settings: Settings) {
         }
     }
 
-    fun play(make: () -> World) {
+    /** Plays the world [make] makes; [editor] for one being edited, [test] the scenario being tried from the editor, [intro] to show a scenario's intro first. */
+    fun play(make: () -> World, editor: Boolean = false, test: ByteArray? = null, intro: Boolean = false) {
         stopGame()
         val r = GameThread(make)
-        r.autosaveDays = settings.autosaveDays
+        // Neither a world being edited nor a scenario being tried takes the game's autosave.
+        r.autosaveDays = if (editor || test != null) 0 else settings.autosaveDays
+        if (editor) SavedScenarios.keepEditor()
         r.onAutosave = { bytes -> r.game?.let { SavedGames.writeAutosave(bytes, it.world, r.company) } }
+        // Time waits while the intro is read.
+        r.paused = intro
         r.start()
         runner = r
+        editing = editor
+        testing = test
+        goalDraft = null
+        picking = null
         screen = Screen.Playing
-        window = null
+        window = if (intro) Win.Intro else null
     }
 
     /** Follows a game joined on the network, playing the company it gave us, with no autosaves. */
     fun joined(remote: Remote, world: World) {
         stopGame()
+        editing = false
+        testing = null
         val r = GameThread({ world }, remote)
         r.company = remote.company
         r.autosaveDays = 0
@@ -318,11 +367,87 @@ private fun Root(settings: Settings) {
                     Result.failure(e)
                 }
             }
-            world.onSuccess { w -> loadError = null; play { w } }.onFailure {
+            world.onSuccess { w -> loadError = null; play({ w }) }.onFailure {
                 loadError = if (it is MissingPacks) needsPacks.replace("%s", it.packs.joinToString { p -> "${p.id} ${p.version}" })
                 else cantLoad.replace("%s", it.message ?: "")
             }
         }
+    }
+
+    val cantOpenScenario = stringResource(Res.string.cant_load, "%s")
+
+    /** Reads a scenario off the main thread, with the packs it needs, and plays it or edits it ([edit]), or says why it can't. */
+    fun openScenario(read: () -> ByteArray?, edit: Boolean, test: ByteArray? = null) {
+        scope.launch {
+            val world = withContext(Dispatchers.Default) {
+                try {
+                    val bytes = read() ?: throw BadData("missing")
+                    val w = if (edit) Scenarios.edit(bytes, InstalledPacks::find) else Scenarios.play(bytes, InstalledPacks::find)
+                    InstalledPacks.prepare(w.roster)
+                    Result.success(w)
+                } catch (e: BadData) {
+                    Result.failure(e)
+                }
+            }
+            world.onSuccess { w -> scenarioError = null; play({ w }, editor = edit, test = test, intro = !edit) }.onFailure {
+                scenarioError = if (it is MissingPacks) needsPacks.replace("%s", it.packs.joinToString { p -> "${p.id} ${p.version}" })
+                else cantOpenScenario.replace("%s", it.message ?: "")
+                if (screen == Screen.Title) window = Win.Scenarios
+            }
+        }
+    }
+
+    /**
+     * Back to the title screen: a game is saved and stopped, so Continue loads it again. A world being edited, or a
+     * scenario tried from it, is only stopped, and the editor's autosave goes.
+     */
+    fun toTitle() {
+        val r = runner
+        if (editing || testing != null) SavedScenarios.clearEditor()
+        if (r != null && r.remote == null && !editing && testing == null) {
+            // Saved first, stopped after; closing to players can't wait for it.
+            closeHost()
+            SavedGames.save(r, SavedGames.AUTOSAVE) {
+                r.stop()
+                scope.launch { saves = SavedGames.list() }
+            }
+            runner = null
+        } else stopGame()
+        editing = false
+        testing = null
+        window = null
+        screen = Screen.Title
+    }
+
+    // A scenario won or lost while it's played says so, once.
+    LaunchedEffect(runner) {
+        val r = runner ?: return@LaunchedEffect
+        var last = -1
+        while (true) {
+            delay(500)
+            val w = r.game?.world ?: continue
+            val o = w.scenario?.outcome ?: continue
+            if (last == Scenario.OPEN && o != Scenario.OPEN && !w.editor) window = Win.Outcome
+            last = o
+        }
+    }
+
+    val tapTown = stringResource(Res.string.tap_a_town)
+    val tapPlace = stringResource(Res.string.tap_a_place)
+    val pick = picking?.let { slot ->
+        MapPick(
+            if (slot == GoalSlot.Place) tapPlace else tapTown,
+            { i ->
+                val w = runner?.game?.world
+                val d = goalDraft
+                if (w != null && d != null && pickInto(w, d, slot, i)) {
+                    picking = null
+                    window = Win.Goals
+                    true
+                } else false
+            },
+            { picking = null; window = Win.Goals },
+        )
     }
 
     /** Asks for a pack's file and adds it, checked off the main thread. */
@@ -349,8 +474,9 @@ private fun Root(settings: Settings) {
             Screen.Title -> TitleScreen(
                 continueLine = saves.firstOrNull()?.let { date(it.day, it.startYear) + " · " + saveLine(it) },
                 onContinue = { saves.firstOrNull()?.let { load(it) } },
-                onNew = { screen = Screen.NewGame },
+                onNew = { editorNew = false; screen = Screen.NewGame },
                 onLoad = { saves = SavedGames.list(); window = Win.Load },
+                onScenarios = { scenarios = SavedScenarios.list(); editorKept = SavedScenarios.editorKept(); scenarioError = null; window = Win.Scenarios },
                 onMultiplayer = { window = Win.Multiplayer },
                 onPacks = { packMessage = null; window = Win.Packs },
                 onSettings = { window = Win.Settings },
@@ -358,14 +484,19 @@ private fun Root(settings: Settings) {
             Screen.NewGame -> NewGameScreen(
                 packs.orEmpty(),
                 onStart = { ng, chosen ->
-                    play {
+                    val editor = editorNew
+                    play({
                         val roster = Roster.build(listOf(Packs.BASE) + chosen)
                         InstalledPacks.prepare(roster)
-                        World(ng, roster)
-                    }
+                        if (editor) World.newEditor(ng, roster) else World(ng, roster)
+                    }, editor = editor)
                 },
-                // Back to the game it was opened from, if there is one.
-                onBack = { screen = if (runner != null) Screen.Playing else Screen.Title },
+                // Back to the game it was opened from, if there is one, or to the scenarios it came from.
+                onBack = {
+                    screen = if (runner != null) Screen.Playing else Screen.Title
+                    if (runner == null && editorNew) window = Win.Scenarios
+                },
+                editor = editorNew,
             )
             Screen.Playing -> {
                 val r = runner
@@ -373,18 +504,34 @@ private fun Root(settings: Settings) {
                 if (r == null || s == null) {
                     Box(Modifier.fillMaxSize().background(LocalColors.current.page))
                 } else {
-                    Playing(r, s, settings, onMenu = { saved = false; window = Win.Menu }, onOverlays = { window = Win.Overlays }, onFinances = { window = Win.Finances }, onTown = { town = it; window = Win.Town }, goTo = goTo,
+                    Playing(r, s, settings, pick, onMenu = { saved = false; window = Win.Menu }, onOverlays = { window = Win.Overlays }, onFinances = { window = Win.Finances }, onTown = { town = it; window = Win.Town }, goTo = goTo,
                         onChat = if (inMultiplayer) ({ window = Win.Chat }) else null, chatUnread = lastChat != null && lastChat !== readChat)
                 }
             }
         }
         when (window) {
-            Win.Menu -> MenuWindow(
+            Win.Menu -> if (editing) EditorMenuWindow(
                 saved,
-                canSave = runner?.remote == null,
+                onScenario = { window = Win.Scenario },
+                onGoals = { window = Win.Goals },
+                onSave = { window = Win.SaveScenario },
+                onTest = {
+                    runner?.onGameThread { g ->
+                        val bytes = Scenarios.export(g.world)
+                        SavedScenarios.writeEditor(bytes)
+                        scope.launch { openScenario({ bytes }, edit = false, test = bytes) }
+                    }
+                },
+                onSettings = { window = Win.Settings },
+                onTitle = ::toTitle,
+                onClose = { window = null },
+            ) else MenuWindow(
+                saved,
+                canSave = runner?.remote == null && testing == null,
+                onEditor = testing?.let { bytes -> { openScenario({ bytes }, edit = true) } },
                 onSave = { runner?.let { r -> SavedGames.save(r) { scope.launch { saves = SavedGames.list(); saved = true } } } },
                 onLoad = { saves = SavedGames.list(); window = Win.Load },
-                onNew = { window = null; screen = Screen.NewGame },
+                onNew = { window = null; editorNew = false; screen = Screen.NewGame },
                 onPlayers = { hostProblem = null; window = Win.Players },
                 onSettings = { window = Win.Settings },
                 onIndustries = { window = Win.Industries },
@@ -392,21 +539,7 @@ private fun Root(settings: Settings) {
                 onSubsidies = { window = Win.Subsidies },
                 onGoals = { window = Win.Goals },
                 onChronicle = { window = Win.Chronicle },
-                // Back to the title screen the game is saved and stopped; Continue loads it again.
-                onTitle = {
-                    val r = runner
-                    if (r != null && r.remote == null) {
-                        // Saved first, stopped after; closing to players can't wait for it.
-                        closeHost()
-                        SavedGames.save(r, SavedGames.AUTOSAVE) {
-                            r.stop()
-                            scope.launch { saves = SavedGames.list() }
-                        }
-                        runner = null
-                    } else stopGame()
-                    window = null
-                    screen = Screen.Title
-                },
+                onTitle = ::toTitle,
                 onClose = { window = null },
             )
             Win.Load -> LoadWindow(
@@ -438,7 +571,34 @@ private fun Root(settings: Settings) {
             }
             Win.Chronicle -> runner?.game?.world?.let { w -> ChronicleWindow(w, { x, y -> goTo.value = x to y; window = null }) { window = null } }
             Win.Subsidies -> runner?.game?.world?.let { w -> SubsidiesWindow(w, { x, y -> goTo.value = x to y; window = null }) { window = null } }
-            Win.Goals -> runner?.game?.world?.let { w -> GoalsWindow(w, { x, y -> goTo.value = x to y; window = null }) { window = null } }
+            Win.Goals -> runner?.game?.world?.let { w ->
+                if (editing) EditorGoalsWindow(w, goalDraft, { goalDraft = it }, { slot -> picking = slot; window = null }, { runner?.request(it) }) { window = null }
+                else GoalsWindow(w, { x, y -> goTo.value = x to y; window = null }) { window = null }
+            }
+            Win.Scenarios -> ScenariosWindow(
+                scenarios, scenarioError,
+                onContinue = if (editorKept) ({ openScenario(SavedScenarios::readEditor, edit = true) }) else null,
+                onNew = { window = null; editorNew = true; screen = Screen.NewGame },
+                onPlay = { e -> openScenario({ SavedScenarios.read(e) }, edit = false) },
+                onEdit = { e -> openScenario({ SavedScenarios.read(e) }, edit = true) },
+                onDelete = { e -> SavedScenarios.delete(e.name); scenarios = SavedScenarios.list() },
+                onClose = { scenarioError = null; window = null },
+            )
+            Win.Scenario -> runner?.game?.world?.let { w -> ScenarioWindow(w, { runner?.request(it) }) { window = Win.Menu } }
+            Win.SaveScenario -> runner?.let { r ->
+                r.game?.world?.let { w ->
+                    SaveScenarioWindow(w, { name -> SavedScenarios.save(r, name) { scope.launch { saved = true; window = Win.Menu } } }) { window = Win.Menu }
+                }
+            }
+            Win.Intro -> runner?.let { r ->
+                // The world may still be being made.
+                val w by androidx.compose.runtime.produceState(r.game?.world, r) { while (value == null) { delay(50); value = r.game?.world } }
+                w?.let {
+                    if (it.scenario != null) IntroWindow(it) { r.paused = false; window = null }
+                    else LaunchedEffect(Unit) { r.paused = false; window = null }
+                }
+            }
+            Win.Outcome -> runner?.game?.world?.let { w -> OutcomeWindow(w, { window = null }, ::toTitle) }
             Win.Town -> runner?.game?.world?.let { w -> w.towns.getOrNull(town)?.let { t -> TownWindow(w, t, { runner?.request(it) }) { window = null } } }
             Win.Multiplayer -> MultiplayerWindow(settings, ::joined) { window = null }
             Win.Players -> runner?.let { r ->
@@ -476,7 +636,7 @@ private fun Root(settings: Settings) {
 
 /** A game being played: waits for the world to be made, then shows it. */
 @Composable
-private fun Playing(runner: GameThread, sheets: Sheets, settings: Settings, onMenu: () -> Unit, onOverlays: () -> Unit, onFinances: () -> Unit, onTown: (Int) -> Unit, goTo: MutableState<Pair<Float, Float>?>, onChat: (() -> Unit)?, chatUnread: Boolean) {
+private fun Playing(runner: GameThread, sheets: Sheets, settings: Settings, pick: MapPick?, onMenu: () -> Unit, onOverlays: () -> Unit, onFinances: () -> Unit, onTown: (Int) -> Unit, goTo: MutableState<Pair<Float, Float>?>, onChat: (() -> Unit)?, chatUnread: Boolean) {
     var world by remember(runner) { mutableStateOf<World?>(null) }
     // Redraws every display frame, and picks up the world once it's made, or when a server sends it again.
     val frame = remember(runner) { mutableLongStateOf(0L) }
@@ -491,11 +651,11 @@ private fun Playing(runner: GameThread, sheets: Sheets, settings: Settings, onMe
         Box(Modifier.fillMaxSize().background(LocalColors.current.page))
         return
     }
-    key(runner, w) { GameScreen(runner, w, sheets, frame, settings, onMenu, onOverlays, onFinances, onTown, goTo, onChat, chatUnread) }
+    key(runner, w) { GameScreen(runner, w, sheets, frame, settings, pick, onMenu, onOverlays, onFinances, onTown, goTo, onChat, chatUnread) }
 }
 
 @Composable
-private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: State<Long>, settings: Settings, onMenu: () -> Unit, onOverlays: () -> Unit, onFinances: () -> Unit, onTown: (Int) -> Unit, goTo: MutableState<Pair<Float, Float>?>, onChat: (() -> Unit)?, chatUnread: Boolean) {
+private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: State<Long>, settings: Settings, pick: MapPick?, onMenu: () -> Unit, onOverlays: () -> Unit, onFinances: () -> Unit, onTown: (Int) -> Unit, goTo: MutableState<Pair<Float, Float>?>, onChat: (() -> Unit)?, chatUnread: Boolean) {
     val me = runner.company
     val c = LocalColors.current
     // The drawings of this game's vehicles: the base pack's come with the app, the others from their packs.
@@ -578,20 +738,73 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
     var roadPlan by remember { mutableStateOf<Command.Road?>(null) }
     var roadSurface by remember { mutableIntStateOf(Surface.entries(Calendar.year(world.startYear, world.day)).last()) }
     var mapSize by remember { mutableStateOf(androidx.compose.ui.geometry.Size.Zero) }
+    // The scenario editor: time stands still and its own tools are out. The size of town placed or grown, the kind
+    // of industry placed and how it's turned, and the area a drag would change.
+    val editor = world.editor
+    var townSize by remember { mutableIntStateOf(TownSize.MEDIUM) }
+    var industryKind by remember { mutableStateOf(placeableKinds(world).firstOrNull()?.key ?: "") }
+    var industryTurn by remember { mutableIntStateOf(0) }
+    var areaPlan by remember { mutableStateOf<IntArray?>(null) }
+
+    /** The tiles an industry of the kind chosen would take with its middle at ([x], [y]). */
+    fun industryArea(x: Int, y: Int): IntArray? {
+        val kind = world.roster.industries.firstOrNull { it.key == industryKind } ?: return null
+        val w = kind.across(industryTurn)
+        val h = kind.along(industryTurn)
+        val x0 = x - (w - 1) / 2
+        val y0 = y - (h - 1) / 2
+        return intArrayOf(x0, y0, x0 + w - 1, y0 + h - 1)
+    }
+
+    /** The height of the corner nearest [at], for levelling to. */
+    fun cornerHeight(at: Pick) = world.heightAt(at.x.roundToInt().coerceIn(0, world.width), at.y.roundToInt().coerceIn(0, world.height))
 
     fun built() { folded = true }
+
+    // An editor command that changed nothing says so in the tray for a few seconds.
+    var refusals by remember { mutableIntStateOf(0) }
+    var refused by remember { mutableStateOf(false) }
+    val edits = rememberCoroutineScope()
+    LaunchedEffect(refusals) { if (refusals > 0) { refused = true; delay(3000); refused = false } }
+
+    /** Runs editor command [c] on the game thread, and says so if it changed nothing. */
+    fun edit(c: Command) {
+        runner.onGameThread { g ->
+            // Only played alone does a command run at once, to compare.
+            val alone = g.broadcast == null && !g.following
+            val before = if (alone) g.world.checksum() else 0L
+            g.request(c)
+            if (alone && g.world.checksum() == before) edits.launch { refusals++ }
+        }
+    }
 
     fun railFor(start: Pick, end: Pick): Command.Rail =
         if (trackPiece == 0 || tool != Tool.Track) trackLine(me, start, end, removing)
         else pieceLine(world, me, start, end, worldPiece(LandPainter(world, view, view.halfWidth), trackPiece), removing)
 
-    val input = remember(tool, removing, stationAlongX, addingStops, addingRoadStops, addingCraftStops, signalKind, bridgeStyle, roadSurface, airportKind, runwayAlongX, trackPiece) {
+    val input = remember(tool, removing, stationAlongX, addingStops, addingRoadStops, addingCraftStops, signalKind, bridgeStyle, roadSurface, airportKind, runwayAlongX, trackPiece, townSize, industryKind, industryTurn, pick) {
         object : MapInput {
             var start: Pick? = null
-            override val drags get() = addingStops == null && addingRoadStops == null && addingCraftStops == null &&
-                (tool == Tool.Track || tool == Tool.Wires || tool == Tool.Station || tool == Tool.Bridge || tool == Tool.Road || tool == Tool.TramRails || tool == Tool.Canal || tool == Tool.Clear)
+            // The height Level levels to, from where the drag starts.
+            var level = 0
+            val editing: Boolean
+                get() = editor && tool in EDITOR_DRAGS
+            override val drags: Boolean
+                get() = pick == null && addingStops == null && addingRoadStops == null && addingCraftStops == null && (editing ||
+                    tool == Tool.Track || tool == Tool.Wires || tool == Tool.Station || tool == Tool.Bridge || tool == Tool.Road || tool == Tool.TramRails || tool == Tool.Canal || tool == Tool.Clear)
             override fun tap(at: Pick) {
                 val ground = world.index(at.tileX, at.tileY)
+                pick?.let { it.onTile(ground); return }
+                if (editor) {
+                    editAreaCommand(tool, me, at.tileX, at.tileY, at.tileX, at.tileY, cornerHeight(at))?.let { edit(it); built(); return }
+                    when (tool) {
+                        Tool.PlaceTown -> { edit(Command.PlaceTown(me, at.tileX, at.tileY, "", townSize)); built(); return }
+                        Tool.GrowTown -> { townNear(world, ground).takeIf { it >= 0 }?.let { edit(Command.GrowTown(me, it, townSize)) } ?: refusals++; return }
+                        Tool.PlaceIndustry -> { industryArea(at.tileX, at.tileY)?.let { a -> edit(Command.PlaceIndustry(me, industryKind, a[0], a[1], industryTurn)); built() }; return }
+                        Tool.RemoveIndustry -> { world.industryAt(ground)?.takeIf { !it.closed }?.let { edit(Command.RemoveIndustry(me, it.id)) } ?: refusals++; return }
+                        else -> {}
+                    }
+                }
                 // Adding stops or looking, a tap on a building's roof means the building, not the land behind it.
                 val picking = addingStops != null || addingRoadStops != null || addingCraftStops != null || tool == Tool.Inspect
                 val tile = if (!picking) ground else view.buildingAt(world, at, mapSize.width, mapSize.height) {
@@ -678,11 +891,16 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
             }
             override fun dragStart(at: Pick) {
                 start = at
+                level = cornerHeight(at)
                 dragTo(at)
             }
             override fun dragTo(at: Pick) {
                 val s = start ?: return
                 dragAt = at
+                if (editing) {
+                    areaPlan = if (tool == Tool.PlaceIndustry) industryArea(at.tileX, at.tileY) else intArrayOf(s.tileX, s.tileY, at.tileX, at.tileY)
+                    return
+                }
                 when (tool) {
                     Tool.Road -> roadPlan = roadLine(me, s, at, roadSurface, removing)
                     Tool.TramRails -> roadPlan = roadLine(me, s, at, roadSurface, removing, tram = true)
@@ -694,6 +912,11 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
                 }
             }
             override fun dragEnd() {
+                areaPlan?.let { a ->
+                    val c = if (tool == Tool.PlaceIndustry) Command.PlaceIndustry(me, industryKind, a[0], a[1], industryTurn)
+                        else editAreaCommand(tool, me, a[0], a[1], a[2], a[3], level)
+                    c?.let { edit(it); built() }
+                }
                 plan?.let { runner.request(if (tool == Tool.Wires) Command.Wire(me, it.sx, it.sy, it.ex, it.ey, it.first, it.remove) else it); built() }
                 stationPlan?.let { runner.request(it); built() }
                 bridgePlan?.let { runner.request(it); built() }
@@ -709,6 +932,7 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
                 roadPlan = null
                 canalPlan = null
                 clearPlan = null
+                areaPlan = null
                 dragAt = null
                 start = null
             }
@@ -727,7 +951,8 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
         ?: clearPlan?.let { p -> world.clearCost(me, p).let { (cost, n) -> n to cost } }
         ?: stationPlan?.let { p -> ((kotlin.math.abs(p.x1 - p.x0) + 1) * (kotlin.math.abs(p.y1 - p.y0) + 1)).let { n -> n to n * world.price(Prices.PLATFORM) } }
         ?: bridgePlan?.let { p -> world.bridgeCost(company, p).takeIf { it >= 0 }?.let { (maxOf(kotlin.math.abs(p.x1 - p.x0), kotlin.math.abs(p.y1 - p.y0)) + 1) to it } }
-    val dragText = dragged?.takeIf { it.first > 0 }?.let { (n, cost) ->
+    // Building's free in the editor.
+    val dragText = if (editor) null else dragged?.takeIf { it.first > 0 }?.let { (n, cost) ->
         stringResource(Res.string.drag_label, pluralStringResource(Res.plurals.drag_tiles, n, n), money(cost))
     }
     val shortOf = dragged != null && dragged.second > money
@@ -749,7 +974,13 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
                 ?: bridgePlan?.let { p -> { painter -> drawBridgePlan(world, painter, p) } }
                 ?: roadPlan?.let { p -> { painter -> drawRoadPlan(world, painter, p) } }
                 ?: canalPlan?.let { p -> { painter -> drawCanalPlan(world, painter, p) } }
-                ?: clearPlan?.let { p -> { painter -> drawClearPlan(world, painter, p) } },
+                ?: clearPlan?.let { p -> { painter -> drawClearPlan(world, painter, p) } }
+                ?: areaPlan?.let { a ->
+                    // An industry shows red where it won't fit.
+                    val bad = tool == Tool.Lower || tool == Tool.ClearTrees || (tool == Tool.PlaceIndustry && !world.industryFitsAt(industryKind, a[0], a[1], industryTurn))
+                    val draw: DrawScope.(LandPainter) -> Unit = { painter -> drawAreaPlan(world, painter, a, removing = bad) }
+                    draw
+                },
             label = dragAt?.takeIf { dragText != null }?.let { at -> { drawDragLabel(world, view, measurer, dragText!!, shortOf, at) } },
             page = c.page,
             overlays = (if (settings.grid) ChunkBaker.GRID else 0) or (if (settings.heights) ChunkBaker.HEIGHTS else 0) or (if (settings.snow) ChunkBaker.SNOW else 0) or (if (settings.condition) ChunkBaker.CONDITION else 0),
@@ -782,15 +1013,15 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
             onMenu,
             paused, { paused = !paused; runner.paused = paused }, speed, { speed = (speed + 1) % SPEEDS.size; runner.speed = SPEEDS[speed] },
             settings.grid || settings.heights || settings.snow || settings.condition, onOverlays,
-            weekdayDate(day, world.startYear),
+            if (editor) stringResource(Res.string.editor) else weekdayDate(day, world.startYear),
             money(money), money < 0,
             { view.turnBy(-1) }, { view.turnBy(1) }, onFinances,
             weather, { selected = if (selected == Selection.Weather) null else Selection.Weather },
             compact = layout.compact || layout.narrow,
             twoLines = twoLines,
             cameras = cameras,
-            timeControls = runner.remote == null,
-            showMoney = me >= 0,
+            timeControls = runner.remote == null && !editor,
+            showMoney = me >= 0 && !editor,
             onChat = onChat,
             chatUnread = chatUnread,
             modifier = if (cameras.isNotEmpty()) {
@@ -854,9 +1085,20 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
             }
         }
 
+        // Picking a place for a goal: what to tap, and a tap on this gives up.
+        if (pick != null) Box(
+            Modifier
+                .align(Alignment.TopCenter)
+                .padding(top = with(density) { stripHeight.toDp() } + gap)
+                .windowInsetsPadding(safe.only(WindowInsetsSides.Horizontal))
+                .padding(horizontal = gap),
+        ) {
+            MessageChip(pick.prompt, { GlyphIcon(Glyph.Remove, c.text, Modifier.padding(4.dp).size(18.dp)) }, pick.onCancel)
+        }
+
         fun pickGroup(g: ToolGroup) {
             if (tool.group != g) lastTool[tool.group] = tool
-            tool = lastTool[g] ?: Tool.of(g).first { it.ready }
+            tool = lastTool[g] ?: Tool.of(g, editor).first { it.ready(editor) }
             plan = null
             stationPlan = null
             folded = false
@@ -868,7 +1110,7 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
         // Someone watching only looks, so the building tools are left out.
         if (layout.sideTools && me >= 0) {
             ToolBar(
-                tool.group, ::pickGroup, vertical = true, compact = compactTools,
+                tool.group, ::pickGroup, vertical = true, compact = compactTools, editor = editor,
                 modifier = Modifier
                     .align(Alignment.CenterEnd)
                     .windowInsetsPadding(safe.only(WindowInsetsSides.End))
@@ -938,7 +1180,7 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
                 null -> {}
             }
             if (tool.group != ToolGroup.Inspect && addingStops == null && addingRoadStops == null && addingCraftStops == null) {
-                val detail = when (tool) {
+                val detail = if (editor) (if (refused) stringResource(Res.string.cant_edit_here) else null) else when (tool) {
                     Tool.Track -> if (removing) stringResource(Res.string.cost_lift, money(world.price(Prices.TRACK_REMOVE))) else stringResource(Res.string.cost_track, money(world.price(Prices.TRACK)), money(world.price(Prices.FOUNDATION)))
                     Tool.Signals, Tool.Waypoint -> stringResource(Res.string.cost_signal, money(world.price(Prices.SIGNAL)))
                     Tool.Bridge -> stringResource(Res.string.cost_tile, money(world.price(Spans.COST[bridgeStyle])))
@@ -962,13 +1204,20 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
                     else -> null
                 }
                 val pieceNames = listOf(Res.string.piece_x, Res.string.piece_y, Res.string.piece_n, Res.string.piece_e, Res.string.piece_s, Res.string.piece_w).map { stringResource(it) }
-                val trackOptions: (@Composable RowScope.() -> Unit)? = if (tool != Tool.Track) null else {
+                val trackOptions: (@Composable RowScope.() -> Unit)? = if (tool == Tool.PlaceIndustry) {
+                    { IndustryKinds(world, industryKind) { industryKind = it } }
+                } else if (tool != Tool.Track) null else {
                     {
                         OptionButton(Glyph.TrackAuto, stringResource(Res.string.track_auto), trackPiece == 0) { trackPiece = 0 }
                         for ((k, piece) in VIEW_PIECES.withIndex()) OptionButton(PIECE_GLYPHS[k], pieceNames[k], trackPiece == piece) { trackPiece = piece }
                     }
                 }
-                ToolTray(tool, { tool = it; plan = null; stationPlan = null }, detail, folded, { folded = it }, layout.compact, trayWidth, options = trackOptions) {
+                ToolTray(tool, { tool = it; plan = null; stationPlan = null }, detail, folded, { folded = it }, layout.compact, trayWidth, options = trackOptions, editor = editor, warning = editor && refused) {
+                    if (tool == Tool.PlaceTown || tool == Tool.GrowTown) {
+                        val sizes = stringArrayResource(Res.array.town_sizes)
+                        Chip(sizes.getOrElse(townSize) { "" }, true) { townSize = (townSize + 1) % TownSize.HOUSES.size }
+                    }
+                    if (tool == Tool.PlaceIndustry) TrayToggle(Glyph.TurnRight, stringResource(Res.string.turn_industry), industryTurn != 0) { industryTurn = (industryTurn + 1) % 4 }
                     if (tool == Tool.Track || tool == Tool.Wires || tool == Tool.Road || tool == Tool.TramRails || tool == Tool.Canal) TrayToggle(Glyph.Lift, stringResource(Res.string.remove_track), removing) { removing = !removing }
                     if (tool == Tool.Road) {
                         val surfaces = stringArrayResource(Res.array.surfaces)
@@ -998,7 +1247,7 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
                     }
                 }
             }
-            if (!layout.sideTools && me >= 0) ToolBar(tool.group, ::pickGroup, vertical = false, compact = compactTools, modifier = trayWidth)
+            if (!layout.sideTools && me >= 0) ToolBar(tool.group, ::pickGroup, vertical = false, compact = compactTools, modifier = trayWidth, editor = editor)
         }
     }
 }
@@ -1148,6 +1397,10 @@ internal fun newsText(world: World, n: News): String {
         val name = if (g.by == me) stringResource(Res.string.your_company) else world.companies.getOrNull(g.by)?.name ?: ""
         return stringResource(Res.string.news_goal_met, name, goalText(world, g))
     }
+    if (n.kind == News.SCENARIO_WON || n.kind == News.SCENARIO_LOST) {
+        val title = world.scenario?.title?.ifBlank { null } ?: stringResource(Res.string.untitled)
+        return stringResource(if (n.kind == News.SCENARIO_WON) Res.string.news_scenario_won else Res.string.news_scenario_lost, title)
+    }
     if (n.kind == News.PROSPECTING_FAILED) return stringResource(Res.string.news_prospect_failed, world.roster.industries.getOrNull(n.about)?.name(languageCode()) ?: "")
     if (n.kind == News.WASHOUT || n.kind == News.FIRE || n.kind == News.AVALANCHE) return stringResource(when (n.kind) { News.FIRE -> Res.string.news_fire; News.AVALANCHE -> Res.string.news_avalanche; else -> Res.string.news_washout })
     if (n.kind == News.DIVERTED) {
@@ -1234,6 +1487,12 @@ fun industryName(world: World, ind: Industry, lang: String): String {
     val vowel = town.firstOrNull()?.lowercaseChar()?.let { it in "aeiouyhéèêàâîôû" } == true
     return (if (vowel) "$kind d'$town" else "$kind de $town") + number
 }
+
+/** How often the world being edited is kept, if it's changed. */
+private const val EDITOR_AUTOSAVE_MILLIS = 3 * 60 * 1000L
+
+/** The editor's tools that work by dragging over an area, or for an industry, moving it about. */
+private val EDITOR_DRAGS = setOf(Tool.Raise, Tool.Lower, Tool.Level, Tool.Trees, Tool.ClearTrees, Tool.PlaceIndustry)
 
 /** The widest the trays and the bottom tool bar go. */
 private const val TRAY_WIDTH = 480

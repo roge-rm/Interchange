@@ -19,6 +19,7 @@ import java.io.File
  * - for a new game: INTERCHANGE_MAP_SIZE, INTERCHANGE_SEED, INTERCHANGE_START_YEAR,
  *   INTERCHANGE_REGION (MIXED, PRAIRIES, ...), INTERCHANGE_RIVALS, INTERCHANGE_DAY_LENGTH,
  *   INTERCHANGE_TOWN_GROWTH (NORMAL or SUPPLIED), INTERCHANGE_GOALS (NONE, TOWNS, DELIVERIES, CONNECTIONS or MIXED)
+ * - INTERCHANGE_SCENARIO, a .ichscn scenario file a new game starts from instead of the settings above
  */
 fun main() {
     val env = System.getenv()

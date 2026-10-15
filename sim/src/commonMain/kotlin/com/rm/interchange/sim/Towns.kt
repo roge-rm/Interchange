@@ -301,7 +301,7 @@ private fun World.freeLand(x: Int, y: Int): Boolean {
 }
 
 /** A road from ([x], [y]) across [edge] onto the free tile there, if both ends take it. */
-private fun World.extendRoad(t: Town, x: Int, y: Int, edge: Int, year: Int): Boolean {
+internal fun World.extendRoad(t: Town, x: Int, y: Int, edge: Int, year: Int): Boolean {
     val nx = x + stepX(edge)
     val ny = y + stepY(edge)
     if (!inside(nx, ny) || !freeLand(nx, ny)) return false

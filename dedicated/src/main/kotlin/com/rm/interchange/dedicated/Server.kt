@@ -8,10 +8,12 @@ import com.rm.interchange.sim.Calendar
 import com.rm.interchange.sim.BadPack
 import com.rm.interchange.sim.NewGame
 import com.rm.interchange.sim.Pack
+import com.rm.interchange.sim.PackRef
 import com.rm.interchange.sim.Packs
 import com.rm.interchange.sim.Region
 import com.rm.interchange.sim.Roster
 import com.rm.interchange.sim.Save
+import com.rm.interchange.sim.Scenarios
 import com.rm.interchange.sim.World
 import com.rm.interchange.sim.companyValue
 import com.rm.interchange.sim.human
@@ -92,12 +94,15 @@ class Server(
 
         // Made here, so a world that can't be read or made fails the open.
         val packs = readPacks()
+        fun find(ref: PackRef) = if (ref.id == Packs.BASE_ID) Packs.BASE.takeIf { it.version >= ref.version }
+            else packs.keys.firstOrNull { it.id == ref.id && it.version >= ref.version }
+        val scenario = env["INTERCHANGE_SCENARIO"]?.takeIf { it.isNotBlank() && next == null }?.let(::File)
         val world = if (!fresh) {
             log.info("Carrying on ${saved.path}")
-            Save.read(saved.readBytes()) { ref ->
-                if (ref.id == Packs.BASE_ID) Packs.BASE.takeIf { it.version >= ref.version }
-                else packs.keys.firstOrNull { it.id == ref.id && it.version >= ref.version }
-            }
+            Save.read(saved.readBytes(), ::find)
+        } else if (scenario != null) {
+            log.info("Starting the scenario ${scenario.path}")
+            Scenarios.play(scenario.readBytes(), ::find)
         } else {
             val settings = next ?: newGameSettings(env)
             val roster = try {

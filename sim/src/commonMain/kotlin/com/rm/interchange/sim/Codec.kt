@@ -49,6 +49,17 @@ object Codec {
     private const val NEW_COMPANY = 39
     private const val RENAME_COMPANY = 40
     private const val SET_INSIGNIA = 41
+    private const val EDIT_TERRAIN = 42
+    private const val PLACE_TOWN = 43
+    private const val GROW_TOWN = 44
+    private const val PLACE_INDUSTRY = 45
+    private const val REMOVE_INDUSTRY = 46
+    private const val EDIT_TREES = 47
+    private const val SET_GOALS = 48
+    private const val SET_SCENARIO = 49
+
+    /** The most goals a [Command.SetGoals] may carry. */
+    const val MOST_GOALS = 100
 
     fun write(w: ByteWriter, c: Command) {
         when (c) {
@@ -89,6 +100,19 @@ object Codec {
             is Command.NewCompany -> { w.byte(NEW_COMPANY); w.int(c.company); w.string(c.name) }
             is Command.RenameCompany -> { w.byte(RENAME_COMPANY); w.int(c.company); w.string(c.name) }
             is Command.SetInsignia -> { w.byte(SET_INSIGNIA); w.int(c.company); w.bytes(c.pixels) }
+            is Command.EditTerrain -> { w.byte(EDIT_TERRAIN); w.int(c.company); w.int(c.x0); w.int(c.y0); w.int(c.x1); w.int(c.y1); w.int(c.how); w.int(c.height) }
+            is Command.PlaceTown -> { w.byte(PLACE_TOWN); w.int(c.company); w.int(c.x); w.int(c.y); w.string(c.name); w.int(c.size) }
+            is Command.GrowTown -> { w.byte(GROW_TOWN); w.int(c.company); w.int(c.town); w.int(c.size) }
+            is Command.PlaceIndustry -> { w.byte(PLACE_INDUSTRY); w.int(c.company); w.string(c.kind); w.int(c.x); w.int(c.y); w.int(c.turn) }
+            is Command.RemoveIndustry -> { w.byte(REMOVE_INDUSTRY); w.int(c.company); w.int(c.industry) }
+            is Command.EditTrees -> { w.byte(EDIT_TREES); w.int(c.company); w.int(c.x0); w.int(c.y0); w.int(c.x1); w.int(c.y1); w.bool(c.plant) }
+            is Command.SetGoals -> {
+                w.byte(SET_GOALS); w.int(c.company); w.uvar(c.goals.size.toLong())
+                for (g in c.goals) { w.int(g.kind); w.long(g.amount); w.int(g.deadline); w.int(g.cargo); w.int(g.town); w.int(g.town2); w.int(g.industry); w.int(g.from) }
+            }
+            is Command.SetScenario -> {
+                w.byte(SET_SCENARIO); w.int(c.company); w.string(c.title); w.string(c.intro); w.long(c.money); w.long(c.loan); w.int(c.win); w.int(c.startYear); w.string(c.chapter)
+            }
             is Command.TrainOrder -> { w.byte(TRAIN_ORDER); w.int(c.company); w.int(c.train); w.int(c.what); w.ints(c.stations) }
         }
     }
@@ -135,6 +159,18 @@ object Codec {
         BUY_CRAFT -> Command.BuyCraft(r.int(), r.int(), r.int(), r.int())
         CRAFT_ORDER -> Command.CraftOrder(r.int(), r.bool(), r.int(), r.int(), r.ints())
         WIRE -> Command.Wire(r.int(), r.int(), r.int(), r.int(), r.int(), r.int(), r.bool())
+        EDIT_TERRAIN -> Command.EditTerrain(r.int(), r.int(), r.int(), r.int(), r.int(), r.int(), r.int())
+        PLACE_TOWN -> Command.PlaceTown(r.int(), r.int(), r.int(), r.string(), r.int())
+        GROW_TOWN -> Command.GrowTown(r.int(), r.int(), r.int())
+        PLACE_INDUSTRY -> Command.PlaceIndustry(r.int(), r.string(), r.int(), r.int(), r.int())
+        REMOVE_INDUSTRY -> Command.RemoveIndustry(r.int(), r.int())
+        EDIT_TREES -> Command.EditTrees(r.int(), r.int(), r.int(), r.int(), r.int(), r.bool())
+        SET_GOALS -> {
+            val company = r.int()
+            val n = r.uvar().toInt().also { if (it !in 0..MOST_GOALS) throw BadData("too many goals") }
+            Command.SetGoals(company, List(n) { Goal(r.int(), r.long(), r.int(), cargo = r.int(), town = r.int(), town2 = r.int(), industry = r.int(), from = r.int()) })
+        }
+        SET_SCENARIO -> Command.SetScenario(r.int(), r.string(), r.string(), r.long(), r.long(), r.int(), r.int(), r.string())
         else -> throw BadData("no such command: $kind")
     }
 

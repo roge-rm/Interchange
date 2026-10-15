@@ -139,6 +139,55 @@ sealed interface Command {
     /** Borrows a step more from the bank, or repays one. */
     data class Loan(override val company: Int, val borrow: Boolean) : Command
 
+    /** A command for the scenario editor, refused in a world that isn't [World.editor]. */
+    sealed interface Edit : Command
+
+    /**
+     * Raises ([how] [RAISE]) or lowers every corner of the tiles from ([x0], [y0]) to ([x1], [y1]) a step, or
+     * levels them all to [height] ([LEVEL]), the land round about following. Nothing moves if any tile that would
+     * change has something built on it.
+     */
+    data class EditTerrain(override val company: Int, val x0: Int, val y0: Int, val x1: Int, val y1: Int, val how: Int, val height: Int = 0) : Edit {
+        companion object {
+            const val RAISE = 0
+            const val LOWER = 1
+            const val LEVEL = 2
+        }
+    }
+
+    /** A new town with its middle at ([x], [y]), named [name] or given a name if that's blank, grown to [size], a [TownSize]. */
+    data class PlaceTown(override val company: Int, val x: Int, val y: Int, val name: String, val size: Int) : Edit
+
+    /** Grows town [town] by about as many buildings as a new one of [size] has. */
+    data class GrowTown(override val company: Int, val town: Int, val size: Int) : Edit
+
+    /** An industry of the kind with key [kind] with its top corner at ([x], [y]), its layout turned by [turn], 0 to 3. */
+    data class PlaceIndustry(override val company: Int, val kind: String, val x: Int, val y: Int, val turn: Int) : Edit
+
+    /** Takes industry [industry] off the map, with any goals about it. */
+    data class RemoveIndustry(override val company: Int, val industry: Int) : Edit
+
+    /** Plants trees on the open land from ([x0], [y0]) to ([x1], [y1]), the kinds that grow on its ground, or clears them. */
+    data class EditTrees(override val company: Int, val x0: Int, val y0: Int, val x1: Int, val y1: Int, val plant: Boolean) : Edit
+
+    /** Sets the game's goals to [goals], all open; only what each asks for is used, not how far it's got. */
+    class SetGoals(override val company: Int, val goals: List<Goal>) : Edit
+
+    /**
+     * Sets the scenario's [title], [intro], the [money] and [loan] each player's company starts with, its [win] rule
+     * ([Scenario.ALL] or [Scenario.ANY]), the year it starts and its campaign [chapter], blank for none.
+     */
+    data class SetScenario(
+        override val company: Int,
+        val title: String,
+        val intro: String,
+        val money: Long,
+        val loan: Long,
+        val win: Int,
+        val startYear: Int,
+        val chapter: String = "",
+    ) : Edit
+
     /** Tells a train what to do; [stations] only for [ORDERS]. */
     class TrainOrder(override val company: Int, val train: Int, val what: Int, val stations: IntArray = IntArray(0)) : Command {
         companion object {

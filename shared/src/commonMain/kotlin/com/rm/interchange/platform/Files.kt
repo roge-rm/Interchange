@@ -17,3 +17,16 @@ interface Files {
 
 /** This platform's files. Set up by the app before the screen starts. */
 lateinit var files: Files
+
+/** Files that come with the app, read only: built-in scenarios. */
+interface Bundled {
+    /** The names of the files in [folder]. */
+    fun list(folder: String): List<String>
+    fun read(path: String): ByteArray?
+}
+
+/** This platform's files that come with the app; none until the app sets them up. */
+var bundled: Bundled = object : Bundled {
+    override fun list(folder: String) = emptyList<String>()
+    override fun read(path: String): ByteArray? = null
+}

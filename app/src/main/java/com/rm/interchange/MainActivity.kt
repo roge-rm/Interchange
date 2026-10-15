@@ -17,6 +17,8 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import com.rm.interchange.platform.AndroidFiles
 import com.rm.interchange.platform.AndroidPictures
+import com.rm.interchange.platform.Bundled
+import com.rm.interchange.platform.bundled
 import com.rm.interchange.platform.Lifecycle
 import com.rm.interchange.platform.Network
 import com.rm.interchange.platform.Picker
@@ -83,6 +85,11 @@ class MainActivity : ComponentActivity(), Picker {
         files = AndroidFiles(filesDir)
         picker = this
         pictures = AndroidPictures
+        // Built-in scenarios are in the app's assets.
+        bundled = object : Bundled {
+            override fun list(folder: String) = runCatching { assets.list(folder)?.toList() }.getOrNull().orEmpty()
+            override fun read(path: String) = runCatching { assets.open(path).use { it.readBytes() } }.getOrNull()
+        }
         // Wi-Fi drops broadcasts unless something holds a multicast lock, so one is held while listening for games nearby.
         val wifi = applicationContext.getSystemService(WIFI_SERVICE) as? WifiManager
         val lock = wifi?.createMulticastLock("interchange-discover")?.apply { setReferenceCounted(false) }

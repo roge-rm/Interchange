@@ -108,9 +108,9 @@ private fun rememberBackdrop(): ImageBitmap? = produceState<ImageBitmap?>(null) 
     value = withContext(Dispatchers.Default) { mapPicture(World(NewGame(width = 256, height = 256, seed = 1867, hills = 2, trees = 3))) }
 }.value
 
-/** The first screen: carry on, start a new game, load one, join one on the network, add packs or change settings. */
+/** The first screen: carry on, start a new game, load one, play a scenario, join one on the network, add packs or change settings. */
 @Composable
-fun TitleScreen(continueLine: String?, onContinue: () -> Unit, onNew: () -> Unit, onLoad: () -> Unit, onMultiplayer: () -> Unit, onPacks: () -> Unit, onSettings: () -> Unit) {
+fun TitleScreen(continueLine: String?, onContinue: () -> Unit, onNew: () -> Unit, onLoad: () -> Unit, onScenarios: () -> Unit, onMultiplayer: () -> Unit, onPacks: () -> Unit, onSettings: () -> Unit) {
     val c = LocalColors.current
     Page(rememberBackdrop()) {
         Row(Modifier.padding(bottom = 16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
@@ -123,6 +123,7 @@ fun TitleScreen(continueLine: String?, onContinue: () -> Unit, onNew: () -> Unit
         }
         BigButton(stringResource(Res.string.new_game), primary = continueLine == null, glyph = Glyph.Plus, onClick = onNew)
         BigButton(stringResource(Res.string.load), glyph = Glyph.Folder, onClick = onLoad)
+        BigButton(stringResource(Res.string.scenarios), glyph = Glyph.Flag, onClick = onScenarios)
         BigButton(stringResource(Res.string.multiplayer), glyph = Glyph.People, onClick = onMultiplayer)
         BigButton(stringResource(Res.string.packs), glyph = Glyph.Package, onClick = onPacks)
         BigButton(stringResource(Res.string.settings), glyph = Glyph.Gear, onClick = onSettings)
@@ -145,10 +146,11 @@ private const val PREVIEW_MOST = 2048 * 2048
 
 /**
  * Choosing a new map: its region, size, start year, how much sea, hills and
- * trees, its seed, and which of [packs] are on, with a picture of it.
+ * trees, its seed, and which of [packs] are on, with a picture of it. For the
+ * scenario [editor], the map to start editing.
  */
 @Composable
-fun NewGameScreen(packs: List<Pack>, onStart: (NewGame, List<Pack>) -> Unit, onBack: () -> Unit) {
+fun NewGameScreen(packs: List<Pack>, onStart: (NewGame, List<Pack>) -> Unit, onBack: () -> Unit, editor: Boolean = false) {
     val c = LocalColors.current
     var width by remember { mutableIntStateOf(256) }
     var height by remember { mutableIntStateOf(256) }
@@ -188,7 +190,7 @@ fun NewGameScreen(packs: List<Pack>, onStart: (NewGame, List<Pack>) -> Unit, onB
         preview = if (width.toLong() * height > PREVIEW_MOST) null else withContext(Dispatchers.Default) { mapPicture(World(land)) }
     }
     val newSeed = stringResource(Res.string.new_seed)
-    val title: @Composable () -> Unit = { Text(stringResource(Res.string.new_game), color = c.text, fontSize = 24.sp, fontWeight = FontWeight.SemiBold) }
+    val title: @Composable () -> Unit = { Text(stringResource(if (editor) Res.string.new_scenario else Res.string.new_game), color = c.text, fontSize = 24.sp, fontWeight = FontWeight.SemiBold) }
     // The picture: a tap on it makes another map.
     val map: @Composable (Modifier) -> Unit = { modifier ->
         Box(
@@ -288,7 +290,7 @@ fun NewGameScreen(packs: List<Pack>, onStart: (NewGame, List<Pack>) -> Unit, onB
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Box(Modifier.weight(1f)) { BigButton(stringResource(Res.string.back), glyph = Glyph.Back, onClick = onBack) }
             Box(Modifier.weight(2f)) {
-                BigButton(stringResource(Res.string.start_game), primary = true, enabled = clash == null, glyph = Glyph.Play) { onStart(settings, chosen) }
+                BigButton(stringResource(if (editor) Res.string.start_editing else Res.string.start_game), primary = true, enabled = clash == null, glyph = Glyph.Play) { onStart(settings, chosen) }
             }
         }
     }
@@ -458,21 +460,31 @@ fun OverlaysWindow(settings: Settings, onClose: () -> Unit) {
     Window(stringResource(Res.string.overlays), onClose, Glyph.Layers) { OverlayToggles(settings) }
 }
 
-/** The in-game menu: save, load, start afresh, play with others, settings, or back to the title screen. A game joined isn't saved here. */
+/**
+ * The in-game menu: save, load, start afresh, play with others, settings, or back to the title screen. A game joined
+ * isn't saved here. A scenario tried from the editor has only the way back to it, and the title screen asks once more.
+ */
 @Composable
-fun MenuWindow(saved: Boolean, canSave: Boolean, onSave: () -> Unit, onLoad: () -> Unit, onNew: () -> Unit, onPlayers: () -> Unit, onSettings: () -> Unit, onIndustries: () -> Unit, onCompanies: () -> Unit, onSubsidies: () -> Unit, onGoals: () -> Unit, onChronicle: () -> Unit, onTitle: () -> Unit, onClose: () -> Unit) {
+fun MenuWindow(saved: Boolean, canSave: Boolean, onEditor: (() -> Unit)?, onSave: () -> Unit, onLoad: () -> Unit, onNew: () -> Unit, onPlayers: () -> Unit, onSettings: () -> Unit, onIndustries: () -> Unit, onCompanies: () -> Unit, onSubsidies: () -> Unit, onGoals: () -> Unit, onChronicle: () -> Unit, onTitle: () -> Unit, onClose: () -> Unit) {
+    val trying = onEditor != null
+    var leaving by remember { mutableStateOf(false) }
     Window(stringResource(Res.string.menu), onClose, Glyph.Menu) {
+        onEditor?.let { BigButton(stringResource(Res.string.back_to_editor), primary = false, glyph = Glyph.Land, onClick = it) }
         if (canSave) BigButton(stringResource(if (saved) Res.string.saved else Res.string.save), primary = !saved, glyph = Glyph.Save, onClick = onSave)
-        BigButton(stringResource(Res.string.load), glyph = Glyph.Folder, onClick = onLoad)
-        BigButton(stringResource(Res.string.new_game), glyph = Glyph.Plus, onClick = onNew)
+        if (!trying) {
+            BigButton(stringResource(Res.string.load), glyph = Glyph.Folder, onClick = onLoad)
+            BigButton(stringResource(Res.string.new_game), glyph = Glyph.Plus, onClick = onNew)
+        }
         BigButton(stringResource(Res.string.industries), glyph = Glyph.Layers, onClick = onIndustries)
         BigButton(stringResource(Res.string.companies), glyph = Glyph.Home, onClick = onCompanies)
         BigButton(stringResource(Res.string.subsidies), glyph = Glyph.Package, onClick = onSubsidies)
         BigButton(stringResource(Res.string.goals), glyph = Glyph.Flag, onClick = onGoals)
         BigButton(stringResource(Res.string.chronicle), glyph = Glyph.Folder, onClick = onChronicle)
-        BigButton(stringResource(Res.string.multiplayer), glyph = Glyph.People, onClick = onPlayers)
+        if (!trying) BigButton(stringResource(Res.string.multiplayer), glyph = Glyph.People, onClick = onPlayers)
         BigButton(stringResource(Res.string.settings), glyph = Glyph.Gear, onClick = onSettings)
-        BigButton(stringResource(Res.string.title_screen), glyph = Glyph.Home, onClick = onTitle)
+        BigButton(stringResource(if (leaving) Res.string.leave_unsaved else Res.string.title_screen), primary = leaving, glyph = Glyph.Home) {
+            if (!trying || leaving) onTitle() else leaving = true
+        }
     }
 }
 

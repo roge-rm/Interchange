@@ -16,10 +16,13 @@ package com.rm.interchange.sim
  */
 object Save {
     private val MAGIC = "ICHG".encodeToByteArray()
-    const val VERSION = 29
+    const val VERSION = 30
 
-    /** [world] as a save; [version] older than [VERSION] only for tests reading older saves. */
-    fun write(world: World, version: Int = VERSION): ByteArray {
+    /**
+     * [world] as a save; [version] older than [VERSION] only for tests reading older saves. [asScenario] writes an
+     * editor world as a scenario to play: the editor off, and each player's company given the scenario's money and loan.
+     */
+    fun write(world: World, version: Int = VERSION, asScenario: Boolean = false): ByteArray {
         val w = ByteWriter(world.width * world.height * 6 + 4096)
         with(world) {
             val g = settings
@@ -35,9 +38,11 @@ object Save {
             w.long(tick)
             w.long(rng.state)
             w.uvar(companies.size.toLong())
+            val start = if (asScenario) scenario else null
             for (c in companies) {
-                w.int(c.id); w.string(c.name); w.long(c.money); w.long(c.runningOwed)
-                w.long(c.loan); w.long(c.monthIn); w.long(c.monthOut)
+                val given = start != null && human(c.id) && !c.gone
+                w.int(c.id); w.string(c.name); w.long(if (given) start!!.money + start.loan else c.money); w.long(c.runningOwed)
+                w.long(if (given) start!!.loan else c.loan); w.long(c.monthIn); w.long(c.monthOut)
                 for (v in c.thisYear) w.long(v)
                 for (v in c.lastYear) w.long(v)
                 w.int(c.upkeep); w.long(c.upkeepOwed)
@@ -159,13 +164,39 @@ object Save {
                     for (v in g.count) w.long(v)
                 }
             }
+            if (version >= 30) {
+                w.bool(editor && !asScenario)
+                val s = scenario
+                w.bool(s != null)
+                if (s != null) { w.string(s.title); w.string(s.intro); w.long(s.money); w.long(s.loan); w.int(s.win); w.string(s.chapter); w.int(s.outcome) }
+            }
         }
         val body = Squeeze.pack(w.toByteArray())
         val out = ByteWriter(body.size + 16)
         for (b in MAGIC) out.byte(b.toInt())
         out.int(version)
+        if (version >= 30) {
+            // The scenario's title, intro and start year ahead of the packed body, for [heading].
+            val s = world.scenario
+            out.bool(s != null)
+            if (s != null) { out.string(s.title); out.string(s.intro); out.int(world.settings.startYear) }
+        }
         out.bytes(body)
         return out.toByteArray()
+    }
+
+    /** A scenario's title, intro and start year, as [heading] reads them. */
+    class Heading(val title: String, val intro: String, val startYear: Int)
+
+    /** The title, intro and start year of the scenario in a save, without unpacking the rest; null if it isn't one or can't be read. */
+    fun heading(data: ByteArray): Heading? = try {
+        val r = ByteReader(data)
+        for (b in MAGIC) if (r.byte() != (b.toInt() and 0xff)) throw BadData("not an Interchange save")
+        val version = r.int()
+        if (version < 30 || version > VERSION || !r.bool()) null
+        else Heading(r.string().take(Scenario.TITLE_MOST), r.string().take(Scenario.INTRO_MOST), r.int())
+    } catch (e: Exception) {
+        null
     }
 
     /** The packs a save needs, as named in it, without reading the rest. */
@@ -406,6 +437,14 @@ object Save {
                     goals += g
                 }
             }
+            if (version >= 30) {
+                editor = r.bool()
+                if (r.bool()) {
+                    val s = Scenario(r.string().take(Scenario.TITLE_MOST), r.string().take(Scenario.INTRO_MOST), r.long(), r.long(), r.int(), r.string().take(Scenario.CHAPTER_MOST))
+                    s.outcome = r.int()
+                    scenario = s
+                }
+            }
         }
         // Signal blocks and who's on which tile are worked out afresh now, as a command can ask before the next move.
         world.networkChangedKeepingRoutes()
@@ -418,6 +457,7 @@ object Save {
         for (b in MAGIC) if (head.byte() != (b.toInt() and 0xff)) throw BadData("not an Interchange save")
         val version = head.int()
         if (version < 1 || version > VERSION) throw BadData("saved by a newer version of the game ($version)")
+        if (version >= 30 && head.bool()) { head.string(); head.string(); head.int() }
         return version to ByteReader(Squeeze.unpack(head.bytes()))
     }
 
@@ -448,7 +488,7 @@ object Save {
         return List(r.uvar().toInt().also { if (it > 256) throw BadData("too many packs") }) { PackRef(r.string(), r.int(), r.long()) }
     }
 
-    private fun basePack(ref: PackRef) = Packs.BASE.takeIf { it.id == ref.id && it.version >= ref.version }
+    internal fun basePack(ref: PackRef) = Packs.BASE.takeIf { it.id == ref.id && it.version >= ref.version }
 
     private fun writeMap(w: ByteWriter, m: Map<Int, Int>) {
         val ks = m.keys.sorted()

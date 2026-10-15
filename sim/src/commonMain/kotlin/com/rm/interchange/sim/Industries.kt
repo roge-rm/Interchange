@@ -80,6 +80,9 @@ class News(val kind: Int, val about: Int, val tick: Long) {
         /** A goal met, and one failed; [News.about] is its place in [World.goals]. */
         const val GOAL_MET = 21
         const val GOAL_FAILED = 22
+        /** The scenario won, and lost; [News.about] is 0. */
+        const val SCENARIO_WON = 23
+        const val SCENARIO_LOST = 24
     }
 }
 
@@ -167,20 +170,26 @@ internal fun World.placeIndustry(kind: IndustryKind): Boolean {
             }
         }
         if (industryFits(kind, x, y, w, h, turn)) {
-            val town = towns.minByOrNull { maxOf(kotlin.math.abs(it.x - x), kotlin.math.abs(it.y - y)) }?.id ?: -1
-            val ind = Industry(industries.size, kind.id, x, y, turn, town)
-            industries += ind
-            for (ty in y until y + h) for (tx in x until x + w) {
-                val i = index(tx, ty)
-                industryOf[i] = (ind.id + 1).toShort()
-                clearTrees(i)
-                touched(tx, ty)
-            }
-            catchmentDirty = true
+            buildIndustry(kind, x, y, turn)
             return true
         }
     }
     return false
+}
+
+/** Puts an industry of [kind] at ([x], [y]) turned by [turn], where [industryFits] says it goes, named after the nearest town. */
+internal fun World.buildIndustry(kind: IndustryKind, x: Int, y: Int, turn: Int): Industry {
+    val town = towns.minByOrNull { maxOf(kotlin.math.abs(it.x - x), kotlin.math.abs(it.y - y)) }?.id ?: -1
+    val ind = Industry(industries.size, kind.id, x, y, turn, town)
+    industries += ind
+    for (ty in y until y + kind.along(turn)) for (tx in x until x + kind.across(turn)) {
+        val i = index(tx, ty)
+        industryOf[i] = (ind.id + 1).toShort()
+        clearTrees(i)
+        touched(tx, ty)
+    }
+    catchmentDirty = true
+    return ind
 }
 
 private const val PLACE_TRIES = 40
@@ -204,12 +213,12 @@ private fun World.shoreTile(): Int? {
     return null
 }
 
-private fun World.industryFits(kind: IndustryKind, x: Int, y: Int, w: Int, h: Int, turn: Int): Boolean {
+internal fun World.industryFits(kind: IndustryKind, x: Int, y: Int, w: Int, h: Int, turn: Int): Boolean {
     if (x < 1 || y < 1 || x + w >= width || y + h >= height) return false
     var suits = 0
     for (ty in y until y + h) for (tx in x until x + w) {
         val i = index(tx, ty)
-        if (isWater(tx, ty) || steep(tx, ty) || track[i].toInt() != 0 || townBuilt(i) || industryOf[i].toInt() != 0 || owner[i].toInt() != -1) return false
+        if (isWater(tx, ty) || steep(tx, ty) || track[i].toInt() != 0 || townBuilt(i) || industryOf[i].toInt() != 0 || owner[i].toInt() != -1 || deck.containsKey(i)) return false
         // Off the beach, unless it's meant to be by the water.
         if (!kind.water && minOf(minOf(heightAt(tx, ty), heightAt(tx + 1, ty)), minOf(heightAt(tx + 1, ty + 1), heightAt(tx, ty + 1))) == 0) return false
         if (kind.ground.isEmpty() || Ground.NAMES[ground[i].toInt()].lowercase() in kind.ground) suits++

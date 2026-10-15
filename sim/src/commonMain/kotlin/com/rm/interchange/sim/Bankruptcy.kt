@@ -75,14 +75,13 @@ internal fun World.buyCompany(buyer: Company, c: Command.BuyCompany) {
 }
 
 /**
- * A player's company, gone under or bought out, starts again: the bank's start money and no loan, its books
+ * A player's company, gone under or bought out, starts again: the start money and loan, as a new one would, its books
  * clean, every town thinking of it as of a stranger. A statue it had stays up as the town's own.
  */
 internal fun World.restart(c: Company, news: Boolean = true) {
     c.gone = false
     c.trouble = 0
-    c.money = price(Prices.START_MONEY)
-    c.loan = 0
+    startFunds(c)
     c.runningOwed = 0
     c.upkeepOwed = 0
     c.thisYear.fill(0)
@@ -174,7 +173,7 @@ internal fun World.newCompany(c: Command.NewCompany) {
     val given = cleanCompanyName(c.name)
     fun name() = if (given.isNotEmpty() && companyNameFree(given, id)) given else playerCompanyName(id)
     when {
-        id == companies.size && id < MAX_COMPANIES -> companies += Company(id, name(), price(Prices.START_MONEY)).also { giveInsignia(it) }
+        id == companies.size && id < MAX_COMPANIES -> companies += Company(id, name(), 0).also { startFunds(it); giveInsignia(it) }
         companies.getOrNull(id)?.gone == true -> {
             companies[id].name = name()
             giveInsignia(companies[id])

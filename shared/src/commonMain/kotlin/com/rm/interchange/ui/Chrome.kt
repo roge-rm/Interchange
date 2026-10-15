@@ -216,18 +216,19 @@ val SPEEDS = intArrayOf(1, 2, 4, 8)
 
 /** The tool buttons, in a row along the bottom or a column down the side. The row shares out the width. */
 @Composable
-fun ToolBar(selected: ToolGroup, onSelect: (ToolGroup) -> Unit, vertical: Boolean, compact: Boolean, modifier: Modifier = Modifier) {
+fun ToolBar(selected: ToolGroup, onSelect: (ToolGroup) -> Unit, vertical: Boolean, compact: Boolean, modifier: Modifier = Modifier, editor: Boolean = false) {
+    val groups = ToolGroup.entries.filter { editor || !it.editorOnly }
     if (vertical) {
         ChromeBox(modifier) {
             // Scrolls only on a screen too short for the whole rail.
             Column(Modifier.verticalScroll(rememberScrollState()).padding(4.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                for (g in ToolGroup.entries) GroupButton(g, g == selected, compact, Modifier.width(if (compact) 56.dp else 64.dp)) { onSelect(g) }
+                for (g in groups) GroupButton(g, g == selected, compact, Modifier.width(if (compact) 56.dp else 64.dp)) { onSelect(g) }
             }
         }
     } else {
         ChromeBox(modifier.fillMaxWidth()) {
             Row(Modifier.padding(4.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                for (g in ToolGroup.entries) GroupButton(g, g == selected, compact, Modifier.weight(1f)) { onSelect(g) }
+                for (g in groups) GroupButton(g, g == selected, compact, Modifier.weight(1f)) { onSelect(g) }
             }
         }
     }
@@ -271,10 +272,14 @@ fun ToolTray(
     modifier: Modifier = Modifier,
     /** A row of choices for the tool, under its tabs, shown while the tray's open. */
     options: (@Composable RowScope.() -> Unit)? = null,
+    /** In the scenario editor: its own tools are shown and ready. */
+    editor: Boolean = false,
+    /** [detail] is a warning, shown in the warning colour. */
+    warning: Boolean = false,
     extras: @Composable RowScope.() -> Unit = {},
 ) {
     val c = LocalColors.current
-    val tools = Tool.of(tool.group)
+    val tools = Tool.of(tool.group, editor)
     ChromeBox(modifier) {
         Column(Modifier.padding(4.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             if (tools.size > 1 && !folded) {
@@ -285,12 +290,12 @@ fun ToolTray(
                         Column(
                             Modifier
                                 .weight(1f)
-                                .alpha(if (t.ready) 1f else 0.4f)
+                                .alpha(if (t.ready(editor)) 1f else 0.4f)
                                 .clip(ButtonShape)
                                 .background(if (on) c.accent else c.button)
                                 .semantics(mergeDescendants = true) { selected = on }
                                 .semantics { contentDescription = toolTitle }
-                                .clickable(enabled = t.ready, role = Role.Tab) { onTool(t) }
+                                .clickable(enabled = t.ready(editor), role = Role.Tab) { onTool(t) }
                                 .padding(vertical = 4.dp),
                             horizontalAlignment = Alignment.CenterHorizontally,
                         ) {
@@ -318,7 +323,7 @@ fun ToolTray(
                 if (folded) GlyphIcon(tool.glyph, c.text, Modifier.size(24.dp))
                 Column(Modifier.weight(1f)) {
                     Text(stringResource(tool.title), color = c.text, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
-                    detail?.let { Text(it, color = c.textDim, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+                    detail?.let { Text(it, color = if (warning) c.warn else c.textDim, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) }
                 }
                 extras()
             }

@@ -14,7 +14,11 @@ package com.rm.interchange.sim
  *
  * [roster] is what can run on the track, from the game's content packs.
  */
-class World(val settings: NewGame, val roster: Roster = Roster.BASE, generate: Boolean = true) {
+class World(settings: NewGame, val roster: Roster = Roster.BASE, generate: Boolean = true) {
+    /** How the world was made; only its start year can change, in the editor before the first day's run. */
+    var settings = settings
+        private set
+
     /** A map with no towns and fair weather, for tests that lay their own track. */
     constructor(width: Int, height: Int, seed: Long, startYear: Int = 1850) : this(NewGame(width, height, seed, startYear, towns = 0, industries = 0, weather = false))
 
@@ -128,6 +132,10 @@ class World(val settings: NewGame, val roster: Roster = Roster.BASE, generate: B
     val subsidies = ArrayList<Subsidy>()
     /** The game's goals, met, failed or open, in the order set. */
     val goals = ArrayList<Goal>()
+    /** The scenario this game is, or null for an ordinary game. */
+    var scenario: Scenario? = null
+    /** Made in the scenario editor: time stands still, building is free and the editor's commands work. */
+    var editor = false
     /** What each company is worth, as of the day's start. Worked out in the game, not saved, so the screen can read it. */
     val worth = LongArray(MAX_COMPANIES)
     /** The town each station sign's tile delivers to, by [stationTown], or -1. Worked out as needed and not saved. */
@@ -247,11 +255,33 @@ class World(val settings: NewGame, val roster: Roster = Roster.BASE, generate: B
         return index(cx, cy)
     }
 
-    /** Runs one command. What can't be done is left undone. */
+    /** Moves the start year to [year], only while it's still the first tick. */
+    internal fun startYear(year: Int) {
+        if (tick != 0L) return
+        settings = settings.copy(startYear = year)
+        lookDay = -1
+    }
+
+    /**
+     * Runs one command. What can't be done is left undone. The editor's commands only work in an editor world, where
+     * the bank's and towns' dealings are refused and the rest is free.
+     */
     fun apply(command: Command) {
         if (command is Command.NewCompany) return newCompany(command)
         val company = companies.getOrNull(command.company) ?: return
         if (company.gone) return
+        if (command is Command.Edit) {
+            if (editor) edit(command)
+            return
+        }
+        if (editor) {
+            if (command is Command.Loan || command is Command.BuyCompany || command is Command.TownAction || command is Command.FundIndustry) return
+            return free(company) { run(company, command) }
+        }
+        run(company, command)
+    }
+
+    private fun run(company: Company, command: Command) {
         when (command) {
             is Command.Terraform -> terraform(company, command.x, command.y, command.up)
             is Command.Rail -> buildRail(company, command)
@@ -290,7 +320,7 @@ class World(val settings: NewGame, val roster: Roster = Roster.BASE, generate: B
             is Command.BuyCompany -> buyCompany(company, command)
             is Command.RenameCompany -> renameCompany(company, command.name)
             is Command.SetInsignia -> setInsignia(company, command.pixels)
-            is Command.NewCompany -> {}
+            is Command.NewCompany, is Command.Edit -> {}
         }
     }
 
@@ -301,6 +331,7 @@ class World(val settings: NewGame, val roster: Roster = Roster.BASE, generate: B
 
     /** Moves the world on by one tick. */
     fun step() {
+        if (editor) return
         tick++
         moveTrains()
         moveRoadVehicles()
@@ -332,6 +363,7 @@ class World(val settings: NewGame, val roster: Roster = Roster.BASE, generate: B
                 passengersMonth()
                 industriesMonth()
                 goalsMonth()
+                scenarioCheck()
             }
             if (Calendar.newYear(startYear, day) && day > 0) {
                 passengersYear()
@@ -371,6 +403,14 @@ class World(val settings: NewGame, val roster: Roster = Roster.BASE, generate: B
         }
         mix(tick)
         mix(rng.state)
+        mix(settings.startYear.toLong())
+        mix(if (editor) 1L else 0L)
+        scenario?.let { s ->
+            for (ch in s.title) mix(ch.code.toLong())
+            for (ch in s.intro) mix(ch.code.toLong())
+            for (ch in s.chapter) mix(ch.code.toLong())
+            mix(s.money); mix(s.loan); mix(s.win.toLong()); mix(s.outcome.toLong())
+        }
         // The packs the game runs, so players with a different set show as out of step.
         for (p in roster.packs) { for (ch in p.id) mix(ch.code.toLong()); mix(p.version.toLong()); mix(p.hash) }
         for (b in bands) mix(b)
