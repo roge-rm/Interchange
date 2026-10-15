@@ -404,10 +404,11 @@ private fun World.tileWeather(year: Int, doy: Int, today: Int) {
                 // Deep snow on steep high ground lets go in a thaw or under heavy snow.
                 if (snow >= AVALANCHE_SNOW && tileHeight(x, y) >= AVALANCHE_HEIGHT && !isFlat(x, y) && (t > 0 || p >= 1500) && cellDice(x, y, salt + 9) < 6) slides[band] += i
                 // Roads cleared some days after the snow stops, by plow, or rolled flat before.
-                // Towns do their own; the province does the rest, any owner's, less often.
+                // Towns do their own and any left without an owner; the province does companies' roads, less often.
                 if (road[i].toInt() != 0 && snow > 4 && p == 0) {
-                    val town = if (roadOwner[i].toInt() < 0) towns.getOrNull(townOf[i].toInt()) else null
-                    val busy = if (town == null) COUNTRY_PLOW else if (town.population > 5000) 128 else 70
+                    val owned = roadOwner[i].toInt() >= 0
+                    val town = if (owned) null else towns.getOrNull(townOf[i].toInt())
+                    val busy = if (owned) COUNTRY_PLOW else if (town != null && town.population > 5000) 128 else 70
                     if (cellDice(x, y, salt + 7) < busy) snow = if (plows) 2 else snow * 2 / 3
                 }
                 if (sheds.contains(i)) snow = 0
