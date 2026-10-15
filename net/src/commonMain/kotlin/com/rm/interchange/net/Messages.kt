@@ -6,6 +6,7 @@ import com.rm.interchange.sim.ByteWriter
 import com.rm.interchange.sim.Codec
 import com.rm.interchange.sim.Command
 import com.rm.interchange.sim.Insignia
+import com.rm.interchange.sim.PackRef
 
 /**
  * Lockstep, as OpenTTD does it: players send commands to the server, the
@@ -28,6 +29,15 @@ sealed interface Message {
 
     /** Player to server, instead of [Hello]: who's playing what? Answered with [Players], then the server closes. */
     data class Look(val protocol: Int) : Message
+
+    /**
+     * Player to server, instead of [Hello]: send me pack [ref], one the game uses. Answered with [PackPart]s, or
+     * [Rejected] if it's not one the server will send. Several may be asked for on one connection, one at a time.
+     */
+    data class PackGet(val protocol: Int, val ref: PackRef) : Message
+
+    /** Server to player: [bytes] of pack [ref]'s zip, from [offset], of [total] bytes in all. */
+    class PackPart(val ref: PackRef, val offset: Int, val total: Int, val bytes: ByteArray) : Message
 
     /** Player to server: set the password for the company I play, or clear it with an empty one. */
     data class Lock(val password: String) : Message
@@ -99,6 +109,8 @@ object Reject {
     const val KICKED = 5
     /** The company asked for needs a password, or the one given was wrong. */
     const val COMPANY_PASSWORD = 6
+    /** The pack asked for isn't one this game uses, or the server hasn't got it. */
+    const val NO_PACK = 7
 }
 
 /**
@@ -108,7 +120,7 @@ object Reject {
  */
 object Wire {
     /** The version of the protocol and the sim together; players and servers must match. */
-    const val PROTOCOL = 4
+    const val PROTOCOL = 5
 
     private const val HELLO = 1
     private const val REQUEST = 2
@@ -122,13 +134,21 @@ object Wire {
     private const val PLAYERS = 10
     private const val LOOK = 11
     private const val LOCK = 12
+    private const val PACK_GET = 13
+    private const val PACK_PART = 14
 
     fun encode(m: Message): ByteArray {
-        val w = ByteWriter(if (m is Message.Welcome) m.save.size + 256 else 64)
+        val w = ByteWriter(when (m) {
+            is Message.Welcome -> m.save.size + 256
+            is Message.PackPart -> m.bytes.size + 128
+            else -> 64
+        })
         when (m) {
             is Message.Hello -> { w.byte(HELLO); w.int(m.protocol); w.string(m.client); w.string(m.name); w.string(m.password); w.int(m.join); w.string(m.companyPassword) }
             is Message.Look -> { w.byte(LOOK); w.int(m.protocol) }
             is Message.Lock -> { w.byte(LOCK); w.string(m.password) }
+            is Message.PackGet -> { w.byte(PACK_GET); w.int(m.protocol); ref(w, m.ref) }
+            is Message.PackPart -> { w.byte(PACK_PART); ref(w, m.ref); w.int(m.offset); w.int(m.total); w.bytes(m.bytes) }
             is Message.Request -> { w.byte(REQUEST); Codec.write(w, m.command) }
             is Message.Say -> { w.byte(SAY); w.string(m.text) }
             Message.Resync -> w.byte(RESYNC)
@@ -163,6 +183,11 @@ object Wire {
             }
             LOOK -> Message.Look(r.int())
             LOCK -> Message.Lock(r.string())
+            PACK_GET -> {
+                val protocol = r.int()
+                Message.PackGet(protocol, if (protocol != PROTOCOL) PackRef("", 0, 0) else ref(r))
+            }
+            PACK_PART -> Message.PackPart(ref(r), r.int(), r.int(), r.bytes())
             REQUEST -> Message.Request(Codec.read(r))
             SAY -> Message.Say(r.string())
             RESYNC -> Message.Resync
@@ -186,4 +211,8 @@ object Wire {
             else -> throw BadData("no such message: $kind")
         }
     }
+
+    private fun ref(w: ByteWriter, ref: PackRef) { w.string(ref.id); w.int(ref.version); w.long(ref.hash) }
+
+    private fun ref(r: ByteReader) = PackRef(r.string(), r.int(), r.long())
 }

@@ -12,6 +12,8 @@ import java.io.File
  * - INTERCHANGE_PORT, 45688 unless set
  * - INTERCHANGE_PASSWORD, needed to join, none unless set
  * - INTERCHANGE_STATE_DIR, where the game is saved, ./state unless set
+ * - INTERCHANGE_PACKS_DIR, the .ichpack packs a new game uses and players can download, the state folder's packs
+ *   folder unless set
  * - INTERCHANGE_LAN_DISCOVERY, false to keep it off the local network's list
  * - INTERCHANGE_CONTROL_SOCKET, the admin channel's socket file, none unless set
  * - for a new game: INTERCHANGE_MAP_SIZE, INTERCHANGE_SEED, INTERCHANGE_START_YEAR,

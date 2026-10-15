@@ -36,6 +36,7 @@ All are environment variables; `docker-compose.yml` sets them from the shorter n
 | `INTERCHANGE_PORT` | `45688` | |
 | `INTERCHANGE_PASSWORD` | none | needed to join |
 | `INTERCHANGE_STATE_DIR` | `./state` | where the game is saved |
+| `INTERCHANGE_PACKS_DIR` | `packs` in the state folder | the add-on packs, see below |
 | `INTERCHANGE_LAN_DISCOVERY` | `true` | `false` keeps it off the local network's list |
 | `INTERCHANGE_CONTROL_SOCKET` | none | the admin channel's socket; none means no admin channel |
 | `INTERCHANGE_MAP_SIZE` | `256` | for a new game: 64 to 4096 |
@@ -52,6 +53,10 @@ It won't start with an empty password or the example's. After 5 wrong passwords 
 ## The state folder
 
 `game.ichg` is the game, `players.tsv` who last played which company and `passwords.tsv` the company passwords, hashed. A new game from the admin page keeps the last game as `game.ichg.old`; rename it back to `game.ichg` with the server stopped to carry on with it.
+
+## Packs
+
+Put `.ichpack` files in the packs folder (`packs` in the state folder unless set) and start a new game: it uses every pack there, in name order, so a pack that needs another should sort after it. A saved game carries on with the packs it was made with, at that version or newer. Players who haven't got a pack the game uses download it from the server when they join. With Docker, copy them in with `docker compose cp my.ichpack server:/state/packs/`.
 
 ## The admin channel
 

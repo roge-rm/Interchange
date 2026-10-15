@@ -179,6 +179,7 @@ async function refresh() {
   el("s-map").textContent = making ? "-" : `${status.mapWidth} × ${status.mapHeight}`;
   el("s-region").textContent = making ? "-" : REGIONS[status.region] || status.region;
   el("s-seed").textContent = making ? "-" : status.seed;
+  el("s-packs").textContent = making ? "-" : (status.packs || []).map((p) => `${p.id} ${p.version}`).join(", ") || "None";
   el("s-players").textContent = making ? "-" : status.players;
   el("s-save").textContent = formatAgo(status.lastSaveEpochMillis);
   el("s-uptime").textContent = formatDuration(status.uptimeSeconds);

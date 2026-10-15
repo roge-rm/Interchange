@@ -27,6 +27,9 @@ class Connection(private val socket: Socket) {
     private val out = LinkedBlockingQueue<ByteArray>()
     private val closed = AtomicBoolean(false)
 
+    /** Whether it has ended. */
+    val isClosed: Boolean get() = closed.get()
+
     /** Bytes waiting to go out, to spot a player who's stopped reading. */
     val backlog: Long get() = waiting.get()
     private val waiting = AtomicLong()

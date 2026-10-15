@@ -362,6 +362,8 @@ class World(val settings: NewGame, val roster: Roster = Roster.BASE, generate: B
         }
         mix(tick)
         mix(rng.state)
+        // The packs the game runs, so players with a different set show as out of step.
+        for (p in roster.packs) { for (ch in p.id) mix(ch.code.toLong()); mix(p.version.toLong()); mix(p.hash) }
         for (b in bands) mix(b)
         // The last row and column of corners, which the rows above leave out.
         for (x in 0..width) mix(heightAt(x, height).toLong())

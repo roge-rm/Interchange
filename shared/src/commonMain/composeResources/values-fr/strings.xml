@@ -472,6 +472,10 @@
     <string name="address">Adresse</string>
     <string name="join">Rejoindre</string>
     <string name="joining">Connexion…</string>
+    <string name="downloading_packs">Téléchargement des packs, %1$s sur %2$s Mo</string>
+    <string name="pack_not_sent">L'hôte n'a pas pu envoyer un pack dont cette partie a besoin : %1$s</string>
+    <string name="pack_broken">Un pack envoyé par l'hôte est abîmé : %1$s</string>
+    <string name="cancel">Annuler</string>
     <string name="password">Mot de passe</string>
     <string name="needs_password">Cette partie demande un mot de passe.</string>
     <string name="wrong_password">Mot de passe incorrect.</string>

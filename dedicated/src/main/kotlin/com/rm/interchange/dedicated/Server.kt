@@ -5,8 +5,12 @@ import com.rm.interchange.server.Game
 import com.rm.interchange.server.GameThread
 import com.rm.interchange.server.Host
 import com.rm.interchange.sim.Calendar
+import com.rm.interchange.sim.BadPack
 import com.rm.interchange.sim.NewGame
+import com.rm.interchange.sim.Pack
+import com.rm.interchange.sim.Packs
 import com.rm.interchange.sim.Region
+import com.rm.interchange.sim.Roster
 import com.rm.interchange.sim.Save
 import com.rm.interchange.sim.World
 import com.rm.interchange.sim.companyValue
@@ -23,7 +27,9 @@ import java.util.concurrent.TimeUnit
 /**
  * The game this server hosts and what the admin channel can do with it. It
  * carries on the game saved in [state], or starts a new one from the env vars,
- * and saves it every game month, on [close] and when asked.
+ * and saves it every game month, on [close] and when asked. A new game uses
+ * every pack in the packs folder, in name order, and players missing one
+ * download it from here.
  *
  * The admin's requests come on the control thread; anything reading or
  * changing the world is handed to the game thread and waited for.
@@ -32,8 +38,8 @@ class Server(
     private val env: Map<String, String>,
     private val state: File,
     private val log: LogRing,
-    /** Makes a new world; tests swap it for one that fails. */
-    private val makeWorld: (NewGame) -> World = { World(it) },
+    /** Makes a new world from the packs' roster; tests swap it for one that fails. */
+    private val makeWorld: (NewGame, Roster) -> World = { settings, roster -> World(settings, roster) },
 ) : ControlServer.Handler {
     private class Running(val runner: GameThread, val host: Host)
 
@@ -43,6 +49,7 @@ class Server(
     private val players = File(state, "players.tsv")
     // Company passwords, hashed.
     private val locks = File(state, "passwords.tsv")
+    private val packsDir = env["INTERCHANGE_PACKS_DIR"]?.takeIf { it.isNotBlank() }?.let(::File) ?: File(state, "packs")
 
     @Volatile private var now: Running? = null
     /** Held while a game opens or closes, so a save, a new game and stopping take turns. */
@@ -74,6 +81,7 @@ class Server(
      */
     private fun open(next: NewGame?) {
         state.mkdirs()
+        packsDir.mkdirs()
         val fresh = next != null || !saved.exists()
         val claimed = if (!fresh && players.exists()) players.readLines().mapNotNull { l ->
             l.split('\t').takeIf { it.size == 2 }?.let { (client, company) -> company.toIntOrNull()?.let { client to it } }
@@ -83,13 +91,23 @@ class Server(
         }.toMap() else emptyMap()
 
         // Made here, so a world that can't be read or made fails the open.
+        val packs = readPacks()
         val world = if (!fresh) {
             log.info("Carrying on ${saved.path}")
-            Save.read(saved.readBytes())
+            Save.read(saved.readBytes()) { ref ->
+                if (ref.id == Packs.BASE_ID) Packs.BASE.takeIf { it.version >= ref.version }
+                else packs.keys.firstOrNull { it.id == ref.id && it.version >= ref.version }
+            }
         } else {
             val settings = next ?: newGameSettings(env)
-            log.info("Making a new ${settings.width}x${settings.height} map, seed ${settings.seed}")
-            makeWorld(settings)
+            val roster = try {
+                Roster.build(listOf(Packs.BASE) + packs.keys)
+            } catch (e: BadPack) {
+                throw IllegalStateException("the packs don't fit together: ${e.problems.first()}")
+            }
+            log.info("Making a new ${settings.width}x${settings.height} map, seed ${settings.seed}" +
+                if (packs.isEmpty()) "" else ", with ${packs.keys.joinToString { "${it.id} ${it.version}" }}")
+            makeWorld(settings, roster)
         }
         val runner = GameThread({ world })
         runner.company = -1
@@ -101,7 +119,8 @@ class Server(
         val free = world.companies.filter { !it.gone && world.human(it.id) && it.id !in claimed.values }.map { it.id }
         val host = try {
             Host(runner, name, port, env["INTERCHANGE_PASSWORD"] ?: "", hostCompany = -1, free = free, claimed = claimed,
-                passwords = passwords, announce = env["INTERCHANGE_LAN_DISCOVERY"] != "false").also {
+                passwords = passwords, announce = env["INTERCHANGE_LAN_DISCOVERY"] != "false",
+                packBytes = { ref -> packs.entries.firstOrNull { it.key.ref == ref }?.value }).also {
                 it.log = log::info
                 it.start()
             }
@@ -124,6 +143,25 @@ class Server(
         }
         runner.onAutosave = { bytes -> keep(bytes, host) }
         now = r
+    }
+
+    /** The packs in the packs folder, in name order, each with its zip; any that can't be read are logged and left out. */
+    private fun readPacks(): Map<Pack, ByteArray> {
+        val out = LinkedHashMap<Pack, ByteArray>()
+        val files = packsDir.listFiles { f -> f.isFile && f.name.endsWith(".ichpack") }?.sortedBy { it.name } ?: return out
+        for (f in files) {
+            try {
+                val zip = f.readBytes()
+                val pack = Packs.unzip(zip)
+                if (pack.id == Packs.BASE_ID || out.keys.any { it.id == pack.id }) log.warn("Left out ${f.name}: ${pack.id} is in already")
+                else out[pack] = zip
+            } catch (e: BadPack) {
+                log.warn("Left out ${f.name}: ${e.problems.first()}")
+            } catch (e: IOException) {
+                log.warn("Couldn't read ${f.name}: ${e.message}")
+            }
+        }
+        return out
     }
 
     /** Stops [r], saving it first if [save]. No more of its autosaves are written once this returns. */
@@ -189,6 +227,9 @@ class Server(
                 "paused" to JsonPrimitive(r.runner.paused),
                 "players" to JsonPrimitive(r.host.players.size),
                 "companies" to JsonPrimitive(w.companies.count { !it.gone }),
+                "packs" to JsonArray(w.roster.packs.filter { it.id != Packs.BASE_ID }.map { p ->
+                    JsonObject(mapOf("id" to JsonPrimitive(p.id), "version" to JsonPrimitive(p.version)))
+                }),
             )
         }
     }

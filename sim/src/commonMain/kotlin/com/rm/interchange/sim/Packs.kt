@@ -154,6 +154,9 @@ object Packs {
         read(mapOf("manifest.json" to BaseData.read("manifest.json"), "vehicles.json" to BaseData.read("vehicles.json"), "houses.json" to BaseData.read("houses.json"), "industries.json" to BaseData.read("industries.json")), spritesElsewhere = true)
     }
 
+    /** Whether [id] is one a pack may have. */
+    fun validId(id: String) = ID.matches(id)
+
     /** A pack from a zip. */
     fun unzip(zip: ByteArray): Pack = read(Zip.read(zip, MAX_FILE, MAX_TOTAL))
 

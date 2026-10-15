@@ -38,13 +38,17 @@ import com.rm.interchange.net.Reject
 import com.rm.interchange.net.Wire
 import com.rm.interchange.platform.Network
 import com.rm.interchange.res.*
+import com.rm.interchange.server.Cancelled
 import com.rm.interchange.server.ChatLine
 import com.rm.interchange.server.GameThread
 import com.rm.interchange.server.Host
 import com.rm.interchange.server.Refused
 import com.rm.interchange.server.Remote
 import com.rm.interchange.sim.BadData
+import com.rm.interchange.sim.BadPack
 import com.rm.interchange.sim.MissingPacks
+import com.rm.interchange.sim.PackRef
+import com.rm.interchange.sim.Packs
 import com.rm.interchange.sim.Save
 import com.rm.interchange.sim.World
 import kotlinx.coroutines.Dispatchers
@@ -79,6 +83,8 @@ private sealed interface Joining {
     class In(val remote: Remote, val world: World) : Joining
     class Turned(val reason: Int) : Joining
     class NeedsPacks(val packs: String) : Joining
+    /** Let in, but missing [packs] the host can send; [company] is the one we were given, to come back to. */
+    class Download(val company: Int, val packs: List<PackRef>) : Joining
     class Unreachable(val why: String) : Joining
 }
 
@@ -98,8 +104,9 @@ private fun parseAddress(text: String): Pair<String, Int> {
  * Joining a game on the network, from the title screen: your name, the games
  * heard nearby, or one by its address. Picking a game lists its companies, to
  * join one, start a new one or watch. A game or company that wants a password
- * asks for it once it's turned you away. Joined, the remote and the world it
- * sent go to [onJoined].
+ * asks for it once it's turned you away. Packs the game uses that you
+ * haven't got are downloaded from the host, then it joins again. Joined, the
+ * remote and the world it sent go to [onJoined].
  */
 @Composable
 fun MultiplayerWindow(settings: Settings, onJoined: (Remote, World) -> Unit, onClose: () -> Unit) {
@@ -114,6 +121,10 @@ fun MultiplayerWindow(settings: Settings, onJoined: (Remote, World) -> Unit, onC
     var password by remember { mutableStateOf("") }
     var askedCompany by remember { mutableStateOf(false) }
     var companyPassword by remember { mutableStateOf("") }
+    // Set while packs are downloading, to stop them.
+    var cancel by remember { mutableStateOf<AtomicBoolean?>(null) }
+    // Closing the window stops a download, and the joining after it.
+    DisposableEffect(Unit) { onDispose { cancel?.set(true) } }
 
     // Games heard, by their host's id, with when each was last heard.
     val heard = remember { mutableStateMapOf<String, Pair<Beacon, Long>>() }
@@ -147,6 +158,9 @@ fun MultiplayerWindow(settings: Settings, onJoined: (Remote, World) -> Unit, onC
     val cantLoad = stringResource(Res.string.cant_load, "%s")
     val lookingText = stringResource(Res.string.looking)
     val joiningText = stringResource(Res.string.joining)
+    val downloading = stringResource(Res.string.downloading_packs, "%1", "%2")
+    val notSent = stringResource(Res.string.pack_not_sent, "%s")
+    val broken = stringResource(Res.string.pack_broken, "%s")
 
     fun where(address: String, port: Int) = if (port == LanDiscovery.GAME_PORT) address else "$address:$port"
 
@@ -181,28 +195,64 @@ fun MultiplayerWindow(settings: Settings, onJoined: (Remote, World) -> Unit, onC
         busy = joiningText
         error = null
         val hello = Message.Hello(Wire.PROTOCOL, settings.client, settings.playerName.trim().ifBlank { fallbackName }, password, join, companyPassword)
+        fun names(packs: List<PackRef>) = packs.joinToString { p -> "${p.id} ${p.version}" }
         scope.launch {
             var got: Remote? = null
             var handed = false
+            /** Joins as [h] and reads the world sent, with only the very packs it names. */
+            fun enter(h: Message.Hello): Joining = try {
+                val r = Remote.join(game.address, game.port, h).also { got = it }
+                val w = Save.read(r.welcome!!.save, InstalledPacks::findExact)
+                InstalledPacks.prepare(w.roster, InstalledPacks::findExact)
+                Joining.In(r, w)
+            } catch (e: Refused) {
+                Joining.Turned(e.reason)
+            } catch (e: MissingPacks) {
+                val company = got?.company ?: -1
+                got?.leave()
+                got = null
+                // The base pack comes with the game, so missing it means another version.
+                if (e.packs.any { it.id == Packs.BASE_ID }) Joining.Turned(Reject.VERSION) else Joining.Download(company, e.packs)
+            } catch (e: BadData) {
+                Joining.Unreachable(cantLoad.replace("%s", e.message ?: ""))
+            } catch (e: Exception) {
+                Joining.Unreachable(cantReach.replace("%s", where(game.address, game.port)))
+            }
             try {
-                // Connecting and reading the world both take a while, so neither holds up the screen.
+                // Connecting, downloading and reading the world all take a while, so none holds up the screen.
                 val outcome = withContext(Dispatchers.IO) {
+                    val first = enter(hello)
+                    if (first !is Joining.Download) return@withContext first
+                    val stop = AtomicBoolean(false).also { cancel = it }
                     try {
-                        val r = Remote.join(game.address, game.port, hello).also { got = it }
-                        val w = Save.read(r.welcome!!.save, InstalledPacks::find)
-                        InstalledPacks.prepare(w.roster)
-                        Joining.In(r, w)
+                        val zips = Remote.fetchPacks(game.address, game.port, first.packs, progress = { _, at, total ->
+                            busy = downloading.replace("%1", "%.1f".format(at / 1e6)).replace("%2", "%.1f".format(total / 1e6))
+                        }, cancelled = { stop.get() })
+                        for ((ref, zip) in zips) InstalledPacks.keepDownloaded(ref, zip)
+                    } catch (e: Cancelled) {
+                        return@withContext null
                     } catch (e: Refused) {
-                        Joining.Turned(e.reason)
-                    } catch (e: MissingPacks) {
-                        Joining.NeedsPacks(e.packs.joinToString { p -> "${p.id} ${p.version}" })
+                        return@withContext Joining.Unreachable(notSent.replace("%s", names(first.packs)))
                     } catch (e: BadData) {
-                        Joining.Unreachable(cantLoad.replace("%s", e.message ?: ""))
+                        return@withContext Joining.Unreachable(broken.replace("%s", e.message ?: ""))
+                    } catch (e: BadPack) {
+                        return@withContext Joining.Unreachable(broken.replace("%s", e.problems.first()))
                     } catch (e: Exception) {
-                        Joining.Unreachable(cantReach.replace("%s", where(game.address, game.port)))
+                        return@withContext Joining.Unreachable(cantReach.replace("%s", where(game.address, game.port)))
+                    } finally {
+                        cancel = null
+                    }
+                    if (stop.get()) return@withContext null
+                    busy = joiningText
+                    // Back as the same client, to the company we were given.
+                    when (val again = enter(hello.copy(join = if (first.company >= 0) first.company else Message.SPECTATE))) {
+                        is Joining.Download -> Joining.NeedsPacks(names(again.packs))
+                        else -> again
                     }
                 }
                 when (outcome) {
+                    null -> {}
+                    is Joining.Download -> error = needsPacks.replace("%s", names(outcome.packs))
                     is Joining.In -> { handed = true; onJoined(outcome.remote, outcome.world) }
                     is Joining.Turned -> when (outcome.reason) {
                         Reject.PASSWORD -> {
@@ -248,6 +298,7 @@ fun MultiplayerWindow(settings: Settings, onJoined: (Remote, World) -> Unit, onC
             if (askedCompany) Field(companyPassword, stringResource(Res.string.company_password), { companyPassword = it.take(Host.PASSWORD_MOST) }, secret = true)
             if (error != null) Text(error ?: "", color = c.bad, fontSize = 14.sp)
             busy?.let { Text(it, color = c.textDim, fontSize = 14.sp) }
+            cancel?.let { stop -> BigButton(stringResource(Res.string.cancel), glyph = Glyph.Remove) { stop.set(true) } }
             if (asked || askedCompany) BigButton(stringResource(Res.string.join), primary = true, enabled = busy == null, glyph = Glyph.Play) { join(game, choice) }
             BigButton(stringResource(Res.string.back), enabled = busy == null, glyph = Glyph.Back) {
                 looked = null

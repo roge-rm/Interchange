@@ -489,6 +489,10 @@
     <string name="address">Address</string>
     <string name="join">Join</string>
     <string name="joining">Joining…</string>
+    <string name="downloading_packs">Downloading packs, %1$s of %2$s MB</string>
+    <string name="pack_not_sent">The host couldn't send a pack this game needs: %1$s</string>
+    <string name="pack_broken">A pack the host sent is broken: %1$s</string>
+    <string name="cancel">Cancel</string>
     <string name="password">Password</string>
     <string name="needs_password">This game needs a password.</string>
     <string name="wrong_password">Wrong password.</string>

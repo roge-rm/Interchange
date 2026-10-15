@@ -3,6 +3,7 @@ package com.rm.interchange.net
 import com.rm.interchange.sim.BadData
 import com.rm.interchange.sim.ByteWriter
 import com.rm.interchange.sim.Command
+import com.rm.interchange.sim.PackRef
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
@@ -17,6 +18,7 @@ class WireTest {
             Message.Hello(Wire.PROTOCOL, "abc", "Ann", "", 2, "ours"),
             Message.Look(Wire.PROTOCOL),
             Message.Lock("ours"),
+            Message.PackGet(Wire.PROTOCOL, PackRef("prairie", 3, -77L)),
             Message.Request(Command.Loan(2, true)),
             Message.Say("bonjour, ça va"),
             Message.Resync,
@@ -34,6 +36,10 @@ class WireTest {
         assertEquals(77L, back.frame)
         assertContentEquals(w.save, back.save)
         assertEquals(w.pending, back.pending)
+        val part = assertIs<Message.PackPart>(Wire.decode(Wire.encode(Message.PackPart(PackRef("prairie", 3, -77L), 5, 9, byteArrayOf(4, 5)))))
+        assertEquals(PackRef("prairie", 3, -77L), part.ref)
+        assertEquals(5 to 9, part.offset to part.total)
+        assertContentEquals(byteArrayOf(4, 5), part.bytes)
     }
 
     @Test

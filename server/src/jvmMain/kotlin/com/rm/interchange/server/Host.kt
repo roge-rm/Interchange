@@ -13,12 +13,16 @@ import com.rm.interchange.sim.Calendar
 import com.rm.interchange.sim.Command
 import com.rm.interchange.sim.Insignia
 import com.rm.interchange.sim.MAX_COMPANIES
+import com.rm.interchange.sim.PackRef
+import com.rm.interchange.sim.Packs
 import com.rm.interchange.sim.World
 import com.rm.interchange.sim.human
 import java.security.MessageDigest
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * Hosts the game [runner] plays for players on the network: lets them in,
@@ -26,7 +30,8 @@ import java.util.concurrent.CopyOnWriteArrayList
  * A phone hosting plays [hostCompany] itself as [hostName]; a dedicated server
  * plays none (-1). Several players may share a company, and a company may
  * have a password, needed to join it unless it's the one you played last
- * since the password was set.
+ * since the password was set. Players missing a pack the game uses can
+ * download it from here first.
  *
  * Network threads only read and pass things on; everything touching the world
  * runs on the game thread.
@@ -48,6 +53,8 @@ class Host(
     passwords: Map<Int, String> = emptyMap(),
     /** Whether to announce the game on the local network. */
     private val announce: Boolean = true,
+    /** The zip of a pack, for players who haven't got it; null if there's none. Called off the game thread. */
+    private val packBytes: (PackRef) -> ByteArray? = { null },
 ) {
     private class Session(val connection: Connection) {
         @Volatile var name = ""
@@ -56,6 +63,8 @@ class Host(
         /** Sent the world and getting every frame; only changed on the game thread. */
         @Volatile var joined = false
         @Volatile var helloed = false
+        /** Sending a pack; one at a time on a connection. */
+        val sending = AtomicBoolean(false)
     }
 
     private val sessions = CopyOnWriteArrayList<Session>()
@@ -81,6 +90,8 @@ class Host(
     private var renamedIn = -1L
     private val listener = Listener(port, ::connected)
     private val id = UUID.randomUUID().toString()
+    /** Packs being sent now, each on a thread of its own. */
+    private val senders = AtomicInteger()
     @Volatile private var closed = false
 
     /** Something to say about what's happening, for the log. */
@@ -173,6 +184,26 @@ class Host(
                     }
                 }
             }
+            // Another asked for while one is sending is ignored.
+            is Message.PackGet -> if (!s.helloed && s.sending.compareAndSet(false, true)) runner.onGameThread { g ->
+                when {
+                    m.protocol != Wire.PROTOCOL -> refuse(s, Reject.VERSION)
+                    // Only packs this game uses; the base pack comes with the game.
+                    m.ref.id == Packs.BASE_ID || m.ref !in g.world.roster.packs -> refuse(s, Reject.NO_PACK)
+                    senders.incrementAndGet() > MAX_PACK_SENDERS -> {
+                        senders.decrementAndGet()
+                        refuse(s, Reject.FULL)
+                    }
+                    else -> Thread({
+                        try {
+                            sendPack(s, m.ref)
+                        } finally {
+                            senders.decrementAndGet()
+                            s.sending.set(false)
+                        }
+                    }, "interchange-pack").apply { isDaemon = true }.start()
+                }
+            }
             is Message.Lock -> if (s.joined && s.company >= 0) lock(s.company, m.password.take(PASSWORD_MOST))
             is Message.Request -> {
                 val c = m.command
@@ -187,6 +218,31 @@ class Host(
             }
             else -> {}
         }
+    }
+
+    /**
+     * Sends [ref]'s zip to [s] in parts, waiting while they're slow to read so it isn't all held at once. A player
+     * who stops reading for [PACK_STALL_MILLIS] is let go.
+     */
+    private fun sendPack(s: Session, ref: PackRef) {
+        val c = s.connection
+        if (c.isClosed) return
+        val zip = try { packBytes(ref) } catch (e: Exception) { null }
+        if (zip == null || zip.size > Packs.MAX_TOTAL) return refuse(s, Reject.NO_PACK)
+        log("Sending pack ${ref.id} ${ref.version} to ${c.address}")
+        var at = 0
+        do {
+            val since = System.nanoTime()
+            while (c.backlog > PACK_PART * 4L) {
+                if (c.isClosed) return
+                if (System.nanoTime() - since > PACK_STALL_MILLIS * 1_000_000) return c.close("stopped reading")
+                Thread.sleep(20)
+            }
+            if (c.isClosed) return
+            val n = minOf(PACK_PART, zip.size - at)
+            c.send(Message.PackPart(ref, at, zip.size, zip.copyOfRange(at, at + n)))
+            at += n
+        } while (at < zip.size)
     }
 
     /** On the game thread: lets [s] in if it may come, with a company. */
@@ -318,6 +374,11 @@ class Host(
         const val NAME_MOST = 24
         const val CHAT_MOST = 300
         const val PASSWORD_MOST = 64
+        /** Bytes of a pack sent in each message. */
+        const val PACK_PART = 1 shl 20
+        /** Packs sent at once, to different players. */
+        const val MAX_PACK_SENDERS = 4
+        const val PACK_STALL_MILLIS = 30_000L
 
         /** A password as it's kept: hashed, so the dedicated server's state folder doesn't hold it as typed. */
         fun hash(password: String): String =
