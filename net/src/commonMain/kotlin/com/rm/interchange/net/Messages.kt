@@ -72,8 +72,11 @@ sealed interface Message {
     /** Server to everyone: [name], playing [company] (-1 for the server or someone watching), said [text]. */
     data class Chat(val name: String, val company: Int, val text: String) : Message
 
-    /** Server to everyone: who's playing now, and the companies players can play. */
-    data class Players(val players: List<Player>, val companies: List<CompanyInfo> = emptyList()) : Message
+    /**
+     * Server to everyone: who's playing now, and the companies players can play. Answering a [Look] it also has
+     * [packs], the add-on packs the game uses, to fetch before joining.
+     */
+    data class Players(val players: List<Player>, val companies: List<CompanyInfo> = emptyList(), val packs: List<PackRef> = emptyList()) : Message
 
     companion object {
         /** What [Hello.join] asks for besides a company to share. */
@@ -120,7 +123,7 @@ object Reject {
  */
 object Wire {
     /** The version of the protocol and the sim together; players and servers must match. */
-    const val PROTOCOL = 5
+    const val PROTOCOL = 6
 
     private const val HELLO = 1
     private const val REQUEST = 2
@@ -166,6 +169,8 @@ object Wire {
                 for (p in m.players) { w.string(p.name); w.int(p.company) }
                 w.int(m.companies.size)
                 for (c in m.companies) { w.int(c.id); w.string(c.name); w.int(c.players); w.bool(c.locked); w.bytes(c.insignia) }
+                w.int(m.packs.size)
+                for (p in m.packs) ref(w, p)
             }
         }
         return w.toByteArray()
@@ -204,9 +209,11 @@ object Wire {
                 val n = r.int().also { if (it !in 0..256) throw BadData("too many players") }
                 val players = List(n) { Player(r.string(), r.int()) }
                 val k = r.int().also { if (it !in 0..256) throw BadData("too many companies") }
-                Message.Players(players, List(k) {
+                val companies = List(k) {
                     CompanyInfo(r.int(), r.string(), r.int(), r.bool(), r.bytes().also { if (it.isNotEmpty() && !Insignia.valid(it)) throw BadData("a bad insignia") })
-                })
+                }
+                val packs = List(r.int().also { if (it !in 0..256) throw BadData("too many packs") }) { ref(r) }
+                Message.Players(players, companies, packs)
             }
             else -> throw BadData("no such message: $kind")
         }

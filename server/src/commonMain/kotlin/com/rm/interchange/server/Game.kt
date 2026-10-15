@@ -115,9 +115,13 @@ class Game(world: World) {
     var outOfStepWhy = ""
         private set
 
+    /** Hears when this copy goes out of step. */
+    var log: (String) -> Unit = {}
+
     private fun outOfStep(why: String) {
         outOfStep = true
         outOfStepWhy = why
+        log("Out of step, asking for the world again: $why")
         frames.clear()
         pending.clear()
         send?.invoke(Message.Resync)

@@ -28,6 +28,7 @@ class WireTest {
             Message.Chat("Ann", 3, "hi"),
             Message.Players(listOf(Player("Host", 0), Player("Ann", 3), Player("Bo", -1))),
             Message.Players(listOf(Player("Ann", 3)), listOf(CompanyInfo(0, "Host & Co", 1, false), CompanyInfo(3, "Ann", 2, true, com.rm.interchange.sim.Insignia.presets[0]))),
+            Message.Players(listOf(Player("Ann", 3)), emptyList(), listOf(PackRef("prairie", 3, -77L), PackRef("railbus", 2, 5L))),
         )
         for (m in all) assertEquals(m, Wire.decode(Wire.encode(m)))
         val w = Message.Welcome(3, "Game", 77, byteArrayOf(1, 2, 3), listOf(Message.Scheduled(78, Command.Loan(3, false))))

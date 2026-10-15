@@ -89,7 +89,7 @@ private sealed interface Joining {
 }
 
 /** A game looked at, to pick what to join as: where it is, its name, the companies in it and who's playing. */
-private class Looked(val address: String, val port: Int, val name: String, val companies: List<CompanyInfo>, val players: List<Player>)
+private class Looked(val address: String, val port: Int, val name: String, val companies: List<CompanyInfo>, val players: List<Player>, val packs: List<PackRef>)
 
 /** The address and port typed, "host" or "host:port". */
 private fun parseAddress(text: String): Pair<String, Int> {
@@ -177,7 +177,7 @@ fun MultiplayerWindow(settings: Settings, onJoined: (Remote, World) -> Unit, onC
                     if (looked?.let { it.address == address && it.port == port } != true) {
                         asked = false; password = ""; askedCompany = false; companyPassword = ""
                     }
-                    looked = Looked(address, port, name, m.companies, m.players)
+                    looked = Looked(address, port, name, m.companies, m.players, m.packs)
                 }.onFailure { e ->
                     error = if ((e as? Refused)?.reason == Reject.VERSION) otherVersion else cantReach.replace("%s", where(address, port))
                 }
@@ -221,28 +221,40 @@ fun MultiplayerWindow(settings: Settings, onJoined: (Remote, World) -> Unit, onC
             try {
                 // Connecting, downloading and reading the world all take a while, so none holds up the screen.
                 val outcome = withContext(Dispatchers.IO) {
+                    /** Fetches [packs] and keeps them; null if it worked, otherwise why not (also null with [stop] set, for cancelling). */
+                    fun download(packs: List<PackRef>): Joining? {
+                        val stop = AtomicBoolean(false).also { cancel = it }
+                        try {
+                            val zips = Remote.fetchPacks(game.address, game.port, packs, progress = { _, at, total ->
+                                busy = downloading.replace("%1", "%.1f".format(at / 1e6)).replace("%2", "%.1f".format(total / 1e6))
+                            }, cancelled = { stop.get() })
+                            for ((ref, zip) in zips) InstalledPacks.keepDownloaded(ref, zip)
+                            return null
+                        } catch (e: Cancelled) {
+                            return null
+                        } catch (e: Refused) {
+                            return Joining.Unreachable(notSent.replace("%s", names(packs)))
+                        } catch (e: BadData) {
+                            return Joining.Unreachable(broken.replace("%s", e.message ?: ""))
+                        } catch (e: BadPack) {
+                            return Joining.Unreachable(broken.replace("%s", e.problems.first()))
+                        } catch (e: Exception) {
+                            return Joining.Unreachable(cantReach.replace("%s", where(game.address, game.port)))
+                        } finally {
+                            cancel = null
+                        }
+                    }
+                    // Packs the game uses are fetched before joining, so a new company isn't made and left.
+                    val missing = game.packs.filter { InstalledPacks.findExact(it) == null }
+                    if (missing.isNotEmpty()) {
+                        download(missing)?.let { return@withContext it }
+                        if (missing.any { InstalledPacks.findExact(it) == null }) return@withContext null
+                        busy = joiningText
+                    }
                     val first = enter(hello)
                     if (first !is Joining.Download) return@withContext first
-                    val stop = AtomicBoolean(false).also { cancel = it }
-                    try {
-                        val zips = Remote.fetchPacks(game.address, game.port, first.packs, progress = { _, at, total ->
-                            busy = downloading.replace("%1", "%.1f".format(at / 1e6)).replace("%2", "%.1f".format(total / 1e6))
-                        }, cancelled = { stop.get() })
-                        for ((ref, zip) in zips) InstalledPacks.keepDownloaded(ref, zip)
-                    } catch (e: Cancelled) {
-                        return@withContext null
-                    } catch (e: Refused) {
-                        return@withContext Joining.Unreachable(notSent.replace("%s", names(first.packs)))
-                    } catch (e: BadData) {
-                        return@withContext Joining.Unreachable(broken.replace("%s", e.message ?: ""))
-                    } catch (e: BadPack) {
-                        return@withContext Joining.Unreachable(broken.replace("%s", e.problems.first()))
-                    } catch (e: Exception) {
-                        return@withContext Joining.Unreachable(cantReach.replace("%s", where(game.address, game.port)))
-                    } finally {
-                        cancel = null
-                    }
-                    if (stop.get()) return@withContext null
+                    download(first.packs)?.let { return@withContext it }
+                    if (first.packs.any { InstalledPacks.findExact(it) == null }) return@withContext null
                     busy = joiningText
                     // Back as the same client, to the company we were given.
                     when (val again = enter(hello.copy(join = if (first.company >= 0) first.company else Message.SPECTATE))) {

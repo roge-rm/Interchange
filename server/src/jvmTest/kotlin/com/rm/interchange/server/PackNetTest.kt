@@ -122,6 +122,25 @@ class PackNetTest {
     }
 
     @Test
+    fun lookingTellsThePacksSoTheyAreFetchedBeforeJoining() {
+        val (runner, host) = hosting()
+        Thread.sleep(300)
+        val seen = Remote.look("127.0.0.1", host.port)
+        assertEquals(listOf(pack.ref), seen.packs)
+        val companies = on(runner) { it.world.companies.size }
+        val have = HashMap<PackRef, Pack>()
+        val find = { ref: PackRef -> if (ref == Packs.BASE.ref) Packs.BASE else have[ref] }
+        val missing = seen.packs.filter { find(it) == null }
+        for ((ref, zip) in Remote.fetchPacks("127.0.0.1", host.port, missing)) have[ref] = Packs.unzip(zip)
+        // Joined once, with the packs in hand, so only one company is made.
+        val remote = Remote.join("127.0.0.1", host.port, Message.Hello(0, "a", "Ann", "", Message.NEW_COMPANY))
+        stops += { remote.leave() }
+        Save.read(remote.welcome!!.save, find)
+        Thread.sleep(500)
+        assertEquals(companies + 1, on(runner) { it.world.companies.size })
+    }
+
+    @Test
     fun twoPlayersCanDownloadAtOnce() {
         val (_, host) = hosting()
         val other = CompletableFuture.supplyAsync { Remote.fetchPacks("127.0.0.1", host.port, listOf(pack.ref)) }

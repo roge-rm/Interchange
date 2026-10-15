@@ -56,6 +56,7 @@ import com.rm.interchange.sim.roadCost
 import com.rm.interchange.sim.clearCost
 import com.rm.interchange.map.View
 import com.rm.interchange.map.buildingAt
+import com.rm.interchange.platform.logLine
 import com.rm.interchange.server.Game
 import com.rm.interchange.server.GameThread
 import com.rm.interchange.server.Host
@@ -231,7 +232,7 @@ private fun Root(settings: Settings) {
         r.company = remote.company
         r.autosaveDays = 0
         // A world sent again after going out of step needs the same packs found.
-        r.onGameThread { g -> g.findPack = InstalledPacks::findExact }
+        r.onGameThread { g -> g.findPack = InstalledPacks::findExact; g.log = ::logLine }
         r.start()
         runner = r
         lost = false
@@ -256,7 +257,7 @@ private fun Root(settings: Settings) {
             try {
                 val result = withContext(Dispatchers.IO) {
                     closing.get()?.join()
-                    runCatching { Host(r, name, password = password, hostName = me, hostCompany = r.company, packBytes = InstalledPacks::zip).also { made = it; it.start() } }
+                    runCatching { Host(r, name, password = password, hostName = me, hostCompany = r.company, packBytes = InstalledPacks::zip).also { it.log = ::logLine; made = it; it.start() } }
                 }
                 // Kept only if the game it was opened for is still running.
                 result.onSuccess { h -> if (runner === r) { host = h; kept = true } }

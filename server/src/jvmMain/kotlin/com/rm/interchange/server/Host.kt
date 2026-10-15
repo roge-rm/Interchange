@@ -179,7 +179,7 @@ class Host(
                 runner.onGameThread { g ->
                     if (m.protocol != Wire.PROTOCOL) refuse(s, Reject.VERSION)
                     else {
-                        s.connection.send(Message.Players(players, companiesOf(g.world)))
+                        s.connection.send(Message.Players(players, companiesOf(g.world), g.world.roster.packs.filter { it.id != Packs.BASE_ID }))
                         s.connection.close("looked")
                     }
                 }
