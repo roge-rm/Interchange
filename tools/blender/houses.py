@@ -201,11 +201,12 @@ def fence_round(m, kind, mat=None, front=None, door_x=0.0, side_front=0.32):
 
 
 def yard_tree(m, x, y, size=1.0, seed=1, kind="maple"):
-    """A shade tree in the yard: a trunk and a crown of leaf blobs."""
+    """A shade tree in the yard: a short trunk and a full crown of leaf blobs from low down."""
     bark = material("bark", "#4a3a2c", rough=0.95)
-    m.upright(x, y, 0, 2.4 * size, 0.012 * size, 0.008 * size, bark, segments=8)
+    m.upright(x, y, 0, 1.8 * size, 0.012 * size, 0.008 * size, bark, segments=8)
     leaves = scenery.leafy("yard " + kind, "#3e6a2a", "#6a9a3e") if kind == "maple" else scenery.leafy("yard elm", "#4a6e2e", "#78a048")
-    for k, (dx, dy, dz, r) in enumerate(((0, 0, 3.2, 0.11), (0.06, 0.03, 2.8, 0.08), (-0.05, -0.04, 2.9, 0.085), (0.02, -0.05, 3.6, 0.07))):
+    for k, (dx, dy, dz, r) in enumerate(((0, 0, 2.1, 0.1), (0.06, 0.03, 1.6, 0.085), (-0.05, -0.04, 1.7, 0.085), (0.03, -0.05, 2.6, 0.075),
+                                         (-0.04, 0.05, 2.4, 0.08), (0.05, -0.02, 1.3, 0.07), (-0.02, 0.04, 1.2, 0.07))):
         scenery.blob(m, x + dx * size, y + dy * size, dz * size, r * size, leaves, seed * 7 + k)
 
 

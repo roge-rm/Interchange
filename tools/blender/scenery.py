@@ -63,32 +63,36 @@ def blob(model, x, y, z, r, mat, seed, squash=1.0):
     return lumpy(model, obj, r * 0.55, r * 0.6, seed)
 
 
+# How big each look of a tree is, from a young one to an old one, so a forest isn't all one height.
+TREE_SIZES = (0.6, 0.76, 0.9, 1.04, 1.2)
+
+
 def tree(m, kind, look, season="summer"):
     """A tree. The leafy kinds can also be drawn in their autumn colours or bare for winter."""
     rng = random.Random(f"{kind}{look}")
-    size = 0.85 + 0.15 * look + rng.uniform(-0.05, 0.05)
+    size = TREE_SIZES[look] + rng.uniform(-0.04, 0.04)
     bark = material("bark", "#5a3f2a", rough=0.9)
     if kind in ("spruce", "fir"):
         green = leafy(f"{kind} needles", "#1f3a20" if kind == "spruce" else "#1e3a34", "#3a5e34" if kind == "spruce" else "#3a6656")
-        top = 5.0 * size
+        top = 3.0 * size
         m.upright(0, 0, 0, top * 0.4, 0.018, 0.014, bark, segments=8)
         layers = 7
         for k in range(layers):
             t = k / layers
             h0 = top * (0.12 + 0.78 * t)
-            r0 = (0.15 if kind == "spruce" else 0.17) * size * (1 - 0.8 * t) + 0.02
+            r0 = (0.13 if kind == "spruce" else 0.145) * size * (1 - 0.8 * t) + 0.02
             cone = m.upright(rng.uniform(-0.005, 0.005), rng.uniform(-0.005, 0.005), h0, h0 + top * 0.3, r0, 0.004, green, segments=14)
             lumpy(m, cone, r0 * 0.35, 0.05, look * 10 + k)
         return
     if kind == "pine":
         green = leafy("pine needles", "#2e4a26", "#56763c")
         trunk = material("pine bark", "#8a5a3a", rough=0.9)
-        top = 5.6 * size
+        top = 3.4 * size
         m.upright(0, 0, 0, top * 0.8, 0.02, 0.014, trunk, segments=8)
         for k in range(9):
             a = rng.uniform(-0.1, 0.1)
             s = rng.uniform(-0.1, 0.1)
-            blob(m, a, s, top * rng.uniform(0.62, 0.95), rng.uniform(0.09, 0.13) * size, green, look * 10 + k, squash=0.55)
+            blob(m, a, s, top * rng.uniform(0.55, 0.95), rng.uniform(0.09, 0.13) * size, green, look * 10 + k, squash=0.55)
         return
     colours = {
         "summer": {"maple": ("#2c5a22", "#4e8a36"), "birch": ("#4e7a30", "#86b04e"), "aspen": ("#5a8a34", "#9ac05a")},
@@ -96,32 +100,34 @@ def tree(m, kind, look, season="summer"):
     }.get(season, {}).get(kind)
     green = leafy(f"{kind} leaves {season}", *colours) if colours else None
     trunk = material("birch bark", "#e4e0d6", rough=0.8) if kind == "birch" else material("aspen bark", "#c4c2b0", rough=0.8) if kind == "aspen" else bark
-    top = (4.2 if kind == "maple" else 4.6) * size
-    m.upright(0, 0, 0, top * 0.6, 0.024, 0.016, trunk, segments=8)
+    top = (2.6 if kind == "maple" else 3.0) * size
+    m.upright(0, 0, 0, top * 0.75, 0.024, 0.016, trunk, segments=8)
     if kind == "birch":
-        for k in range(6):
-            z = top * 0.08 * (k + 1)
+        for k in range(4):
+            z = top * 0.07 * (k + 1)
             m.box(-0.026, 0.026, -0.006, 0.006, z, z + 0.06, material("birch marks", "#2a2622", rough=0.9))
-    wide = (0.16 if kind == "maple" else 0.11) * size
-    count = 11 if kind == "maple" else 8
+    # The crown starts low and is widest a third of the way up, as an egg.
+    low = 0.32 if kind == "maple" else 0.38
+    wide = (0.15 if kind == "maple" else 0.1) * size
+    count = 14 if kind == "maple" else 11
     twigs = None
     if green is None:
         # Bare: boughs out to where the leaves would be, twigs off them, and a faint haze of the finest twigs.
         twigs = haze(f"{kind} twigs", "#6a5c54" if kind == "maple" else "#8a7e74")
     for k in range(count):
         t = rng.random()
-        h = top * (0.55 + 0.4 * t)
-        reach = wide * math.sin(math.pi * min(1.0, 0.2 + t * 0.9))
+        h = top * (low + (0.92 - low) * t)
+        reach = wide * (0.35 + 0.65 * math.sin(math.pi * min(1.0, 0.25 + t * 0.85)))
         ang = rng.uniform(0, 2 * math.pi)
-        r = rng.uniform(0.1, 0.14) * size * (1.1 if kind == "maple" else 0.85)
+        r = rng.uniform(0.09, 0.12) * size * (1.1 if kind == "maple" else 0.85)
         x, y = reach * math.cos(ang), reach * math.sin(ang)
         if green is not None:
             blob(m, x, y, h, r, green, look * 10 + k)
             continue
-        m.rod((0, 0, top * 0.45), (x, y, h), 0.008, trunk, segments=6)
+        m.rod((0, 0, top * 0.3), (x, y, h), 0.008, trunk, segments=6)
         for j in range(3):
             a2 = ang + rng.uniform(-1.2, 1.2)
-            m.rod((x, y, h), (x + r * 0.8 * math.cos(a2), y + r * 0.8 * math.sin(a2), h + rng.uniform(0.1, 0.6)), 0.004, trunk, segments=5)
+            m.rod((x, y, h), (x + r * 0.8 * math.cos(a2), y + r * 0.8 * math.sin(a2), h + rng.uniform(0.1, 0.4)), 0.004, trunk, segments=5)
         blob(m, x, y, h, r * 0.9, twigs, look * 10 + k)
 
 

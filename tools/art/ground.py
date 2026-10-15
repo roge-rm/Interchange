@@ -278,7 +278,7 @@ def water():
 # ---- trees -------------------------------------------------------------------------
 
 TREES = ["spruce", "pine", "fir", "maple", "birch", "aspen"]
-TREE_LOOKS = 3
+TREE_LOOKS = 5
 
 
 def sphere(d, centre, r, col):
@@ -294,7 +294,7 @@ def sphere(d, centre, r, col):
 
 def tree(kind, look):
     rng = random.Random(zlib.crc32(f"{kind}{look}".encode()))
-    size = 0.85 + 0.15 * look + rng.uniform(-0.05, 0.05)
+    size = (0.6, 0.76, 0.9, 1.04, 1.2)[look] + rng.uniform(-0.04, 0.04)
     img = cell()
     f = Frame(0)
     if kind in ("spruce", "fir", "pine"):

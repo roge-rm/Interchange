@@ -37,6 +37,8 @@ import roadcars  # noqa: E402
 import waterside  # noqa: E402
 
 TREES = ["spruce", "pine", "fir", "maple", "birch", "aspen"]
+# Buildings are drawn at this share of their modelled height, so towns and trees sit lower against a 25 metre tile.
+BUILDING_RISE = 0.75
 LEAFY = ["maple", "birch", "aspen"]
 DECOR = ["boulder", "shrub", "tall_grass"]
 PIECES = ["X", "Y", "N", "E", "S", "W"]
@@ -87,7 +89,7 @@ def up_pass(out, name, model):
     rig.render(str(out / name.replace(".png", "_up.png")))
 
 
-def shot(out, name, build, samples=48, shadow=True, placed=True, heading=0):
+def shot(out, name, build, samples=48, shadow=True, placed=True, heading=0, rise=1.0):
     if ONLY and not name.startswith(ONLY):
         return
     shadow_name = name.replace(".png", "_shadow.png")
@@ -104,7 +106,7 @@ def shot(out, name, build, samples=48, shadow=True, placed=True, heading=0):
         model = parts.Model(name)
         build(model)
         if placed:
-            model.place(heading)
+            model.place(heading).scale.z = rise
         up_pass(out, name, model)
         return
     rig.clear()
@@ -114,7 +116,7 @@ def shot(out, name, build, samples=48, shadow=True, placed=True, heading=0):
     model = parts.Model(name)
     build(model)
     if placed:
-        model.place(heading)
+        model.place(heading).scale.z = rise
     if not shadow:
         catcher.hide_render = True
         rig.render(str(out / name))
@@ -139,37 +141,37 @@ def main():
     ONLY = args[1] if len(args) > 1 else None
     out.mkdir(parents=True, exist_ok=True)
     for kind in TREES:
-        for look in range(3):
+        for look in range(len(scenery.TREE_SIZES)):
             shot(out, f"tree_{kind}_{look}.png", lambda m, kind=kind, look=look: scenery.tree(m, kind, look))
     for kind in LEAFY:
         for season in ("autumn", "bare"):
-            for look in range(3):
+            for look in range(len(scenery.TREE_SIZES)):
                 shot(out, f"tree_{kind}_{look}_{season}.png", lambda m, kind=kind, look=look, season=season: scenery.tree(m, kind, look, season))
     for a in (0, 1):
-        shot(out, f"station_{a}.png", lambda m, a=a: scenery.station(m, a == 0))
+        shot(out, f"station_{a}.png", lambda m, a=a: scenery.station(m, a == 0), rise=BUILDING_RISE)
     for edge in EDGES:
-        shot(out, f"depot_{edge}.png", lambda m, edge=edge: scenery.depot(m, edge))
-        shot(out, f"garage_{edge}.png", lambda m, edge=edge: scenery.garage(m, edge))
+        shot(out, f"depot_{edge}.png", lambda m, edge=edge: scenery.depot(m, edge), rise=BUILDING_RISE)
+        shot(out, f"garage_{edge}.png", lambda m, edge=edge: scenery.garage(m, edge), rise=BUILDING_RISE)
     for a in (0, 1):
-        shot(out, f"road_stop_{a}.png", lambda m, a=a: scenery.road_stop(m, a == 0))
-    shot(out, "salt_dome.png", roadcars.salt_dome)
+        shot(out, f"road_stop_{a}.png", lambda m, a=a: scenery.road_stop(m, a == 0), rise=BUILDING_RISE)
+    shot(out, "salt_dome.png", roadcars.salt_dome, rise=BUILDING_RISE)
     for edge in EDGES:
-        shot(out, f"dock_{edge}.png", lambda m, edge=edge: waterside.dock(m, edge))
-        shot(out, f"shipyard_{edge}.png", lambda m, edge=edge: waterside.shipyard(m, edge))
+        shot(out, f"dock_{edge}.png", lambda m, edge=edge: waterside.dock(m, edge), rise=BUILDING_RISE)
+        shot(out, f"shipyard_{edge}.png", lambda m, edge=edge: waterside.shipyard(m, edge), rise=BUILDING_RISE)
         shot(out, f"lock_{edge}.png", lambda m, edge=edge: waterside.lock(m, edge))
-        shot(out, f"seaplane_{edge}.png", lambda m, edge=edge: waterside.seaplane_dock(m, edge))
-        shot(out, f"hangar_small_{edge}.png", lambda m, edge=edge: waterside.hangar(m, edge, False))
-        shot(out, f"hangar_{edge}.png", lambda m, edge=edge: waterside.hangar(m, edge, True))
+        shot(out, f"seaplane_{edge}.png", lambda m, edge=edge: waterside.seaplane_dock(m, edge), rise=BUILDING_RISE)
+        shot(out, f"hangar_small_{edge}.png", lambda m, edge=edge: waterside.hangar(m, edge, False), rise=BUILDING_RISE)
+        shot(out, f"hangar_{edge}.png", lambda m, edge=edge: waterside.hangar(m, edge, True), rise=BUILDING_RISE)
         for size in ("small", "mid", "big"):
-            shot(out, f"terminal_{size}_{edge}.png", lambda m, edge=edge, size=size: waterside.terminal(m, edge, size))
-    shot(out, "tower.png", waterside.tower)
-    shot(out, "strip_hut.png", waterside.strip_hut)
+            shot(out, f"terminal_{size}_{edge}.png", lambda m, edge=edge, size=size: waterside.terminal(m, edge, size), rise=BUILDING_RISE)
+    shot(out, "tower.png", waterside.tower, rise=BUILDING_RISE)
+    shot(out, "strip_hut.png", waterside.strip_hut, rise=BUILDING_RISE)
     for kind in houses.BUILDERS:
         for edge in EDGES:
-            shot(out, f"house_{kind}_{edge}.png", lambda m, kind=kind: houses.house(m, kind), heading=houses.FACING[edge])
+            shot(out, f"house_{kind}_{edge}.png", lambda m, kind=kind: houses.house(m, kind), heading=houses.FACING[edge], rise=BUILDING_RISE)
     for key in industries.PARTS:
         for edge in EDGES:
-            shot(out, f"part_{key}_{edge}.png", lambda m, key=key: industries.part(m, key), heading=houses.FACING[edge])
+            shot(out, f"part_{key}_{edge}.png", lambda m, key=key: industries.part(m, key), heading=houses.FACING[edge], rise=BUILDING_RISE)
     # Bridges a tile and a step at a time, and tunnel mouths, drawn over trains so have no shadows of their own.
     for style in spans.STYLES:
         for a in (0, 1):
