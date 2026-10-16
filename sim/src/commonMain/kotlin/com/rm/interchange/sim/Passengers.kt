@@ -18,10 +18,12 @@ package com.rm.interchange.sim
 
 /**
  * A lot of passengers or mail travelling together: going to station [dest]
- * (-1 for anywhere), from station [origin], since tick [since]. [credit] is
- * what its earlier legs have been credited to the trains that carried them;
- * [boarded] is the station it got on its present train at, and [waitingFrom]
- * when it started waiting at the station it's at.
+ * (-1 for anywhere), from station [origin]. Its fare goes by its time on
+ * board: on a vehicle that's the ticks since [since]; waiting at a station
+ * it's [waitingFrom] less [since], which doesn't grow while it waits.
+ * [credit] is what its earlier legs have been credited to the trains that
+ * carried them; [boarded] is the station it got on its present train at, and
+ * [waitingFrom] when it started waiting at the station it's at.
  */
 class Packet(val dest: Int, val origin: Int, var count: Int, val since: Long, var credit: Long = 0, var boarded: Int = -1, var waitingFrom: Long = since)
 
@@ -160,10 +162,14 @@ fun World.nextHop(from: Int, dest: Int): Int {
     return nextHops[from]?.get(dest) ?: -1
 }
 
-/** Adds [n] to station [s]'s cargo [c] for [dest], with the lot from the same place already waiting if there is one. */
+/**
+ * Adds [n] to station [s]'s cargo [c] for [dest], with the lot from the same place already waiting if there is one
+ * and it's been on board as long. [since] is the tick its time on board started from: now for new cargo.
+ */
 internal fun World.addWaiting(s: Station, c: Int, dest: Int, origin: Int, n: Int, since: Long, credit: Long = 0) {
     if (n <= 0) return
-    val same = s.cargo[c].firstOrNull { it.dest == dest && it.origin == origin }
+    val aboard = tick - since
+    val same = s.cargo[c].firstOrNull { it.dest == dest && it.origin == origin && it.waitingFrom - it.since == aboard }
     if (same != null) {
         same.count += n
         same.credit += credit
@@ -368,6 +374,7 @@ private fun nextStop(t: Carrier): Int = if (t.orders.size < 2) -1 else Order.sta
 internal fun World.callAt(t: Carrier, s: Station, o: Int = 0) {
     val company = companies.getOrNull(t.owner) ?: return
     val next = nextStop(t)
+    // Days on board, over every leg so far.
     val days = { p: Packet -> ((tick - p.since) / Calendar.TICKS_PER_DAY).toInt() }
     val unload = Order.has(o, Order.UNLOAD)
     val transfer = Order.has(o, Order.TRANSFER)
@@ -434,9 +441,9 @@ internal fun World.loadAt(t: Carrier, s: Station) {
             // Only towards where it's going, and never back where it came from.
             if (next == p.origin || (p.dest != -1 && (next < 0 || nextHop(s.id, p.dest) != next))) continue
             val take = minOf(room, p.count)
-            // A share of the lot's credit goes with those who board.
+            // A share of the lot's credit goes with those who board, and its time on board carries on from where it was.
             val credit = p.credit * take / p.count
-            t.cargo[c] += Packet(p.dest, p.origin, take, p.since, credit, s.id)
+            t.cargo[c] += Packet(p.dest, p.origin, take, tick - (p.waitingFrom - p.since), credit, s.id)
             p.count -= take
             p.credit -= credit
             room -= take
@@ -446,7 +453,7 @@ internal fun World.loadAt(t: Carrier, s: Station) {
 }
 
 /**
- * What [n] of cargo [c] pays carried from [from] to [to] in [days]: by the
+ * What [n] of cargo [c] pays carried from [from] to [to] with [days] on board: by the
  * distance between the stations, full if it came at a tile a day or better
  * (about 40 km/h) and within that cargo's grace, then less each day after,
  * down to a third.

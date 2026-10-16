@@ -284,7 +284,7 @@ class Balance {
     }
 
     /**
-     * A sensible first railway pays its train back in 2 to 5 work years at day length 1 and 10, on a town of about
+     * A sensible first railway pays its train back in 1.5 to 5 work years at day length 1 and 10, on a town of about
      * 500 at each end or one mine's output, and the line makes money counting track upkeep (which is by the calendar,
      * so day length 1 is where it bites).
      */
@@ -304,11 +304,42 @@ class Balance {
         }
         val rows = table(runs)
         assertEquals(runs.size, rows.size, "every early line was built")
+        for (row in rows) println("early: ${row.run.year} ${row.run.vehicle} ${Cargo.IDS[row.run.cargo]} ${row.run.tiles} tiles, day length ${row.run.dayLength}: ${row.payback}")
         for (row in rows) {
             val what = "${row.run.year} ${row.run.vehicle} and ${row.run.wagons} ${Cargo.IDS[row.run.cargo]} wagons, ${row.run.tiles} tiles, day length ${row.run.dayLength}"
-            assertTrue(row.years in 2.0..5.0, "$what pays back in ${row.payback} work years")
+            assertTrue(row.years in 1.5..5.0, "$what pays back in ${row.payback} work years")
             assertTrue(row.profit > row.upkeep, "$what makes ${row.profit} against ${row.upkeep} upkeep")
         }
+    }
+
+    /**
+     * Each kind in its niche: a full 1950s truck pays back in 2 to 5 work years on a short haul of 15 tiles, a 1950s
+     * freight train pays back faster than the trucks on 60 tiles, and a horse freight wagon pays on 10 tiles in 1850.
+     */
+    @Test
+    fun eachKindPaysInItsNiche() {
+        val r = Roster.BASE
+        fun e(key: String) = r.engines.first { it.key == "base:$key" }
+        val days = listOf(1, 10)
+        fun road(key: String, year: Int, tiles: Int, cargo: Int) = days.map { dl -> Run("truck", key, year, dl, tiles, "full", cargo, e(key), null, 0) }
+        val coal = onSale(r, 1950, VehicleKind.WAGON).filter { Cargo.COAL in it.cargoes }.maxBy { it.capacity }
+        val pacific = e("pacific")
+        val train = days.map { dl -> Run("train-freight", "pacific", 1950, dl, 60, "full", Cargo.COAL, pacific, coal, wagonsFor(r, pacific, coal, Cargo.COAL)) }
+        val trucks = listOf("dump_truck" to Cargo.COAL, "semi_van" to Cargo.GOODS)
+        val short = trucks.flatMap { (k, c) -> road(k, 1950, 15, c) }
+        val long = trucks.flatMap { (k, c) -> road(k, 1950, 60, c) }
+        val horse = road("freight_wagon", 1850, 10, Cargo.GRAIN)
+        val rows = table(short + long + train + horse)
+        assertEquals(short.size + long.size + train.size + horse.size, rows.size, "every route was built")
+        fun what(row: Row) = "${row.run.year} ${row.run.vehicle}, ${row.run.tiles} tiles, day length ${row.run.dayLength}"
+        for (row in rows) println("niche: ${what(row)}: ${row.payback}")
+        for (row in rows.filter { it.run.mode == "truck" && it.run.tiles == 15 }) assertTrue(row.years in 2.0..5.0, "${what(row)} pays back in ${row.payback} work years")
+        for (t in rows.filter { it.run.mode == "train-freight" }) {
+            for (row in rows.filter { it.run.mode == "truck" && it.run.tiles == 60 && it.run.dayLength == t.run.dayLength }) {
+                assertTrue(t.years < row.years, "${what(t)} pays back in ${t.payback} work years, ${what(row)} in ${row.payback}")
+            }
+        }
+        for (row in rows.filter { it.run.year == 1850 }) assertTrue(row.years <= 8.0, "${what(row)} pays back in ${row.payback} work years")
     }
 
     // The checks FareTest made: full vehicles on a year's run earn comfortably more than they cost, trains most of all.
