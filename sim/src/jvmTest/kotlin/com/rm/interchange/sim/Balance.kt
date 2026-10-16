@@ -18,8 +18,10 @@ import kotlin.test.assertTrue
  *   runs 10 or 16 times as many work days. Wear, upkeep and interest aren't in running cost.
  * - Load "full" keeps a fresh thousand waiting at the start (and, for passengers, at the far end too) each work day.
  *   Load "supply" is what a town of about 500 makes: 10 passengers a work day at each end (about 300 a month, from
- *   the houses' 8 passengers a day per 256 people, less the station rating), and for freight 100 a calendar month at the
- *   start only, as a mine or a farm makes (industries' monthly amounts run 40 to 110).
+ *   the houses' 8 passengers a day per 256 people, less the station rating), and for freight 100 every 30 work days at
+ *   the start only, spread evenly, as a mine or a farm makes (industries' monthly amounts run 40 to 110).
+ * - Profit is over the calendar year; profit a work year divides that by the day length, and payback is price over
+ *   profit a work year, so it reads the same at any day length.
  * - Bush planes on floats and skis are left out: with the weather off they hold forever in winter, as there's no snow to land skis on.
  * - Full runs use one vehicle (one train). Supply runs use as many as the supply fills, up to 6 (rail has one train).
  */
@@ -39,7 +41,8 @@ class Balance {
 
     class Row(val run: Run, val fleet: Int, val price: Long, val income: Long, val running: Long) {
         val profit get() = income - running
-        val payback get() = if (profit <= 0) "never" else "%.1f".format(price.toDouble() / profit)
+        val workProfit get() = profit / run.dayLength
+        val payback get() = if (profit <= 0) "never" else "%.1f".format(price.toDouble() * run.dayLength / profit)
     }
 
     private fun world(year: Int, dayLength: Int): World {
@@ -133,7 +136,7 @@ class Balance {
         val e = run.engine
         if (run.mode.startsWith("train")) return 1
         if (run.load == "full") return 1
-        val perDay = if (run.cargo == Cargo.PASSENGERS) 10.0 else 100.0 / (30 * run.dayLength)
+        val perDay = if (run.cargo == Cargo.PASSENGERS) 10.0 else 100.0 / 30
         val trip = 2.0 * run.tiles / (e.speed / 40.0) + 6 + if (run.mode.startsWith("air")) 10 else 0
         return Math.ceil(perDay * trip / e.capacity).toInt().coerceIn(1, 6)
     }
@@ -212,7 +215,6 @@ class Balance {
         val price = before - c.money
         // Passengers go both ways; freight only from the first stop.
         val both = run.cargo == Cargo.PASSENGERS
-        val dayTicks = w.dayTicks.toLong()
         val total = Calendar.TICKS_PER_DAY * 365L * run.dayLength
         while (w.tick < total) {
             if (w.tick % Calendar.TICKS_PER_DAY == 0L) {
@@ -223,8 +225,9 @@ class Balance {
                         s.cargo[run.cargo].clear()
                         w.addWaiting(s, run.cargo, dest, s.id, 1000, w.tick)
                     } else {
-                        val monthStart = w.tick % dayTicks == 0L && Calendar.dayOfMonth(w.startYear, w.day) == 1
-                        val n = if (both) 10 else if (monthStart) 100 else 0
+                        // Freight 100 every 30 work days, the remainder carried so it's 3 or 4 a day.
+                        val d = w.tick / Calendar.TICKS_PER_DAY
+                        val n = if (both) 10 else ((d + 1) * 100 / 30 - d * 100 / 30).toInt()
                         w.addWaiting(s, run.cargo, dest, s.id, minOf(n, MAX_WAITING - s.waiting(run.cargo)), w.tick)
                     }
                 }
@@ -252,10 +255,10 @@ class Balance {
 
     private fun write(rows: List<Row>) {
         val dir = File("build/balance").apply { mkdirs() }
-        val head = listOf("mode", "vehicle", "year", "day", "tiles", "load", "cargo", "fleet", "wagons", "price", "income", "running", "profit", "payback")
+        val head = listOf("mode", "vehicle", "year", "day", "tiles", "load", "cargo", "fleet", "wagons", "price", "income", "running", "profit", "work-yr profit", "work-yr payback")
         fun cells(r: Row) = listOf(
             r.run.mode, r.run.vehicle, r.run.year, r.run.dayLength, r.run.tiles, r.run.load, Cargo.IDS[r.run.cargo], r.fleet, r.run.wagons,
-            r.price, r.income, r.running, r.profit, r.payback,
+            r.price, r.income, r.running, r.profit, r.workProfit, r.payback,
         )
         File(dir, "table.csv").writeText((listOf(head) + rows.map { cells(it) }).joinToString("\n") { it.joinToString(",") } + "\n")
         val md = StringBuilder()

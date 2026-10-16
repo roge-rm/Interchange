@@ -57,6 +57,20 @@ class IndustryTest {
         assertTrue(!w.accepts(w.stations[1]!!, Cargo.PASSENGERS))
     }
 
+    /** A mine makes a month's worth of cargo in 30 work days whatever the day length. */
+    @Test
+    fun industriesMakeCargoByWorkDays() {
+        for (dayLength in listOf(1, 10)) {
+            val w = World(NewGame(96, 64, 1, 1900, towns = 0, industries = 0, weather = false, dayLength = dayLength))
+            val kind = w.roster.industries.first { it.key == "base:coal_mine" }
+            w.industries += Industry(0, kind.id, 10, 12, 0, -1)
+            // 25 work days, inside January at either length so no month's turn clears the tally.
+            repeat(Calendar.TICKS_PER_DAY * 25) { w.step() }
+            val made = w.industries[0].made[Cargo.COAL]
+            assertTrue(made in 70..100, "made $made in 25 work days at day length $dayLength")
+        }
+    }
+
     @Test
     fun coalCarriedToTheMillIsMadeIntoSteel() {
         val w = chain()
