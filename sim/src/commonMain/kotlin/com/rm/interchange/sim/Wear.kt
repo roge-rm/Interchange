@@ -99,9 +99,15 @@ internal fun World.trackWorkDay() {
                 val frost = u(weather.frost[i])
                 val soaked = u(weather.wet[i]) > SOAKED
                 if (frost > 0 || soaked) {
-                    val sky = skyAt(settings.region, year, doy, weather.anomaly, fronts, height, x, y, tileHeight(x, y))
-                    if (frost > 0 && sky.temperature > 0 && cellDice(x, y, salt + 1) < HEAVE_ODDS) c -= HEAVE
-                    if (soaked && sky.temperature > 0 && cellDice(x, y, salt + 2) < SETTLE_ODDS) c -= SETTLE
+                    val heave = frost > 0 && cellDice(x, y, salt + 1) < HEAVE_ODDS
+                    val settle = soaked && cellDice(x, y, salt + 2) < SETTLE_ODDS
+                    if (heave || settle) {
+                        val sky = skyAt(settings.region, year, doy, weather.anomaly, fronts, height, x, y, tileHeight(x, y))
+                        if (sky.temperature > 0) {
+                            if (heave) c -= HEAVE
+                            if (settle) c -= SETTLE
+                        }
+                    }
                 }
             }
             if (c < 255) {

@@ -346,7 +346,8 @@ class World(settings: NewGame, val roster: Roster = Roster.BASE, generate: Boole
             shipsDay()
             aircraftDay()
             payRunningCosts()
-            trackWorkDay()
+            // On a calendar day tick it runs after the weather and trackDay below.
+            if (tick % dayTicks != 0L) trackWorkDay()
             upkeepDay()
             passengersDay()
             payments.removeAll { tick - it.tick > PAYMENT_TICKS }
@@ -356,6 +357,7 @@ class World(settings: NewGame, val roster: Roster = Roster.BASE, generate: Boole
             weatherDay()
             airSkies.clear()
             trackDay()
+            if (tick % Calendar.TICKS_PER_DAY == 0L) trackWorkDay()
             weatherLooks()
             roadsDay()
             townsDay()

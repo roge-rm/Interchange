@@ -46,6 +46,31 @@ class WearTest {
         assertTrue(w.companies[0].thisYear[Books.UPKEEP] < 0)
     }
 
+    /** Ten 2000 tonne passes a work day, then the work day, and how often the tile has a slow order once settled. */
+    private fun slowShare(dayLength: Int, upkeep: Int): Int {
+        val w = World(NewGame(64, 64, 1, 1900, sea = 0, trees = 0, towns = 0, industries = 0, inflation = false, weather = false, dayLength = dayLength))
+        for (i in w.corners.indices) w.corners[i] = 3
+        w.companies[0].money = 100_000_000
+        w.apply(Command.Rail(0, 3, 10, 39, 10, Track.X, remove = false))
+        w.companies[0].upkeep = upkeep
+        val tile = w.index(20, 10)
+        var slow = 0
+        repeat(200) { day ->
+            repeat(10) { w.wearBy(tile, 2_000_000) }
+            w.days(1)
+            if (day >= 150 && w.trackLimit(tile) != -1) slow++
+        }
+        return slow
+    }
+
+    @Test
+    fun aBusyLineSettlesWornOnNormalUpkeepAndClearOnHigh() {
+        for (dayLength in intArrayOf(1, 10)) {
+            assertTrue(slowShare(dayLength, Upkeep.NORMAL) > 0, "no slow order on normal upkeep at day length $dayLength")
+            assertEquals(0, slowShare(dayLength, Upkeep.HIGH), "slow order on high upkeep at day length $dayLength")
+        }
+    }
+
     @Test
     fun wornTrackHasASlowOrder() {
         val w = line()
