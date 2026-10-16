@@ -53,14 +53,17 @@ class PassengerTest {
         assertEquals(120, t.capacity(Cargo.PASSENGERS))
         var carried = false
         var paid = 0L
+        // Each town has had some of its people picked up at some point.
+        val picked = BooleanArray(w.towns.size)
         repeat(40_000) {
             w.step()
             if (t.load(Cargo.PASSENGERS) > 0) carried = true
+            for (town in w.towns) if (town.servedThisMonth > 0) picked[town.id] = true
             paid += w.payments.filter { it.tick == w.tick }.sumOf { it.amount }
         }
         assertTrue(carried)
         assertTrue(paid > 0, "no fares paid")
-        assertTrue(w.towns.all { it.servedLastMonth > 0 || it.servedThisMonth > 0 })
+        assertTrue(picked.all { it })
     }
 
     @Test

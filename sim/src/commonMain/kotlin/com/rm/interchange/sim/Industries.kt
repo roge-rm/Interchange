@@ -302,7 +302,8 @@ internal fun World.industriesMonth() {
         val share = if (made == 0) 0 else (ind.moved.sum() * 100 / made).coerceAtMost(100)
         // Changes come on the calendar, but the more of it is carried the more they come by work done, so at a long
         // day length serving one shows as soon as at day length 1 while the rest of the map changes no faster.
-        val chance = (100 + (settings.dayLength - 1) * share) * 10 / CHANGE_ODDS
+        // At most one month in three, so a long day length fully served doesn't change every month.
+        val chance = minOf((100 + (settings.dayLength - 1) * share) * 10 / CHANGE_ODDS, MOST_CHANGE)
         if (kind.produces.any { it > 0 } && rng.below(1000) < chance) {
             // Well served it's likelier to grow, badly served likelier to shrink: even at a fifth carried.
             val up = rng.below(100) < minOf(UP_MOST, UP_UNSERVED + share / 2)
@@ -387,6 +388,9 @@ const val MIN_LEVEL = 4
  * 1; all of it carried, that's a month of work.
  */
 private const val CHANGE_ODDS = 30
+
+/** The most an industry's change chance gets a calendar month, in thousandths. */
+private const val MOST_CHANGE = 333
 
 /** The chance in percent a change is up for an industry none of whose cargo is carried, and the most it gets. */
 private const val UP_UNSERVED = 40

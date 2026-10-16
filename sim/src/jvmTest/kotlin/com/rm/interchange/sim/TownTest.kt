@@ -34,6 +34,34 @@ class TownTest {
     }
 
     @Test
+    fun aStopNothingCallsAtDoesntSpeedGrowthOrSupplyATown() {
+        val w = World(NewGame(width = 256, height = 256, seed = 5, startYear = 1900, region = Region.MIXED, townGrowth = TownGrowth.SUPPLIED))
+        w.companies[0].money = 10_000_000
+        val t = w.towns.maxBy { it.population }
+        // A road stop on the first straight road near the middle.
+        loop@ for (r in 0..6) for (dy in -r..r) for (dx in -r..r) {
+            w.apply(Command.RoadStop(0, t.x + dx, t.y + dy))
+            if (w.stations.any { it != null }) break@loop
+        }
+        val stop = w.stations.first { it != null }!!
+        assertEquals(t, w.stationTown(stop))
+        var last = t.growIn
+        repeat(365) {
+            repeat(Calendar.TICKS_PER_DAY) { w.step() }
+            // Each wait it sets is an unserved one, never shortened.
+            if (t.growIn > last) assertTrue(t.growIn >= 10, "grew in ${t.growIn} days")
+            last = t.growIn
+            if (Calendar.dayOfMonth(w.startYear, w.day) == 1) {
+                assertEquals(0, t.servedLastMonth)
+                assertEquals(0, w.townCoverage(t))
+                assertTrue(!w.townNeeds(t).first { it.cargo == Cargo.PASSENGERS }.met)
+            }
+        }
+        // People did turn up there to be picked up.
+        assertTrue(stop.cargo[Cargo.PASSENGERS].sumOf { it.count } > 0)
+    }
+
+    @Test
     fun theShieldIsMostlyFrenchAndTheRockiesEnglish() {
         val shield = world(region = Region.SHIELD).towns.count { '-' in it.name || it.name.endsWith("ville") }
         val rockies = world(region = Region.ROCKIES).towns

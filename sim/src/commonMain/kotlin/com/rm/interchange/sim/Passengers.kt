@@ -204,7 +204,6 @@ internal fun World.passengersDay() {
         val m = made.getOrPut(sid) { IntArray(Cargo.COUNT) }
         m[Cargo.PASSENGERS] += passengers
         m[Cargo.MAIL] += mail
-        towns.getOrNull(townOf[tile].toInt())?.let { it.servedThisMonth += passengers + mail; it.mailThisMonth += mail }
     }
     val travel = Calendar.travel(startYear, day)
     val post = Calendar.mail(startYear, day)
@@ -442,6 +441,11 @@ internal fun World.loadAt(t: Carrier, s: Station) {
             // Only towards where it's going, and never back where it came from.
             if (next == p.origin || (p.dest != -1 && (next < 0 || nextHop(s.id, p.dest) != next))) continue
             val take = minOf(room, p.count)
+            // Passengers and mail starting out here count for the town as picked up from it.
+            if (p.origin == s.id && (c == Cargo.PASSENGERS || c == Cargo.MAIL)) stationTown(s)?.let { town ->
+                town.servedThisMonth += take
+                if (c == Cargo.MAIL) town.mailThisMonth += take
+            }
             // A share of the lot's credit goes with those who board, and its time on board carries on from where it was.
             val credit = p.credit * take / p.count
             t.cargo[c] += Packet(p.dest, p.origin, take, tick - (p.waitingFrom - p.since), credit, s.id)

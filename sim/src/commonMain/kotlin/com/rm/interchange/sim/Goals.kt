@@ -260,7 +260,7 @@ private const val CONNECT_LEAST = 200L
 
 /**
  * Something a town needs in a month to grow when towns grow only supplied: [needed] of [cargo] and the [got] of it
- * last month. Passengers and mail are what's picked up from its buildings, the rest what's delivered. [heating] is
+ * last month. Passengers and mail are what vehicles picked up at its stations, the rest what's delivered. [heating] is
  * coal or fuel together, for the cold months, with [cargo] coal.
  */
 class TownNeed(val cargo: Int, val needed: Int, val got: Int, val heating: Boolean = false) {
@@ -294,8 +294,8 @@ fun World.townNeeds(t: Town): List<TownNeed> {
 fun World.townSupplied(t: Town) = townNeeds(t).all { it.met }
 
 /** What a town needs a month of work for every 100 people. */
-private const val NEED_PASSENGERS = 20
-private const val NEED_MAIL = 4
+private const val NEED_PASSENGERS = 10
+private const val NEED_MAIL = 2
 private const val NEED_FOOD = 3
 private const val NEED_GOODS = 2
 private const val NEED_FUEL = 1

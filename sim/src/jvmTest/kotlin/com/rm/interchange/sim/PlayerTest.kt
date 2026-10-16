@@ -50,7 +50,9 @@ class PlayerTest {
         assertTrue(!c.gone && c.trouble == 0, "in trouble\n$note")
         assertTrue(p.vehicles() > 0, "nothing running\n$note")
         assertTrue(y.last().profit > 0, "losing in year 5\n$note")
-        assertTrue(y.last().value > y[1].value, "not growing\n$note")
+        // Worth more, or earning more in a year it spent on new lines, as value counts track at nothing and vehicles at resale.
+        val spending = y.last().built + y.last().bought > 0 && y.last().profit > y[1].profit
+        assertTrue(y.last().value > y[1].value || spending, "not growing\n$note")
         // A year's work doesn't make it rich: at most a few times what it started with, at any day length.
         assertTrue(y.first().money < p.startMoney * 3, "rich after a year\n$note")
     }
