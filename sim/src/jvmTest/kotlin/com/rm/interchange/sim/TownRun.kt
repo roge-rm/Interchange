@@ -85,18 +85,18 @@ class TownRun {
                 val d = maxOf(kotlin.math.abs(t1.x - t2.x), kotlin.math.abs(t1.y - t2.y))
                 if (d !in 16..40) continue
                 val serves = { s: Station, _: Boolean -> (w.stationPeople[s.id] ?: 0) > 0 }
-                if (w.tryRail(c, railSite(t1, t2.x, t2.y), railSite(t2, t1.x, t1.y), Cargo.PASSENGERS, minOf(t1.population, t2.population) / 4, t1.id, t2.id, serves, margin = 0) { plan.routes += it } == Tried.BUILT) rails++
+                if (w.tryRail(c, railSite(t1, t2.x, t2.y), railSite(t2, t1.x, t1.y), Cargo.PASSENGERS, minOf(t1.population, t2.population) / 4, t1.id, t2.id, serves, payback = 0) { plan.routes += it } == Tried.BUILT) rails++
             }
             for (t in byPop.take(8)) {
                 if (plan.routes.count { !it.rail && !it.freight } >= 4) break
                 val p = Rival(0, t.id).also { it.routes += plan.routes; it.failed += plan.failed }
-                w.newRoute(p, c)
+                w.newRoute(p, c, payback = 0)
                 plan.routes.clear(); plan.routes += p.routes; plan.failed += p.failed
             }
             for (t in byPop.take(8)) {
                 if (plan.routes.count { it.freight } >= 4) break
                 val p = Rival(0, t.id).also { it.routes += plan.routes; it.failed += plan.failed }
-                w.newFreightRoute(p, c)
+                w.newFreightRoute(p, c, payback = 0)
                 plan.routes.clear(); plan.routes += p.routes; plan.failed += p.failed
             }
             // Towns on a railway, then on buses only; industries a route loads at.

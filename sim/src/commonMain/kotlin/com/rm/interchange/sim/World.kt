@@ -429,7 +429,7 @@ class World(settings: NewGame, val roster: Roster = Roster.BASE, generate: Boole
         for (x in 0..width) mix(heightAt(x, height).toLong())
         for (y in 0 until height) mix(heightAt(width, y).toLong())
         for (c in companies) { mix(c.money); mix(c.loan) }
-        for (r in rivals) { mix(r.thinkOn.toLong()); mix(r.routes.size.toLong()); mix(r.failed.size.toLong()) }
+        for (r in rivals) { mix(r.thinkOn.toLong()); mix(r.routes.size.toLong()); mix(r.failed.size.toLong()); for (f in r.failed.keys.sorted()) { mix(f); mix(r.failed.getValue(f).toLong()) } }
         for (c in companies) { mix(c.money); mix(c.loan); mix(c.founded); mix(c.upkeepOwed); mix(c.trackTiles.toLong()); mix(c.roadUpkeep); mix(c.trouble.toLong()); mix(if (c.gone) 1 else 0); for (ch in c.name) mix(ch.code.toLong())
             for (b in c.insignia) mix(b.toLong()) }
         mix(if (upkeepCounted) 1L else 0L)

@@ -31,20 +31,20 @@ class RivalRun {
         out.append("Per rival: routes open as bus/truck/rail, routes given up as bus/truck/rail, vehicles, money and loan in dollars, value (money less loan plus vehicles less start money), ")
         out.append("profit last year (income less running, upkeep and interest), status (ok, trouble in months, GONE). Tried is town pairs and industries it has given up on, in all.\n\n")
         out.append("## Summary at the end\n\n")
-        out.append("Median (min to max) over every rival of every run at that level and start year.\n\n")
-        out.append("| level | start | day length | routes | vehicles | value | gone | in trouble | runs |\n|---|---|---|---|---|---|---|---|---|\n")
+        out.append("Median (min to max) over every rival of every run at that level and start year. Given up is all the routes given up by bus/truck/rail, over all those rivals.\n\n")
+        out.append("| level | start | day length | routes | rail | vehicles | value | given up | gone | in trouble | runs |\n|---|---|---|---|---|---|---|---|---|---|---|\n")
         for (v in levels) for (s in starts) for (l in lengths) {
             val rs = done.filter { it.first.level == v && it.first.start == s && it.first.length == l }.flatMap { it.second.last().rivals }
             if (rs.isEmpty()) continue
             fun spread(f: (Snap) -> Long) = rs.map(f).sorted().let { "${it[it.size / 2]} (${it.first()} to ${it.last()})" }
-            out.append("| ${names[v]} | $s | $l | ${spread { it.open.sum().toLong() }} | ${spread { it.vehicles.toLong() }} | ${spread { it.value }} | ${rs.count { it.gone } * 100 / rs.size}% | ${rs.count { it.trouble > 0 && !it.gone } * 100 / rs.size}% | ${rs.size} |\n")
+            out.append("| ${names[v]} | $s | $l | ${spread { it.open.sum().toLong() }} | ${spread { it.open[2].toLong() }} | ${spread { it.vehicles.toLong() }} | ${spread { it.value }} | ${givenUp(rs)} | ${rs.count { it.gone } * 100 / rs.size}% | ${rs.count { it.trouble > 0 && !it.gone } * 100 / rs.size}% | ${rs.size} |\n")
         }
-        out.append("\n## Summary by level\n\n| level | routes | vehicles | value | gone | in trouble |\n|---|---|---|---|---|---|\n")
+        out.append("\n## Summary by level\n\n| level | routes | rail | vehicles | value | given up | gone | in trouble |\n|---|---|---|---|---|---|---|---|\n")
         for (v in levels) {
             val rs = done.filter { it.first.level == v }.flatMap { it.second.last().rivals }
             if (rs.isEmpty()) continue
             fun spread(f: (Snap) -> Long) = rs.map(f).sorted().let { "${it[it.size / 2]} (${it.first()} to ${it.last()})" }
-            out.append("| ${names[v]} | ${spread { it.open.sum().toLong() }} | ${spread { it.vehicles.toLong() }} | ${spread { it.value }} | ${rs.count { it.gone } * 100 / rs.size}% | ${rs.count { it.trouble > 0 && !it.gone } * 100 / rs.size}% |\n")
+            out.append("| ${names[v]} | ${spread { it.open.sum().toLong() }} | ${spread { it.open[2].toLong() }} | ${spread { it.vehicles.toLong() }} | ${spread { it.value }} | ${givenUp(rs)} | ${rs.count { it.gone } * 100 / rs.size}% | ${rs.count { it.trouble > 0 && !it.gone } * 100 / rs.size}% |\n")
         }
         out.append("\n## Runs\n\n")
         for ((j, r) in done) {
@@ -58,6 +58,8 @@ class RivalRun {
         val dir = File("build/balance").apply { mkdirs() }
         File(dir, "rivals.md").writeText(out.toString())
     }
+
+    private fun givenUp(rs: List<Snap>) = (0 until 3).joinToString("/") { k -> rs.sumOf { it.failed[k] }.toString() }
 
     private fun list(key: String, default: String) = (System.getProperty(key) ?: default).split(",").map { it.trim() }
 
@@ -77,29 +79,36 @@ class RivalRun {
         /** 0 bus, 1 truck, 2 rail. */
         private fun kind(r: RivalRoute) = if (r.rail) 2 else if (r.freight) 1 else 0
 
-        /** The kind of a given-up key, as [Rival.failed] packs them: bit 62 truck, bit 61 rail, else bus. */
-        private fun failedKind(k: Long) = if (k and (1L shl 62) != 0L) 1 else if (k and (1L shl 61) != 0L) 2 else 0
-
         private fun snap(w: World, r: Rival, given: IntArray): Snap {
             val c = w.companies[r.company]
             val open = IntArray(3)
             for (route in r.routes) open[kind(route)]++
             val vehicles = w.trains.count { it != null && it.owner == c.id } + w.roadVehicles.count { it != null && it.owner == c.id } +
                 w.ships.count { it != null && it.owner == c.id } + w.aircraft.count { it != null && it.owner == c.id }
-            val profit = c.lastYear[Books.INCOME] - c.lastYear[Books.RUNNING] - c.lastYear[Books.UPKEEP] - c.lastYear[Books.INTEREST]
+            // Costs are booked as negative amounts.
+            val profit = c.lastYear[Books.INCOME] + c.lastYear[Books.RUNNING] + c.lastYear[Books.UPKEEP] + c.lastYear[Books.INTEREST]
             return Snap(open, given.copyOf(), vehicles, c.money, c.loan, w.companyValue(c), profit, r.failed.size, c.trouble, c.gone)
         }
 
         fun run(seed: Long, start: Int, length: Int, level: Int, count: Int, years: Int): Result {
             val w = World(NewGame(256, 256, seed, start, dayLength = length, rivals = count, rivalLevel = level))
             val marks = ArrayList<Mark>()
-            // Routes given up so far, by kind, kept as they leave the rival's list.
+            // Routes given up so far, by kind: ones that leave the rival's list while it's still going.
             val given = List(w.rivals.size) { IntArray(3) }
-            val seen = List(w.rivals.size) { HashSet<Long>() }
+            val running = List(w.rivals.size) { HashSet<RivalRoute>() }
             // A rival bought out leaves w.rivals, so keep them all.
             val all = w.rivals.toList()
+            fun count() {
+                for ((i, r) in all.withIndex()) {
+                    if (w.companies[r.company].gone) continue
+                    val now = r.routes.toSet()
+                    for (route in running[i]) if (route !in now) given[i][kind(route)]++
+                    running[i].clear()
+                    running[i] += now
+                }
+            }
             fun lookAll(): Mark {
-                for ((i, r) in all.withIndex()) for (k in r.failed) if (seen[i].add(k)) given[i][failedKind(k)]++
+                count()
                 return Mark(Calendar.year(w.startYear, w.day), all.mapIndexed { i, r -> snap(w, r, given[i]) })
             }
             marks += lookAll()
@@ -110,7 +119,7 @@ class RivalRun {
                 w.step()
                 val now = Calendar.year(w.startYear, w.day)
                 if (now != before && ((now - first) % 5 == 0 || now == end)) marks += lookAll()
-                else if (w.day % 30 == 0 && w.tick % Calendar.TICKS_PER_DAY == 0L) for ((i, r) in all.withIndex()) for (k in r.failed) if (seen[i].add(k)) given[i][failedKind(k)]++
+                else if (w.tick % w.dayTicks == 0L) count()
             }
             if (marks.last().year != end) marks += lookAll()
             return Result(marks)

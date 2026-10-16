@@ -16,7 +16,7 @@ package com.rm.interchange.sim
  */
 object Save {
     private val MAGIC = "ICHG".encodeToByteArray()
-    const val VERSION = 33
+    const val VERSION = 34
 
     /**
      * [world] as a save; [version] older than [VERSION] only for tests reading older saves. [asScenario] writes an
@@ -140,12 +140,12 @@ object Save {
             writeWaterAndAir(w, this)
             w.uvar(rivals.size.toLong())
             for (rv in rivals) {
-                w.int(rv.company); w.int(rv.home); w.int(rv.thinkOn)
+                w.int(rv.company); w.int(rv.home); w.int(if (version >= 34) rv.thinkOn else rv.thinkOn / settings.dayLength)
                 w.uvar(rv.routes.size.toLong())
                 for (rt in rv.routes) { w.int(rt.a); w.int(rt.b); w.int(rt.depot); w.int(rt.townA); w.int(rt.townB); w.int(rt.cargo); w.bool(rt.rail) }
-                val failed = rv.failed.sorted()
+                val failed = rv.failed.keys.sorted()
                 w.uvar(failed.size.toLong())
-                for (f in failed) w.long(f)
+                for (f in failed) { w.long(f); if (version >= 34) w.int(rv.failed.getValue(f)) }
             }
             w.uvar(subsidies.size.toLong())
             for (s in subsidies) { w.int(s.cargo); w.int(s.from); w.int(s.to); w.bool(s.towns); w.int(s.company); w.int(s.months) }
@@ -424,11 +424,12 @@ object Save {
             if (version >= 17) readWaterAndAir(r, this, ::vehicle, version)
             if (version >= 19) repeat(r.uvar().toInt().also { if (it > NewGame.MOST_RIVALS) throw BadData("too many rivals") }) {
                 val rv = Rival(r.int(), r.int())
-                rv.thinkOn = r.int()
+                // Before 34 it thought on calendar days and never tried a pair again.
+                rv.thinkOn = r.int().let { if (version >= 34) it else it * settings.dayLength }
                 repeat(r.uvar().toInt().also { if (it > 1000) throw BadData("too many routes") }) {
                     rv.routes += RivalRoute(r.int(), r.int(), r.int(), r.int(), r.int(), r.int(), version >= 20 && r.bool())
                 }
-                repeat(r.uvar().toInt().also { if (it > 100_000) throw BadData("too many tried pairs") }) { rv.failed += r.long() }
+                repeat(r.uvar().toInt().also { if (it > 100_000) throw BadData("too many tried pairs") }) { rv.failed[r.long()] = if (version >= 34) r.int() else 0 }
                 rivals += rv
             }
             if (version >= 22) repeat(r.uvar().toInt().also { if (it > 100_000) throw BadData("too many subsidies") }) {

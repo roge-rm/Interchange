@@ -11,11 +11,22 @@ package com.rm.interchange.sim
 
 /** A computer-run company's plans: its home town, when it next thinks, and the routes it runs. */
 class Rival(val company: Int, val home: Int) {
-    /** The calendar day it next looks over its business. */
+    /** The work day it next looks over its business. */
     var thinkOn = 0
     val routes = ArrayList<RivalRoute>()
-    /** Town pairs it has tried and couldn't join, packed as [pairKey], so it doesn't try them again. */
-    val failed = HashSet<Long>()
+    /**
+     * Town pairs and industries it couldn't join or gave up on, packed as [pairKey] and the like, with the work day it
+     * did. Each is tried again [RETRY_DAYS] after.
+     */
+    val failed = HashMap<Long, Int>()
+}
+
+/** Whether [r] has tried [key] lately and not tried again yet. */
+internal fun World.triedLately(r: Rival, key: Long): Boolean = r.failed[key]?.let { workDay - it < RETRY_DAYS } == true
+
+/** Remembers that [r] couldn't do [key] for now. */
+internal fun World.giveUp(r: Rival, key: Long) {
+    r.failed[key] = workDay
 }
 
 /**
@@ -56,7 +67,7 @@ internal fun World.startRivals(n: Int) {
     for ((i, home) in homes.withIndex()) {
         val id = companies.size
         companies += Company(id, rivalName(home, id), Prices.startMoney(startYear)).also { giveInsignia(it) }
-        rivals += Rival(id, home.id).also { it.thinkOn = day + 3 + i * 9 }
+        rivals += Rival(id, home.id).also { it.thinkOn = workDay + 3 + i * 9 }
     }
 }
 
@@ -69,12 +80,12 @@ private fun World.rivalName(home: Town, id: Int): String {
     return townCompanyName(nameTown(home, id), kind, id)
 }
 
-/** Each calendar day: any rival due to think does. */
+/** Each calendar day: any rival due to think does, every so many work days. */
 internal fun World.rivalsDay() {
     // A copy, as one may buy out another while it thinks.
     for (r in rivals.toList()) {
-        if (day < r.thinkOn || r !in rivals) continue
-        r.thinkOn = day + THINK_DAYS
+        if (workDay < r.thinkOn || r !in rivals) continue
+        r.thinkOn = workDay + if (settings.rivalLevel == RivalLevel.HARD) HARD_THINK_DAYS else THINK_DAYS
         val c = companies.getOrNull(r.company) ?: continue
         think(r, c)
     }
@@ -89,22 +100,51 @@ private fun World.think(r: Rival, c: Company) {
     sellLosers(r, c)
     townWork(r, c)
     for (route in r.routes) growRoute(c, route)
-    if (r.routes.size >= maxRoutes(r)) return
-    // Buses, then trucks, then a railway, round again; anything it can't do this time, the next kind.
-    val kinds = listOf<(Rival, Company) -> Tried>({ a, b -> newRoute(a, b) }, { a, b -> newFreightRoute(a, b) }, { a, b -> newRailRoute(a, b) })
-    for (k in 0 until kinds.size) if (kinds[(r.routes.size + k) % kinds.size](r, c) != Tried.CANT) return
+    // A hard rival with money to spare opens two at a look.
+    val opens = if (settings.rivalLevel == RivalLevel.HARD && c.money - c.loan > maxLoan()) 2 else 1
+    repeat(opens) {
+        if (r.routes.size >= maxRoutes(c)) return
+        // On borrowed money, only once what it runs pays.
+        if (c.loan > 0 && r.routes.isNotEmpty() && profitAWorkYear(c) <= 0) return
+        // Each level's kinds in turn; anything it can't do this time, the next kind.
+        val kinds = KINDS[level()]
+        var done = false
+        for (k in kinds.indices) {
+            val tried = when (kinds[(r.routes.size + k) % kinds.size]) {
+                KIND_BUS -> newRoute(r, c)
+                KIND_TRUCK -> newFreightRoute(r, c)
+                else -> newRailRoute(r, c)
+            }
+            if (tried == Tried.POOR) return
+            if (tried == Tried.BUILT) { done = true; break }
+        }
+        if (!done) return
+    }
 }
+
+/** What each level opens in turn, easy to hard: buses, trucks, railways. */
+private const val KIND_BUS = 0
+private const val KIND_TRUCK = 1
+private const val KIND_RAIL = 2
+private val KINDS = listOf(
+    intArrayOf(KIND_BUS, KIND_TRUCK, KIND_BUS, KIND_TRUCK, KIND_RAIL),
+    intArrayOf(KIND_BUS, KIND_TRUCK, KIND_RAIL),
+    intArrayOf(KIND_RAIL, KIND_BUS, KIND_RAIL, KIND_TRUCK),
+)
+
+/** Whether a vehicle built on calendar day [built] ran the whole of last year, so its profit then is a full year's. */
+private fun World.ranLastYear(built: Int) = Calendar.year(startYear, built) < Calendar.year(startYear, day) - 1
 
 /**
  * Sends vehicles that lost money last year to their garage and sells them once there. A route left with none is
- * given up: its stops and garage come down, the road stays, and it isn't tried again.
+ * given up: its stops and garage come down, a railway's track too, the road stays, and it isn't tried again for a while.
  */
 internal fun World.sellLosers(r: Rival, c: Company) {
     // Its own vehicles only stand stopped in a depot when sent there to be sold.
     for (v in roadVehicles) {
         if (v == null || v.owner != c.id) continue
         if (v.inDepot && !v.running) apply(Command.RoadOrder(c.id, v.id, Command.TrainOrder.SELL))
-        else if (!v.inDepot && (!v.toDepot || v.servicing) && day - v.built >= SELL_AGE && v.profitLastYear < 0) {
+        else if (!v.inDepot && (!v.toDepot || v.servicing) && ranLastYear(v.built) && v.profitLastYear < 0) {
             // One on its way for a service is turned off that first, then sent to stay.
             if (v.toDepot) apply(Command.RoadOrder(c.id, v.id, Command.TrainOrder.TO_DEPOT))
             apply(Command.RoadOrder(c.id, v.id, Command.TrainOrder.TO_DEPOT))
@@ -113,15 +153,16 @@ internal fun World.sellLosers(r: Rival, c: Company) {
     for (t in trains) {
         if (t == null || t.owner != c.id) continue
         if (t.inDepot && !t.running) apply(Command.TrainOrder(c.id, t.id, Command.TrainOrder.SELL))
-        else if (!t.inDepot && !t.toDepot && day - t.built >= SELL_AGE && t.profitLastYear < 0) {
+        else if (!t.inDepot && !t.toDepot && ranLastYear(t.built) && t.profitLastYear < 0) {
             apply(Command.TrainOrder(c.id, t.id, Command.TrainOrder.TO_DEPOT))
         }
     }
     val gone = r.routes.filter { route -> (if (route.rail) trains else roadVehicles).none { it != null && it.owner == c.id && onRoute(it, route) } }
     for (route in gone) {
         r.routes -= route
-        r.failed += keyOf(route)
-        // Stations and depots another route still uses stay; a railway's track stays too.
+        giveUp(r, keyOf(route))
+        // A railway's line is its own, so it all comes up; stations and depots another route still uses stay.
+        if (route.rail) takeUpLine(c, route)
         for (id in listOf(route.a, route.b)) {
             if (r.routes.any { it.a == id || it.b == id }) continue
             val s = stations.getOrNull(id) ?: continue
@@ -131,16 +172,66 @@ internal fun World.sellLosers(r: Rival, c: Company) {
     }
 }
 
+/**
+ * Takes up the track of [route], a railway given up: its two stations and the shortest run of [c]'s plain track
+ * between them. Junctions, signals and other stations stop the search, so track that came with a company it bought
+ * and was joined on stays, and a line that can't be followed without passing one is left whole.
+ */
+private fun World.takeUpLine(c: Company, route: RivalRoute) {
+    val sa = stations.getOrNull(route.a) ?: return
+    val sb = stations.getOrNull(route.b) ?: return
+    fun pieces(i: Int) = Track.PIECES.count { track[i].toInt() and it != 0 }
+    fun plain(i: Int): Boolean {
+        if (owner[i].toInt() != c.id || pieces(i) != 1 || i in signals || depotTiles.containsKey(i)) return false
+        val id = stationTiles[i] ?: return true
+        return id == sa.id || id == sb.id
+    }
+    val from = HashMap<Int, Int>()
+    val queue = ArrayList<Int>()
+    for (i in sa.tiles) if (plain(i)) { from[i] = -1; queue += i }
+    var end = -1
+    var k = 0
+    while (k < queue.size && end < 0) {
+        val i = queue[k++]
+        if (stationTiles[i] == sb.id) { end = i; break }
+        val bits = track[i].toInt()
+        for (e in 0 until 4) {
+            if (Track.PIECES.none { bits and it != 0 && Track.has(it, e) }) continue
+            val x = i % width + Track.dx(e)
+            val y = i / width + Track.dy(e)
+            if (!inside(x, y)) continue
+            val n = index(x, y)
+            val back = Track.opposite(e)
+            if (n in from || !plain(n) || Track.PIECES.none { track[n].toInt() and it != 0 && Track.has(it, back) }) continue
+            from[n] = i
+            queue += n
+        }
+    }
+    if (end < 0) return
+    val line = LinkedHashSet<Int>()
+    var i = end
+    while (i >= 0) { line += i; i = from.getValue(i) }
+    for (t in sa.tiles) if (plain(t)) line += t
+    for (t in sb.tiles) if (plain(t)) line += t
+    // Stations used by another of its routes stay.
+    fun kept(i: Int) = stationTiles[i]?.let { id -> rivals.any { rv -> rv.company == c.id && rv.routes.any { it.a == id || it.b == id } } } == true
+    for (t in line) if (!kept(t)) clearTile(c, Command.Clear(c.id, t % width, t / width))
+}
+
 /** Whether [v] runs on [route]. */
 private fun onRoute(v: Carrier, route: RivalRoute) = v.orders.size == 2 && Order.station(v.orders[0]) == route.a && Order.station(v.orders[1]) == route.b
 
-/** More routes as the years go by. */
-private fun World.maxRoutes(r: Rival): Int {
-    val years = Calendar.year(startYear, day) - startYear
+/**
+ * More routes as work years go by, and more again for money in hand beyond what the bank lends in a go, up to the
+ * level's most.
+ */
+private fun World.maxRoutes(c: Company): Int {
+    val years = workDay / 365
+    val spare = ((c.money - c.loan) / maxLoan()).toInt().coerceIn(0, MAX_ROUTES)
     return when (settings.rivalLevel) {
-        RivalLevel.EASY -> (1 + years / 3).coerceAtMost(MAX_ROUTES - 2)
-        RivalLevel.HARD -> (1 + years * 2 / 3).coerceAtMost(MAX_ROUTES + 4)
-        else -> (1 + years / 2).coerceAtMost(MAX_ROUTES)
+        RivalLevel.EASY -> (1 + years / 3 + spare / 2).coerceAtMost(EASY_ROUTES)
+        RivalLevel.HARD -> (2 + years + spare).coerceAtMost(HARD_ROUTES)
+        else -> (1 + years / 2 + spare).coerceAtMost(MAX_ROUTES)
     }
 }
 
@@ -172,7 +263,8 @@ private fun World.pairTaken(company: Int, t1: Town, t2: Town): Boolean {
 private fun World.townWork(r: Rival, c: Company) {
     val level = settings.rivalLevel
     if (level == RivalLevel.EASY || rng.below(3) != 0) return
-    fun rich(action: Int) = c.money > townActionCost(action) * 3 && netWorth(c) > townActionCost(action) * 5
+    // Out of what it makes: a sixth of a work year's profit at most, and three times that in hand.
+    fun rich(action: Int) = c.money - c.loan > townActionCost(action) * 3 && profitAWorkYear(c) > townActionCost(action) * 6
     fun go(t: Town, action: Int): Boolean {
         if (!townActionOpen(c.id, t, action) || !rich(action)) return false
         apply(Command.TownAction(c.id, t.id, action))
@@ -194,6 +286,10 @@ private fun World.townWork(r: Rival, c: Company) {
     if (chebyshev(t.x, t.y, poor.signX, poor.signY) <= TownActions.AD_REACH[ad]) go(t, ad)
 }
 
+/** What [c] made last year after running costs, upkeep and interest, for each work year in it. */
+private fun World.profitAWorkYear(c: Company): Long =
+    (c.lastYear[Books.INCOME] + c.lastYear[Books.RUNNING] + c.lastYear[Books.UPKEEP] + c.lastYear[Books.INTEREST]) / settings.dayLength
+
 /** Adds a vehicle to [route] when it's leaving people behind at either end. */
 internal fun World.growRoute(c: Company, route: RivalRoute) {
     // A railway is one line of single track: one train.
@@ -201,7 +297,7 @@ internal fun World.growRoute(c: Company, route: RivalRoute) {
     val a = stations.getOrNull(route.a) ?: return
     val b = stations.getOrNull(route.b) ?: return
     val on = roadVehicles.filter { it != null && it.owner == c.id && onRoute(it, route) }.map { it!! }
-    if (on.size >= MAX_PER_ROUTE || on.any { it.toDepot && !it.servicing || day - it.built >= SELL_AGE && it.profitLastYear < 0 }) return
+    if (on.size >= MAX_PER_ROUTE || on.any { it.toDepot && !it.servicing || ranLastYear(it.built) && it.profitLastYear < 0 }) return
     // Only on a route that pays: last year's profit, or this year's once it's a few months in.
     val lastYear = on.sumOf { it.profitLastYear }
     val thisYear = on.sumOf { it.profitThisYear }
@@ -223,10 +319,11 @@ private fun World.buyStruggling(c: Company) {
     }
 }
 
-/** Whether [c] has [cost] or can borrow it, borrowing what it needs. */
+/** Whether [c] has [cost] or can borrow it, borrowing what it needs; an easy rival borrows only half what the bank lends. */
 internal fun World.afford(c: Company, cost: Long): Boolean {
-    if (c.money + (maxLoan() - c.loan) < cost) return false
-    while (c.money < cost && c.loan < maxLoan()) apply(Command.Loan(c.id, true))
+    val most = if (settings.rivalLevel == RivalLevel.EASY && !human(c.id)) maxLoan() / 2 else maxLoan()
+    if (c.money + (most - c.loan) < cost) return false
+    while (c.money < cost && c.loan < most) apply(Command.Loan(c.id, true))
     return c.money >= cost
 }
 
@@ -248,32 +345,39 @@ private fun World.buyAndStart(c: Company, route: RivalRoute, model: Engine) {
     apply(Command.RoadOrder(c.id, id, Command.TrainOrder.START_STOP))
 }
 
-/** Tries the most promising pairs of towns not yet joined by this rival, nearest its home first. */
-internal fun World.newRoute(r: Rival, c: Company): Tried {
+/** How far ([x], [y]) is from [r]'s [home] or the nearest of its stations, so it grows out from what it has. */
+private fun World.reach(r: Rival, home: Town, x: Int, y: Int): Int {
+    var best = chebyshev(x, y, home.x, home.y)
+    for (route in r.routes) for (id in intArrayOf(route.a, route.b)) stations.getOrNull(id)?.let { best = minOf(best, chebyshev(x, y, it.signX, it.signY)) }
+    return best
+}
+
+/** Tries the most promising pairs of towns not yet joined by this rival, nearest its home or its stations first. */
+internal fun World.newRoute(r: Rival, c: Company, payback: Int = ROAD_PAYBACK[level()]): Tried {
     val model = bestModel(Cargo.PASSENGERS) ?: return Tried.CANT
     val home = towns.getOrNull(r.home) ?: return Tried.CANT
     val served = r.routes.map { pairKey(it.townA, it.townB) }.toSet()
     val pairs = ArrayList<Triple<Town, Town, Long>>()
     for (t1 in towns) {
-        if (t1.population < MIN_TOWN || chebyshev(t1.x, t1.y, home.x, home.y) > HOME_REACH) continue
+        if (t1.population < MIN_TOWN || reach(r, home, t1.x, t1.y) > HOME_REACH) continue
         for (t2 in towns) {
             if (t2.id <= t1.id || t2.population < MIN_TOWN) continue
             val d = chebyshev(t1.x, t1.y, t2.x, t2.y)
             if (d < MIN_APART || d > MAX_APART) continue
             val key = pairKey(t1.id, t2.id)
-            if (key in served || key in r.failed || pairTaken(c.id, t1, t2)) continue
+            if (key in served || triedLately(r, key) || pairTaken(c.id, t1, t2)) continue
             // A town that won't have it at either end now may later.
             if (townRefuses(c, t1.x, t1.y) || townRefuses(c, t2.x, t2.y) || leaveAlone(t1) || leaveAlone(t2)) continue
-            // Bigger towns, closer together, nearer home.
-            val score = minOf(t1.population, t2.population).toLong() * 1000 / (d + chebyshev(t1.x, t1.y, home.x, home.y) / 2 + 5)
+            // Bigger towns, closer together, nearer home or its stations.
+            val score = minOf(t1.population, t2.population).toLong() * 1000 / (d + reach(r, home, t1.x, t1.y) / 2 + 5)
             // A subsidy on offer makes it worth twice as much.
             pairs += Triple(t1, t2, if (onOffer(Cargo.PASSENGERS, t1.id, t2.id, true)) score * 2 else score)
         }
     }
     pairs.sortWith(compareByDescending<Triple<Town, Town, Long>> { it.third }.thenBy { it.first.id }.thenBy { it.second.id })
     for ((t1, t2, _) in pairs.take(TRIES)) {
-        when (val t = tryRoute(r, c, t1, t2, model)) {
-            Tried.CANT -> r.failed += pairKey(t1.id, t2.id)
+        when (val t = tryRoute(r, c, t1, t2, model, payback)) {
+            Tried.CANT -> giveUp(r, pairKey(t1.id, t2.id))
             else -> return t
         }
     }
@@ -284,7 +388,7 @@ internal fun World.newRoute(r: Rival, c: Company): Tried {
  * Tries the most promising industries near home not yet served by this rival, each to the nearest that takes what
  * it makes, by how much it makes and how near.
  */
-internal fun World.newFreightRoute(r: Rival, c: Company): Tried {
+internal fun World.newFreightRoute(r: Rival, c: Company, payback: Int = ROAD_PAYBACK[level()]): Tried {
     val home = towns.getOrNull(r.home) ?: return Tried.CANT
     val served = r.routes.filter { it.freight }.map { it.townA to it.cargo }.toSet()
     class Pick(val from: Industry, val to: Industry, val cargo: Int, val model: Engine, val score: Long)
@@ -293,7 +397,7 @@ internal fun World.newFreightRoute(r: Rival, c: Company): Tried {
         if (ind.closed) continue
         val kind = roster.industries[ind.kind]
         val (cx, cy) = middle(ind)
-        if (chebyshev(cx, cy, home.x, home.y) > HOME_REACH) continue
+        if (reach(r, home, cx, cy) > HOME_REACH) continue
         for (cg in 0 until Cargo.COUNT) {
             val month = kind.produces[cg] * ind.level / 16
             if (month <= 0 || (ind.id to cg) in served || servedByOthers(ind, cg, c.id)) continue
@@ -305,21 +409,21 @@ internal fun World.newFreightRoute(r: Rival, c: Company): Tried {
                 if (o.closed || o.id == ind.id || !roster.industries[o.kind].takes(cg)) continue
                 val (ox, oy) = middle(o)
                 val d = chebyshev(cx, cy, ox, oy)
-                if (d < MIN_APART || d > MAX_APART || d >= best || freightKey(ind.id, o.id, cg) in r.failed) continue
+                if (d < MIN_APART || d > MAX_APART || d >= best || triedLately(r, freightKey(ind.id, o.id, cg))) continue
                 to = o
                 best = d
             }
             if (to == null) continue
             val (ox, oy) = middle(to)
             if (townRefuses(c, cx, cy) || townRefuses(c, ox, oy)) continue
-            val score = month.toLong() * 1000 / (best + chebyshev(cx, cy, home.x, home.y) / 2 + 5)
+            val score = month.toLong() * 1000 / (best + reach(r, home, cx, cy) / 2 + 5)
             picks += Pick(ind, to, cg, model, if (onOffer(cg, ind.id, to.id, false)) score * 2 else score)
         }
     }
     picks.sortWith(compareByDescending<Pick> { it.score }.thenBy { it.from.id }.thenBy { it.cargo })
     for (p in picks.take(TRIES)) {
-        when (val t = tryFreight(r, c, p.from, p.to, p.cargo, p.model)) {
-            Tried.CANT -> r.failed += freightKey(p.from.id, p.to.id, p.cargo)
+        when (val t = tryFreight(r, c, p.from, p.to, p.cargo, p.model, payback)) {
+            Tried.CANT -> giveUp(r, freightKey(p.from.id, p.to.id, p.cargo))
             else -> return t
         }
     }
@@ -330,20 +434,22 @@ internal fun World.newFreightRoute(r: Rival, c: Company): Tried {
  * Tries a railway: from an industry near home to the nearest that takes what it makes, or between two big towns,
  * farther apart than road vehicles go, the longer the better up to a point.
  */
-internal fun World.newRailRoute(r: Rival, c: Company, margin: Int = RAIL_MARGIN): Tried {
+internal fun World.newRailRoute(r: Rival, c: Company, payback: Int = RAIL_PAYBACK[level()]): Tried {
     val home = towns.getOrNull(r.home) ?: return Tried.CANT
     val served = r.routes.filter { it.rail }.map { keyOf(it) }.toSet()
+    // Its own trucks at an industry would take half of what a train waits for.
+    val trucked = r.routes.filter { it.freight }.map { it.townA to it.cargo }.toSet()
     class Pick(val from: Int, val to: Int, val cargo: Int, val load: Int, val sa: RailSite, val sb: RailSite, val score: Long)
     val picks = ArrayList<Pick>()
     for (ind in industries) {
         if (ind.closed) continue
         val kind = roster.industries[ind.kind]
         val (cx, cy) = middle(ind)
-        val fromHome = chebyshev(cx, cy, home.x, home.y)
+        val fromHome = reach(r, home, cx, cy)
         if (fromHome > HOME_REACH) continue
         for (cg in 0 until Cargo.COUNT) {
             val month = kind.produces[cg] * ind.level / 16
-            if (month < RAIL_LEAST || servedByOthers(ind, cg, c.id)) continue
+            if (month < RAIL_LEAST || (ind.id to cg) in trucked || servedByOthers(ind, cg, c.id)) continue
             var to: Industry? = null
             var best = Int.MAX_VALUE
             for (o in industries) {
@@ -356,28 +462,28 @@ internal fun World.newRailRoute(r: Rival, c: Company, margin: Int = RAIL_MARGIN)
             }
             if (to == null) continue
             val key = railKey(ind.id, to.id, cg)
-            if (key in served || key in r.failed) continue
+            if (key in served || triedLately(r, key)) continue
             val (ox, oy) = middle(to)
             if (townRefuses(c, cx, cy) || townRefuses(c, ox, oy)) continue
-            // About what it'll get in a month: its share is never all of it.
-            picks += Pick(ind.id, to.id, cg, month * 2 / 3, railSite(ind, ox, oy), railSite(to, cx, cy), month.toLong() * minOf(best, RAIL_BEST) * 100 / (fromHome + 10))
+            // About what it'll get in a month: its station's rating takes a share and the weather some more.
+            picks += Pick(ind.id, to.id, cg, month / 2, railSite(ind, ox, oy), railSite(to, cx, cy), month.toLong() * minOf(best, RAIL_BEST) * 100 / (fromHome + 10))
         }
     }
     for (t1 in towns) {
         if (t1.population < RAIL_TOWN) continue
-        val fromHome = chebyshev(t1.x, t1.y, home.x, home.y)
+        val fromHome = reach(r, home, t1.x, t1.y)
         if (fromHome > HOME_REACH) continue
         for (t2 in towns) {
             if (t2.id == t1.id || t2.population < RAIL_TOWN) continue
             val d = chebyshev(t1.x, t1.y, t2.x, t2.y)
             if (d < RAIL_MIN || d > RAIL_MAX) continue
             val key = railKey(minOf(t1.id, t2.id), maxOf(t1.id, t2.id), Cargo.PASSENGERS)
-            if (key in served || key in r.failed || t2.id < t1.id && chebyshev(t2.x, t2.y, home.x, home.y) <= HOME_REACH) continue
+            if (key in served || triedLately(r, key) || t2.id < t1.id && reach(r, home, t2.x, t2.y) <= HOME_REACH) continue
             if (pairTaken(c.id, t1, t2)) continue
             if (townRefuses(c, t1.x, t1.y) || townRefuses(c, t2.x, t2.y) || leaveAlone(t1) || leaveAlone(t2)) continue
-            // Passengers go both ways, so a town's worth about a mine's month.
-            picks += Pick(minOf(t1.id, t2.id), maxOf(t1.id, t2.id), Cargo.PASSENGERS, minOf(t1.population, t2.population) / 4, railSite(t1, t2.x, t2.y), railSite(t2, t1.x, t1.y),
-                minOf(t1.population, t2.population).toLong() / 4 * minOf(d, RAIL_BEST) * 100 / (fromHome + 10))
+            // Its load comes from the people its stations reach, worked out where they go.
+            picks += Pick(minOf(t1.id, t2.id), maxOf(t1.id, t2.id), Cargo.PASSENGERS, 0, railSite(t1, t2.x, t2.y), railSite(t2, t1.x, t1.y),
+                minOf(t1.population, t2.population).toLong() * minOf(d, RAIL_BEST) * 100 / (fromHome + 10))
         }
     }
     picks.sortWith(compareByDescending<Pick> { it.score }.thenBy { it.from }.thenBy { it.to }.thenBy { it.cargo })
@@ -386,8 +492,8 @@ internal fun World.newRailRoute(r: Rival, c: Company, margin: Int = RAIL_MARGIN)
         val serves = { s: Station, first: Boolean ->
             if (freight) stationIndustries[s.id]?.contains(if (first) p.from else p.to) == true else (stationPeople[s.id] ?: 0) > 0
         }
-        when (val t = tryRail(c, p.sa, p.sb, p.cargo, p.load, p.from, p.to, serves, margin) { r.routes += it }) {
-            Tried.CANT -> r.failed += railKey(p.from, p.to, p.cargo)
+        when (val t = tryRail(c, p.sa, p.sb, p.cargo, p.load, p.from, p.to, serves, payback) { r.routes += it }) {
+            Tried.CANT -> giveUp(r, railKey(p.from, p.to, p.cargo))
             else -> return t
         }
     }
@@ -409,8 +515,39 @@ internal fun World.middle(ind: Industry): Pair<Int, Int> {
     return ind.x + kind.across(ind.turn) / 2 to ind.y + kind.along(ind.turn) / 2
 }
 
-/** Joins industries [from] and [to] by road with a stop at each, a garage and two trucks for [cargo]. */
-private fun World.tryFreight(r: Rival, c: Company, from: Industry, to: Industry, cargo: Int, model: Engine): Tried {
+/** The rivals' level, as an index into the tables by level. */
+private fun World.level() = settings.rivalLevel.coerceIn(RivalLevel.EASY, RivalLevel.HARD)
+
+/**
+ * Whether a road route is expected to pay for itself within [payback] work years, or any will do if that's 0: as many
+ * [model]s as it takes, up to [MAX_PER_ROUTE], carrying [cargo] along [path] on [surface], about [load] a month (each
+ * way for passengers), with [built] spent on its road, stops and garage.
+ */
+private fun World.roadPays(model: Engine, cargo: Int, load: Int, path: IntArray, surface: Int, built: Long, payback: Int): Boolean {
+    if (payback <= 0) return true
+    val first = path.first()
+    val last = path.last()
+    val dist = kotlin.math.abs((first and 0xffff) - (last and 0xffff)) + kotlin.math.abs((first ushr 16) - (last ushr 16))
+    // A tile a day at 40-odd km/h, a fifth more for corners and stops, and a day at each end.
+    val there = path.size * KMH_PER_TILE_A_DAY * 6 / (5 * model.speed.coerceAtLeast(1)) + 2
+    val trips = (365 / (there * 2)).coerceAtLeast(1)
+    val wanted = load * 12
+    val n = ((wanted + trips * model.capacity - 1) / (trips * model.capacity).coerceAtLeast(1)).coerceIn(2, MAX_PER_ROUTE)
+    val hauled = minOf(n * trips * model.capacity, wanted)
+    // Freight waits on board for a full load, half of it the whole time it takes to fill.
+    val filling = if (cargo == Cargo.PASSENGERS) 0 else model.capacity * 15 / load.coerceAtLeast(1)
+    val late = (there + filling - dist * Cargo.PACE[cargo] - Cargo.GRACE[cargo]).coerceAtLeast(0)
+    val share = (100 - late * Cargo.DECAY[cargo]).coerceAtLeast(33)
+    val ways = if (cargo == Cargo.PASSENGERS) 2 else 1
+    val income = pay(hauled.toLong() * dist * Cargo.RATE[cargo] * share / 10_000) * ways
+    // Upkeep on its new road and two stops, in tenths of a cent a work day.
+    val fresh = path.count { road[tileOf(it)].toInt() == 0 }
+    val upkeep = price((fresh.toLong() * Upkeep.ROAD[surface] + 2 * Upkeep.STOP) * 365 / 1_000)
+    return (income - price(model.running) * n - upkeep) * payback >= built + price(model.cost) * n
+}
+
+/** Joins industries [from] and [to] by road with a stop at each, a garage and two trucks for [cargo], if it'll pay within [payback] work years. */
+private fun World.tryFreight(r: Rival, c: Company, from: Industry, to: Industry, cargo: Int, model: Engine, payback: Int): Tried {
     val (tx, ty) = middle(to)
     val path = roadPath(around(from), around(to).toHashSet(), tx, ty) ?: return Tried.CANT
     val year = Calendar.year(startYear, day)
@@ -418,6 +555,8 @@ private fun World.tryFreight(r: Rival, c: Company, from: Industry, to: Industry,
     val runs = runs(c.id, path, surface)
     val roadCost = runs.sumOf { roadCost(c, it).coerceAtLeast(0) }
     val cost = roadCost + price(Prices.ROAD_STOP) * 2 + price(Prices.DEPOT) + price(model.cost) * 2
+    val month = roster.industries[from.kind].produces[cargo] * from.level / 16
+    if (!roadPays(model, cargo, month / 2, path, surface, cost - price(model.cost) * 2, payback)) return Tried.CANT
     // Where the stops and garage go is found before anything's spent.
     val laid = laidEdges(path)
     val joined = joinedBy(path, laid)
@@ -459,8 +598,8 @@ private fun World.around(ind: Industry): List<Int> {
 
 internal enum class Tried { BUILT, CANT, POOR }
 
-/** Joins towns [t1] and [t2] by road with a stop in each, a garage and two vehicles, if it can and can pay. */
-private fun World.tryRoute(r: Rival, c: Company, t1: Town, t2: Town, model: Engine): Tried {
+/** Joins towns [t1] and [t2] by road with a stop in each, a garage and two vehicles, if it can and can pay, and it'll pay within [payback] work years. */
+private fun World.tryRoute(r: Rival, c: Company, t1: Town, t2: Town, model: Engine, payback: Int): Tried {
     val path = roadPath(t1, t2) ?: return Tried.CANT
     val year = Calendar.year(startYear, day)
     // The cheapest surface the vehicles can go their top speed on.
@@ -468,6 +607,8 @@ private fun World.tryRoute(r: Rival, c: Company, t1: Town, t2: Town, model: Engi
     val runs = runs(c.id, path, surface)
     val roadCost = runs.sumOf { roadCost(c, it).coerceAtLeast(0) }
     val cost = roadCost + price(Prices.ROAD_STOP) * 2 + price(Prices.DEPOT) + price(model.cost) * 2
+    // What a stop in the middle of the smaller town gets a month, each way.
+    if (!roadPays(model, Cargo.PASSENGERS, minOf(t1.population, t2.population) / 3, path, surface, cost - price(model.cost) * 2, payback)) return Tried.CANT
     // Where the stops and garage go is found before anything's spent.
     val laid = laidEdges(path)
     val joined = joinedBy(path, laid)
@@ -925,20 +1066,27 @@ private const val RAIL_BEST = 40
 /** Industries making less a month than this aren't worth a railway. */
 private const val RAIL_LEAST = 60
 /** Towns smaller than this aren't worth a railway. */
-private const val RAIL_TOWN = 300
+private const val RAIL_TOWN = 150
 /** Railways tried at each look. */
-private const val RAIL_TRIES = 2
+private const val RAIL_TRIES = 3
 
-/** Calendar days between a rival's looks at its business. */
+/** Work years a rival's railway and its road routes have to pay for themselves in, easy to hard. */
+private val RAIL_PAYBACK = intArrayOf(12, 20, 30)
+private val ROAD_PAYBACK = intArrayOf(14, 16, 24)
+/** Railways given up and town pairs and industries it couldn't join are tried again after this many work days. */
+internal const val RETRY_DAYS = 365 * 5
+/** Work days between a rival's looks at its business, and a hard one's. */
 private const val THINK_DAYS = 30
+private const val HARD_THINK_DAYS = 20
+/** Most routes a rival runs: normal, easy and hard. */
 private const val MAX_ROUTES = 8
+private const val EASY_ROUTES = 5
+private const val HARD_ROUTES = 14
 /** How near the player's stations easy rivals keep away from, in tiles. */
 private const val PLAYER_REACH = 10
 /** A station rating, out of 255, poor enough for a rival to advertise. */
 private const val POOR_RATING = 110
 private const val MAX_PER_ROUTE = 6
-/** Calendar days a vehicle runs before it's sold for losing money: two years, so last year's figure is a whole year. */
-private const val SELL_AGE = 730
 /** Towns smaller than this aren't worth a route. */
 private const val MIN_TOWN = 60
 /** How far apart, in tiles, towns on a route are, and how far from home the nearer is. */

@@ -238,8 +238,6 @@ class SaveTest {
     fun aCopyTakenAnyTimeInAFullGameCarriesOnTheSame() {
         val a = World(NewGame(160, 160, 12, 1930, Region.MIXED, towns = 10, industries = 6, rivals = 2, rivalLevel = RivalLevel.HARD, goals = GoalSet.MIXED))
         a.companies[0].money = 100_000_000
-        // Enough for the rival that stays to keep building.
-        a.companies[2].money += 400_000
         busesRoundTowns(a)
         trainAndShip(a)
         var copies = 0

@@ -66,6 +66,98 @@ class RivalTest {
     }
 
     @Test
+    fun aRailwayGivenUpIsTakenUp() {
+        val w = World(NewGame(160, 160, 5, 1930, Region.MIXED, towns = 3, industries = 0, rivals = 1))
+        val r = w.rivals[0]
+        val c = w.companies[r.company]
+        c.money = 10_000_000
+        // Any line between the two biggest towns, wherever it'll go.
+        val towns = w.towns.sortedByDescending { it.population }
+        val serves = { s: Station, _: Boolean -> (w.stationPeople[s.id] ?: 0) > 0 }
+        var built = false
+        loop@ for (t1 in towns) for (t2 in towns) {
+            if (t1.id == t2.id) continue
+            if (w.tryRail(c, railSite(t1, t2.x, t2.y), railSite(t2, t1.x, t1.y), Cargo.PASSENGERS, 100, t1.id, t2.id, serves, payback = 0) { r.routes += it } == Tried.BUILT) { built = true; break@loop }
+        }
+        assertTrue(built, "no line to test with")
+        r.thinkOn = Int.MAX_VALUE
+        val route = r.routes.single { it.rail }
+        val line = (0 until w.width * w.height).filter { w.owner[it].toInt() == r.company && w.track[it].toInt() != 0 }
+        assertTrue(line.size > 20, "line of ${line.size}")
+        w.days(30)
+        // Its train old and losing money.
+        for (t in w.trains) if (t != null && t.owner == r.company) { t.built = w.day - 1000; t.profitLastYear = -100 }
+        repeat(12) { w.days(30); w.sellLosers(r, c) }
+        assertTrue(route !in r.routes, "the railway is still run")
+        assertTrue(line.none { w.track[it].toInt() != 0 }, "track left on ${line.count { w.track[it].toInt() != 0 }} tiles")
+        assertTrue(w.triedLately(r, keyOfRail(route)), "not remembered")
+    }
+
+    @Test
+    fun aGivenUpRailwayLeavesTrackJoinedOnToIt() {
+        val w = World(NewGame(160, 160, 5, 1930, Region.MIXED, towns = 3, industries = 0, rivals = 1))
+        val r = w.rivals[0]
+        val c = w.companies[r.company]
+        c.money = 10_000_000
+        val towns = w.towns.sortedByDescending { it.population }
+        val serves = { s: Station, _: Boolean -> (w.stationPeople[s.id] ?: 0) > 0 }
+        var built = false
+        loop@ for (t1 in towns) for (t2 in towns) {
+            if (t1.id == t2.id) continue
+            if (w.tryRail(c, railSite(t1, t2.x, t2.y), railSite(t2, t1.x, t1.y), Cargo.PASSENGERS, 100, t1.id, t2.id, serves, payback = 0) { r.routes += it } == Tried.BUILT) { built = true; break@loop }
+        }
+        assertTrue(built, "no line to test with")
+        r.thinkOn = Int.MAX_VALUE
+        val route = r.routes.single { it.rail }
+        val line = (0 until w.width * w.height).filter { w.owner[it].toInt() == r.company && w.track[it].toInt() != 0 }
+        // Track of the rival's own laid on past the far terminus's back end, as if from a company it bought.
+        val far = w.stations[route.b]!!
+        var joined = -1
+        for (i in far.tiles) for (e in 0 until 4) {
+            if (joined >= 0) break
+            if (Track.PIECES.none { w.track[i].toInt() and it != 0 && Track.has(it, e) }) continue
+            val x = i % w.width + Track.dx(e)
+            val y = i / w.width + Track.dy(e)
+            if (!w.inside(x, y)) continue
+            val n = w.index(x, y)
+            if (w.track[n].toInt() != 0 || w.stationTiles.containsKey(n) || w.depotTiles.containsKey(n)) continue
+            w.track[n] = Track.PIECES.first { Track.has(it, Track.opposite(e)) }.toByte()
+            w.owner[n] = r.company.toByte()
+            joined = n
+        }
+        assertTrue(joined >= 0, "nowhere to join on")
+        w.days(30)
+        for (t in w.trains) if (t != null && t.owner == r.company) { t.built = w.day - 1000; t.profitLastYear = -100 }
+        repeat(12) { w.days(30); w.sellLosers(r, c) }
+        assertTrue(route !in r.routes, "the railway is still run")
+        assertTrue(w.track[joined].toInt() != 0, "the joined track was taken up")
+        assertTrue(line.none { w.track[it].toInt() != 0 }, "track left on ${line.count { w.track[it].toInt() != 0 }} tiles")
+    }
+
+    private fun keyOfRail(route: RivalRoute) = (1L shl 61) or (route.cargo.toLong() shl 48) or (route.townA.toLong() shl 24) or route.townB.toLong()
+
+    @Test
+    fun pairsAreTriedAgainAfterAWhile() {
+        val w = game()
+        val r = w.rivals[0]
+        w.giveUp(r, 42L)
+        assertTrue(w.triedLately(r, 42L))
+        w.days(RETRY_DAYS - 1)
+        assertTrue(w.triedLately(r, 42L))
+        w.days(1)
+        assertTrue(!w.triedLately(r, 42L), "still not tried again")
+    }
+
+    @Test
+    fun rivalsThinkByWorkDays() {
+        val w = World(NewGame(128, 128, 7, 1930, Region.MIXED, towns = 3, industries = 0, rivals = 1, dayLength = 10))
+        // A month of work is three calendar days at day length 10.
+        val looks = HashSet<Int>()
+        repeat(w.dayTicks * 30) { w.step(); looks += w.rivals[0].thinkOn }
+        assertTrue(looks.size >= 9, "thought ${looks.size} times in 300 work days")
+    }
+
+    @Test
     fun rivalsMakeTheSameMovesInEveryCopy() {
         val a = game()
         val b = game()

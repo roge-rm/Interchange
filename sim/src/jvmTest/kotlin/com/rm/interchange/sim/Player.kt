@@ -108,8 +108,8 @@ class Player(val world: World, val thinkDays: Int = 30, val mostRoutes: Int = 12
             val kind = kinds[(n + k) % kinds.size]
             val tried = when (kind) {
                 KIND_BUS -> w.newRoute(plan, c)
-                // A railway that's expected to cover its running cost, where a rival wants half as much again.
-                KIND_RAIL -> w.newRailRoute(plan, c, margin = 100)
+                // A railway that's expected to pay for itself within ten work years.
+                KIND_RAIL -> w.newRailRoute(plan, c, payback = 10)
                 else -> w.newFreightRoute(plan, c)
             }
             if (tried == Tried.BUILT) {
