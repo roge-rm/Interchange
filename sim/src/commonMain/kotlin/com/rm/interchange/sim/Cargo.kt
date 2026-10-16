@@ -3,7 +3,8 @@ package com.rm.interchange.sim
 /**
  * The kinds of cargo, by number, as packs and saves name them by id. What each
  * pays a tile in hundredths of a dollar, the days it can take before it pays
- * less, and how much less a day after that, in hundredths.
+ * less (days a tile and days more), how much less a day after that, in
+ * hundredths, and how much more passengers, mail and goods pay carried fast.
  */
 object Cargo {
     const val PASSENGERS = 0
@@ -40,6 +41,12 @@ object Cargo {
     val RATE = intArrayOf(20, 35, 22, 28, 24, 20, 22, 30, 44, 26, 36, 36, 48, 44, 32, 22, 24, 40, 22, 42)
     val GRACE = intArrayOf(5, 4, 30, 25, 20, 40, 40, 30, 12, 25, 15, 4, 3, 2, 20, 40, 40, 30, 40, 30)
     val DECAY = intArrayOf(1, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 3, 4, 5, 1, 1, 1, 1, 1, 1)
+    /** Days a tile it can take before it pays less: 1 is a tile a day, about 40 km/h; freight that keeps takes 2, as a laker goes. */
+    val PACE = intArrayOf(1, 1, 2, 2, 2, 2, 2, 2, 1, 2, 2, 1, 1, 1, 2, 2, 2, 2, 2, 2)
+    /** Percent more paid at [FAST_TO] tiles a day on board or better, rising from [FAST_FROM]: what an aircraft earns over a train. */
+    val FAST = intArrayOf(100, 50, 0, 0, 0, 0, 0, 0, 50, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+    const val FAST_FROM = 3
+    const val FAST_TO = 12
 
     /** What one of each weighs, in kg: a passenger with their bags, a bag of mail, a head of livestock, a tonne of the rest. */
     val KG = intArrayOf(90, 50, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 500, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000)

@@ -454,15 +454,20 @@ internal fun World.loadAt(t: Carrier, s: Station) {
 
 /**
  * What [n] of cargo [c] pays carried from [from] to [to] with [days] on board: by the
- * distance between the stations, full if it came at a tile a day or better
- * (about 40 km/h) and within that cargo's grace, then less each day after,
- * down to a third.
+ * distance between the stations, full if it came at its pace (a tile a day, about
+ * 40 km/h, or two days a tile for freight that keeps) and within that cargo's
+ * grace, then less each day after, down to a third. Passengers, mail and goods
+ * carried faster than a train pay more, up to [Cargo.FAST] percent.
  */
 fun fare(c: Int, n: Int, from: Station, to: Station, days: Int): Long {
     val dist = kotlin.math.abs(from.signX - to.signX) + kotlin.math.abs(from.signY - to.signY)
-    val quick = dist + Cargo.GRACE[c]
+    val quick = dist * Cargo.PACE[c] + Cargo.GRACE[c]
     val share = (100 - maxOf(0, days - quick) * Cargo.DECAY[c]).coerceAtLeast(33)
-    return n.toLong() * dist * Cargo.RATE[c] * share / 10_000
+    // Tiles a day on board, in hundredths.
+    val pace = dist * 100 / days.coerceAtLeast(1)
+    val span = (Cargo.FAST_TO - Cargo.FAST_FROM) * 100
+    val fast = Cargo.FAST[c] * (pace - Cargo.FAST_FROM * 100).coerceIn(0, span) / span
+    return n.toLong() * dist * Cargo.RATE[c] * (share + fast) / 10_000
 }
 
 /**

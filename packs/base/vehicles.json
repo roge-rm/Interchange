@@ -589,7 +589,7 @@
       "power": 1600,
       "tractive": 267,
       "weight": 112,
-      "cost": 90000,
+      "cost": 70000,
       "running": 3400,
       "length": 12,
       "traction": "diesel",
@@ -607,7 +607,7 @@
       "power": 1750,
       "tractive": 289,
       "weight": 116,
-      "cost": 98000,
+      "cost": 75000,
       "running": 3500,
       "length": 12,
       "traction": "diesel",
@@ -643,7 +643,7 @@
       "power": 3000,
       "tractive": 400,
       "weight": 177,
-      "cost": 180000,
+      "cost": 100000,
       "running": 5200,
       "length": 15,
       "traction": "diesel",
@@ -715,7 +715,7 @@
       "power": 4400,
       "tractive": 480,
       "weight": 190,
-      "cost": 280000,
+      "cost": 120000,
       "running": 6200,
       "length": 16,
       "traction": "diesel",
@@ -733,7 +733,7 @@
       "power": 4300,
       "tractive": 760,
       "weight": 190,
-      "cost": 320000,
+      "cost": 140000,
       "running": 6000,
       "length": 16,
       "traction": "diesel",
@@ -1522,8 +1522,8 @@
       "speed": 12,
       "power": 50,
       "weight": 200,
-      "cost": 6000,
-      "running": 600,
+      "cost": 5000,
+      "running": 300,
       "length": 6,
       "carries": [
         "grain",
@@ -1532,7 +1532,7 @@
         "goods",
         "coal"
       ],
-      "capacity": 20,
+      "capacity": 250,
       "life": 40
     },
     {
@@ -1546,14 +1546,14 @@
       "speed": 16,
       "power": 200,
       "weight": 300,
-      "cost": 9000,
-      "running": 1200,
+      "cost": 7000,
+      "running": 500,
       "length": 7,
       "carries": [
         "passengers",
         "mail"
       ],
-      "capacity": 80,
+      "capacity": 150,
       "life": 40
     },
     {
@@ -1564,11 +1564,11 @@
       "type": { "en": "Canal freighter", "fr": "Cargo de canal" },
       "from": 1880,
       "until": 1960,
-      "speed": 17,
+      "speed": 18,
       "power": 700,
       "weight": 1500,
-      "cost": 22000,
-      "running": 2400,
+      "cost": 18000,
+      "running": 1200,
       "length": 8,
       "carries": [
         "grain",
@@ -1579,7 +1579,7 @@
         "paper",
         "steel"
       ],
-      "capacity": 40,
+      "capacity": 600,
       "life": 45
     },
     {
@@ -1593,8 +1593,8 @@
       "speed": 25,
       "power": 2000,
       "weight": 3000,
-      "cost": 40000,
-      "running": 4000,
+      "cost": 22000,
+      "running": 2000,
       "length": 10,
       "carries": [
         "passengers",
@@ -1611,11 +1611,11 @@
       "type": { "en": "Bulk freighter", "fr": "Vraquier" },
       "from": 1900,
       "until": 1975,
-      "speed": 20,
+      "speed": 22,
       "power": 1800,
       "weight": 6000,
-      "cost": 60000,
-      "running": 5000,
+      "cost": 48000,
+      "running": 2500,
       "length": 12,
       "carries": [
         "grain",
@@ -1623,7 +1623,7 @@
         "coal",
         "potash"
       ],
-      "capacity": 90,
+      "capacity": 1300,
       "life": 50
     },
     {
@@ -1651,11 +1651,11 @@
       "type": { "en": "Northern resupply", "fr": "Ravitaillement du Nord" },
       "from": 1920,
       "until": 2100,
-      "speed": 14,
+      "speed": 16,
       "power": 600,
       "weight": 800,
-      "cost": 15000,
-      "running": 1600,
+      "cost": 12000,
+      "running": 800,
       "length": 9,
       "carries": [
         "fuel",
@@ -1663,7 +1663,7 @@
         "food",
         "lumber"
       ],
-      "capacity": 35,
+      "capacity": 400,
       "life": 40
     },
     {
@@ -1677,8 +1677,8 @@
       "speed": 22,
       "power": 1500,
       "weight": 3000,
-      "cost": 45000,
-      "running": 3800,
+      "cost": 25000,
+      "running": 1600,
       "length": 10,
       "carries": [
         "goods",
@@ -1688,7 +1688,7 @@
         "aluminium",
         "fish"
       ],
-      "capacity": 50,
+      "capacity": 400,
       "life": 45
     },
     {
@@ -1702,14 +1702,14 @@
       "speed": 21,
       "power": 1600,
       "weight": 4000,
-      "cost": 50000,
-      "running": 4200,
+      "cost": 30000,
+      "running": 2000,
       "length": 10,
       "carries": [
         "oil",
         "fuel"
       ],
-      "capacity": 60,
+      "capacity": 800,
       "life": 45
     },
     {
@@ -1723,8 +1723,8 @@
       "speed": 26,
       "power": 2500,
       "weight": 3000,
-      "cost": 45000,
-      "running": 4000,
+      "cost": 25000,
+      "running": 2500,
       "length": 9,
       "carries": [
         "passengers",
@@ -1744,8 +1744,8 @@
       "speed": 26,
       "power": 9000,
       "weight": 12000,
-      "cost": 140000,
-      "running": 9000,
+      "cost": 86000,
+      "running": 3500,
       "length": 16,
       "carries": [
         "grain",
@@ -1753,7 +1753,7 @@
         "coal",
         "potash"
       ],
-      "capacity": 180,
+      "capacity": 1800,
       "life": 50
     },
     {
@@ -1784,8 +1784,8 @@
       "speed": 26,
       "power": 8000,
       "weight": 11000,
-      "cost": 130000,
-      "running": 8000,
+      "cost": 72000,
+      "running": 3000,
       "length": 15,
       "carries": [
         "grain",
@@ -1793,7 +1793,7 @@
         "coal",
         "potash"
       ],
-      "capacity": 150,
+      "capacity": 1500,
       "life": 50
     },
     {
@@ -1807,7 +1807,7 @@
       "speed": 37,
       "power": 12000,
       "weight": 6000,
-      "cost": 160000,
+      "cost": 120000,
       "running": 11000,
       "length": 13,
       "carries": [
@@ -1828,8 +1828,8 @@
       "speed": 70,
       "power": 4000,
       "weight": 50,
-      "cost": 60000,
-      "running": 7000,
+      "cost": 18000,
+      "running": 1500,
       "length": 5,
       "carries": [
         "passengers",
@@ -1850,8 +1850,8 @@
       "speed": 30,
       "power": 9000,
       "weight": 8000,
-      "cost": 120000,
-      "running": 7000,
+      "cost": 45000,
+      "running": 2500,
       "length": 14,
       "carries": [
         "goods",
@@ -1861,7 +1861,7 @@
         "aluminium",
         "fish"
       ],
-      "capacity": 120,
+      "capacity": 600,
       "life": 45
     },
     {
@@ -1875,14 +1875,14 @@
       "speed": 27,
       "power": 8000,
       "weight": 9000,
-      "cost": 120000,
-      "running": 7500,
+      "cost": 60000,
+      "running": 3000,
       "length": 14,
       "carries": [
         "oil",
         "fuel"
       ],
-      "capacity": 140,
+      "capacity": 1200,
       "life": 45
     },
     {
@@ -1896,8 +1896,8 @@
       "speed": 26,
       "power": 4000,
       "weight": 2500,
-      "cost": 90000,
-      "running": 3000,
+      "cost": 30000,
+      "running": 1500,
       "length": 9,
       "carries": [
         "passengers",
@@ -1971,8 +1971,8 @@
       "speed": 300,
       "power": 900,
       "weight": 5,
-      "cost": 30000,
-      "running": 3000,
+      "cost": 15000,
+      "running": 1000,
       "length": 5,
       "carries": [
         "passengers",
@@ -1994,8 +1994,8 @@
       "speed": 300,
       "power": 2400,
       "weight": 8,
-      "cost": 45000,
-      "running": 4500,
+      "cost": 30000,
+      "running": 2000,
       "length": 6,
       "carries": [
         "passengers",
@@ -2068,14 +2068,14 @@
       "speed": 130,
       "power": 200,
       "weight": 1,
-      "cost": 10000,
-      "running": 1500,
+      "cost": 2000,
+      "running": 150,
       "length": 3,
       "carries": [
         "passengers",
         "mail"
       ],
-      "capacity": 2,
+      "capacity": 3,
       "life": 30,
       "range": 400,
       "runway": "heli"
@@ -2118,8 +2118,8 @@
       "speed": 160,
       "power": 800,
       "weight": 3,
-      "cost": 35000,
-      "running": 4000,
+      "cost": 7500,
+      "running": 600,
       "length": 4,
       "carries": [
         "passengers",
@@ -2141,8 +2141,8 @@
       "speed": 260,
       "power": 3300,
       "weight": 12,
-      "cost": 90000,
-      "running": 7000,
+      "cost": 15000,
+      "running": 1000,
       "length": 6,
       "carries": [
         "goods",
@@ -2189,7 +2189,7 @@
       "speed": 880,
       "power": 70000,
       "weight": 60,
-      "cost": 600000,
+      "cost": 750000,
       "running": 30000,
       "length": 12,
       "carries": [
@@ -2239,7 +2239,7 @@
       "speed": 820,
       "power": 28000,
       "weight": 35,
-      "cost": 350000,
+      "cost": 450000,
       "running": 18000,
       "length": 9,
       "carries": [
@@ -2262,8 +2262,8 @@
       "speed": 560,
       "power": 18000,
       "weight": 35,
-      "cost": 400000,
-      "running": 22000,
+      "cost": 200000,
+      "running": 8000,
       "length": 9,
       "carries": [
         "goods",
@@ -2288,8 +2288,8 @@
       "speed": 215,
       "power": 420,
       "weight": 1,
-      "cost": 30000,
-      "running": 2500,
+      "cost": 4500,
+      "running": 250,
       "length": 3,
       "carries": [
         "passengers",
@@ -2311,7 +2311,7 @@
       "speed": 780,
       "power": 32000,
       "weight": 40,
-      "cost": 380000,
+      "cost": 500000,
       "running": 19000,
       "length": 9,
       "carries": [
@@ -2334,8 +2334,8 @@
       "speed": 900,
       "power": 200000,
       "weight": 170,
-      "cost": 1500000,
-      "running": 70000,
+      "cost": 800000,
+      "running": 30000,
       "length": 13,
       "carries": [
         "goods",
@@ -2360,7 +2360,7 @@
       "speed": 430,
       "power": 4500,
       "weight": 12,
-      "cost": 180000,
+      "cost": 140000,
       "running": 9000,
       "length": 7,
       "carries": [
@@ -2383,7 +2383,7 @@
       "speed": 850,
       "power": 100000,
       "weight": 90,
-      "cost": 900000,
+      "cost": 1200000,
       "running": 40000,
       "length": 12,
       "carries": [
@@ -2406,7 +2406,7 @@
       "speed": 500,
       "power": 4300,
       "weight": 13,
-      "cost": 220000,
+      "cost": 160000,
       "running": 9500,
       "length": 7,
       "carries": [
@@ -2429,7 +2429,7 @@
       "speed": 830,
       "power": 54000,
       "weight": 42,
-      "cost": 500000,
+      "cost": 750000,
       "running": 22000,
       "length": 10,
       "carries": [
@@ -2475,8 +2475,8 @@
       "speed": 280,
       "power": 5000,
       "weight": 8,
-      "cost": 250000,
-      "running": 15000,
+      "cost": 25000,
+      "running": 2000,
       "length": 5,
       "carries": [
         "passengers",
@@ -2498,7 +2498,7 @@
       "speed": 830,
       "power": 46000,
       "weight": 37,
-      "cost": 480000,
+      "cost": 650000,
       "running": 17000,
       "length": 9,
       "carries": [

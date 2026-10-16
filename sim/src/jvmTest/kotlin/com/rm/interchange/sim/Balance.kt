@@ -8,25 +8,32 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 /**
- * The balance harness. Reference routes for every mode on a flat map with no towns, trees or industries, run for a
- * calendar year with the vehicles on sale in sample years, and a table of what each costs and earns.
+ * The balance harness. Reference routes for every mode on a flat map with no towns, trees or industries, run for at
+ * least three work years with the vehicles on sale in sample years, and a table of what each costs and earns.
  *
  * Every sample year and day length runs in about a minute on 10 threads, and writes build/balance/table.md and table.csv.
  *
  * Notes on the numbers:
- * - Price is the vehicles bought (a train with its wagons and tender), not the track, stops, docks or airports.
- * - Income and running cost are what the books show over one calendar year from 1 January, so a long day length
- *   runs 10 or 16 times as many work days. Wear, upkeep and interest aren't in running cost.
- * - Load "full" keeps a fresh thousand waiting at the start (and, for passengers, at the far end too) each work day.
+ * - Price is the vehicles bought (a train with its wagons and tender); built is the track, stops, docks or airports.
+ * - Income and running cost are what the books show from 1 January over whole calendar years, as many as make three
+ *   work years (three at day length 1, one at 10 or 16), so a slow ship's one or two trips a year average out.
+ *   Wear, upkeep and interest aren't in running cost. Inflation is off.
+ * - Load "full" keeps a fresh thousand (or two loads, for a big ship) waiting at the start (and, for passengers and
+ *   mail, at the far end too) each work day.
  *   Load "supply" is what a town of about 500 makes: 10 passengers a work day at each end (about 300 a month, from
  *   the houses' 8 passengers a day per 256 people, less the station rating), and for freight 100 every 30 work days at
  *   the start only, spread evenly, as a mine or a farm makes (industries' monthly amounts run 40 to 110).
- * - Profit is over the calendar year; profit a work year divides that by the day length, and payback is price over
- *   profit a work year, so it reads the same at any day length.
+ * - Profit is over the whole run; profit a work year divides that by the work years run, and payback is price over
+ *   profit a work year, so it reads the same at any day length. Line payback counts what was built as well.
  * - Bush planes on floats and skis are left out: with the weather off they hold forever in winter, as there's no snow to land skis on.
  * - Full runs use one vehicle (one train). Supply runs use as many as the supply fills, up to 6 (rail has one train).
  */
 class Balance {
+    private companion object {
+        /** Mail a work day at each end on a supply run: a town of about 500 makes far less mail than passengers. */
+        const val MAIL_A_DAY = 3
+    }
+
     class Run(
         val mode: String,
         val vehicle: String,
@@ -40,15 +47,27 @@ class Balance {
         val wagons: Int,
     )
 
-    class Row(val run: Run, val fleet: Int, val price: Long, val income: Long, val running: Long, val upkeep: Long = 0) {
+    class Row(
+        val run: Run,
+        val fleet: Int,
+        val price: Long,
+        val income: Long,
+        val running: Long,
+        val upkeep: Long = 0,
+        val built: Long = 0,
+        val workYears: Int = run.dayLength,
+    ) {
         val profit get() = income - running
-        val workProfit get() = profit / run.dayLength
-        val years get() = if (profit <= 0) Double.POSITIVE_INFINITY else price.toDouble() * run.dayLength / profit
+        val workProfit get() = profit / workYears
+        val years get() = if (profit <= 0) Double.POSITIVE_INFINITY else price.toDouble() * workYears / profit
         val payback get() = if (profit <= 0) "never" else "%.1f".format(years)
+        /** Payback counting the track, stops, docks or airports too. */
+        val lineYears get() = if (profit <= 0) Double.POSITIVE_INFINITY else (price + built).toDouble() * workYears / profit
+        val linePayback get() = if (profit <= 0) "never" else "%.1f".format(lineYears)
     }
 
-    private fun world(year: Int, dayLength: Int): World {
-        val w = World(NewGame(128, 64, 1, year, Region.MIXED, towns = 0, industries = 0, weather = false, dayLength = dayLength))
+    private fun world(year: Int, dayLength: Int, width: Int = 128): World {
+        val w = World(NewGame(width, 64, 1, year, Region.MIXED, towns = 0, industries = 0, weather = false, inflation = false, dayLength = dayLength))
         for (i in w.corners.indices) w.corners[i] = 3
         w.trees.fill(0)
         w.companies[0].money = 1_000_000_000L
@@ -87,6 +106,14 @@ class Balance {
 
     private fun freightCargo(e: Engine) = freightPrefs.firstOrNull { it in e.cargoes } ?: e.cargoes.first()
 
+    /** Ships carry bulk first, then lumber for a tug and barge, then goods. */
+    private val shipPrefs = listOf(Cargo.COAL, Cargo.GRAIN, Cargo.IRON_ORE, Cargo.OIL, Cargo.LUMBER, Cargo.GOODS)
+
+    private fun shipCargo(e: Engine) = shipPrefs.firstOrNull { it in e.cargoes } ?: e.cargoes.first()
+
+    /** Whether [cargo] goes both ways between the ends, as passengers and mail do, or only from the first. */
+    private fun bothWays(cargo: Int) = cargo == Cargo.PASSENGERS || cargo == Cargo.MAIL
+
     private fun airKind(e: Engine) = when (e.runway) {
         Runways.STRIP -> Airports.STRIP
         Runways.REGIONAL -> Airports.REGIONAL
@@ -101,8 +128,9 @@ class Balance {
         val out = ArrayList<Run>()
         val rail = listOf(20, 60)
         val road = listOf(15, 40)
+        val ferry = listOf(12, 30, 80)
         val sea = listOf(30, 80)
-        val air = listOf(20, 60)
+        val air = listOf(20, 60, 120)
         fun add(mode: String, e: Engine, wagon: Engine?, wagons: Int, year: Int, cargo: Int, lengths: List<Int>) {
             for (dl in days) for (len in lengths) for (load in loads) {
                 out += Run(mode, e.key.substringAfter(':'), year, dl, len, load, cargo, e, wagon, wagons)
@@ -124,11 +152,12 @@ class Balance {
             for (e in extremes(roads.filter { Cargo.PASSENGERS in it.cargoes }, speedCap)) add("bus", e, null, 0, year, Cargo.PASSENGERS, road)
             for (e in extremes(roads.filter { Cargo.PASSENGERS !in it.cargoes && !it.cargoes.contentEquals(intArrayOf(Cargo.MAIL)) }, speedCap)) add("truck", e, null, 0, year, freightCargo(e), road)
             val ships = onSale(r, year, VehicleKind.SHIP).filter { it.capacity > 0 && it.cargoes.isNotEmpty() }
-            for (e in extremes(ships.filter { Cargo.PASSENGERS in it.cargoes }, speedCap)) add("ship-pass", e, null, 0, year, Cargo.PASSENGERS, sea)
-            for (e in extremes(ships.filter { Cargo.PASSENGERS !in it.cargoes }, speedCap)) add("ship-freight", e, null, 0, year, freightCargo(e), sea)
+            for (e in extremes(ships.filter { Cargo.PASSENGERS in it.cargoes }, speedCap)) add("ship-pass", e, null, 0, year, Cargo.PASSENGERS, ferry)
+            for (e in extremes(ships.filter { Cargo.PASSENGERS !in it.cargoes }, speedCap)) add("ship-freight", e, null, 0, year, shipCargo(e), sea)
             val planes = onSale(r, year, VehicleKind.AIRCRAFT).filter { it.capacity > 0 && !it.floats && Airports.FROM[airKind(it)] <= year }
             for (e in extremes(planes.filter { Cargo.PASSENGERS in it.cargoes }, speedCap)) add("air-pass", e, null, 0, year, Cargo.PASSENGERS, air)
             for (e in extremes(planes.filter { Cargo.PASSENGERS !in it.cargoes }, speedCap)) add("air-freight", e, null, 0, year, freightCargo(e), air)
+            for (e in extremes(planes.filter { Cargo.PASSENGERS in it.cargoes && Cargo.MAIL in it.cargoes }, speedCap)) add("air-mail", e, null, 0, year, Cargo.MAIL, air)
         }
         return out
     }
@@ -138,13 +167,17 @@ class Balance {
         val e = run.engine
         if (run.mode.startsWith("train")) return 1
         if (run.load == "full") return 1
-        val perDay = if (run.cargo == Cargo.PASSENGERS) 10.0 else 100.0 / 30
+        val perDay = when (run.cargo) {
+            Cargo.PASSENGERS -> 10.0
+            Cargo.MAIL -> MAIL_A_DAY.toDouble()
+            else -> 100.0 / 30
+        }
         val trip = 2.0 * run.tiles / (e.speed / 40.0) + 6 + if (run.mode.startsWith("air")) 10 else 0
         return Math.ceil(perDay * trip / e.capacity).toInt().coerceIn(1, 6)
     }
 
     private fun execute(run: Run): Row? {
-        val w = world(run.year, run.dayLength)
+        val w = world(run.year, run.dayLength, if (run.tiles > 100) 256 else 128)
         val e = run.engine
         val len = run.tiles
         val c = w.companies[0]
@@ -152,6 +185,7 @@ class Balance {
         val fleet = fleetFor(run)
         val before: Long
         val tiles = len
+        val start = c.money
         when {
             run.mode.startsWith("train") -> {
                 w.apply(Command.Depot(0, 2, 10, Track.XP))
@@ -183,12 +217,12 @@ class Balance {
                 }
             }
             run.mode.startsWith("ship") -> {
-                // A lake from x = 10 to the far dock, y = 10 to 50, with docks on both shores and a shipyard.
+                // A lake from x = 10 to the far dock, y = 10 to 50, with docks on both shores and a shipyard by the first.
                 for (y in 0..64) for (x in 0..128) w.corners[w.corner(x, y)] = if (x in 10..(9 + len) && y in 10..50) 0 else 1
                 w.shoreChanged()
                 w.apply(Command.Dock(0, 9, 30))
                 w.apply(Command.Dock(0, 9 + len, 30))
-                w.apply(Command.Shipyard(0, 9, 15))
+                w.apply(Command.Shipyard(0, 9, 27))
                 if (w.stations.size < 2 || w.depots.isEmpty()) return null
                 before = c.money
                 repeat(fleet) {
@@ -215,9 +249,14 @@ class Balance {
             }
         }
         val price = before - c.money
-        // Passengers go both ways; freight only from the first stop.
-        val both = run.cargo == Cargo.PASSENGERS
-        val total = Calendar.TICKS_PER_DAY * 365L * run.dayLength
+        val built = start - before
+        // Passengers and mail go both ways; freight only from the first stop.
+        val both = bothWays(run.cargo)
+        // Whole calendar years, enough for three work years.
+        val calendarYears = (3 + run.dayLength - 1) / run.dayLength
+        val total = Calendar.TICKS_PER_DAY * 365L * run.dayLength * calendarYears
+        val sums = LongArray(Books.COUNT)
+        var year = Calendar.year(w.startYear, w.day)
         while (w.tick < total) {
             if (w.tick % Calendar.TICKS_PER_DAY == 0L) {
                 for (s in w.stations) {
@@ -225,19 +264,28 @@ class Balance {
                     val dest = if (s.id == 0) 1 else 0
                     if (run.load == "full") {
                         s.cargo[run.cargo].clear()
-                        w.addWaiting(s, run.cargo, dest, s.id, 1000, w.tick)
+                        w.addWaiting(s, run.cargo, dest, s.id, maxOf(1000, e.capacity * 2), w.tick)
                     } else {
                         // Freight 100 every 30 work days, the remainder carried so it's 3 or 4 a day.
                         val d = w.tick / Calendar.TICKS_PER_DAY
-                        val n = if (both) 10 else ((d + 1) * 100 / 30 - d * 100 / 30).toInt()
+                        val n = when {
+                            run.cargo == Cargo.PASSENGERS -> 10
+                            run.cargo == Cargo.MAIL -> MAIL_A_DAY
+                            else -> ((d + 1) * 100 / 30 - d * 100 / 30).toInt()
+                        }
                         w.addWaiting(s, run.cargo, dest, s.id, minOf(n, MAX_WAITING - s.waiting(run.cargo)), w.tick)
                     }
                 }
             }
             w.step()
+            val now = Calendar.year(w.startYear, w.day)
+            if (now != year) {
+                for (k in sums.indices) sums[k] += c.lastYear[k]
+                year = now
+            }
         }
-        fun books(kind: Int) = c.thisYear[kind] + c.lastYear[kind]
-        return Row(run, fleet, price, books(Books.INCOME), -books(Books.RUNNING), -books(Books.UPKEEP))
+        for (k in sums.indices) sums[k] += c.thisYear[k]
+        return Row(run, fleet, price, sums[Books.INCOME], -sums[Books.RUNNING], -sums[Books.UPKEEP], built, run.dayLength * calendarYears)
             .also { check(tiles == len) }
     }
 
@@ -258,10 +306,13 @@ class Balance {
 
     private fun write(rows: List<Row>) {
         val dir = File("build/balance").apply { mkdirs() }
-        val head = listOf("mode", "vehicle", "year", "day", "tiles", "load", "cargo", "fleet", "wagons", "price", "income", "running", "profit", "work-yr profit", "work-yr payback")
+        val head = listOf(
+            "mode", "vehicle", "year", "day", "tiles", "load", "cargo", "fleet", "wagons", "price", "built", "work yrs", "income", "running",
+            "profit", "upkeep", "work-yr profit", "work-yr payback", "line payback",
+        )
         fun cells(r: Row) = listOf(
             r.run.mode, r.run.vehicle, r.run.year, r.run.dayLength, r.run.tiles, r.run.load, Cargo.IDS[r.run.cargo], r.fleet, r.run.wagons,
-            r.price, r.income, r.running, r.profit, r.workProfit, r.payback,
+            r.price, r.built, r.workYears, r.income, r.running, r.profit, r.upkeep, r.workProfit, r.payback, r.linePayback,
         )
         File(dir, "table.csv").writeText((listOf(head) + rows.map { cells(it) }).joinToString("\n") { it.joinToString(",") } + "\n")
         val md = StringBuilder()
@@ -314,7 +365,8 @@ class Balance {
 
     /**
      * Each kind in its niche: a full 1950s truck pays back in 2 to 5 work years on a short haul of 15 tiles, a 1950s
-     * freight train pays back faster than the trucks on 60 tiles, and a horse freight wagon pays on 10 tiles in 1850.
+     * freight train pays back faster than the trucks on 60 tiles, as a 1980 and a 2010 diesel do against their
+     * trucks, and a horse freight wagon pays on 10 tiles in 1850.
      */
     @Test
     fun eachKindPaysInItsNiche() {
@@ -329,17 +381,92 @@ class Balance {
         val short = trucks.flatMap { (k, c) -> road(k, 1950, 15, c) }
         val long = trucks.flatMap { (k, c) -> road(k, 1950, 60, c) }
         val horse = road("freight_wagon", 1850, 10, Cargo.GRAIN)
-        val rows = table(short + long + train + horse)
-        assertEquals(short.size + long.size + train.size + horse.size, rows.size, "every route was built")
+        fun diesel(key: String, year: Int) = days.map { dl -> Run("train-freight", key, year, dl, 60, "full", Cargo.COAL, e(key), coal, wagonsFor(r, e(key), coal, Cargo.COAL)) }
+        val diesels = diesel("sd40", 1980) + diesel("dash9", 2010)
+        val modern = listOf(
+            Triple("tandem_dump", 1980, Cargo.COAL), Triple("highway_tractor", 1980, Cargo.GOODS),
+            Triple("quad_dump", 2010, Cargo.COAL), Triple("grain_train", 2010, Cargo.GRAIN), Triple("aero_tractor", 2010, Cargo.GOODS),
+        ).flatMap { (k, y, c) -> road(k, y, 60, c) }
+        val all = short + long + train + horse + diesels + modern
+        val rows = table(all)
+        assertEquals(all.size, rows.size, "every route was built")
         fun what(row: Row) = "${row.run.year} ${row.run.vehicle}, ${row.run.tiles} tiles, day length ${row.run.dayLength}"
         for (row in rows) println("niche: ${what(row)}: ${row.payback}")
         for (row in rows.filter { it.run.mode == "truck" && it.run.tiles == 15 }) assertTrue(row.years in 2.0..5.0, "${what(row)} pays back in ${row.payback} work years")
         for (t in rows.filter { it.run.mode == "train-freight" }) {
-            for (row in rows.filter { it.run.mode == "truck" && it.run.tiles == 60 && it.run.dayLength == t.run.dayLength }) {
+            // Against the trucks of its own day: 1950s ones for the Pacific, 1980 or 2010 ones for the diesels.
+            for (row in rows.filter { it.run.mode == "truck" && it.run.tiles == 60 && it.run.dayLength == t.run.dayLength && it.run.year == t.run.year }) {
                 assertTrue(t.years < row.years, "${what(t)} pays back in ${t.payback} work years, ${what(row)} in ${row.payback}")
             }
         }
         for (row in rows.filter { it.run.year == 1850 }) assertTrue(row.years <= 8.0, "${what(row)} pays back in ${row.payback} work years")
+    }
+
+    /**
+     * Water and air in their niches, full, at day length 1 and 10:
+     * - Bulk by water on a long haul of 80 tiles pays back in 1.5 to 5 work years, and from the diesels on, counting
+     *   the docks against the track, faster than the coal train of its day on the same 80 tiles. Steam freight trains
+     *   pay back in 1.2 to 1.8 there, faster than any laker.
+     * - Ferries pay back in 5 work years or less on a short crossing of 12 tiles.
+     * - Airliners of the 1950s, 1960s and 1980s pay back in 2.5 to 6.5 work years on 60 and 120 tiles, and at least
+     *   twice as slowly on a short hop of 20.
+     * - Freight aircraft pay on 120 tiles within 8 work years, but never as fast as the freight train of their day.
+     * - A helicopter pays modestly on a short hop: 3 to 8 work years on 20 tiles.
+     */
+    @Test
+    fun waterAndAirPayInTheirNiches() {
+        val r = Roster.BASE
+        fun e(key: String) = r.engines.first { it.key == "base:$key" }
+        val days = listOf(1, 10)
+        fun runs(mode: String, key: String, year: Int, tiles: Int, cargo: Int) = days.map { dl -> Run(mode, key, year, dl, tiles, "full", cargo, e(key), null, 0) }
+        val coal = onSale(r, 1980, VehicleKind.WAGON).filter { Cargo.COAL in it.cargoes }.maxBy { it.capacity }
+        fun train(key: String, year: Int, tiles: Int) = days.map { dl -> Run("train-freight", key, year, dl, tiles, "full", Cargo.COAL, e(key), coal, wagonsFor(r, e(key), coal, Cargo.COAL)) }
+        val bulk = listOf(
+            Triple("steam_laker", 1950, Cargo.COAL), Triple("lake_tanker", 1950, Cargo.OIL), Triple("canaller", 1920, Cargo.COAL),
+            Triple("seaway_laker", 1980, Cargo.COAL), Triple("self_unloader", 2010, Cargo.COAL), Triple("product_tanker", 2010, Cargo.OIL),
+        ).flatMap { (k, y, c) -> runs("ship-freight", k, y, 80, c) }
+        val tug = runs("ship-freight", "tug_barge", 1980, 80, Cargo.LUMBER)
+        val trains = train("mikado", 1920, 80) + train("pacific", 1950, 80) + train("sd40", 1980, 80) + train("dash9", 2010, 80) +
+            train("pacific", 1950, 60) + train("sd40", 1980, 60) + train("dash9", 2010, 60)
+        val ferries = listOf("paddle_steamer" to 1850, "lake_steamer" to 1900, "car_ferry" to 1950, "superferry" to 1980, "hovercraft" to 1980, "battery_ferry" to 2020)
+            .flatMap { (k, y) -> runs("ship-pass", k, y, 12, Cargo.PASSENGERS) }
+        val liners = listOf("north_star" to 1950, "dc8" to 1965, "b767" to 1985)
+        val air = liners.flatMap { (k, y) -> listOf(20, 60, 120).flatMap { runs("air-pass", k, y, it, Cargo.PASSENGERS) } }
+        // The rest of the airliners, printed only.
+        val others = listOf("dc3" to 1945, "viscount" to 1960, "dc9" to 1970, "b737_200" to 1975, "dash7" to 1980, "dash8" to 1990, "a320" to 1995, "crj" to 2000, "a220" to 2020)
+            .flatMap { (k, y) -> listOf(20, 60, 120).flatMap { runs("air-pass", k, y, it, Cargo.PASSENGERS) } }
+        val freighters = listOf("b747f" to 1980, "hercules" to 1980, "bristol_freighter" to 1960).flatMap { (k, y) -> runs("air-freight", k, y, 120, Cargo.GOODS) }
+        val helis = listOf("bell_47" to 1955, "s55" to 1960, "jetranger" to 1980, "s92" to 2010).flatMap { (k, y) -> runs("air-pass", k, y, 20, Cargo.PASSENGERS) }
+        val all = bulk + tug + trains + ferries + air + others + freighters + helis
+        val rows = table(all)
+        assertEquals(all.size, rows.size, "every route was built")
+        fun what(row: Row) = "${row.run.year} ${row.run.vehicle} ${Cargo.IDS[row.run.cargo]}, ${row.run.tiles} tiles, day length ${row.run.dayLength}"
+        for (row in rows) println("water and air: ${what(row)}: ${row.payback}, line ${row.linePayback}")
+        fun trainOf(row: Row, tiles: Int) = rows.filter { it.run.mode == "train-freight" && it.run.tiles == tiles && it.run.dayLength == row.run.dayLength }
+            .minBy { kotlin.math.abs(it.run.year - row.run.year) }
+        for (row in rows.filter { it.run.mode == "ship-freight" }) {
+            assertTrue(row.years in 1.5..5.0, "${what(row)} pays back in ${row.payback} work years")
+            if (row.run.vehicle == "tug_barge" || row.run.year < 1960) continue
+            val t = trainOf(row, 80)
+            assertTrue(row.lineYears < t.lineYears, "${what(row)} pays back its line in ${row.linePayback}, ${what(t)} in ${t.linePayback}")
+        }
+        for (row in rows.filter { it.run.mode == "ship-pass" }) assertTrue(row.years <= 5.0, "${what(row)} pays back in ${row.payback} work years")
+        val names = liners.map { it.first }
+        for (row in rows.filter { it.run.vehicle in names }) {
+            if (row.run.tiles >= 60) assertTrue(row.years in 2.5..6.5, "${what(row)} pays back in ${row.payback} work years")
+            else {
+                val long = rows.first { it.run.vehicle == row.run.vehicle && it.run.dayLength == row.run.dayLength && it.run.tiles == 120 }
+                assertTrue(row.years > long.years * 2, "${what(row)} pays back in ${row.payback} work years, on 120 tiles in ${long.payback}")
+            }
+        }
+        for (row in rows.filter { it.run.mode == "air-freight" && it.run.vehicle != "bristol_freighter" }) {
+            assertTrue(row.years <= 8.0, "${what(row)} pays back in ${row.payback} work years")
+            val t = trainOf(row, 60)
+            assertTrue(row.years > t.years, "${what(row)} pays back in ${row.payback} work years, ${what(t)} in ${t.payback}")
+        }
+        for (row in rows.filter { it.run.vehicle == "jetranger" || it.run.vehicle == "s92" }) {
+            assertTrue(row.years in 3.0..8.0, "${what(row)} pays back in ${row.payback} work years")
+        }
     }
 
     // The checks FareTest made: full vehicles on a year's run earn comfortably more than they cost, trains most of all.

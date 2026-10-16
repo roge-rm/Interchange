@@ -502,6 +502,11 @@ private fun World.arriveShip(v: Ship) {
         val o = v.orders.getOrNull(v.order % v.orders.size.coerceAtLeast(1)) ?: 0
         v.waiting = maxOf(Calendar.TICKS_PER_DAY, Calendar.TICKS_PER_DAY * Order.waitDays(o))
         callAt(v, s, o)
+        // Due a service: to the shipyard from here, so it never turns back halfway across a lake.
+        if (v.service && workDay - v.serviced >= SERVICE_DAYS && !v.toDepot && depots.getOrNull(v.depot) != null) {
+            v.toDepot = true
+            v.servicing = true
+        }
     } else if (target == -1) {
         val d = depots.getOrNull(v.depot) ?: return
         if (tile != shipyardWater(d)) return
@@ -624,7 +629,8 @@ internal fun World.shipsDay() {
             v.brokenFor = Calendar.TICKS_PER_DAY
             v.breakdowns++
         }
-        if (v.service && workDay - v.serviced >= SERVICE_DAYS && v.running && !v.toDepot && depots.getOrNull(v.depot) != null) {
+        // Ships go for a service after a call; one that's gone twice as long without calling anywhere goes from where it is.
+        if (v.service && workDay - v.serviced >= SERVICE_DAYS * 2 && v.running && !v.toDepot && depots.getOrNull(v.depot) != null) {
             v.toDepot = true
             v.servicing = true
             v.route = null

@@ -81,7 +81,9 @@ class PassengerTest {
     fun slowerTripsPayLess() {
         val a = Station(0, 0, "", 0, 0)
         val b = Station(1, 0, "", 40, 0)
-        assertEquals(fare(Cargo.PASSENGERS, 100, a, b, 5), fare(Cargo.PASSENGERS, 100, a, b, 25))
+        assertEquals(fare(Cargo.PASSENGERS, 100, a, b, 14), fare(Cargo.PASSENGERS, 100, a, b, 25))
+        // Faster than about three tiles a day pays more, as an aircraft goes.
+        assertTrue(fare(Cargo.PASSENGERS, 100, a, b, 5) > fare(Cargo.PASSENGERS, 100, a, b, 14))
         assertTrue(fare(Cargo.PASSENGERS, 100, a, b, 60) < fare(Cargo.PASSENGERS, 100, a, b, 25))
         assertTrue(fare(Cargo.MAIL, 100, a, b, 5) > fare(Cargo.PASSENGERS, 100, a, b, 5))
     }
