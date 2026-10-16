@@ -36,7 +36,8 @@ object Cargo {
     /** The number of cargo [id], as packs name it, or -1. */
     fun of(id: String) = IDS.indexOf(id)
 
-    val RATE = intArrayOf(20, 35, 11, 14, 12, 10, 11, 15, 22, 13, 18, 18, 24, 22, 16, 11, 12, 20, 11, 21)
+    /** Full fare, in cents for one carried a tile. */
+    val RATE = intArrayOf(20, 35, 22, 28, 24, 20, 22, 30, 44, 26, 36, 36, 48, 44, 32, 22, 24, 40, 22, 42)
     val GRACE = intArrayOf(5, 4, 30, 25, 20, 40, 40, 30, 12, 25, 15, 4, 3, 2, 20, 40, 40, 30, 40, 30)
     val DECAY = intArrayOf(1, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 3, 4, 5, 1, 1, 1, 1, 1, 1)
 

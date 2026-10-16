@@ -4,6 +4,7 @@ import java.io.File
 import java.util.concurrent.Callable
 import java.util.concurrent.Executors
 import kotlin.test.Test
+import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 /**
@@ -39,10 +40,11 @@ class Balance {
         val wagons: Int,
     )
 
-    class Row(val run: Run, val fleet: Int, val price: Long, val income: Long, val running: Long) {
+    class Row(val run: Run, val fleet: Int, val price: Long, val income: Long, val running: Long, val upkeep: Long = 0) {
         val profit get() = income - running
         val workProfit get() = profit / run.dayLength
-        val payback get() = if (profit <= 0) "never" else "%.1f".format(price.toDouble() * run.dayLength / profit)
+        val years get() = if (profit <= 0) Double.POSITIVE_INFINITY else price.toDouble() * run.dayLength / profit
+        val payback get() = if (profit <= 0) "never" else "%.1f".format(years)
     }
 
     private fun world(year: Int, dayLength: Int): World {
@@ -234,7 +236,8 @@ class Balance {
             }
             w.step()
         }
-        return Row(run, fleet, price, c.thisYear[Books.INCOME] + c.lastYear[Books.INCOME], -(c.thisYear[Books.RUNNING] + c.lastYear[Books.RUNNING]))
+        fun books(kind: Int) = c.thisYear[kind] + c.lastYear[kind]
+        return Row(run, fleet, price, books(Books.INCOME), -books(Books.RUNNING), -books(Books.UPKEEP))
             .also { check(tiles == len) }
     }
 
@@ -278,6 +281,34 @@ class Balance {
         println("balance: ${rows.size} of ${runs.size} runs in ${(System.currentTimeMillis() - started) / 1000} s")
         write(rows)
         assertTrue(rows.isNotEmpty())
+    }
+
+    /**
+     * A sensible first railway pays its train back in 2 to 5 work years at day length 1 and 10, on a town of about
+     * 500 at each end or one mine's output, and the line makes money counting track upkeep (which is by the calendar,
+     * so day length 1 is where it bites).
+     */
+    @Test
+    fun earlyRailwaysPayBack() {
+        val r = Roster.BASE
+        fun e(key: String) = r.engines.first { it.key == "base:$key" }
+        val lines = listOf(
+            Triple(1836, "dorchester", "coach_wood") to Triple(4, 30, Cargo.PASSENGERS),
+            Triple(1860, "american", "coach_wood") to Triple(4, 30, Cargo.PASSENGERS),
+            Triple(1860, "american", "boxcar_wood") to Triple(10, 40, Cargo.GRAIN),
+        )
+        val runs = lines.flatMap { (t, s) ->
+            listOf(1, 10).map { dl ->
+                Run("train", t.second, t.first, dl, s.second, "supply", s.third, e(t.second), e(t.third), s.first)
+            }
+        }
+        val rows = table(runs)
+        assertEquals(runs.size, rows.size, "every early line was built")
+        for (row in rows) {
+            val what = "${row.run.year} ${row.run.vehicle} and ${row.run.wagons} ${Cargo.IDS[row.run.cargo]} wagons, ${row.run.tiles} tiles, day length ${row.run.dayLength}"
+            assertTrue(row.years in 2.0..5.0, "$what pays back in ${row.payback} work years")
+            assertTrue(row.profit > row.upkeep, "$what makes ${row.profit} against ${row.upkeep} upkeep")
+        }
     }
 
     // The checks FareTest made: full vehicles on a year's run earn comfortably more than they cost, trains most of all.
