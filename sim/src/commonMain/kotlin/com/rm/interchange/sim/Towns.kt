@@ -228,11 +228,24 @@ internal fun World.townsDay() {
         if (--t.growIn > 0) continue
         // Growing only when supplied, a town that wasn't last month waits, unless it's paid to build.
         if (settings.townGrowth == TownGrowth.NORMAL || t.funded > 0 || townSupplied(t)) growTown(t, year)
-        // A town with a station taking its people somewhere grows three times as fast, and one paid to build faster still.
+        // A town with stations taking its people somewhere grows faster the more of it they reach, and one paid to
+        // build faster still.
         val days = (40 - t.houses / 8).coerceIn(10, 40) + rng.below(10)
-        t.growIn = if (t.funded > 0) FUNDED_GROW_DAYS else if (t.servedLastMonth > 0) (days / 3).coerceAtLeast(3) else days
+        t.growIn = if (t.funded > 0) FUNDED_GROW_DAYS else if (t.servedLastMonth > 0) (days * 10 / (10 + minOf(townCoverage(t), FULL_COVERAGE))).coerceAtLeast(SERVED_GROW_DAYS) else days
     }
 }
+
+/**
+ * How much of [t] its stations reach: passengers made at them from its buildings in a month of work, in percent of
+ * its people, from last calendar month's count. A stop reaching most of a small town gets about half.
+ */
+fun World.townCoverage(t: Town): Int =
+    ((t.servedLastMonth - t.mailLastMonth).toLong() * 100 / settings.dayLength / t.population.coerceAtLeast(1)).toInt().coerceIn(0, 1000)
+
+/** Coverage, in percent, past which a town grows no faster: six times as fast as unserved. */
+private const val FULL_COVERAGE = 50
+/** The fewest calendar days between a served town's goes at growing. */
+private const val SERVED_GROW_DAYS = 3
 
 /**
  * One go at growing [t]: a walk out from its middle along its roads, building

@@ -270,11 +270,12 @@ class TownNeed(val cargo: Int, val needed: Int, val got: Int, val heating: Boole
 /**
  * What [t] needs a month to grow when supplied, as OpenTTD's city builder scripts have it: passengers always, mail
  * from 500 people, food from 1000, goods from 2000, fuel from 4000, and heating from 1000 through the cold months,
- * December to March. Each so many for every 100 people, with what it got last month.
+ * December to March. Each so many for every 100 people a month of work, with what it got last month.
  */
 fun World.townNeeds(t: Town): List<TownNeed> {
     val p = t.population
-    fun need(per100: Int) = maxOf(1, p * per100 / 100)
+    // The tallies are for a calendar month, which is day length months of work.
+    fun need(per100: Int) = maxOf(1, p * per100 / 100) * settings.dayLength
     val out = ArrayList<TownNeed>()
     out += TownNeed(Cargo.PASSENGERS, need(NEED_PASSENGERS), t.servedLastMonth - t.mailLastMonth)
     if (p >= 500) out += TownNeed(Cargo.MAIL, need(NEED_MAIL), t.mailLastMonth)
@@ -292,9 +293,9 @@ fun World.townNeeds(t: Town): List<TownNeed> {
 /** Whether [t] got all it needed last month. */
 fun World.townSupplied(t: Town) = townNeeds(t).all { it.met }
 
-/** What a town needs a month for every 100 people. */
-private const val NEED_PASSENGERS = 10
-private const val NEED_MAIL = 2
+/** What a town needs a month of work for every 100 people. */
+private const val NEED_PASSENGERS = 20
+private const val NEED_MAIL = 4
 private const val NEED_FOOD = 3
 private const val NEED_GOODS = 2
 private const val NEED_FUEL = 1

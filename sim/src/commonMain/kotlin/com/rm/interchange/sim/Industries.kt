@@ -298,11 +298,14 @@ internal fun World.industriesMonth() {
     for (ind in industries) {
         if (ind.closed) continue
         val kind = roster.industries[ind.kind]
-        if (kind.produces.any { it > 0 } && rng.below(CHANGE_ODDS) == 0) {
-            val made = ind.made.sum()
-            val share = if (made == 0) 0 else ind.moved.sum() * 100 / made
-            // Well served it's likelier to grow, badly served likelier to shrink.
-            val up = rng.below(100) < 25 + share / 2
+        val made = ind.made.sum()
+        val share = if (made == 0) 0 else (ind.moved.sum() * 100 / made).coerceAtMost(100)
+        // Changes come on the calendar, but the more of it is carried the more they come by work done, so at a long
+        // day length serving one shows as soon as at day length 1 while the rest of the map changes no faster.
+        val chance = (100 + (settings.dayLength - 1) * share) * 10 / CHANGE_ODDS
+        if (kind.produces.any { it > 0 } && rng.below(1000) < chance) {
+            // Well served it's likelier to grow, badly served likelier to shrink: even at a fifth carried.
+            val up = rng.below(100) < minOf(UP_MOST, UP_UNSERVED + share / 2)
             if (up && ind.level < MAX_LEVEL) {
                 ind.level = minOf(MAX_LEVEL, ind.level * 3 / 2)
                 tell(News.PRODUCTION_UP, ind.id)
@@ -379,8 +382,15 @@ internal fun World.closeIndustry(ind: Industry) {
 const val MAX_LEVEL = 64
 const val MIN_LEVEL = 4
 
-/** One in this many chances a month that a primary industry's production changes. */
-private const val CHANGE_ODDS = 20
+/**
+ * One in this many chances a calendar month that a primary industry's production changes, unserved or at day length
+ * 1; all of it carried, that's a month of work.
+ */
+private const val CHANGE_ODDS = 30
+
+/** The chance in percent a change is up for an industry none of whose cargo is carried, and the most it gets. */
+private const val UP_UNSERVED = 40
+private const val UP_MOST = 90
 
 /** About one in this many months a new industry opens, on a 256 by 256 map. */
 private const val OPEN_ODDS = 6

@@ -156,9 +156,9 @@ class GoalTest {
         val needs = w.townNeeds(t)
         assertEquals(listOf(Cargo.PASSENGERS, Cargo.MAIL, Cargo.FOOD, Cargo.GOODS, Cargo.FUEL, Cargo.COAL), needs.map { it.cargo })
         assertTrue(needs.last().heating)
-        assertEquals(500, needs.first().needed)
+        assertEquals(1000, needs.first().needed)
         assertTrue(!w.townSupplied(t))
-        t.servedLastMonth = 1000; t.mailLastMonth = 100
+        t.servedLastMonth = 1200; t.mailLastMonth = 200
         t.deliveredLastMonth[Cargo.FOOD] = 150; t.deliveredLastMonth[Cargo.GOODS] = 100; t.deliveredLastMonth[Cargo.FUEL] = 50; t.deliveredLastMonth[Cargo.COAL] = 50
         assertTrue(w.townSupplied(t))
         // A small one needs only passengers.
