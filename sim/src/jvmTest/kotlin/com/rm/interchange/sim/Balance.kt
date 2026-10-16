@@ -74,10 +74,10 @@ class Balance {
         return w
     }
 
-    private fun onSale(w: Roster, year: Int, kind: VehicleKind) = w.engines.filter { it.enabled && it.kind == kind && year >= it.from && year < it.until }
+    internal fun onSale(w: Roster, year: Int, kind: VehicleKind) = w.engines.filter { it.enabled && it.kind == kind && year >= it.from && year < it.until }
 
     /** The most wagons [e] pulls with [wagon] loaded with [cargo]: it must start on a half percent grade, and hold 70% of its top speed on that grade. */
-    private fun wagonsFor(r: Roster, e: Engine, wagon: Engine, cargo: Int): Int {
+    internal fun wagonsFor(r: Roster, e: Engine, wagon: Engine, cargo: Int): Int {
         val tender = if (e.tender >= 0) r[e.tender].weight else 0
         val per = wagon.weight + wagon.capacity * Cargo.KG[cargo] / 1000
         var best = 1
@@ -104,17 +104,17 @@ class Balance {
 
     private val freightPrefs = listOf(Cargo.COAL, Cargo.GRAIN, Cargo.TIMBER, Cargo.GOODS)
 
-    private fun freightCargo(e: Engine) = freightPrefs.firstOrNull { it in e.cargoes } ?: e.cargoes.first()
+    internal fun freightCargo(e: Engine) = freightPrefs.firstOrNull { it in e.cargoes } ?: e.cargoes.first()
 
     /** Ships carry bulk first, then lumber for a tug and barge, then goods. */
     private val shipPrefs = listOf(Cargo.COAL, Cargo.GRAIN, Cargo.IRON_ORE, Cargo.OIL, Cargo.LUMBER, Cargo.GOODS)
 
-    private fun shipCargo(e: Engine) = shipPrefs.firstOrNull { it in e.cargoes } ?: e.cargoes.first()
+    internal fun shipCargo(e: Engine) = shipPrefs.firstOrNull { it in e.cargoes } ?: e.cargoes.first()
 
     /** Whether [cargo] goes both ways between the ends, as passengers and mail do, or only from the first. */
     private fun bothWays(cargo: Int) = cargo == Cargo.PASSENGERS || cargo == Cargo.MAIL
 
-    private fun airKind(e: Engine) = when (e.runway) {
+    internal fun airKind(e: Engine) = when (e.runway) {
         Runways.STRIP -> Airports.STRIP
         Runways.REGIONAL -> Airports.REGIONAL
         Runways.CITY -> Airports.CITY

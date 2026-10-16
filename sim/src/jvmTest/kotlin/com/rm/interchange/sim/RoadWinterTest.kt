@@ -19,6 +19,8 @@ class RoadWinterTest {
         w.days(1)
         assertEquals(0, w.weather.ice[w.index(12, 20)].toInt())
         assertTrue(w.weather.ice[w.index(30, 20)].toInt() > 0, "salted out of reach")
+        // The salt is paid with the next work day's upkeep.
+        w.days(1)
         assertTrue(w.companies[0].thisYear[Books.UPKEEP] < 0)
     }
 

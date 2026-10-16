@@ -618,10 +618,12 @@ private fun World.advance(t: Train, move: Int, free: Int) {
         t.nose -= stepLength(t.steps.last())
         t.steps += next
         shareFee(t, stepTile(next))
-        // The engine's pilot pushes the snow off the line as it goes.
+        // The engine's pilot pushes the snow off the line as it goes. Snow falls by the calendar, so without a plow it's one pass
+        // in the square root of day length: in between one in day length, which would leave more snow on the line at long day lengths, and all.
         val tile = stepTile(next)
         val snow = weather.snow[tile].toInt() and 255
-        if (stepLevel(next) == 0 && snow > 0) weather.snow[tile] = when (t.plow) {
+        val pilot = t.plow != Plows.NONE || snow <= PLOWED || settings.dayLength == 1 || rng.below(isqrt(settings.dayLength.toLong()).toInt()) == 0
+        if (stepLevel(next) == 0 && snow > 0 && pilot) weather.snow[tile] = when (t.plow) {
             Plows.ROTARY -> 0
             Plows.WEDGE -> if (snow <= WEDGE_CLEARS) minOf(snow, 3) else snow - WEDGE_CLEARS
             else -> if (snow > PLOWED) PLOWED + (snow - PLOWED) / 2 else snow

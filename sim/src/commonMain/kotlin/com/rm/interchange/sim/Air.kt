@@ -349,10 +349,14 @@ fun World.runway(a: Airport): IntArray {
     else intArrayOf(a.x * u + u / 2, a.y * u, a.x * u + u / 2, (a.y + a.h) * u)
 }
 
-/** Today's weather at an airport, as bits: [FOGGY], [ICING]; worked out once a day and forgotten when the weather moves on. */
+/**
+ * Today's weather at an airport, as bits: [FOGGY], [ICING]; worked out once a day and forgotten when the weather moves on.
+ * Fog and icing last through the first third of a calendar day's work days, then lift.
+ */
 private fun World.airSky(a: Airport): Int {
-    airSkies[a.id]?.let { return it }
-    if (!settings.weather) return 0
+    val lifted = (tick / Calendar.TICKS_PER_DAY) % settings.dayLength >= (settings.dayLength + 2) / 3
+    airSkies[a.id]?.let { return if (lifted) 0 else it }
+    if (!settings.weather || lifted) return 0
     return airSkies.getOrPut(a.id) {
         val sky = skyAt(a.x, a.y)
         (if (sky.fog) FOGGY else 0) or (if (sky.precipitation > 0 && sky.temperature in -100..10) ICING else 0)

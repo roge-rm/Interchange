@@ -429,13 +429,16 @@ internal fun World.roadLimit(v: RoadVehicle, tile: Int): Int {
 /** Whether tile [i]'s road is icy or under packed snow. */
 fun World.slippery(i: Int) = (weather.ice[i].toInt() and 255) > 2 || (weather.snow[i].toInt() and 255) in 3..40
 
-/** Wear on a road from a vehicle running onto it: trucks more than buses; plows clear the snow, the rest pack deep snow down a little. */
+/**
+ * Wear on a road from a vehicle running onto it: trucks more than buses; plows clear the snow, the rest pack deep snow
+ * down a little, one pass in day length, as snow falls by the calendar and vehicles pass by work time.
+ */
 private fun World.roadWearBy(tile: Int, v: RoadVehicle) {
     val snow = weather.snow[tile].toInt() and 255
     if (v.info.plow != Plows.NONE) {
         weather.snow[tile] = minOf(snow, 2).toByte()
         weather.ice[tile] = 0
-    } else if (snow >= DEEP_ROAD_SNOW) {
+    } else if (snow >= DEEP_ROAD_SNOW && (settings.dayLength == 1 || rng.below(settings.dayLength) == 0)) {
         weather.snow[tile] = (snow - PACKED_SNOW).toByte()
     }
     if (track[tile].toInt() != 0) return

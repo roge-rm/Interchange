@@ -125,10 +125,11 @@ internal fun World.trackDay() {
             var c = u(condition[i])
             if (sky != null) {
                 val frost = u(weather.frost[i])
-                if (frost > 0 && sky.temperature > 0 && cellDice(x, y, salt + 1) < 80) c--
-                if (u(weather.wet[i]) > 150 && cellDice(x, y, salt + 2) < 50) c--
+                // A calendar day's heave or settling, a point for each work day in it, as mending is.
+                if (frost > 0 && sky.temperature > 0 && cellDice(x, y, salt + 1) < 80) c -= settings.dayLength
+                if (u(weather.wet[i]) > 150 && cellDice(x, y, salt + 2) < 50) c -= settings.dayLength
                 if (sky.temperature > KINK_HEAT && c < 170 && !kinks.containsKey(i) && cellDice(x, y, salt + 3) < (170 - c) / 8) found[b] += intArrayOf(EVENT_KINK, i)
-                if (sky.precipitation >= WASHOUT_RAIN && u(weather.wet[i]) > 200 && lowGround(x, y) && cellDice(x, y, salt + 4) < 14) found[b] += intArrayOf(EVENT_WASHOUT, i)
+                if (sky.precipitation >= WASHOUT_RAIN && u(weather.wet[i]) > 200 && lowGround(x, y) && cellDice(x, y, salt + 4) < WASHOUT_ODDS) found[b] += intArrayOf(EVENT_WASHOUT, i)
             }
             val level = companies.getOrNull(owner)?.upkeep ?: Upkeep.NORMAL
             val mend = Upkeep.MEND[level] * settings.dayLength
@@ -264,5 +265,7 @@ private const val EVENT_BURNT = 3
 const val KINK_HEAT = 230
 const val FIRE_HEAT = 200
 const val WASHOUT_RAIN = 2500
+/** Chance out of 256 a day that a soaked low tile of track washes out in a downpour. */
+const val WASHOUT_ODDS = 1
 const val KINK_DAYS = 5
 const val WASHOUT_DAYS_FROM = 6

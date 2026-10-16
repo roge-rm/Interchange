@@ -295,7 +295,8 @@ internal fun World.roadsDay() {
             if (salt && snow < 20) weather.snow[i] = 0
             spread++
         }
-        if (spread > 0) spend(c, Books.UPKEEP, price(SALT_COST) * spread)
+        // A calendar day's salt keeps the road clear for day length work days, so it's paid as that many, with upkeep.
+        c.upkeepOwed += SALT_COST * spread * settings.dayLength
     }
     var changed = false
     val opens = iceRoadsOpen ?: BooleanArray(0)
@@ -315,9 +316,9 @@ internal fun World.roadsDay() {
         if (track[i].toInt() != 0) continue
         var c = condition[i].toInt() and 255
         if (surfaceAt(i) >= Surface.PAVED && (weather.frost[i].toInt() and 255) > 0 && settings.weather && cellDice(x, y, day * 977 + seedBits + 21) < 60) {
-            // Thaw under a paved road heaves it into potholes.
+            // Thaw under a paved road heaves it into potholes, a point for each work day in the calendar day.
             val t = skyAt(x, y).temperature
-            if (t > 0) c--
+            if (t > 0) c -= settings.dayLength
         }
         val owner = roadOwner[i].toInt()
         // Vehicles wear roads by work time, so crews mend a calendar day's worth of work days.
@@ -354,8 +355,9 @@ internal fun World.saltDepot(company: Company, c: Command.SaltDepot) {
     touched(c.x, c.y)
 }
 
-/** Salt from this year, sand before; how far a depot's trucks spread it, in tiles; and what each costs. */
+/** Salt from this year, sand before; how far a depot's trucks spread it, in tiles; and what a tile spread costs a work day, in tenths of a cent. */
 const val SALT_FROM = 1950
 const val SALT_REACH = 8
-const val SALT_COST = 2L
+const val SALT_COST = 50L
+/** A salt depot, in dollars before inflation. */
 const val SALT_DEPOT_COST = 2_500L
