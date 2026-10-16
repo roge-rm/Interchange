@@ -21,6 +21,8 @@ class RivalLevelTest {
     @Test
     fun normalRivalsPutUpStatuesAtHome() {
         val w = game(RivalLevel.NORMAL)
+        // Rich enough for one in their first year: they start with what a 1930 company does, too little for that now.
+        for (r in w.rivals) w.companies[r.company].money = 250_000
         w.days(365)
         assertTrue(w.statues() > 0, "no statues")
         // But nothing aimed at the player.

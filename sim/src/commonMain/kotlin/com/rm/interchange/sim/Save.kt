@@ -16,7 +16,7 @@ package com.rm.interchange.sim
  */
 object Save {
     private val MAGIC = "ICHG".encodeToByteArray()
-    const val VERSION = 31
+    const val VERSION = 32
 
     /**
      * [world] as a save; [version] older than [VERSION] only for tests reading older saves. [asScenario] writes an
@@ -175,6 +175,11 @@ object Save {
                 for (t in trains) if (t != null) w.long(t.noDepotUntil)
                 for (v in roadVehicles) if (v != null) w.long(v.noDepotUntil)
                 for (v in ships) if (v != null) w.long(v.noDepotUntil)
+            }
+            if (version >= 32) {
+                // The money each company was set up with, which its value leaves out.
+                val start = if (asScenario) scenario else null
+                for (c in companies) w.long(if (start != null && human(c.id) && !c.gone) start.money else c.founded)
             }
         }
         val body = Squeeze.pack(w.toByteArray())
@@ -456,6 +461,10 @@ object Save {
                 for (v in roadVehicles) if (v != null) v.noDepotUntil = r.long()
                 for (v in ships) if (v != null) v.noDepotUntil = r.long()
             }
+            if (version >= 32) for (c in companies) c.founded = r.long()
+            // Before that every company began with the bank's $250,000, before inflation, or a player with the scenario's money.
+            // One restarted after going under got that with inflation, which isn't known now, so it's taken as $250,000 too.
+            else for (c in companies) c.founded = if (human(c.id)) scenario?.money ?: Prices.START_MONEY else Prices.START_MONEY
         }
         // Signal blocks and who's on which tile are worked out afresh now, as a command can ask before the next move.
         world.networkChangedKeepingRoutes()

@@ -25,6 +25,8 @@ class Company(val id: Int, var name: String, var money: Long) {
     var trouble = 0
     /** Bought out or gone under: it owns nothing and does nothing. Kept so ids stay put. */
     var gone = false
+    /** The money it was set up with, its loan aside, which its [World.companyValue] leaves out. */
+    var founded = money
     /** Its insignia, [Insignia.BYTES] bytes; see-through all over until it's given one. */
     var insignia = ByteArray(Insignia.BYTES)
 }
@@ -63,12 +65,39 @@ object Prices {
     const val TREE = 40L
     /** Pulling down a town building, for each of the people who lived or worked in it. */
     const val DEMOLISH_PER_PERSON = 30L
+    /** A scenario's money unless it's given its own. */
     const val START_MONEY = 250_000L
-    /** The most a company can borrow, and the steps it borrows and repays in. */
-    const val MAX_LOAN = 300_000L
+    /** The steps a company borrows and repays in. */
     const val LOAN_STEP = 10_000L
-    /** Interest on the loan, in hundredths of a percent a year. */
+    /** Interest on the loan, in hundredths of a percent a work year. */
     const val INTEREST = 400
+
+    /**
+     * What a company starts with in each era, and the most the bank lends then, before inflation: about a first
+     * railway of the day (30 tiles, two stations of five platforms, a depot and an engine with three coaches) and a
+     * little over, from the Dorchester's $23,000 line in 1836 to the F40's $253,000 in 2000, rising a few years after
+     * each dearer engine comes in. In between it's a straight line from one year here to the next.
+     */
+    private val ERA_YEARS = intArrayOf(1836, 1852, 1860, 1904, 1912, 1928, 1956, 1962, 1988, 1994, 2020, 2026)
+    private val ERA_MONEY = longArrayOf(30_000, 32_000, 45_000, 55_000, 75_000, 95_000, 130_000, 160_000, 220_000, 280_000, 330_000, 450_000)
+
+    /** The year town actions are priced for in [TownActions.COST]; other years scale them by [era]. */
+    const val ERA_BASE = 1950
+
+    /** What [ERA_MONEY] gives for [year]. */
+    fun era(year: Int): Long {
+        if (year <= ERA_YEARS.first()) return ERA_MONEY.first()
+        for (k in 1 until ERA_YEARS.size) {
+            if (year > ERA_YEARS[k]) continue
+            val y0 = ERA_YEARS[k - 1]
+            val m0 = ERA_MONEY[k - 1]
+            return m0 + (ERA_MONEY[k] - m0) * (year - y0) / (ERA_YEARS[k] - y0)
+        }
+        return ERA_MONEY.last()
+    }
+
+    /** What a new company starts with in [year], before inflation, a whole number of thousands. */
+    fun startMoney(year: Int): Long = era(year) / 1_000 * 1_000
 }
 
 /** [base] dollars as they are now, after inflation. */
@@ -91,8 +120,11 @@ internal fun World.earn(company: Company, kind: Int, amount: Long) {
     company.monthIn += amount
 }
 
-/** The most [company] may borrow now: the bank's limit, risen with inflation. */
-fun World.maxLoan(): Long = price(Prices.MAX_LOAN) / Prices.LOAN_STEP * Prices.LOAN_STEP
+/** The most a company may borrow now: about a first railway of the year's era, risen with inflation, in whole steps. */
+fun World.maxLoan(): Long = (price(Prices.era(Calendar.year(startYear, day))) / Prices.LOAN_STEP).coerceAtLeast(1) * Prices.LOAN_STEP
+
+/** The most [c] may owe without being in trouble: the bank's limit, or more if it owed more when the limit was higher, as in an older save. */
+fun World.loanLimit(c: Company): Long = maxOf(maxLoan(), c.loan)
 
 /** Borrows or repays a step, as far as the limit or the money in hand allows. */
 internal fun World.loanCommand(company: Company, c: Command.Loan) {
@@ -109,7 +141,7 @@ internal fun World.loanCommand(company: Company, c: Command.Loan) {
     }
 }
 
-/** The end of each month: interest on the loan, and the month's money put in the history. */
+/** The end of each calendar month: interest on the loan, and the month's money put in the history. */
 internal fun World.companiesMonth() {
     for (c in companies) {
         // A month's interest for each work day in it, so a loan costs the same against the work done whatever the day length.
@@ -121,7 +153,20 @@ internal fun World.companiesMonth() {
         c.monthIn = 0
         c.monthOut = 0
     }
-    troubleMonth()
+}
+
+/** Work days in a month of work, for what goes by months of work at any day length. */
+const val WORK_MONTH = 30
+
+/**
+ * Whether a month of work ended today: at day length 1 the calendar month's first, otherwise each time another
+ * [WORK_MONTH] work days have gone by, so trouble and subsidies keep time with the work done.
+ */
+internal fun World.workMonthEnded(): Boolean {
+    if (day <= 0) return false
+    val n = settings.dayLength
+    if (n == 1) return Calendar.dayOfMonth(startYear, day) == 1
+    return day.toLong() * n / WORK_MONTH != (day - 1).toLong() * n / WORK_MONTH
 }
 
 /**

@@ -54,6 +54,8 @@ class SubsidyTest {
         val rival = w.rivals.first()
         val c = w.companies[rival.company]
         val vehicles = w.roadVehicles.filter { it != null && it.owner == c.id }.sumOf { w.roadValue(it!!) }
-        assertEquals(c.money - c.loan + vehicles + w.trains.filter { it != null && it.owner == c.id }.sumOf { w.value(it!!) }, w.companyValue(c))
+        assertEquals(c.money - c.loan + vehicles + w.trains.filter { it != null && it.owner == c.id }.sumOf { w.value(it!!) }, w.netWorth(c))
+        // Its value leaves out what it was set up with.
+        assertEquals(w.netWorth(c) - Prices.startMoney(w.startYear), w.companyValue(c))
     }
 }

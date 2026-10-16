@@ -23,3 +23,10 @@ kotlin {
         }
     }
 }
+
+// -Pinterchange.* is passed on to the tests, for the slow balance runs such as PlayerRun.
+tasks.withType<Test>().configureEach {
+    val asked = project.properties.filterKeys { it.startsWith("interchange.") }
+    for ((k, v) in asked) systemProperty(k, v.toString())
+    if (asked.isNotEmpty()) maxHeapSize = "6g"
+}

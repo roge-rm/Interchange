@@ -67,6 +67,8 @@ class TownActionTest {
     @Test
     fun whatTownsWerePaidForIsSaved() {
         val w = game()
+        // More than a company starts with in 1930, for all three.
+        w.companies[0].money = 1_000_000
         val t = w.towns.maxBy { it.population }
         w.apply(Command.TownAction(0, t.id, TownActions.STATUE))
         w.apply(Command.TownAction(0, t.id, TownActions.FUND))

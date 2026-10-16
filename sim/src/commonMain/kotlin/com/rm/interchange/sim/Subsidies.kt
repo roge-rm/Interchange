@@ -18,7 +18,7 @@ class Subsidy(val cargo: Int, val from: Int, val to: Int, val towns: Boolean) {
     val open get() = months > 0
 }
 
-/** Months a subsidy is offered for, and paid for once won. */
+/** Months of work a subsidy is offered for, and paid for once won. */
 const val SUBSIDY_MONTHS = 12
 
 /** Most subsidies on offer at once. */
@@ -34,7 +34,7 @@ private const val SUBSIDY_TOWN_REACH = 10
 /** Towns smaller than this aren't offered subsidies. */
 private const val SUBSIDY_TOWN = 100
 
-/** The first of each month: subsidies run down, and maybe a new one is offered. */
+/** The end of each month of work: subsidies run down, and maybe a new one is offered. */
 internal fun World.subsidiesMonth() {
     for (s in subsidies) if (s.open) s.months--
     if (subsidies.count { it.open && it.company < 0 } >= MOST_OFFERED || rng.below(3) != 0) return
@@ -126,10 +126,16 @@ internal fun World.worthDay() {
 }
 
 /**
- * What [c] is worth: its money less its loan, and what its vehicles would sell for. Track, stations and the rest
- * aren't counted, as nobody would buy them.
+ * What [c] has made of itself: [netWorth] less the money it was set up with, so a new company is worth nothing and
+ * the start money doesn't count towards goals. What it's shown at and what goals go by.
  */
-fun World.companyValue(c: Company): Long {
+fun World.companyValue(c: Company): Long = netWorth(c) - c.founded
+
+/**
+ * What [c] would fetch: its money less its loan, and what its vehicles would sell for. Track, stations and the rest
+ * aren't counted, as nobody would buy them. What it's bought and sold for.
+ */
+fun World.netWorth(c: Company): Long {
     var v = c.money - c.loan
     for (t in trains) if (t != null && t.owner == c.id) v += value(t)
     for (r in roadVehicles) if (r != null && r.owner == c.id) v += roadValue(r)

@@ -19,13 +19,14 @@ object TownActions {
     const val EXCLUSIVE = 6
     const val COUNT = 7
 
-    /** What each costs before inflation, in dollars. */
+    /** What each costs in [Prices.ERA_BASE] before inflation, in dollars; other years scale it by [Prices.era]. */
     val COST = longArrayOf(3_000, 8_000, 15_000, 20_000, 40_000, 60_000, 100_000)
 
     /** How far from the town's middle each size of advertising reaches, in tiles, and what it adds to ratings there, out of 255. */
     val AD_REACH = intArrayOf(10, 15, 20)
     val AD_LIFT = intArrayOf(30, 60, 100)
 
+    /** Road works and exclusive rights last work days, as what they hold up goes by work days; funding's growth goes by the calendar. */
     const val ROAD_WORKS_DAYS = 180
     const val FUND_DAYS = 90
     const val EXCLUSIVE_DAYS = 365
@@ -44,8 +45,9 @@ const val STATUE_RATING = 10
 /** How far from a town's middle its statue can stand, in tiles. */
 private const val STATUE_REACH = 6
 
-/** What [action] costs now. */
-fun World.townActionCost(action: Int): Long = price(TownActions.COST[action])
+/** What [action] costs now: dearer in later eras, as a year's takings are, and with inflation. */
+fun World.townActionCost(action: Int): Long =
+    price(TownActions.COST[action] * Prices.era(Calendar.year(startYear, day)) / Prices.era(Prices.ERA_BASE)) / 100 * 100
 
 /** Whether [company] can ask [t] for [action] now, money aside: one statue each, and one of the lasting things at a time. */
 fun World.townActionOpen(company: Int, t: Town, action: Int): Boolean = when (action) {
@@ -118,9 +120,15 @@ fun World.statueSpot(t: Town): Int {
 
 /** Each calendar day: the lasting things [t] was paid for run down, and road works done leave its streets as new. */
 internal fun World.townActionsDay(t: Town) {
+    val work = settings.dayLength
     if (t.funded > 0) t.funded--
-    if (t.exclusiveDays > 0 && --t.exclusiveDays == 0) t.exclusive = -1
-    if (t.roadWorks > 0 && --t.roadWorks == 0) {
+    if (t.exclusiveDays > 0) {
+        t.exclusiveDays = (t.exclusiveDays - work).coerceAtLeast(0)
+        if (t.exclusiveDays == 0) t.exclusive = -1
+    }
+    if (t.roadWorks > 0) {
+        t.roadWorks = (t.roadWorks - work).coerceAtLeast(0)
+        if (t.roadWorks > 0) return
         for (i in 0 until width * height) if (townOf[i].toInt() == t.id && road[i].toInt() != 0 && track[i].toInt() == 0) condition[i] = -1
         townsChanged = true
     }

@@ -16,6 +16,7 @@ import com.rm.interchange.sim.Save
 import com.rm.interchange.sim.Scenarios
 import com.rm.interchange.sim.World
 import com.rm.interchange.sim.companyValue
+import com.rm.interchange.sim.netWorth
 import com.rm.interchange.sim.human
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
@@ -283,7 +284,8 @@ class Server(
                     "name" to JsonPrimitive(c.name),
                     "human" to JsonPrimitive(w.human(c.id)),
                     "money" to JsonPrimitive(c.money),
-                    "value" to JsonPrimitive(w.companyValue(c)),
+                    "value" to JsonPrimitive(w.netWorth(c)),
+                    "made" to JsonPrimitive(w.companyValue(c)),
                     "players" to JsonPrimitive(on[c.id] ?: 0),
                     "password" to JsonPrimitive(c.id in locked),
                 )

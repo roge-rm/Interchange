@@ -188,11 +188,11 @@ private fun World.railTrain(cargo: Int, load: Int): RailTrain? {
 }
 
 /**
- * Whether [train] would take half as much again as it costs to run, carrying [cargo] between tiles [from] and [to]
+ * Whether [train] would take [margin] percent of what it costs to run, carrying [cargo] between tiles [from] and [to]
  * over [tiles] of track: a year of whichever's less, what it can haul at its speed or about [load] a month, at the
  * full fare, both ways for passengers.
  */
-private fun World.pays(train: RailTrain, cargo: Int, load: Int, tiles: Int, from: Int, to: Int): Boolean {
+private fun World.pays(train: RailTrain, cargo: Int, load: Int, tiles: Int, from: Int, to: Int, margin: Int): Boolean {
     val capacity = train.wagon.capacity * train.wagons
     // A tile a day at 40-odd km/h, and a couple of days at each end.
     val there = tiles * KMH_PER_TILE_A_DAY / train.engine.speed.coerceAtLeast(1) + 2
@@ -201,7 +201,7 @@ private fun World.pays(train: RailTrain, cargo: Int, load: Int, tiles: Int, from
     val ways = if (cargo == Cargo.PASSENGERS) 2 else 1
     val income = pay(hauled.toLong() * dist * Cargo.RATE[cargo] / 100) * ways
     val running = price(train.engine.running + train.wagon.running * train.wagons + (roster.getOrNull(train.engine.tender)?.running ?: 0))
-    return income * 2 >= running * 3
+    return income * 100 >= running * margin
 }
 
 /** What [t] costs, its tender with it. */
@@ -209,16 +209,17 @@ private fun World.trainCost(t: RailTrain): Long = price(t.engine.cost + t.wagon.
 
 /**
  * Joins sites [sa] and [sb] by a railway carrying [cargo], [load] at a time, with a terminus at each and a depot behind the first,
- * and sets a train going, handing the route to [built]. [serves] checks each new station reaches what it's for.
+ * and sets a train going, handing the route to [built]. [serves] checks each new station reaches what it's for. Only
+ * a line expected to take [margin] percent of its train's running cost is built.
  */
 internal fun World.tryRail(
     c: Company, sa: RailSite, sb: RailSite, cargo: Int, load: Int, from: Int, to: Int,
-    serves: (Station, Boolean) -> Boolean, built: (RivalRoute) -> Unit,
+    serves: (Station, Boolean) -> Boolean, margin: Int = RAIL_MARGIN, built: (RivalRoute) -> Unit,
 ): Tried {
     val train = railTrain(cargo, load) ?: return Tried.CANT
     for (a in termini(c, sa, true)) for (b in termini(c, sb, false)) {
         val path = railPath(a, b) ?: continue
-        if (!pays(train, cargo, load, path.size + PLATFORMS, a.at(this, 1), b.at(this, 1))) return Tried.CANT
+        if (!pays(train, cargo, load, path.size + PLATFORMS, a.at(this, 1), b.at(this, 1), margin)) return Tried.CANT
         val runs = railRuns(c.id, path)
         var cost = 0L
         for (run in runs) {
@@ -276,6 +277,8 @@ private fun World.buyTrain(c: Company, route: RivalRoute, train: RailTrain) {
     apply(Command.TrainOrder(c.id, id, Command.TrainOrder.START_STOP))
 }
 
+/** What a rival's railway has to be expected to take, in percent of its train's running cost. */
+internal const val RAIL_MARGIN = 150
 /** Platforms at each terminus, enough for an engine and a few cars. */
 private const val PLATFORMS = 5
 /** How far from a town's middle its station goes. */

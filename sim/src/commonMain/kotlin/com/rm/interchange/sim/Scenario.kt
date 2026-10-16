@@ -54,7 +54,7 @@ internal fun World.scenarioCheck() {
 }
 
 /** What a player's company starts with, or starts again with: the scenario's money if it has one, else the bank's. */
-internal fun World.startMoney(): Long = scenario?.money ?: price(Prices.START_MONEY)
+internal fun World.startMoney(): Long = scenario?.money ?: price(Prices.startMoney(Calendar.year(startYear, day)))
 
 /** The loan a player's company starts owing in a scenario, its money in hand on top of [startMoney]. */
 internal fun World.startLoan(): Long = scenario?.loan ?: 0L
@@ -62,7 +62,8 @@ internal fun World.startLoan(): Long = scenario?.loan ?: 0L
 /** Gives [c] what a player's company starts with: [startMoney] and [startLoan], owing the loan. */
 internal fun World.startFunds(c: Company) {
     c.loan = startLoan()
-    c.money = startMoney() + c.loan
+    c.founded = startMoney()
+    c.money = c.founded + c.loan
 }
 
 object Scenarios {

@@ -9,23 +9,25 @@ package com.rm.interchange.sim
  * warned at four, seven and ten months and goes under after a year, or when
  * a hard rival buys it, and the bank sets them up with a new company.
  * A player can also buy any computer company outright at a premium, as in
- * OpenTTD's hostile takeover.
+ * OpenTTD's hostile takeover. The months are months of work ([workMonthEnded]),
+ * so a company has as long to put things right against the work done at any
+ * day length.
  */
 
-/** Months in trouble before the news warns, a company is offered for sale, a rival goes under, and the player does. */
+/** Months of work in trouble before the news warns, a company is offered for sale, a rival goes under, and the player does. */
 const val TROUBLE_WARN = 4
 const val TROUBLE_FOR_SALE = 7
 const val TROUBLE_BANKRUPT = 10
 const val TROUBLE_PLAYER = 12
 
 /** Whether [c] couldn't pay its way even borrowing all the bank will lend. */
-fun World.inTrouble(c: Company): Boolean = c.money + (maxLoan() - c.loan) < 0
+fun World.inTrouble(c: Company): Boolean = c.money + (loanLimit(c) - c.loan) < 0
 
 /** Whether [c] is up for sale: long in trouble, and if it's the player's, only to hard rivals. */
 fun World.forSale(c: Company): Boolean = !c.gone && c.trouble >= TROUBLE_FOR_SALE && (!human(c.id) || settings.rivalLevel == RivalLevel.HARD)
 
 /** What buying [c] costs: what it's worth, debts and all, or nothing if it owes more than it has. */
-fun World.salePrice(c: Company): Long = companyValue(c).coerceAtLeast(0)
+fun World.salePrice(c: Company): Long = netWorth(c).coerceAtLeast(0)
 
 /** What buying computer company [c] outright costs when it isn't for sale: half again what it's worth. */
 fun World.takeoverPrice(c: Company): Long = salePrice(c) * 3 / 2
@@ -33,7 +35,7 @@ fun World.takeoverPrice(c: Company): Long = salePrice(c) * 3 / 2
 /** Whether a player can buy [c] outright: a computer company still running and not up for sale. */
 fun World.canTakeOver(c: Company): Boolean = !c.gone && !human(c.id) && !forSale(c)
 
-/** The end of each month, after interest: who's in trouble, warned, for sale or gone under. */
+/** The end of each month of work: who's in trouble, warned, for sale or gone under. */
 internal fun World.troubleMonth() {
     for (c in companies) {
         if (c.gone) continue

@@ -884,7 +884,8 @@ internal object HighSpeed : Recipe() {
         val b = ids.last()
         return listOf(
             Goal(Goal.CONNECT, 8_000, END, town = minOf(a, b), town2 = maxOf(a, b)),
-            Goal(Goal.COMPANY_VALUE, 2_000_000, END),
+            // Value leaves out the chapter's $1,500,000 start money.
+            Goal(Goal.COMPANY_VALUE, 500_000, END),
         )
     }
 

@@ -645,11 +645,13 @@ fun TownWindow(world: World, t: com.rm.interchange.sim.Town, send: (com.rm.inter
             val name = if (co.id == me) stringResource(Res.string.your_company) else co.name
             ListRow(Glyph.Home, name, levels.getOrElse(com.rm.interchange.sim.approvalLevel(t.approval[co.id])) { "" }, null, tint = com.rm.interchange.map.companyColour(co.id), insignia = co.insignia)
         }
-        if (t.roadWorks > 0) ListRow(Glyph.Road, stringResource(Res.string.road_works_left, t.roadWorks), null, null)
+        // Road works and exclusive rights count work days; the window shows days on the calendar.
+        val dayLength = world.settings.dayLength
+        if (t.roadWorks > 0) ListRow(Glyph.Road, stringResource(Res.string.road_works_left, (t.roadWorks + dayLength - 1) / dayLength), null, null)
         if (t.funded > 0) ListRow(Glyph.Home, stringResource(Res.string.funded_left, t.funded), null, null)
         world.companies.getOrNull(t.exclusive)?.let { co ->
             val name = if (co.id == me) stringResource(Res.string.your_company) else co.name
-            ListRow(Glyph.Station, stringResource(Res.string.exclusive_left, name, t.exclusiveDays), null, null, tint = com.rm.interchange.map.companyColour(co.id))
+            ListRow(Glyph.Station, stringResource(Res.string.exclusive_left, name, (t.exclusiveDays + dayLength - 1) / dayLength), null, null, tint = com.rm.interchange.map.companyColour(co.id))
         }
         if (world.settings.townGrowth == com.rm.interchange.sim.TownGrowth.SUPPLIED) {
             TownNeeds(world, t)
@@ -778,8 +780,10 @@ fun SubsidiesWindow(world: World, onGo: (Float, Float) -> Unit, onClose: () -> U
         if (open.isEmpty()) Text(stringResource(Res.string.no_subsidies), color = LocalColors.current.textDim, fontSize = 14.sp)
         for ((i, s) in open) {
             val won = world.companies.getOrNull(s.company)
-            val line = if (won == null) stringResource(Res.string.subsidy_offered_for, s.months)
-                else stringResource(Res.string.subsidy_won_by, if (won.id == LocalCompany.current) stringResource(Res.string.your_company) else won.name, s.months)
+            // A subsidy counts months of work; the window shows months on the calendar.
+            val months = (s.months + world.settings.dayLength - 1) / world.settings.dayLength
+            val line = if (won == null) stringResource(Res.string.subsidy_offered_for, months)
+                else stringResource(Res.string.subsidy_won_by, if (won.id == LocalCompany.current) stringResource(Res.string.your_company) else won.name, months)
             val (x, y) = subsidyStart(world, i)
             ListRow(Glyph.Package, subsidyRoute(world, i), line, { onGo(x, y) }, tint = won?.let { com.rm.interchange.map.companyColour(it.id) })
         }

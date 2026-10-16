@@ -73,7 +73,7 @@ printf 'status\n' | socat - UNIX-CONNECT:/run/interchange/control.sock
 |---|---|
 | `status` | name, date, map, speed, paused, players, last save |
 | `players` | who's playing which company |
-| `companies` | money, value and whether a password is set |
+| `companies` | money, value (money less loan, plus vehicles), made (value less the start money) and whether a password is set |
 | `log <n>` | the last n log lines |
 | `pause`, `resume`, `speed <n>` | speed is 1, 2, 4 or 8 |
 | `chat <text>` | says it to everyone, from "Server" |

@@ -124,7 +124,7 @@ class World(settings: NewGame, val roster: Roster = Roster.BASE, generate: Boole
     /** Recent payments, for the screen. Not part of the game. */
     val payments = ArrayList<Payment>()
 
-    val companies = mutableListOf(Company(0, "Company", Prices.START_MONEY))
+    val companies = mutableListOf(Company(0, "Company", Prices.startMoney(settings.startYear)))
 
     /** The companies the computer runs, by their place in [companies]. */
     val rivals = ArrayList<Rival>()
@@ -357,9 +357,14 @@ class World(settings: NewGame, val roster: Roster = Roster.BASE, generate: Boole
             townsDay()
             rivalsDay()
             worthDay()
-            if (Calendar.dayOfMonth(startYear, day) == 1 && day > 0) {
-                companiesMonth()
+            val monthStart = Calendar.dayOfMonth(startYear, day) == 1 && day > 0
+            if (monthStart) companiesMonth()
+            // Trouble and subsidies go by months of work, the calendar's months at day length 1.
+            if (workMonthEnded()) {
+                troubleMonth()
                 subsidiesMonth()
+            }
+            if (monthStart) {
                 passengersMonth()
                 industriesMonth()
                 goalsMonth()
@@ -419,7 +424,7 @@ class World(settings: NewGame, val roster: Roster = Roster.BASE, generate: Boole
         for (y in 0 until height) mix(heightAt(width, y).toLong())
         for (c in companies) { mix(c.money); mix(c.loan) }
         for (r in rivals) { mix(r.thinkOn.toLong()); mix(r.routes.size.toLong()); mix(r.failed.size.toLong()) }
-        for (c in companies) { mix(c.money); mix(c.loan); mix(c.trouble.toLong()); mix(if (c.gone) 1 else 0); for (ch in c.name) mix(ch.code.toLong())
+        for (c in companies) { mix(c.money); mix(c.loan); mix(c.founded); mix(c.trouble.toLong()); mix(if (c.gone) 1 else 0); for (ch in c.name) mix(ch.code.toLong())
             for (b in c.insignia) mix(b.toLong()) }
         for (s in subsidies) { mix(s.cargo.toLong()); mix(s.from.toLong()); mix(s.to.toLong()); mix(s.company.toLong()); mix(s.months.toLong()) }
         mix(costScale); mix(payScale)

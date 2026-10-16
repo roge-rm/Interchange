@@ -55,7 +55,7 @@ internal fun World.startRivals(n: Int) {
     while (homes.size < n) homes += towns[k++ % towns.size]
     for ((i, home) in homes.withIndex()) {
         val id = companies.size
-        companies += Company(id, rivalName(home, id), Prices.START_MONEY).also { giveInsignia(it) }
+        companies += Company(id, rivalName(home, id), Prices.startMoney(startYear)).also { giveInsignia(it) }
         rivals += Rival(id, home.id).also { it.thinkOn = day + 3 + i * 9 }
     }
 }
@@ -99,7 +99,7 @@ private fun World.think(r: Rival, c: Company) {
  * Sends vehicles that lost money last year to their garage and sells them once there. A route left with none is
  * given up: its stops and garage come down, the road stays, and it isn't tried again.
  */
-private fun World.sellLosers(r: Rival, c: Company) {
+internal fun World.sellLosers(r: Rival, c: Company) {
     // Its own vehicles only stand stopped in a depot when sent there to be sold.
     for (v in roadVehicles) {
         if (v == null || v.owner != c.id) continue
@@ -172,7 +172,7 @@ private fun World.pairTaken(company: Int, t1: Town, t2: Town): Boolean {
 private fun World.townWork(r: Rival, c: Company) {
     val level = settings.rivalLevel
     if (level == RivalLevel.EASY || rng.below(3) != 0) return
-    fun rich(action: Int) = c.money > townActionCost(action) * 3 && companyValue(c) > townActionCost(action) * 5
+    fun rich(action: Int) = c.money > townActionCost(action) * 3 && netWorth(c) > townActionCost(action) * 5
     fun go(t: Town, action: Int): Boolean {
         if (!townActionOpen(c.id, t, action) || !rich(action)) return false
         apply(Command.TownAction(c.id, t.id, action))
@@ -195,7 +195,7 @@ private fun World.townWork(r: Rival, c: Company) {
 }
 
 /** Adds a vehicle to [route] when it's leaving people behind at either end. */
-private fun World.growRoute(c: Company, route: RivalRoute) {
+internal fun World.growRoute(c: Company, route: RivalRoute) {
     // A railway is one line of single track: one train.
     if (route.rail) return
     val a = stations.getOrNull(route.a) ?: return
@@ -218,7 +218,7 @@ private fun World.buyStruggling(c: Company) {
     for (o in companies) {
         if (o.id == c.id || !forSale(o)) continue
         val cost = salePrice(o)
-        if (companyValue(c) < cost * 3 || !afford(c, cost * 2)) continue
+        if (netWorth(c) < cost * 3 || !afford(c, cost * 2)) continue
         apply(Command.BuyCompany(c.id, o.id))
     }
 }
@@ -249,7 +249,7 @@ private fun World.buyAndStart(c: Company, route: RivalRoute, model: Engine) {
 }
 
 /** Tries the most promising pairs of towns not yet joined by this rival, nearest its home first. */
-private fun World.newRoute(r: Rival, c: Company): Tried {
+internal fun World.newRoute(r: Rival, c: Company): Tried {
     val model = bestModel(Cargo.PASSENGERS) ?: return Tried.CANT
     val home = towns.getOrNull(r.home) ?: return Tried.CANT
     val served = r.routes.map { pairKey(it.townA, it.townB) }.toSet()
@@ -284,7 +284,7 @@ private fun World.newRoute(r: Rival, c: Company): Tried {
  * Tries the most promising industries near home not yet served by this rival, each to the nearest that takes what
  * it makes, by how much it makes and how near.
  */
-private fun World.newFreightRoute(r: Rival, c: Company): Tried {
+internal fun World.newFreightRoute(r: Rival, c: Company): Tried {
     val home = towns.getOrNull(r.home) ?: return Tried.CANT
     val served = r.routes.filter { it.freight }.map { it.townA to it.cargo }.toSet()
     class Pick(val from: Industry, val to: Industry, val cargo: Int, val model: Engine, val score: Long)
@@ -330,7 +330,7 @@ private fun World.newFreightRoute(r: Rival, c: Company): Tried {
  * Tries a railway: from an industry near home to the nearest that takes what it makes, or between two big towns,
  * farther apart than road vehicles go, the longer the better up to a point.
  */
-private fun World.newRailRoute(r: Rival, c: Company): Tried {
+internal fun World.newRailRoute(r: Rival, c: Company, margin: Int = RAIL_MARGIN): Tried {
     val home = towns.getOrNull(r.home) ?: return Tried.CANT
     val served = r.routes.filter { it.rail }.map { keyOf(it) }.toSet()
     class Pick(val from: Int, val to: Int, val cargo: Int, val load: Int, val sa: RailSite, val sb: RailSite, val score: Long)
@@ -386,7 +386,7 @@ private fun World.newRailRoute(r: Rival, c: Company): Tried {
         val serves = { s: Station, first: Boolean ->
             if (freight) stationIndustries[s.id]?.contains(if (first) p.from else p.to) == true else (stationPeople[s.id] ?: 0) > 0
         }
-        when (val t = tryRail(c, p.sa, p.sb, p.cargo, p.load, p.from, p.to, serves) { r.routes += it }) {
+        when (val t = tryRail(c, p.sa, p.sb, p.cargo, p.load, p.from, p.to, serves, margin) { r.routes += it }) {
             Tried.CANT -> r.failed += railKey(p.from, p.to, p.cargo)
             else -> return t
         }

@@ -172,7 +172,8 @@ internal fun World.makeGoals() {
             goals += townGoals(dice, 1)
             goals += deliveryGoals(dice, 1)
             goals += connectionGoals(dice, 1)
-            goals += Goal(Goal.COMPANY_VALUE, Prices.START_MONEY * (8 + dice.below(5)), deadline(dice))
+            // Value leaves the start money out, so 7 to 11 times it is what 8 to 12 was when it counted.
+            goals += Goal(Goal.COMPANY_VALUE, Prices.startMoney(startYear) * (7 + dice.below(5)), deadline(dice))
         }
     }
 }

@@ -208,8 +208,9 @@ class ScenarioTest {
         any.scenarioCheck()
         assertEquals(1, any.told(News.SCENARIO_LOST))
 
-        // In play: a company worth anything meets the goal at the month's end, and the scenario's won.
+        // In play: a company worth anything meets the goal at the month's end, and the scenario's won. A new one is worth nothing till it earns.
         val play = world(Scenario.ALL, Goal.OPEN)
+        play.companies[0].money += 1_000
         repeat(play.dayTicks * 70) { play.step() }
         assertEquals(Goal.MET, play.goals[0].status)
         assertEquals(1, play.told(News.SCENARIO_WON))

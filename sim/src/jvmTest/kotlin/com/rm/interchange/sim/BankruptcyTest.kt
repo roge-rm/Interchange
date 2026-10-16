@@ -33,6 +33,17 @@ class BankruptcyTest {
     }
 
     @Test
+    fun troubleGoesByMonthsOfWorkAtAnyDayLength() {
+        val w = World(NewGame(128, 128, 7, 1930, Region.MIXED, towns = 3, industries = 0, rivals = 1, dayLength = 10))
+        val c = w.sinking()
+        // As many work days as at day length 1, a tenth of the calendar.
+        w.days(WORK_MONTH * TROUBLE_WARN + 40)
+        assertTrue(c.trouble >= TROUBLE_WARN && !w.forSale(c), "${c.trouble} months")
+        w.days(WORK_MONTH * (TROUBLE_FOR_SALE - TROUBLE_WARN))
+        assertTrue(w.forSale(c), "not for sale after ${c.trouble} months")
+    }
+
+    @Test
     fun buyingOneTakesOnAllItHasAndOwes() {
         val w = game()
         val c = w.sinking()

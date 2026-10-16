@@ -266,13 +266,15 @@ private fun World.setScenario(c: Command.SetScenario) {
     s.title = c.title.trim().take(Scenario.TITLE_MOST)
     s.intro = c.intro.trim().take(Scenario.INTRO_MOST)
     s.money = c.money.coerceIn(0, MONEY_MOST)
-    s.loan = c.loan.coerceIn(0, maxLoan()) / Prices.LOAN_STEP * Prices.LOAN_STEP
     s.win = c.win
     s.chapter = c.chapter.trim().take(Scenario.CHAPTER_MOST)
     val year = c.startYear.coerceIn(NewGame.FIRST_YEAR, NewGame.LAST_YEAR)
     val by = year - settings.startYear
-    if (tick != 0L || by == 0) return
-    startYear(year)
+    val moves = tick == 0L && by != 0
+    if (moves) startYear(year)
+    // The loan limit goes by the era, so the year comes first.
+    s.loan = c.loan.coerceIn(0, maxLoan()) / Prices.LOAN_STEP * Prices.LOAN_STEP
+    if (!moves) return
     // The goals move with the start, keeping their years from it.
     val moved = goals.map { g -> Goal(g.kind, g.amount, g.deadline + by, g.cargo, g.town, g.town2, g.industry, if (g.from == 0) 0 else g.from + by) }
     goals.clear()

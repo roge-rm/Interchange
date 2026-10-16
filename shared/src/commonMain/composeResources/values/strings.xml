@@ -287,8 +287,8 @@
     <string name="rivals">Rivals</string>
     <string name="companies">Companies</string>
     <string name="your_company">Your company</string>
-    <string name="company_line">Worth %1$s · %2$d vehicles · %3$d stations</string>
-    <string name="company_line_takeover">Worth %1$s · %2$d vehicles · %3$d stations · buy for %4$s</string>
+    <string name="company_line">Made %1$s · %2$d vehicles · %3$d stations</string>
+    <string name="company_line_takeover">Made %1$s · %2$d vehicles · %3$d stations · buy for %4$s</string>
     <string name="company_name">Company name</string>
     <string name="rename">Rename</string>
     <string name="insignia">Insignia</string>
