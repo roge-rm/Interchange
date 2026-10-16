@@ -278,6 +278,8 @@ internal fun World.roadsChanged() {
 internal fun World.roadsDay() {
     val year = Calendar.year(startYear, day)
     val salt = year >= SALT_FROM
+    // Each tile within reach of its owner's depots is salted once a day, and paid for only where the salt does something.
+    val salted = HashSet<Int>()
     for (d in saltDepots.sorted()) {
         val c = companies.getOrNull(roadOwner[d].toInt().coerceAtLeast(0)) ?: continue
         val x0 = d % width
@@ -286,13 +288,14 @@ internal fun World.roadsDay() {
         for (y in y0 - SALT_REACH..y0 + SALT_REACH) for (x in x0 - SALT_REACH..x0 + SALT_REACH) {
             if (!inside(x, y)) continue
             val i = index(x, y)
-            if (roadEdges(i) == 0 || roadOwner[i].toInt() != c.id) continue
+            if (roadEdges(i) == 0 || roadOwner[i].toInt() != c.id || !salted.add(i)) continue
             val ice = weather.ice[i].toInt() and 255
             val snow = weather.snow[i].toInt() and 255
-            if (ice == 0 && snow == 0) continue
-            // Salt melts ice and thin snow; sand only gives grip, so ice is halved.
+            // Salt melts ice and thin snow; sand only gives grip, so ice is halved. Neither does anything for deep snow.
+            val thin = salt && snow in 1 until 20
+            if (ice == 0 && !thin) continue
             weather.ice[i] = (if (salt) 0 else ice / 2).toByte()
-            if (salt && snow < 20) weather.snow[i] = 0
+            if (thin) weather.snow[i] = 0
             spread++
         }
         // A calendar day's salt keeps the road clear for day length work days, so it's paid as that many, with upkeep.

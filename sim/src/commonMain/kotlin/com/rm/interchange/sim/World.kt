@@ -346,6 +346,7 @@ class World(settings: NewGame, val roster: Roster = Roster.BASE, generate: Boole
             shipsDay()
             aircraftDay()
             payRunningCosts()
+            trackWorkDay()
             upkeepDay()
             passengersDay()
             payments.removeAll { tick - it.tick > PAYMENT_TICKS }

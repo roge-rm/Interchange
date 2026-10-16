@@ -13,21 +13,26 @@ import kotlin.test.Test
  * - each region: the weather on, as the game has it;
  * - capped, in the first region: the weather on, but deep snow on the road kept just under [DEEP_ROAD_SNOW] (so the
  *   winter tire cap stays and the deep snow cap goes), or the line kept clear of closures, kinks and slow orders;
- * - salt, in the first region: the weather on, with salt (or sand) depots along the road.
+ * - salt, in the first region: the weather on, with salt (or sand) depots along the road;
+ * - for trains, in the first region: the track on low and high upkeep, and busy, worn as if [BUSY] more trains like
+ *   it passed each tile a work day, on each upkeep level.
  * Profit is income less running and upkeep (salt is upkeep). The "bad" line has forest along both sides and a lake
  * beside its middle, for fires and washouts.
  *
  * Slow, so it runs only when asked: `./gradlew :sim:jvmTest --tests '*WeatherRun*' -Pinterchange.weatherYears=4`,
- * and optionally interchange.weatherEras, weatherLengths, weatherRegions and weatherSeeds as comma lists.
+ * and optionally interchange.weatherEras, weatherLengths, weatherRegions, weatherSeeds and weatherModes (route modes
+ * starting with these, as train, bus, ship) as comma lists.
  */
 class WeatherRun {
     class Route(val mode: String, val key: String, val year: Int, val tiles: Int, val cargo: Int, val engine: Engine, val wagon: Engine?, val wagons: Int, val bad: Boolean = false) {
         val name get() = "$mode ${key.substringAfter(':')}${if (bad) " (bad line)" else ""}, $year, $tiles tiles"
     }
 
-    /** IDEAL, WEAR, WEATHER, CAPPED or SALT, the last three in a region. */
+    /** Ideal, wear, weather, capped, salt, or for trains an upkeep level (low, high, busy low, busy, busy high), the rest in a region. */
     class Variant(val kind: String, val region: Region = Region.MIXED) {
-        val weather get() = kind == "weather" || kind == "capped" || kind == "salt" || kind == "low"
+        val weather get() = kind != "ideal" && kind != "wear"
+        val upkeep get() = if (kind.endsWith("low")) Upkeep.LOW else if (kind.endsWith("high")) Upkeep.HIGH else Upkeep.NORMAL
+        val busy get() = kind.startsWith("busy")
         val label get() = if (weather) "$kind ${region.name.lowercase()}" else kind
     }
 
@@ -35,6 +40,8 @@ class WeatherRun {
         val profit: Long, val income: Long, val upkeep: Long, val workYears: Int, val calendarYears: Int,
         /** Calendar days: nothing moved, any slow order on the line, closed, kinked, deep snow on the road, the tire cap, ice past [SHIP_ICE] on the way. */
         val shut: Int, val slow: Int, val closed: Int, val kinked: Int, val deep: Int, val capped: Int, val iced: Int, val breakdowns: Int,
+        /** Heat kinks that started on the line, and calendar days with a 40 km/h slow order on it. */
+        val kinks: Int = 0, val veryWorn: Int = 0,
     ) {
         val perWorkYear get() = profit / workYears.coerceAtLeast(1)
         fun perYear(days: Int) = days.toDouble() / calendarYears
@@ -79,7 +86,7 @@ class WeatherRun {
         val out = arrayListOf(Variant("ideal"), Variant("wear"))
         for (r in regions) out += Variant("weather", r)
         if (mode.startsWith("train") || mode == "bus" || mode == "truck") out += Variant("capped", regions.first())
-        if (mode.startsWith("train")) out += Variant("low", regions.first())
+        if (mode.startsWith("train")) for (k in listOf("low", "high", "busy low", "busy", "busy high")) out += Variant(k, regions.first())
         if (mode == "bus" || mode == "truck") out += Variant("salt", regions.first())
         return out
     }
@@ -90,7 +97,7 @@ class WeatherRun {
         w.trees.fill(0)
         val c = w.companies[0]
         c.money = 1_000_000_000L
-        if (v.kind == "low") c.upkeep = Upkeep.LOW
+        c.upkeep = v.upkeep
         val len = route.tiles
         val e = route.engine
         val line = ArrayList<Int>()
@@ -161,6 +168,8 @@ class WeatherRun {
         var year = Calendar.year(w.startYear, w.day)
         var moved = 0L
         var shut = 0; var slow = 0; var closed = 0; var kinked = 0; var deep = 0; var capped = 0; var iced = 0
+        var kinks = 0; var veryWorn = 0
+        var wasKinked = emptySet<Int>()
         val train = route.mode.startsWith("train")
         val road = route.mode == "bus" || route.mode == "truck"
         while (w.tick < total) {
@@ -185,6 +194,10 @@ class WeatherRun {
                     if ((w.condition[i].toInt() and 255) < WORN) w.condition[i] = WORN.toByte()
                 }
             }
+            if (v.busy && w.tick % Calendar.TICKS_PER_DAY == 0L) {
+                val mass = w.trains.firstOrNull { it != null }?.massKg() ?: 0L
+                for (i in line) repeat(BUSY) { w.wearBy(i, mass) }
+            }
             w.step()
             for (t in w.trains) if (t != null) moved += t.speed
             for (r in w.roadVehicles) if (r != null) moved += r.speed
@@ -196,6 +209,12 @@ class WeatherRun {
                 if (line.any { w.trackLimit(it) > 0 } && train) slow++
                 if (line.any { w.closedTile(it) }) closed++
                 if (line.any { w.kinks.containsKey(it) }) kinked++
+                if (train) {
+                    val kinkedNow = line.filter { w.kinks.containsKey(it) }.toSet()
+                    kinks += (kinkedNow - wasKinked).size
+                    wasKinked = kinkedNow
+                    if (line.any { w.trackLimit(it) == VERY_WORN_KMH }) veryWorn++
+                }
                 if (road && line.any { (w.weather.snow[it].toInt() and 255) >= DEEP_ROAD_SNOW }) deep++
                 if (road && line.any { w.slippery(it) || (w.weather.snow[it].toInt() and 255) >= 5 }) capped++
                 if (water.any { (w.weather.ice[it].toInt() and 255) >= SHIP_ICE }) iced++
@@ -212,7 +231,7 @@ class WeatherRun {
         val profit = income + sums[Books.RUNNING] - upkeep
         val breakdowns = w.trains.sumOf { it?.breakdowns ?: 0 } + w.roadVehicles.sumOf { it?.breakdowns ?: 0 } +
             w.ships.sumOf { it?.breakdowns ?: 0 } + w.aircraft.sumOf { it?.breakdowns ?: 0 }
-        return Result(profit, income, upkeep, dayLength * years, years, shut, slow, closed, kinked, deep, capped, iced, breakdowns)
+        return Result(profit, income, upkeep, dayLength * years, years, shut, slow, closed, kinked, deep, capped, iced, breakdowns, kinks, veryWorn)
     }
 
     @Test
@@ -222,8 +241,9 @@ class WeatherRun {
         val lengths = (System.getProperty("interchange.weatherLengths") ?: "1,10").split(",").map { it.trim().toInt() }
         val regions = (System.getProperty("interchange.weatherRegions") ?: "MIXED,PRAIRIES,MARITIMES,NORTH").split(",").map { Region.valueOf(it.trim()) }
         val seeds = (System.getProperty("interchange.weatherSeeds") ?: "1,2").split(",").map { it.trim().toLong() }
+        val modes = System.getProperty("interchange.weatherModes")?.split(",")?.map { it.trim() }
         class Job(val route: Route, val v: Variant, val length: Int, val seed: Long)
-        val rs = routes(eras)
+        val rs = routes(eras).filter { r -> modes == null || modes.any { r.mode.startsWith(it) } }
         val jobs = rs.flatMap { r -> variants(r.mode, regions).flatMap { v -> lengths.flatMap { l -> seeds.map { Job(r, v, l, it) } } } }
             .sortedByDescending { it.length }
         val started = System.currentTimeMillis()
@@ -238,7 +258,7 @@ class WeatherRun {
             return Result(
                 got.sumOf { it.profit }, got.sumOf { it.income }, got.sumOf { it.upkeep }, got.sumOf { it.workYears }, got.sumOf { it.calendarYears },
                 got.sumOf { it.shut }, got.sumOf { it.slow }, got.sumOf { it.closed }, got.sumOf { it.kinked }, got.sumOf { it.deep },
-                got.sumOf { it.capped }, got.sumOf { it.iced }, got.sumOf { it.breakdowns },
+                got.sumOf { it.capped }, got.sumOf { it.iced }, got.sumOf { it.breakdowns }, got.sumOf { it.kinks }, got.sumOf { it.veryWorn },
             )
         }
         fun share(lost: Long, of: Long) = if (of <= 0) "-" else "${lost * 100 / of}%"
@@ -250,13 +270,13 @@ class WeatherRun {
         out.append("with the calendar days a year that nothing moved (shut) and, for trains, the days with a slow order, closed or kinked, ")
         out.append("for road, the days with deep snow and with the tire cap, and for ships the days iced in. ")
         out.append("Of that, ${regions.first().name.lowercase()}'s capped share is the part that goes when deep snow on the road ")
-        out.append("is kept under $DEEP_ROAD_SNOW cm (road) or the line is kept clear of closures, kinks and slow orders (trains); salt is the weather share with salt depots along the road; low upkeep is the weather share with the track on low upkeep.\n\n")
+        out.append("is kept under $DEEP_ROAD_SNOW cm (road) or the line is kept clear of closures, kinks and slow orders (trains); salt is the weather share with salt depots along the road.\n\n")
         for (l in lengths) {
             out.append("## Day length $l\n\n")
             out.append("| route | ideal/work yr | wear | breakdowns/work yr |")
             for (r in regions) out.append(" ${r.name.lowercase()} | shut | other days |")
-            out.append(" capped | salt | low upkeep |\n|")
-            out.append("---|".repeat(4 + regions.size * 3 + 3)).append("\n")
+            out.append(" capped | salt |\n|")
+            out.append("---|".repeat(4 + regions.size * 3 + 2)).append("\n")
             for (r in rs) {
                 val ideal = sum(r, "ideal", l) ?: continue
                 val wear = sum(r, "wear", l) ?: continue
@@ -276,13 +296,32 @@ class WeatherRun {
                 val cap = sum(r, "capped ${regions.first().name.lowercase()}", l)
                 val salt = sum(r, "salt ${regions.first().name.lowercase()}", l)
                 out.append(" ${if (cap != null && first != null) share(cap.profit - first.profit, wear.profit) else "-"} |")
-                out.append(" ${if (salt != null) share(wear.profit - salt.profit, wear.profit) else "-"} |")
-                val low = sum(r, "low ${regions.first().name.lowercase()}", l)
-                out.append(" ${if (low != null) "${share(wear.profit - low.profit, wear.profit)}, slow ${days(low.perYear(low.slow))}, kinked ${days(low.perYear(low.kinked))}" else "-"} |\n")
+                out.append(" ${if (salt != null) share(wear.profit - salt.profit, wear.profit) else "-"} |\n")
+            }
+            out.append("\n")
+            val first = regions.first().name.lowercase()
+            val levels = listOf("low", "weather", "high", "busy low", "busy", "busy high")
+            out.append("Track upkeep in $first: the weather share, calendar days a year with a slow order (and with a 40 km/h one) and heat kinks a year.\n\n")
+            out.append("| route | low | normal | high | busy, low | busy, normal | busy, high |\n|").append("---|".repeat(7)).append("\n")
+            for (r in rs) {
+                if (!r.mode.startsWith("train")) continue
+                val wear = sum(r, "wear", l) ?: continue
+                out.append("| ${r.name} |")
+                for (k in levels) {
+                    val x = sum(r, "$k $first", l)
+                    if (x == null) { out.append(" - |"); continue }
+                    out.append(" ${share(wear.profit - x.profit, wear.profit)}, slow ${days(x.perYear(x.slow))} (${days(x.perYear(x.veryWorn))}), kinks ${"%.1f".format(x.perYear(x.kinks))} |")
+                }
+                out.append("\n")
             }
             out.append("\n")
         }
         val dir = File("build/balance").apply { mkdirs() }
         File(dir, "weather.md").writeText(out.toString())
+    }
+
+    companion object {
+        /** Extra trains a work day over each tile of a busy line. */
+        const val BUSY = 8
     }
 }

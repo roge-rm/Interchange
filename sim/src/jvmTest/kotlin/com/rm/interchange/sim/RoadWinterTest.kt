@@ -25,6 +25,26 @@ class RoadWinterTest {
     }
 
     @Test
+    fun overlappingDepotsSaltATileOnceAndDeepSnowIsntCharged() {
+        val w = World(64, 64, 1, startYear = 1960)
+        for (i in w.corners.indices) w.corners[i] = 3
+        w.companies[0].money = 1_000_000
+        w.apply(Command.Road(0, 5, 20, 40, 20, Surface.PAVED, remove = false))
+        w.apply(Command.SaltDepot(0, 14, 21))
+        w.apply(Command.SaltDepot(0, 16, 21))
+        val c = w.companies[0]
+        // Road tiles 6 to 24 are in reach of one depot or both.
+        for (x in 5..40) w.weather.ice[w.index(x, 20)] = 20
+        var owed = c.upkeepOwed
+        w.roadsDay()
+        assertEquals(SALT_COST * 19, c.upkeepOwed - owed)
+        for (x in 5..40) { w.weather.ice[w.index(x, 20)] = 0; w.weather.snow[w.index(x, 20)] = 50 }
+        owed = c.upkeepOwed
+        w.roadsDay()
+        assertEquals(0, c.upkeepOwed - owed, "paid for salt on deep snow")
+    }
+
+    @Test
     fun anIceRoadOpensOnlyOnThickIce() {
         val w = World(64, 64, 1, startYear = 1960)
         for (y in 0..64) for (x in 0..64) w.corners[w.corner(x, y)] = if (x in 21..29) 0 else 3

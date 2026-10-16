@@ -372,8 +372,8 @@ private fun World.tileWeather(year: Int, doy: Int, today: Int) {
                 }
                 val melted: Int
                 if (t <= 0) {
-                    // Colder snow is fluffier.
-                    snow += dither(if (t < -100) p * 3 / 2 else p, x, y)
+                    // Colder snow is fluffier; wet snow near freezing lies thinner.
+                    snow += dither(if (t < -100) p * 3 / 2 else if (t > DRY_SNOW) p / 2 else p, x, y)
                     // The spring sun melts it off slopes facing south a little even below zero.
                     melted = if (spring && t > -50 && facesSouth(x, y)) minOf(snow, dither(40, x, y)) else 0
                 } else {
@@ -382,8 +382,8 @@ private fun World.tileWeather(year: Int, doy: Int, today: Int) {
                     melted = minOf(snow, dither(m, x, y))
                 }
                 snow -= melted
-                // It settles a little each day.
-                snow -= dither(snow * 5, x, y)
+                // It settles a little each day, wet snow faster.
+                snow -= dither(snow * (if (t > DRY_SNOW) 15 else 5), x, y)
                 if (t > 0) wet += dither(p, x, y)
                 wet += melted * 3
                 if (frost == 0) wet -= wet / 12
@@ -396,10 +396,10 @@ private fun World.tileWeather(year: Int, doy: Int, today: Int) {
                 if (sky.freezing) ice += dither(p, x, y)
                 else if (t in -60..-1 && wet > 80 && snow < 2) ice += 1
                 if (t > 0) ice -= dither(t * 10 + 200, x, y) else ice -= dither(30, x, y)
-                // Wind drifts snow onto open track, unless a snow fence or trees nearby catch it.
-                if (track[i].toInt() != 0 && wind >= DRIFT_WIND && !cover[i] && !sheltered(x, y)) {
-                    if (t <= 0 && p > 0) snow += dither(p * (wind - DRIFT_WIND + 10) / 15, x, y)
-                    else if (t < 0 && wind >= BLOWING_WIND && snow < 40) snow += dither((wind - BLOWING_WIND + 5) * 12, x, y)
+                // Wind drifts dry snow onto open track, unless a snow fence or trees nearby catch it; wet snow near freezing doesn't drift.
+                if (track[i].toInt() != 0 && wind >= DRIFT_WIND && t <= DRY_SNOW && !cover[i] && !sheltered(x, y)) {
+                    if (p > 0) snow += dither(p * (wind - DRIFT_WIND + 10) / 15, x, y)
+                    else if (wind >= BLOWING_WIND && snow < 40) snow += dither((wind - BLOWING_WIND + 5) * 12, x, y)
                 }
                 // Deep snow on steep high ground lets go in a thaw or under heavy snow.
                 if (snow >= AVALANCHE_SNOW && tileHeight(x, y) >= AVALANCHE_HEIGHT && !isFlat(x, y) && (t > 0 || p >= 1500) && cellDice(x, y, salt + 9) < 6) slides[band] += i
@@ -497,6 +497,8 @@ internal fun World.snowWorks(company: Company, c: Command.SnowWorks) {
 /** Wind, in km/h, that drifts falling snow onto track, and that blows lying snow about. */
 const val DRIFT_WIND = 25
 const val BLOWING_WIND = 35
+/** Snow falling or lying at or below this heat, in tenths of a degree, is dry enough to drift. */
+const val DRY_SNOW = -50
 /** How far round a snow fence catches drifting snow, in tiles. */
 const val FENCE_REACH = 3
 /** Snow, in cm, and height, in steps, for an avalanche, and how far it runs, in tiles. */

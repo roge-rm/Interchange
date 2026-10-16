@@ -55,6 +55,8 @@ class WearTest {
         val t = w.runTrain()
         var fastest = 0
         repeat(2000) {
+            // Kept very worn, as crews mend a share of it each work day.
+            for (x in 15..30) w.condition[w.index(x, 10)] = 50
             w.step()
             if (!t.inDepot && stepTile(t.steps.last()) % w.width in 18..28) fastest = maxOf(fastest, t.speed * 2700 / 65536)
         }

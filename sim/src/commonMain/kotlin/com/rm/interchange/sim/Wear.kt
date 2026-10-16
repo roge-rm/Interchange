@@ -4,8 +4,9 @@ package com.rm.interchange.sim
  * Track wears and the weather gets at it. Each tile of track has a condition,
  * 0 to 255, new track at the top. Heavy trains wear it a little each time
  * they pass, thawing frost heaves it, soaked ground lets it settle; crews mend
- * it each work day, as much as the company's upkeep pays for. Worn track gets a
- * slow order, and in summer heat worn track can kink and need one too.
+ * a share of what's worn each work day, more the more the company's upkeep
+ * pays, so a busy line settles lower than a quiet one. Worn track gets a slow
+ * order, and in summer heat worn track can kink and need one too.
  *
  * Downpours on soaked low ground wash track out, and in hot dry summers a
  * fire in the forest spreads with the wind; either closes the line till the
@@ -17,8 +18,10 @@ object Upkeep {
     const val LOW = 0
     const val NORMAL = 1
     const val HIGH = 2
-    /** What crews mend a tile a work day, in hundredths of a point, and what that costs a tile of track a work day. Costs here are in tenths of a cent. */
+    /** What crews mend a tile of road a work day, in hundredths of a point. */
     val MEND = intArrayOf(30, 100, 250)
+    /** The share of a tile of track's wear crews mend a work day, in 1024ths, and what that costs a tile a work day. Costs here are in tenths of a cent. */
+    val TRACK_MEND = intArrayOf(70, 111, 256)
     val TRACK = intArrayOf(20, 50, 120)
     /** Days of a closure crews work off in a day. */
     val CLEAR = intArrayOf(1, 1, 2)
@@ -62,24 +65,58 @@ fun World.trackLimit(tile: Int): Int = when {
     else -> -1
 }
 
-/** Wear from a train of [mass] kg running onto [tile]: a point now and then, more often the heavier it is. */
+/** Wear from a train of [mass] kg running onto [tile]: a point for each [WEAR_TONNES] it weighs, the rest by chance. */
 internal fun World.wearBy(tile: Int, mass: Long) {
     if (track[tile].toInt() == 0) return
-    if (rng.below(WEAR_ODDS) < mass / 1000) condition[tile] = (u(condition[tile]) - 1).coerceAtLeast(0).toByte()
+    val tonnes = (mass / 1000).toInt()
+    val points = tonnes / WEAR_TONNES + if (rng.below(WEAR_TONNES) < tonnes % WEAR_TONNES) 1 else 0
+    if (points > 0) condition[tile] = (u(condition[tile]) - points).coerceAtLeast(0).toByte()
 }
 
-/** A wearing train of a tonne wears a point one time in this many. */
-const val WEAR_ODDS = 5_000
+/** Tonnes of train that wear a tile of track a point as it passes. */
+const val WEAR_TONNES = 1_000
 
 /** Whether [tile] is a burning tile, or a burnt one still black. */
 fun World.burning(tile: Int) = u(fire[tile]) in 1..FIRE_DAYS
 fun World.burnt(tile: Int) = u(fire[tile]) >= BURNT_FROM
 
 /**
- * The track's day, after the weather's: wear and mending on every tile across the cores, then kinks,
- * washouts and fires found there put on the map in tile order. Crews mend a calendar day's worth of
- * work days, as trains wear track by work time. Each company's track and roads are counted on the way
- * for [upkeepDay].
+ * Each work day, on every tile of track across the cores: thawing frost heaves it and soaked ground lets it
+ * settle a few points now and then, and crews mend a share of its wear by the owner's [Upkeep] level. Done by work
+ * days so trains, the weather and crews keep the same pace at any day length.
+ */
+internal fun World.trackWorkDay() {
+    val year = Calendar.year(startYear, day)
+    val doy = Calendar.dayOfYear(startYear, day)
+    val salt = (tick / Calendar.TICKS_PER_DAY).toInt() * 977 + seedBits
+    val fronts = weather.fronts.toList()
+    parallelBands(height) { from, until ->
+        for (y in from until until) for (x in 0 until width) {
+            val i = index(x, y)
+            if (track[i].toInt() == 0) continue
+            var c = u(condition[i])
+            if (settings.weather) {
+                val frost = u(weather.frost[i])
+                val soaked = u(weather.wet[i]) > SOAKED
+                if (frost > 0 || soaked) {
+                    val sky = skyAt(settings.region, year, doy, weather.anomaly, fronts, height, x, y, tileHeight(x, y))
+                    if (frost > 0 && sky.temperature > 0 && cellDice(x, y, salt + 1) < HEAVE_ODDS) c -= HEAVE
+                    if (soaked && sky.temperature > 0 && cellDice(x, y, salt + 2) < SETTLE_ODDS) c -= SETTLE
+                }
+            }
+            if (c < 255) {
+                val level = companies.getOrNull(owner[i].toInt())?.upkeep ?: Upkeep.NORMAL
+                val mend = (255 - c) * Upkeep.TRACK_MEND[level]
+                c += mend / 1024 + if (cellDice(x, y, salt + 5) * 4 < mend % 1024) 1 else 0
+            }
+            condition[i] = c.coerceIn(0, 255).toByte()
+        }
+    }
+}
+
+/**
+ * The track's day, after the weather's: kinks, washouts and fires found on every tile across the cores, put on
+ * the map in tile order. Each company's track and roads are counted on the way for [upkeepDay].
  */
 internal fun World.trackDay() {
     val year = Calendar.year(startYear, day)
@@ -121,20 +158,11 @@ internal fun World.trackDay() {
                 if (cellDice(x, y, salt + 11) * 256 + cellDice(x, y, salt + 12) < odds) found[b] += intArrayOf(EVENT_FIRE, i)
             }
             if (t == 0) continue
-            val owner = owner[i].toInt()
-            var c = u(condition[i])
             if (sky != null) {
-                val frost = u(weather.frost[i])
-                // A calendar day's heave or settling, a point for each work day in it, as mending is.
-                if (frost > 0 && sky.temperature > 0 && cellDice(x, y, salt + 1) < 80) c -= settings.dayLength
-                if (u(weather.wet[i]) > 150 && cellDice(x, y, salt + 2) < 50) c -= settings.dayLength
-                if (sky.temperature > KINK_HEAT && c < 170 && !kinks.containsKey(i) && cellDice(x, y, salt + 3) < (170 - c) / 8) found[b] += intArrayOf(EVENT_KINK, i)
+                val c = u(condition[i])
+                if (sky.temperature > KINK_HEAT && c < KINK_BELOW && !kinks.containsKey(i) && cellDice(x, y, salt + 3) * 256 + cellDice(x, y, salt + 6) < (KINK_BELOW - c) * KINK_ODDS) found[b] += intArrayOf(EVENT_KINK, i)
                 if (sky.precipitation >= WASHOUT_RAIN && u(weather.wet[i]) > 200 && lowGround(x, y) && cellDice(x, y, salt + 4) < WASHOUT_ODDS) found[b] += intArrayOf(EVENT_WASHOUT, i)
             }
-            val level = companies.getOrNull(owner)?.upkeep ?: Upkeep.NORMAL
-            val mend = Upkeep.MEND[level] * settings.dayLength
-            c += mend / 100 + if (cellDice(x, y, salt + 5) * 100 / 256 < mend % 100) 1 else 0
-            condition[i] = c.coerceIn(0, 255).toByte()
         }
     }
     setUpkeepCounts(tracks, roads)
@@ -268,4 +296,13 @@ const val WASHOUT_RAIN = 2500
 /** Chance out of 256 a day that a soaked low tile of track washes out in a downpour. */
 const val WASHOUT_ODDS = 1
 const val KINK_DAYS = 5
+/** Worn track below this condition can kink on a hot day, [KINK_ODDS] times in 65536 for each point below. */
+const val KINK_BELOW = 170
+const val KINK_ODDS = 10
+/** Ground wetter than this, in mm, lets track settle. Chances out of 256 a work day that thawing frost heaves a tile of track, and that soaked ground settles it, and by how many points. */
+const val SOAKED = 120
+const val HEAVE_ODDS = 128
+const val HEAVE = 8
+const val SETTLE_ODDS = 128
+const val SETTLE = 6
 const val WASHOUT_DAYS_FROM = 6
