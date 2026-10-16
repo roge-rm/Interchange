@@ -320,7 +320,8 @@ internal fun World.roadsDay() {
             if (t > 0) c--
         }
         val owner = roadOwner[i].toInt()
-        val mend = if (owner < 0) Upkeep.MEND[Upkeep.NORMAL] else Upkeep.MEND[companies.getOrNull(owner)?.upkeep ?: Upkeep.NORMAL]
+        // Vehicles wear roads by work time, so crews mend a calendar day's worth of work days.
+        val mend = settings.dayLength * if (owner < 0) Upkeep.MEND[Upkeep.NORMAL] else Upkeep.MEND[companies.getOrNull(owner)?.upkeep ?: Upkeep.NORMAL]
         c += mend / 100 + if (cellDice(x, y, day * 977 + seedBits + 22) * 100 / 256 < mend % 100) 1 else 0
         condition[i] = c.coerceIn(0, 255).toByte()
     }

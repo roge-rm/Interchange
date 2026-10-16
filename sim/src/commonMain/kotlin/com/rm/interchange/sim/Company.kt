@@ -18,7 +18,7 @@ class Company(val id: Int, var name: String, var money: Long) {
     /** Income and spending this month so far. */
     var monthIn = 0L
     var monthOut = 0L
-    /** How much it spends keeping its track up, an [Upkeep] level, and what it owes short of a dollar, in cents. */
+    /** How much it spends keeping its track up, an [Upkeep] level, and what it owes short of a dollar, in tenths of a cent. */
     var upkeep = Upkeep.NORMAL
     var upkeepOwed = 0L
     /** Months running it's been unable to pay its way, even borrowing all it can. */

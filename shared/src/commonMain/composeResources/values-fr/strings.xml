@@ -393,7 +393,7 @@
         <item>Chevalet</item><item>Treillis</item><item>Béton</item>
     </string-array>
     <string name="tool_wires">Caténaire</string>
-    <string name="book_upkeep">Entretien des voies</string>
+    <string name="book_upkeep">Entretien</string>
     <string name="track_upkeep">Entretien des voies</string>
     <string-array name="upkeep_levels">
         <item>Faible</item><item>Normal</item><item>Élevé</item>

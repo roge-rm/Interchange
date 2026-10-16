@@ -16,7 +16,7 @@ package com.rm.interchange.sim
  */
 object Save {
     private val MAGIC = "ICHG".encodeToByteArray()
-    const val VERSION = 32
+    const val VERSION = 33
 
     /**
      * [world] as a save; [version] older than [VERSION] only for tests reading older saves. [asScenario] writes an
@@ -45,7 +45,7 @@ object Save {
                 w.long(if (given) start!!.loan else c.loan); w.long(c.monthIn); w.long(c.monthOut)
                 for (v in c.thisYear) w.long(v)
                 for (v in c.lastYear) w.long(v)
-                w.int(c.upkeep); w.long(c.upkeepOwed)
+                w.int(c.upkeep); w.long(if (version >= 33) c.upkeepOwed else c.upkeepOwed / 10)
                 w.uvar(c.history.size.toLong())
                 for (h in c.history) for (v in h) w.long(v)
                 w.int(c.trouble); w.bool(c.gone)
@@ -252,7 +252,8 @@ object Save {
                     val books = if (version >= 14) Books.COUNT else 6
                     for (k in 0 until books) c.thisYear[k] = r.long()
                     for (k in 0 until books) c.lastYear[k] = r.long()
-                    if (version >= 14) { c.upkeep = r.int(); c.upkeepOwed = r.long() }
+                    // Upkeep owed is in tenths of a cent from version 33, cents before.
+                    if (version >= 14) { c.upkeep = r.int(); c.upkeepOwed = r.long() * if (version >= 33) 1 else 10 }
                     repeat(r.uvar().toInt().also { if (it > HISTORY_MONTHS) throw BadData("too long a history") }) { c.history += LongArray(3) { r.long() } }
                 }
                 if (version >= 23) { c.trouble = r.int(); c.gone = r.bool() }

@@ -17,7 +17,7 @@ import kotlin.test.assertTrue
  * - Price is the vehicles bought (a train with its wagons and tender); built is the track, stops, docks or airports.
  * - Income and running cost are what the books show from 1 January over whole calendar years, as many as make three
  *   work years (three at day length 1, one at 10 or 16), so a slow ship's one or two trips a year average out.
- *   Wear, upkeep and interest aren't in running cost. Inflation is off.
+ *   Wear, upkeep and interest aren't in running cost; upkeep (track, roads, stops, docks, airports) has its own column. Inflation is off.
  * - Load "full" keeps a fresh thousand (or two loads, for a big ship) waiting at the start (and, for passengers and
  *   mail, at the far end too) each work day.
  *   Load "supply" is what a town of about 500 makes: 10 passengers a work day at each end (about 300 a month, from
@@ -336,8 +336,7 @@ class Balance {
 
     /**
      * A sensible first railway pays its train back in 1.5 to 5 work years at day length 1 and 10, on a town of about
-     * 500 at each end or one mine's output, and the line makes money counting track upkeep (which is by the calendar,
-     * so day length 1 is where it bites).
+     * 500 at each end or one mine's output, and the line makes money counting its upkeep.
      */
     @Test
     fun earlyRailwaysPayBack() {

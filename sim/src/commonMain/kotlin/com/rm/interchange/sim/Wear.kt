@@ -4,7 +4,7 @@ package com.rm.interchange.sim
  * Track wears and the weather gets at it. Each tile of track has a condition,
  * 0 to 255, new track at the top. Heavy trains wear it a little each time
  * they pass, thawing frost heaves it, soaked ground lets it settle; crews mend
- * it each day, as much as the company's upkeep pays for. Worn track gets a
+ * it each work day, as much as the company's upkeep pays for. Worn track gets a
  * slow order, and in summer heat worn track can kink and need one too.
  *
  * Downpours on soaked low ground wash track out, and in hot dry summers a
@@ -17,11 +17,20 @@ object Upkeep {
     const val LOW = 0
     const val NORMAL = 1
     const val HIGH = 2
-    /** What crews mend a tile a day, in hundredths of a point, and what that costs a tile a day, in cents. */
+    /** What crews mend a tile a work day, in hundredths of a point, and what that costs a tile of track a work day. Costs here are in tenths of a cent. */
     val MEND = intArrayOf(30, 100, 250)
-    val CENTS = intArrayOf(5, 20, 50)
+    val TRACK = intArrayOf(20, 50, 120)
     /** Days of a closure crews work off in a day. */
     val CLEAR = intArrayOf(1, 1, 2)
+
+    /** A tile of company road a work day by [Surface], dirt to highway. */
+    val ROAD = intArrayOf(5, 7, 15, 25)
+    /** A road stop, a dock, and a tile of canal or a lock, a work day. */
+    const val STOP = 50
+    const val DOCK = 200
+    const val CANAL = 30
+    /** An airport a work day by [Airports] kind, about 5% of its price a work year. */
+    val AIRPORT = intArrayOf(1_100, 700, 800, 4_100, 11_000, 27_000)
 }
 
 /** Why track is closed. */
@@ -68,7 +77,8 @@ fun World.burnt(tile: Int) = u(fire[tile]) >= BURNT_FROM
 
 /**
  * The track's day, after the weather's: wear and mending on every tile across the cores, then kinks,
- * washouts and fires found there put on the map in tile order, and each company paying for its crews.
+ * washouts and fires found there put on the map in tile order. Crews mend a calendar day's worth of
+ * work days, as trains wear track by work time.
  */
 internal fun World.trackDay() {
     val year = Calendar.year(startYear, day)
@@ -77,7 +87,6 @@ internal fun World.trackDay() {
     val fronts = weather.fronts.toList()
     val bands = Workers.threads * 4
     val found = Array(bands) { ArrayList<IntArray>() }
-    val tiles = Array(bands) { IntArray(MAX_COMPANIES) }
     val was = fire.copyOf()
     val wind = weather.windFrom
     parallelBandsIndexed(height, bands) { b, from, until ->
@@ -102,7 +111,6 @@ internal fun World.trackDay() {
             }
             if (t == 0) continue
             val owner = owner[i].toInt()
-            if (owner in 0 until MAX_COMPANIES) tiles[b][owner]++
             var c = u(condition[i])
             if (sky != null) {
                 val frost = u(weather.frost[i])
@@ -112,7 +120,7 @@ internal fun World.trackDay() {
                 if (sky.precipitation >= WASHOUT_RAIN && u(weather.wet[i]) > 200 && lowGround(x, y) && cellDice(x, y, salt + 4) < 14) found[b] += intArrayOf(EVENT_WASHOUT, i)
             }
             val level = companies.getOrNull(owner)?.upkeep ?: Upkeep.NORMAL
-            val mend = Upkeep.MEND[level]
+            val mend = Upkeep.MEND[level] * settings.dayLength
             c += mend / 100 + if (cellDice(x, y, salt + 5) * 100 / 256 < mend % 100) 1 else 0
             condition[i] = c.coerceIn(0, 255).toByte()
         }
@@ -148,7 +156,7 @@ internal fun World.trackDay() {
             }
         }
     }
-    // The crews work off closures and kinks, and are paid.
+    // The crews work off closures and kinks.
     for (k in closed.keys.sorted()) {
         val v = closed.getValue(k)
         val level = companies.getOrNull(owner[k].toInt())?.upkeep ?: Upkeep.NORMAL
@@ -159,11 +167,44 @@ internal fun World.trackDay() {
         val left = kinks.getValue(k) - 1
         if (left <= 0) kinks.remove(k) else kinks[k] = left
     }
+}
+
+/**
+ * Each work day, each company pays for its track at its [Upkeep] level, its roads by surface, its road stops,
+ * docks, canals, locks and airports. Counted fresh from the map each time, so a loaded world pays the same.
+ */
+internal fun World.upkeepDay() {
+    if (companies.isEmpty()) return
+    val bands = Workers.threads * 4
+    val track = Array(bands) { IntArray(MAX_COMPANIES) }
+    val roads = Array(bands) { LongArray(MAX_COMPANIES) }
+    parallelBandsIndexed(height, bands) { b, from, until ->
+        for (i in from * width until until * width) {
+            if (this.track[i].toInt() != 0) {
+                val o = owner[i].toInt()
+                if (o in 0 until MAX_COMPANIES) track[b][o]++
+            }
+            if (roadEdges(i) != 0) {
+                val o = roadOwner[i].toInt()
+                if (o in 0 until MAX_COMPANIES) roads[b][o] += Upkeep.ROAD[surfaceAt(i)].toLong()
+            }
+        }
+    }
+    val owed = LongArray(MAX_COMPANIES)
+    for (b in 0 until bands) for (o in 0 until MAX_COMPANIES) owed[o] += roads[b][o]
+    for (s in stations) {
+        if (s == null || s.waypoint || s.owner !in 0 until MAX_COMPANIES) continue
+        owed[s.owner] += s.stops.size.toLong() * Upkeep.STOP + s.docks.size.toLong() * Upkeep.DOCK
+    }
+    for (i in canals) { val o = owner[i].toInt(); if (o in 0 until MAX_COMPANIES) owed[o] += Upkeep.CANAL.toLong() }
+    for (i in locks.keys) { val o = owner[i].toInt(); if (o in 0 until MAX_COMPANIES) owed[o] += Upkeep.CANAL.toLong() }
+    for (a in airports) if (a != null && a.owner in 0 until MAX_COMPANIES) owed[a.owner] += Upkeep.AIRPORT[a.kind].toLong()
     for (c in companies) {
-        val n = (0 until bands).sumOf { tiles[it].getOrElse(c.id) { 0 } }
-        c.upkeepOwed += n.toLong() * Upkeep.CENTS[c.upkeep]
-        val dollars = price(c.upkeepOwed / 100)
-        c.upkeepOwed %= 100
+        if (c.id !in 0 until MAX_COMPANIES) continue
+        val n = (0 until bands).sumOf { track[it][c.id] }
+        c.upkeepOwed += n.toLong() * Upkeep.TRACK[c.upkeep] + owed[c.id]
+        val dollars = price(c.upkeepOwed / 1_000)
+        c.upkeepOwed %= 1_000
         if (dollars > 0) spend(c, Books.UPKEEP, dollars)
     }
 }

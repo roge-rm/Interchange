@@ -410,7 +410,7 @@
         <item>Trestle</item><item>Truss</item><item>Concrete</item>
     </string-array>
     <string name="tool_wires">Wires</string>
-    <string name="book_upkeep">Track upkeep</string>
+    <string name="book_upkeep">Upkeep</string>
     <string name="track_upkeep">Track upkeep</string>
     <string-array name="upkeep_levels">
         <item>Low</item><item>Normal</item><item>High</item>
