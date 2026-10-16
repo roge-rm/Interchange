@@ -78,7 +78,8 @@ fun World.burnt(tile: Int) = u(fire[tile]) >= BURNT_FROM
 /**
  * The track's day, after the weather's: wear and mending on every tile across the cores, then kinks,
  * washouts and fires found there put on the map in tile order. Crews mend a calendar day's worth of
- * work days, as trains wear track by work time.
+ * work days, as trains wear track by work time. Each company's track and roads are counted on the way
+ * for [upkeepDay].
  */
 internal fun World.trackDay() {
     val year = Calendar.year(startYear, day)
@@ -89,10 +90,20 @@ internal fun World.trackDay() {
     val found = Array(bands) { ArrayList<IntArray>() }
     val was = fire.copyOf()
     val wind = weather.windFrom
+    val tracks = Array(bands) { IntArray(MAX_COMPANIES) }
+    val roads = Array(bands) { LongArray(MAX_COMPANIES) }
     parallelBandsIndexed(height, bands) { b, from, until ->
         for (y in from until until) for (x in 0 until width) {
             val i = index(x, y)
             val t = track[i].toInt()
+            if (t != 0) {
+                val o = owner[i].toInt()
+                if (o in 0 until MAX_COMPANIES) tracks[b][o]++
+            }
+            if (road[i].toInt() != 0) {
+                val o = roadOwner[i].toInt()
+                if (o in 0 until MAX_COMPANIES && roadEdges(i) != 0) roads[b][o] += Upkeep.ROAD[surfaceAt(i)].toLong()
+            }
             // Fire burns down, spreads, and leaves black ground that fades.
             val f = u(was[i])
             if (f in 1..FIRE_DAYS) {
@@ -125,6 +136,7 @@ internal fun World.trackDay() {
             condition[i] = c.coerceIn(0, 255).toByte()
         }
     }
+    setUpkeepCounts(tracks, roads)
     for (b in 0 until bands) for (e in found[b]) {
         val i = e[1]
         when (e[0]) {
@@ -169,29 +181,45 @@ internal fun World.trackDay() {
     }
 }
 
-/**
- * Each work day, each company pays for its track at its [Upkeep] level, its roads by surface, its road stops,
- * docks, canals, locks and airports. Counted fresh from the map each time, so a loaded world pays the same.
- */
-internal fun World.upkeepDay() {
-    if (companies.isEmpty()) return
+/** Stores each company's track tiles and road upkeep from per-band counts by owner. */
+private fun World.setUpkeepCounts(tracks: Array<IntArray>, roads: Array<LongArray>) {
+    for (c in companies) {
+        if (c.id !in 0 until MAX_COMPANIES) continue
+        c.trackTiles = tracks.sumOf { it[c.id] }
+        c.roadUpkeep = roads.sumOf { it[c.id] }
+    }
+    upkeepCounted = true
+}
+
+/** Counts each company's track and roads from the whole map, for a world that hasn't had a calendar day yet. */
+private fun World.countUpkeep() {
     val bands = Workers.threads * 4
-    val track = Array(bands) { IntArray(MAX_COMPANIES) }
+    val tracks = Array(bands) { IntArray(MAX_COMPANIES) }
     val roads = Array(bands) { LongArray(MAX_COMPANIES) }
     parallelBandsIndexed(height, bands) { b, from, until ->
         for (i in from * width until until * width) {
-            if (this.track[i].toInt() != 0) {
+            if (track[i].toInt() != 0) {
                 val o = owner[i].toInt()
-                if (o in 0 until MAX_COMPANIES) track[b][o]++
+                if (o in 0 until MAX_COMPANIES) tracks[b][o]++
             }
-            if (roadEdges(i) != 0) {
+            if (road[i].toInt() != 0 && roadEdges(i) != 0) {
                 val o = roadOwner[i].toInt()
                 if (o in 0 until MAX_COMPANIES) roads[b][o] += Upkeep.ROAD[surfaceAt(i)].toLong()
             }
         }
     }
+    setUpkeepCounts(tracks, roads)
+}
+
+/**
+ * Each work day, each company pays for its track at its [Upkeep] level, its roads by surface, its road stops,
+ * docks, canals, locks and airports. Track and roads are as [trackDay] last counted them, saved with the world
+ * so a loaded one pays the same; the rest is counted each time.
+ */
+internal fun World.upkeepDay() {
+    if (companies.isEmpty()) return
+    if (!upkeepCounted) countUpkeep()
     val owed = LongArray(MAX_COMPANIES)
-    for (b in 0 until bands) for (o in 0 until MAX_COMPANIES) owed[o] += roads[b][o]
     for (s in stations) {
         if (s == null || s.waypoint || s.owner !in 0 until MAX_COMPANIES) continue
         owed[s.owner] += s.stops.size.toLong() * Upkeep.STOP + s.docks.size.toLong() * Upkeep.DOCK
@@ -201,8 +229,7 @@ internal fun World.upkeepDay() {
     for (a in airports) if (a != null && a.owner in 0 until MAX_COMPANIES) owed[a.owner] += Upkeep.AIRPORT[a.kind].toLong()
     for (c in companies) {
         if (c.id !in 0 until MAX_COMPANIES) continue
-        val n = (0 until bands).sumOf { track[it][c.id] }
-        c.upkeepOwed += n.toLong() * Upkeep.TRACK[c.upkeep] + owed[c.id]
+        c.upkeepOwed += c.trackTiles.toLong() * Upkeep.TRACK[c.upkeep] + c.roadUpkeep + owed[c.id]
         val dollars = price(c.upkeepOwed / 1_000)
         c.upkeepOwed %= 1_000
         if (dollars > 0) spend(c, Books.UPKEEP, dollars)

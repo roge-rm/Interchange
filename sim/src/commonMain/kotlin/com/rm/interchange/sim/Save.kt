@@ -181,6 +181,12 @@ object Save {
                 val start = if (asScenario) scenario else null
                 for (c in companies) w.long(if (start != null && human(c.id) && !c.gone) start.money else c.founded)
             }
+            if (version >= 33) {
+                // Track and roads as counted for upkeep on the last calendar day, so a copy pays what this one would.
+                val counted = upkeepCounted && !asScenario
+                w.bool(counted)
+                if (counted) for (c in companies) { w.int(c.trackTiles); w.long(c.roadUpkeep) }
+            }
         }
         val body = Squeeze.pack(w.toByteArray())
         val out = ByteWriter(body.size + 16)
@@ -466,6 +472,11 @@ object Save {
             // Before that every company began with the bank's $250,000, before inflation, or a player with the scenario's money.
             // One restarted after going under got that with inflation, which isn't known now, so it's taken as $250,000 too.
             else for (c in companies) c.founded = if (human(c.id)) scenario?.money ?: Prices.START_MONEY else Prices.START_MONEY
+            // Older saves count track and roads afresh on the first work day.
+            if (version >= 33 && r.bool()) {
+                upkeepCounted = true
+                for (c in companies) { c.trackTiles = r.int(); c.roadUpkeep = r.long() }
+            }
         }
         // Signal blocks and who's on which tile are worked out afresh now, as a command can ask before the next move.
         world.networkChangedKeepingRoutes()

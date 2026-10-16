@@ -118,6 +118,10 @@ internal fun World.takeOver(from: Company, to: Company) {
     for (v in ships) if (v != null && v.owner == from.id) v.owner = to.id
     for (v in aircraft) if (v != null && v.owner == from.id) v.owner = to.id
     for (s in subsidies) if (s.company == from.id) s.company = to.id
+    to.trackTiles += from.trackTiles
+    to.roadUpkeep += from.roadUpkeep
+    from.trackTiles = 0
+    from.roadUpkeep = 0
     to.money += from.money - from.loan
     from.money = 0
     from.loan = 0
@@ -155,6 +159,8 @@ internal fun World.dissolve(c: Company) {
     }
     c.money = 0
     c.loan = 0
+    c.trackTiles = 0
+    c.roadUpkeep = 0
     c.gone = true
     c.trouble = 0
     for (s in subsidies) if (s.company == c.id) s.months = 0
