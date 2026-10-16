@@ -246,10 +246,11 @@ internal fun World.clearTile(company: Company, c: Command.Clear) {
     }
     if (clearWaterOrAir(company, i)) return
     depotAt(i)?.takeIf { it.road }?.let { d ->
-        if (roadVehicles.any { it != null && it.depot == d.id }) return
+        if (roadVehicles.any { it != null && it.inDepot && it.depot == d.id }) return
         spend(company, Books.CONSTRUCTION, price(Prices.CLEAR))
         depotTiles.remove(i)
         depots[d.id] = null
+        depotGone(d)
         road[i] = 0; roadKind[i] = 0; roadOwner[i] = -1
         val n = index(c.x + Track.dx(d.edge), c.y + Track.dy(d.edge))
         road[n] = (road[n].toInt() and roadBit(Track.opposite(d.edge)).inv()).toByte()
@@ -270,7 +271,7 @@ internal fun World.clearTile(company: Company, c: Command.Clear) {
         s.tiles.remove(i)
         if (s.empty) dropStation(id)
     }
-    depotTiles.remove(i)?.let { id -> depots[id] = null }
+    depotTiles.remove(i)?.let { id -> depots[id]?.let { d -> depots[id] = null; depotGone(d) } }
     track[i] = 0
     wires[i] = 0
     sheds.remove(i)

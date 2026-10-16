@@ -16,7 +16,7 @@ package com.rm.interchange.sim
  */
 object Save {
     private val MAGIC = "ICHG".encodeToByteArray()
-    const val VERSION = 30
+    const val VERSION = 31
 
     /**
      * [world] as a save; [version] older than [VERSION] only for tests reading older saves. [asScenario] writes an
@@ -169,6 +169,12 @@ object Save {
                 val s = scenario
                 w.bool(s != null)
                 if (s != null) { w.string(s.title); w.string(s.intro); w.long(s.money); w.long(s.loan); w.int(s.win); w.string(s.chapter); w.int(s.outcome) }
+            }
+            if (version >= 31) {
+                // When each vehicle that found no depot for a service looks again.
+                for (t in trains) if (t != null) w.long(t.noDepotUntil)
+                for (v in roadVehicles) if (v != null) w.long(v.noDepotUntil)
+                for (v in ships) if (v != null) w.long(v.noDepotUntil)
             }
         }
         val body = Squeeze.pack(w.toByteArray())
@@ -444,6 +450,11 @@ object Save {
                     s.outcome = r.int()
                     scenario = s
                 }
+            }
+            if (version >= 31) {
+                for (t in trains) if (t != null) t.noDepotUntil = r.long()
+                for (v in roadVehicles) if (v != null) v.noDepotUntil = r.long()
+                for (v in ships) if (v != null) v.noDepotUntil = r.long()
             }
         }
         // Signal blocks and who's on which tile are worked out afresh now, as a command can ask before the next move.

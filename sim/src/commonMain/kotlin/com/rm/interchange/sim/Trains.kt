@@ -38,7 +38,7 @@ class Train(
     val engine: Int,
     val wagon: Int,
     val wagons: Int,
-    /** The depot it was bought in, and goes back to. */
+    /** The depot it was bought in or last serviced at, and goes back to. */
     var depot: Int,
     /** What its wagons are set to carry, a [Cargo] number among those they can, or -1 for their first. */
     val wagonCargo: Int = -1,
@@ -122,6 +122,8 @@ class Train(
     /** Sent for a service, and whether the player wants it serviced at all. */
     var servicing = false
     var service = true
+    /** No depot it could reach for a service: the daily check for one long overdue waits till this tick. */
+    var noDepotUntil = 0L
 
     // The tiles and blocks it's on, as last counted.
     internal var onTiles = IntArray(0)
@@ -285,8 +287,11 @@ internal fun World.moveTrains() {
     for ((i, t) in planning.withIndex()) {
         val p = routes[i]
         if (p == null) {
-            t.lostUntil = tick + LOST_RETRY
+            // No depot it can reach for its service: straight back to its orders, to try again after its next call.
+            if (t.toDepot && t.servicing) noDepot(t) else t.lostUntil = tick + LOST_RETRY
         } else {
+            // Off for a service, or home gone, it goes to whichever depot its route found, and lives there after.
+            if (anyDepot(t)) depotTiles[stepTile(p.steps.last())]?.let { t.depot = it }
             t.route = p.steps
             t.routeAt = 0
             if (p.behind) t.turnRound = true
@@ -298,10 +303,11 @@ internal fun World.moveTrains() {
 private fun World.moveTrain(t: Train) {
     if (t.waiting > 0) {
         if (--t.waiting == 0) {
-            // A full load order keeps it there, loading as more comes, till it's full.
+            // A full load order keeps it there, loading as more comes, till it's full, unless it's due a service.
             val o = t.orders.getOrNull(t.order % t.orders.size.coerceAtLeast(1)) ?: 0
             val s = stations.getOrNull(Order.station(o))
-            if (Order.has(o, Order.FULL_LOAD) && s != null && !t.full()) {
+            val due = !t.toDepot && due(t.service, t.serviced) && hasDepot(t.owner, Depots.RAIL)
+            if (Order.has(o, Order.FULL_LOAD) && s != null && !t.full() && !due) {
                 loadAt(t, s)
                 if (!t.full()) {
                     t.waiting = FULL_LOAD_RETRY
@@ -310,6 +316,8 @@ private fun World.moveTrain(t: Train) {
             }
             nextOrder(t)
             t.route = null
+            // Due a service: from this stop to the nearest depot, then on to its next order.
+            if (due) forService(t)
         }
         return
     }

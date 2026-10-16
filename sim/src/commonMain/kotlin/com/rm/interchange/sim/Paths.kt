@@ -34,8 +34,16 @@ fun World.follows(cur: Int, next: Int): Boolean {
 private fun World.search(from: Int, t: Train): IntArray? {
     val target = t.target
     if (target == -2) return null
-    val depotTile = if (target == -1) depots.getOrNull(t.depot)?.tile ?: return null else -1
+    // Off for a service, or with its home gone, it ends at any depot of its company's it can get into; sent in, only at its own.
+    val anyDepot = anyDepot(t)
+    val depotTile = if (target == -1 && !anyDepot) depots.getOrNull(t.depot)?.tile ?: return null else -1
     val electric = t.engineInfo.traction == Traction.ELECTRIC
+    fun depotGoal(tile: Int, entry: Int): Boolean {
+        val d = depotAt(tile) ?: return false
+        if (d.edge != entry) return false
+        if (!anyDepot) return tile == depotTile
+        return d.owner == t.owner && d.kind == Depots.RAIL && (!electric || depotWired(d))
+    }
     val dist = HashMap<Int, Int>()
     // How each place was reached: the place before, times 8, plus the piece run along from it.
     val prev = HashMap<Int, Long>()
@@ -56,7 +64,7 @@ private fun World.search(from: Int, t: Train): IntArray? {
         val nt = node / 8
         val level = (node / 4) % 2
         val entry = node % 4
-        if (level == 0 && if (target >= 0) stationTiles[nt] == target else nt == depotTile && depotAt(nt)?.edge == entry) {
+        if (level == 0 && if (target >= 0) stationTiles[nt] == target else depotGoal(nt, entry)) {
             return path(first, node, prev, target)
         }
         if (++looked > MAX_LOOK) return null

@@ -1238,7 +1238,7 @@
       "speed": 85,
       "power": 250,
       "weight": 10,
-      "cost": 3500,
+      "cost": 4200,
       "running": 210,
       "length": 7,
       "carries": [
@@ -1262,7 +1262,7 @@
       "speed": 100,
       "power": 400,
       "weight": 13,
-      "cost": 4200,
+      "cost": 5400,
       "running": 270,
       "length": 8,
       "carries": [
@@ -1326,7 +1326,7 @@
       "speed": 100,
       "power": 500,
       "weight": 18,
-      "cost": 4700,
+      "cost": 6000,
       "running": 310,
       "length": 13,
       "carries": [
@@ -1380,7 +1380,7 @@
       "speed": 105,
       "power": 450,
       "weight": 15,
-      "cost": 6400,
+      "cost": 7700,
       "running": 460,
       "length": 12,
       "carries": [
@@ -1405,7 +1405,7 @@
       "speed": 110,
       "power": 500,
       "weight": 15,
-      "cost": 6850,
+      "cost": 8800,
       "running": 490,
       "length": 12,
       "carries": [

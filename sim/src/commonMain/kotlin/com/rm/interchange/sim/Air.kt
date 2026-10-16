@@ -219,7 +219,7 @@ private fun World.buildable(i: Int): Boolean {
 
 /** Takes airport [a] down, if no aircraft is at it or based there. */
 internal fun World.removeAirport(company: Company, a: Airport) {
-    if (aircraft.any { it != null && (it.depot == a.depot || !it.inDepot && it.at == a.id && it.state == Flight.GATE) }) return
+    if (aircraft.any { it != null && (it.inDepot && it.depot == a.depot || !it.inDepot && it.at == a.id && it.state == Flight.GATE) }) return
     if (company.money < price(Prices.CLEAR)) return
     spend(company, Books.CONSTRUCTION, price(Prices.CLEAR))
     val s = stations[a.station]
@@ -229,9 +229,11 @@ internal fun World.removeAirport(company: Company, a: Airport) {
         s?.aero?.remove(t)
         touched(t % width, t / width)
     }
-    depotTiles.remove(depots[a.depot]?.tile ?: -1)
+    val hangar = depots.getOrNull(a.depot)
+    depotTiles.remove(hangar?.tile ?: -1)
     depots[a.depot] = null
     airports[a.id] = null
+    hangar?.let { depotGone(it) }
     if (s != null && s.empty) dropStation(s.id)
     for (v in aircraft) if (v != null && v.at == a.id) v.at = -1
     networkChanged()
@@ -282,7 +284,12 @@ internal fun World.aircraftCommand(company: Company, c: Command.CraftOrder) {
             for (o in c.stations) if (stations.getOrNull(Order.station(o))?.owner == company.id) v.orders += o
             v.order = 0
         }
-        Command.TrainOrder.TO_DEPOT -> if (!v.inDepot) { v.toDepot = !v.toDepot; v.servicing = false }
+        Command.TrainOrder.TO_DEPOT -> if (!v.inDepot) {
+            v.toDepot = !v.toDepot
+            v.servicing = false
+            // Its home hangar gone: the nearest it can use.
+            if (v.toDepot && depots.getOrNull(v.depot) == null) nearestHangar(v)?.let { v.depot = it.depot }
+        }
         Command.TrainOrder.SELL -> if (v.inDepot) {
             earn(company, Books.TRAINS_SOLD, craftValue(v.price, v.built, v.info.life))
             aircraft[v.id] = null
@@ -419,7 +426,11 @@ private fun World.fly(v: Aircraft) {
 /** At the gate: loading, then off when it may go and has somewhere it can reach. */
 private fun World.atGate(v: Aircraft) {
     if (v.waiting > 0) {
-        if (--v.waiting == 0 && v.orders.isNotEmpty() && !v.toDepot) v.order = (v.order + 1) % v.orders.size
+        if (--v.waiting == 0) {
+            if (v.orders.isNotEmpty() && !v.toDepot) v.order = (v.order + 1) % v.orders.size
+            // Due a service or a change of gear: from this stop to the nearest hangar, then on to its next order.
+            if (!v.toDepot && (due(v.service, v.serviced) || needsGear(v))) forService(v)
+        }
         return
     }
     if (v.brokenFor > 0) { v.brokenFor--; return }
@@ -623,11 +634,49 @@ private fun World.intoHangar(v: Aircraft) {
         v.serviced = workDay
         v.servicing = false
         v.running = true
-        if (v.seasonalGear && v.info.floats) v.gear = wantedGear(v, airports.getOrNull(v.at))
+        // Gear for the airports of its orders, as [needsGear] asks.
+        if (v.seasonalGear && v.info.floats) v.gear = wantedGear(v)
     }
 }
 
-/** Each day: wear and breakdowns (kept on the ground for repairs), trips home for a service or a change of gear, and running costs. */
+/** Whether bush plane [v] wants its gear changed for the season. */
+private fun World.needsGear(v: Aircraft) = v.seasonalGear && v.info.floats && v.gear != wantedGear(v)
+
+/**
+ * The nearest airport with a hangar of [v]'s company that it can use, reach and land at on the gear it has,
+ * the one it's at if that will do, or null.
+ */
+internal fun World.nearestHangar(v: Aircraft): Airport? {
+    // From the airport it's at, or where it is in the air, in tiles.
+    val here = if (v.state == Flight.GATE) airports.getOrNull(v.at) else null
+    val x = here?.x ?: (v.x / SHIP_UNIT)
+    val y = here?.y ?: (v.y / SHIP_UNIT)
+    var best: Airport? = null
+    var bestDist = Long.MAX_VALUE
+    for (a in airports) {
+        if (a == null || !a.serves(v.info)) continue
+        val d = depots.getOrNull(a.depot) ?: continue
+        if (d.owner != v.owner || d.kind != Depots.HANGAR) continue
+        val dx = (a.x - x).toLong()
+        val dy = (a.y - y).toLong()
+        val km = isqrt(dx * dx + dy * dy) * TILE_METRES / 1000
+        if (v.info.range > 0 && km > v.info.range) continue
+        // Wheels don't land on water, nor floats on land.
+        if (if (a.kind == Airports.SEAPLANE) v.gear == Gear.WHEELS else v.info.floats && v.gear == Gear.FLOATS) continue
+        if (dx * dx + dy * dy < bestDist) { best = a; bestDist = dx * dx + dy * dy }
+    }
+    return best
+}
+
+/** Sends [v] for a service at [nearestHangar], its home after. Nothing happens if there's none. */
+internal fun World.forService(v: Aircraft) {
+    val a = nearestHangar(v) ?: return
+    v.depot = a.depot
+    v.toDepot = true
+    v.servicing = true
+}
+
+/** Each day: wear and breakdowns (kept on the ground for repairs), trips to a hangar for one long overdue a service, and running costs. */
 internal fun World.aircraftDay() {
     if (aircraft.isEmpty()) return
     for (v in aircraft) {
@@ -637,12 +686,8 @@ internal fun World.aircraftDay() {
             v.brokenFor = Calendar.TICKS_PER_DAY
             v.breakdowns++
         }
-        val due = v.service && workDay - v.serviced >= SERVICE_DAYS
-        val gear = v.seasonalGear && v.info.floats && v.gear != wantedGear(v)
-        if ((due || gear) && v.running && !v.toDepot && depots.getOrNull(v.depot) != null) {
-            v.toDepot = true
-            v.servicing = true
-        }
+        // Due ones go after their next call; this catches one that's called nowhere in twice the time.
+        if (overdue(v.service, v.serviced) && v.running && !v.toDepot) forService(v)
     }
     for (v in aircraft) {
         if (v == null || v.inDepot && !v.running) continue

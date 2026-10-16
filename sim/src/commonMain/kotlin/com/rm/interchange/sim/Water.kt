@@ -61,6 +61,8 @@ class Ship(
     var brokenFor = 0
     var servicing = false
     var service = true
+    /** No depot it could reach for a service: the daily check for one long overdue waits till this tick. */
+    var noDepotUntil = 0L
 
     val carries: Int get() = if (cargoChoice in info.cargoes) cargoChoice else info.cargoes.firstOrNull() ?: -1
     override fun capacity(c: Int) = if (c == carries) info.capacity else 0
@@ -75,6 +77,13 @@ class Ship(
         else -> Order.station(orders[order % orders.size])
     }
 }
+
+/** Whether [v], heading for a shipyard, may take any of its company's: off for a service, or with its home gone. */
+private fun World.anyShipyard(v: Ship) = v.toDepot && (v.servicing || depots.getOrNull(v.depot) == null)
+
+/** Company [owner]'s shipyard, the first by number, whose water is tile [water], or null. */
+fun World.shipyardAt(owner: Int, water: Int): Depot? =
+    depots.firstOrNull { it != null && it.owner == owner && it.kind == Depots.SHIPYARD && shipyardWater(it) == water }
 
 /** The tile ship [s] is on. */
 fun World.shipTile(s: Ship) = index((s.x / SHIP_UNIT).coerceIn(0, width - 1), (s.y / SHIP_UNIT).coerceIn(0, height - 1))
@@ -312,8 +321,9 @@ internal fun World.clearWaterOrAir(company: Company, i: Int): Boolean {
         return true
     }
     depotAt(i)?.takeIf { it.kind == Depots.SHIPYARD }?.let { d ->
-        if (d.owner != company.id || ships.any { it != null && it.depot == d.id } || !pay()) return true
+        if (d.owner != company.id || ships.any { it != null && it.inDepot && it.depot == d.id } || !pay()) return true
         depotTiles.remove(i); depots[d.id] = null; owner[i] = -1
+        depotGone(d)
         touched(x, y); shipsChanged()
         return true
     }
@@ -405,7 +415,19 @@ internal fun World.moveShips() {
     Workers.run(planning.size) { i -> routes[i] = planShipRoute(planning[i]) }
     for ((i, v) in planning.withIndex()) {
         val r = routes[i]
-        if (r == null) v.lostUntil = tick + LOST_RETRY * 4 else { v.route = r; v.routeAt = 0 }
+        if (r == null) {
+            // No shipyard it can reach for its service: straight back to its orders, to try again after its next call.
+            if (v.toDepot && v.servicing) {
+                v.toDepot = false
+                v.servicing = false
+                v.noDepotUntil = tick + NO_DEPOT_RETRY
+            } else v.lostUntil = tick + LOST_RETRY * 4
+        } else {
+            // Off for a service, or home gone, it goes to whichever shipyard its route found, and lives there after.
+            if (anyShipyard(v)) shipyardAt(v.owner, if (r.isEmpty()) shipTile(v) else r.last())?.let { v.depot = it.id }
+            v.route = r
+            v.routeAt = 0
+        }
     }
     for (v in list) if (!v.inDepot) sail(v)
 }
@@ -417,6 +439,11 @@ private fun World.sail(v: Ship) {
         if (--v.waiting == 0) {
             if (v.orders.isNotEmpty()) v.order = (v.order + 1) % v.orders.size
             v.route = null
+            // Due a service: from this call to the nearest shipyard, so it never turns back halfway across a lake.
+            if (!v.toDepot && due(v.service, v.serviced) && hasDepot(v.owner, Depots.SHIPYARD)) {
+                v.toDepot = true
+                v.servicing = true
+            }
         }
         return
     }
@@ -502,11 +529,6 @@ private fun World.arriveShip(v: Ship) {
         val o = v.orders.getOrNull(v.order % v.orders.size.coerceAtLeast(1)) ?: 0
         v.waiting = maxOf(Calendar.TICKS_PER_DAY, Calendar.TICKS_PER_DAY * Order.waitDays(o))
         callAt(v, s, o)
-        // Due a service: to the shipyard from here, so it never turns back halfway across a lake.
-        if (v.service && workDay - v.serviced >= SERVICE_DAYS && !v.toDepot && depots.getOrNull(v.depot) != null) {
-            v.toDepot = true
-            v.servicing = true
-        }
     } else if (target == -1) {
         val d = depots.getOrNull(v.depot) ?: return
         if (tile != shipyardWater(d)) return
@@ -531,6 +553,8 @@ internal fun World.planShipRoute(v: Ship): IntArray? {
     val target = v.target
     val goals = when {
         target >= 0 -> berths(target).toHashSet()
+        // Off for a service, or with its home gone, the water in front of any of its company's shipyards; sent in, only its own.
+        anyShipyard(v) -> depots.filter { it != null && it.owner == v.owner && it.kind == Depots.SHIPYARD }.map { shipyardWater(it!!) }.toHashSet()
         target == -1 -> depots.getOrNull(v.depot)?.let { hashSetOf(shipyardWater(it)) } ?: return null
         else -> return null
     }
@@ -630,7 +654,7 @@ internal fun World.shipsDay() {
             v.breakdowns++
         }
         // Ships go for a service after a call; one that's gone twice as long without calling anywhere goes from where it is.
-        if (v.service && workDay - v.serviced >= SERVICE_DAYS * 2 && v.running && !v.toDepot && depots.getOrNull(v.depot) != null) {
+        if (overdue(v.service, v.serviced) && v.running && !v.toDepot && tick >= v.noDepotUntil && hasDepot(v.owner, Depots.SHIPYARD)) {
             v.toDepot = true
             v.servicing = true
             v.route = null

@@ -4,9 +4,12 @@ package com.rm.interchange.sim
  * Trains wear and age. Each one's reliability, in hundredths of a percent,
  * falls a little every day it's out, and the lower it is the likelier a
  * breakdown, which stands it for a day or two; steam breaks down more in deep
- * cold. Every [SERVICE_DAYS] a train set to be serviced goes to its depot and
- * comes out as good as its age lets it be. Past its engine's life it's never
- * as good again, and is worth less; renewing it in the depot makes it new.
+ * cold. Once [SERVICE_DAYS] have gone by, a train set to be serviced finishes
+ * its leg, calls at its next stop, then goes from there to the nearest depot
+ * its company has that it can reach, and comes out as good as its age lets it
+ * be. One that's gone twice as long, calling nowhere, goes from where it is.
+ * Past its engine's life it's never as good again, and is worth less;
+ * renewing it in the depot makes it new.
  */
 
 /** Days between services, and how much reliability a day out takes, in hundredths of a percent. */
@@ -43,13 +46,54 @@ internal fun World.trainsDay() {
                 t.breakdowns++
             }
         }
-        if (t.service && t.running && !t.toDepot && workDay - t.serviced >= SERVICE_DAYS && depots.getOrNull(t.depot) != null) {
-            t.toDepot = true
-            t.servicing = true
-            t.route = null
-        }
+        // Due ones go after their next call; this catches one that's called nowhere in twice the time.
+        if (t.running && !t.toDepot && overdue(t.service, t.serviced) && tick >= t.noDepotUntil && hasDepot(t.owner, Depots.RAIL)) forService(t)
         // Once, on the calendar day it comes of age, though this runs each work day.
         if (day - t.built == t.engineInfo.life * 365 && tick % dayTicks == 0L) tell(News.TRAIN_OLD, t.id)
+    }
+}
+
+/** Due a service: set to be serviced and [SERVICE_DAYS] work days since the last. */
+fun World.due(service: Boolean, serviced: Int) = service && workDay - serviced >= SERVICE_DAYS
+
+/** Gone twice as long as [due] without a service, so it goes from wherever it is. */
+fun World.overdue(service: Boolean, serviced: Int) = service && workDay - serviced >= SERVICE_DAYS * 2
+
+/** Whether company [owner] has a depot of [kind] standing. */
+fun World.hasDepot(owner: Int, kind: Int) = depots.any { it != null && it.owner == owner && it.kind == kind }
+
+/** Sends train [t] off for a service at the nearest depot its route finds. */
+internal fun World.forService(t: Train) {
+    t.toDepot = true
+    t.servicing = true
+    t.route = null
+}
+
+/** Whether train [t], heading for a depot, may take any of its company's: off for a service, or with its home gone. */
+internal fun World.anyDepot(t: Train) = t.toDepot && (t.servicing || depots.getOrNull(t.depot) == null)
+
+/** Train [t] found no depot to reach for its service: on with its orders, and the daily check leaves it a while. */
+internal fun World.noDepot(t: Train) {
+    t.toDepot = false
+    t.servicing = false
+    t.noDepotUntil = tick + NO_DEPOT_RETRY
+}
+
+/**
+ * Depot [d] is gone: each vehicle based there takes the nearest of its company's depots of that kind as home,
+ * or none, and one on its way there looks for its way afresh.
+ */
+internal fun World.depotGone(d: Depot) {
+    fun dist(e: Depot) = kotlin.math.abs(e.tile % width - d.tile % width) + kotlin.math.abs(e.tile / width - d.tile / width)
+    fun nearest(owner: Int, fits: (Depot) -> Boolean = { true }): Int =
+        depots.filter { it != null && it.id != d.id && it.owner == owner && it.kind == d.kind && fits(it) }.minByOrNull { dist(it!!) }?.id ?: -1
+    when (d.kind) {
+        Depots.RAIL -> for (t in trains) if (t != null && t.depot == d.id) { t.depot = nearest(t.owner); if (t.toDepot) t.route = null }
+        Depots.ROAD -> for (v in roadVehicles) if (v != null && v.depot == d.id) { v.depot = nearest(v.owner); if (v.toDepot) v.route = null }
+        Depots.SHIPYARD -> for (v in ships) if (v != null && v.depot == d.id) { v.depot = nearest(v.owner); if (v.toDepot) v.route = null }
+        Depots.HANGAR -> for (v in aircraft) if (v != null && v.depot == d.id) {
+            v.depot = nearest(v.owner) { e -> airports.any { it != null && it.depot == e.id && it.serves(v.info) } }
+        }
     }
 }
 
@@ -61,6 +105,8 @@ internal fun World.serviced(t: Train) {
     t.running = true
 }
 
+/** Ticks the daily check for a long overdue service waits after finding no depot to reach. */
+const val NO_DEPOT_RETRY = Calendar.TICKS_PER_DAY * 30L
 /** Below this, in tenths of a degree, steam engines break down twice as often. */
 const val DEEP_COLD = -250
 /** A day's chance of a breakdown is (100% less reliability) in this. */

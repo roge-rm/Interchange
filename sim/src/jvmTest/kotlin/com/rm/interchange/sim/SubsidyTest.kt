@@ -26,6 +26,8 @@ class SubsidyTest {
         w.days(200)
         val rival = w.rivals.first { r -> r.routes.any { !it.freight } }
         val route = rival.routes.first { !it.freight }
+        // Only this one on offer, so one the rival already won for the same towns doesn't take its place.
+        w.subsidies.clear()
         w.subsidies += Subsidy(Cargo.PASSENGERS, route.townA, route.townB, towns = true)
         val k = w.subsidies.size - 1
         val s = w.subsidies[k]
