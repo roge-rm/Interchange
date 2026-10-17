@@ -123,6 +123,7 @@ const val SUBSIDY_PAYS = 2
 /** Works out every company's worth for [World.worth], on the game thread, for the screen to read. */
 internal fun World.worthDay() {
     for (i in companies.indices) if (i < worth.size) worth[i] = companyValue(companies[i])
+    valueLowsDay()
 }
 
 /**

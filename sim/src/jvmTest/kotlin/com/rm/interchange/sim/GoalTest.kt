@@ -90,6 +90,21 @@ class GoalTest {
     }
 
     @Test
+    fun aCompanyValueCountsFromItsLowest() {
+        val w = World(64, 64, 1)
+        val c = w.companies[0]
+        w.goals += Goal(Goal.COMPANY_VALUE, 50_000, 1851)
+        // Spent 100,000 building, then earned 60,000 back: worth less than it started, but up 60,000 from its lowest.
+        c.money -= 100_000
+        w.days(2)
+        assertEquals(-100_000L, w.goals[0].count[0])
+        c.money += 60_000
+        w.days(40)
+        assertEquals(60_000L, w.goalProgress(w.goals[0], 0))
+        assertEquals(Goal.MET, w.goals[0].status)
+    }
+
+    @Test
     fun everyKindFailsWhenItsYearEndsUnmet() {
         val w = line()
         w.goals += Goal(Goal.TOWN_POP, 100_000, 1860, town = 0)

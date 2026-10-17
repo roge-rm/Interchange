@@ -28,7 +28,8 @@ class Goal(
 ) {
     /**
      * By company id: for a delivery what each has delivered since [from], for a connection the passengers each has
-     * carried this year, for a town what each has delivered there.
+     * carried this year, for a town what each has delivered there, for a value the lowest each has been worth, never
+     * above nothing.
      */
     val count = LongArray(MAX_COMPANIES)
     var status = OPEN
@@ -53,15 +54,24 @@ class Goal(
 
 /**
  * How far [company] has got with [g], to set against [Goal.amount]: the town's people, what it's delivered or carried,
- * its worth, or its profit so far this year.
+ * its worth over the lowest it's been, or its profit so far this year.
  */
 fun World.goalProgress(g: Goal, company: Int): Long {
     val c = companies.getOrNull(company)
     return when (g.kind) {
         Goal.TOWN_POP -> towns.getOrNull(g.town)?.population?.toLong() ?: 0L
         Goal.DELIVER, Goal.CONNECT -> g.count.getOrElse(company) { 0L }
-        Goal.COMPANY_VALUE -> worth.getOrElse(company) { 0L }
+        // What it's gained since its lowest, so building up a network isn't held against it.
+        Goal.COMPANY_VALUE -> worth.getOrElse(company) { 0L } - g.count.getOrElse(company) { 0L }
         else -> c?.thisYear?.sum() ?: 0L
+    }
+}
+
+/** Each calendar day after [worthDay]: the lowest each company has been worth, for open value goals. */
+internal fun World.valueLowsDay() {
+    for (g in goals) {
+        if (g.status != Goal.OPEN || g.kind != Goal.COMPANY_VALUE) continue
+        for (i in companies.indices) if (i < worth.size && i < g.count.size && worth[i] < g.count[i]) g.count[i] = worth[i]
     }
 }
 
@@ -180,9 +190,9 @@ internal fun World.makeGoals() {
             goals += townGoals(dice, 1)
             goals += deliveryGoals(dice, 1)
             goals += connectionGoals(dice, 1)
-            // Value leaves the start money out: a tenth of it for each work year to the deadline.
+            // Value is what's gained from the company's lowest: a share of the start money for each work year to the deadline.
             val end = workDeadline(dice)
-            goals += Goal(Goal.COMPANY_VALUE, roundTo(Prices.startMoney(startYear) * workYears(end) / VALUE_YEARS, 1_000), end)
+            goals += Goal(Goal.COMPANY_VALUE, roundTo(Prices.startMoney(startYear) * workYears(end) * valueShare(startYear) / 100, 1_000), end)
         }
     }
 }
@@ -289,8 +299,11 @@ private fun deliverAYear(year: Int): Long = when {
     else -> 350L
 }
 
-/** Work years for each start money of a value goal. */
-private const val VALUE_YEARS = 10L
+/**
+ * A value goal's amount for each work year to its deadline, in hundredths of the start money, by the start year: about
+ * what a company going for money gains in most games at day lengths 1 and 10, less while railways are new.
+ */
+private fun valueShare(year: Int): Long = if (year < 1860) 1L else 2L
 
 /** How far apart towns to connect are, in tiles. */
 private const val CONNECT_NEAREST = 20

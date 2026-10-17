@@ -15,6 +15,10 @@ package com.rm.interchange.sim
  * a mill makes it), bus lines out of a town to grow, with what it needs when towns grow only supplied, and buildings
  * paid for there when well off. Those routes are kept and grown even when they lose. [style] varies its choices:
  * 0 rail first, 1 road first, 2 rail first with the goals taken last to first.
+ *
+ * While a value goal is open it also goes for money: more routes of its own, sooner, of the kind that pays back
+ * fastest in the era by [Balance]'s reference routes (passenger trains between towns before 1940, buses after), and
+ * on borrowed money as long as last year made a profit.
  */
 class Player(val world: World, val thinkDays: Int = 30, val mostRoutes: Int = 12, val aim: Boolean = false, val style: Int = 0) {
     /** One calendar year's books, read on 1 January for the year before. */
@@ -114,10 +118,15 @@ class Player(val world: World, val thinkDays: Int = 30, val mostRoutes: Int = 12
             legs.clear()
         }
         while (c.money < 0 && c.loan < w.maxLoan()) w.apply(Command.Loan(0, true))
+        // Going for value, its first line of its own goes in before any for the other goals, to pay for them.
+        val value = forValue()
+        if (value && plan.routes.isEmpty()) openRoute()
         if (aim) aimAtGoals()
+        if (value) sellWorkLosers()
         sellLosers()
-        for (route in plan.routes.toList()) w.growRoute(c, route)
-        if (plan.routes.size < mostRoutes && newRouteDue() && aimsSettled()) openRoute()
+        for (route in plan.routes.toList()) if (value && !route.rail) growValue(c, route) else w.growRoute(c, route)
+        // Going for value, its own lines don't wait on the other goals' routes.
+        if (plan.routes.size < (if (value) VALUE_ROUTES else mostRoutes) && newRouteDue() && (value || aimsSettled())) openRoute()
         // Well off: the loan goes back, keeping a quarter of what a company starts with now.
         val keep = w.price(Prices.era(Calendar.year(w.startYear, w.day))) / 4
         while (c.loan > 0 && c.money - Prices.LOAN_STEP > keep && plan.routes.size >= 1) {
@@ -434,20 +443,87 @@ class Player(val world: World, val thinkDays: Int = 30, val mostRoutes: Int = 12
         for (t in rails) if (t.toDepot && !t.servicing) w.apply(Command.TrainOrder(0, t.id, Command.TrainOrder.TO_DEPOT))
     }
 
-    /** The first line at once; after that one half a work year after the last, once the company's out of debt. */
+    /** Whether it's going for money, with a value goal open. */
+    private fun forValue() = aim && world.goals.any { it.status == Goal.OPEN && it.kind == Goal.COMPANY_VALUE }
+
+    /**
+     * The first line at once; after that one half a work year after the last, once the company's out of debt. Going
+     * for value, a quarter of a work year after the last while last year made a profit, borrowing up to half the
+     * bank's limit.
+     */
     private fun newRouteDue(): Boolean {
         if (plan.routes.isEmpty()) return true
-        if (world.workDay - lastNew < 180) return false
         val c = company
+        if (forValue()) {
+            if (world.workDay - lastNew < VALUE_WAIT) return false
+            if (c.money - c.loan > 0) return true
+            return ownPay() > 0 && c.loan <= world.maxLoan() / 2
+        }
+        if (world.workDay - lastNew < 180) return false
         return c.money - c.loan > 0
     }
 
-    /** Buses first, then a railway, then trucks, round again; anything it can't do now, the next kind. */
+    /**
+     * Going for value, its own routes' vehicles that lost money over their last work year go to the depot to be sold,
+     * judged by this calendar year's books once a work year of it has gone by, so a long day length doesn't keep a
+     * loser running for ten work years.
+     */
+    private fun sellWorkLosers() {
+        val w = world
+        val dl = w.settings.dayLength
+        if (dl == 1) return
+        val worked = Calendar.dayOfYear(w.startYear, w.day).toLong() * dl
+        if (worked < 365) return
+        fun old(built: Int) = (w.day - built).toLong() * dl >= 365 + worked
+        for (v in w.roadVehicles) {
+            if (v == null || v.owner != 0 || v.inDepot || v.toDepot || !old(v.built) || v.profitThisYear >= 0) continue
+            if (plan.routes.any { onRoute(v, it) }) w.apply(Command.RoadOrder(0, v.id, Command.TrainOrder.TO_DEPOT))
+        }
+        for (t in w.trains) {
+            if (t == null || t.owner != 0 || t.inDepot || t.toDepot || !old(t.built) || t.profitThisYear >= 0) continue
+            if (plan.routes.any { onRoute(t, it) }) w.apply(Command.TrainOrder(0, t.id, Command.TrainOrder.TO_DEPOT))
+        }
+    }
+
+    /** What the vehicles on its own routes, not the goals', made this calendar year and last together. */
+    private fun ownPay(): Long {
+        val w = world
+        var made = 0L
+        for (v in w.roadVehicles) if (v != null && v.owner == 0 && plan.routes.any { onRoute(v, it) }) made += v.profitThisYear + v.profitLastYear
+        for (t in w.trains) if (t != null && t.owner == 0 && plan.routes.any { onRoute(t, it) }) made += t.profitThisYear + t.profitLastYear
+        return made
+    }
+
+    /**
+     * Going for value, another vehicle on one of its own road routes when a load and a half waits and what's on it
+     * made money this year and last together, borrowing for it up to three quarters of the bank's limit.
+     */
+    private fun growValue(c: Company, route: RivalRoute) {
+        val w = world
+        val on = w.roadVehicles.filter { it != null && it.owner == 0 && onRoute(it, route) }.map { it!! }
+        if (on.isEmpty() || on.size >= AIM_MOST || on.any { it.toDepot && !it.servicing }) return
+        if (on.sumOf { it.profitThisYear + it.profitLastYear } <= 0) return
+        val a = w.stations.getOrNull(route.a) ?: return
+        val b = w.stations.getOrNull(route.b) ?: return
+        val model = w.bestModel(route.cargo) ?: return
+        val waiting = if (route.freight) a.waiting(route.cargo) else maxOf(a.waiting(route.cargo), b.waiting(route.cargo))
+        if (waiting < (model.capacity * 3 / 2).coerceAtLeast(10)) return
+        val cost = w.price(model.cost)
+        if (c.money < cost && c.loan + cost > w.maxLoan() * 3 / 4) return
+        if (w.afford(c, cost)) w.buyAndStart(c, route, model)
+    }
+
+    /**
+     * Buses first, then a railway, then trucks, round again; anything it can't do now, the next kind. Going for value,
+     * the kind that pays best in the era first each time.
+     */
     private fun openRoute() {
         val w = world
         val c = company
-        val kinds = listOf(KIND_BUS, KIND_RAIL, KIND_TRUCK)
-        val n = plan.routes.size
+        val value = forValue()
+        val kinds = if (!value) listOf(KIND_BUS, KIND_RAIL, KIND_TRUCK)
+        else if (Calendar.year(w.startYear, w.day) < VALUE_BUS_YEAR) listOf(KIND_RAIL, KIND_BUS, KIND_TRUCK) else listOf(KIND_BUS, KIND_TRUCK, KIND_RAIL)
+        val n = if (value) 0 else plan.routes.size
         for (k in kinds.indices) {
             val kind = kinds[(n + k) % kinds.size]
             val tried = when (kind) {
@@ -484,6 +560,10 @@ class Player(val world: World, val thinkDays: Int = 30, val mostRoutes: Int = 12
 
         /** Work days between tries at a goal that couldn't be built for, and the most road vehicles on a goal's route. */
         private const val AIM_RETRY = 365
+        /** Going for value: the most routes of its own, work days between new ones, and the year buses pay better than trains. */
+        private const val VALUE_ROUTES = 20
+        private const val VALUE_WAIT = 90
+        private const val VALUE_BUS_YEAR = 1940
         private const val AIM_MOST = 10
         /** How far from a town's middle it looks for room for a terminus. */
         private const val TOWN_RAIL_REACH = 10
