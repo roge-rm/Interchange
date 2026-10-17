@@ -18,6 +18,7 @@ import com.rm.interchange.sim.Command
 import com.rm.interchange.sim.Track
 import com.rm.interchange.sim.World
 import com.rm.interchange.sim.planRail
+import com.rm.interchange.sim.planSignals
 import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.sign
@@ -66,6 +67,24 @@ fun DrawScope.drawTrackPlan(world: World, painter: LandPainter, rail: Command.Ra
     }
 }
 
+/** The run of signals a drag from [start] to [end] places, along the line the track tool would lay. */
+fun signalRun(company: Int, start: Pick, end: Pick, kind: Int, spacing: Int, remove: Boolean): Command.SignalRun =
+    trackLine(company, start, end, false).let { Command.SignalRun(company, it.sx, it.sy, it.ex, it.ey, it.first, kind, spacing, remove) }
+
+/** Where [run] would put signals, lit on the track; the rest of its line pale, or all of it red to remove. */
+fun DrawScope.drawSignalPlan(world: World, painter: LandPainter, run: Command.SignalRun) {
+    val line = Track.line(world, run.sx, run.sy, run.ex, run.ey, run.first) ?: return
+    val spots = world.planSignals(run).map { world.index(it.x, it.y) }.toSet()
+    for (entry in line) {
+        val i = entry / 64
+        val on = run.remove || i in spots
+        with(painter) {
+            track(i % world.width, i / world.width, entry % 64, if (run.remove) PLAN_BAD else if (on) PLAN_OK else PLAN_DIM, if (on) PLAN_RAIL else PLAN_DIM)
+        }
+    }
+}
+
+private val PLAN_DIM = Color(0x33F0B429)
 private val PLAN_OK = Color(0x99F0B429)
 private val PLAN_RAIL = Color(0xCCFFFFFF)
 private val PLAN_BAD = Color(0x99E05A4E)

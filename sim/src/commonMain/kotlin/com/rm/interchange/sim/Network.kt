@@ -205,6 +205,75 @@ internal fun World.placeSignal(company: Company, c: Command.Signal) {
     networkChanged()
 }
 
+/** Where a signal of a run goes: tile ([x], [y]), the [piece] and the edge it [facing]. */
+data class SignalSpot(val x: Int, val y: Int, val piece: Int, val facing: Int)
+
+/** The most signals a run may be spaced to, and the least. */
+const val SIGNAL_SPACING_MIN = 2
+const val SIGNAL_SPACING_MAX = 8
+
+/**
+ * The signals [c] would place, in order along its line: every spacing'th tile
+ * from the first that takes one, on the company's own track, facing trains that
+ * come the way the line goes. Empty for a removal or a line that makes no sense.
+ */
+fun World.planSignals(c: Command.SignalRun): List<SignalSpot> {
+    if (c.remove) return emptyList()
+    val line = Track.line(this, c.sx, c.sy, c.ex, c.ey, c.first) ?: return emptyList()
+    val step = c.spacing.coerceIn(SIGNAL_SPACING_MIN, SIGNAL_SPACING_MAX)
+    val out = ArrayList<SignalSpot>()
+    for (k in line.indices step step) {
+        val i = line[k] / 64
+        val piece = line[k] % 64
+        val x = i % width
+        val y = i / width
+        if (owner[i].toInt() != c.company || !signalFits(x, y, piece)) continue
+        // Trains go in at the edge that leads back to the previous tile, or for the first tile, the one that doesn't lead to the next.
+        val edges = intArrayOf(Track.edges(piece) and 3, Track.edges(piece) shr 2)
+        val toward = { tile: Int -> edges.firstOrNull { inside(x + Track.dx(it), y + Track.dy(it)) && index(x + Track.dx(it), y + Track.dy(it)) == tile } }
+        val facing = when {
+            k > 0 -> toward(line[k - 1] / 64)
+            line.size > 1 -> toward(line[1] / 64)?.let { Track.opposite(it) }
+            else -> null
+        } ?: edges[0]
+        out += SignalSpot(x, y, piece, facing)
+    }
+    return out
+}
+
+/** What a [Command.SignalRun] would cost: the price of a signal for each tile that gets a new one, and how many. */
+fun World.signalRunCost(c: Command.SignalRun): Pair<Long, Int> {
+    val n = planSignals(c).count { signals[pieceKey(index(it.x, it.y), it.piece)] == null }
+    return price(Prices.SIGNAL) * n to n
+}
+
+/**
+ * Places a [Command.SignalRun], or takes signals off. A signal already on a spot
+ * is changed to the kind and way asked for, free. Nothing is done if the new
+ * ones cost more than the company has.
+ */
+internal fun World.placeSignalRun(company: Company, c: Command.SignalRun) {
+    if (c.remove) {
+        val line = Track.line(this, c.sx, c.sy, c.ex, c.ey, c.first) ?: return
+        var any = false
+        for (entry in line) {
+            val i = entry / 64
+            if (owner[i].toInt() != company.id) continue
+            for (p in Track.PIECES) if (signals.remove(pieceKey(i, p)) != null) any = true
+        }
+        if (any) networkChanged()
+        return
+    }
+    val spots = planSignals(c)
+    if (spots.isEmpty()) return
+    val (cost, _) = signalRunCost(c)
+    if (company.money < cost) return
+    val kind = if (c.kind in Signals.PLACED) c.kind else Signals.TWO_WAY
+    if (cost > 0) spend(company, Books.CONSTRUCTION, cost)
+    for (s in spots) signals[pieceKey(index(s.x, s.y), s.piece)] = Signals.pack(s.facing, kind)
+    networkChanged()
+}
+
 /** Marks a tile of the company's plain straight track as a waypoint: a station with no platform that trains run through. */
 internal fun World.buildWaypoint(company: Company, c: Command.Waypoint) {
     if (!inside(c.x, c.y)) return

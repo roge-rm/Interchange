@@ -101,7 +101,10 @@ import com.rm.interchange.sim.industryAt
 import com.rm.interchange.sim.approvalLevel
 import com.rm.interchange.map.rememberTownLabels
 import com.rm.interchange.sim.World
+import com.rm.interchange.sim.SIGNAL_SPACING_MAX
+import com.rm.interchange.sim.SIGNAL_SPACING_MIN
 import com.rm.interchange.sim.Signals
+import com.rm.interchange.sim.signalRunCost
 import com.rm.interchange.sim.Surface
 import com.rm.interchange.sim.SALT_DEPOT_COST
 import com.rm.interchange.sim.Airports
@@ -746,6 +749,8 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
     var removing by remember { mutableStateOf(false) }
     var stationAlongX by remember { mutableStateOf(true) }
     var signalKind by remember { mutableIntStateOf(0) }
+    var signalSpacing by remember { mutableIntStateOf(4) }
+    var signalPlan by remember { mutableStateOf<Command.SignalRun?>(null) }
     var bridgeStyle by remember { mutableIntStateOf(0) }
     var bridgePlan by remember { mutableStateOf<Command.Bridge?>(null) }
     // The tray folds to its line once something's built, to show more of the map.
@@ -812,7 +817,7 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
         if (trackPiece == 0 || tool != Tool.Track) trackLine(me, start, end, removing)
         else pieceLine(world, me, start, end, worldPiece(LandPainter(world, view, view.halfWidth), trackPiece), removing)
 
-    val input = remember(tool, removing, stationAlongX, addingStops, addingRoadStops, addingCraftStops, signalKind, bridgeStyle, roadSurface, airportKind, runwayAlongX, trackPiece, townSize, industryKind, industryTurn, pick) {
+    val input = remember(tool, removing, stationAlongX, addingStops, addingRoadStops, addingCraftStops, signalKind, signalSpacing, bridgeStyle, roadSurface, airportKind, runwayAlongX, trackPiece, townSize, industryKind, industryTurn, pick) {
         object : MapInput {
             var start: Pick? = null
             // The height Level levels to, from where the drag starts.
@@ -821,7 +826,7 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
                 get() = editor && tool in EDITOR_DRAGS
             override val drags: Boolean
                 get() = pick == null && addingStops == null && addingRoadStops == null && addingCraftStops == null && (editing ||
-                    tool == Tool.Track || tool == Tool.Wires || tool == Tool.Station || tool == Tool.Bridge || tool == Tool.Road || tool == Tool.TramRails || tool == Tool.Canal || tool == Tool.Clear)
+                    tool == Tool.Track || tool == Tool.Wires || tool == Tool.Signals || tool == Tool.Station || tool == Tool.Bridge || tool == Tool.Road || tool == Tool.TramRails || tool == Tool.Canal || tool == Tool.Clear)
             override fun tap(at: Pick) {
                 val ground = world.index(at.tileX, at.tileY)
                 pick?.let { it.onTile(ground); return }
@@ -902,7 +907,8 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
                     Tool.Buoy -> { runner.request(Command.Buoy(me, at.tileX, at.tileY)); built() }
                     Tool.Airport -> { runner.request(Command.Airport(me, at.tileX, at.tileY, airportKind, if (runwayAlongX) Track.X else Track.Y)); built() }
                     Tool.Wires -> { runner.request(trackLine(me, at, at, removing).let { Command.Wire(me, it.sx, it.sy, it.ex, it.ey, it.first, it.remove) }); built() }
-                    Tool.Signals -> signalAt(world, me, at)?.let { runner.request(it.copy(kind = Signals.PLACED[signalKind])); built() }
+                    Tool.Signals -> if (removing) { runner.request(signalRun(me, at, at, Signals.PLACED[signalKind], signalSpacing, true)); built() }
+                        else signalAt(world, me, at)?.let { runner.request(it.copy(kind = Signals.PLACED[signalKind])); built() }
                     Tool.Waypoint -> { runner.request(Command.Waypoint(me, at.tileX, at.tileY)); built() }
                     Tool.Tunnel -> { runner.request(Command.Tunnel(me, at.tileX, at.tileY)); built() }
                     Tool.SnowShed, Tool.SnowFence -> { runner.request(Command.SnowWorks(me, at.tileX, at.tileY, shed = tool == Tool.SnowShed)); built() }
@@ -938,6 +944,7 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
                     Tool.Bridge -> bridgePlan = bridgePlan(me, s, at, bridgeStyle)
                     Tool.Canal -> canalPlan = roadLine(me, s, at, 0, removing).let { Command.Canal(me, it.sx, it.sy, it.ex, it.ey, removing) }
                     Tool.Clear -> clearPlan = Command.ClearArea(me, s.tileX, s.tileY, at.tileX, at.tileY)
+                    Tool.Signals -> signalPlan = signalRun(me, s, at, Signals.PLACED[signalKind], signalSpacing, removing)
                     else -> plan = railFor(s, at)
                 }
             }
@@ -953,6 +960,7 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
                 roadPlan?.let { runner.request(it); built() }
                 canalPlan?.let { runner.request(it); built() }
                 clearPlan?.let { runner.request(it); built() }
+                signalPlan?.let { runner.request(it); built() }
                 dragCancel()
             }
             override fun dragCancel() {
@@ -962,6 +970,7 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
                 roadPlan = null
                 canalPlan = null
                 clearPlan = null
+                signalPlan = null
                 areaPlan = null
                 dragAt = null
                 start = null
@@ -979,11 +988,12 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
     } ?: roadPlan?.let { p -> world.roadCost(company, p).takeIf { it >= 0 }?.let { (maxOf(kotlin.math.abs(p.ex - p.sx), kotlin.math.abs(p.ey - p.sy)) + 1) to it } }
         ?: canalPlan?.let { p -> world.canalCost(company, p).let { (cost, n) -> n to cost } }
         ?: clearPlan?.let { p -> world.clearCost(me, p).let { (cost, n) -> n to cost } }
+        ?: signalPlan?.takeIf { !it.remove }?.let { p -> world.signalRunCost(p).let { (cost, n) -> n to cost } }
         ?: stationPlan?.let { p -> ((kotlin.math.abs(p.x1 - p.x0) + 1) * (kotlin.math.abs(p.y1 - p.y0) + 1)).let { n -> n to n * world.price(Prices.PLATFORM) } }
         ?: bridgePlan?.let { p -> world.bridgeCost(company, p).takeIf { it >= 0 }?.let { (maxOf(kotlin.math.abs(p.x1 - p.x0), kotlin.math.abs(p.y1 - p.y0)) + 1) to it } }
     // Building's free in the editor.
     val dragText = if (editor) null else dragged?.takeIf { it.first > 0 }?.let { (n, cost) ->
-        stringResource(Res.string.drag_label, pluralStringResource(Res.plurals.drag_tiles, n, n), money(cost))
+        stringResource(Res.string.drag_label, pluralStringResource(if (signalPlan != null) Res.plurals.drag_signals else Res.plurals.drag_tiles, n, n), money(cost))
     }
     val shortOf = dragged != null && dragged.second > money
     val measurer = rememberTextMeasurer()
@@ -1005,6 +1015,7 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
                 ?: roadPlan?.let { p -> { painter -> drawRoadPlan(world, painter, p) } }
                 ?: canalPlan?.let { p -> { painter -> drawCanalPlan(world, painter, p) } }
                 ?: clearPlan?.let { p -> { painter -> drawClearPlan(world, painter, p) } }
+                ?: signalPlan?.let { p -> { painter -> drawSignalPlan(world, painter, p) } }
                 ?: areaPlan?.let { a ->
                     // An industry shows red where it won't fit.
                     val bad = tool == Tool.Lower || tool == Tool.ClearTrees || (tool == Tool.PlaceIndustry && !world.industryFitsAt(industryKind, a[0], a[1], industryTurn))
@@ -1242,13 +1253,13 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
                         for ((k, piece) in VIEW_PIECES.withIndex()) OptionButton(PIECE_GLYPHS[k], pieceNames[k], trackPiece == piece) { trackPiece = piece }
                     }
                 }
-                ToolTray(tool, { tool = it; plan = null; stationPlan = null }, detail, folded, { folded = it }, layout.compact, trayWidth, options = trackOptions, editor = editor, warning = editor && refused) {
+                ToolTray(tool, { tool = it; plan = null; stationPlan = null; signalPlan = null }, detail, folded, { folded = it }, layout.compact, trayWidth, options = trackOptions, editor = editor, warning = editor && refused) {
                     if (tool == Tool.PlaceTown || tool == Tool.GrowTown) {
                         val sizes = stringArrayResource(Res.array.town_sizes)
                         Chip(sizes.getOrElse(townSize) { "" }, true) { townSize = (townSize + 1) % TownSize.HOUSES.size }
                     }
                     if (tool == Tool.PlaceIndustry) TrayToggle(Glyph.TurnRight, stringResource(Res.string.turn_industry), industryTurn != 0) { industryTurn = (industryTurn + 1) % 4 }
-                    if (tool == Tool.Track || tool == Tool.Wires || tool == Tool.Road || tool == Tool.TramRails || tool == Tool.Canal) TrayToggle(Glyph.Lift, stringResource(Res.string.remove_track), removing) { removing = !removing }
+                    if (tool == Tool.Track || tool == Tool.Wires || tool == Tool.Signals || tool == Tool.Road || tool == Tool.TramRails || tool == Tool.Canal) TrayToggle(Glyph.Lift, stringResource(Res.string.remove_track), removing) { removing = !removing }
                     if (tool == Tool.Road) {
                         val surfaces = stringArrayResource(Res.array.surfaces)
                         val built = Surface.entries(Calendar.year(world.startYear, day))
@@ -1274,6 +1285,9 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
                     if (tool == Tool.Signals) {
                         val kinds = stringArrayResource(Res.array.signal_kinds)
                         Chip(kinds.getOrElse(signalKind) { "" }, true) { signalKind = (signalKind + 1) % Signals.PLACED.size }
+                        Chip(stringResource(Res.string.signal_spacing, signalSpacing), true) {
+                            signalSpacing = if (signalSpacing >= SIGNAL_SPACING_MAX) SIGNAL_SPACING_MIN else signalSpacing + 1
+                        }
                     }
                 }
             }

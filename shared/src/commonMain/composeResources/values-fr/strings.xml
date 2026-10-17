@@ -485,6 +485,11 @@
         <item quantity="one">%1$d case</item>
         <item quantity="other">%1$d cases</item>
     </plurals>
+    <string name="signal_spacing">Toutes les %1$d cases</string>
+    <plurals name="drag_signals">
+        <item quantity="one">%1$d signal</item>
+        <item quantity="other">%1$d signaux</item>
+    </plurals>
     <string name="multiplayer">Multijoueur</string>
     <string name="your_name">Votre nom</string>
     <string name="player">Joueur</string>

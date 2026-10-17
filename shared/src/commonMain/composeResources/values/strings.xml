@@ -502,6 +502,11 @@
         <item quantity="one">%1$d tile</item>
         <item quantity="other">%1$d tiles</item>
     </plurals>
+    <string name="signal_spacing">Every %1$d tiles</string>
+    <plurals name="drag_signals">
+        <item quantity="one">%1$d signal</item>
+        <item quantity="other">%1$d signals</item>
+    </plurals>
     <string name="multiplayer">Multiplayer</string>
     <string name="your_name">Your name</string>
     <string name="player">Player</string>

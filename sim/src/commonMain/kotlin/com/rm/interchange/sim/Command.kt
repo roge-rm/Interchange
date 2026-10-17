@@ -29,6 +29,16 @@ sealed interface Command {
     /** Puts a signal of [kind] on a piece facing [facing], or changes the one there to it; the same again makes it one-way, then takes it away. */
     data class Signal(override val company: Int, val x: Int, val y: Int, val piece: Int, val facing: Int, val kind: Int = Signals.TWO_WAY) : Command
 
+    /**
+     * Along the line [Rail] would lay, puts a signal of [kind] on every [spacing]th tile that takes one, facing the way the
+     * line goes, or with [remove] takes the company's signals off every tile of it.
+     */
+    data class SignalRun(
+        override val company: Int,
+        val sx: Int, val sy: Int, val ex: Int, val ey: Int,
+        val first: Int, val kind: Int, val spacing: Int, val remove: Boolean,
+    ) : Command
+
     /** Builds a bridge of [style] from head ([x0], [y0]) to head ([x1], [y1]). */
     data class Bridge(override val company: Int, val x0: Int, val y0: Int, val x1: Int, val y1: Int, val style: Int) : Command
 

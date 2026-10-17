@@ -57,6 +57,7 @@ object Codec {
     private const val EDIT_TREES = 47
     private const val SET_GOALS = 48
     private const val SET_SCENARIO = 49
+    private const val SIGNAL_RUN = 50
 
     /** The most goals a [Command.SetGoals] may carry. */
     const val MOST_GOALS = 100
@@ -68,6 +69,7 @@ object Codec {
             is Command.Station -> { w.byte(STATION); w.int(c.company); w.int(c.x0); w.int(c.y0); w.int(c.x1); w.int(c.y1); w.int(c.axis) }
             is Command.Depot -> { w.byte(DEPOT); w.int(c.company); w.int(c.x); w.int(c.y); w.int(c.edge) }
             is Command.Signal -> { w.byte(SIGNAL_KIND); w.int(c.company); w.int(c.x); w.int(c.y); w.int(c.piece); w.int(c.facing); w.int(c.kind) }
+            is Command.SignalRun -> { w.byte(SIGNAL_RUN); w.int(c.company); w.int(c.sx); w.int(c.sy); w.int(c.ex); w.int(c.ey); w.int(c.first); w.int(c.kind); w.int(c.spacing); w.bool(c.remove) }
             is Command.Waypoint -> { w.byte(WAYPOINT); w.int(c.company); w.int(c.x); w.int(c.y) }
             is Command.Bridge -> { w.byte(BRIDGE); w.int(c.company); w.int(c.x0); w.int(c.y0); w.int(c.x1); w.int(c.y1); w.int(c.style) }
             is Command.Tunnel -> { w.byte(TUNNEL); w.int(c.company); w.int(c.x); w.int(c.y) }
@@ -136,6 +138,7 @@ object Codec {
         RENAME_COMPANY -> Command.RenameCompany(r.int(), r.string())
         SET_INSIGNIA -> Command.SetInsignia(r.int(), r.bytes())
         SIGNAL_KIND -> Command.Signal(r.int(), r.int(), r.int(), r.int(), r.int(), r.int())
+        SIGNAL_RUN -> Command.SignalRun(r.int(), r.int(), r.int(), r.int(), r.int(), r.int(), r.int(), r.int(), r.bool())
         WAYPOINT -> Command.Waypoint(r.int(), r.int(), r.int())
         BRIDGE -> Command.Bridge(r.int(), r.int(), r.int(), r.int(), r.int(), r.int())
         TUNNEL -> Command.Tunnel(r.int(), r.int(), r.int())

@@ -290,6 +290,7 @@ class World(settings: NewGame, val roster: Roster = Roster.BASE, generate: Boole
             is Command.Station -> buildStation(company, command)
             is Command.Depot -> buildDepot(company, command)
             is Command.Signal -> placeSignal(company, command)
+            is Command.SignalRun -> placeSignalRun(company, command)
             is Command.Waypoint -> buildWaypoint(company, command)
             is Command.Bridge -> buildBridge(company, command)
             is Command.Tunnel -> buildTunnel(company, command)
