@@ -37,9 +37,9 @@ private fun World.railFree(i: Int): Boolean {
 
 /**
  * The best few places for a terminus in [site]: level, clear, the mouth facing the way the line goes, and for
- * [people] in reach of as many as it can.
+ * [people] in reach of as many as it can. [loose] needs only the first platform in the site, for freight.
  */
-private fun World.termini(c: Company, site: RailSite, depot: Boolean, people: Boolean): List<Terminus> {
+private fun World.termini(c: Company, site: RailSite, depot: Boolean, people: Boolean, loose: Boolean = false): List<Terminus> {
     val found = ArrayList<Pair<Terminus, Int>>()
     for (y in site.y0..site.y1) for (x in site.x0..site.x1) for (out in 0 until 4) {
         val t = Terminus(x - Track.dx(out), y - Track.dy(out), out)
@@ -48,7 +48,7 @@ private fun World.termini(c: Company, site: RailSite, depot: Boolean, people: Bo
         // The platforms inside the site, all of it level at one height.
         val px = t.x + Track.dx(out) * PLATFORMS
         val py = t.y + Track.dy(out) * PLATFORMS
-        if (px !in site.x0..site.x1 || py !in site.y0..site.y1) continue
+        if ((!loose || people) && (px !in site.x0..site.x1 || py !in site.y0..site.y1)) continue
         val h = heightAt(x, y)
         var ok = true
         for (k in (if (depot) 0 else 1)..last) {
@@ -69,9 +69,10 @@ private fun World.termini(c: Company, site: RailSite, depot: Boolean, people: Bo
 
 /**
  * A way for track from [a]'s mouth to [b]'s, as tiles each with the edges it's come in and goes out by, packed
- * tile * 16 + in * 4 + out. Null if there's none within reach.
+ * tile * 16 + in * 4 + out. Null if there's none within reach. With [bridges] given, that company's bridges can carry
+ * it straight over water or anything else in the way, from one tile on the way to the next some tiles on.
  */
-private fun World.railPath(a: Terminus, b: Terminus): IntArray? {
+private fun World.railPath(a: Terminus, b: Terminus, bridges: Company? = null): IntArray? {
     val start = a.mouth(this)
     val goal = b.mouth(this)
     val gx = goal % width
@@ -87,7 +88,7 @@ private fun World.railPath(a: Terminus, b: Terminus): IntArray? {
     val s0 = start * 4 + Track.opposite(a.out)
     best[s0] = 0
     heap.push(h(start).toLong() shl 32 or s0.toLong())
-    val limit = (chebyshev(start % width, start / width, gx, gy) + 10).let { it * it * 16 }.coerceAtMost(RAIL_PATH_LIMIT)
+    val limit = (chebyshev(start % width, start / width, gx, gy) + 10).let { it * it * 16 }.coerceAtMost(if (bridges != null) LOOSE_PATH_LIMIT else RAIL_PATH_LIMIT)
     var expanded = 0
     while (!heap.isEmpty() && expanded < limit) {
         val top = heap.pop()
@@ -122,6 +123,18 @@ private fun World.railPath(a: Terminus, b: Terminus): IntArray? {
             if (!inside(nx, ny)) continue
             val n = index(nx, ny)
             if (n in kept) continue
+            if (bridges != null && !turn && blockedAhead(tx, ty, e)) {
+                val land = bridgeLanding(bridges, tx, ty, e, kept)
+                if (land >= 0) {
+                    val ns = land * 4 + Track.opposite(e)
+                    val ng = g + chebyshev(tx, ty, land % width, land / width) * RAIL_MOVE * RAIL_BRIDGE
+                    if (ng < (best[ns] ?: Int.MAX_VALUE)) {
+                        best[ns] = ng
+                        back[ns] = s
+                        heap.push((ng + h(land)).toLong() shl 32 or ns.toLong())
+                    }
+                }
+            }
             val step = railStep(n, e) ?: continue
             if (edgeHeight(tx, ty, Track.pieceOf(came, e), e) != edgeHeight(nx, ny, Track.straight(e), Track.opposite(e))) continue
             val ns = n * 4 + Track.opposite(e)
@@ -133,6 +146,46 @@ private fun World.railPath(a: Terminus, b: Terminus): IntArray? {
         }
     }
     return null
+}
+
+/** The nearest tile a bridge from ([x], [y]) going out through edge [e] can land on, free for track beyond; -1 for none. */
+private fun World.bridgeLanding(c: Company, x: Int, y: Int, e: Int, kept: Set<Int>): Int {
+    for (k in 2..Spans.LONGEST[Spans.CONCRETE] + 1) {
+        val lx = x + Track.dx(e) * k
+        val ly = y + Track.dy(e) * k
+        if (!inside(lx, ly)) return -1
+        val style = bridgeStyle(k - 1)
+        if (style < 0) return -1
+        val n = index(lx, ly)
+        if (n in kept || railStep(n, e) == null) continue
+        if (bridgeCost(c, Command.Bridge(c.id, x, y, lx, ly, style)) >= 0) return n
+    }
+    return -1
+}
+
+/** Whether water or something track can't cross is one or two tiles on from ([x], [y]) through edge [e], so a bridge might do. */
+private fun World.blockedAhead(x: Int, y: Int, e: Int): Boolean = (1..2).any { k ->
+    val nx = x + Track.dx(e) * k
+    val ny = y + Track.dy(e) * k
+    inside(nx, ny) && (isWater(nx, ny) || railStep(index(nx, ny), e) == null)
+}
+
+/** The cheapest bridge on sale that spans [len] tiles between its heads, or -1. */
+private fun World.bridgeStyle(len: Int): Int {
+    val year = Calendar.year(startYear, day)
+    return (Spans.TRESTLE..Spans.CONCRETE).firstOrNull { year >= Spans.FROM[it] && len <= Spans.LONGEST[it] } ?: -1
+}
+
+/** The bridges [path] takes, one wherever it jumps from a tile to one not beside it. */
+private fun World.railBridges(company: Int, path: IntArray): List<Command.Bridge> {
+    val out = ArrayList<Command.Bridge>()
+    for (k in 1 until path.size) {
+        val a = path[k - 1] / 16
+        val b = path[k] / 16
+        val len = chebyshev(a % width, a / width, b % width, b / width) - 1
+        if (len > 0) out += Command.Bridge(company, a % width, a / width, b % width, b / width, bridgeStyle(len))
+    }
+    return out
 }
 
 /** What laying track onto tile [i] across edge [e] costs in the search, or null if it can't go there. */
@@ -155,7 +208,7 @@ private fun World.railRuns(company: Int, path: IntArray): List<Command.Rail> {
         val piece = Track.pieceOf((path[k] / 4) % 4, path[k] % 4)
         var end = k
         if (piece == Track.X || piece == Track.Y) {
-            while (end + 1 < path.size && Track.pieceOf((path[end + 1] / 4) % 4, path[end + 1] % 4) == piece) end++
+            while (end + 1 < path.size && Track.pieceOf((path[end + 1] / 4) % 4, path[end + 1] % 4) == piece && next(path[end] / 16, path[end + 1] / 16)) end++
         }
         val e = path[end] / 16
         out += Command.Rail(company, t % width, t / width, e % width, e / width, piece, remove = false)
@@ -164,14 +217,18 @@ private fun World.railRuns(company: Int, path: IntArray): List<Command.Rail> {
     return out
 }
 
+/** Whether tiles [a] and [b] are side by side, not a bridge's two heads. */
+private fun World.next(a: Int, b: Int) = chebyshev(a % width, a / width, b % width, b / width) == 1
+
 /** A train for [cargo] that fits a platform: the engine and wagons of the day, and how many wagons. */
 private class RailTrain(val engine: Engine, val wagon: Engine, val wagons: Int)
 
 /**
  * The trains that could run for [cargo], about [load] of it at a time and no longer than a platform: the wagon of the
  * day holding most for its length behind each engine strong enough to pull them. Steam or diesel, as the line has no wires.
+ * [loose] takes as many wagons as each engine can pull at a third the power, for the scripted test player.
  */
-private fun World.railTrains(cargo: Int, load: Int): List<RailTrain> {
+private fun World.railTrains(cargo: Int, load: Int, loose: Boolean = false): List<RailTrain> {
     val year = Calendar.year(startYear, day)
     val wagon = roster.available(year, false).filter { cargo in it.cargoes && it.capacity > 0 && it.plow == Plows.NONE }
         .maxWithOrNull(compareBy<Engine> { it.capacity * 16 / it.length }.thenBy { -it.id }) ?: return emptyList()
@@ -179,10 +236,12 @@ private fun World.railTrains(cargo: Int, load: Int): List<RailTrain> {
     val out = ArrayList<RailTrain>()
     for (e in roster.available(year, true)) {
         if (e.traction == Traction.ELECTRIC) continue
-        val n = ((load + wagon.capacity - 1) / wagon.capacity).coerceIn(1, (fits(e) / wagon.length).coerceAtLeast(1))
+        var n = ((load + wagon.capacity - 1) / wagon.capacity).coerceIn(1, (fits(e) / wagon.length).coerceAtLeast(1))
         // Loaded weight in tonnes against power, about what a freight engine pulls on the level at a fair speed.
-        val tonnes = e.weight + (roster.getOrNull(e.tender)?.weight ?: 0) + n * (wagon.weight + wagon.capacity)
-        if (e.power >= tonnes * HP_PER_TONNE) out += RailTrain(e, wagon, n)
+        fun tonnes() = e.weight + (roster.getOrNull(e.tender)?.weight ?: 0) + n * (wagon.weight + wagon.capacity)
+        val hp = if (loose) 1 else HP_PER_TONNE
+        if (loose) while (n > 1 && e.power < tonnes() * hp) n--
+        if (e.power >= tonnes() * hp) out += RailTrain(e, wagon, n)
     }
     return out
 }
@@ -267,24 +326,33 @@ private fun World.trainCost(t: RailTrain): Long = price(t.engine.cost + t.wagon.
  * Joins sites [sa] and [sb] by a railway carrying [cargo], [load] a month of freight or the passengers its stations
  * get, with a terminus at each and a depot behind the first, and sets a train going, handing the route to [built].
  * [serves] checks each new station reaches what it's for. Only a line expected to pay for itself within [payback]
- * work years is built, or any line if that's 0.
+ * work years is built, or any line if that's 0. [loose] is for the scripted test player: any engine that moves its
+ * train, as many wagons as the platforms hold, bridges over water and a longer search for the way.
  */
 internal fun World.tryRail(
     c: Company, sa: RailSite, sb: RailSite, cargo: Int, load: Int, from: Int, to: Int,
-    serves: (Station, Boolean) -> Boolean, payback: Int, built: (RivalRoute) -> Unit,
+    serves: (Station, Boolean) -> Boolean, payback: Int, loose: Boolean = false, built: (RivalRoute) -> Unit,
 ): Tried {
     val passengers = cargo == Cargo.PASSENGERS
-    for (a in termini(c, sa, true, passengers)) for (b in termini(c, sb, false, passengers)) {
+    for (a in termini(c, sa, true, passengers, loose)) for (b in termini(c, sb, false, passengers, loose)) {
         val people = if (passengers) minOf(catchPeople(a), catchPeople(b)) else 0
+        // Loose, a pair of termini where one has nobody in reach isn't built only to come up again.
+        if (loose && (passengers || cargo == Cargo.MAIL) && minOf(catchPeople(a), catchPeople(b)) == 0) continue
         // Sized for about what it'll get a month at a middling rating.
-        val trains = railTrains(cargo, if (passengers) people * 3 / 8 else load)
+        val trains = if (loose) railTrains(cargo, LOOSE_LOAD, true) else railTrains(cargo, if (passengers) people * 3 / 8 else load)
         if (trains.isEmpty()) return Tried.CANT
-        val path = railPath(a, b) ?: continue
+        val path = railPath(a, b, if (loose) c else null) ?: continue
         val runs = railRuns(c.id, path)
+        val spans = if (loose) railBridges(c.id, path) else emptyList()
         var cost = 0L
         for (run in runs) {
             val (each, n) = railCost(run)
             if (each < 0 || n == 0) return Tried.CANT
+            cost += each
+        }
+        for (span in spans) {
+            val each = bridgeCost(c, span)
+            if (each < 0) return Tried.CANT
             cost += each
         }
         // The train that would do best over the payback time: what it makes in that time less what it costs.
@@ -299,7 +367,7 @@ internal fun World.tryRail(
         cost += price(Prices.PLATFORM) * PLATFORMS * 2 + price(Prices.DEPOT) + trainCost(train)
         if (payback > 0 && made(train) * payback < cost) return Tried.CANT
         if (!afford(c, cost * 6 / 5)) return Tried.POOR
-        val route = buildRail(c, a, b, path, runs, train, cargo, from, to, serves) ?: return Tried.CANT
+        val route = buildRail(c, a, b, path, runs + spans, train, cargo, from, to, serves) ?: return Tried.CANT
         built(route)
         return Tried.BUILT
     }
@@ -307,7 +375,7 @@ internal fun World.tryRail(
 }
 
 private fun World.buildRail(
-    c: Company, a: Terminus, b: Terminus, path: IntArray, runs: List<Command.Rail>, train: RailTrain, cargo: Int, from: Int, to: Int,
+    c: Company, a: Terminus, b: Terminus, path: IntArray, runs: List<Command>, train: RailTrain, cargo: Int, from: Int, to: Int,
     serves: (Station, Boolean) -> Boolean,
 ): RivalRoute? {
     for (run in runs) apply(run)
@@ -363,7 +431,12 @@ private const val RAIL_SLOPE = 4
 private const val RAIL_FOUNDATION = 6
 private const val RAIL_CROSSING = 6
 private const val RAIL_TURN = 4
+/** A bridge tile costs the search this many times a tile of track on the ground. */
+private const val RAIL_BRIDGE = 4
 private const val RAIL_PATH_LIMIT = 120_000
+/** For the scripted test player: the most steps searched, and a load big enough to fill the platforms. */
+private const val LOOSE_PATH_LIMIT = 600_000
+private const val LOOSE_LOAD = 10_000
 /** Km/h for a train to go a tile a work day. */
 internal const val KMH_PER_TILE_A_DAY = 42
 /** Horsepower an engine needs for each tonne of its train, loaded. */
