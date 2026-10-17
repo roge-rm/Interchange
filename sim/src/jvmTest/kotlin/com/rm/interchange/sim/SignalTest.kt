@@ -47,8 +47,25 @@ class SignalTest {
             if (at.size == 2 && at.map { stepTile(it.steps.last()) / w.width }.toSet().size == 2) both = true
         }
         assertTrue(both, "never both at the station, one at each platform")
+        // The screen's list of held pieces is only made when asked for.
+        assertEquals(0, w.view().reserved.size)
+        assertEquals(w.reserved.keys.sorted(), w.view(withReserved = true).reserved.sorted())
         // Nothing's left held that no train stands on or is heading through.
         for ((key, id) in w.reserved) assertTrue(w.trains[id] != null)
+    }
+
+    @Test
+    fun heldPiecesInTunnelsArentListedForTheScreen() {
+        val w = twoPlatforms()
+        val bridge = Span(w.spans.size, 0, tunnel = false, Spans.TRUSS, 40, 5, 44, 5, 3).also { w.spans += it }
+        val tunnel = Span(w.spans.size, 0, tunnel = true, Spans.TUNNEL, 40, 8, 44, 8, 3).also { w.spans += it }
+        w.deck[w.index(41, 5)] = bridge.id
+        w.deck[w.index(41, 8)] = tunnel.id
+        val onBridge = pieceKey(w.index(41, 5), Track.X, 1)
+        val inTunnel = pieceKey(w.index(41, 8), Track.X, 1)
+        val ground = pieceKey(w.index(12, 10), Track.X)
+        for (k in intArrayOf(onBridge, inTunnel, ground)) w.reserved[k] = 0
+        assertEquals(listOf(onBridge, ground).sorted(), w.view(withReserved = true).reserved.sorted())
     }
 
     @Test

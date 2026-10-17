@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -441,7 +442,7 @@ fun SettingsWindow(settings: Settings, onClose: () -> Unit) {
     }
 }
 
-/** The grid, heights, snow and track condition overlays, on or off. */
+/** The grid, heights, snow, track condition and reserved track overlays, on or off. */
 @Composable
 private fun OverlayToggles(settings: Settings) {
     Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -451,6 +452,10 @@ private fun OverlayToggles(settings: Settings) {
     Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         TogglePill(stringResource(Res.string.snow_depth), settings.snow, Modifier.weight(1f).fillMaxHeight()) { settings.snow = it; settings.save() }
         TogglePill(stringResource(Res.string.track_condition), settings.condition, Modifier.weight(1f).fillMaxHeight()) { settings.condition = it; settings.save() }
+    }
+    Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        TogglePill(stringResource(Res.string.reserved_track), settings.reserved, Modifier.weight(1f).fillMaxHeight()) { settings.reserved = it; settings.save() }
+        Spacer(Modifier.weight(1f))
     }
 }
 

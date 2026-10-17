@@ -399,6 +399,7 @@
         <item>Faible</item><item>Normal</item><item>Élevé</item>
     </string-array>
     <string name="track_condition">Voies</string>
+    <string name="reserved_track">Voies réservées</string>
     <string name="condition_line">État %1$d %</string>
     <string name="slow_order">Ralentissement, %1$d km/h</string>
     <string name="closed_washout">Emportée, rouverte dans %1$d jours</string>

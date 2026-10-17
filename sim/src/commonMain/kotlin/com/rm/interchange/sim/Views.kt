@@ -268,10 +268,15 @@ class WorldView(
     val buoys: IntArray = IntArray(0),
     /** Each company's name, by id. */
     val companies: List<String> = emptyList(),
+    /** The pieces trains hold paths through, by piece key, those inside tunnels left out; empty unless asked for. */
+    val reserved: IntArray = IntArray(0),
 )
 
-/** What the screen shows a player of [company]: their payments and money, and everything on the map. */
-fun World.view(company: Int = 0): WorldView {
+/**
+ * What the screen shows a player of [company]: their payments and money, and everything on the map, and with
+ * [withReserved] the pieces trains hold.
+ */
+fun World.view(company: Int = 0, withReserved: Boolean = false): WorldView {
     val cars = ArrayList<Float>()
     for (t in trains) {
         if (t == null || t.inDepot) continue
@@ -424,7 +429,19 @@ fun World.view(company: Int = 0): WorldView {
         airports.filterNotNull().map { AirportView(it.id, it.station, it.kind, it.x, it.y, it.w, it.h, it.axis, it.depot, it.ils, it.deice) },
         buoys.keys.sorted().toIntArray(),
         companies.map { it.name },
+        if (withReserved) reservedView() else IntArray(0),
     )
+}
+
+/** The keys of the reserved pieces out in the open: on the ground or on a bridge. */
+private fun World.reservedView(): IntArray {
+    val out = IntArray(reserved.size)
+    var n = 0
+    for (k in reserved.keys) {
+        if (keyLevel(k) == 1 && deck[keyTile(k)]?.let { spans.getOrNull(it) }?.tunnel != false) continue
+        out[n++] = k
+    }
+    return out.copyOf(n)
 }
 
 /** The weather's copy for the screen, made again only once a day. */

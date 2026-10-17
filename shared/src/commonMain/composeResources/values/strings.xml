@@ -416,6 +416,7 @@
         <item>Low</item><item>Normal</item><item>High</item>
     </string-array>
     <string name="track_condition">Track</string>
+    <string name="reserved_track">Reserved track</string>
     <string name="condition_line">Condition %1$d%</string>
     <string name="slow_order">Slow order, %1$d km/h</string>
     <string name="closed_washout">Washed out, open in %1$d days</string>

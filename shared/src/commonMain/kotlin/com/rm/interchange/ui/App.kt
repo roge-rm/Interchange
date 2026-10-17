@@ -208,6 +208,7 @@ private fun Root(settings: Settings) {
         onDispose { Lifecycle.onHide = null }
     }
     // Autosave follows the setting while a game runs.
+    LaunchedEffect(runner, settings.reserved) { runner?.showReserved = settings.reserved }
     LaunchedEffect(runner, settings.autosave) { runner?.takeIf { it.remote == null && !editing && testing == null }?.autosaveDays = settings.autosaveDays }
     // The world being edited is kept every few minutes, in case the app's closed.
     LaunchedEffect(runner, editing) {
@@ -1053,7 +1054,7 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
         StatusStrip(
             onMenu,
             paused, { paused = !paused; runner.paused = paused }, speed, { speed = (speed + 1) % SPEEDS.size; runner.speed = SPEEDS[speed] },
-            settings.grid || settings.heights || settings.snow || settings.condition, onOverlays,
+            settings.grid || settings.heights || settings.snow || settings.condition || settings.reserved, onOverlays,
             if (editor) stringResource(Res.string.editor) else weekdayDate(day, world.startYear),
             money(money), money < 0,
             { view.turnBy(-1) }, { view.turnBy(1) }, onFinances,

@@ -6,6 +6,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.ClipOp
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -13,6 +14,9 @@ import com.rm.interchange.sim.Signals
 import com.rm.interchange.sim.Spans
 import com.rm.interchange.sim.edgeHeight
 import com.rm.interchange.sim.burning
+import com.rm.interchange.sim.keyLevel
+import com.rm.interchange.sim.keyPiece
+import com.rm.interchange.sim.keyTile
 import com.rm.interchange.sim.closedTile
 import com.rm.interchange.sim.trackLimit
 import com.rm.interchange.sim.Track
@@ -177,13 +181,30 @@ internal fun DrawScope.drawMoving(world: World, view: View, sheets: Sheets, movi
         if (level > 0) sheets.vehicle(model, level - 1)
         if (level + 1 < Renderer.LEVELS.size) sheets.vehicle(model, level + 1)
     }
+    val lit = litPieces(world, view, moving, items)
     items.sortBy { it[0] }
     val cover = Cover(world, view, level, sheets.get(level) ?: return)
+    // Reserved track on the ground goes under everything else, cut away behind buildings; edges first so the lines join.
+    if (lit.isNotEmpty()) {
+        val hidden = lit.map { l ->
+            val pad = view.halfWidth
+            with(cover) { covering(l[0], l[1], Rect(minOf(l[2], l[4]) - pad, minOf(l[3], l[5]) - pad, maxOf(l[2], l[4]) + pad, maxOf(l[3], l[5]) + pad)) }
+        }
+        for (edge in booleanArrayOf(true, false)) for (i in lit.indices) {
+            val l = lit[i]
+            val h = hidden[i]
+            if (h != null) clipPath(h, ClipOp.Difference) { drawLit(l[2], l[3], l[4], l[5], view.halfWidth, edge, StrokeCap.Round) }
+            else drawLit(l[2], l[3], l[4], l[5], view.halfWidth, edge, StrokeCap.Round)
+        }
+    }
     with(painter) {
         for (it in items) {
             val model = it[4].toInt()
             if (model == WIRE) {
                 drawWire(it, view.halfWidth)
+            } else if (model == LIT) {
+                drawLit(it[1], it[2], it[5], it[6], view.halfWidth, true, StrokeCap.Butt)
+                drawLit(it[1], it[2], it[5], it[6], view.halfWidth, false, StrokeCap.Butt)
             } else if (model == FENCE) {
                 drawFence(it)
             } else if (model == FIRE) {
@@ -217,10 +238,64 @@ private const val FIRE = -5
 private const val BOARD = -6
 private const val FENCE = -7
 private const val BUOY = -8
+private const val LIT = -9
 /** Aircraft in the air go over everything; their shadows fall a little off from under them, by height, as the sun stands. */
 private const val FLYING_DEPTH = 1000f
 private const val SUN_X = 0.06f
 private const val SUN_Y = 0.1f
+
+/**
+ * The reserved pieces on screen, each from one end to the other along its middle at the height of the rails. Those on
+ * the ground come back as view x, view y and the ends on screen; those on a bridge go into [items], just over its deck.
+ */
+private fun DrawScope.litPieces(world: World, view: View, moving: Moving, items: ArrayList<FloatArray>): List<FloatArray> {
+    val keys = moving.now.reserved
+    if (keys.isEmpty()) return emptyList()
+    val out = ArrayList<FloatArray>()
+    val margin = view.halfWidth * 2
+    for (k in keys) {
+        val tile = keyTile(k)
+        val x = tile % world.width
+        val y = tile / world.width
+        // On a bridge, at its deck's height; the sim leaves out those in tunnels.
+        val deck = if (keyLevel(k) == 1) {
+            moving.now.spans.firstOrNull { s -> !s.tunnel && x in minOf(s.x0, s.x1)..maxOf(s.x0, s.x1) && y in minOf(s.y0, s.y1)..maxOf(s.y0, s.y1) } ?: continue
+        } else null
+        val e = Track.edges(keyPiece(k))
+        val a = e and 3
+        val b = e shr 2
+        val pieces = world.track[tile].toInt()
+        val ha = (deck?.height ?: world.edgeHeight(x, y, pieces, a)) + RAIL_TOP
+        val hb = (deck?.height ?: world.edgeHeight(x, y, pieces, b)) + RAIL_TOP
+        val ax = x + Track.edgeX4(a) / 4f
+        val ay = y + Track.edgeY4(a) / 4f
+        val bx = x + Track.edgeX4(b) / 4f
+        val by = y + Track.edgeY4(b) / 4f
+        val x1 = view.screenX(view.toViewX(ax, ay), view.toViewY(ax, ay), size.width)
+        val y1 = view.screenY(view.toViewX(ax, ay), view.toViewY(ax, ay), ha, size.height)
+        val x2 = view.screenX(view.toViewX(bx, by), view.toViewY(bx, by), size.width)
+        val y2 = view.screenY(view.toViewX(bx, by), view.toViewY(bx, by), hb, size.height)
+        if (maxOf(x1, x2) < -margin || minOf(x1, x2) > size.width + margin || maxOf(y1, y2) < -margin || minOf(y1, y2) > size.height + margin) continue
+        val vx = view.toViewX(x + 0.5f, y + 0.5f)
+        val vy = view.toViewY(x + 0.5f, y + 0.5f)
+        if (deck != null) items += floatArrayOf(vx + vy + DECK_DEPTH + 0.05f, x1, y1, 0f, LIT.toFloat(), x2, y2)
+        else out += floatArrayOf(vx, vy, x1, y1, x2, y2)
+    }
+    return out
+}
+
+/** A lit line along a reserved piece from ([x1], [y1]) to ([x2], [y2]) on screen: its dark [edge], or the light over it. */
+private fun DrawScope.drawLit(x1: Float, y1: Float, x2: Float, y2: Float, hw: Float, edge: Boolean, cap: StrokeCap) {
+    val w = maxOf(1.2f, hw * 0.06f)
+    if (edge) drawLine(LIT_EDGE, Offset(x1, y1), Offset(x2, y2), w * 2.2f, cap)
+    else drawLine(LIT_LIGHT, Offset(x1, y1), Offset(x2, y2), w, cap)
+}
+
+/** Reserved track's light, warm white to read on grass and in the dark, and its edge, to read on snow. */
+private val LIT_LIGHT = Color(0xfffff4c0)
+private val LIT_EDGE = Color(0xa0302010)
+/** How far above the bed the rails' tops are, in steps. */
+private const val RAIL_TOP = 0.15f
 
 /** A buoy: a red can on the water, with a white band. */
 private fun DrawScope.drawBuoy(x: Float, y: Float, hw: Float) {
