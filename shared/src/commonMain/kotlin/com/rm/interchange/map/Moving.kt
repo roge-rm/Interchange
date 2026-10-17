@@ -181,20 +181,26 @@ internal fun DrawScope.drawMoving(world: World, view: View, sheets: Sheets, movi
         if (level > 0) sheets.vehicle(model, level - 1)
         if (level + 1 < Renderer.LEVELS.size) sheets.vehicle(model, level + 1)
     }
-    val lit = litPieces(world, view, moving, items)
+    val lit = if (view.halfWidth >= LIT_FROM) litPieces(world, view, moving, items) else emptyList()
     items.sortBy { it[0] }
     val cover = Cover(world, view, level, sheets.get(level) ?: return)
     // Reserved track on the ground goes under everything else, cut away behind buildings; edges first so the lines join.
     if (lit.isNotEmpty()) {
-        val hidden = lit.map { l ->
-            val pad = view.halfWidth
-            with(cover) { covering(l[0], l[1], Rect(minOf(l[2], l[4]) - pad, minOf(l[3], l[5]) - pad, maxOf(l[2], l[4]) + pad, maxOf(l[3], l[5]) + pad)) }
+        val pad = view.halfWidth
+        // Pieces with the same buildings in front of them are cut together; each is cut only by its own.
+        val groups = HashMap<Long, Pair<Path, ArrayList<FloatArray>>>()
+        val bare = ArrayList<FloatArray>()
+        val set = LongArray(1)
+        for (l in lit) {
+            set[0] = 0
+            val h = with(cover) { covering(l[0], l[1], Rect(minOf(l[2], l[4]) - pad, minOf(l[3], l[5]) - pad, maxOf(l[2], l[4]) + pad, maxOf(l[3], l[5]) + pad), set) }
+            if (h == null) bare += l else groups.getOrPut(set[0]) { h to ArrayList() }.second += l
         }
-        for (edge in booleanArrayOf(true, false)) for (i in lit.indices) {
-            val l = lit[i]
-            val h = hidden[i]
-            if (h != null) clipPath(h, ClipOp.Difference) { drawLit(l[2], l[3], l[4], l[5], view.halfWidth, edge, StrokeCap.Round) }
-            else drawLit(l[2], l[3], l[4], l[5], view.halfWidth, edge, StrokeCap.Round)
+        for (edge in booleanArrayOf(true, false)) {
+            for (l in bare) drawLit(l[2], l[3], l[4], l[5], view.halfWidth, edge, StrokeCap.Round)
+            for ((path, pieces) in groups.values) clipPath(path, ClipOp.Difference) {
+                for (l in pieces) drawLit(l[2], l[3], l[4], l[5], view.halfWidth, edge, StrokeCap.Round)
+            }
         }
     }
     with(painter) {
@@ -244,6 +250,45 @@ private const val FLYING_DEPTH = 1000f
 private const val SUN_X = 0.06f
 private const val SUN_Y = 0.1f
 
+/** Reserved track is drawn from this zoom in. */
+private const val LIT_FROM = 8f
+
+/** The reserved pieces as world numbers, nine to a piece: tile x and y, the two ends' x, y and height, and 1 on a bridge. */
+private class LitCache(val world: World, val reserved: Int, val touches: Int, val geometry: FloatArray)
+
+private var litCache: LitCache? = null
+
+/** The geometry of the pieces in [keys], worked out again only when they or the map change. */
+private fun litGeometry(world: World, keys: IntArray): FloatArray {
+    val reserved = keys.contentHashCode()
+    val touches = world.touches
+    litCache?.let { if (it.world === world && it.reserved == reserved && it.touches == touches) return it.geometry }
+    val out = FloatArray(keys.size * 9)
+    var n = 0
+    for (k in keys) {
+        val tile = keyTile(k)
+        val x = tile % world.width
+        val y = tile / world.width
+        // On a bridge, at its deck's height; the sim leaves out those in tunnels.
+        val deck = if (keyLevel(k) == 1) (world.deck[tile]?.let { world.spans.getOrNull(it) }?.takeIf { !it.tunnel } ?: continue) else null
+        val e = Track.edges(keyPiece(k))
+        val a = e and 3
+        val b = e shr 2
+        val pieces = world.track[tile].toInt()
+        out[n] = x.toFloat()
+        out[n + 1] = y.toFloat()
+        out[n + 2] = x + Track.edgeX4(a) / 4f
+        out[n + 3] = y + Track.edgeY4(a) / 4f
+        out[n + 4] = (deck?.height ?: world.edgeHeight(x, y, pieces, a)) + RAIL_TOP
+        out[n + 5] = x + Track.edgeX4(b) / 4f
+        out[n + 6] = y + Track.edgeY4(b) / 4f
+        out[n + 7] = (deck?.height ?: world.edgeHeight(x, y, pieces, b)) + RAIL_TOP
+        out[n + 8] = if (deck != null) 1f else 0f
+        n += 9
+    }
+    return out.copyOf(n).also { litCache = LitCache(world, reserved, touches, it) }
+}
+
 /**
  * The reserved pieces on screen, each from one end to the other along its middle at the height of the rails. Those on
  * the ground come back as view x, view y and the ends on screen; those on a bridge go into [items], just over its deck.
@@ -251,35 +296,28 @@ private const val SUN_Y = 0.1f
 private fun DrawScope.litPieces(world: World, view: View, moving: Moving, items: ArrayList<FloatArray>): List<FloatArray> {
     val keys = moving.now.reserved
     if (keys.isEmpty()) return emptyList()
+    val g = litGeometry(world, keys)
     val out = ArrayList<FloatArray>()
     val margin = view.halfWidth * 2
-    for (k in keys) {
-        val tile = keyTile(k)
-        val x = tile % world.width
-        val y = tile / world.width
-        // On a bridge, at its deck's height; the sim leaves out those in tunnels.
-        val deck = if (keyLevel(k) == 1) {
-            moving.now.spans.firstOrNull { s -> !s.tunnel && x in minOf(s.x0, s.x1)..maxOf(s.x0, s.x1) && y in minOf(s.y0, s.y1)..maxOf(s.y0, s.y1) } ?: continue
-        } else null
-        val e = Track.edges(keyPiece(k))
-        val a = e and 3
-        val b = e shr 2
-        val pieces = world.track[tile].toInt()
-        val ha = (deck?.height ?: world.edgeHeight(x, y, pieces, a)) + RAIL_TOP
-        val hb = (deck?.height ?: world.edgeHeight(x, y, pieces, b)) + RAIL_TOP
-        val ax = x + Track.edgeX4(a) / 4f
-        val ay = y + Track.edgeY4(a) / 4f
-        val bx = x + Track.edgeX4(b) / 4f
-        val by = y + Track.edgeY4(b) / 4f
-        val x1 = view.screenX(view.toViewX(ax, ay), view.toViewY(ax, ay), size.width)
-        val y1 = view.screenY(view.toViewX(ax, ay), view.toViewY(ax, ay), ha, size.height)
-        val x2 = view.screenX(view.toViewX(bx, by), view.toViewY(bx, by), size.width)
-        val y2 = view.screenY(view.toViewX(bx, by), view.toViewY(bx, by), hb, size.height)
-        if (maxOf(x1, x2) < -margin || minOf(x1, x2) > size.width + margin || maxOf(y1, y2) < -margin || minOf(y1, y2) > size.height + margin) continue
-        val vx = view.toViewX(x + 0.5f, y + 0.5f)
-        val vy = view.toViewY(x + 0.5f, y + 0.5f)
-        if (deck != null) items += floatArrayOf(vx + vy + DECK_DEPTH + 0.05f, x1, y1, 0f, LIT.toFloat(), x2, y2)
-        else out += floatArrayOf(vx, vy, x1, y1, x2, y2)
+    val w = size.width
+    val h = size.height
+    var n = 0
+    while (n < g.size) {
+        val ax = g[n + 2]
+        val ay = g[n + 3]
+        val bx = g[n + 5]
+        val by = g[n + 6]
+        val x1 = view.screenX(view.toViewX(ax, ay), view.toViewY(ax, ay), w)
+        val y1 = view.screenY(view.toViewX(ax, ay), view.toViewY(ax, ay), g[n + 4], h)
+        val x2 = view.screenX(view.toViewX(bx, by), view.toViewY(bx, by), w)
+        val y2 = view.screenY(view.toViewX(bx, by), view.toViewY(bx, by), g[n + 7], h)
+        if (maxOf(x1, x2) >= -margin && minOf(x1, x2) <= w + margin && maxOf(y1, y2) >= -margin && minOf(y1, y2) <= h + margin) {
+            val vx = view.toViewX(g[n] + 0.5f, g[n + 1] + 0.5f)
+            val vy = view.toViewY(g[n] + 0.5f, g[n + 1] + 0.5f)
+            if (g[n + 8] > 0f) items += floatArrayOf(vx + vy + DECK_DEPTH + 0.05f, x1, y1, 0f, LIT.toFloat(), x2, y2)
+            else out += floatArrayOf(vx, vy, x1, y1, x2, y2)
+        }
+        n += 9
     }
     return out
 }

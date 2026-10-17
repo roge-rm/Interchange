@@ -7,6 +7,7 @@ import com.rm.interchange.map.LandPainter
 import com.rm.interchange.map.Pick
 import com.rm.interchange.sim.Command
 import com.rm.interchange.sim.Track
+import com.rm.interchange.sim.pieceKey
 import com.rm.interchange.sim.CATCHMENT
 import com.rm.interchange.sim.World
 import com.rm.interchange.sim.bridgeCost
@@ -15,18 +16,20 @@ import kotlin.math.abs
 /**
  * The signal a tap at [at] puts down: on the piece of the tile nearest the
  * finger, facing trains that come in at its end nearer the finger. Null if
- * there's no track.
+ * there's no track, or with [signalled], none with a signal.
  */
-fun signalAt(world: World, company: Int, at: Pick): Command.Signal? {
+fun signalAt(world: World, company: Int, at: Pick, signalled: Boolean = false): Command.Signal? {
     val pieces = if (world.inside(at.tileX, at.tileY)) world.trackAt(at.tileX, at.tileY) else 0
     if (pieces == 0) return null
     var best = 0
     var bestD = Float.MAX_VALUE
     for (p in Track.PIECES) {
         if (pieces and p == 0) continue
+        if (signalled && world.signals[pieceKey(world.index(at.tileX, at.tileY), p)] == null) continue
         val d = distanceToPiece(p, at.fx, at.fy)
         if (d < bestD) { bestD = d; best = p }
     }
+    if (best == 0) return null
     val e = Track.edges(best)
     val a = e and 3
     val b = e shr 2

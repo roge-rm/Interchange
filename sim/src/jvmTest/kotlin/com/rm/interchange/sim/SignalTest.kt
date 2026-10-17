@@ -153,6 +153,35 @@ class SignalTest {
     }
 
     @Test
+    fun aDiagonalRunFacesEdgesItsPiecesHave() {
+        val w = twoPlatforms()
+        w.apply(Command.Rail(0, 40, 20, 46, 26, Track.E, remove = false))
+        assertTrue(Track.line(w, 40, 20, 46, 26, Track.E) != null)
+        w.apply(Command.SignalRun(0, 40, 20, 46, 26, Track.E, Signals.TWO_WAY, 2, false))
+        var n = 0
+        for ((key, packed) in w.signals) {
+            val tile = keyTile(key)
+            if (tile % w.width < 40) continue
+            n++
+            val piece = keyPiece(key)
+            val facing = Signals.facing(packed)
+            assertTrue(Track.has(piece, facing), "facing $facing on piece $piece at tile $tile")
+        }
+        assertTrue(n >= 3, "$n signals")
+    }
+
+    @Test
+    fun removingAlongARunLeavesOtherPiecesOnTheTile() {
+        val w = twoPlatforms()
+        val i = w.index(20, 10)
+        w.signals[pieceKey(i, Track.X)] = Signals.pack(Track.XP, Signals.TWO_WAY)
+        w.signals[pieceKey(i, Track.W)] = Signals.pack(Track.XP, Signals.TWO_WAY)
+        w.apply(Command.SignalRun(0, 19, 10, 21, 10, Track.X, Signals.TWO_WAY, 2, true))
+        assertTrue(w.signals[pieceKey(i, Track.X)] == null)
+        assertTrue(w.signals[pieceKey(i, Track.W)] != null)
+    }
+
+    @Test
     fun aSignalRunReadsBackFromBytes() {
         val c = Command.SignalRun(0, 4, 10, 30, 10, Track.X, Signals.COMBO, 5, true)
         val w = ByteWriter()

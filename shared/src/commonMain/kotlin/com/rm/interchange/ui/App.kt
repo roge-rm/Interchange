@@ -207,8 +207,8 @@ private fun Root(settings: Settings) {
         }
         onDispose { Lifecycle.onHide = null }
     }
-    // Autosave follows the setting while a game runs.
     LaunchedEffect(runner, settings.reserved) { runner?.showReserved = settings.reserved }
+    // Autosave follows the setting while a game runs.
     LaunchedEffect(runner, settings.autosave) { runner?.takeIf { it.remote == null && !editing && testing == null }?.autosaveDays = settings.autosaveDays }
     // The world being edited is kept every few minutes, in case the app's closed.
     LaunchedEffect(runner, editing) {
@@ -908,7 +908,7 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
                     Tool.Buoy -> { runner.request(Command.Buoy(me, at.tileX, at.tileY)); built() }
                     Tool.Airport -> { runner.request(Command.Airport(me, at.tileX, at.tileY, airportKind, if (runwayAlongX) Track.X else Track.Y)); built() }
                     Tool.Wires -> { runner.request(trackLine(me, at, at, removing).let { Command.Wire(me, it.sx, it.sy, it.ex, it.ey, it.first, it.remove) }); built() }
-                    Tool.Signals -> if (removing) { runner.request(signalRun(me, at, at, Signals.PLACED[signalKind], signalSpacing, true)); built() }
+                    Tool.Signals -> if (removing) signalAt(world, me, at, signalled = true)?.let { runner.request(Command.SignalRun(me, at.tileX, at.tileY, at.tileX, at.tileY, it.piece, Signals.PLACED[signalKind], signalSpacing, true)); built() }
                         else signalAt(world, me, at)?.let { runner.request(it.copy(kind = Signals.PLACED[signalKind])); built() }
                     Tool.Waypoint -> { runner.request(Command.Waypoint(me, at.tileX, at.tileY)); built() }
                     Tool.Tunnel -> { runner.request(Command.Tunnel(me, at.tileX, at.tileY)); built() }
@@ -961,7 +961,8 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
                 roadPlan?.let { runner.request(it); built() }
                 canalPlan?.let { runner.request(it); built() }
                 clearPlan?.let { runner.request(it); built() }
-                signalPlan?.let { runner.request(it); built() }
+                // A drag that stays on one tile is a tap on it.
+                signalPlan?.let { if (it.sx == it.ex && it.sy == it.ey) start?.let { s -> tap(s) } else { runner.request(it); built() } }
                 dragCancel()
             }
             override fun dragCancel() {
@@ -1254,7 +1255,7 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
                         for ((k, piece) in VIEW_PIECES.withIndex()) OptionButton(PIECE_GLYPHS[k], pieceNames[k], trackPiece == piece) { trackPiece = piece }
                     }
                 }
-                ToolTray(tool, { tool = it; plan = null; stationPlan = null; signalPlan = null }, detail, folded, { folded = it }, layout.compact, trayWidth, options = trackOptions, editor = editor, warning = editor && refused) {
+                ToolTray(tool, { tool = it; plan = null; stationPlan = null; signalPlan = null; removing = false }, detail, folded, { folded = it }, layout.compact, trayWidth, options = trackOptions, editor = editor, warning = editor && refused) {
                     if (tool == Tool.PlaceTown || tool == Tool.GrowTown) {
                         val sizes = stringArrayResource(Res.array.town_sizes)
                         Chip(sizes.getOrElse(townSize) { "" }, true) { townSize = (townSize + 1) % TownSize.HOUSES.size }

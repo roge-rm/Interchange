@@ -27,7 +27,7 @@ internal class Cover(private val world: World, private val view: View, private v
      * What of the screen the buildings in front of view point ([vx], [vy]) cover, near enough to it to matter, as a path
      * of their columns; null if none do. [near] is how far round the point on screen to look, in pixels.
      */
-    fun DrawScope.covering(vx: Float, vy: Float, near: Rect): Path? {
+    fun DrawScope.covering(vx: Float, vy: Float, near: Rect, set: LongArray? = null): Path? {
         val tx = floor(vx).toInt()
         val ty = floor(vy).toInt()
         val scale = view.halfWidth / hw
@@ -48,6 +48,8 @@ internal class Cover(private val world: World, private val view: View, private v
             val left = view.screenX(bx.toFloat(), by.toFloat(), size.width) + Atlas.STATIC_RECTS[r + 4] / shrink * scale
             val top = view.screenY(bx.toFloat(), by.toFloat(), base.toFloat(), size.height) + Atlas.STATIC_RECTS[r + 5] / shrink * scale
             if (left > near.right || left + w * scale < near.left || top > near.bottom || top + h * scale < near.top) continue
+            // [set] gets a number for which buildings these are, to tell pieces with the same cover.
+            if (set != null) set[0] = set[0] * 31 + (by * view.viewWidth + bx + 1)
             val columns = columns(cell, w, h)
             val p = path ?: Path().also { path = it }
             var i = 0

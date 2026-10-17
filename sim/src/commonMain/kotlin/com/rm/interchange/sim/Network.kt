@@ -233,7 +233,7 @@ fun World.planSignals(c: Command.SignalRun): List<SignalSpot> {
         val toward = { tile: Int -> edges.firstOrNull { inside(x + Track.dx(it), y + Track.dy(it)) && index(x + Track.dx(it), y + Track.dy(it)) == tile } }
         val facing = when {
             k > 0 -> toward(line[k - 1] / 64)
-            line.size > 1 -> toward(line[1] / 64)?.let { Track.opposite(it) }
+            line.size > 1 -> toward(line[1] / 64)?.let { Track.other(piece, it) }
             else -> null
         } ?: edges[0]
         out += SignalSpot(x, y, piece, facing)
@@ -259,7 +259,7 @@ internal fun World.placeSignalRun(company: Company, c: Command.SignalRun) {
         for (entry in line) {
             val i = entry / 64
             if (owner[i].toInt() != company.id) continue
-            for (p in Track.PIECES) if (signals.remove(pieceKey(i, p)) != null) any = true
+            if (signals.remove(pieceKey(i, entry % 64)) != null) any = true
         }
         if (any) networkChanged()
         return

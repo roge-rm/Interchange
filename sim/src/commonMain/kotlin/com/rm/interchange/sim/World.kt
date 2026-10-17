@@ -327,8 +327,13 @@ class World(settings: NewGame, val roster: Roster = Roster.BASE, generate: Boole
         }
     }
 
+    /** How many times [touched] has been called; not saved, for the screen to tell if anything changed. */
+    var touches = 0
+        private set
+
     /** Notes that tile ([x], [y]) has changed, for the renderer. */
     fun touched(x: Int, y: Int) {
+        touches++
         chunkVersions[(y / BLOCK) * (width / BLOCK) + x / BLOCK]++
     }
 
