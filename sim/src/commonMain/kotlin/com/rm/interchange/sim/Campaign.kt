@@ -445,6 +445,28 @@ internal fun World.industryNear(key: String, x: Int, y: Int): Int {
 private const val PLACE_REACH = 12
 
 /**
+ * Railway lands: a strip from ([x0], [y0]) to ([x1], [y1]) kept clear while towns are placed and grown round it, so
+ * a station fits in the middle of town and its line runs out. Its tiles, to give back with [release].
+ */
+internal fun World.reserve(x0: Int, y0: Int, x1: Int, y1: Int): List<Int> {
+    val out = ArrayList<Int>()
+    for (y in minOf(y0, y1)..maxOf(y0, y1)) for (x in minOf(x0, x1)..maxOf(x0, x1)) {
+        if (!inside(x, y)) continue
+        val i = index(x, y)
+        if (owner[i].toInt() != -1) continue
+        // Held by the player's company in the editor, as towns don't build on anyone's land.
+        owner[i] = 0
+        out += i
+    }
+    return out
+}
+
+/** Gives back the tiles [reserve] kept clear. */
+internal fun World.release(tiles: List<Int>) {
+    for (i in tiles) owner[i] = -1
+}
+
+/**
  * Chapter 1, 1836: a portage line. Two waters, a long lake to the west and another to the east, joined by a river
  * that can't be run between them: a ledge of rapids in a gorge through a low ridge. A landing town at each end of
  * the rapids, timber up the east shore and a sawmill at the west landing.
@@ -506,7 +528,7 @@ internal object PortageLine : Recipe() {
         val mill = w.industryNear("base:sawmill", 40, 66)
         return listOf(
             Goal(Goal.CONNECT, 500, END, town = minOf(lower, upper), town2 = maxOf(lower, upper)),
-            Goal(Goal.DELIVER, 2_500, END, cargo = Cargo.TIMBER, industry = mill, from = settings.startYear),
+            Goal(Goal.DELIVER, 10_000, END, cargo = Cargo.TIMBER, industry = mill, from = settings.startYear),
         )
     }
 }
@@ -554,8 +576,9 @@ internal object TrunkLine : Recipe() {
         // A plain rising gently from the shore, broad shallow valleys down to the rivers, and the towns on level ground.
         w.lowerLand(lake, 1, 6)
         w.lowerLand(rivers, 1, 3)
+        // Room round each town to grow, the most round Marlowe.
         for (x in TOWN_X) {
-            val r = if (x == 128) 9 else 6
+            val r = if (x == 128) 16 else 10
             w.levelLand(Area(w).rect(x - r, edge[x] - 10 - r, x + r, edge[x] - 6 + r / 2).ragged(4, 61), 3)
         }
         w.carveWater(lake, rough = 5, salt = 1)
@@ -565,6 +588,11 @@ internal object TrunkLine : Recipe() {
     override fun fill(w: World): List<Goal> {
         val edge = shore(w)
         w.setGround(Area(w).oval(150, 60, 14, 10), Ground.FOREST)
+        // Railway lands along the shore through Marlowe and into each end town, for stations in the middle of town.
+        fun row(k: Int) = edge[TOWN_X[k]] - 7
+        val lands = w.reserve(TOWN_X[0] + 3, row(0), TOWN_X[0] + 16, row(0)) +
+            w.reserve(TOWN_X[2] - 20, row(2), TOWN_X[2] - 3, row(2)) + w.reserve(TOWN_X[2] + 3, row(2), TOWN_X[2] + 20, row(2)) +
+            w.reserve(TOWN_X[4] - 16, row(4), TOWN_X[4] - 3, row(4))
         val ids = IntArray(TOWN_X.size) { k -> w.townNear(NAMES[k], TOWN_X[k], edge[TOWN_X[k]] - 10, SIZES[k], french = k >= 3) }
         w.industryNear("base:farm", 70, edge[70] - 40)
         w.industryNear("base:flour_mill", 186, edge[186] - 26)
@@ -573,11 +601,11 @@ internal object TrunkLine : Recipe() {
         w.industryNear("base:port", 140, edge[140] - 1)
         val middle = ids[2]
         w.apply(Command.GrowTown(0, middle, TownSize.CITY))
+        w.release(lands)
         return listOf(
             Goal(Goal.CONNECT, 1_000, END, town = minOf(ids[0], middle), town2 = maxOf(ids[0], middle)),
             Goal(Goal.CONNECT, 1_000, END, town = minOf(ids[4], middle), town2 = maxOf(ids[4], middle)),
-            Goal(Goal.DELIVER, 3_000, END, cargo = Cargo.MAIL, town = middle, from = settings.startYear),
-            Goal(Goal.TOWN_POP, 1_200, END, town = middle),
+            Goal(Goal.TOWN_POP, 700, END, town = middle),
         )
     }
 }
@@ -619,6 +647,8 @@ internal object LastSpike : Recipe() {
     const val PLAIN_X = 150
     /** The passes' rows, north and south. */
     val PASS_Y = intArrayOf(82, 178)
+    /** The port's row, on the coast north of Port Haldane. */
+    const val PORT_Y = 112
 
     override fun shape(w: World) {
         // The mountains from noise, as high as the range they're in lets them go: highest in the main range, lower
@@ -669,8 +699,9 @@ internal object LastSpike : Recipe() {
             pts += xs.last(); pts += py; bottoms += floors.last()
             w.valleyAlong(pts.toIntArray(), bottoms.toIntArray(), 2)
         }
-        // The towns' and the port's level ground.
-        w.levelLand(Area(w).rect(COAST_X + 6, 120, COAST_X + 22, 138).ragged(4, 62), 2)
+        // The towns' and the port's level ground, the coast town's running north to the port with room for a terminus.
+        val coast = Area(w).rect(COAST_X + 4, PORT_Y - 8, COAST_X + 22, 138)
+        w.levelLand(coast.ragged(4, 62), 2)
         w.levelLand(Area(w).rect(222, 120, 240, 136).ragged(4, 63), 3)
         w.levelLand(Area(w).rect(VALLEY_X - 5, 124, VALLEY_X + 5, 134).ragged(4, 64), 7)
         // A river winding down across the prairie.
@@ -678,7 +709,7 @@ internal object LastSpike : Recipe() {
         w.lowerLand(river, 1, 3)
         val sea = Area(w)
         for (y in 0 until w.height) sea.rect(0, y, COAST_X + w.wander(y, 37, 24, 5), y)
-        w.carveWater(sea, rough = 4, salt = 3)
+        w.carveWater(sea, rough = 4, salt = 3, dry = coast)
         w.carveWater(river, rough = 1, salt = 4)
     }
 
@@ -693,14 +724,14 @@ internal object LastSpike : Recipe() {
         val east = w.townNear("Fort Calder", 231, 128, TownSize.MEDIUM)
         // A big seam, twice a usual mine's coal.
         w.industries[w.industryNear("base:coal_mine", VALLEY_X + 2, 150)].level = 32
-        val port = w.industryNear("base:port", COAST_X + 4, 112)
+        val port = w.industryNear("base:port", COAST_X + 2, PORT_Y)
         w.industryNear("base:logging_camp", 40, 150)
         w.industryNear("base:sawmill", COAST_X + 16, 146)
         w.industryNear("base:farm", 214, 160)
         w.industryNear("base:grain_elevator", 236, 110)
         return listOf(
             Goal(Goal.CONNECT, 1_000, END, town = minOf(west, east), town2 = maxOf(west, east)),
-            Goal(Goal.DELIVER, 3_000, END, cargo = Cargo.COAL, industry = port, from = settings.startYear),
+            Goal(Goal.DELIVER, 8_000, END, cargo = Cargo.COAL, industry = port, from = settings.startYear),
         )
     }
 }
@@ -725,6 +756,9 @@ internal object Seaway : Recipe() {
     const val RIVER_Y = 128
     const val LEDGE_X0 = 121
     const val LEDGE_X1 = 134
+    /** The port's corner, on the south bank of the river near its mouth. */
+    const val PORT_X = 206
+    const val PORT_Y = 146
 
     override fun shape(w: World) {
         w.liftLand(2)
@@ -737,6 +771,10 @@ internal object Seaway : Recipe() {
         // The neck at the rapids, narrow and square to the ledge, so the canal's locks sit on straight slopes.
         val neck = Area(w).rect(LEDGE_X0 - 12, RIVER_Y - 3, LEDGE_X0 - 1, RIVER_Y + 3).rect(LEDGE_X1 + 1, RIVER_Y - 3, LEDGE_X1 + 12, RIVER_Y + 3)
         val keep = Area(w).rect(LEDGE_X0 - 12, RIVER_Y - 14, LEDGE_X1 + 12, RIVER_Y + 14)
+        // The port's level ground on the south bank near the mouth, with room for a terminus.
+        val port = Area(w).rect(PORT_X - 6, PORT_Y, PORT_X + 14, PORT_Y + 10)
+        w.levelLand(port, 2)
+        keep.plus(port)
         w.carveWater(lake.plus(upper).plus(lower).plus(sea).minus(keep), rough = 4, salt = 5, dry = keep)
         w.carveWater(neck, rough = 0)
     }
@@ -756,7 +794,7 @@ internal object Seaway : Recipe() {
         w.industries[w.industryNear("base:farm", 66, 200)].level = 32
         val mill = w.industryNear("base:steel_mill", 176, 110)
         w.industryNear("base:coal_mine", 210, 80)
-        val port = w.industryNear("base:port", 232, 128)
+        val port = w.industryNear("base:port", PORT_X, PORT_Y - 2)
         return listOf(
             Goal(Goal.DELIVER, 15_000, END, cargo = Cargo.IRON_ORE, industry = mill, from = settings.startYear),
             Goal(Goal.DELIVER, 12_000, END, cargo = Cargo.GRAIN, industry = port, from = settings.startYear),
@@ -782,26 +820,30 @@ internal object IronOre : Recipe() {
     const val MINE_Y = 44
     const val HARBOUR_X = 214
     const val HARBOUR_Y = 204
+    /** A fishing village up the shore from the harbour. */
+    const val VILLAGE_X = 202
+    const val VILLAGE_Y = 170
 
     override fun shape(w: World) {
         // Low, worn country: the hills at half their height, a step above the lakes.
         for (k in w.corners.indices) w.corners[k] = (1 + w.corners[k] / 2).toByte()
         w.settleLand()
-        // The mine's plateau and the harbour's flat.
+        // The mine's plateau, the harbour's flat with room for the town to grow, and the village up the shore.
         w.levelLand(Area(w).rect(MINE_X - 10, MINE_Y - 8, MINE_X + 18, MINE_Y + 14).ragged(4, 65), 5)
-        w.levelLand(Area(w).rect(HARBOUR_X - 12, HARBOUR_Y - 8, HARBOUR_X + 6, HARBOUR_Y + 8).ragged(4, 66), 2)
+        w.levelLand(Area(w).rect(HARBOUR_X - 18, HARBOUR_Y - 10, HARBOUR_X + 6, HARBOUR_Y + 10).ragged(4, 66), 2)
+        w.levelLand(Area(w).rect(VILLAGE_X - 8, VILLAGE_Y - 6, VILLAGE_X + 6, VILLAGE_Y + 6).ragged(3, 78), 2)
         // Lakes strewn across the country between, kept off the mine and the harbour.
         val lakes = Area(w)
         for (k in 0 until 18) {
             val x = 30 + w.shapeDice(k, 1, 51) * 180 / 256
             val y = 30 + w.shapeDice(k, 2, 51) * 190 / 256
-            if (chebyshev(x, y, MINE_X, MINE_Y) < 26 || chebyshev(x, y, HARBOUR_X, HARBOUR_Y) < 30) continue
+            if (chebyshev(x, y, MINE_X, MINE_Y) < 26 || chebyshev(x, y, HARBOUR_X, HARBOUR_Y) < 30 || chebyshev(x, y, VILLAGE_X, VILLAGE_Y) < 20) continue
             lakes.oval(x, y, 4 + w.shapeDice(k, 3, 51) % 10, 3 + w.shapeDice(k, 4, 51) % 8, rough = 70, salt = 52 + k)
         }
         // The sea along the east and into the south-east corner.
         val sea = Area(w)
         for (y in 0 until w.height) sea.rect(232 + w.wander(y, 53, 30, 8) - maxOf(0, y - 150) / 3, y, w.width - 1, y)
-        val shore = Area(w).rect(HARBOUR_X - 12, HARBOUR_Y - 8, HARBOUR_X + 4, HARBOUR_Y + 8)
+        val shore = Area(w).rect(HARBOUR_X - 18, HARBOUR_Y - 10, HARBOUR_X + 4, HARBOUR_Y + 10).rect(VILLAGE_X - 8, VILLAGE_Y - 6, VILLAGE_X + 6, VILLAGE_Y + 6)
         w.carveWater(lakes, rough = 3, salt = 6, dry = shore)
         w.carveWater(sea, rough = 5, salt = 7, dry = shore)
     }
@@ -810,17 +852,18 @@ internal object IronOre : Recipe() {
         // Bare rock in bands across the country.
         val rock = Area(w)
         for (y in 0 until w.height) for (x in 0 until w.width) if (w.roughness(x, y, 54, 14) > 40) rock.rect(x, y, x, y)
-        w.setGround(rock.minus(Area(w).rect(HARBOUR_X - 14, HARBOUR_Y - 10, HARBOUR_X + 8, HARBOUR_Y + 10)).minus(Area(w).rect(MINE_X - 12, MINE_Y - 10, MINE_X + 20, MINE_Y + 16)), Ground.ROCK)
+        w.setGround(rock.minus(Area(w).rect(HARBOUR_X - 20, HARBOUR_Y - 12, HARBOUR_X + 8, HARBOUR_Y + 12)).minus(Area(w).rect(VILLAGE_X - 10, VILLAGE_Y - 8, VILLAGE_X + 8, VILLAGE_Y + 8)).minus(Area(w).rect(MINE_X - 12, MINE_Y - 10, MINE_X + 20, MINE_Y + 16)), Ground.ROCK)
         w.townNear("Carrow Lake", MINE_X + 10, MINE_Y + 8, TownSize.SMALL)
         w.townNear("Esker Lake", 128, 122, TownSize.SMALL)
         val harbour = w.townNear("Baie-Clairval", HARBOUR_X - 4, HARBOUR_Y, TownSize.MEDIUM, french = true)
+        w.townNear("Anse-aux-Pins", VILLAGE_X, VILLAGE_Y, TownSize.SMALL, french = true)
         w.industries[w.industryNear("base:iron_mine", MINE_X - 2, MINE_Y - 2)].level = MAX_LEVEL
         val mill = w.industryNear("base:steel_mill", HARBOUR_X - 6, HARBOUR_Y - 16)
         w.industryNear("base:port", HARBOUR_X + 8, HARBOUR_Y + 10)
         w.industryNear("base:logging_camp", 150, 60)
         return listOf(
             Goal(Goal.DELIVER, 15_000, END, cargo = Cargo.IRON_ORE, industry = mill, from = settings.startYear),
-            Goal(Goal.TOWN_POP, 1_000, END, town = harbour),
+            Goal(Goal.TOWN_POP, 850, END, town = harbour),
         )
     }
 }
@@ -864,28 +907,32 @@ internal object HighSpeed : Recipe() {
 
     override fun fill(w: World): List<Goal> {
         val edge = shore(w)
-        val ids = IntArray(TOWN_X.size) { k ->
-            w.townNear(NAMES[k], TOWN_X[k], edge[TOWN_X[k]] - 16 - if (SIZES[k] == TownSize.CITY) 6 else 0, SIZES[k], french = k >= 4)
-        }
+        fun townY(k: Int) = edge[TOWN_X[k]] - 16 - if (SIZES[k] == TownSize.CITY) 6 else 0
+        // Railway lands into the middle of each city from the side facing the other, for a station downtown.
+        val west = TOWN_X.first()
+        val east = TOWN_X.last()
+        val lands = w.reserve(west + 3, townY(0) + 3, west + 26, townY(0) + 3) +
+            w.reserve(east - 26, townY(TOWN_X.size - 1) + 3, east - 3, townY(TOWN_X.size - 1) + 3)
+        val ids = IntArray(TOWN_X.size) { k -> w.townNear(NAMES[k], TOWN_X[k], townY(k), SIZES[k], french = k >= 4) }
         // The cities each grown again, to be cities of the day.
         for (k in intArrayOf(0, TOWN_X.size - 1)) repeat(3) { w.apply(Command.GrowTown(0, ids[k], TownSize.CITY)) }
+        w.release(lands)
         w.industryNear("base:farm", 200, 180)
         w.industryNear("base:flour_mill", 260, 200)
         w.industryNear("base:factory", 120, 220)
         w.industryNear("base:oil_wells", 380, 170)
         w.industryNear("base:refinery", 400, 220)
         // The highway: up from each city and along the row between.
-        val west = TOWN_X.first()
-        val east = TOWN_X.last()
         w.apply(Command.Road(0, west, edge[west] - 16, west, HIGHWAY_Y, Surface.HIGHWAY, false))
         w.apply(Command.Road(0, west, HIGHWAY_Y, east, HIGHWAY_Y, Surface.HIGHWAY, false))
         w.apply(Command.Road(0, east, HIGHWAY_Y, east, edge[east] - 16, Surface.HIGHWAY, false))
         val a = ids.first()
         val b = ids.last()
         return listOf(
-            Goal(Goal.CONNECT, 8_000, END, town = minOf(a, b), town2 = maxOf(a, b)),
+            // More than a coach line on the highway carries, for a fast line between the downtowns.
+            Goal(Goal.CONNECT, 11_000, END, town = minOf(a, b), town2 = maxOf(a, b)),
             // Value leaves out the chapter's $1,500,000 start money.
-            Goal(Goal.COMPANY_VALUE, 500_000, END),
+            Goal(Goal.COMPANY_VALUE, 100_000, END),
         )
     }
 
@@ -915,8 +962,11 @@ internal object WarmingNorth : Recipe() {
         for (k in w.corners.indices) w.corners[k] = (1 + w.corners[k] / 3).toByte()
         w.settleLand()
         w.levelLand(Area(w).rect(116, 214, 142, 236).ragged(4, 68), 3)
-        w.levelLand(Area(w).rect(58, 50, 80, 66).ragged(4, 69), 2)
-        w.levelLand(Area(w).rect(176, 38, 200, 54).ragged(4, 70), 2)
+        // The northern towns with room to grow, and a village near each.
+        w.levelLand(Area(w).rect(52, 44, 84, 66).ragged(4, 69), 2)
+        w.levelLand(Area(w).rect(172, 32, 204, 54).ragged(4, 70), 2)
+        w.levelLand(Area(w).rect(26, 30, 40, 42).ragged(3, 79), 2)
+        w.levelLand(Area(w).rect(218, 18, 232, 30).ragged(3, 80), 2)
         val lakes = Area(w)
             .oval(128, 132, 70, 22, rough = 60, salt = 71)
             .oval(60, 80, 26, 12, rough = 60, salt = 72)
@@ -931,8 +981,13 @@ internal object WarmingNorth : Recipe() {
     override fun fill(w: World): List<Goal> {
         w.setGround(Area(w).oval(100, 216, 30, 18, rough = 60, salt = 77), Ground.MEADOW)
         w.setGround(Area(w).rect(0, 0, w.width - 1, 110).minus(Area(w).oval(196, 66, 30, 18)), Ground.TUNDRA)
+        // Railway lands between the two northern towns, for stations in the middle of each.
+        val lands = w.reserve(71, 61, 86, 61) + w.reserve(170, 49, 185, 49)
         val north = w.townNear("Tamarack Point", 68, 58, TownSize.LARGE)
         val northEast = w.townNear("Fort Delorme", 188, 46, TownSize.LARGE, french = true)
+        w.release(lands)
+        w.townNear("Spruce Narrows", 33, 36, TownSize.SMALL)
+        w.townNear("Lac-Brûlé", 225, 24, TownSize.SMALL, french = true)
         w.townNear("Fort Ashdown", 128, 226, TownSize.LARGE)
         w.industryNear("base:oil_wells", 180, 230)
         w.industryNear("base:refinery", 150, 214)
@@ -941,8 +996,8 @@ internal object WarmingNorth : Recipe() {
         w.industryNear("base:fishing_harbour", 128, 112)
         w.industryNear("base:cannery", 150, 100)
         return listOf(
-            Goal(Goal.TOWN_POP, 1_500, END, town = north),
-            Goal(Goal.TOWN_POP, 1_500, END, town = northEast),
+            Goal(Goal.TOWN_POP, 550, END, town = north),
+            Goal(Goal.TOWN_POP, 550, END, town = northEast),
         )
     }
 }

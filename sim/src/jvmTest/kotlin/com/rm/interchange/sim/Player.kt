@@ -285,7 +285,7 @@ class Player(val world: World, val thinkDays: Int = 30, val mostRoutes: Int = 12
         val near = w.towns.filter { it.id != t.id && chebyshev(it.x, it.y, t.x, t.y) in 6..LINE_FURTHEST }.sortedBy { chebyshev(it.x, it.y, t.x, t.y) }.take(4)
         if (mail) {
             val model = w.bestModel(Cargo.MAIL)
-            val line = aims.routes.firstOrNull { !it.rail && !it.freight && it.townB == t.id && it.townA != t.id && aims.routes.none { m -> m.cargo == Cargo.MAIL && m.a == it.a && m.b == it.b } }
+            val line = aims.routes.firstOrNull { !it.rail && !it.freight && (it.townA == t.id) != (it.townB == t.id) && aims.routes.none { m -> m.cargo == Cargo.MAIL && m.a == it.a && m.b == it.b } }
             if (line != null && model != null) {
                 val route = RivalRoute(line.a, line.b, line.depot, line.townA, line.townB, Cargo.MAIL)
                 aims.routes += route
@@ -299,10 +299,10 @@ class Player(val world: World, val thinkDays: Int = 30, val mostRoutes: Int = 12
             }
             return Tried.CANT
         }
+        // Buses first where they reach, at any style: stops in the middle of town carry more of it than a terminus at its edge.
         for (o in near) {
             val road = chebyshev(o.x, o.y, t.x, t.y) <= BUS_FURTHEST
-            val tried = if (road && style == 1) bus(t, o).let { if (it == Tried.CANT) townRail(t, o) else it }
-            else townRail(t, o).let { if (it == Tried.CANT && road) bus(t, o) else it }
+            val tried = if (road) bus(t, o).let { if (it == Tried.CANT) townRail(t, o) else it } else townRail(t, o)
             if (tried != Tried.CANT) return tried
         }
         return Tried.CANT

@@ -42,7 +42,7 @@ class CampaignRun {
         val out = StringBuilder("# Goals and the campaign\n\n")
         out.append("Progress is company 0's against the goal's amount, in percent: people for a town (met only once the company has delivered there), ")
         out.append("what's delivered since the goal's start year, passengers between the two towns in the best calendar year for a connection, company value. ")
-        out.append("The player aims at the goals (see `Player`), styles 1 rail first, 2 road first, 3 rail first taking the goals last to first. Idle does nothing. ")
+        out.append("The player aims at the goals (see `Player`), styles 1 rail first, 2 road first, 3 rail first taking the goals last to first; generated games play seed 1, 2 and 3 in styles 1, 2 and 3. Idle does nothing. ")
         out.append("Unserved: a town goal's town the company never delivered to. Never tried: the player kept its money back (a fifth of its start) and never built for it. ")
         out.append("Went under: the company couldn't pay its way and the bank started it again, goal counts and all.\n\n")
         if (chapterDone.isNotEmpty()) chapterReport(out, chapterDone.map { it.first.id to it.first.style to it.second })
@@ -157,7 +157,8 @@ class CampaignRun {
             val w = World(NewGame(256, 256, seed, start, dayLength = length, goals = set))
             val watch = Watch(w)
             val over = { w.goals.none { it.status == Goal.OPEN } }
-            val p = if (idle) null else Player(w, aim = true)
+            // Each seed played in its own style, so every style is seen without playing each map three times.
+            val p = if (idle) null else Player(w, aim = true, style = ((seed - 1) % 3).toInt())
             while (Calendar.year(w.startYear, w.day) < start + years + 1 && !over()) {
                 if (p == null) idleYear(w, watch, over)
                 else {

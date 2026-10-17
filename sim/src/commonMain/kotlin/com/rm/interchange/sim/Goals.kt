@@ -146,17 +146,25 @@ internal fun World.goalsMonth() {
 /** The player's company that has met [g], the one furthest on, or -1. A year's profit only counts once the year's ended. */
 private fun World.whoMet(g: Goal, yearEnded: Boolean): Int {
     if (g.kind == Goal.YEAR_PROFIT && !yearEnded) return -1
-    // A town has to have been delivered to by the company that meets it, not just grow by itself.
-    if (g.kind == Goal.TOWN_POP && (towns.getOrNull(g.town)?.population ?: 0) < g.amount) return -1
+    // A town has to have been delivered to by the company that meets it, and be served by it still, not just grow by itself.
+    val town = if (g.kind == Goal.TOWN_POP) towns.getOrNull(g.town) ?: return -1 else null
+    if (town != null && town.population < g.amount) return -1
     var best = -1
     var most = 0L
     for (c in companies) {
         if (c.gone || !human(c.id)) continue
+        if (town != null && !servedLastMonth(c.id, town)) continue
         val p = if (g.kind == Goal.TOWN_POP) g.count[c.id] else goalProgress(g, c.id)
         val enough = if (g.kind == Goal.TOWN_POP) p > 0 else p >= g.amount
         if (enough && (best < 0 || p > most)) { best = c.id; most = p }
     }
     return best
+}
+
+/** Whether one of [company]'s vehicles called at one of its stations in [town] last month, run on the first of the month. */
+private fun World.servedLastMonth(company: Int, town: Town): Boolean {
+    val since = tick - Calendar.dayOfMonth(startYear, day - 1).toLong() * dayTicks
+    return stations.any { s -> s != null && s.owner == company && s.lastCall.any { it >= since } && stationTown(s)?.id == town.id }
 }
 
 /** Sets this new world's goals, as [NewGame.goals] asks, from the seed, by their own dice so the rest of the game's are as without. */
@@ -172,18 +180,32 @@ internal fun World.makeGoals() {
             goals += townGoals(dice, 1)
             goals += deliveryGoals(dice, 1)
             goals += connectionGoals(dice, 1)
-            // Value leaves the start money out, so 7 to 11 times it is what 8 to 12 was when it counted.
-            goals += Goal(Goal.COMPANY_VALUE, Prices.startMoney(startYear) * (7 + dice.below(5)), deadline(dice))
+            // Value leaves the start money out: a tenth of it for each work year to the deadline.
+            val end = workDeadline(dice)
+            goals += Goal(Goal.COMPANY_VALUE, roundTo(Prices.startMoney(startYear) * workYears(end) / VALUE_YEARS, 1_000), end)
         }
     }
 }
 
-/** A goal's last year: 10 to 20 years on from the start. */
+/** A town goal's last year: 10 to 20 calendar years on from the start, as towns grow on the calendar. */
 private fun World.deadline(dice: Rng) = startYear + 10 + dice.below(11)
+
+/**
+ * A delivery, connection or value goal's last year: 11 to 21 work years from the start, so it plays alike at any
+ * day length, in whole calendar years, at least the first.
+ */
+private fun World.workDeadline(dice: Rng): Int {
+    val work = 11 + dice.below(11)
+    val dl = settings.dayLength
+    return startYear + maxOf(1, (work + dl / 2) / dl) - 1
+}
+
+/** Work years from the start to the end of [deadline]. */
+private fun World.workYears(deadline: Int) = (deadline + 1 - startYear).toLong() * settings.dayLength
 
 private fun roundTo(v: Long, step: Long) = (v + step / 2) / step * step
 
-/** [n] towns to grow 2 to 4 times over, one from each part of the towns by size, small to big. */
+/** [n] towns to grow one and a half to two and a half times over, one from each part of the towns by size, small to big. */
 private fun World.townGoals(dice: Rng, n: Int): List<Goal> {
     val sorted = towns.sortedWith(compareBy({ it.population }, { it.id }))
     val out = ArrayList<Goal>()
@@ -193,7 +215,7 @@ private fun World.townGoals(dice: Rng, n: Int): List<Goal> {
         val hi = maxOf(lo + 1, sorted.size * (k + 1) / n)
         val t = sorted[lo + dice.below(hi - lo)]
         if (out.any { it.town == t.id }) continue
-        val target = roundTo(maxOf(t.population.toLong() * (2 + dice.below(3)), t.population + TOWN_GOAL_LEAST), 50)
+        val target = roundTo(maxOf(t.population.toLong() * (3 + dice.below(3)) / 2, t.population + TOWN_GOAL_LEAST), 50)
         out += Goal(Goal.TOWN_POP, target, deadline(dice), town = t.id)
     }
     return out
@@ -201,7 +223,8 @@ private fun World.townGoals(dice: Rng, n: Int): List<Goal> {
 
 /**
  * [n] deliveries: with more than one, the first goods or food to the biggest town, then cargo made on the map to
- * industries that take it, each a different industry. [DELIVER_A_YEAR] for each year to the deadline.
+ * industries that take it, each a different industry. [deliverAYear] for each work year to the deadline, a third of
+ * that to a town as its goods or food are made from something else brought in first.
  */
 private fun World.deliveryGoals(dice: Rng, n: Int): List<Goal> {
     var made = 0
@@ -211,8 +234,8 @@ private fun World.deliveryGoals(dice: Rng, n: Int): List<Goal> {
     val big = towns.maxByOrNull { it.population }
     if (big != null && (n > 1 || takers.isEmpty())) {
         val c = listOf(Cargo.GOODS, Cargo.FOOD).firstOrNull { made and (1 shl it) != 0 } ?: Cargo.PASSENGERS
-        val end = deadline(dice)
-        out += Goal(Goal.DELIVER, (end - startYear) * DELIVER_A_YEAR, end, cargo = c, town = big.id, from = startYear)
+        val end = workDeadline(dice)
+        out += Goal(Goal.DELIVER, roundTo(workYears(end) * deliverAYear(startYear) / 3, 50), end, cargo = c, town = big.id, from = startYear)
     }
     var tries = n * 10
     while (out.size < n && takers.isNotEmpty() && tries-- > 0) {
@@ -220,13 +243,16 @@ private fun World.deliveryGoals(dice: Rng, n: Int): List<Goal> {
         if (out.any { it.industry == ind.id }) continue
         val cargoes = (0 until Cargo.COUNT).filter { c -> made and (1 shl c) != 0 && roster.industries[ind.kind].takes(c) }
         val c = cargoes[dice.below(cargoes.size)]
-        val end = deadline(dice)
-        out += Goal(Goal.DELIVER, (end - startYear) * DELIVER_A_YEAR, end, cargo = c, industry = ind.id, from = startYear)
+        val end = workDeadline(dice)
+        out += Goal(Goal.DELIVER, roundTo(workYears(end) * deliverAYear(startYear), 50), end, cargo = c, industry = ind.id, from = startYear)
     }
     return out
 }
 
-/** [n] pairs of towns [CONNECT_NEAREST] to [CONNECT_FURTHEST] tiles apart, passengers between them in a year by their size. */
+/**
+ * [n] pairs of towns [CONNECT_NEAREST] to [CONNECT_FURTHEST] tiles apart, passengers between them in a calendar year,
+ * a quarter of their people or [connectLeast], for each work year in it.
+ */
 private fun World.connectionGoals(dice: Rng, n: Int): List<Goal> {
     val out = ArrayList<Goal>()
     if (towns.size < 2) return out
@@ -238,8 +264,9 @@ private fun World.connectionGoals(dice: Rng, n: Int): List<Goal> {
         val lo = minOf(a.id, b.id)
         val hi = maxOf(a.id, b.id)
         if (out.any { it.town == lo && it.town2 == hi }) continue
-        val amount = roundTo(maxOf(CONNECT_LEAST, (a.population + b.population) / 2L), 50)
-        out += Goal(Goal.CONNECT, amount, deadline(dice), town = lo, town2 = hi)
+        val amount = roundTo(maxOf(connectLeast(startYear), (a.population + b.population) / 4L), 50) * settings.dayLength
+        // A year's trips have to be carried within one calendar year, so a long day still gets a few to build up to it.
+        out += Goal(Goal.CONNECT, amount, maxOf(workDeadline(dice), startYear + CONNECT_YEARS - 1), town = lo, town2 = hi)
     }
     return out
 }
@@ -248,15 +275,36 @@ private fun World.connectionGoals(dice: Rng, n: Int): List<Goal> {
 private const val GOAL_DICE = 0x476f616cL
 
 /** The fewest people a town goal adds. */
-private const val TOWN_GOAL_LEAST = 200L
+private const val TOWN_GOAL_LEAST = 150L
 
-/** A delivery goal's amount for each year to its deadline. */
-private const val DELIVER_A_YEAR = 500L
+/**
+ * A delivery goal's amount for each work year to its deadline, by the start year: what a first line of the day
+ * carries, from a horse and four flatcars in 1836 to a long freight train.
+ */
+private fun deliverAYear(year: Int): Long = when {
+    year < 1860 -> 100L
+    year < 1900 -> 150L
+    year < 1950 -> 200L
+    year < 2000 -> 300L
+    else -> 350L
+}
 
-/** How far apart towns to connect are, in tiles, and the fewest passengers a year asked for. */
+/** Work years for each start money of a value goal. */
+private const val VALUE_YEARS = 10L
+
+/** How far apart towns to connect are, in tiles. */
 private const val CONNECT_NEAREST = 20
 private const val CONNECT_FURTHEST = 80
-private const val CONNECT_LEAST = 200L
+
+/** The fewest calendar years a connection goal gives, at any day length. */
+private const val CONNECT_YEARS = 3
+
+/** The fewest passengers a work year a connection asks for, by the start year: fewer while trains are small. */
+private fun connectLeast(year: Int): Long = when {
+    year < 1900 -> 100L
+    year < 1950 -> 150L
+    else -> 200L
+}
 
 /**
  * Something a town needs in a month to grow when towns grow only supplied: [needed] of [cargo] and the [got] of it

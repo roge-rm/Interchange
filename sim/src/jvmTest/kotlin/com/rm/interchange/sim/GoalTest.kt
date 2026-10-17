@@ -189,7 +189,7 @@ class GoalTest {
             assertEquals(none.rng.state, a.rng.state)
             assertEquals(none.towns.map { it.population }, a.towns.map { it.population })
             for (g in a.goals) when (g.kind) {
-                Goal.TOWN_POP -> assertTrue(g.amount >= a.towns[g.town].population * 2L - 25)
+                Goal.TOWN_POP -> assertTrue(g.amount >= a.towns[g.town].population * 3L / 2 - 25)
                 Goal.CONNECT -> assertTrue(a.towns[g.town].let { t -> a.towns[g.town2].let { u -> chebyshev(t.x, t.y, u.x, u.y) in 20..80 } })
                 Goal.DELIVER -> assertTrue(g.industry >= 0 && a.roster.industries[a.industries[g.industry].kind].takes(g.cargo) || g.town >= 0)
             }
