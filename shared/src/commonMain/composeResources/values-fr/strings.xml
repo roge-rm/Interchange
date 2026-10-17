@@ -384,6 +384,7 @@
     <string name="age_line">%1$d ans, fiable à %2$d %, %3$d pannes</string>
     <string name="renew_for">Renouveler pour %1$s</string>
     <string name="servicing">Entretien</string>
+    <string name="news_stuck">%1$s est bloqué : un train lui barre la route et il n'y a pas d'autre chemin</string>
     <string name="news_old">%1$s se fait vieux</string>
     <string name="tool_waypoint">Point de passage</string>
     <string-array name="signal_kinds">

@@ -1115,7 +1115,7 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
                         view.focusX = ind.x + 1f
                         view.focusY = ind.y + 1f
                     }
-                    if (n.kind == News.SNOWBOUND || n.kind == News.TRAIN_OLD) selected = Selection.Train(n.about)
+                    if (n.kind == News.SNOWBOUND || n.kind == News.TRAIN_OLD || n.kind == News.TRAIN_STUCK) selected = Selection.Train(n.about)
                     if (n.kind == News.SLID) selected = Selection.RoadVehicle(n.about)
                     if (n.kind == News.DIVERTED) selected = Selection.Aircraft(n.about)
                     if (n.kind == News.SUBSIDY_OFFERED || n.kind == News.SUBSIDY_AWARDED) subsidyStart(world, n.about).let { (x, y) -> view.focusX = x; view.focusY = y }
@@ -1459,10 +1459,10 @@ internal fun newsText(world: World, n: News): String {
         val name = world.roadVehicles.getOrNull(n.about)?.name?.takeIf { it.isNotEmpty() } ?: stringResource(Res.string.road_vehicle_n, n.about + 1)
         return stringResource(Res.string.news_slid, name)
     }
-    if (n.kind == News.SNOWBOUND || n.kind == News.TRAIN_OLD) {
+    if (n.kind == News.SNOWBOUND || n.kind == News.TRAIN_OLD || n.kind == News.TRAIN_STUCK) {
         if (world.trains.getOrNull(n.about)?.owner != me) return ""
         val name = world.trains.getOrNull(n.about)?.name?.takeIf { it.isNotEmpty() } ?: stringResource(Res.string.train_n, n.about + 1)
-        return stringResource(if (n.kind == News.SNOWBOUND) Res.string.news_snowbound else Res.string.news_old, name)
+        return stringResource(when (n.kind) { News.SNOWBOUND -> Res.string.news_snowbound; News.TRAIN_STUCK -> Res.string.news_stuck; else -> Res.string.news_old }, name)
     }
     val ind = world.industries.getOrNull(n.about) ?: return ""
     val name = industryName(world, ind, languageCode())

@@ -401,6 +401,7 @@
     <string name="age_line">%1$d years old, %2$d% reliable, %3$d breakdowns</string>
     <string name="renew_for">Renew for %1$s</string>
     <string name="servicing">Servicing</string>
+    <string name="news_stuck">%1$s is stuck: a train is in the way and there's no way round</string>
     <string name="news_old">%1$s is getting old</string>
     <string name="tool_waypoint">Waypoint</string>
     <string-array name="signal_kinds">

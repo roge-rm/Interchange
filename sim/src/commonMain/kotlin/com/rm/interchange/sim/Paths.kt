@@ -25,13 +25,21 @@ internal fun World.planRoute(t: Train): Plan? {
     return search(turned, t)?.let { Plan(it, true) }
 }
 
+/** A way on from [t]'s last wagon, turned round, that keeps off the pieces in [avoid], or null. */
+internal fun World.wayRound(t: Train, avoid: Set<Int>): IntArray? {
+    val i = (t.behind(t.length) shr 32).toInt()
+    if (i < 0) return null
+    val s = t.steps[i]
+    return search(step(stepTile(s), Track.index(stepPiece(s)), stepExit(s), stepLevel(s)), t, avoid)
+}
+
 /** Whether [next] carries on from [cur]: the tile through its way out, come in at the matching edge. */
 fun World.follows(cur: Int, next: Int): Boolean {
     val a = across(stepTile(cur), stepLevel(cur), stepExit(cur))
     return a >= 0 && stepTile(next) == a / 2 && stepLevel(next) == a % 2 && stepEntry(next) == Track.opposite(stepExit(cur))
 }
 
-private fun World.search(from: Int, t: Train): IntArray? {
+private fun World.search(from: Int, t: Train, avoid: Set<Int>? = null): IntArray? {
     val target = t.target
     if (target == -2) return null
     // Off for a service, or with its home gone, it ends at any depot of its company's it can get into; sent in, only at its own.
@@ -72,6 +80,7 @@ private fun World.search(from: Int, t: Train): IntArray? {
             val piece = stepPiece(w)
             if (level == 0 && !mayPass(nt, piece, entry)) continue
             if (electric && !wired(w)) continue
+            if (avoid != null && stepKey(w) in avoid) continue
             if (level == 0 && closedTile(nt)) continue
             if (!settings.sharing && owner[nt].toInt() != t.owner) continue
             val out = Track.other(piece, entry)

@@ -16,7 +16,7 @@ package com.rm.interchange.sim
  */
 object Save {
     private val MAGIC = "ICHG".encodeToByteArray()
-    const val VERSION = 36
+    const val VERSION = 37
 
     /** A vehicle's [built] day as saved by [version]: work days from 36, calendar days before. */
     private fun World.builtOut(built: Int, version: Int) = if (version >= 36) built else built / settings.dayLength
@@ -89,6 +89,7 @@ object Save {
                 w.int(t.shared)
                 w.int(builtOut(t.built, version)); w.int(t.serviced); w.int(t.reliability); w.int(t.breakdowns); w.int(t.brokenFor); w.bool(t.servicing); w.bool(t.service)
                 if (version >= 28) w.bool(t.snowbound)
+                if (version >= 37) { w.int(t.headOn); w.bool(t.stuck); w.bool(t.held) }
             }
             w.uvar(towns.size.toLong())
             for (t in towns) { w.string(t.name); w.int(t.x); w.int(t.y); w.int(t.grid); w.bool(t.french); w.int(t.population); w.int(t.houses); w.int(t.growIn); w.int(t.servedThisMonth); w.int(t.servedLastMonth); w.ints(t.approval)
@@ -328,6 +329,7 @@ object Save {
                         t.built = r.int(); t.serviced = r.int(); t.reliability = r.int(); t.breakdowns = r.int(); t.brokenFor = r.int()
                         t.servicing = r.bool(); t.service = r.bool()
                         if (version >= 28) t.snowbound = r.bool()
+                        if (version >= 37) { t.headOn = r.int(); t.stuck = r.bool(); t.held = r.bool() }
                     } else {
                         t.built = (tick / Calendar.TICKS_PER_DAY).toInt()
                         t.serviced = t.built

@@ -479,6 +479,7 @@ class World(settings: NewGame, val roster: Roster = Roster.BASE, generate: Boole
             mix(t.id.toLong()); mix(t.nose.toLong()); mix(t.speed.toLong()); mix(t.waiting.toLong()); mix(t.order.toLong())
             for (c in t.cargo) for (p in c) { mix(p.dest.toLong()); mix(p.count.toLong()) }
             mix(t.profitThisYear); mix(t.reliability.toLong()); mix(t.brokenFor.toLong()); mix(t.depot.toLong()); mix(t.noDepotUntil)
+            mix(t.headOn.toLong()); mix(if (t.stuck) 1L else 0L); mix(if (t.held) 1L else 0L)
             for (st in t.steps) mix(st.toLong())
         }
         return h

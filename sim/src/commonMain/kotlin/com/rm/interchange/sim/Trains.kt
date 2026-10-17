@@ -110,6 +110,12 @@ class Train(
     var lostUntil = 0L
     /** Stuck in a drift, so the news is told once. */
     var snowbound = false
+    /** Ticks it's stood held by a standing train coming the other way, counted every [HEAD_ON_CHECK] ticks. */
+    var headOn = 0
+    /** Held head-on with no way round, so the news is told once. */
+    var stuck = false
+    /** Standing at a signal or behind a train, as of its last move. */
+    var held = false
 
     /** The work day it was bought or last renewed, and last serviced. */
     var built = 0
@@ -301,6 +307,7 @@ internal fun World.moveTrains() {
 }
 
 private fun World.moveTrain(t: Train) {
+    t.held = false
     if (t.waiting > 0) {
         if (--t.waiting == 0) {
             // A full load order keeps it there, loading as more comes, till it's full, unless it's due a service.
@@ -375,10 +382,16 @@ private fun World.moveTrain(t: Train) {
         t.speed = 0
         return
     }
-    if (move > 0) t.snowbound = false
+    if (move > 0) {
+        t.snowbound = false
+        t.headOn = 0
+        t.stuck = false
+    }
     if (move == free && t.speed / 16 >= free) {
         // At the stopping point.
         t.speed = 0
+        t.held = stop == Stop.TRAIN || stop == Stop.SIGNAL
+        if ((stop == Stop.TRAIN || stop == Stop.SIGNAL) && tick % HEAD_ON_CHECK == 0L && headOnWait(t)) return
         when (stop) {
             Stop.SIGNAL -> if (tick % PATH_RETRY == 0L && t.route != null) {
                 // Held at a signal: look again for a way, another platform perhaps.
@@ -398,6 +411,90 @@ private fun World.moveTrain(t: Train) {
             else -> {}
         }
     }
+}
+
+/**
+ * Counts how long [t], standing, has been held by a standing train coming the other way on its path. When each holds
+ * the other up, after [HEAD_ON_WAIT] the one with the higher id turns round onto a way that keeps off the other, or
+ * the lower id once the higher is stuck; a train in the way that isn't held at a signal or behind a train (stopped,
+ * lost, snowed in) is gone round by [t] whatever the ids. With no way round it tells the news once for the pair. A
+ * train going the same way, or one held by something else, is just waited for. True if it turned.
+ */
+private fun World.headOnWait(t: Train): Boolean {
+    val u = firstInWay(t)
+    if (u == null || u.speed != 0 || u.waiting > 0 || u.brokenFor > 0 || (u.held && firstInWay(u) !== t)) {
+        t.headOn = 0
+        return false
+    }
+    t.headOn += HEAD_ON_CHECK.toInt()
+    if (t.headOn < HEAD_ON_WAIT || (u.held && u.id > t.id && !u.stuck)) return false
+    t.headOn = 0
+    val avoid = HashSet<Int>()
+    for (p in u.onPieces) avoid += p
+    for ((key, id) in reserved) if (id == u.id) avoid += key
+    val way = wayRound(t, avoid)
+    if (way == null) {
+        if (!t.stuck) {
+            t.stuck = true
+            if (!u.stuck) tell(News.TRAIN_STUCK, t.id)
+        }
+        return false
+    }
+    turnRound(t)
+    t.route = way
+    t.routeAt = 0
+    t.lostUntil = 0
+    return true
+}
+
+/**
+ * The first train on [t]'s path ahead that holds it up, if it's coming the other way: on, or holding, a piece
+ * there that meets [t]'s and heading out through the edge [t] comes in at. Null if the first is going the same way.
+ */
+private fun World.firstInWay(t: Train): Train? {
+    var cur = t.steps.last()
+    var at = t.routeAt
+    // The other trains on each tile, by tile key in order of id, made when first needed.
+    var onTile: HashMap<Int, ArrayList<Train>>? = null
+    repeat(MAX_PATH) {
+        val next = nextFrom(t, cur, at)
+        if (next < 0) return null
+        val tile = stepTile(next)
+        val level = stepLevel(next)
+        val piece = stepPiece(next)
+        fun meets(q: Int) = q == piece || Track.touch(q, piece)
+        val place = tileKey(next)
+        var holder: Train? = null
+        if ((tileTrains[place] ?: 0) - (if (place in t.onTiles) 1 else 0) > 0) {
+            val map = onTile ?: HashMap<Int, ArrayList<Train>>().also { m ->
+                for (u in trains) if (u != null && u.id != t.id && !u.inDepot) for (k in u.onTiles) m.getOrPut(k) { ArrayList() }.let { if (it.lastOrNull() !== u) it += u }
+                onTile = m
+            }
+            val wholeTile = !inPathArea(next)
+            holder = map[place]?.firstOrNull { u -> u.steps.any { stepTile(it) == tile && stepLevel(it) == level && (wholeTile || meets(stepPiece(it))) } }
+        }
+        if (holder == null) for (q in Track.PIECES) {
+            if (!meets(q)) continue
+            val id = reserved[pieceKey(tile, q, level)] ?: continue
+            if (id != t.id) {
+                holder = trains.getOrNull(id) ?: return null
+                break
+            }
+        }
+        if (holder != null) return if (toward(holder, tile, level, stepEntry(next))) holder else null
+        cur = next
+        at++
+    }
+    return null
+}
+
+/** Whether [u] heads out of [tile] through [edge]: going by the step it's on there, else its route up to there. */
+private fun toward(u: Train, tile: Int, level: Int, edge: Int): Boolean {
+    fun here(s: Int) = stepTile(s) == tile && stepLevel(s) == level
+    u.steps.lastOrNull { here(it) }?.let { return stepExit(it) == edge }
+    val r = u.route ?: return false
+    for (k in u.routeAt until r.size) if (here(r[k])) return stepExit(r[k]) == edge
+    return false
 }
 
 private enum class Stop { NONE, SIGNAL, TRAIN, STATION, DEPOT, END, SNOW }
@@ -751,6 +848,9 @@ const val RAM_TICKS = 1L
 /** The furthest through a path signal's area a train holds its way, in steps, and entry and exit signals chained. */
 const val MAX_PATH = 128
 const val MAX_PRESIGNALS = 4
+/** How often a standing train looks for one coming the other way, and how long it waits for it, in ticks: a work day. */
+const val HEAD_ON_CHECK = 8L
+const val HEAD_ON_WAIT = Calendar.TICKS_PER_DAY
 /** Ticks a train waits at a path signal before looking for another way, to a free platform say. */
 const val PATH_RETRY = 128L
 
