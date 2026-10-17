@@ -16,7 +16,7 @@ package com.rm.interchange.sim
  */
 object Save {
     private val MAGIC = "ICHG".encodeToByteArray()
-    const val VERSION = 34
+    const val VERSION = 35
 
     /**
      * [world] as a save; [version] older than [VERSION] only for tests reading older saves. [asScenario] writes an
@@ -142,7 +142,10 @@ object Save {
             for (rv in rivals) {
                 w.int(rv.company); w.int(rv.home); w.int(if (version >= 34) rv.thinkOn else rv.thinkOn / settings.dayLength)
                 w.uvar(rv.routes.size.toLong())
-                for (rt in rv.routes) { w.int(rt.a); w.int(rt.b); w.int(rt.depot); w.int(rt.townA); w.int(rt.townB); w.int(rt.cargo); w.bool(rt.rail) }
+                for (rt in rv.routes) {
+                    w.int(rt.a); w.int(rt.b); w.int(rt.depot); w.int(rt.townA); w.int(rt.townB); w.int(rt.cargo); w.bool(rt.rail)
+                    if (version >= 35) { w.uvar(rt.loops.size.toLong()); for (l in rt.loops) w.int(l) }
+                }
                 val failed = rv.failed.keys.sorted()
                 w.uvar(failed.size.toLong())
                 for (f in failed) { w.long(f); if (version >= 34) w.int(rv.failed.getValue(f)) }
@@ -427,7 +430,9 @@ object Save {
                 // Before 34 it thought on calendar days and never tried a pair again.
                 rv.thinkOn = r.int().let { if (version >= 34) it else it * settings.dayLength }
                 repeat(r.uvar().toInt().also { if (it > 1000) throw BadData("too many routes") }) {
-                    rv.routes += RivalRoute(r.int(), r.int(), r.int(), r.int(), r.int(), r.int(), version >= 20 && r.bool())
+                    val route = RivalRoute(r.int(), r.int(), r.int(), r.int(), r.int(), r.int(), version >= 20 && r.bool())
+                    if (version >= 35) repeat(r.uvar().toInt().also { if (it > 100) throw BadData("too many loops") }) { route.loops += r.int() }
+                    rv.routes += route
                 }
                 repeat(r.uvar().toInt().also { if (it > 100_000) throw BadData("too many tried pairs") }) { rv.failed[r.long()] = if (version >= 34) r.int() else 0 }
                 rivals += rv

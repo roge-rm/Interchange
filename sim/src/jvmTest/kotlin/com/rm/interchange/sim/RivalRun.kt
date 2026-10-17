@@ -29,29 +29,35 @@ class RivalRun {
         val out = StringBuilder("# Rivals\n\n")
         out.append("A 256 by 256 map, default settings, $count rivals, $years calendar years. Company 0 is the human one and does nothing. ")
         out.append("Per rival: routes open as bus/truck/rail, routes given up as bus/truck/rail, vehicles, money and loan in dollars, value (money less loan plus vehicles less start money), ")
-        out.append("profit last year (income less running, upkeep and interest), status (ok, trouble in months, GONE). Tried is town pairs and industries it has given up on, in all.\n\n")
+        out.append("profit last year (income less running, upkeep and interest), status (ok, trouble in months, GONE). Tried is town pairs and industries it has given up on, in all. ")
+        out.append("Bus routes include feeder buses to railway stations. Trains, passing loops and feeders are counted in the runs and summed by level at the end.\n\n")
         out.append("## Summary at the end\n\n")
         out.append("Median (min to max) over every rival of every run at that level and start year. Given up is all the routes given up by bus/truck/rail, over all those rivals.\n\n")
-        out.append("| level | start | day length | routes | rail | vehicles | value | given up | gone | in trouble | runs |\n|---|---|---|---|---|---|---|---|---|---|---|\n")
+        out.append("| level | start | day length | routes | rail | trains | vehicles | value | given up | gone | in trouble | runs |\n|---|---|---|---|---|---|---|---|---|---|---|---|\n")
         for (v in levels) for (s in starts) for (l in lengths) {
             val rs = done.filter { it.first.level == v && it.first.start == s && it.first.length == l }.flatMap { it.second.last().rivals }
             if (rs.isEmpty()) continue
             fun spread(f: (Snap) -> Long) = rs.map(f).sorted().let { "${it[it.size / 2]} (${it.first()} to ${it.last()})" }
-            out.append("| ${names[v]} | $s | $l | ${spread { it.open.sum().toLong() }} | ${spread { it.open[2].toLong() }} | ${spread { it.vehicles.toLong() }} | ${spread { it.value }} | ${givenUp(rs)} | ${rs.count { it.gone } * 100 / rs.size}% | ${rs.count { it.trouble > 0 && !it.gone } * 100 / rs.size}% | ${rs.size} |\n")
+            out.append("| ${names[v]} | $s | $l | ${spread { it.open.sum().toLong() }} | ${spread { it.open[2].toLong() }} | ${spread { it.trains.toLong() }} | ${spread { it.vehicles.toLong() }} | ${spread { it.value }} | ${givenUp(rs)} | ${rs.count { it.gone } * 100 / rs.size}% | ${rs.count { it.trouble > 0 && !it.gone } * 100 / rs.size}% | ${rs.size} |\n")
         }
-        out.append("\n## Summary by level\n\n| level | routes | rail | vehicles | value | given up | gone | in trouble |\n|---|---|---|---|---|---|---|---|\n")
+        out.append("\n## Summary by level\n\n| level | routes | rail | trains | vehicles | value | given up | gone | in trouble |\n|---|---|---|---|---|---|---|---|---|\n")
         for (v in levels) {
             val rs = done.filter { it.first.level == v }.flatMap { it.second.last().rivals }
             if (rs.isEmpty()) continue
             fun spread(f: (Snap) -> Long) = rs.map(f).sorted().let { "${it[it.size / 2]} (${it.first()} to ${it.last()})" }
-            out.append("| ${names[v]} | ${spread { it.open.sum().toLong() }} | ${spread { it.open[2].toLong() }} | ${spread { it.vehicles.toLong() }} | ${spread { it.value }} | ${givenUp(rs)} | ${rs.count { it.gone } * 100 / rs.size}% | ${rs.count { it.trouble > 0 && !it.gone } * 100 / rs.size}% |\n")
+            out.append("| ${names[v]} | ${spread { it.open.sum().toLong() }} | ${spread { it.open[2].toLong() }} | ${spread { it.trains.toLong() }} | ${spread { it.vehicles.toLong() }} | ${spread { it.value }} | ${givenUp(rs)} | ${rs.count { it.gone } * 100 / rs.size}% | ${rs.count { it.trouble > 0 && !it.gone } * 100 / rs.size}% |\n")
         }
-        out.append("\n## Runs\n\n")
+        out.append("\nIn all at the end, by level: ")
+        out.append(levels.joinToString("; ") { v ->
+            val rs = done.filter { it.first.level == v }.flatMap { it.second.last().rivals }
+            "${names[v]} ${rs.sumOf { it.open[2] }} railways, ${rs.sumOf { it.trains }} trains, ${rs.sumOf { it.loops }} loops, ${rs.sumOf { it.feeders }} feeders"
+        })
+        out.append(".\n\n## Runs\n\n")
         for ((j, r) in done) {
             out.append("### ${names[j.level]}, ${j.start}, day length ${j.length}, seed ${j.seed}\n\n")
-            out.append("| year | rival | open | given up | vehicles | money | loan | value | profit | tried | status |\n|---|---|---|---|---|---|---|---|---|---|---|\n")
+            out.append("| year | rival | open | given up | trains | loops | feeders | vehicles | money | loan | value | profit | tried | status |\n|---|---|---|---|---|---|---|---|---|---|---|---|---|---|\n")
             for (m in r.marks) for ((i, s) in m.rivals.withIndex()) {
-                out.append("| ${m.year} | ${i + 1} | ${s.open.joinToString("/")} | ${s.failed.joinToString("/")} | ${s.vehicles} | ${s.money} | ${s.loan} | ${s.value} | ${s.profit} | ${s.tried} | ${if (s.gone) "GONE" else if (s.trouble > 0) "trouble ${s.trouble}" else "ok"} |\n")
+                out.append("| ${m.year} | ${i + 1} | ${s.open.joinToString("/")} | ${s.failed.joinToString("/")} | ${s.trains} | ${s.loops} | ${s.feeders} | ${s.vehicles} | ${s.money} | ${s.loan} | ${s.value} | ${s.profit} | ${s.tried} | ${if (s.gone) "GONE" else if (s.trouble > 0) "trouble ${s.trouble}" else "ok"} |\n")
             }
             out.append("\n")
         }
@@ -66,7 +72,7 @@ class RivalRun {
     /** One rival's state: routes open and given up by bus, truck and rail. */
     class Snap(
         val open: IntArray, val failed: IntArray, val vehicles: Int, val money: Long, val loan: Long, val value: Long,
-        val profit: Long, val tried: Int, val trouble: Int, val gone: Boolean,
+        val profit: Long, val tried: Int, val trouble: Int, val gone: Boolean, val trains: Int, val loops: Int, val feeders: Int,
     )
 
     class Mark(val year: Int, val rivals: List<Snap>)
@@ -79,6 +85,7 @@ class RivalRun {
         /** 0 bus, 1 truck, 2 rail. */
         private fun kind(r: RivalRoute) = if (r.rail) 2 else if (r.freight) 1 else 0
 
+
         private fun snap(w: World, r: Rival, given: IntArray): Snap {
             val c = w.companies[r.company]
             val open = IntArray(3)
@@ -87,7 +94,8 @@ class RivalRun {
                 w.ships.count { it != null && it.owner == c.id } + w.aircraft.count { it != null && it.owner == c.id }
             // Costs are booked as negative amounts.
             val profit = c.lastYear[Books.INCOME] + c.lastYear[Books.RUNNING] + c.lastYear[Books.UPKEEP] + c.lastYear[Books.INTEREST]
-            return Snap(open, given.copyOf(), vehicles, c.money, c.loan, w.companyValue(c), profit, r.failed.size, c.trouble, c.gone)
+            val trains = w.trains.count { it != null && it.owner == c.id }
+            return Snap(open, given.copyOf(), vehicles, c.money, c.loan, w.companyValue(c), profit, r.failed.size, c.trouble, c.gone, trains, r.routes.sumOf { it.loops.size }, r.routes.count { it.feeder })
         }
 
         fun run(seed: Long, start: Int, length: Int, level: Int, count: Int, years: Int): Result {

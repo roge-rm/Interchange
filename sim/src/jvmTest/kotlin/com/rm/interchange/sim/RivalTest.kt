@@ -43,8 +43,9 @@ class RivalTest {
         for ((company, rt) in rail) {
             assertEquals(company, w.stations[rt.a]!!.owner)
             assertTrue(w.stations[rt.a]!!.tiles.isNotEmpty() && w.stations[rt.b]!!.tiles.isNotEmpty(), "a railway without platforms")
-            val train = w.trains.single { it != null && it.owner == company && Order.station(it.orders[0]) == rt.a }!!
-            assertTrue(train.profitThisYear + train.profitLastYear > 0, "its train doesn't pay")
+            val on = w.trains.filter { it != null && it.owner == company && Order.station(it.orders[0]) == rt.a }.map { it!! }
+            assertTrue(on.isNotEmpty() && on.size <= rt.loops.size + 1, "${on.size} trains on ${rt.loops.size} loops")
+            assertTrue(on.sumOf { it.profitThisYear + it.profitLastYear } > 0, "its trains don't pay")
         }
     }
 
@@ -132,6 +133,67 @@ class RivalTest {
         assertTrue(route !in r.routes, "the railway is still run")
         assertTrue(w.track[joined].toInt() != 0, "the joined track was taken up")
         assertTrue(line.none { w.track[it].toInt() != 0 }, "track left on ${line.count { w.track[it].toInt() != 0 }} tiles")
+    }
+
+    /** A railway for [r] between the biggest towns that'll take one, any that will do. */
+    private fun railFor(w: World, r: Rival): RivalRoute? {
+        val c = w.companies[r.company]
+        val towns = w.towns.sortedByDescending { it.population }
+        val serves = { s: Station, _: Boolean -> (w.stationPeople[s.id] ?: 0) > 0 }
+        for (t1 in towns) for (t2 in towns) {
+            if (t1.id == t2.id) continue
+            if (w.tryRail(c, railSite(t1, t2.x, t2.y), railSite(t2, t1.x, t1.y), Cargo.PASSENGERS, 100, t1.id, t2.id, serves, payback = 0) { r.routes += it } == Tried.BUILT) return r.routes.last()
+        }
+        return null
+    }
+
+    @Test
+    fun aPassingLoopRunsASecondTrain() {
+        val w = World(NewGame(160, 160, 5, 1930, Region.MIXED, towns = 3, industries = 0, rivals = 1))
+        val r = w.rivals[0]
+        val c = w.companies[r.company]
+        c.money = 10_000_000
+        r.thinkOn = Int.MAX_VALUE
+        val route = railFor(w, r) ?: error("no line to test with")
+        val line = (0 until w.width * w.height).filter { w.owner[it].toInt() == r.company && w.track[it].toInt() != 0 }
+        assertTrue(w.addLoop(c, route), "no loop laid")
+        assertEquals(1, route.loops.size)
+        assertEquals(2, w.loopTiles(route.loops[0]).count { i -> Track.PIECES.any { w.signals[pieceKey(i, it)]?.let { s -> Signals.oneWay(s) } == true } })
+        assertTrue(w.addTrain(c, route), "no second train")
+        val on = w.trains.filterNotNull().filter { it.owner == r.company }
+        assertEquals(2, on.size)
+        // Both trains keep calling at both ends, passing on the loop.
+        val calls = IntArray(2)
+        val last = IntArray(2) { -1 }
+        repeat(Calendar.TICKS_PER_DAY * 365) {
+            w.step()
+            for ((k, t) in on.withIndex()) if (t.order != last[k]) { calls[k]++; last[k] = t.order }
+        }
+        assertTrue(calls.all { it >= 8 }, "calls ${calls.toList()}")
+        // Given up, the loop and the signal tile come up with the line.
+        for (t in on) { t.built = w.day - 1000; t.profitLastYear = -100 }
+        val loop = w.loopTiles(route.loops[0]).asList()
+        repeat(12) { w.days(30); w.sellLosers(r, c) }
+        assertTrue(route !in r.routes, "the railway is still run")
+        val all = line + loop
+        assertTrue(all.none { w.track[it].toInt() != 0 }, "track left on ${all.count { w.track[it].toInt() != 0 }} tiles")
+    }
+
+    @Test
+    fun rivalStationsGoInTown() {
+        // The same line built by a rival, which may pull down a few town buildings, and by the player, who doesn't here.
+        fun build(rival: Boolean): Pair<World, RivalRoute> {
+            val w = World(NewGame(160, 160, 5, 1930, Region.MIXED, towns = 3, industries = 0, rivals = 1))
+            val r = w.rivals[0]
+            r.thinkOn = Int.MAX_VALUE
+            val plan = if (rival) r else Rival(0, 0)
+            w.companies[plan.company].money = 10_000_000
+            return w to (railFor(w, plan) ?: error("no line to test with"))
+        }
+        val (wr, rr) = build(true)
+        val (wp, rp) = build(false)
+        fun people(w: World, rt: RivalRoute) = (w.stationPeople[rt.a] ?: 0) + (w.stationPeople[rt.b] ?: 0)
+        assertTrue(people(wr, rr) > people(wp, rp), "rival reaches ${people(wr, rr)}, player ${people(wp, rp)}")
     }
 
     private fun keyOfRail(route: RivalRoute) = (1L shl 61) or (route.cargo.toLong() shl 48) or (route.townA.toLong() shl 24) or route.townB.toLong()
