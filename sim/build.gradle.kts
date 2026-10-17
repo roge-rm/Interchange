@@ -26,7 +26,12 @@ kotlin {
 
 // -Pinterchange.* is passed on to the tests, for the slow balance runs such as PlayerRun.
 tasks.withType<Test>().configureEach {
-    val asked = project.properties.filterKeys { it.startsWith("interchange.") }
+    val asked = providers.gradlePropertiesPrefixedBy("interchange.").get()
     for ((k, v) in asked) systemProperty(k, v.toString())
-    if (asked.isNotEmpty()) maxHeapSize = "6g"
+    if (asked.isNotEmpty()) {
+        maxHeapSize = "6g"
+        // The runs write their tables outside the task's outputs, so they always run.
+        outputs.cacheIf { false }
+        outputs.upToDateWhen { false }
+    }
 }
