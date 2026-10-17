@@ -67,7 +67,8 @@ class Balance {
     }
 
     private fun world(year: Int, dayLength: Int, width: Int = 128): World {
-        val w = World(NewGame(width, 64, 1, year, Region.MIXED, towns = 0, industries = 0, weather = false, inflation = false, dayLength = dayLength))
+        // No crashes: they'd make paybacks a matter of luck.
+        val w = World(NewGame(width, 64, 1, year, Region.MIXED, towns = 0, industries = 0, weather = false, inflation = false, dayLength = dayLength, collisions = false))
         for (i in w.corners.indices) w.corners[i] = 3
         w.trees.fill(0)
         w.companies[0].money = 1_000_000_000L
@@ -471,7 +472,7 @@ class Balance {
     // The checks FareTest made: full vehicles on a year's run earn comfortably more than they cost, trains most of all.
 
     private fun run(weather: Boolean, year: Int, key: String, gap: Int): Pair<Long, Long> {
-        val w = World(NewGame(96, 64, 1, year, Region.MIXED, towns = 0, industries = 0, weather = weather))
+        val w = World(NewGame(96, 64, 1, year, Region.MIXED, towns = 0, industries = 0, weather = weather, collisions = false))
         for (i in w.corners.indices) w.corners[i] = 3
         w.trees.fill(0)
         w.companies[0].money = 10_000_000
@@ -501,7 +502,7 @@ class Balance {
     }
 
     private fun train(year: Int, engine: String, wagon: String, wagons: Int, gap: Int): Pair<Long, Long> {
-        val w = World(NewGame(96, 64, 1, year, Region.MIXED, towns = 0, industries = 0, weather = false))
+        val w = World(NewGame(96, 64, 1, year, Region.MIXED, towns = 0, industries = 0, weather = false, collisions = false))
         for (i in w.corners.indices) w.corners[i] = 3
         w.trees.fill(0)
         w.companies[0].money = 10_000_000

@@ -16,7 +16,7 @@ package com.rm.interchange.sim
  */
 object Save {
     private val MAGIC = "ICHG".encodeToByteArray()
-    const val VERSION = 38
+    const val VERSION = 39
 
     /** A vehicle's [built] day as saved by [version]: work days from 36, calendar days before. */
     private fun World.builtOut(built: Int, version: Int) = if (version >= 36) built else built / settings.dayLength
@@ -134,6 +134,7 @@ object Save {
                 if (r != null) w.ints(r)
                 w.int(v.routeAt); w.long(v.lostUntil); w.int(builtOut(v.built, version)); w.int(v.serviced); w.int(v.reliability); w.int(v.breakdowns); w.int(v.brokenFor)
                 w.bool(v.servicing); w.bool(v.service); w.int(v.tires); w.bool(v.seasonalTires); w.bool(v.slid)
+                if (version >= 39) w.int(v.wreckedFor)
             }
             val held = reserved.keys.sorted()
             w.uvar(held.size.toLong())
@@ -427,6 +428,7 @@ object Save {
                     v.route = if (r.bool()) r.ints() else null
                     v.routeAt = r.int(); v.lostUntil = r.long(); v.built = r.int(); v.serviced = r.int(); v.reliability = r.int(); v.breakdowns = r.int(); v.brokenFor = r.int()
                     v.servicing = r.bool(); v.service = r.bool(); v.tires = r.int(); v.seasonalTires = r.bool(); v.slid = r.bool()
+                    if (version >= 39) v.wreckedFor = r.int()
                     roadVehicles += v
                 }
             } else {
@@ -610,6 +612,7 @@ object Save {
             w.ints(v.orders.toIntArray()); w.int(v.order); w.bool(v.toDepot)
             w.int(builtOut(v.built, version)); w.int(v.serviced); w.int(v.reliability); w.int(v.breakdowns); w.int(v.brokenFor)
             w.bool(v.servicing); w.bool(v.service)
+            if (version >= 39) w.int(v.wreckedFor)
         }
     }
 
@@ -650,6 +653,7 @@ object Save {
             v.orders += r.ints().toList(); v.order = r.int(); v.toDepot = r.bool()
             v.built = r.int(); v.serviced = r.int(); v.reliability = r.int(); v.breakdowns = r.int(); v.brokenFor = r.int()
             v.servicing = r.bool(); v.service = r.bool()
+            if (version >= 39) v.wreckedFor = r.int()
             aircraft += v
         }
     }

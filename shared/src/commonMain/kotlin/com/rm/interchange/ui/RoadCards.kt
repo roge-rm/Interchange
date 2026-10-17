@@ -79,6 +79,7 @@ fun RoadVehicleCard(view: WorldView, roster: Roster, v: RoadVehicleView, addingS
     Card(roadVehicleName(v), onClose, modifier) {
         val target = if (v.orders.isEmpty()) null else Order.station(v.orders[v.order % v.orders.size])
         val doing = when {
+            v.wrecked -> stringResource(Res.string.wrecked)
             v.slid -> stringResource(Res.string.in_the_ditch)
             v.broken -> stringResource(Res.string.broken_down)
             v.inDepot && v.running -> stringResource(Res.string.waiting_to_leave)
@@ -92,7 +93,7 @@ fun RoadVehicleCard(view: WorldView, roster: Roster, v: RoadVehicleView, addingS
             else -> stringResource(Res.string.no_stops)
         }
         Text(roster[v.model].name(lang), color = c.textDim, fontSize = 13.sp)
-        Text(doing, color = if (v.lost || v.broken || v.slid) c.warn else c.text, fontSize = 13.sp)
+        Text(doing, color = if (v.wrecked) c.bad else if (v.lost || v.broken || v.slid) c.warn else c.text, fontSize = 13.sp)
         val names = stringArrayResource(Res.array.cargoes)
         if (v.capacity > 0) Text(stringResource(Res.string.cargo_load, names.getOrElse(v.carries) { "" }, v.load, v.capacity), color = c.text, fontSize = 13.sp)
         Text(stringResource(Res.string.profit_line, money(v.profitThisYear), money(v.profitLastYear)), color = if (v.profitThisYear < 0) c.bad else c.textDim, fontSize = 13.sp)
@@ -101,6 +102,8 @@ fun RoadVehicleCard(view: WorldView, roster: Roster, v: RoadVehicleView, addingS
             Text(stringResource(Res.string.owned_by, view.companies.getOrElse(v.owner) { "" }), color = c.textDim, fontSize = 13.sp)
             return@Card
         }
+        // A wreck can't be given orders or sold; it's cleared away by itself.
+        if (v.wrecked) return@Card
         Text(stringResource(Res.string.age_line_road, v.age, v.reliability), color = c.textDim, fontSize = 13.sp)
         val horses = roster[v.model].traction == Traction.HORSE
         val tires = stringArrayResource(Res.array.tire_kinds)

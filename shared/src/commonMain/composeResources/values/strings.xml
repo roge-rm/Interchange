@@ -406,6 +406,8 @@
     <string name="news_crash_lost">%1$s crashed near %2$s, %3$d people lost</string>
     <string name="name_and">%1$s and %2$s</string>
     <string name="company_train">%1$s train %2$d</string>
+    <string name="company_road_vehicle">%1$s vehicle %2$d</string>
+    <string name="company_aircraft">%1$s aircraft %2$d</string>
     <string name="wrecked">Wrecked</string>
     <string name="news_stuck">%1$s is stuck: a train is in the way and there's no way round</string>
     <string name="news_old">%1$s is getting old</string>
@@ -488,6 +490,7 @@
         <item>wrong gear</item>
         <item>snow on the strip</item>
         <item>runway too short</item>
+        <item>a wreck on the runway</item>
     </string-array>
     <string-array name="gear_kinds">
         <item>wheels</item>

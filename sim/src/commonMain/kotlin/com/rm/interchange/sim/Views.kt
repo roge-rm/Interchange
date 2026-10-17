@@ -125,6 +125,8 @@ class RoadVehicleView(
     val renewCost: Long,
     /** The company it belongs to. */
     val owner: Int = 0,
+    /** A wreck, waiting to be cleared. */
+    val wrecked: Boolean = false,
 )
 
 /** A ship as the screen shows it. */
@@ -190,6 +192,8 @@ class AircraftView(
     val holdingFor: String?,
     /** The company it belongs to. */
     val owner: Int = 0,
+    /** A wreck on the runway, waiting to be cleared. */
+    val wrecked: Boolean = false,
 )
 
 /** An airport as the screen shows it. */
@@ -274,6 +278,8 @@ class WorldView(
     val companies: List<String> = emptyList(),
     /** The pieces trains hold paths through, by piece key, those inside tunnels left out; empty unless asked for. */
     val reserved: IntArray = IntArray(0),
+    /** Level crossings with a train near, their lights flashing, by tile. */
+    val crossings: IntArray = IntArray(0),
 )
 
 /**
@@ -390,7 +396,10 @@ fun World.view(company: Int = 0, withReserved: Boolean = false): WorldView {
         townViews = towns.map { TownView(it.id, it.name, it.x, it.y, it.population, it.houses) }
         townsChanged = false
     }
-    return WorldView(VehicleView(tick, cars.toFloatArray(), trains.mapNotNullTo(HashSet()) { t -> t?.id?.takeIf { t.wreckedFor > 0 } }), trainViews, stationViews, signalViews, depotViews, townViews, payments.filter { it.company == company }, news.toList(),
+    val wrecks = trains.mapNotNullTo(HashSet()) { t -> t?.id?.takeIf { t.wreckedFor > 0 } }
+    for (v in roadVehicles) if (v != null && v.wreckedFor > 0) wrecks += VehicleView.key(VehicleView.ROAD, v.id)
+    for (v in aircraft) if (v != null && v.wreckedFor > 0) wrecks += VehicleView.key(VehicleView.AIRCRAFT, v.id)
+    return WorldView(VehicleView(tick, cars.toFloatArray(), wrecks), trainViews, stationViews, signalViews, depotViews, townViews, payments.filter { it.company == company }, news.toList(),
         companies.getOrNull(company)?.let { c -> CompanyView(c.money, c.loan, maxLoan(), c.thisYear.copyOf(), c.lastYear.copyOf(), c.history.map { it.copyOf() }, c.upkeep) }, tick, weatherView(),
         stations.filterNotNull().filter { it.waypoint }.flatMap { it.tiles }.toIntArray(),
         spans.filterNotNull().map { SpanView(it.tunnel, it.style, it.x0, it.y0, it.x1, it.y1, it.height) },
@@ -402,7 +411,7 @@ fun World.view(company: Int = 0, withReserved: Boolean = false): WorldView {
                 v.waiting > 0, v.running && !v.inDepot && v.lostUntil > tick, c, if (c >= 0) v.load(c) else 0, if (c >= 0) v.capacity(c) else 0,
                 v.profitThisYear, v.profitLastYear, (workDay - v.built).coerceAtLeast(0) / 365, v.reliability / 100, v.brokenFor > 0 && !v.slid, v.slid,
                 v.service, v.servicing, v.tires, v.seasonalTires, price(v.price) - roadValue(v),
-                owner = v.owner,
+                owner = v.owner, wrecked = v.wreckedFor > 0,
             )
         },
         ships.filterNotNull().map { v ->
@@ -427,14 +436,38 @@ fun World.view(company: Int = 0, withReserved: Boolean = false): WorldView {
                 v.profitThisYear, v.profitLastYear, (workDay - v.built).coerceAtLeast(0) / 365, v.reliability / 100, v.brokenFor > 0,
                 v.service, v.servicing, price(v.price) - craftValue(v.price, v.built, v.info.life), v.gear, v.seasonalGear,
                 if (v.state == Flight.HOLD && dest != null) cantLand(v, dest) else null,
-                owner = v.owner,
+                owner = v.owner, wrecked = v.wreckedFor > 0,
             )
         },
         airports.filterNotNull().map { AirportView(it.id, it.station, it.kind, it.x, it.y, it.w, it.h, it.axis, it.depot, it.ils, it.deice) },
         buoys.keys.sorted().toIntArray(),
         companies.map { it.name },
         if (withReserved) reservedView() else IntArray(0),
+        litCrossings(),
     )
+}
+
+/**
+ * The level crossings a road vehicle would wait at now, as [trainNear] has it: those with a train on them or within
+ * [CROSSING_LOOK] tiles along their track. Found from the tiles trains are on, so it costs nothing with none about.
+ */
+internal fun World.litCrossings(): IntArray {
+    if (tileTrains.isEmpty()) return IntArray(0)
+    val out = HashSet<Int>()
+    for ((k, n) in tileTrains) {
+        if (n <= 0 || k < 0) continue
+        val x = k % width
+        val y = k / width
+        if (crossing(k)) out += k
+        for (e in 0 until 4) for (d in 1..CROSSING_LOOK) {
+            val cx = x + Track.dx(e) * d
+            val cy = y + Track.dy(e) * d
+            if (!inside(cx, cy)) break
+            val c = index(cx, cy)
+            if (c !in out && crossing(c) && trainNear(c)) out += c
+        }
+    }
+    return out.sorted().toIntArray()
 }
 
 /** The keys of the reserved pieces out in the open: on the ground or on a bridge. */

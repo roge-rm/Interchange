@@ -389,6 +389,8 @@
     <string name="news_crash_lost">%1$s a eu un accident près de %2$s, %3$d personnes ont péri</string>
     <string name="name_and">%1$s et %2$s</string>
     <string name="company_train">Train %2$d de %1$s</string>
+    <string name="company_road_vehicle">Véhicule %2$d de %1$s</string>
+    <string name="company_aircraft">Aéronef %2$d de %1$s</string>
     <string name="wrecked">Accidenté</string>
     <string name="news_stuck">%1$s est bloqué : un train lui barre la route et il n'y a pas d'autre chemin</string>
     <string name="news_old">%1$s se fait vieux</string>
@@ -471,6 +473,7 @@
         <item>mauvais train</item>
         <item>neige sur la piste</item>
         <item>piste trop courte</item>
+        <item>une épave sur la piste</item>
     </string-array>
     <string-array name="gear_kinds">
         <item>roues</item>

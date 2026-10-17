@@ -464,9 +464,9 @@ class World(settings: NewGame, val roster: Roster = Roster.BASE, generate: Boole
         for (k in fences.sorted()) mix(k.toLong())
         for (k in roadStops.keys.sorted()) mix(k.toLong() * 31 + roadStops.getValue(k))
         for (k in saltDepots.sorted()) mix(k.toLong() * 7)
-        for (v in roadVehicles) if (v != null) { mix(v.depot.toLong()); mix(v.noDepotUntil) }
+        for (v in roadVehicles) if (v != null) { mix(v.depot.toLong()); mix(v.noDepotUntil); mix(v.wreckedFor.toLong()) }
         for (v in ships) if (v != null) { mix(v.depot.toLong()); mix(v.noDepotUntil) }
-        for (v in aircraft) if (v != null) mix(v.depot.toLong())
+        for (v in aircraft) if (v != null) { mix(v.depot.toLong()); mix(v.wreckedFor.toLong()) }
         for (v in roadVehicles) if (v != null) { mix(v.id.toLong()); mix(v.at.toLong()); mix(v.along.toLong()); mix(v.speed.toLong()); for (c in v.cargo) for (p in c) mix(p.count.toLong()) }
         for (k in sheds.sorted()) mix(-k.toLong())
         for (k in canals.sorted()) mix(k.toLong() * 3)

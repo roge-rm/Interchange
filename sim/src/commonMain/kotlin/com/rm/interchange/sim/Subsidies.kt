@@ -141,6 +141,6 @@ fun World.netWorth(c: Company): Long {
     for (t in trains) if (t != null && t.owner == c.id) v += value(t)
     for (r in roadVehicles) if (r != null && r.owner == c.id) v += roadValue(r)
     for (s in ships) if (s != null && s.owner == c.id) v += craftValue(s.price, s.built, s.info.life)
-    for (a in aircraft) if (a != null && a.owner == c.id) v += craftValue(a.price, a.built, a.info.life)
+    for (a in aircraft) if (a != null && a.owner == c.id && a.wreckedFor == 0) v += craftValue(a.price, a.built, a.info.life)
     return v
 }

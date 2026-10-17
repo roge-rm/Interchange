@@ -210,8 +210,9 @@ fun AircraftCard(view: WorldView, roster: Roster, v: AircraftView, addingStops: 
     Card(aircraftName(v), onClose, modifier) {
         val target = if (v.orders.isEmpty()) null else Order.station(v.orders[v.order % v.orders.size])
         val reasons = stringArrayResource(Res.array.hold_reasons)
-        val reason = when (v.holdingFor) { "storm" -> 0; "fog" -> 1; "gates" -> 2; "ice" -> 3; "gear" -> 4; "snow" -> 5; else -> 6 }
+        val reason = when (v.holdingFor) { "storm" -> 0; "fog" -> 1; "gates" -> 2; "ice" -> 3; "gear" -> 4; "snow" -> 5; "wreck" -> 7; else -> 6 }
         val doing = when {
+            v.wrecked -> stringResource(Res.string.wrecked)
             v.broken -> stringResource(Res.string.broken_down)
             v.inDepot && v.running -> stringResource(Res.string.waiting_to_leave)
             v.inDepot -> stringResource(Res.string.in_hangar)
@@ -225,7 +226,7 @@ fun AircraftCard(view: WorldView, roster: Roster, v: AircraftView, addingStops: 
             else -> stringResource(Res.string.no_stops)
         }
         Text(e.name(lang), color = c.textDim, fontSize = 13.sp)
-        Text(doing, color = if (v.broken || v.state == Flight.HOLD) c.warn else c.text, fontSize = 13.sp)
+        Text(doing, color = if (v.wrecked) c.bad else if (v.broken || v.state == Flight.HOLD) c.warn else c.text, fontSize = 13.sp)
         val names = stringArrayResource(Res.array.cargoes)
         if (v.capacity > 0) Text(stringResource(Res.string.cargo_load, names.getOrElse(v.carries) { "" }, v.load, v.capacity), color = c.text, fontSize = 13.sp)
         Text(stringResource(Res.string.profit_line, money(v.profitThisYear), money(v.profitLastYear)), color = if (v.profitThisYear < 0) c.bad else c.textDim, fontSize = 13.sp)
@@ -234,6 +235,8 @@ fun AircraftCard(view: WorldView, roster: Roster, v: AircraftView, addingStops: 
             Text(stringResource(Res.string.owned_by, view.companies.getOrElse(v.owner) { "" }), color = c.textDim, fontSize = 13.sp)
             return@Card
         }
+        // A wreck can't be given orders or sold; it's cleared away by itself.
+        if (v.wrecked) return@Card
         Text(stringResource(Res.string.age_line_road, v.age, v.reliability), color = c.textDim, fontSize = 13.sp)
         if (e.range > 0) Text(stringResource(Res.string.range_line, e.range), color = c.textDim, fontSize = 13.sp)
         if (e.floats) {

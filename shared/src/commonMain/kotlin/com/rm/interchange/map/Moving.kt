@@ -85,6 +85,13 @@ internal fun DrawScope.drawMoving(world: World, view: View, sheets: Sheets, movi
             if (sign != 0) add(items, world, view, x + 0.2f, y + 0.2f, sign.toFloat(), 0f, BOARD)
         }
     }
+    // Level crossings with a train near: a post with two red lamps on opposite corners, close enough in to make out.
+    if (view.halfWidth >= 8f) for (tile in moving.now.crossings) {
+        val x = tile % world.width
+        val y = tile / world.width
+        add(items, world, view, x + 0.18f, y + 0.18f, 0f, 0f, CROSSING)
+        add(items, world, view, x + 0.82f, y + 0.82f, 1f, 0f, CROSSING)
+    }
     // Wires over electrified track, close enough in to make out: a mast at one end of each piece, the wire along it.
     if (view.halfWidth >= 12f) forTilesOnScreen(world, view) { x, y ->
         val i = world.index(x, y)
@@ -221,6 +228,8 @@ internal fun DrawScope.drawMoving(world: World, view: View, sheets: Sheets, movi
                 drawMark(model, it[3].toInt(), it[1], it[2], view.halfWidth)
             } else if (model == BUOY) {
                 drawBuoy(it[1], it[2], view.halfWidth)
+            } else if (model == CROSSING) {
+                drawCrossingLights(it[1], it[2], view.halfWidth)
             } else if (model < 0) {
                 spriteAt(it[3].toInt(), it[1], it[2], scale)
             } else {
@@ -245,6 +254,7 @@ private const val BOARD = -6
 private const val FENCE = -7
 private const val BUOY = -8
 private const val LIT = -9
+private const val CROSSING = -10
 /** Aircraft in the air go over everything; their shadows fall a little off from under them, by height, as the sun stands. */
 private const val FLYING_DEPTH = 1000f
 private const val SUN_X = 0.06f
@@ -341,6 +351,20 @@ private fun DrawScope.drawBuoy(x: Float, y: Float, hw: Float) {
     drawRect(Color(0xffc8302a), Offset(x - 1.6f * u, y - 5f * u), Size(3.2f * u, 5f * u))
     drawRect(Color(0xfff4f4f0), Offset(x - 1.6f * u, y - 3.4f * u), Size(3.2f * u, 1f * u))
     drawRect(Color(0xff2a2a2a), Offset(x - 1.6f * u, y - 5f * u), Size(3.2f * u, 5f * u), style = Stroke(0.4f * u))
+}
+
+/** A level crossing's post with two red lamps flashing in turn, about once a second. */
+private fun DrawScope.drawCrossingLights(x: Float, y: Float, hw: Float) {
+    val u = hw / 32f
+    val left = (flicker.elapsedNow().inWholeMilliseconds / 500) % 2 == 0L
+    drawLine(Color(0xff3a3a3a), Offset(x, y), Offset(x, y - 12f * u), 1.2f * u)
+    drawLine(Color(0xff2a2a2a), Offset(x - 3.5f * u, y - 12f * u), Offset(x + 3.5f * u, y - 12f * u), 1.6f * u)
+    for (k in 0 until 2) {
+        val on = (k == 0) == left
+        val c = Offset(x + (if (k == 0) -3f else 3f) * u, y - 12f * u)
+        if (on) drawCircle(Color(0x60ff3020), 3.2f * u, c)
+        drawCircle(if (on) Color(0xffff3a28) else Color(0xff5a1810), 1.5f * u, c)
+    }
 }
 
 /** Whether a snow fence on ([x], [y]) runs along x: the way the nearest track does, or across the wind if there's none near. */

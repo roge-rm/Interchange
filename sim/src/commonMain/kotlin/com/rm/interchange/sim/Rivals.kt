@@ -177,7 +177,7 @@ internal fun World.lostAWorkYear(built: Int, thisYear: Long, lastYear: Long): Bo
 internal fun World.sellLosers(r: Rival, c: Company) {
     // Its own vehicles only stand stopped in a depot when sent there to be sold.
     for (v in roadVehicles) {
-        if (v == null || v.owner != c.id) continue
+        if (v == null || v.owner != c.id || v.wreckedFor > 0) continue
         if (v.inDepot && !v.running) apply(Command.RoadOrder(c.id, v.id, Command.TrainOrder.SELL))
         else if (!v.inDepot && (!v.toDepot || v.servicing) && lostAWorkYear(v.built, v.profitThisYear, v.profitLastYear)) {
             // One on its way for a service is turned off that first, then sent to stay.
@@ -186,7 +186,7 @@ internal fun World.sellLosers(r: Rival, c: Company) {
         }
     }
     for (t in trains) {
-        if (t == null || t.owner != c.id) continue
+        if (t == null || t.owner != c.id || t.wreckedFor > 0) continue
         // One stopped there that no longer loses money is set going again, unless the company is selling to pay its loan.
         val sell = lostAWorkYear(t.built, t.profitThisYear, t.profitLastYear) || shedding(c)
         if (t.inDepot && !t.running) apply(Command.TrainOrder(c.id, t.id, if (sell) Command.TrainOrder.SELL else Command.TrainOrder.START_STOP))
@@ -333,8 +333,8 @@ private fun World.shedding(c: Company): Boolean = !human(c.id) && c.loan > 0 && 
 private fun World.shed(c: Company) {
     if (!shedding(c)) return
     val old = { built: Int -> workDay - built >= 365 }
-    val road = roadVehicles.filter { it != null && it.owner == c.id && !it.inDepot && !it.toDepot && old(it.built) }.map { it!! }
-    val rail = trains.filter { it != null && it.owner == c.id && !it.inDepot && !it.toDepot && old(it.built) }.map { it!! }
+    val road = roadVehicles.filter { it != null && it.owner == c.id && it.wreckedFor == 0 && !it.inDepot && !it.toDepot && old(it.built) }.map { it!! }
+    val rail = trains.filter { it != null && it.owner == c.id && it.wreckedFor == 0 && !it.inDepot && !it.toDepot && old(it.built) }.map { it!! }
     val v = road.minByOrNull { it.profitThisYear + it.profitLastYear }
     val t = rail.minByOrNull { it.profitThisYear + it.profitLastYear }
     if (t != null && (v == null || t.profitThisYear + t.profitLastYear < v.profitThisYear + v.profitLastYear)) {

@@ -117,6 +117,8 @@ class Aircraft(
     var brokenFor = 0
     var servicing = false
     var service = true
+    /** A wreck on the runway of airport [at], with this many ticks left before it's cleared away; 0 for one that's whole. */
+    var wreckedFor = 0
 
     val carries: Int get() = if (cargoChoice in info.cargoes) cargoChoice else info.cargoes.firstOrNull() ?: -1
     override fun capacity(c: Int) = if (c == carries) info.capacity else 0
@@ -219,7 +221,7 @@ private fun World.buildable(i: Int): Boolean {
 
 /** Takes airport [a] down, if no aircraft is at it or based there. */
 internal fun World.removeAirport(company: Company, a: Airport) {
-    if (aircraft.any { it != null && (it.inDepot && it.depot == a.depot || !it.inDepot && it.at == a.id && it.state == Flight.GATE) }) return
+    if (aircraft.any { it != null && (it.inDepot && it.depot == a.depot || !it.inDepot && it.at == a.id && (it.state == Flight.GATE || it.wreckedFor > 0)) }) return
     if (company.money < price(Prices.CLEAR)) return
     spend(company, Books.CONSTRUCTION, price(Prices.CLEAR))
     val s = stations[a.station]
@@ -275,7 +277,7 @@ internal fun World.buyAircraft(company: Company, depot: Depot, e: Engine, cargo:
 
 internal fun World.aircraftCommand(company: Company, c: Command.CraftOrder) {
     val v = aircraft.getOrNull(c.vehicle) ?: return
-    if (v.owner != company.id) return
+    if (v.owner != company.id || v.wreckedFor > 0) return
     linksDirty = true
     when (c.what) {
         Command.TrainOrder.START_STOP -> if (v.inDepot) { if (v.running) v.running = false else outOfHangar(v) } else v.running = !v.running
@@ -369,6 +371,7 @@ private fun Engine.stormLimit() = if (runway == Runways.STRIP || runway == Runwa
 /** Why aircraft [v] can't land at airport [a] now: null if it can. */
 fun World.cantLand(v: Aircraft, a: Airport): String? {
     if (!a.serves(v.info)) return "runway"
+    if (wreckAt(a)) return "wreck"
     if (weather.wind >= v.info.stormLimit()) return "storm"
     if (airSky(a) and FOGGY != 0 && !a.ils) return "fog"
     val busy = aircraft.count { it != null && it !== v && !it.inDepot && it.at == a.id && (it.state == Flight.GATE || it.state == Flight.LANDING) }
@@ -396,7 +399,7 @@ fun World.cantLand(v: Aircraft, a: Airport): String? {
 private fun World.mayLeave(v: Aircraft, a: Airport): Boolean {
     if (weather.wind >= v.info.stormLimit()) return false
     if (airSky(a) and ICING != 0 && !a.deice) return false
-    return true
+    return !wreckAt(a)
 }
 
 /** The gear a bush plane wants: skis in winter, floats if it calls at a seaplane base, else wheels. */
@@ -413,6 +416,10 @@ internal fun World.moveAircraft() {
     for (v in aircraft) {
         if (v == null) continue
         if (v.inDepot) { if (v.running) outOfHangar(v); continue }
+        if (v.wreckedFor > 0) {
+            if (--v.wreckedFor == 0) { aircraft[v.id] = null; linksDirty = true }
+            continue
+        }
         fly(v)
     }
 }
@@ -584,7 +591,8 @@ private fun World.hold(v: Aircraft) {
         // Diverted: on to its next stop with what it carries.
         v.order = (v.order + 1) % v.orders.size
         v.state = Flight.CRUISE
-        tell(News.DIVERTED, v.id)
+        // A wreck closing the airport has its own news.
+        if (!wreckAt(dest)) tell(News.DIVERTED, v.id)
     }
 }
 
@@ -599,14 +607,46 @@ private fun World.land(v: Aircraft) {
     }
     val r = runway(a)
     if (v.altitude > 0) {
+        // A wreck on the runway: round again and hold.
+        if (wreckAt(a)) { v.state = Flight.HOLD; v.holding = 0; return }
         val left = moveTo(v, r[0], r[1], v.speed / 16)
         val glide = SHIP_UNIT * APPROACH
         v.altitude = ground + ((cruiseAltitude(v) - ground).toLong() * left / glide).toInt().coerceAtLeast(0)
-        if (left == 0) v.altitude = 0
+        if (left == 0) {
+            v.altitude = 0
+            if (settings.collisions && rng.below(crashOdds(v, a)) == 0) crashLanding(v, a)
+        }
         return
     }
     v.speed = maxOf(v.speed - v.maxSpeed / 30, v.maxSpeed / 6)
     if (moveTo(v, r[2], r[3], v.speed / 16) == 0) arriveAircraft(v, a)
+}
+
+/** Whether a wreck stands on airport [a]'s runway, closing it. */
+private fun World.wreckAt(a: Airport) = aircraft.any { it != null && it.wreckedFor > 0 && it.at == a.id }
+
+/**
+ * One landing in this many crashes, with collisions on: [CRASH_ODDS], or [SHORT_CRASH_ODDS] for a fast aircraft on
+ * a strip or regional airport, as OpenTTD has jets on small airports.
+ */
+internal fun crashOdds(v: Aircraft, a: Airport) =
+    if (v.info.speed >= FAST_KMH && Airports.CLASS[a.kind] in Runways.STRIP..Runways.REGIONAL) SHORT_CRASH_ODDS else CRASH_ODDS
+
+/** Aircraft [v] crashes touching down on [a]: everyone aboard lost, the wreck left on the runway. */
+private fun World.crashLanding(v: Aircraft, a: Airport) {
+    v.wreckedFor = WRECK_TICKS
+    v.running = false
+    v.speed = 0
+    v.waiting = 0
+    v.brokenFor = 0
+    v.toDepot = false
+    v.servicing = false
+    v.holding = 0
+    v.orders.clear()
+    v.order = 0
+    linksDirty = true
+    val tile = index((v.x / SHIP_UNIT).coerceIn(0, width - 1), (v.y / SHIP_UNIT).coerceIn(0, height - 1))
+    crashed(tile, listOf(CrashVehicle(Crash.AIRCRAFT, v.id, v.owner, v.name) to v))
 }
 
 /** Down and at a gate: calling at the station, or into the hangar. */
@@ -684,7 +724,7 @@ internal fun World.forService(v: Aircraft) {
 internal fun World.aircraftDay() {
     if (aircraft.isEmpty()) return
     for (v in aircraft) {
-        if (v == null || v.inDepot) continue
+        if (v == null || v.inDepot || v.wreckedFor > 0) continue
         v.reliability = (v.reliability - WEAR_A_DAY).coerceAtLeast(LEAST_RELIABLE / 2)
         if (v.running && v.state == Flight.GATE && v.brokenFor == 0 && rng.below(BREAKDOWN_ODDS) < 10_000 - v.reliability) {
             v.brokenFor = Calendar.TICKS_PER_DAY
@@ -694,7 +734,7 @@ internal fun World.aircraftDay() {
         if (overdue(v.service, v.serviced) && v.running && !v.toDepot) forService(v)
     }
     for (v in aircraft) {
-        if (v == null || v.inDepot && !v.running) continue
+        if (v == null || v.inDepot && !v.running || v.wreckedFor > 0) continue
         val c = companies.getOrNull(v.owner) ?: continue
         c.runningOwed += price(v.info.running)
         val today = c.runningOwed / 365
@@ -728,6 +768,10 @@ const val LOW_CRUISE = 6
 /** How fast aircraft climb and descend, in 16ths of a step a tick; how far out they line up to land, in tiles. */
 const val CLIMB = 6
 const val APPROACH = 5
+/** One landing in this many crashes with collisions on, and for a fast aircraft on a small airport; fast is from this, in km/h. */
+const val CRASH_ODDS = 400
+const val SHORT_CRASH_ODDS = 100
+const val FAST_KMH = 550
 /** Ticks an aircraft holds before diverting. */
 const val HOLD_TICKS = 3 * 64
 /** The years landing aids and de-icing come in, and what each costs. */

@@ -391,4 +391,5 @@ internal fun World.dropStation(id: Int) {
 }
 
 /** Everything that calls at stations. */
-fun World.carriers(): List<Carrier> = trains.filter { it != null && it.wreckedFor == 0 }.map { it!! } + roadVehicles.filterNotNull() + ships.filterNotNull() + aircraft.filterNotNull()
+fun World.carriers(): List<Carrier> = trains.filter { it != null && it.wreckedFor == 0 }.map { it!! } + roadVehicles.filter { it != null && it.wreckedFor == 0 }.map { it!! } +
+    ships.filterNotNull() + aircraft.filter { it != null && it.wreckedFor == 0 }.map { it!! }

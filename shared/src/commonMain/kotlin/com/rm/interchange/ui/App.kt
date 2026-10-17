@@ -49,6 +49,7 @@ import com.rm.interchange.map.LandPainter
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.foundation.layout.RowScope
 import org.jetbrains.compose.resources.pluralStringResource
+import com.rm.interchange.sim.Crash
 import com.rm.interchange.sim.crashFor
 import com.rm.interchange.sim.railCost
 import com.rm.interchange.sim.canalCost
@@ -1468,10 +1469,13 @@ internal fun newsText(world: World, n: News): String {
     if (n.kind == News.CRASH) {
         val k = world.crashFor(n.about) ?: return ""
         val names = k.vehicles.map { v ->
+            val company = world.companies.getOrNull(v.owner)?.name ?: ""
             when {
                 v.name.isNotEmpty() -> v.name
+                v.kind == Crash.ROAD -> if (v.owner == me) stringResource(Res.string.road_vehicle_n, v.id + 1) else stringResource(Res.string.company_road_vehicle, company, v.id + 1)
+                v.kind == Crash.AIRCRAFT -> if (v.owner == me) stringResource(Res.string.aircraft_n, v.id + 1) else stringResource(Res.string.company_aircraft, company, v.id + 1)
                 v.owner == me -> stringResource(Res.string.train_n, v.id + 1)
-                else -> stringResource(Res.string.company_train, world.companies.getOrNull(v.owner)?.name ?: "", v.id + 1)
+                else -> stringResource(Res.string.company_train, company, v.id + 1)
             }
         }
         val name = if (names.size < 2) names.firstOrNull() ?: "" else stringResource(Res.string.name_and, names.dropLast(1).joinToString(", "), names.last())

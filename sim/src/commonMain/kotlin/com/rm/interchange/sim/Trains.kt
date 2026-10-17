@@ -347,7 +347,7 @@ private fun World.trainsHit(t: Train): List<Train> {
 }
 
 /** Wrecks train [t] where it stands: stopped, its orders and path let go. */
-private fun World.wreck(t: Train) {
+internal fun World.wreck(t: Train) {
     t.wreckedFor = WRECK_TICKS
     t.running = false
     t.speed = 0

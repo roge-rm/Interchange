@@ -83,6 +83,8 @@ class RoadVehicle(
     var seasonalTires = true
     /** In the ditch after sliding off an icy road: ticks till it's pulled out. Counted with [brokenFor]. */
     var slid = false
+    /** A wreck, with this many ticks left before it's cleared away; 0 for one that's whole. */
+    var wreckedFor = 0
 
     val carries: Int get() = if (cargoChoice in info.cargoes) cargoChoice else info.cargoes.firstOrNull() ?: -1
     override fun capacity(c: Int) = if (c == carries) info.capacity else 0
@@ -157,7 +159,7 @@ internal fun World.buyRoadVehicle(company: Company, c: Command.BuyRoadVehicle) {
 
 internal fun World.roadVehicleCommand(company: Company, c: Command.RoadOrder) {
     val v = roadVehicles.getOrNull(c.vehicle) ?: return
-    if (v.owner != company.id) return
+    if (v.owner != company.id || v.wreckedFor > 0) return
     linksDirty = true
     when (c.what) {
         Command.TrainOrder.START_STOP -> if (v.inDepot) { if (v.running) v.running = false else leaveGarage(v) } else v.running = !v.running
@@ -188,6 +190,7 @@ internal fun World.roadVehicleCommand(company: Company, c: Command.RoadOrder) {
 
 /** What road vehicle [v] fetches sold. */
 fun World.roadValue(v: RoadVehicle): Long {
+    if (v.wreckedFor > 0) return 0
     val age = (workDay - v.built).coerceAtLeast(0) / 365
     return price(v.price) * maxOf(10, 100 - 100 * age / v.info.life.coerceAtLeast(1)) / 200
 }
@@ -219,7 +222,7 @@ internal fun World.moveRoadVehicles() {
     if (roadNetDirty) roadNetDirty = false
     val list = roadVehicles.filterNotNull()
     for (v in list) if (v.inDepot && v.running) leaveGarage(v)
-    val planning = list.filter { !it.inDepot && it.running && it.route == null && tick >= it.lostUntil && it.target != -2 && it.waiting == 0 }
+    val planning = list.filter { !it.inDepot && it.wreckedFor == 0 && it.running && it.route == null && tick >= it.lostUntil && it.target != -2 && it.waiting == 0 }
     val routes = arrayOfNulls<IntArray>(planning.size)
     Workers.run(planning.size) { i -> routes[i] = planRoadRoute(planning[i]) }
     for ((i, v) in planning.withIndex()) {
@@ -241,7 +244,46 @@ internal fun World.moveRoadVehicles() {
     // Who's on each tile, for keeping apart.
     val on = HashMap<Int, ArrayList<RoadVehicle>>()
     for (v in list) if (!v.inDepot) on.getOrPut(roadStepTile(v.at)) { ArrayList() } += v
-    for (v in list) if (!v.inDepot) driveRoadVehicle(v, on)
+    for (v in list) {
+        if (v.inDepot) continue
+        if (v.wreckedFor > 0) {
+            if (--v.wreckedFor == 0) { roadVehicles[v.id] = null; linksDirty = true }
+            continue
+        }
+        driveRoadVehicle(v, on)
+    }
+    if (settings.collisions) for (v in list) if (!v.inDepot && v.wreckedFor == 0 && v.speed == 0) crossingCrash(v, list)
+}
+
+/**
+ * With collisions on, road vehicles standing on a level crossing (broken down, queued over it or stopped) are hit
+ * by a train that comes onto the crossing, and all are wrecked together. One that's moving is taken to clear it in time.
+ */
+private fun World.crossingCrash(v: RoadVehicle, list: List<RoadVehicle>) {
+    val tile = roadStepTile(v.at)
+    if (!crossing(tile) || (tileTrains[tile] ?: 0) <= 0) return
+    val hit = trains.filter { it != null && !it.inDepot && it.wreckedFor == 0 && tile in it.onTiles }.map { it!! }
+    if (hit.isEmpty()) return
+    val road = list.filter { !it.inDepot && it.wreckedFor == 0 && it.speed == 0 && roadStepTile(it.at) == tile }
+    for (t in hit) wreck(t)
+    for (u in road) wreckRoad(u)
+    crashed(tile, hit.map { CrashVehicle(Crash.TRAIN, it.id, it.owner, it.name) to it } + road.map { CrashVehicle(Crash.ROAD, it.id, it.owner, it.name) to it })
+}
+
+/** Wrecks road vehicle [v] where it stands, blocking its lane till it's cleared; its orders are let go. */
+internal fun World.wreckRoad(v: RoadVehicle) {
+    v.wreckedFor = WRECK_TICKS
+    v.running = false
+    v.speed = 0
+    v.waiting = 0
+    v.brokenFor = 0
+    v.slid = false
+    v.toDepot = false
+    v.servicing = false
+    v.route = null
+    v.orders.clear()
+    v.order = 0
+    linksDirty = true
 }
 
 /** Whether [v] has all it can carry, or all the spring load limits let it. */
@@ -385,6 +427,12 @@ private fun World.roadFreeAhead(v: RoadVehicle, on: HashMap<Int, ArrayList<RoadV
     if (n < 0) return free
     // Trains have the crossing.
     if (crossing(n) && trainNear(n)) return free
+    // Nor onto a crossing with another just past it that a train has, so it doesn't stand between the tracks.
+    if (crossing(n)) {
+        val way = v.route?.getOrNull(v.routeAt)?.takeIf { roadStepTile(it) == n }
+        val n2 = roadAcross(n, if (way != null) roadStepExit(way) else roadStepExit(v.at))
+        if (n2 >= 0 && crossing(n2) && trainNear(n2)) return free
+    }
     val entry = Track.opposite(roadStepExit(v.at))
     for (o in on[n].orEmpty()) {
         if (o === v) continue
@@ -397,7 +445,7 @@ private fun World.roadFreeAhead(v: RoadVehicle, on: HashMap<Int, ArrayList<RoadV
 }
 
 /** Whether a train is on crossing [tile] or close along its track. */
-private fun World.trainNear(tile: Int): Boolean {
+internal fun World.trainNear(tile: Int): Boolean {
     if (trainOnTile(tile)) return true
     val t = track[tile].toInt()
     val edges = if (t == Track.X) intArrayOf(Track.XM, Track.XP) else intArrayOf(Track.YM, Track.YP)
@@ -484,7 +532,7 @@ internal fun World.wantedTires(): Int {
 /** Each day: wear and breakdowns, and a trip to a garage for one long overdue a service. */
 internal fun World.roadVehiclesDay() {
     for (v in roadVehicles) {
-        if (v == null || v.inDepot) continue
+        if (v == null || v.inDepot || v.wreckedFor > 0) continue
         v.reliability = (v.reliability - WEAR_A_DAY).coerceAtLeast(LEAST_RELIABLE / 2)
         if (v.running && v.brokenFor == 0 && v.waiting == 0 && rng.below(BREAKDOWN_ODDS) < 10_000 - v.reliability) {
             v.brokenFor = Calendar.TICKS_PER_DAY / 2
@@ -499,7 +547,7 @@ internal fun World.roadVehiclesDay() {
     }
     // Running costs, as trains pay theirs.
     for (v in roadVehicles) {
-        if (v == null || v.inDepot && !v.running) continue
+        if (v == null || v.inDepot && !v.running || v.wreckedFor > 0) continue
         val c = companies.getOrNull(v.owner) ?: continue
         c.runningOwed += price(v.info.running)
         val today = c.runningOwed / 365
