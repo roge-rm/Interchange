@@ -151,6 +151,12 @@ private val KINDS = listOf(
 )
 
 /** Whether a vehicle built on calendar day [built] ran the whole of last year, so its profit then is a full year's. */
+/** Work days so far this calendar year. */
+internal fun World.workedThisYear(): Long = Calendar.dayOfYear(startYear, day).toLong() * settings.dayLength
+
+/** Work days into the calendar year before this year's books are a fair guide to a route's pay. */
+internal const val FEW_MONTHS = 90
+
 private fun World.ranLastYear(built: Int) = Calendar.year(startYear, built) < Calendar.year(startYear, day) - 1
 
 /**
@@ -334,10 +340,10 @@ internal fun World.growRoute(c: Company, route: RivalRoute) {
     val b = stations.getOrNull(route.b) ?: return
     val on = roadVehicles.filter { it != null && it.owner == c.id && onRoute(it, route) }.map { it!! }
     if (on.size >= MAX_PER_ROUTE || on.any { it.toDepot && !it.servicing || ranLastYear(it.built) && it.profitLastYear < 0 }) return
-    // Only on a route that pays: last year's profit, or this year's once it's a few months in.
+    // Only on a route that pays: last year's profit, or this year's once it's a few months of work in.
     val lastYear = on.sumOf { it.profitLastYear }
     val thisYear = on.sumOf { it.profitThisYear }
-    if (lastYear <= 0 && (Calendar.dayOfYear(startYear, day) < 90 || thisYear <= 0)) return
+    if (lastYear <= 0 && (workedThisYear() < FEW_MONTHS || thisYear <= 0)) return
     val model = bestModel(route.cargo) ?: return
     val waiting = maxOf(a.waiting(route.cargo), b.waiting(route.cargo))
     if (waiting < (model.capacity * 3 / 2).coerceAtLeast(10)) return

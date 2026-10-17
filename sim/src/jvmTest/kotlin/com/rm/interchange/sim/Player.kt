@@ -72,8 +72,11 @@ class Player(val world: World, val thinkDays: Int = 30, val mostRoutes: Int = 12
     /** Legs built, by [legKey]. */
     private val legs = HashSet<Long>()
 
-    /** Plays on for [n] calendar years, keeping each year's books in [years], or till [stop] says, calling [daily] each new calendar day. */
-    fun play(n: Int, stop: () -> Boolean = { false }, daily: () -> Unit = {}) {
+    /**
+     * Plays on for [n] calendar years, keeping each year's books in [years], or till [stop] says, calling [daily] each
+     * new calendar day and [work] each new work day.
+     */
+    fun play(n: Int, stop: () -> Boolean = { false }, work: () -> Unit = {}, daily: () -> Unit = {}) {
         val w = world
         val end = Calendar.year(w.startYear, w.day) + n
         while (Calendar.year(w.startYear, w.day) < end && !stop()) {
@@ -83,6 +86,7 @@ class Player(val world: World, val thinkDays: Int = 30, val mostRoutes: Int = 12
                 nextThink = w.workDay + thinkDays
                 think()
             }
+            if (w.tick % Calendar.TICKS_PER_DAY == 0L) work()
             if (w.day != before) daily()
             if (w.day != before && Calendar.newYear(w.startYear, w.day) && w.day > 0) years += books()
         }

@@ -614,10 +614,10 @@ internal fun World.growRail(c: Company, route: RivalRoute, payback: Int, ranLast
     val capacity = first.wagons * roster[first.wagon].capacity
     val waiting = if (route.freight) a.waiting(route.cargo) else maxOf(a.waiting(route.cargo), b.waiting(route.cargo))
     if (waiting < capacity) return
-    // What each train made in a work year: last year's, or this year's once it's a few months in.
+    // What each train made in a work year: last year's, or this year's once it's a few months of work in.
     val inYear = Calendar.dayOfYear(startYear, day)
     val each = if (on.all { ranLastYear(it.built) }) on.sumOf { it.profitLastYear } / on.size
-    else if (inYear >= 90) on.sumOf { it.profitThisYear } * 365 / inYear / on.size else return
+    else if (workedThisYear() >= FEW_MONTHS) on.sumOf { it.profitThisYear } * 365 / inYear / on.size else return
     val perWork = each / settings.dayLength
     if (perWork * minOf(payback, TRAIN_PAYBACK) < price(first.price)) return
     if (leadTile(c, route) < 0) return
