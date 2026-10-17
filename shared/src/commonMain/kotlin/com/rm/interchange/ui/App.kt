@@ -49,6 +49,7 @@ import com.rm.interchange.map.LandPainter
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.foundation.layout.RowScope
 import org.jetbrains.compose.resources.pluralStringResource
+import com.rm.interchange.sim.crashFor
 import com.rm.interchange.sim.railCost
 import com.rm.interchange.sim.canalCost
 import com.rm.interchange.sim.bridgeCost
@@ -1124,6 +1125,10 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
                         view.focusX = n.about % world.width + 0.5f
                         view.focusY = n.about / world.width + 0.5f
                     }
+                    if (n.kind == News.CRASH) world.crashFor(n.about)?.let { k ->
+                        view.focusX = k.tile % world.width + 0.5f
+                        view.focusY = k.tile / world.width + 0.5f
+                    }
                 }
             }
         }
@@ -1406,6 +1411,7 @@ internal fun newsCompany(world: World, n: News): com.rm.interchange.sim.Company?
     News.COMPANY_BOUGHT -> world.companies.getOrNull(n.about shr 8)
     News.SUBSIDY_AWARDED -> world.companies.getOrNull(world.subsidies.getOrNull(n.about)?.company ?: -1)
     News.GOAL_MET -> world.companies.getOrNull(world.goals.getOrNull(n.about)?.by ?: -1)
+    News.CRASH -> world.companies.getOrNull(world.crashFor(n.about)?.vehicles?.firstOrNull()?.owner ?: -1)
     else -> null
 }
 
@@ -1458,6 +1464,19 @@ internal fun newsText(world: World, n: News): String {
         if (world.roadVehicles.getOrNull(n.about)?.owner != me) return ""
         val name = world.roadVehicles.getOrNull(n.about)?.name?.takeIf { it.isNotEmpty() } ?: stringResource(Res.string.road_vehicle_n, n.about + 1)
         return stringResource(Res.string.news_slid, name)
+    }
+    if (n.kind == News.CRASH) {
+        val k = world.crashFor(n.about) ?: return ""
+        val names = k.vehicles.map { v ->
+            when {
+                v.name.isNotEmpty() -> v.name
+                v.owner == me -> stringResource(Res.string.train_n, v.id + 1)
+                else -> stringResource(Res.string.company_train, world.companies.getOrNull(v.owner)?.name ?: "", v.id + 1)
+            }
+        }
+        val name = if (names.size < 2) names.firstOrNull() ?: "" else stringResource(Res.string.name_and, names.dropLast(1).joinToString(", "), names.last())
+        val place = world.towns.getOrNull(k.town)?.name ?: "${k.tile % world.width}, ${k.tile / world.width}"
+        return if (k.lost > 0) stringResource(Res.string.news_crash_lost, name, place, k.lost) else stringResource(Res.string.news_crash, name, place)
     }
     if (n.kind == News.SNOWBOUND || n.kind == News.TRAIN_OLD || n.kind == News.TRAIN_STUCK) {
         if (world.trains.getOrNull(n.about)?.owner != me) return ""

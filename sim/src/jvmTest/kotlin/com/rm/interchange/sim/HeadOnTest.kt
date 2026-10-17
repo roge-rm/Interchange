@@ -6,7 +6,8 @@ import kotlin.test.assertTrue
 
 class HeadOnTest {
     private fun world(): World {
-        val w = World(64, 64, 1, startYear = 1900)
+        // Collisions off: trains wait for each other.
+        val w = World(NewGame(64, 64, 1, 1900, towns = 0, industries = 0, weather = false, collisions = false))
         for (i in w.corners.indices) w.corners[i] = 3
         w.companies[0].money = 100_000_000
         return w

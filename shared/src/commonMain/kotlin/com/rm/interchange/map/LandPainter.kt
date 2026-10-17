@@ -44,7 +44,7 @@ class LandPainter(private val world: World, private val view: View, private val 
     }
 
     /** Draws sprite [cell] of [image], whose rects are [rects], standing at screen point ([px], [py]). */
-    fun DrawScope.spriteAt(image: ImageBitmap, rects: IntArray, cell: Int, px: Float, py: Float, scale: Float, shadow: Boolean = false) {
+    fun DrawScope.spriteAt(image: ImageBitmap, rects: IntArray, cell: Int, px: Float, py: Float, scale: Float, shadow: Boolean = false, wreck: Boolean = false) {
         if (cell < 0) return
         val r = cell * 6
         val f = shrink
@@ -63,7 +63,7 @@ class LandPainter(private val world: World, private val view: View, private val 
             image, IntOffset(sx, sy), IntSize(w, h), IntOffset(l, t),
             IntSize((left + w * scale).toInt() - l, (top + h * scale).toInt() - t),
             alpha = if (shadow) SHADOW_ALPHA else 1f,
-            colorFilter = if (shadow) SHADOW_TINT else null,
+            colorFilter = if (shadow) SHADOW_TINT else if (wreck) WRECK_TINT else null,
             filterQuality = if (scale == 1f) FilterQuality.None else FilterQuality.Low,
         )
     }
@@ -145,3 +145,5 @@ class LandPainter(private val world: World, private val view: View, private val 
 /** An aircraft's shadow on the ground: its own shape, darkened. */
 private const val SHADOW_ALPHA = 0.3f
 private val SHADOW_TINT = ColorFilter.tint(Color.Black, BlendMode.SrcIn)
+/** A wreck: its own drawing, darkened and browned as if burnt. */
+private val WRECK_TINT = ColorFilter.tint(Color(0xFF4A4038), BlendMode.Modulate)

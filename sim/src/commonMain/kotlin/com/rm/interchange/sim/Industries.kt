@@ -85,6 +85,8 @@ class News(val kind: Int, val about: Int, val tick: Long) {
         const val SCENARIO_LOST = 24
         /** A train held head-on by another with no way round; [News.about] is the train. */
         const val TRAIN_STUCK = 25
+        /** A crash; [News.about] is its number in [World.crashes]. */
+        const val CRASH = 26
     }
 }
 

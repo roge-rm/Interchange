@@ -27,12 +27,12 @@ fun World.bestReliability(t: Train): Int =
     (t.engineInfo.reliability * 100 - maxOf(0, age(t) - t.engineInfo.life) * OLD_AGE_LOSS).coerceAtLeast(LEAST_RELIABLE)
 
 /** What train [t] fetches sold: half its price new, less as it ages, never under a twentieth. */
-fun World.value(t: Train): Long = price(t.price) * maxOf(10, 100 - 100 * age(t) / t.engineInfo.life.coerceAtLeast(1)) / 200
+fun World.value(t: Train): Long = if (t.wreckedFor > 0) 0 else price(t.price) * maxOf(10, 100 - 100 * age(t) / t.engineInfo.life.coerceAtLeast(1)) / 200
 
 /** Each day: wear, breakdowns, trips to the depot for a service, and news of trains grown old. */
 internal fun World.trainsDay() {
     for (t in trains) {
-        if (t == null || t.inDepot) continue
+        if (t == null || t.inDepot || t.wreckedFor > 0) continue
         t.reliability = (t.reliability - WEAR_A_DAY).coerceAtLeast(LEAST_RELIABLE / 2)
         if (t.running && t.brokenFor == 0 && t.waiting == 0) {
             var odds = 10_000 - t.reliability

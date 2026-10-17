@@ -283,6 +283,7 @@
     <string name="book_total">Profit</string>
     <string name="money_graph">Money, last two years</string>
     <string name="inflation">Inflation</string>
+    <string name="collisions">Collisions</string>
     <string name="day_length">Day length</string>
     <string name="rivals">Rivals</string>
     <string name="companies">Companies</string>
@@ -401,6 +402,11 @@
     <string name="age_line">%1$d years old, %2$d% reliable, %3$d breakdowns</string>
     <string name="renew_for">Renew for %1$s</string>
     <string name="servicing">Servicing</string>
+    <string name="news_crash">%1$s crashed near %2$s</string>
+    <string name="news_crash_lost">%1$s crashed near %2$s, %3$d people lost</string>
+    <string name="name_and">%1$s and %2$s</string>
+    <string name="company_train">%1$s train %2$d</string>
+    <string name="wrecked">Wrecked</string>
     <string name="news_stuck">%1$s is stuck: a train is in the way and there's no way round</string>
     <string name="news_old">%1$s is getting old</string>
     <string name="tool_waypoint">Waypoint</string>

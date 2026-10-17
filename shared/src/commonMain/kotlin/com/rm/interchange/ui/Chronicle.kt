@@ -25,6 +25,7 @@ import com.rm.interchange.res.*
 import com.rm.interchange.sim.News
 import com.rm.interchange.sim.Story
 import com.rm.interchange.sim.World
+import com.rm.interchange.sim.crashFor
 import org.jetbrains.compose.resources.stringArrayResource
 import org.jetbrains.compose.resources.stringResource
 
@@ -32,7 +33,7 @@ import org.jetbrains.compose.resources.stringResource
 private val HEADLINES = setOf(
     News.INDUSTRY_OPENS, News.INDUSTRY_CLOSES, News.WASHOUT, News.FIRE, News.AVALANCHE, News.SUBSIDY_AWARDED,
     News.COMPANY_FOR_SALE, News.COMPANY_BOUGHT, News.COMPANY_BANKRUPT, News.COMPANY_RESTARTED, News.NEW_VEHICLE,
-    News.GOAL_MET, News.GOAL_FAILED, News.SCENARIO_WON, News.SCENARIO_LOST,
+    News.GOAL_MET, News.GOAL_FAILED, News.SCENARIO_WON, News.SCENARIO_LOST, News.CRASH,
 )
 
 /** The most months the chronicle shows at once, newest first. */
@@ -123,5 +124,6 @@ private fun storyPlace(world: World, t: Story): Pair<Float, Float>? = when (t.ki
     News.WASHOUT, News.FIRE, News.AVALANCHE -> t.about % world.width + 0.5f to t.about / world.width + 0.5f
     News.SUBSIDY_OFFERED, News.SUBSIDY_AWARDED -> subsidyStart(world, t.about)
     News.GOAL_MET, News.GOAL_FAILED -> goalPlace(world, t.about)
+    News.CRASH -> world.crashFor(t.about)?.let { it.tile % world.width + 0.5f to it.tile / world.width + 0.5f }
     else -> null
 }

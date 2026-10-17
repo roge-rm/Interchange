@@ -58,6 +58,7 @@ fun TrainCard(
     Card(trainName(t), onClose, modifier) {
         val target = if (t.orders.isEmpty()) null else Order.station(t.orders[t.order % t.orders.size])
         val doing = when {
+            t.wrecked -> stringResource(Res.string.wrecked)
             t.broken -> stringResource(Res.string.broken_down)
             t.needsWires -> stringResource(Res.string.needs_wires)
             t.inDepot && t.running -> stringResource(Res.string.waiting_to_leave)
@@ -73,7 +74,7 @@ fun TrainCard(
         val lang = languageCode()
         val w = roster[t.wagon]
         Text(stringResource(Res.string.consist, roster[t.engine].name(lang), t.wagons, (if (t.wagons == 1) w.name(lang) else w.plural(lang)).lowercase()), color = c.textDim, fontSize = 13.sp)
-        Text(doing, color = if (t.lost || t.broken || t.needsWires) c.warn else c.text, fontSize = 13.sp)
+        Text(doing, color = if (t.wrecked) c.bad else if (t.lost || t.broken || t.needsWires) c.warn else c.text, fontSize = 13.sp)
         Text(
             stringResource(Res.string.age_line, t.age, t.reliability, t.breakdowns),
             color = if (t.old) c.warn else c.textDim, fontSize = 13.sp,
@@ -92,6 +93,8 @@ fun TrainCard(
             Text(stringResource(Res.string.owned_by, view.companies.getOrElse(t.owner) { "" }), color = c.textDim, fontSize = 13.sp)
             return@Card
         }
+        // A wreck can't be given orders or sold; it's cleared away by itself.
+        if (t.wrecked) return@Card
         // The stops, the one it's heading for lit; a tap opens what to do there.
         var open by remember(t.id) { mutableIntStateOf(-1) }
         FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {

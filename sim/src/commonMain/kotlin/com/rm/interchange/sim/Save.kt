@@ -16,7 +16,7 @@ package com.rm.interchange.sim
  */
 object Save {
     private val MAGIC = "ICHG".encodeToByteArray()
-    const val VERSION = 37
+    const val VERSION = 38
 
     /** A vehicle's [built] day as saved by [version]: work days from 36, calendar days before. */
     private fun World.builtOut(built: Int, version: Int) = if (version >= 36) built else built / settings.dayLength
@@ -32,6 +32,7 @@ object Save {
             w.int(g.width); w.int(g.height); w.long(g.seed); w.int(g.startYear); w.int(g.region.ordinal)
             w.int(g.sea); w.int(g.hills); w.int(g.trees); w.int(g.towns); w.int(g.industries); w.bool(g.inflation); w.bool(g.weather); w.int(g.dayLength); w.int(g.rivals); w.bool(g.sharing); w.int(g.rivalLevel)
             if (version >= 29) { w.int(g.townGrowth.ordinal); w.int(g.goals.ordinal) }
+            if (version >= 38) w.bool(g.collisions)
             w.uvar(roster.packs.size.toLong())
             for (p in roster.packs) { w.string(p.id); w.int(p.version); w.long(p.hash) }
             w.uvar(roster.engines.size.toLong())
@@ -90,6 +91,7 @@ object Save {
                 w.int(builtOut(t.built, version)); w.int(t.serviced); w.int(t.reliability); w.int(t.breakdowns); w.int(t.brokenFor); w.bool(t.servicing); w.bool(t.service)
                 if (version >= 28) w.bool(t.snowbound)
                 if (version >= 37) { w.int(t.headOn); w.bool(t.stuck); w.bool(t.held) }
+                if (version >= 38) { w.int(t.wreckedFor); w.bool(t.signalled) }
             }
             w.uvar(towns.size.toLong())
             for (t in towns) { w.string(t.name); w.int(t.x); w.int(t.y); w.int(t.grid); w.bool(t.french); w.int(t.population); w.int(t.houses); w.int(t.growIn); w.int(t.servedThisMonth); w.int(t.servedLastMonth); w.ints(t.approval)
@@ -193,6 +195,16 @@ object Save {
                 val counted = upkeepCounted && !asScenario
                 w.bool(counted)
                 if (counted) for (c in companies) { w.int(c.trackTiles); w.long(c.roadUpkeep) }
+            }
+            if (version >= 38) {
+                val log = crashes
+                w.int(log.first)
+                w.uvar(log.list.size.toLong())
+                for (c in log.list) {
+                    w.uvar(c.vehicles.size.toLong())
+                    for (v in c.vehicles) { w.int(v.kind); w.int(v.id); w.int(v.owner); w.string(v.name) }
+                    w.int(c.tile); w.int(c.town); w.int(c.lost)
+                }
             }
         }
         val body = Squeeze.pack(w.toByteArray())
@@ -330,6 +342,7 @@ object Save {
                         t.servicing = r.bool(); t.service = r.bool()
                         if (version >= 28) t.snowbound = r.bool()
                         if (version >= 37) { t.headOn = r.int(); t.stuck = r.bool(); t.held = r.bool() }
+                        if (version >= 38) { t.wreckedFor = r.int(); t.signalled = r.bool() }
                     } else {
                         t.built = (tick / Calendar.TICKS_PER_DAY).toInt()
                         t.serviced = t.built
@@ -488,6 +501,14 @@ object Save {
                 upkeepCounted = true
                 for (c in companies) { c.trackTiles = r.int(); c.roadUpkeep = r.long() }
             }
+            if (version >= 38) {
+                val first = r.int()
+                val list = List(r.uvar().toInt().also { if (it > CRASHES_MOST) throw BadData("too many crashes") }) {
+                    val vehicles = List(r.uvar().toInt().also { if (it > 1000) throw BadData("too many in a crash") }) { CrashVehicle(r.int(), r.int(), r.int(), r.string()) }
+                    Crash(vehicles, r.int(), r.int(), r.int())
+                }
+                crashes = CrashLog(first, list)
+            }
         }
         // Vehicles' built day was a calendar day before 36, a work day since.
         if (version < 36) {
@@ -530,6 +551,8 @@ object Save {
             rivalLevel = if (version >= 26) r.int().coerceIn(RivalLevel.EASY, RivalLevel.HARD) else RivalLevel.NORMAL,
             townGrowth = if (version >= 29) TownGrowth.entries.getOrElse(r.int()) { TownGrowth.NORMAL } else TownGrowth.NORMAL,
             goals = if (version >= 29) GoalSet.entries.getOrElse(r.int()) { GoalSet.NONE } else GoalSet.NONE,
+            // Games from before collisions keep trains waiting for each other.
+            collisions = version >= 38 && r.bool(),
         )
         if (settings.width !in 16..4096 || settings.height !in 16..4096) throw BadData("map size out of range")
         return settings

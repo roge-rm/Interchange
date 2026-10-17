@@ -173,7 +173,7 @@ internal fun DrawScope.drawMoving(world: World, view: View, sheets: Sheets, movi
         // On a bridge, at its deck's height and in front of the deck.
         val deck = v.deck(i)
         if (deck >= 0f) reach += ON_DECK
-        add(items, world, view, x, y, cell.toFloat(), reach, v.sprite(i), deck)
+        add(items, world, view, x, y, cell.toFloat(), reach, v.sprite(i), deck, wreck = v.wrecked(i))
     }
     // Vehicles' drawings at the levels either side unpacked ahead, so they're there when the view zooms.
     for (i in 0 until v.count) {
@@ -229,8 +229,8 @@ internal fun DrawScope.drawMoving(world: World, view: View, sheets: Sheets, movi
                 val rects = sheets.vehicleRects(model) ?: continue
                 // Behind a building in front of it, cut away where the building stands.
                 val hidden = if (it[6] >= 0f) with(cover) { covering(it[6], it[7], Rect(it[1] - view.halfWidth * 1.5f, it[2] - view.halfWidth * 2f, it[1] + view.halfWidth * 1.5f, it[2] + view.halfWidth)) } else null
-                if (hidden != null) clipPath(hidden, ClipOp.Difference) { spriteAt(sheet, rects, it[3].toInt(), it[1], it[2], scale, shadow = it[5] == 1f) }
-                else spriteAt(sheet, rects, it[3].toInt(), it[1], it[2], scale, shadow = it[5] == 1f)
+                if (hidden != null) clipPath(hidden, ClipOp.Difference) { spriteAt(sheet, rects, it[3].toInt(), it[1], it[2], scale, shadow = it[5] == 1f, wreck = it[5] == 2f) }
+                else spriteAt(sheet, rects, it[3].toInt(), it[1], it[2], scale, shadow = it[5] == 1f, wreck = it[5] == 2f)
             }
         }
     }
@@ -493,7 +493,7 @@ private const val DEPOT_DEPTH = 0.95f
 /** How much nearer the camera a car's front end is than its middle, per tile of half length, by heading in the view. */
 private val NEAR = floatArrayOf(1f, 1.414f, 1f, 0f, 1f, 1.414f, 1f, 0f)
 
-private fun DrawScope.add(items: ArrayList<FloatArray>, world: World, view: View, x: Float, y: Float, cell: Float, reach: Float = 0f, model: Int = -1, deck: Float = -1f, shadow: Boolean = false) {
+private fun DrawScope.add(items: ArrayList<FloatArray>, world: World, view: View, x: Float, y: Float, cell: Float, reach: Float = 0f, model: Int = -1, deck: Float = -1f, shadow: Boolean = false, wreck: Boolean = false) {
     val vx = view.toViewX(x, y)
     val vy = view.toViewY(x, y)
     val sx = view.screenX(vx, vy, size.width)
@@ -502,7 +502,7 @@ private fun DrawScope.add(items: ArrayList<FloatArray>, world: World, view: View
     if (sx < -margin || sx > size.width + margin || sy < -margin || sy > size.height + margin * 2) return
     // Where it stands in the view, for cutting away what's behind a building; up off the ground, nothing's in front.
     val low = !shadow && deck < 0f
-    items += floatArrayOf(vx + vy + reach, sx, sy, cell, model.toFloat(), if (shadow) 1f else 0f, if (low) vx else -1f, if (low) vy else -1f)
+    items += floatArrayOf(vx + vy + reach, sx, sy, cell, model.toFloat(), if (shadow) 1f else if (wreck) 2f else 0f, if (low) vx else -1f, if (low) vy else -1f)
 }
 
 /** Where a signal on [piece] of [tile] facing [facing] stands: just in from that edge, beside the track on the right of trains it faces. */

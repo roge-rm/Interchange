@@ -40,6 +40,7 @@ class RivalTest {
         w.days(365 * 7)
         val rail = w.rivals.flatMap { r -> r.routes.filter { it.rail }.map { r.company to it } }
         assertTrue(rail.isNotEmpty(), "no rival built a railway")
+        assertTrue(w.chronicle.none { it.kind == News.CRASH }, "a rival's trains crashed")
         for ((company, rt) in rail) {
             assertEquals(company, w.stations[rt.a]!!.owner)
             assertTrue(w.stations[rt.a]!!.tiles.isNotEmpty() && w.stations[rt.b]!!.tiles.isNotEmpty(), "a railway without platforms")

@@ -58,6 +58,14 @@ class SaveTest {
     }
 
     @Test
+    fun aVersion37SaveHasNoCollisions() {
+        val w = busy()
+        assertTrue(w.settings.collisions)
+        assertTrue(!Save.read(Save.write(w, version = 37)).settings.collisions)
+        assertTrue(Save.read(Save.write(w)).settings.collisions)
+    }
+
+    @Test
     fun aGeneratedMapSurvivesSavingAndLoading() {
         val a = World(NewGame(width = 128, height = 64, seed = 7, region = Region.SHIELD, hills = 2))
         val b = Save.read(Save.write(a))

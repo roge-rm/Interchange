@@ -116,6 +116,10 @@ class Train(
     var stuck = false
     /** Standing at a signal or behind a train, as of its last move. */
     var held = false
+    /** Came into the block it's in past a signal, so with collisions on it still stops for a train ahead. */
+    var signalled = false
+    /** A wreck, with this many ticks left before it's cleared away; 0 for a train that's whole. */
+    var wreckedFor = 0
 
     /** The work day it was bought or last renewed, and last serviced. */
     var built = 0
@@ -193,7 +197,7 @@ internal fun World.buyTrain(company: Company, c: Command.BuyTrain) {
 
 internal fun World.trainCommand(company: Company, c: Command.TrainOrder) {
     val t = trains.getOrNull(c.train) ?: return
-    if (t.owner != company.id) return
+    if (t.owner != company.id || t.wreckedFor > 0) return
     // Orders and trains make the links passengers find their way by.
     linksDirty = true
     when (c.what) {
@@ -215,7 +219,7 @@ internal fun World.trainCommand(company: Company, c: Command.TrainOrder) {
         }
         Command.TrainOrder.SHARE -> {
             val other = trains.getOrNull(c.stations.firstOrNull() ?: -1) ?: return
-            if (other.owner != company.id || other.id == t.id) return
+            if (other.owner != company.id || other.id == t.id || other.wreckedFor > 0) return
             if (other.shared < 0) other.shared = other.id
             t.shared = other.shared
             t.orders.clear()
@@ -278,6 +282,7 @@ private fun World.leaveDepot(t: Train) {
     t.inDepot = false
     t.running = true
     t.route = null
+    t.signalled = false
     countOn(t)
 }
 
@@ -307,6 +312,76 @@ internal fun World.moveTrains() {
 }
 
 private fun World.moveTrain(t: Train) {
+    if (t.wreckedFor > 0) {
+        if (--t.wreckedFor == 0) clearWreck(t)
+        return
+    }
+    drive(t)
+    if (!settings.collisions || t.inDepot) return
+    val hit = trainsHit(t)
+    if (hit.isEmpty()) return
+    val all = listOf(t) + hit
+    for (u in all) wreck(u)
+    crashed(stepTile(t.steps.last()), all.map { CrashVehicle(Crash.TRAIN, it.id, it.owner, it.name) to it })
+}
+
+/**
+ * The trains [t]'s nose has run into, in order of id: those that aren't wrecks on the piece under its nose or one
+ * meeting or crossing it there. Trains kept apart by signals and reserved paths never get this close.
+ */
+private fun World.trainsHit(t: Train): List<Train> {
+    val out = ArrayList<Train>()
+    val s = t.steps.last()
+    val tile = stepTile(s)
+    val level = stepLevel(s)
+    val piece = stepPiece(s)
+    val pieces = piecesAt(tile, level)
+    for (q in Track.PIECES) {
+        if (pieces and q == 0 || (q != piece && !Track.touch(q, piece))) continue
+        val key = pieceKey(tile, q, level)
+        if ((pieceTrains[key] ?: 0) - (if (key in t.onPieces) 1 else 0) <= 0) continue
+        for (u in trains) if (u != null && u.id != t.id && !u.inDepot && u.wreckedFor == 0 && key in u.onPieces && u !in out) out += u
+    }
+    out.sortBy { it.id }
+    return out
+}
+
+/** Wrecks train [t] where it stands: stopped, its orders and path let go. */
+private fun World.wreck(t: Train) {
+    t.wreckedFor = WRECK_TICKS
+    t.running = false
+    t.speed = 0
+    t.waiting = 0
+    t.brokenFor = 0
+    t.toDepot = false
+    t.servicing = false
+    t.turnRound = false
+    t.held = false
+    t.stuck = false
+    t.headOn = 0
+    t.snowbound = false
+    t.route = null
+    t.orders.clear()
+    t.order = 0
+    t.shared = -1
+    releaseAhead(t)
+    linksDirty = true
+}
+
+/** Clears wreck [t] off the track, gone for good. */
+private fun World.clearWreck(t: Train) {
+    reserved.entries.removeAll { it.value == t.id }
+    t.steps.clear()
+    t.inDepot = true
+    countOn(t)
+    linksDirty = true
+    trains[t.id] = null
+}
+
+/** Whether some train is a wreck, so track ahead is looked over for one. */
+private fun World.anyWreck() = trains.any { it != null && it.wreckedFor > 0 }
+
+private fun World.drive(t: Train) {
     t.held = false
     if (t.waiting > 0) {
         if (--t.waiting == 0) {
@@ -422,7 +497,8 @@ private fun World.moveTrain(t: Train) {
  */
 private fun World.headOnWait(t: Train): Boolean {
     val u = firstInWay(t)
-    if (u == null || u.speed != 0 || u.waiting > 0 || u.brokenFor > 0 || (u.held && firstInWay(u) !== t)) {
+    // A wreck in the way is waited out.
+    if (u == null || u.wreckedFor > 0 || u.speed != 0 || u.waiting > 0 || u.brokenFor > 0 || (u.held && firstInWay(u) !== t)) {
         t.headOn = 0
         return false
     }
@@ -628,20 +704,29 @@ private fun World.blockClear(t: Train, b: Int, kind: Int, depth: Int): Boolean {
     return outs.isEmpty() || outs.any { blockClear(t, it[1], it[0], depth + 1) }
 }
 
-/** Whether step [s]'s piece is free for train [t]: neither it nor a piece crossing it held or run on by another train, nor, if [occupiedTile], the tile. */
-private fun World.pieceFree(t: Train, s: Int, occupiedTile: Boolean): Boolean {
+/**
+ * Whether step [s]'s piece is free for train [t]: neither it nor a piece crossing it held or run on by another train,
+ * nor, if [occupiedTile], the tile. A path signal [reserving] the way always looks for trains on it.
+ */
+private fun World.pieceFree(t: Train, s: Int, occupiedTile: Boolean, reserving: Boolean = false): Boolean {
     val tile = stepTile(s)
     val level = stepLevel(s)
     val piece = stepPiece(s)
     val place = tileKey(s)
-    if (occupiedTile && (tileTrains[place] ?: 0) - (if (place in t.onTiles) 1 else 0) > 0) return false
+    // With collisions on, a train that came in past no signal runs on into whatever's ahead, a wreck aside.
+    val sees = !settings.collisions || t.signalled || reserving
+    if (sees && occupiedTile && (tileTrains[place] ?: 0) - (if (place in t.onTiles) 1 else 0) > 0) return false
     val pieces = piecesAt(tile, level)
+    var wrecks: Boolean? = null
     for (q in Track.PIECES) {
         if (pieces and q == 0 || (q != piece && !Track.touch(q, piece))) continue
         val key = pieceKey(tile, q, level)
         val holder = reserved[key]
         if (holder != null && holder != t.id) return false
-        if ((pieceTrains[key] ?: 0) - (if (key in t.onPieces) 1 else 0) > 0) return false
+        if ((pieceTrains[key] ?: 0) - (if (key in t.onPieces) 1 else 0) > 0) {
+            if (sees) return false
+            if (wrecks ?: anyWreck().also { wrecks = it }) for (u in trains) if (u != null && u.wreckedFor > 0 && key in u.onPieces) return false
+        }
     }
     return true
 }
@@ -666,7 +751,7 @@ private fun World.reserveThrough(t: Train, first: Int, at: Int): Boolean {
     var s = first
     var i = at
     while (way.size < MAX_PATH) {
-        if (!pieceFree(t, s, occupiedTile = false)) return false
+        if (!pieceFree(t, s, occupiedTile = false, reserving = true)) return false
         way += s
         val target = t.target
         val n = nextFrom(t, s, i + 1)
@@ -712,7 +797,11 @@ private fun World.advance(t: Train, move: Int, free: Int) {
             t.nose = stepLength(t.steps.last())
             break
         }
-        t.nose -= stepLength(t.steps.last())
+        val cur = t.steps.last()
+        t.nose -= stepLength(cur)
+        // Past a signal it's kept apart from other trains; into another block past none, it isn't.
+        if (signalFor(cur, next) >= 0) t.signalled = true
+        else if (blocks[stepKey(next)] != blocks[stepKey(cur)]) t.signalled = false
         t.steps += next
         shareFee(t, stepTile(next))
         // The engine's pilot pushes the snow off the line as it goes. Snow falls by the calendar, so without a plow it's one pass
@@ -790,7 +879,7 @@ internal fun World.countOn(t: Train) {
 /** Running costs, taken every day: a 365th of a year's, the remainders carried, so a leap year costs a day more. */
 internal fun World.payRunningCosts() {
     for (t in trains) {
-        if (t == null || t.inDepot && !t.running) continue
+        if (t == null || t.inDepot && !t.running || t.wreckedFor > 0) continue
         val c = companies.getOrNull(t.owner) ?: continue
         val yearly = price(t.carEngines.sumOf { roster[it].running })
         c.runningOwed += yearly

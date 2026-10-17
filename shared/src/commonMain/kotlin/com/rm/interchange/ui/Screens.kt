@@ -165,6 +165,7 @@ fun NewGameScreen(packs: List<Pack>, onStart: (NewGame, List<Pack>) -> Unit, onB
     var industries by remember { mutableIntStateOf(2) }
     var inflation by remember { mutableStateOf(true) }
     var sharing by remember { mutableStateOf(true) }
+    var collisions by remember { mutableStateOf(true) }
     var rivalLevel by remember { mutableIntStateOf(com.rm.interchange.sim.RivalLevel.NORMAL) }
     var weather by remember { mutableStateOf(true) }
     var dayLength by remember { mutableIntStateOf(10) }
@@ -172,7 +173,7 @@ fun NewGameScreen(packs: List<Pack>, onStart: (NewGame, List<Pack>) -> Unit, onB
     var townGrowth by remember { mutableStateOf(com.rm.interchange.sim.TownGrowth.NORMAL) }
     var goals by remember { mutableStateOf(com.rm.interchange.sim.GoalSet.NONE) }
     var off by remember { mutableStateOf(emptySet<String>()) }
-    val settings = NewGame(width, height, seed, year, region, sea, hills, trees, towns, industries, inflation, weather, dayLength, rivals, sharing, rivalLevel, townGrowth, goals)
+    val settings = NewGame(width, height, seed, year, region, sea, hills, trees, towns, industries, inflation, weather, dayLength, rivals, sharing, rivalLevel, townGrowth, goals, collisions)
     // The map's the same whatever the goals and growth, so changing them doesn't make it again.
     val land = settings.copy(townGrowth = com.rm.interchange.sim.TownGrowth.NORMAL, goals = com.rm.interchange.sim.GoalSet.NONE)
     val chosen = packs.filter { it.id !in off }
@@ -274,7 +275,10 @@ fun NewGameScreen(packs: List<Pack>, onStart: (NewGame, List<Pack>) -> Unit, onB
         Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             TogglePill(stringResource(Res.string.inflation), inflation, Modifier.weight(1f).fillMaxHeight()) { inflation = it }
             TogglePill(stringResource(Res.string.weather), weather, Modifier.weight(1f).fillMaxHeight()) { weather = it }
+        }
+        Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             TogglePill(stringResource(Res.string.shared_track), sharing, Modifier.weight(1f).fillMaxHeight()) { sharing = it }
+            TogglePill(stringResource(Res.string.collisions), collisions, Modifier.weight(1f).fillMaxHeight()) { collisions = it }
         }
         if (packs.isNotEmpty()) {
             Text(stringResource(Res.string.packs), color = c.text, fontSize = 15.sp)

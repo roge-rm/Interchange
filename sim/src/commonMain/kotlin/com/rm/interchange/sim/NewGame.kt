@@ -51,6 +51,8 @@ data class NewGame(
     val townGrowth: TownGrowth = TownGrowth.NORMAL,
     /** The goals the game is made with, by [makeGoals]. */
     val goals: GoalSet = GoalSet.NONE,
+    /** Trains that run into each other with no signal or reserved path keeping them apart are wrecked; without it they wait. */
+    val collisions: Boolean = true,
 ) {
     companion object {
         val DAY_LENGTHS = intArrayOf(1, 2, 4, 6, 10, 16)

@@ -110,7 +110,8 @@ class PassengerTest {
      */
     @Test
     fun passengersChangeTrainsToGetWhereTheyreGoing() {
-        val w = World(96, 64, 1, startYear = 1900)
+        // Collisions off: the two trains share station B with no signals, waiting for each other there.
+        val w = World(NewGame(96, 64, 1, 1900, towns = 0, industries = 0, weather = false, collisions = false))
         for (i in w.corners.indices) w.corners[i] = 3
         w.companies[0].money = 10_000_000
         // A depot at each end, one for each train.

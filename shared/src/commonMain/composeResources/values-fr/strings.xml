@@ -266,6 +266,7 @@
     <string name="book_total">Bénéfice</string>
     <string name="money_graph">Argent, deux dernières années</string>
     <string name="inflation">Inflation</string>
+    <string name="collisions">Collisions</string>
     <string name="day_length">Durée du jour</string>
     <string name="rivals">Concurrents</string>
     <string name="companies">Compagnies</string>
@@ -384,6 +385,11 @@
     <string name="age_line">%1$d ans, fiable à %2$d %, %3$d pannes</string>
     <string name="renew_for">Renouveler pour %1$s</string>
     <string name="servicing">Entretien</string>
+    <string name="news_crash">%1$s a eu un accident près de %2$s</string>
+    <string name="news_crash_lost">%1$s a eu un accident près de %2$s, %3$d personnes ont péri</string>
+    <string name="name_and">%1$s et %2$s</string>
+    <string name="company_train">Train %2$d de %1$s</string>
+    <string name="wrecked">Accidenté</string>
     <string name="news_stuck">%1$s est bloqué : un train lui barre la route et il n'y a pas d'autre chemin</string>
     <string name="news_old">%1$s se fait vieux</string>
     <string name="tool_waypoint">Point de passage</string>

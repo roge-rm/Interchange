@@ -49,6 +49,7 @@ class PlayerTest {
         val note = y.joinToString("\n") { "${it.year}: money ${it.money}, loan ${it.loan}, value ${it.value}, profit ${it.profit}, routes ${it.routes}" }
         assertTrue(!c.gone && c.trouble == 0, "in trouble\n$note")
         assertTrue(p.vehicles() > 0, "nothing running\n$note")
+        assertTrue(p.world.chronicle.none { it.kind == News.CRASH }, "its trains crashed")
         assertTrue(y.last().profit > 0, "losing in year 5\n$note")
         // Worth more, or earning more in a year it spent on new lines, as value counts track at nothing and vehicles at resale.
         val spending = y.last().built + y.last().bought > 0 && y.last().profit > y[1].profit

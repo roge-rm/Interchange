@@ -34,6 +34,7 @@ fun newGameSettings(env: Map<String, String>, chosen: Map<String, String> = empt
         dayLength = pick("dayLength", "INTERCHANGE_DAY_LENGTH", 10) { it in NewGame.DAY_LENGTHS },
         townGrowth = env["INTERCHANGE_TOWN_GROWTH"]?.let { v -> TownGrowth.entries.firstOrNull { it.name.equals(v, ignoreCase = true) } } ?: TownGrowth.NORMAL,
         goals = env["INTERCHANGE_GOALS"]?.let { v -> GoalSet.entries.firstOrNull { it.name.equals(v, ignoreCase = true) } } ?: GoalSet.NONE,
+        collisions = env["INTERCHANGE_COLLISIONS"]?.let { v -> v.lowercase() !in setOf("0", "false", "off", "no") } ?: true,
     )
 }
 

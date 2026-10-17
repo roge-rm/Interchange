@@ -7,7 +7,7 @@ package com.rm.interchange.sim
  */
 
 /** Where every wagon is: [CAR_FIELDS] floats each. */
-class VehicleView(val tick: Long, val cars: FloatArray) {
+class VehicleView(val tick: Long, val cars: FloatArray, val wrecks: Set<Int> = emptySet()) {
     val count get() = cars.size / CAR_FIELDS
 
     fun key(i: Int) = cars[i * CAR_FIELDS].toInt()
@@ -28,6 +28,8 @@ class VehicleView(val tick: Long, val cars: FloatArray) {
     fun roadVehicle(i: Int) = craft(key(i), ROAD)
     fun ship(i: Int) = craft(key(i), SHIP)
     fun aircraft(i: Int) = craft(key(i), AIRCRAFT)
+    /** A wreck, drawn darkened: [wrecks] holds wrecked trains by id and other vehicles by their key. */
+    fun wrecked(i: Int) = wrecks.isNotEmpty() && (if (key(i) >= 0) key(i) / 256 else key(i)) in wrecks
     /** Up in the air: drawn from its flying sprites, with a shadow on the ground. */
     fun flying(i: Int) = slope(i) == FLYING
 
@@ -89,6 +91,8 @@ class TrainView(
     val needsWires: Boolean = false,
     /** The company it belongs to. */
     val owner: Int = 0,
+    /** A wreck, waiting to be cleared. */
+    val wrecked: Boolean = false,
 )
 
 /** A bus, truck or streetcar as the screen shows it. */
@@ -356,7 +360,7 @@ fun World.view(company: Int = 0, withReserved: Boolean = false): WorldView {
             IntArray(Cargo.COUNT) { t.load(it) }, IntArray(Cargo.COUNT) { t.capacity(it) }, t.profitThisYear, t.profitLastYear, t.shared,
             age(t), t.reliability / 100, t.brokenFor > 0, t.breakdowns, t.service, t.servicing, price(t.price) - value(t), age(t) >= t.engineInfo.life,
             t.inDepot && t.engineInfo.traction == Traction.ELECTRIC && depots.getOrNull(t.depot)?.let { !depotWired(it) } == true,
-            owner = t.owner,
+            owner = t.owner, wrecked = t.wreckedFor > 0,
         )
     }
     val stationViews = stations.filterNotNull().map { s ->
@@ -386,7 +390,7 @@ fun World.view(company: Int = 0, withReserved: Boolean = false): WorldView {
         townViews = towns.map { TownView(it.id, it.name, it.x, it.y, it.population, it.houses) }
         townsChanged = false
     }
-    return WorldView(VehicleView(tick, cars.toFloatArray()), trainViews, stationViews, signalViews, depotViews, townViews, payments.filter { it.company == company }, news.toList(),
+    return WorldView(VehicleView(tick, cars.toFloatArray(), trains.mapNotNullTo(HashSet()) { t -> t?.id?.takeIf { t.wreckedFor > 0 } }), trainViews, stationViews, signalViews, depotViews, townViews, payments.filter { it.company == company }, news.toList(),
         companies.getOrNull(company)?.let { c -> CompanyView(c.money, c.loan, maxLoan(), c.thisYear.copyOf(), c.lastYear.copyOf(), c.history.map { it.copyOf() }, c.upkeep) }, tick, weatherView(),
         stations.filterNotNull().filter { it.waypoint }.flatMap { it.tiles }.toIntArray(),
         spans.filterNotNull().map { SpanView(it.tunnel, it.style, it.x0, it.y0, it.x1, it.y1, it.height) },
