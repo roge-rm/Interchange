@@ -4,9 +4,26 @@ Interchange is a transport game for Android 8.1+ based on OpenTTD.
 
 Start in 1836 with horse-drawn wagons and a bit of money, and build railways, roads, canals and air routes between towns and industries through to now and past it. Carry people, mail and freight, keep things running through the winter, and try to stay ahead of the computer companies, or your friends.
 
-It's at 0.10 and playable, but not finished. Let me know what works and what doesn't in the #interchange channel **[on my discord](https://discord.gg/9Wun47jGC6)**, or open an issue here.
+It's at 0.11 and playable, but not finished. Let me know what works and what doesn't in the #interchange channel **[on my discord](https://discord.gg/9Wun47jGC6)**, or open an issue here.
 
 Dan (rm)
+
+---
+
+## Screenshots
+
+<table>
+  <tr>
+    <td align="center" width="33%"><img src="screenshots/town.jpg" width="100%" alt="A town in summer with a diesel train at the station and buses in the streets"></td>
+    <td align="center" width="33%"><img src="screenshots/winter.jpg" width="100%" alt="The same town in January, under snow"></td>
+    <td align="center" width="33%"><img src="screenshots/logging.jpg" width="100%" alt="Logging trucks on a snowy road through the woods"></td>
+  </tr>
+  <tr>
+    <td align="center" width="33%"><img src="screenshots/building.jpg" width="100%" alt="Laying track by the station"></td>
+    <td align="center" width="33%"><img src="screenshots/companies.jpg" width="100%" alt="The companies, with their insignias and what they're worth"></td>
+    <td align="center" width="33%"><img src="screenshots/campaign.jpg" width="100%" alt="The campaign's seven chapters"></td>
+  </tr>
+</table>
 
 ---
 
@@ -29,6 +46,8 @@ Dan (rm)
 **Your company.** Give it a name and an insignia: pick one of 24 or draw your own in the pixel editor. It takes your company's colour.
 
 **Town councils.** Advertise, fund new buildings, put up a statue, do road works or buy exclusive rights.
+
+**Goals and the campaign.** Goals to grow towns, carry cargo and build up the company, a campaign of seven chapters from 1836 to 2072, and a scenario editor for your own.
 
 **The chronicle.** All the news kept in a newspaper of the era, to read back through.
 
