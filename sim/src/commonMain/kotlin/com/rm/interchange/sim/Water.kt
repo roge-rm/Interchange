@@ -31,6 +31,8 @@ class Ship(
     val cargoChoice: Int = -1,
 ) : Carrier {
     var name = ""
+    override var renewAsked = NEVER_ASKED
+    override var renewFailed = false
     val info get() = roster[model]
     var inDepot = true
     var running = false
@@ -440,7 +442,7 @@ private fun World.sail(v: Ship) {
             if (v.orders.isNotEmpty()) v.order = (v.order + 1) % v.orders.size
             v.route = null
             // Due a service: from this call to the nearest shipyard, so it never turns back halfway across a lake.
-            if (!v.toDepot && due(v.service, v.serviced) && hasDepot(v.owner, Depots.SHIPYARD)) {
+            if (!v.toDepot && hasDepot(v.owner, Depots.SHIPYARD) && (due(v.service, v.serviced) || renewNow(v))) {
                 v.toDepot = true
                 v.servicing = true
             }
@@ -536,6 +538,7 @@ private fun World.arriveShip(v: Ship) {
         v.running = false
         v.toDepot = false
         if (v.servicing) {
+            autorenew(v)
             v.reliability = v.info.reliability * 100
             v.serviced = workDay
             v.servicing = false

@@ -32,6 +32,10 @@ class Company(val id: Int, var name: String, var money: Long) {
     var founded = money
     /** Its insignia, [Insignia.BYTES] bytes; see-through all over until it's given one. */
     var insignia = ByteArray(Insignia.BYTES)
+    /** Autorenew on, how many work months from the end of a vehicle's life it's renewed (before if negative), and the money it keeps in hand. */
+    var autorenew = true
+    var renewMonths = Autorenew.MONTHS_DEFAULT
+    var renewFloor = 0L
 }
 
 /** What money is booked to: what it was spent on or where it came from. */

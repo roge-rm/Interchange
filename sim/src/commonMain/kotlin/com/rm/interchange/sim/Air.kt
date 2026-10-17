@@ -88,6 +88,8 @@ class Aircraft(
     val cargoChoice: Int = -1,
 ) : Carrier {
     var name = ""
+    override var renewAsked = NEVER_ASKED
+    override var renewFailed = false
     val info get() = roster[model]
     var inDepot = true
     var running = false
@@ -440,7 +442,7 @@ private fun World.atGate(v: Aircraft) {
         if (--v.waiting == 0) {
             if (v.orders.isNotEmpty() && !v.toDepot) v.order = (v.order + 1) % v.orders.size
             // Due a service or a change of gear: from this stop to the nearest hangar, then on to its next order.
-            if (!v.toDepot && (due(v.service, v.serviced) || needsGear(v))) forService(v)
+            if (!v.toDepot && (due(v.service, v.serviced) || needsGear(v) || hasDepot(v.owner, Depots.HANGAR) && renewNow(v))) forService(v)
         }
         return
     }
@@ -674,6 +676,7 @@ private fun World.intoHangar(v: Aircraft) {
     v.running = false
     v.toDepot = false
     if (v.servicing) {
+        autorenew(v)
         v.reliability = v.info.reliability * 100
         v.serviced = workDay
         v.servicing = false

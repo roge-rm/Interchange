@@ -87,6 +87,8 @@ class News(val kind: Int, val about: Int, val tick: Long) {
         const val TRAIN_STUCK = 25
         /** A crash; [News.about] is its number in [World.crashes]. */
         const val CRASH = 26
+        /** A vehicle due renewing that its company couldn't pay for; [News.about] is an [Autorenew] kind shifted up by [Autorenew.KIND_SHIFT], with the vehicle's id. */
+        const val RENEW_FAILED = 27
     }
 }
 

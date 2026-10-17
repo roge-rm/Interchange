@@ -541,6 +541,22 @@ fun FinanceWindow(runner: com.rm.interchange.server.GameThread, onClose: () -> U
         Head(stringResource(Res.string.track_upkeep))
         val levels = stringArrayResource(Res.array.upkeep_levels)
         FillChips(listOf(0, 1, 2), co.upkeep, { levels.getOrElse(it) { "" } }) { runner.request(com.rm.interchange.sim.Command.SetUpkeep(me, it)) }
+        Head(stringResource(Res.string.autorenew))
+        fun renew(on: Boolean = co.autorenew, months: Int = co.renewMonths, floor: Long = co.renewFloor) =
+            runner.request(com.rm.interchange.sim.Command.SetAutorenew(me, on, months, floor))
+        TogglePill(stringResource(Res.string.autorenew_on), co.autorenew, Modifier.fillMaxWidth()) { renew(on = it) }
+        if (co.autorenew) {
+            val months = com.rm.interchange.sim.Autorenew.MONTHS.toList()
+            StepSlider(stringResource(Res.string.renew_when), months, co.renewMonths.let { m -> months.minBy { kotlin.math.abs(it - m) } }, { m ->
+                when {
+                    m < 0 -> stringResource(Res.string.renew_before, -m)
+                    m > 0 -> stringResource(Res.string.renew_after, m)
+                    else -> stringResource(Res.string.renew_at_end)
+                }
+            }) { renew(months = it) }
+            val floors = com.rm.interchange.sim.Autorenew.FLOORS.toList()
+            StepSlider(stringResource(Res.string.renew_floor), floors, floors.lastOrNull { it <= co.renewFloor } ?: 0L, { money(it) }) { renew(floor = it) }
+        }
         if (co.history.size >= 2) {
             Head(stringResource(Res.string.money_graph))
             MoneyGraph(co.history, Modifier.fillMaxWidth().height(120.dp))

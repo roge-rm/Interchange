@@ -57,6 +57,43 @@ class SaveTest {
         assertEquals(w.trains[0]!!.built, Save.read(Save.write(w)).trains[0]!!.built)
     }
 
+    /** A bus in its garage, a ship at its shipyard and an aircraft in its hangar, at day length [dayLength]. */
+    private fun fleet(dayLength: Int): World {
+        val w = World(NewGame(64, 64, 1, 1965, towns = 0, industries = 0, weather = false, dayLength = dayLength))
+        for (y in 0..64) for (x in 0..64) w.corners[w.corner(x, y)] = if (x in 10..50 && y in 10..30) 0 else 1
+        w.shoreChanged()
+        w.companies[0].money = 100_000_000
+        w.apply(Command.Road(0, 5, 40, 30, 40, Surface.PAVED, remove = false))
+        w.apply(Command.Garage(0, 5, 41, Track.YM))
+        w.apply(Command.BuyRoadVehicle(0, w.depots.size - 1, w.roster.engines.first { it.key == "base:new_look" }.id))
+        w.apply(Command.Shipyard(0, 9, 15))
+        w.apply(Command.BuyCraft(0, w.depots.size - 1, w.roster.engines.first { it.key == "base:steam_laker" }.id))
+        w.apply(Command.Airport(0, 40, 45, Airports.REGIONAL, Track.X))
+        w.apply(Command.BuyCraft(0, w.airports[0]!!.depot, w.roster.engines.first { it.key == "base:dc3" }.id))
+        assertEquals(1, w.roadVehicles.size)
+        assertEquals(1, w.ships.size)
+        assertEquals(1, w.aircraft.size)
+        return w
+    }
+
+    @Test
+    fun otherVehiclesAgesFromAVersion35SaveAreInWorkDays() {
+        val w = fleet(dayLength = 10)
+        repeat(Calendar.TICKS_PER_DAY * 500) { w.step() }
+        // Built 40 calendar days back, 400 work days.
+        w.roadVehicles[0]!!.built = w.workDay - 400
+        w.ships[0]!!.built = w.workDay - 401
+        w.aircraft[0]!!.built = w.workDay - 402
+        val back = Save.read(Save.write(w, version = 35))
+        assertEquals(w.roadVehicles[0]!!.built / 10 * 10, back.roadVehicles[0]!!.built)
+        assertEquals(w.ships[0]!!.built / 10 * 10, back.ships[0]!!.built)
+        assertEquals(w.aircraft[0]!!.built / 10 * 10, back.aircraft[0]!!.built)
+        val now = Save.read(Save.write(w))
+        assertEquals(w.roadVehicles[0]!!.built, now.roadVehicles[0]!!.built)
+        assertEquals(w.ships[0]!!.built, now.ships[0]!!.built)
+        assertEquals(w.aircraft[0]!!.built, now.aircraft[0]!!.built)
+    }
+
     @Test
     fun aVersion37SaveHasNoCollisions() {
         val w = busy()

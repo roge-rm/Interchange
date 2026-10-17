@@ -16,7 +16,7 @@ package com.rm.interchange.sim
  */
 object Save {
     private val MAGIC = "ICHG".encodeToByteArray()
-    const val VERSION = 39
+    const val VERSION = 40
 
     /** A vehicle's [built] day as saved by [version]: work days from 36, calendar days before. */
     private fun World.builtOut(built: Int, version: Int) = if (version >= 36) built else built / settings.dayLength
@@ -206,6 +206,10 @@ object Save {
                     for (v in c.vehicles) { w.int(v.kind); w.int(v.id); w.int(v.owner); w.string(v.name) }
                     w.int(c.tile); w.int(c.town); w.int(c.lost)
                 }
+            }
+            if (version >= 40) {
+                for (c in companies) { w.bool(c.autorenew); w.int(c.renewMonths); w.long(c.renewFloor) }
+                for (list in listOf<List<Carrier?>>(trains, roadVehicles, ships, aircraft)) for (v in list) if (v != null) { w.int(v.renewAsked); w.bool(v.renewFailed) }
             }
         }
         val body = Squeeze.pack(w.toByteArray())
@@ -510,6 +514,11 @@ object Save {
                     Crash(vehicles, r.int(), r.int(), r.int())
                 }
                 crashes = CrashLog(first, list)
+            }
+            // Before 40 there was no autorenew: every company has it on, as new ones do.
+            if (version >= 40) {
+                for (c in companies) { c.autorenew = r.bool(); c.renewMonths = r.int().coerceIn(-12, 12); c.renewFloor = r.long().coerceAtLeast(0) }
+                for (list in listOf<List<Carrier?>>(trains, roadVehicles, ships, aircraft)) for (v in list) if (v != null) { v.renewAsked = r.int(); v.renewFailed = r.bool() }
             }
         }
         // Vehicles' built day was a calendar day before 36, a work day since.

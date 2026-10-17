@@ -26,6 +26,9 @@ interface Carrier {
     fun capacity(c: Int): Int
     /** Its top speed, in km/h, for station ratings. */
     val topSpeed: Int
+    /** The work day it was last sent in to be renewed or found its company couldn't pay, and told so since its last renewal. */
+    var renewAsked: Int
+    var renewFailed: Boolean
 }
 
 /** A step of road: [tile], the edge come in at and the edge leaving by. */
@@ -78,6 +81,8 @@ class RoadVehicle(
     var service = true
     /** No depot it could reach for a service: the daily check for one long overdue waits till this tick. */
     var noDepotUntil = 0L
+    override var renewAsked = NEVER_ASKED
+    override var renewFailed = false
     /** Its tires, a [Tires] kind, and whether it changes them at the garage as the seasons turn. */
     var tires = Tires.SUMMER
     var seasonalTires = true
@@ -301,7 +306,7 @@ private fun World.driveRoadVehicle(v: RoadVehicle, on: HashMap<Int, ArrayList<Ro
             // standing in a drive-through stop it would hold up everyone behind it.
             val o = v.orders.getOrNull(v.order % v.orders.size.coerceAtLeast(1)) ?: 0
             val s = stations.getOrNull(Order.station(o))
-            val due = !v.toDepot && (due(v.service, v.serviced) || needsTires(v)) && hasDepot(v.owner, Depots.ROAD)
+            val due = !v.toDepot && hasDepot(v.owner, Depots.ROAD) && (due(v.service, v.serviced) || needsTires(v) || renewNow(v))
             if (Order.has(o, Order.FULL_LOAD) && s != null && !v.toDepot && !due && !roadFull(v)) {
                 loadAt(v, s)
                 if (!roadFull(v)) {
@@ -387,6 +392,7 @@ private fun World.arrive(v: RoadVehicle) {
         v.toDepot = false
         v.route = null
         if (v.servicing) {
+            autorenew(v)
             v.reliability = v.info.reliability * 100
             v.serviced = workDay
             v.servicing = false

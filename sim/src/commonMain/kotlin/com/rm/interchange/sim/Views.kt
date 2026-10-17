@@ -244,6 +244,10 @@ class CompanyView(
     val history: List<LongArray>,
     /** How much it spends keeping its track up, an [Upkeep] level. */
     val upkeep: Int = Upkeep.NORMAL,
+    /** Autorenew on, its work months from the end of a vehicle's life, and the money it keeps in hand. */
+    val autorenew: Boolean = true,
+    val renewMonths: Int = Autorenew.MONTHS_DEFAULT,
+    val renewFloor: Long = 0,
 )
 
 /** The weather as the screen shows it: copies of the fronts, the air and the wind, as of the start of [day]. */
@@ -400,7 +404,7 @@ fun World.view(company: Int = 0, withReserved: Boolean = false): WorldView {
     for (v in roadVehicles) if (v != null && v.wreckedFor > 0) wrecks += VehicleView.key(VehicleView.ROAD, v.id)
     for (v in aircraft) if (v != null && v.wreckedFor > 0) wrecks += VehicleView.key(VehicleView.AIRCRAFT, v.id)
     return WorldView(VehicleView(tick, cars.toFloatArray(), wrecks), trainViews, stationViews, signalViews, depotViews, townViews, payments.filter { it.company == company }, news.toList(),
-        companies.getOrNull(company)?.let { c -> CompanyView(c.money, c.loan, maxLoan(), c.thisYear.copyOf(), c.lastYear.copyOf(), c.history.map { it.copyOf() }, c.upkeep) }, tick, weatherView(),
+        companies.getOrNull(company)?.let { c -> CompanyView(c.money, c.loan, maxLoan(), c.thisYear.copyOf(), c.lastYear.copyOf(), c.history.map { it.copyOf() }, c.upkeep, c.autorenew, c.renewMonths, c.renewFloor) }, tick, weatherView(),
         stations.filterNotNull().filter { it.waypoint }.flatMap { it.tiles }.toIntArray(),
         spans.filterNotNull().map { SpanView(it.tunnel, it.style, it.x0, it.y0, it.x1, it.y1, it.height) },
         sheds.toIntArray(), fences.toIntArray(),

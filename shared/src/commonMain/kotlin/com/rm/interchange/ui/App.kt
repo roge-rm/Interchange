@@ -49,6 +49,7 @@ import com.rm.interchange.map.LandPainter
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.foundation.layout.RowScope
 import org.jetbrains.compose.resources.pluralStringResource
+import com.rm.interchange.sim.Autorenew
 import com.rm.interchange.sim.Crash
 import com.rm.interchange.sim.crashFor
 import com.rm.interchange.sim.railCost
@@ -1120,6 +1121,15 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
                     if (n.kind == News.SNOWBOUND || n.kind == News.TRAIN_OLD || n.kind == News.TRAIN_STUCK) selected = Selection.Train(n.about)
                     if (n.kind == News.SLID) selected = Selection.RoadVehicle(n.about)
                     if (n.kind == News.DIVERTED) selected = Selection.Aircraft(n.about)
+                    if (n.kind == News.RENEW_FAILED) {
+                        val id = n.about and ((1 shl Autorenew.KIND_SHIFT) - 1)
+                        selected = when (n.about shr Autorenew.KIND_SHIFT) {
+                            Autorenew.TRAIN -> Selection.Train(id)
+                            Autorenew.ROAD -> Selection.RoadVehicle(id)
+                            Autorenew.SHIP -> Selection.Ship(id)
+                            else -> Selection.Aircraft(id)
+                        }
+                    }
                     if (n.kind == News.SUBSIDY_OFFERED || n.kind == News.SUBSIDY_AWARDED) subsidyStart(world, n.about).let { (x, y) -> view.focusX = x; view.focusY = y }
                     if (n.kind == News.GOAL_MET || n.kind == News.GOAL_FAILED) goalPlace(world, n.about)?.let { (x, y) -> view.focusX = x; view.focusY = y }
                     if (n.kind == News.WASHOUT || n.kind == News.FIRE || n.kind == News.AVALANCHE) {
@@ -1460,6 +1470,16 @@ internal fun newsText(world: World, n: News): String {
         if (world.aircraft.getOrNull(n.about)?.owner != me) return ""
         val name = world.aircraft.getOrNull(n.about)?.name?.takeIf { it.isNotEmpty() } ?: stringResource(Res.string.aircraft_n, n.about + 1)
         return stringResource(Res.string.news_diverted, name)
+    }
+    if (n.kind == News.RENEW_FAILED) {
+        val id = n.about and ((1 shl Autorenew.KIND_SHIFT) - 1)
+        val name = when (n.about shr Autorenew.KIND_SHIFT) {
+            Autorenew.TRAIN -> world.trains.getOrNull(id)?.takeIf { it.owner == me }?.let { it.name.ifEmpty { stringResource(Res.string.train_n, id + 1) } }
+            Autorenew.ROAD -> world.roadVehicles.getOrNull(id)?.takeIf { it.owner == me }?.let { it.name.ifEmpty { stringResource(Res.string.road_vehicle_n, id + 1) } }
+            Autorenew.SHIP -> world.ships.getOrNull(id)?.takeIf { it.owner == me }?.let { it.name.ifEmpty { stringResource(Res.string.ship_n, id + 1) } }
+            else -> world.aircraft.getOrNull(id)?.takeIf { it.owner == me }?.let { it.name.ifEmpty { stringResource(Res.string.aircraft_n, id + 1) } }
+        } ?: return ""
+        return stringResource(Res.string.news_renew_failed, name)
     }
     if (n.kind == News.SLID) {
         if (world.roadVehicles.getOrNull(n.about)?.owner != me) return ""

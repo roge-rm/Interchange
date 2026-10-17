@@ -424,6 +424,14 @@
     <string-array name="upkeep_levels">
         <item>Low</item><item>Normal</item><item>High</item>
     </string-array>
+    <string name="autorenew">Autorenew</string>
+    <string name="autorenew_on">Renew old vehicles</string>
+    <string name="renew_when">Renew</string>
+    <string name="renew_before">%1$d months before end of life</string>
+    <string name="renew_at_end">At end of life</string>
+    <string name="renew_after">%1$d months after end of life</string>
+    <string name="renew_floor">Keep at least</string>
+    <string name="news_renew_failed">Autorenew failed for %1$s: not enough money</string>
     <string name="track_condition">Track</string>
     <string name="reserved_track">Reserved track</string>
     <string name="condition_line">Condition %1$d%</string>

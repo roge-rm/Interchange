@@ -407,6 +407,14 @@
     <string-array name="upkeep_levels">
         <item>Faible</item><item>Normal</item><item>Élevé</item>
     </string-array>
+    <string name="autorenew">Renouvellement automatique</string>
+    <string name="autorenew_on">Renouveler les vieux véhicules</string>
+    <string name="renew_when">Renouveler</string>
+    <string name="renew_before">%1$d mois avant la fin de vie</string>
+    <string name="renew_at_end">En fin de vie</string>
+    <string name="renew_after">%1$d mois après la fin de vie</string>
+    <string name="renew_floor">Garder au moins</string>
+    <string name="news_renew_failed">Renouvellement automatique de %1$s impossible : pas assez d'argent</string>
     <string name="track_condition">Voies</string>
     <string name="reserved_track">Voies réservées</string>
     <string name="condition_line">État %1$d %</string>

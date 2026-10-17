@@ -134,6 +134,8 @@ class Train(
     var service = true
     /** No depot it could reach for a service: the daily check for one long overdue waits till this tick. */
     var noDepotUntil = 0L
+    override var renewAsked = NEVER_ASKED
+    override var renewFailed = false
 
     // The tiles and blocks it's on, as last counted.
     internal var onTiles = IntArray(0)
@@ -388,7 +390,7 @@ private fun World.drive(t: Train) {
             // A full load order keeps it there, loading as more comes, till it's full, unless it's due a service.
             val o = t.orders.getOrNull(t.order % t.orders.size.coerceAtLeast(1)) ?: 0
             val s = stations.getOrNull(Order.station(o))
-            val due = !t.toDepot && due(t.service, t.serviced) && hasDepot(t.owner, Depots.RAIL)
+            val due = !t.toDepot && hasDepot(t.owner, Depots.RAIL) && (due(t.service, t.serviced) || renewNow(t))
             if (Order.has(o, Order.FULL_LOAD) && s != null && !t.full() && !due) {
                 loadAt(t, s)
                 if (!t.full()) {
@@ -854,7 +856,10 @@ private fun World.enterDepot(t: Train) {
     t.route = null
     reserved.entries.removeAll { it.value == t.id }
     countOn(t)
-    if (t.servicing) serviced(t)
+    if (t.servicing) {
+        autorenew(t)
+        serviced(t)
+    }
 }
 
 /** Counts the train afresh on the tiles and blocks it's on. */

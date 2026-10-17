@@ -644,7 +644,7 @@ internal fun World.addTrain(c: Company, route: RivalRoute): Boolean {
 /**
  * Each day, for a railway with more than one train. A train out of the depot waits at the signal by it while another
  * is at the platforms; if that one is heading into the depot, neither can move, and the one out of the depot can't
- * back in with its tail still in there. So these trains aren't serviced, and one sent in to be sold has its trip
+ * back in with its tail still in there. So these trains aren't serviced, and one sent in to be sold or renewed has its trip
  * called off and goes on to the far end first, its orders turned round so that's next.
  */
 internal fun World.unblockDepot(c: Company, route: RivalRoute) {
@@ -661,7 +661,8 @@ internal fun World.unblockDepot(c: Company, route: RivalRoute) {
         if (t.inDepot || !t.toDepot || block !in t.onBlocks || stepTile(t.steps.last()) == lead) continue
         val far = if (Order.station(t.orders[0]) == route.a) intArrayOf(t.orders[1], t.orders[0]) else t.orders.toIntArray()
         apply(Command.TrainOrder(c.id, t.id, Command.TrainOrder.ORDERS, far))
-        apply(Command.TrainOrder(c.id, t.id, if (t.servicing) Command.TrainOrder.SERVICE else Command.TrainOrder.TO_DEPOT))
+        // A train going in to be renewed has servicing off, so its trip is called off as one going to be sold.
+        apply(Command.TrainOrder(c.id, t.id, if (t.servicing && t.service) Command.TrainOrder.SERVICE else Command.TrainOrder.TO_DEPOT))
     }
 }
 

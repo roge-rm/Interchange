@@ -112,6 +112,9 @@ private fun World.think(r: Rival, c: Company) {
     }
     buyStruggling(c)
     if (c.gone) return
+    // Its vehicles are renewed as they age, keeping two loan steps in hand, but not while it sells to pay its loan.
+    c.autorenew = !shedding(c)
+    c.renewFloor = price(Prices.LOAN_STEP) * 2
     shed(c)
     sellLosers(r, c)
     townWork(r, c)

@@ -128,7 +128,6 @@ class Player(val world: World, val thinkDays: Int = 30, val mostRoutes: Int = 12
         val value = forValue()
         if (value && plan.routes.isEmpty()) openRoute()
         if (aim) aimAtGoals()
-        renewOld()
         if (value) sellWorkLosers()
         countPay()
         sellLosers()
@@ -490,21 +489,6 @@ class Player(val world: World, val thinkDays: Int = 30, val mostRoutes: Int = 12
         for (t in w.trains) {
             if (t == null || t.owner != 0 || t.inDepot || t.toDepot || !old(t.built) || t.profitThisYear >= 0) continue
             if (plan.routes.any { onRoute(t, it) }) w.apply(Command.TrainOrder(0, t.id, Command.TrainOrder.TO_DEPOT))
-        }
-    }
-
-    /**
-     * Trains past their engine's life go to the depot and are renewed there and set going again, as a player does on
-     * the news that one has grown old, before their reliability falls away.
-     */
-    private fun renewOld() {
-        val w = world
-        for (t in w.trains) {
-            if (t == null || t.owner != 0 || w.age(t) < t.engineInfo.life) continue
-            if (t.inDepot && !t.running) {
-                w.apply(Command.TrainOrder(0, t.id, Command.TrainOrder.RENEW))
-                if (w.age(t) < t.engineInfo.life) w.apply(Command.TrainOrder(0, t.id, Command.TrainOrder.START_STOP))
-            } else if (!t.inDepot && !t.toDepot) w.apply(Command.TrainOrder(0, t.id, Command.TrainOrder.TO_DEPOT))
         }
     }
 

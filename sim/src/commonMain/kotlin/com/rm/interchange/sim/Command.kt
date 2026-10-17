@@ -110,6 +110,9 @@ sealed interface Command {
     /** How much the company spends keeping its track up, an [Upkeep] level. */
     data class SetUpkeep(override val company: Int, val level: Int) : Command
 
+    /** Autorenew on or off, [months] work months from the end of a vehicle's life (before if negative), keeping [floor] dollars in hand. */
+    data class SetAutorenew(override val company: Int, val on: Boolean, val months: Int, val floor: Long) : Command
+
     /** Marks a tile of straight track as a waypoint, for orders to route trains through. */
     data class Waypoint(override val company: Int, val x: Int, val y: Int) : Command
 
