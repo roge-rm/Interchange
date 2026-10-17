@@ -19,8 +19,8 @@ const val WEAR_A_DAY = 8
 const val OLD_AGE_LOSS = 400
 const val LEAST_RELIABLE = 2000
 
-/** Whole years since train [t] was built or renewed. */
-fun World.age(t: Train) = (day - t.built).coerceAtLeast(0) / 365
+/** Whole work years since train [t] was built or renewed. */
+fun World.age(t: Train) = (workDay - t.built).coerceAtLeast(0) / 365
 
 /** The best train [t] can be, in hundredths of a percent: its engine's reliability new, less for each year past its life. */
 fun World.bestReliability(t: Train): Int =
@@ -48,8 +48,8 @@ internal fun World.trainsDay() {
         }
         // Due ones go after their next call; this catches one that's called nowhere in twice the time.
         if (t.running && !t.toDepot && overdue(t.service, t.serviced) && tick >= t.noDepotUntil && hasDepot(t.owner, Depots.RAIL)) forService(t)
-        // Once, on the calendar day it comes of age, though this runs each work day.
-        if (day - t.built == t.engineInfo.life * 365 && tick % dayTicks == 0L) tell(News.TRAIN_OLD, t.id)
+        // Once, on the work day it comes of age.
+        if (workDay - t.built == t.engineInfo.life * 365) tell(News.TRAIN_OLD, t.id)
     }
 }
 

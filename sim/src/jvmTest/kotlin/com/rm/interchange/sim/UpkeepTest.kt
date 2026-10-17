@@ -43,7 +43,7 @@ class UpkeepTest {
         val w = line()
         val t = w.trains[0]!!
         val new = w.value(t)
-        t.built = w.day - 40 * 365
+        t.built = w.workDay - 40 * 365
         assertTrue(w.value(t) < new)
         assertTrue(w.bestReliability(t) < t.engineInfo.reliability * 100)
         // Back in the depot to renew it.

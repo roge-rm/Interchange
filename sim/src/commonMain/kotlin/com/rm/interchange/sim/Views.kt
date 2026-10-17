@@ -391,7 +391,7 @@ fun World.view(company: Int = 0): WorldView {
             RoadVehicleView(
                 v.id, v.name, v.model, v.depot, v.inDepot, v.running, v.toDepot, v.orders.toIntArray(), v.order, v.speed / 16 * 2700 / 4096,
                 v.waiting > 0, v.running && !v.inDepot && v.lostUntil > tick, c, if (c >= 0) v.load(c) else 0, if (c >= 0) v.capacity(c) else 0,
-                v.profitThisYear, v.profitLastYear, (day - v.built).coerceAtLeast(0) / 365, v.reliability / 100, v.brokenFor > 0 && !v.slid, v.slid,
+                v.profitThisYear, v.profitLastYear, (workDay - v.built).coerceAtLeast(0) / 365, v.reliability / 100, v.brokenFor > 0 && !v.slid, v.slid,
                 v.service, v.servicing, v.tires, v.seasonalTires, price(v.price) - roadValue(v),
                 owner = v.owner,
             )
@@ -403,7 +403,7 @@ fun World.view(company: Int = 0): WorldView {
             ShipView(
                 v.id, v.name, v.model, v.depot, v.inDepot, v.running, v.toDepot, v.orders.toIntArray(), v.order, v.speed / 16 * 2700 / 4096,
                 v.waiting > 0, iced, c, if (c >= 0) v.load(c) else 0, if (c >= 0) v.capacity(c) else 0,
-                v.profitThisYear, v.profitLastYear, (day - v.built).coerceAtLeast(0) / 365, v.reliability / 100, v.brokenFor > 0,
+                v.profitThisYear, v.profitLastYear, (workDay - v.built).coerceAtLeast(0) / 365, v.reliability / 100, v.brokenFor > 0,
                 v.service, v.servicing, price(v.price) - craftValue(v.price, v.built, v.info.life),
                 iced && (weather.ice[shipTile(v)].toInt() and 255) > 0, v.waiting == 1 && weather.wind >= STORM_WIND,
                 owner = v.owner,
@@ -415,7 +415,7 @@ fun World.view(company: Int = 0): WorldView {
             AircraftView(
                 v.id, v.name, v.model, v.depot, v.inDepot, v.running, v.toDepot, v.orders.toIntArray(), v.order, v.speed / 16 * 2700 / 4096,
                 v.state, v.waiting > 0, c, if (c >= 0) v.load(c) else 0, if (c >= 0) v.capacity(c) else 0,
-                v.profitThisYear, v.profitLastYear, (day - v.built).coerceAtLeast(0) / 365, v.reliability / 100, v.brokenFor > 0,
+                v.profitThisYear, v.profitLastYear, (workDay - v.built).coerceAtLeast(0) / 365, v.reliability / 100, v.brokenFor > 0,
                 v.service, v.servicing, price(v.price) - craftValue(v.price, v.built, v.info.life), v.gear, v.seasonalGear,
                 if (v.state == Flight.HOLD && dest != null) cantLand(v, dest) else null,
                 owner = v.owner,

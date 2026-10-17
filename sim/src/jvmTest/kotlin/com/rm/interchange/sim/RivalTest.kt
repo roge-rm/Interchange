@@ -57,7 +57,7 @@ class RivalTest {
         val route = r.routes.first()
         // Every vehicle on it old and losing money.
         for (v in w.roadVehicles) if (v != null && v.owner == r.company && Order.station(v.orders[0]) == route.a) {
-            v.built = w.day - 1000
+            v.built = w.workDay - 1000 * w.settings.dayLength
             v.profitLastYear = -100
         }
         w.days(120)
@@ -87,7 +87,7 @@ class RivalTest {
         assertTrue(line.size > 20, "line of ${line.size}")
         w.days(30)
         // Its train old and losing money.
-        for (t in w.trains) if (t != null && t.owner == r.company) { t.built = w.day - 1000; t.profitLastYear = -100 }
+        for (t in w.trains) if (t != null && t.owner == r.company) { t.built = w.workDay - 1000 * w.settings.dayLength; t.profitLastYear = -100 }
         repeat(12) { w.days(30); w.sellLosers(r, c) }
         assertTrue(route !in r.routes, "the railway is still run")
         assertTrue(line.none { w.track[it].toInt() != 0 }, "track left on ${line.count { w.track[it].toInt() != 0 }} tiles")
@@ -128,7 +128,7 @@ class RivalTest {
         }
         assertTrue(joined >= 0, "nowhere to join on")
         w.days(30)
-        for (t in w.trains) if (t != null && t.owner == r.company) { t.built = w.day - 1000; t.profitLastYear = -100 }
+        for (t in w.trains) if (t != null && t.owner == r.company) { t.built = w.workDay - 1000 * w.settings.dayLength; t.profitLastYear = -100 }
         repeat(12) { w.days(30); w.sellLosers(r, c) }
         assertTrue(route !in r.routes, "the railway is still run")
         assertTrue(w.track[joined].toInt() != 0, "the joined track was taken up")
@@ -171,7 +171,7 @@ class RivalTest {
         }
         assertTrue(calls.all { it >= 8 }, "calls ${calls.toList()}")
         // Given up, the loop and the signal tile come up with the line.
-        for (t in on) { t.built = w.day - 1000; t.profitLastYear = -100 }
+        for (t in on) { t.built = w.workDay - 1000 * w.settings.dayLength; t.profitLastYear = -100 }
         val loop = w.loopTiles(route.loops[0]).asList()
         repeat(12) { w.days(30); w.sellLosers(r, c) }
         assertTrue(route !in r.routes, "the railway is still run")

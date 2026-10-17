@@ -350,7 +350,7 @@ internal fun World.buyShip(company: Company, depot: Depot, e: Engine, cargo: Int
     val v = Ship(roster, ships.size, company.id, e.id, depot.id, if (cargo in e.cargoes) cargo else -1)
     if (company.money < price(v.price)) return
     spend(company, Books.NEW_TRAINS, price(v.price))
-    v.built = day
+    v.built = workDay
     v.serviced = workDay
     v.reliability = e.reliability * 100
     ships += v
@@ -378,16 +378,16 @@ internal fun World.shipCommand(company: Company, c: Command.CraftOrder) {
             val cost = price(v.price) - craftValue(v.price, v.built, v.info.life)
             if (company.money < cost) return
             spend(company, Books.NEW_TRAINS, cost)
-            v.built = day
+            v.built = workDay
             v.serviced = workDay
             v.reliability = v.info.reliability * 100
         }
     }
 }
 
-/** What a ship or aircraft of [price] built on [built] with a working life of [life] years fetches sold. */
+/** What a ship or aircraft of [price] built on work day [built] with a working life of [life] years fetches sold. */
 fun World.craftValue(price: Long, built: Int, life: Int): Long {
-    val age = (day - built).coerceAtLeast(0) / 365
+    val age = (workDay - built).coerceAtLeast(0) / 365
     return price(price) * maxOf(10, 100 - 100 * age / life.coerceAtLeast(1)) / 200
 }
 

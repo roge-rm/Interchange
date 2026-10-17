@@ -1,5 +1,7 @@
 package com.rm.interchange.sim
 
+import java.util.IdentityHashMap
+
 /**
  * A scripted player for balance tests: a normal new game, played by a simple plan through the same commands a
  * player sends. It borrows as it needs, opens a bus line between the biggest towns near its home (the biggest town),
@@ -126,7 +128,9 @@ class Player(val world: World, val thinkDays: Int = 30, val mostRoutes: Int = 12
         val value = forValue()
         if (value && plan.routes.isEmpty()) openRoute()
         if (aim) aimAtGoals()
+        renewOld()
         if (value) sellWorkLosers()
+        countPay()
         sellLosers()
         for (route in plan.routes.toList()) if (value && !route.rail) growValue(c, route) else w.growRoute(c, route)
         // Going for value, its own lines don't wait on the other goals' routes.
@@ -478,7 +482,7 @@ class Player(val world: World, val thinkDays: Int = 30, val mostRoutes: Int = 12
         if (dl == 1) return
         val worked = Calendar.dayOfYear(w.startYear, w.day).toLong() * dl
         if (worked < 365) return
-        fun old(built: Int) = (w.day - built).toLong() * dl >= 365 + worked
+        fun old(built: Int) = w.workDay - built >= 365 + worked
         for (v in w.roadVehicles) {
             if (v == null || v.owner != 0 || v.inDepot || v.toDepot || !old(v.built) || v.profitThisYear >= 0) continue
             if (plan.routes.any { onRoute(v, it) }) w.apply(Command.RoadOrder(0, v.id, Command.TrainOrder.TO_DEPOT))
@@ -488,6 +492,45 @@ class Player(val world: World, val thinkDays: Int = 30, val mostRoutes: Int = 12
             if (plan.routes.any { onRoute(t, it) }) w.apply(Command.TrainOrder(0, t.id, Command.TrainOrder.TO_DEPOT))
         }
     }
+
+    /**
+     * Trains past their engine's life go to the depot and are renewed there and set going again, as a player does on
+     * the news that one has grown old, before their reliability falls away.
+     */
+    private fun renewOld() {
+        val w = world
+        for (t in w.trains) {
+            if (t == null || t.owner != 0 || w.age(t) < t.engineInfo.life) continue
+            if (t.inDepot && !t.running) {
+                w.apply(Command.TrainOrder(0, t.id, Command.TrainOrder.RENEW))
+                if (w.age(t) < t.engineInfo.life) w.apply(Command.TrainOrder(0, t.id, Command.TrainOrder.START_STOP))
+            } else if (!t.inDepot && !t.toDepot) w.apply(Command.TrainOrder(0, t.id, Command.TrainOrder.TO_DEPOT))
+        }
+    }
+
+    /** Each road vehicle's profit so far, from its yearly books at each look, and that total at its looks over the last work year. */
+    private class Pay(var year: Int, var seen: Long, var total: Long) { val looks = ArrayDeque<Pair<Int, Long>>() }
+    private val pay = IdentityHashMap<RoadVehicle, Pay>()
+
+    /** Brings [pay] up to date; a look comes at least once a calendar year, so at most one year end has gone by. */
+    private fun countPay() {
+        val w = world
+        val year = Calendar.year(w.startYear, w.day)
+        pay.keys.retainAll { v -> w.roadVehicles.getOrNull(v.id) === v }
+        for (v in w.roadVehicles) {
+            if (v == null || v.owner != 0) continue
+            val p = pay.getOrPut(v) { Pay(year, 0, 0).also { it.looks.addLast(v.built to 0L) } }
+            // A year end since the last look moved this year's books to last year's.
+            p.total += if (year == p.year) v.profitThisYear - p.seen else v.profitLastYear - p.seen + v.profitThisYear
+            p.year = year
+            p.seen = v.profitThisYear
+            p.looks.addLast(w.workDay to p.total)
+            while (p.looks.size > 1 && w.workDay - p.looks[1].first >= 365) p.looks.removeFirst()
+        }
+    }
+
+    /** What road vehicle [v] made over about its last work year, or since it was bought if that's sooner. */
+    private fun lastWorkYear(v: RoadVehicle): Long = pay[v]?.let { it.total - it.looks.first().second } ?: 0
 
     /** What the vehicles on its own routes, not the goals', made this calendar year and last together. */
     private fun ownPay(): Long {
@@ -500,13 +543,13 @@ class Player(val world: World, val thinkDays: Int = 30, val mostRoutes: Int = 12
 
     /**
      * Going for value, another vehicle on one of its own road routes when a load and a half waits and what's on it
-     * made money this year and last together, borrowing for it up to three quarters of the bank's limit.
+     * made money over about the last work year, borrowing for it up to three quarters of the bank's limit.
      */
     private fun growValue(c: Company, route: RivalRoute) {
         val w = world
         val on = w.roadVehicles.filter { it != null && it.owner == 0 && onRoute(it, route) }.map { it!! }
         if (on.isEmpty() || on.size >= AIM_MOST || on.any { it.toDepot && !it.servicing }) return
-        if (on.sumOf { it.profitThisYear + it.profitLastYear } <= 0) return
+        if (on.sumOf { lastWorkYear(it) } <= 0) return
         val a = w.stations.getOrNull(route.a) ?: return
         val b = w.stations.getOrNull(route.b) ?: return
         val model = w.bestModel(route.cargo) ?: return

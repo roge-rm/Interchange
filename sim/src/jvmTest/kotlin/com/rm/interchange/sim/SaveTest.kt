@@ -8,8 +8,8 @@ import kotlin.test.assertTrue
 
 class SaveTest {
     /** A line with two stations, a depot and a running train, from the train tests. */
-    private fun busy(): World {
-        val w = World(64, 64, 1)
+    private fun busy(dayLength: Int = 1): World {
+        val w = World(NewGame(64, 64, 1, 1850, towns = 0, industries = 0, weather = false, dayLength = dayLength))
         for (i in w.corners.indices) w.corners[i] = 3
         w.companies[0].money = 10_000_000
         w.apply(Command.Depot(0, 2, 10, Track.XP))
@@ -45,6 +45,16 @@ class SaveTest {
         repeat(1_000) { a.step(); b.step() }
         assertEquals(a.checksum(), b.checksum())
         assertEquals(a.trains.size, 1)
+    }
+
+    @Test
+    fun aVehiclesAgeFromAVersion35SaveIsInWorkDays() {
+        val w = busy(dayLength = 10)
+        // Built 40 calendar days back, 400 work days.
+        w.trains[0]!!.built = w.workDay - 400
+        val back = Save.read(Save.write(w, version = 35))
+        assertEquals(w.trains[0]!!.built / 10 * 10, back.trains[0]!!.built)
+        assertEquals(w.trains[0]!!.built, Save.read(Save.write(w)).trains[0]!!.built)
     }
 
     @Test

@@ -111,7 +111,7 @@ class Train(
     /** Stuck in a drift, so the news is told once. */
     var snowbound = false
 
-    /** The day it was bought or last renewed, and last serviced. */
+    /** The work day it was bought or last renewed, and last serviced. */
     var built = 0
     var serviced = 0
     /** How reliable it is now, in hundredths of a percent, and how many times it's broken down. */
@@ -179,7 +179,7 @@ internal fun World.buyTrain(company: Company, c: Command.BuyTrain) {
     val t = Train(roster, trains.size, company.id, e.id, w.id, c.wagons, depot.id, if (c.cargo in w.cargoes) c.cargo else -1)
     if (company.money < price(t.price)) return
     spend(company, Books.NEW_TRAINS, price(t.price))
-    t.built = day
+    t.built = workDay
     t.serviced = workDay
     t.reliability = e.reliability * 100
     trains += t
@@ -237,7 +237,7 @@ internal fun World.trainCommand(company: Company, c: Command.TrainOrder) {
             val cost = price(t.price) - value(t)
             if (company.money < cost) return
             spend(company, Books.NEW_TRAINS, cost)
-            t.built = day
+            t.built = workDay
             t.serviced = workDay
             t.reliability = t.engineInfo.reliability * 100
         }

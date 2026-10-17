@@ -16,7 +16,10 @@ package com.rm.interchange.sim
  */
 object Save {
     private val MAGIC = "ICHG".encodeToByteArray()
-    const val VERSION = 35
+    const val VERSION = 36
+
+    /** A vehicle's [built] day as saved by [version]: work days from 36, calendar days before. */
+    private fun World.builtOut(built: Int, version: Int) = if (version >= 36) built else built / settings.dayLength
 
     /**
      * [world] as a save; [version] older than [VERSION] only for tests reading older saves. [asScenario] writes an
@@ -84,7 +87,7 @@ object Save {
                 w.int(t.routeAt); w.bool(t.turnRound); w.long(t.lostUntil)
                 writeCargo(w, t.cargo); w.long(t.profitThisYear); w.long(t.profitLastYear)
                 w.int(t.shared)
-                w.int(t.built); w.int(t.serviced); w.int(t.reliability); w.int(t.breakdowns); w.int(t.brokenFor); w.bool(t.servicing); w.bool(t.service)
+                w.int(builtOut(t.built, version)); w.int(t.serviced); w.int(t.reliability); w.int(t.breakdowns); w.int(t.brokenFor); w.bool(t.servicing); w.bool(t.service)
                 if (version >= 28) w.bool(t.snowbound)
             }
             w.uvar(towns.size.toLong())
@@ -126,7 +129,7 @@ object Save {
                 val r = v.route
                 w.bool(r != null)
                 if (r != null) w.ints(r)
-                w.int(v.routeAt); w.long(v.lostUntil); w.int(v.built); w.int(v.serviced); w.int(v.reliability); w.int(v.breakdowns); w.int(v.brokenFor)
+                w.int(v.routeAt); w.long(v.lostUntil); w.int(builtOut(v.built, version)); w.int(v.serviced); w.int(v.reliability); w.int(v.breakdowns); w.int(v.brokenFor)
                 w.bool(v.servicing); w.bool(v.service); w.int(v.tires); w.bool(v.seasonalTires); w.bool(v.slid)
             }
             val held = reserved.keys.sorted()
@@ -137,7 +140,7 @@ object Save {
             w.int(wx.anomaly); w.int(wx.recent); w.int(wx.windFrom); w.int(wx.wind)
             w.uvar(wx.fronts.size.toLong())
             for (f in wx.fronts) { w.int(f.kind); w.int(f.x); w.int(f.y); w.int(f.dx); w.int(f.dy); w.int(f.radius); w.int(f.strength); w.int(f.warmth); w.int(f.life); w.bool(f.freezing) }
-            writeWaterAndAir(w, this)
+            writeWaterAndAir(w, this, version)
             w.uvar(rivals.size.toLong())
             for (rv in rivals) {
                 w.int(rv.company); w.int(rv.home); w.int(if (version >= 34) rv.thinkOn else rv.thinkOn / settings.dayLength)
@@ -484,6 +487,14 @@ object Save {
                 for (c in companies) { c.trackTiles = r.int(); c.roadUpkeep = r.long() }
             }
         }
+        // Vehicles' built day was a calendar day before 36, a work day since.
+        if (version < 36) {
+            val n = world.settings.dayLength
+            for (t in world.trains) if (t != null) t.built *= n
+            for (v in world.roadVehicles) if (v != null) v.built *= n
+            for (v in world.ships) if (v != null) v.built *= n
+            for (v in world.aircraft) if (v != null) v.built *= n
+        }
         // Signal blocks and who's on which tile are worked out afresh now, as a command can ask before the next move.
         world.networkChangedKeepingRoutes()
         world.workOutBlocks()
@@ -540,7 +551,7 @@ object Save {
         repeat(r.uvar().toInt().also { if (it > 10_000_000) throw BadData("too many entries") }) { into[r.int()] = r.int() }
     }
 
-    private fun writeWaterAndAir(w: ByteWriter, world: World) = with(world) {
+    private fun writeWaterAndAir(w: ByteWriter, world: World, version: Int) = with(world) {
         w.ints(canals.sorted().toIntArray())
         writeMap(w, locks); writeMap(w, docks); writeMap(w, dockFacing); writeMap(w, buoys)
         w.uvar(ships.size.toLong())
@@ -554,7 +565,7 @@ object Save {
             val r = v.route
             w.bool(r != null)
             if (r != null) w.ints(r)
-            w.int(v.routeAt); w.long(v.lostUntil); w.int(v.built); w.int(v.serviced); w.int(v.reliability); w.int(v.breakdowns); w.int(v.brokenFor)
+            w.int(v.routeAt); w.long(v.lostUntil); w.int(builtOut(v.built, version)); w.int(v.serviced); w.int(v.reliability); w.int(v.breakdowns); w.int(v.brokenFor)
             w.bool(v.servicing); w.bool(v.service)
         }
         w.uvar(airports.size.toLong())
@@ -572,7 +583,7 @@ object Save {
             w.int(v.state); w.int(v.at); w.int(v.holding); w.int(v.gear); w.bool(v.seasonalGear)
             writeCargo(w, v.cargo); w.long(v.profitThisYear); w.long(v.profitLastYear)
             w.ints(v.orders.toIntArray()); w.int(v.order); w.bool(v.toDepot)
-            w.int(v.built); w.int(v.serviced); w.int(v.reliability); w.int(v.breakdowns); w.int(v.brokenFor)
+            w.int(builtOut(v.built, version)); w.int(v.serviced); w.int(v.reliability); w.int(v.breakdowns); w.int(v.brokenFor)
             w.bool(v.servicing); w.bool(v.service)
         }
     }

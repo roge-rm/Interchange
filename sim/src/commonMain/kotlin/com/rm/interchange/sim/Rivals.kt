@@ -150,25 +150,36 @@ private val KINDS = listOf(
     intArrayOf(KIND_RAIL, KIND_BUS, KIND_RAIL, KIND_TRUCK),
 )
 
-/** Whether a vehicle built on calendar day [built] ran the whole of last year, so its profit then is a full year's. */
 /** Work days so far this calendar year. */
 internal fun World.workedThisYear(): Long = Calendar.dayOfYear(startYear, day).toLong() * settings.dayLength
 
 /** Work days into the calendar year before this year's books are a fair guide to a route's pay. */
 internal const val FEW_MONTHS = 90
 
-private fun World.ranLastYear(built: Int) = Calendar.year(startYear, built) < Calendar.year(startYear, day) - 1
+/** Whether a vehicle built on work day [built] ran the whole of last calendar year, so its profit then is a full year's. */
+private fun World.ranLastYear(built: Int) = Calendar.year(startYear, built / settings.dayLength) < Calendar.year(startYear, day) - 1
 
 /**
- * Sends vehicles that lost money last year to their garage and sells them once there. A route left with none is
- * given up: its stops and garage come down, a railway's track too, the road stays, and it isn't tried again for a while.
+ * Whether a vehicle built on work day [built] lost money: last calendar year if it ran all of it. Past day length 1
+ * a newer one is judged by all its books once it has run two work years, so a new loser isn't kept for the many work
+ * years in a calendar year. Part of a calendar year isn't enough to judge one that ran all of last year, as winter
+ * would sell lines that pay over the year.
+ */
+internal fun World.lostAWorkYear(built: Int, thisYear: Long, lastYear: Long): Boolean {
+    if (ranLastYear(built)) return lastYear < 0
+    return settings.dayLength > 1 && workDay - built >= 2 * 365 && thisYear + lastYear < 0
+}
+
+/**
+ * Sends vehicles that lose money ([lostAWorkYear]) to their garage and sells them once there. A route left with none
+ * is given up: its stops and garage come down, a railway's track too, the road stays, and it isn't tried again for a while.
  */
 internal fun World.sellLosers(r: Rival, c: Company) {
     // Its own vehicles only stand stopped in a depot when sent there to be sold.
     for (v in roadVehicles) {
         if (v == null || v.owner != c.id) continue
         if (v.inDepot && !v.running) apply(Command.RoadOrder(c.id, v.id, Command.TrainOrder.SELL))
-        else if (!v.inDepot && (!v.toDepot || v.servicing) && ranLastYear(v.built) && v.profitLastYear < 0) {
+        else if (!v.inDepot && (!v.toDepot || v.servicing) && lostAWorkYear(v.built, v.profitThisYear, v.profitLastYear)) {
             // One on its way for a service is turned off that first, then sent to stay.
             if (v.toDepot) apply(Command.RoadOrder(c.id, v.id, Command.TrainOrder.TO_DEPOT))
             apply(Command.RoadOrder(c.id, v.id, Command.TrainOrder.TO_DEPOT))
@@ -177,9 +188,9 @@ internal fun World.sellLosers(r: Rival, c: Company) {
     for (t in trains) {
         if (t == null || t.owner != c.id) continue
         // One stopped there that no longer loses money is set going again, unless the company is selling to pay its loan.
-        val sell = ranLastYear(t.built) && t.profitLastYear < 0 || shedding(c)
+        val sell = lostAWorkYear(t.built, t.profitThisYear, t.profitLastYear) || shedding(c)
         if (t.inDepot && !t.running) apply(Command.TrainOrder(c.id, t.id, if (sell) Command.TrainOrder.SELL else Command.TrainOrder.START_STOP))
-        else if (!t.inDepot && !t.toDepot && ranLastYear(t.built) && t.profitLastYear < 0) {
+        else if (!t.inDepot && !t.toDepot && lostAWorkYear(t.built, t.profitThisYear, t.profitLastYear)) {
             apply(Command.TrainOrder(c.id, t.id, Command.TrainOrder.TO_DEPOT))
         }
     }
@@ -321,7 +332,7 @@ private fun World.shedding(c: Company): Boolean = !human(c.id) && c.loan > 0 && 
  */
 private fun World.shed(c: Company) {
     if (!shedding(c)) return
-    val old = { built: Int -> (day - built).toLong() * settings.dayLength >= 365 }
+    val old = { built: Int -> workDay - built >= 365 }
     val road = roadVehicles.filter { it != null && it.owner == c.id && !it.inDepot && !it.toDepot && old(it.built) }.map { it!! }
     val rail = trains.filter { it != null && it.owner == c.id && !it.inDepot && !it.toDepot && old(it.built) }.map { it!! }
     val v = road.minByOrNull { it.profitThisYear + it.profitLastYear }

@@ -148,7 +148,7 @@ internal fun World.buyRoadVehicle(company: Company, c: Command.BuyRoadVehicle) {
     val v = RoadVehicle(roster, roadVehicles.size, company.id, e.id, depot.id, if (c.cargo in e.cargoes) c.cargo else -1)
     if (company.money < price(v.price)) return
     spend(company, Books.NEW_TRAINS, price(v.price))
-    v.built = day
+    v.built = workDay
     v.serviced = workDay
     v.reliability = e.reliability * 100
     if (year >= Tires.WINTER_FROM && Climate.look(settings.region, year, Calendar.dayOfYear(startYear, day)) == Climate.WINTER) v.tires = Tires.WINTER
@@ -178,7 +178,7 @@ internal fun World.roadVehicleCommand(company: Company, c: Command.RoadOrder) {
             val cost = price(v.price) - roadValue(v)
             if (company.money < cost) return
             spend(company, Books.NEW_TRAINS, cost)
-            v.built = day
+            v.built = workDay
             v.serviced = workDay
             v.reliability = v.info.reliability * 100
         }
@@ -188,7 +188,7 @@ internal fun World.roadVehicleCommand(company: Company, c: Command.RoadOrder) {
 
 /** What road vehicle [v] fetches sold. */
 fun World.roadValue(v: RoadVehicle): Long {
-    val age = (day - v.built).coerceAtLeast(0) / 365
+    val age = (workDay - v.built).coerceAtLeast(0) / 365
     return price(v.price) * maxOf(10, 100 - 100 * age / v.info.life.coerceAtLeast(1)) / 200
 }
 

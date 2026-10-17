@@ -265,7 +265,7 @@ internal fun World.buyAircraft(company: Company, depot: Depot, e: Engine, cargo:
     val v = Aircraft(roster, aircraft.size, company.id, e.id, depot.id, if (cargo in e.cargoes) cargo else -1)
     if (company.money < price(v.price)) return
     spend(company, Books.NEW_TRAINS, price(v.price))
-    v.built = day
+    v.built = workDay
     v.serviced = workDay
     v.reliability = e.reliability * 100
     v.at = a.id
@@ -299,7 +299,7 @@ internal fun World.aircraftCommand(company: Company, c: Command.CraftOrder) {
             val cost = price(v.price) - craftValue(v.price, v.built, v.info.life)
             if (company.money < cost) return
             spend(company, Books.NEW_TRAINS, cost)
-            v.built = day
+            v.built = workDay
             v.serviced = workDay
             v.reliability = v.info.reliability * 100
         }
