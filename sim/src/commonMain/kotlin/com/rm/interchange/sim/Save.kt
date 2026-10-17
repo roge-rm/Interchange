@@ -487,6 +487,8 @@ object Save {
         // Signal blocks and who's on which tile are worked out afresh now, as a command can ask before the next move.
         world.networkChangedKeepingRoutes()
         world.workOutBlocks()
+        // Worth isn't saved, so the goal bars read it right while paused. Value lows wait for the day tick, to stay in step.
+        for (i in world.companies.indices) if (i < world.worth.size) world.worth[i] = world.companyValue(world.companies[i])
         return world
     }
 
