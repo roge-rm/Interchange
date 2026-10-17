@@ -863,7 +863,7 @@ internal object IronOre : Recipe() {
         w.industryNear("base:logging_camp", 150, 60)
         return listOf(
             Goal(Goal.DELIVER, 15_000, END, cargo = Cargo.IRON_ORE, industry = mill, from = settings.startYear),
-            Goal(Goal.TOWN_POP, 850, END, town = harbour),
+            Goal(Goal.TOWN_POP, 650, END, town = harbour),
         )
     }
 }

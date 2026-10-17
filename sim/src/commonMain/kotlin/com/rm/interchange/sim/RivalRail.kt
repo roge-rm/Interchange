@@ -131,8 +131,10 @@ private fun World.railPath(c: Company, a: Terminus, b: Terminus, clearing: Boole
         expanded++
         val t = s / 4
         val came = s % 4
+        // A bridge's far head takes straight track only.
+        val landed = back[s]?.let { !next(it / 4, t) } == true
         // A mouth on a road is crossed straight.
-        if (t == goal && came != into && (road[t].toInt() == 0 || came == b.out)) {
+        if (t == goal && came != into && (road[t].toInt() == 0 || came == b.out) && (!landed || came == b.out)) {
             val out = ArrayList<Int>()
             var at = s
             var exit = into
@@ -151,13 +153,13 @@ private fun World.railPath(c: Company, a: Terminus, b: Terminus, clearing: Boole
         for (e in 0 until 4) {
             if (e == came) continue
             val turn = e != Track.opposite(came)
-            if (turn && (!flat || crossing)) continue
+            if (turn && (!flat || crossing || landed)) continue
             val nx = tx + Track.dx(e)
             val ny = ty + Track.dy(e)
             if (!inside(nx, ny)) continue
             val n = index(nx, ny)
             if (n in kept) continue
-            if (bridges && !turn && blockedAhead(c, tx, ty, e)) {
+            if (bridges && !turn && !landed && blockedAhead(c, tx, ty, e)) {
                 val land = bridgeLanding(c, tx, ty, e, kept)
                 if (land >= 0) {
                     val ns = land * 4 + Track.opposite(e)
@@ -474,7 +476,8 @@ private fun World.buildRail(
     apply(Command.Depot(c.id, a.x, a.y, a.out))
     val sa = stationTiles[a1]?.let { stations[it] }
     val sb = stationTiles[b1]?.let { stations[it] }
-    val laid = path.all { p -> track[p / 16].toInt() and Track.pieceOf((p / 4) % 4, p % 4) != 0 }
+    val laid = path.all { p -> track[p / 16].toInt() and Track.pieceOf((p / 4) % 4, p % 4) != 0 } &&
+        runs.all { it !is Command.Bridge || spanHeads.containsKey(index(it.x0, it.y0)) && spanHeads.containsKey(index(it.x1, it.y1)) }
     if (catchmentDirty) workOutCatchment()
     if (!laid || depots.size == before || pieceKey(lead, axisA) !in signals || sa == null || sb == null || sa.id == sb.id ||
         sa.owner != c.id || sb.owner != c.id || !serves(sa, true) || !serves(sb, false)

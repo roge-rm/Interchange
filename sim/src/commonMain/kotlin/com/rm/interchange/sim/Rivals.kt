@@ -102,11 +102,17 @@ internal fun World.rivalsDay() {
 }
 
 private fun World.think(r: Rival, c: Company) {
-    // Out of money: borrow, a step at a time. Well off: pay the loan back.
+    // Out of money: borrow, a step at a time. Well off, or losing money on what it owes: pay the loan back.
     while (c.money < 0 && c.loan < maxLoan()) apply(Command.Loan(c.id, true))
-    while (c.loan > 0 && c.money > price(Prices.LOAN_STEP) * 4) apply(Command.Loan(c.id, false))
+    val keep = if (shedding(c)) 0L else price(Prices.LOAN_STEP) * 3
+    while (c.loan > 0 && c.money > price(Prices.LOAN_STEP) + keep) {
+        val was = c.loan
+        apply(Command.Loan(c.id, false))
+        if (c.loan == was) break
+    }
     buyStruggling(c)
     if (c.gone) return
+    shed(c)
     sellLosers(r, c)
     townWork(r, c)
     for (route in r.routes) growRoute(c, route)
@@ -164,8 +170,9 @@ internal fun World.sellLosers(r: Rival, c: Company) {
     }
     for (t in trains) {
         if (t == null || t.owner != c.id) continue
-        // One stopped there that no longer loses money is set going again.
-        if (t.inDepot && !t.running) apply(Command.TrainOrder(c.id, t.id, if (ranLastYear(t.built) && t.profitLastYear < 0) Command.TrainOrder.SELL else Command.TrainOrder.START_STOP))
+        // One stopped there that no longer loses money is set going again, unless the company is selling to pay its loan.
+        val sell = ranLastYear(t.built) && t.profitLastYear < 0 || shedding(c)
+        if (t.inDepot && !t.running) apply(Command.TrainOrder(c.id, t.id, if (sell) Command.TrainOrder.SELL else Command.TrainOrder.START_STOP))
         else if (!t.inDepot && !t.toDepot && ranLastYear(t.built) && t.profitLastYear < 0) {
             apply(Command.TrainOrder(c.id, t.id, Command.TrainOrder.TO_DEPOT))
         }
@@ -284,9 +291,41 @@ private fun World.townWork(r: Rival, c: Company) {
     if (chebyshev(t.x, t.y, poor.signX, poor.signY) <= TownActions.AD_REACH[ad]) go(t, ad)
 }
 
-/** What [c] made last year after running costs, upkeep and interest, for each work year in it. */
-private fun World.profitAWorkYear(c: Company): Long =
-    (c.lastYear[Books.INCOME] + c.lastYear[Books.RUNNING] + c.lastYear[Books.UPKEEP] + c.lastYear[Books.INTEREST]) / settings.dayLength
+/**
+ * What [c] makes a work year after running costs, upkeep and interest: by this calendar year's books once a work year
+ * of it has gone by, so a long day length doesn't judge by a year ten work years old, else by last year's.
+ */
+private fun World.profitAWorkYear(c: Company): Long {
+    val worked = Calendar.dayOfYear(startYear, day).toLong() * settings.dayLength
+    return if (worked >= 365 && settings.dayLength > 1) made(c.thisYear) * 365 / worked else made(c.lastYear) / settings.dayLength
+}
+
+/** A year's books after running costs, upkeep and interest. */
+private fun made(y: LongArray) = y[Books.INCOME] + y[Books.RUNNING] + y[Books.UPKEEP] + y[Books.INTEREST]
+
+/**
+ * Whether rival [c] owes the bank and lost money on what it runs last year and still does, so it pays back what it
+ * can and sells to do it. Both years, so a line just opened on borrowed money has its time to pay.
+ */
+private fun World.shedding(c: Company): Boolean = !human(c.id) && c.loan > 0 && made(c.lastYear) < 0 && profitAWorkYear(c) < 0
+
+/**
+ * A rival in [shedding] sends its least paying vehicle that has run a work year to its depot to be sold, one a look,
+ * till what's left pays its interest or the loan is paid off.
+ */
+private fun World.shed(c: Company) {
+    if (!shedding(c)) return
+    val old = { built: Int -> (day - built).toLong() * settings.dayLength >= 365 }
+    val road = roadVehicles.filter { it != null && it.owner == c.id && !it.inDepot && !it.toDepot && old(it.built) }.map { it!! }
+    val rail = trains.filter { it != null && it.owner == c.id && !it.inDepot && !it.toDepot && old(it.built) }.map { it!! }
+    val v = road.minByOrNull { it.profitThisYear + it.profitLastYear }
+    val t = rail.minByOrNull { it.profitThisYear + it.profitLastYear }
+    if (t != null && (v == null || t.profitThisYear + t.profitLastYear < v.profitThisYear + v.profitLastYear)) {
+        apply(Command.TrainOrder(c.id, t.id, Command.TrainOrder.TO_DEPOT))
+    } else if (v != null) {
+        apply(Command.RoadOrder(c.id, v.id, Command.TrainOrder.TO_DEPOT))
+    }
+}
 
 /** Adds a vehicle to [route] when it's leaving people behind at either end, or for a railway a train or a passing loop. */
 internal fun World.growRoute(c: Company, route: RivalRoute) {
