@@ -2,13 +2,11 @@
 
 Interchange is a transport game for Android 8.1+ based on OpenTTD.
 
-Start in 1836 with a few horse-drawn wagons and not much money, and build your way up from there. Lay railways, roads and canals, open airports, and connect towns and industries with whatever the era gives you - steam to diesel to electric, coaches to buses, schooners to lakers, bush planes to jets. Carry people, mail and freight, and keep it all running through the winter when the snow piles up and the lakes freeze over.
-
-You won't be alone, either. Computer companies build their own lines and go after the same towns and cargo you do, and you can buy them out, or pick one up cheap when it goes broke. Or play with friends - every phone can host a game, and there's a standalone server (easily run with docker) if you want one that keeps going without you.
+Move goods and people via rail, road, water, and ait. Build your company up over time, upgrade your vehicles, make complicated rail networks and fight your way through the weather. Play against computer rivals and/or other human players - or play with other people as the same company.
 
 There's a campaign of seven chapters from 1836 on, goals to play for in your own games, and a scenario editor to make your own.
 
-It's at 0.11 and very playable, but not finished. Build things, run trains into each other, tell me what works and what doesn't.
+Currently the game is playable but not finished. Build things, run trains into each other, tell me what works and what doesn't.
 
 Join me in the #interchange channel **[on my discord](https://discord.gg/9Wun47jGC6)** to discuss the game or report any bugs.
 <br>You can also add an issue here for me to look at.
