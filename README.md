@@ -2,11 +2,19 @@
 
 Interchange is a transport game for Android 8.1+ based on OpenTTD.
 
-Start in 1836 with horse-drawn wagons and a bit of money, and build railways, roads, canals and air routes between towns and industries through to now and past it. Carry people, mail and freight, keep things running through the winter, and try to stay ahead of the computer companies, or your friends.
+Start in 1836 with a few horse-drawn wagons and not much money, and build your way up from there. Lay railways, roads and canals, open airports, and connect towns and industries with whatever the era gives you - steam to diesel to electric, coaches to buses, schooners to lakers, bush planes to jets. Carry people, mail and freight, and keep it all running through the winter when the snow piles up and the lakes freeze over.
 
-It's at 0.11 and playable, but not finished. Let me know what works and what doesn't in the #interchange channel **[on my discord](https://discord.gg/9Wun47jGC6)**, or open an issue here.
+You won't be alone, either. Computer companies build their own lines and go after the same towns and cargo you do, and you can buy them out, or pick one up cheap when it goes broke. Or play with friends - every phone can host a game, and there's a standalone server (easily run with docker) if you want one that keeps going without you.
 
-Dan (rm)
+There's a campaign of seven chapters from 1836 on, goals to play for in your own games, and a scenario editor to make your own.
+
+It's at 0.11 and very playable, but not finished. Build things, run trains into each other, tell me what works and what doesn't.
+
+Join me in the #interchange channel **[on my discord](https://discord.gg/9Wun47jGC6)** to discuss the game or report any bugs.
+<br>You can also add an issue here for me to look at.
+
+Enjoy!
+Dan
 
 ---
 
@@ -33,13 +41,13 @@ Dan (rm)
 
 **Seasons and weather.** Fronts cross the map, snow piles up, drifts and melts, lakes freeze over, the ground heaves in spring and the leaves turn in the fall. The climate warms as the years go by.
 
-**Rail.** Trains with grades and grip, path signals and presignals, bridges and tunnels, electrification, track that wears and washes out, and snow plows for the drifts. Engines and cars from the 1830s on.
+**Rail.** Trains with grades and grip, bridges and tunnels, electrification, track that wears and washes out, and snow plows for the drifts. Drag along a line to signal it, with path signals and presignals, and turn on the overlay to see what track each train has claimed. Leave the signals out and trains can run into each other, as in OpenTTD (you can turn crashes off). Engines and cars from the 1830s on.
 
-**Road.** Dirt tracks to highways, one-way roads, trams, buses and trucks by era, horse-drawn wagons and coaches early on, and winter tires, salt and plows later.
+**Road.** Dirt tracks to highways, one-way roads, trams, buses and trucks by era, horse-drawn wagons and coaches early on, and winter tires, salt and plows later. Level crossings flash when a train's coming, but don't let traffic queue across them.
 
 **Water and air.** Canals and locks, ferries, lakers and icebreakers, strips, seaplane bases and airports, and bush planes on floats and skis.
 
-**Industries and money.** Logging camps, farms, mines, mills, oil sands and ports that make and take cargo. Loans, subsidies, company value and a league table.
+**Industries and money.** Logging camps, farms, mines, mills, oil sands and ports that make and take cargo. Loans, subsidies, company value and a league table, and autorenew to replace your vehicles as they get old.
 
 **Rivals.** Up to 7 computer companies that run buses, trucks and railways, open and give up routes and go broke if they're not careful. You can buy one outright, or pick up one that's in trouble.
 
