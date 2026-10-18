@@ -1,6 +1,7 @@
 package com.rm.interchange.ui
 
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
@@ -19,7 +20,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.DrawScope
@@ -202,7 +202,7 @@ fun EditorMenuWindow(saved: Boolean, onScenario: () -> Unit, onGoals: () -> Unit
         BigButton(stringResource(if (saved) Res.string.saved else Res.string.save_scenario), primary = !saved, glyph = Glyph.Save, onClick = onSave)
         BigButton(stringResource(Res.string.test_play), glyph = Glyph.Play, onClick = onTest)
         BigButton(stringResource(Res.string.settings), glyph = Glyph.Gear, onClick = onSettings)
-        BigButton(stringResource(if (leaving && !saved) Res.string.leave_unsaved else Res.string.title_screen), primary = leaving && !saved, glyph = Glyph.Home) {
+        BigButton(stringResource(if (leaving && !saved) Res.string.leave_unsaved else Res.string.title_screen), primary = leaving && !saved, glyph = Glyph.Exit) {
             if (saved || leaving) onTitle() else leaving = true
         }
     }
@@ -348,7 +348,8 @@ fun EditorGoalsWindow(world: World, draft: GoalDraft?, onDraft: (GoalDraft?) -> 
     val lang = languageCode()
     var listing by remember { mutableStateOf<GoalSlot?>(null) }
     Window(stringResource(Res.string.add_goal), { onDraft(null) }, Glyph.Plus) {
-        for (row in (0 until Goal.KINDS).chunked(3)) FillChips(row, draft.kind, { kinds.getOrElse(it) { "" } }) {
+        Head(stringResource(Res.string.goal_kind))
+        OptionGroup((0 until Goal.KINDS).toList(), draft.kind, ::goalGlyph, { kinds.getOrElse(it) { "" } }, perRow = 3) {
             draft.kind = it
             draft.amount = defaultAmount(world, draft).toString()
             listing = null
@@ -365,19 +366,20 @@ fun EditorGoalsWindow(world: World, draft: GoalDraft?, onDraft: (GoalDraft?) -> 
                 GoalSlot.Place -> world.industries.getOrNull(draft.industry)?.let { industryName(world, it, lang) } ?: world.towns.getOrNull(draft.town)?.name
                 GoalSlot.Town -> world.towns.getOrNull(draft.town)?.name
             }
+            val chosenIndustry = slot == GoalSlot.Place && draft.industry >= 0 && name != null
             Head(stringResource(when (slot) { GoalSlot.Town -> Res.string.goal_target_town; GoalSlot.Town2 -> Res.string.goal_target_town2; GoalSlot.Place -> Res.string.goal_target_place }))
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(name ?: stringResource(Res.string.none_chosen), color = if (name == null) c.textDim else c.text, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
-                ActionButton(stringResource(Res.string.on_the_map), strong = true) { onPickOnMap(slot) }
-                ActionButton(stringResource(Res.string.from_a_list)) { listing = if (listing == slot) null else slot }
-            }
+            ActionRow(if (chosenIndustry) Glyph.Factory else Glyph.Home, name ?: stringResource(Res.string.none_chosen), dim = name == null)
+            ButtonTiles(listOf(
+                TileButton(Glyph.Inspect, stringResource(Res.string.on_the_map), strong = true) { onPickOnMap(slot) },
+                TileButton(Glyph.Menu, stringResource(Res.string.from_a_list), lit = listing == slot) { listing = if (listing == slot) null else slot },
+            ))
             if (listing == slot) {
-                for (t in townsOf(world).sortedBy { it.name }) ListRow(Glyph.Home, t.name, null, {
+                for (t in townsOf(world).sortedBy { it.name }) PictureRow(t.name, icon = { Badge(Glyph.Home) }, onClick = {
                     if (slot == GoalSlot.Town2) draft.town2 = t.id else { draft.town = t.id; draft.industry = -1 }
                     listing = null
                 })
                 if (slot == GoalSlot.Place) for (ind in industriesOf(world).filter { !it.closed && world.roster.industries[it.kind].accepts != 0 }.sortedBy { industryName(world, it, lang) }) {
-                    ListRow(Glyph.Layers, industryName(world, ind, lang), null, {
+                    PictureRow(industryName(world, ind, lang), picture = { IndustryPicture(world.roster.industries[ind.kind], it) }, onClick = {
                         pickInto(world, draft, GoalSlot.Place, world.index(ind.x, ind.y))
                         listing = null
                     })
@@ -388,7 +390,7 @@ fun EditorGoalsWindow(world: World, draft: GoalDraft?, onDraft: (GoalDraft?) -> 
             Head(stringResource(Res.string.cargo))
             val takes = world.industries.getOrNull(draft.industry)?.let { world.roster.industries[it.kind] }
             val offered = (0 until Cargo.COUNT).filter { takes == null || takes.takes(it) }
-            for (row in offered.chunked(3)) FillChips(row, draft.cargo, { cargoes.getOrElse(it) { "" } }) { draft.cargo = it }
+            if (offered.isNotEmpty()) SegmentedChoice(offered, draft.cargo, { cargoes.getOrElse(it) { "" } }, perRow = 3) { draft.cargo = it }
         }
         val amountLabel = when (draft.kind) {
             Goal.TOWN_POP -> Res.string.amount_people
@@ -433,10 +435,13 @@ private fun defaultAmount(world: World, d: GoalDraft): Long = when (d.kind) {
 /** The most goals a scenario can have, as the game takes them. */
 private const val GOALS_MOST = com.rm.interchange.sim.Codec.MOST_GOALS
 
+/** The glyph for goals of [kind]. */
 fun goalGlyph(kind: Int) = when (kind) {
     Goal.TOWN_POP -> Glyph.Home
     Goal.DELIVER -> Glyph.Package
     Goal.CONNECT -> Glyph.Station
+    Goal.COMPANY_VALUE -> Glyph.Briefcase
+    Goal.YEAR_PROFIT -> Glyph.Graph
     else -> Glyph.Flag
 }
 
@@ -482,7 +487,7 @@ fun OutcomeWindow(world: World, onKeepPlaying: () -> Unit, onTitle: () -> Unit) 
         if (s.title.isNotBlank()) Text(s.title, color = c.text, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
         Text(stringResource(if (won) Res.string.scenario_won_line else Res.string.scenario_lost_line), color = c.text, fontSize = 15.sp)
         BigButton(stringResource(Res.string.keep_playing), primary = true, glyph = Glyph.Play, onClick = onKeepPlaying)
-        BigButton(stringResource(Res.string.title_screen), glyph = Glyph.Home, onClick = onTitle)
+        BigButton(stringResource(Res.string.title_screen), glyph = Glyph.Exit, onClick = onTitle)
     }
 }
 
@@ -491,8 +496,8 @@ fun OutcomeWindow(world: World, onKeepPlaying: () -> Unit, onTitle: () -> Unit) 
 fun RowScope.IndustryKinds(world: World, kind: String, onKind: (String) -> Unit) {
     val lang = languageCode()
     val open = placeableKinds(world)
-    Row(Modifier.weight(1f).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-        for (k in open) Chip(k.name(lang), k.key == kind) { onKind(k.key) }
+    Row(Modifier.weight(1f).horizontalScroll(rememberScrollState()).selectableGroup(), horizontalArrangement = Arrangement.spacedBy(KitSpace.Gap)) {
+        for (k in open) PictureChip(k.name(lang), k.key == kind, { IndustryPicture(k, it) }) { onKind(k.key) }
     }
 }
 

@@ -23,6 +23,8 @@
 
     <!-- The strip along the top. -->
     <string name="menu">Menu</string>
+    <string name="menu_head_game">Game</string>
+    <string name="menu_head_world">The world</string>
     <string name="play">Play</string>
     <string name="pause">Pause</string>
     <string name="speed">Speed</string>
@@ -577,6 +579,7 @@
     <string name="done">Done</string>
     <string name="add_goal">Add goal</string>
     <string-array name="goal_kinds"><item>Town size</item><item>Delivery</item><item>Connection</item><item>Company value</item><item>Profit</item></string-array>
+    <string name="goal_kind">Kind of goal</string>
     <string name="goal_target_town">Town</string>
     <string name="goal_target_town2">Second town</string>
     <string name="goal_target_place">Town or industry</string>

@@ -390,23 +390,6 @@ fun MessageChip(text: String, lead: (@Composable () -> Unit)? = null, onClick: (
     }
 }
 
-/** A pill that's on or off, for picking one of a few things. */
-@Composable
-fun Chip(label: String, on: Boolean, enabled: Boolean = true, onClick: () -> Unit) {
-    val c = LocalColors.current
-    Box(
-        Modifier
-            .alpha(if (enabled) 1f else 0.4f)
-            .clip(RoundedCornerShape(16.dp))
-            .background(if (on) c.accent else c.button)
-            .semantics { selected = on }
-            .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
-            .padding(horizontal = 12.dp, vertical = 6.dp),
-    ) {
-        Text(label, color = if (on) c.onAccent else c.text, fontSize = 13.sp, maxLines = 1)
-    }
-}
-
 /** A button with words on it, for what a card can do. */
 @Composable
 fun ActionButton(label: String, enabled: Boolean = true, strong: Boolean = false, onClick: () -> Unit) {

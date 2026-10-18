@@ -617,7 +617,9 @@ private fun Root(settings: Settings) {
             Win.Chronicle -> runner?.game?.world?.let { w -> ChronicleWindow(w, { x, y -> goTo.value = x to y; window = null }) { window = null } }
             Win.Subsidies -> runner?.game?.world?.let { w -> SubsidiesWindow(w, { x, y -> goTo.value = x to y; window = null }) { window = null } }
             Win.Goals -> runner?.game?.world?.let { w ->
-                if (editing) EditorGoalsWindow(w, goalDraft, { goalDraft = it }, { slot -> picking = slot; window = null }, { runner?.request(it) }) { window = null }
+                if (editing) CompositionLocalProvider(LocalSheets provides sheets) {
+                    EditorGoalsWindow(w, goalDraft, { goalDraft = it }, { slot -> picking = slot; window = null }, { runner?.request(it) }) { window = null }
+                }
                 else GoalsWindow(w, { x, y -> goTo.value = x to y; window = null }) { window = null }
             }
             Win.Scenarios -> ScenariosWindow(
@@ -1321,7 +1323,7 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
                 val trayDetail = listOfNotNull(picked.takeUnless { refusedHere }, detail).joinToString(stringResource(Res.string.list_join)).ifEmpty { null }
                 val trackOptions = mutableListOf<@Composable RowScope.() -> Unit>()
                 when (tool) {
-                    Tool.PlaceIndustry -> trackOptions += { IndustryKinds(world, industryKind) { industryKind = it } }
+                    Tool.PlaceIndustry -> trackOptions += { CompositionLocalProvider(LocalSheets provides sheets) { IndustryKinds(world, industryKind) { industryKind = it } } }
                     Tool.Track -> trackOptions += {
                         OptionButton(Glyph.TrackAuto, stringResource(Res.string.track_auto), trackPiece == 0) { trackPiece = 0 }
                         for ((k, piece) in VIEW_PIECES.withIndex()) OptionButton(PIECE_GLYPHS[k], pieceNames[k], trackPiece == piece) { trackPiece = piece }

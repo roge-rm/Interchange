@@ -14,6 +14,8 @@
     <string name="date">%1$d %2$s %3$d</string>
 
     <string name="menu">Menu</string>
+    <string name="menu_head_game">Partie</string>
+    <string name="menu_head_world">Le monde</string>
     <string name="play">Jouer</string>
     <string name="pause">Pause</string>
     <string name="speed">Vitesse</string>
@@ -560,6 +562,7 @@
     <string name="done">OK</string>
     <string name="add_goal">Ajouter un objectif</string>
     <string-array name="goal_kinds"><item>Taille d'une ville</item><item>Livraison</item><item>Liaison</item><item>Valeur de la compagnie</item><item>Bénéfice</item></string-array>
+    <string name="goal_kind">Type d'objectif</string>
     <string name="goal_target_town">Ville</string>
     <string name="goal_target_town2">Deuxième ville</string>
     <string name="goal_target_place">Ville ou industrie</string>

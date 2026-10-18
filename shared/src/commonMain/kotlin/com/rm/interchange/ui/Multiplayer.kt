@@ -485,6 +485,6 @@ fun LostWindow(onClose: () -> Unit) {
     val c = LocalColors.current
     Window(stringResource(Res.string.connection_lost), onClose, Glyph.People) {
         Text(stringResource(Res.string.connection_lost_line), color = c.text, fontSize = 14.sp)
-        BigButton(stringResource(Res.string.title_screen), primary = true, glyph = Glyph.Home, onClick = onClose)
+        BigButton(stringResource(Res.string.title_screen), primary = true, glyph = Glyph.Exit, onClick = onClose)
     }
 }

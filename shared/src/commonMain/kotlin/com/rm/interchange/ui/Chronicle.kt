@@ -1,6 +1,5 @@
 package com.rm.interchange.ui
 
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -15,15 +14,16 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.rm.interchange.res.*
 import com.rm.interchange.sim.News
 import com.rm.interchange.sim.Story
+import com.rm.interchange.sim.VehicleKind
 import com.rm.interchange.sim.World
 import com.rm.interchange.sim.crashFor
 import org.jetbrains.compose.resources.stringArrayResource
@@ -53,7 +53,7 @@ fun ChronicleWindow(world: World, onGo: (Float, Float) -> Unit, onClose: () -> U
     var everything by remember { mutableStateOf(false) }
     val months = stringArrayResource(Res.array.months)
     val town = world.towns.maxByOrNull { it.population }?.name ?: ""
-    Window(stringResource(Res.string.chronicle), onClose, Glyph.Folder) {
+    Window(stringResource(Res.string.chronicle), onClose, Glyph.Newspaper) {
         FillChips(listOf(false, true), everything, { stringResource(if (it) Res.string.chronicle_all else Res.string.chronicle_headlines) }) { everything = it }
         // The chronicle is replaced whole when the game adds to it, so this is a steady copy.
         val all = world.chronicle
@@ -63,6 +63,9 @@ fun ChronicleWindow(world: World, onGo: (Float, Float) -> Unit, onClose: () -> U
         }
         if (told.isEmpty()) Text(stringResource(Res.string.chronicle_empty), color = c.textDim, fontSize = 14.sp)
         for ((at, stories) in told) {
+            // Some news is only told to the company it's about, so a month can have none to show.
+            val lines = stories.asReversed().mapNotNull { t -> newsText(world, News(t.kind, t.about, 0)).takeIf { it.isNotEmpty() }?.let { t to it } }
+            if (lines.isEmpty()) continue
             val year = at / 12
             val gazette = year < STAR_FROM
             val star = !gazette && year < FEED_FROM
@@ -79,42 +82,57 @@ fun ChronicleWindow(world: World, onGo: (Float, Float) -> Unit, onClose: () -> U
                     Text(stringResource(Res.string.month_year, months.getOrElse(at % 12) { "" }, year), color = c.textDim, fontSize = 12.sp)
                 }
                 HorizontalDivider(color = c.textDim.copy(alpha = 0.4f))
-                for (t in stories.asReversed()) {
-                    val text = newsText(world, News(t.kind, t.about, 0))
-                    if (text.isEmpty()) continue
+                for ((t, text) in lines) {
                     val place = storyPlace(world, t)
-                    val about = newsCompany(world, News(t.kind, t.about, 0))
-                    if (about != null) Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        CompanyInsignia(about, 24.dp)
-                        Text(
-                            when {
-                                gazette -> text
-                                star -> text.uppercase()
-                                else -> text
-                            },
-                            color = c.text, fontFamily = family,
-                            fontSize = if (star) 13.sp else 14.sp,
+                    val about = if (t.kind in COMPANY_NEWS) newsCompany(world, News(t.kind, t.about, 0)) else null
+                    BulletRow(
+                        if (star) text.uppercase() else text,
+                        glyph = storyGlyph(world, t),
+                        lead = about?.let { co -> { CompanyInsignia(co, 22.dp) } },
+                        onClick = place?.let { (x, y) -> { onGo(x, y) } },
+                        style = TextStyle(
+                            fontFamily = family, fontSize = if (star) 13.sp else 14.sp,
                             fontWeight = if (star) FontWeight.Bold else FontWeight.Normal,
-                            modifier = Modifier.weight(1f).padding(vertical = 2.dp),
-                        )
-                    } else Text(
-                        when {
-                            gazette -> text
-                            star -> text.uppercase()
-                            else -> "• $text"
-                        },
-                        color = c.text, fontFamily = family,
-                        fontSize = if (star) 13.sp else 14.sp,
-                        fontWeight = if (star) FontWeight.Bold else FontWeight.Normal,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .then(if (place != null) Modifier.clickable(role = Role.Button) { onGo(place.first, place.second) } else Modifier)
-                            .padding(vertical = 2.dp),
+                        ),
                     )
                 }
             }
         }
     }
+}
+
+/** News about a company itself, shown with its insignia for a bullet. */
+private val COMPANY_NEWS = setOf(
+    News.COMPANY_TROUBLE, News.COMPANY_FOR_SALE, News.COMPANY_BOUGHT, News.COMPANY_BANKRUPT, News.COMPANY_RESTARTED, News.COMPANY_STARTED,
+)
+
+/** The bullet for story [t], by its kind. */
+private fun storyGlyph(world: World, t: Story): Glyph = when (t.kind) {
+    News.INDUSTRY_OPENS, News.INDUSTRY_CLOSES, News.PROSPECTING_FAILED -> Glyph.Factory
+    News.PRODUCTION_UP -> Glyph.Up
+    News.PRODUCTION_DOWN -> Glyph.Down
+    News.SNOWBOUND -> Glyph.Snow
+    News.TRAIN_OLD -> Glyph.Calendar
+    News.TRAIN_STUCK -> Glyph.Rail
+    News.WASHOUT -> Glyph.Water
+    News.FIRE -> Glyph.Fire
+    News.AVALANCHE -> Glyph.Heights
+    News.SLID -> Glyph.Road
+    News.DIVERTED -> Glyph.Air
+    News.SUBSIDY_OFFERED, News.SUBSIDY_AWARDED -> Glyph.Money
+    News.NEW_VEHICLE -> when (world.roster.getOrNull(t.about)?.kind) {
+        VehicleKind.ROAD -> Glyph.Road
+        VehicleKind.SHIP -> Glyph.Water
+        VehicleKind.AIRCRAFT -> Glyph.Air
+        null -> Glyph.Plus
+        else -> Glyph.Rail
+    }
+    News.GOAL_MET, News.GOAL_FAILED -> world.goals.getOrNull(t.about)?.let { goalGlyph(it.kind) } ?: Glyph.Flag
+    News.SCENARIO_WON -> Glyph.Trophy
+    News.SCENARIO_LOST -> Glyph.Flag
+    News.CRASH -> Glyph.Alert
+    News.RENEW_FAILED -> Glyph.Renew
+    else -> Glyph.Briefcase
 }
 
 /** Where on the map story [t] happened, or null if it's not about a place. */

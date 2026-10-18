@@ -55,11 +55,11 @@ import kotlin.math.roundToInt
 
 /** A wide button for the screens and windows, with a glyph before its words. [primary] is the one most likely wanted. */
 @Composable
-fun BigButton(text: String, primary: Boolean = false, enabled: Boolean = true, glyph: Glyph? = null, onClick: () -> Unit) {
+fun BigButton(text: String, primary: Boolean = false, enabled: Boolean = true, glyph: Glyph? = null, modifier: Modifier = Modifier, onClick: () -> Unit) {
     val c = LocalColors.current
     val tint = if (primary) c.onAccent else c.text
     Row(
-        Modifier
+        modifier
             .fillMaxWidth()
             .alpha(if (enabled) 1f else 0.45f)
             .clip(RoundedCornerShape(10.dp))

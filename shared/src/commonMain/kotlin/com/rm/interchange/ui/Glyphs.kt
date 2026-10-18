@@ -28,6 +28,7 @@ enum class Glyph {
     BridgeTrestle, BridgeTruss, BridgeConcrete,
     SignalPath, SignalEntry, SignalExit, SignalCombo, Spacing,
     AdSmall, AdMedium, AdLarge, RoadWorks, Statue, FundBuildings, Exclusive, LandingAids, Deicing,
+    Factory, Money, Newspaper, Briefcase, Exit, Fire, Trophy, Graph, Chevron,
 }
 
 /** [glyph] drawn in [tint] on a 24 unit square scaled to fit. */
@@ -240,6 +241,30 @@ private class GlyphPen(val scope: DrawScope, val u: Float, val dx: Float, val dy
                 small(Glyph.Snow, 0f, 0f, 0.6f)
                 circle(16.5f, 17.5f, 3.5f); line(16.5f, 9.5f, 13.4f, 15.8f); line(16.5f, 9.5f, 19.6f, 15.8f)
             }
+            // A sawtooth roof with a chimney, for industries.
+            Glyph.Factory -> {
+                shape(false, 3f, 21f, 3f, 12f, 8f, 8f, 8f, 12f, 13f, 8f, 13f, 12f, 17f, 12f, 17f, 3f, 20.5f, 3f, 20.5f, 21f)
+                line(6f, 16.5f, 8.5f, 16.5f, 1.5f); line(11f, 16.5f, 13.5f, 16.5f, 1.5f)
+            }
+            Glyph.Money -> { shape(false, 2f, 6f, 22f, 6f, 22f, 18f, 2f, 18f); circle(12f, 12f, 3f); circle(5.5f, 12f, 1f, true); circle(18.5f, 12f, 1f, true) }
+            Glyph.Newspaper -> {
+                shape(false, 3f, 4f, 18f, 4f, 18f, 20f, 3f, 20f); open(18f, 8f, 21f, 8f, 21f, 18f, 19f, 20f)
+                line(6f, 8f, 15f, 8f, 2.5f); line(6f, 12f, 15f, 12f, 1.2f); line(6f, 14.5f, 15f, 14.5f, 1.2f); line(6f, 17f, 11f, 17f, 1.2f)
+            }
+            Glyph.Briefcase -> { shape(false, 3f, 8f, 21f, 8f, 21f, 20f, 3f, 20f); open(9f, 8f, 9f, 5f, 15f, 5f, 15f, 8f); line(3f, 13f, 21f, 13f, 1.5f); line(12f, 11.5f, 12f, 14.5f, 2.5f) }
+            // A door with an arrow going out of it.
+            Glyph.Exit -> { open(13f, 7f, 13f, 3f, 4f, 3f, 4f, 21f, 13f, 21f, 13f, 17f); line(9f, 12f, 21f, 12f); open(17f, 8f, 21f, 12f, 17f, 16f) }
+            Glyph.Fire -> {
+                shape(false, 12f, 2f, 16.5f, 8f, 18.5f, 13f, 17.5f, 18f, 14.5f, 21f, 9.5f, 21f, 6.5f, 18f, 5.5f, 13f, 8f, 8.5f, 10f, 12f)
+                open(12f, 13f, 14f, 16.5f, 12f, 19f, 10f, 16.5f, 12f, 13f)
+            }
+            Glyph.Trophy -> {
+                shape(false, 7f, 3f, 17f, 3f, 16.5f, 9.5f, 12f, 13f, 7.5f, 9.5f); arc(7f, 6.5f, 2.5f, 90f, 180f); arc(17f, 6.5f, 2.5f, -90f, 180f)
+                line(12f, 13f, 12f, 17f); shape(false, 8f, 17f, 16f, 17f, 16f, 21f, 8f, 21f)
+            }
+            Glyph.Graph -> { open(4f, 3f, 4f, 20f, 21f, 20f); open(7f, 16f, 11f, 11.5f, 14f, 14f, 19.5f, 7f); open(15.5f, 7f, 19.5f, 7f, 19.5f, 11f) }
+            // Says a row goes somewhere when tapped.
+            Glyph.Chevron -> open(9f, 5f, 16f, 12f, 9f, 19f)
         }
     }
 

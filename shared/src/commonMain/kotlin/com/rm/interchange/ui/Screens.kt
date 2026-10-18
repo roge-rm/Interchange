@@ -419,13 +419,18 @@ fun PacksWindow(packs: List<Pack>, adding: Boolean, message: String?, failed: Bo
         BigButton(stringResource(if (adding) Res.string.adding_pack else Res.string.add_pack), primary = true, enabled = !adding, glyph = Glyph.Plus, onClick = onAdd)
         if (message != null) Text(message, color = if (failed) c.bad else c.text, fontSize = 14.sp)
         for (p in listOf(Packs.BASE) + packs) {
-            val line = stringResource(Res.string.pack_line, p.version, p.author) + " · " + pluralStringResource(Res.plurals.vehicles_count, p.vehicles.size, p.vehicles.size)
             val about = p.description(lang)
-            ListRow(Glyph.Package, p.name(lang), if (about.isEmpty()) line else "$line\n$about", null) {
-                if (p.id == Packs.BASE_ID) return@ListRow
-                if (removing == p.id) ActionButton(stringResource(Res.string.remove), strong = true) { removing = null; onRemove(p) }
-                else SquareButton(Glyph.Remove, stringResource(Res.string.remove), 34.dp) { removing = p.id }
-            }
+            PictureRow(
+                p.name(lang),
+                icon = { Badge(Glyph.Package, size = 40.dp) },
+                line = stringResource(Res.string.pack_line, p.version, p.author),
+                stats = pluralStringResource(Res.plurals.vehicles_count, p.vehicles.size, p.vehicles.size),
+                end = if (p.id == Packs.BASE_ID) null else ({
+                    if (removing == p.id) ActionButton(stringResource(Res.string.remove), strong = true) { removing = null; onRemove(p) }
+                    else SquareButton(Glyph.Remove, stringResource(Res.string.remove), 34.dp) { removing = p.id }
+                }),
+                below = if (about.isEmpty()) null else ({ Text(about, color = c.textDim, style = KitType.Dim) }),
+            )
         }
     }
 }
@@ -477,23 +482,31 @@ fun OverlaysWindow(settings: Settings, onClose: () -> Unit) {
 fun MenuWindow(saved: Boolean, canSave: Boolean, onEditor: (() -> Unit)?, onSave: () -> Unit, onLoad: () -> Unit, onNew: () -> Unit, onPlayers: () -> Unit, onSettings: () -> Unit, onIndustries: () -> Unit, onCompanies: () -> Unit, onSubsidies: () -> Unit, onGoals: () -> Unit, onChronicle: () -> Unit, onTitle: () -> Unit, onClose: () -> Unit) {
     val trying = onEditor != null
     var leaving by remember { mutableStateOf(false) }
-    Window(stringResource(Res.string.menu), onClose, Glyph.Menu) {
-        onEditor?.let { BigButton(stringResource(Res.string.back_to_editor), primary = false, glyph = Glyph.Land, onClick = it) }
-        if (canSave) BigButton(stringResource(if (saved) Res.string.saved else Res.string.save), primary = !saved, glyph = Glyph.Save, onClick = onSave)
-        if (!trying) {
-            BigButton(stringResource(Res.string.load), glyph = Glyph.Folder, onClick = onLoad)
-            BigButton(stringResource(Res.string.new_game), glyph = Glyph.Plus, onClick = onNew)
-        }
-        BigButton(stringResource(Res.string.industries), glyph = Glyph.Layers, onClick = onIndustries)
-        BigButton(stringResource(Res.string.companies), glyph = Glyph.Home, onClick = onCompanies)
-        BigButton(stringResource(Res.string.subsidies), glyph = Glyph.Package, onClick = onSubsidies)
-        BigButton(stringResource(Res.string.goals), glyph = Glyph.Flag, onClick = onGoals)
-        BigButton(stringResource(Res.string.chronicle), glyph = Glyph.Folder, onClick = onChronicle)
-        if (!trying) BigButton(stringResource(Res.string.multiplayer), glyph = Glyph.People, onClick = onPlayers)
-        BigButton(stringResource(Res.string.settings), glyph = Glyph.Gear, onClick = onSettings)
-        BigButton(stringResource(if (leaving) Res.string.leave_unsaved else Res.string.title_screen), primary = leaving, glyph = Glyph.Home) {
+    // Each entry's words, glyph, whether it's the main one, and what it does.
+    class Entry(val text: String, val glyph: Glyph, val primary: Boolean = false, val onClick: () -> Unit)
+    val game = listOfNotNull(
+        onEditor?.let { Entry(stringResource(Res.string.back_to_editor), Glyph.Land, onClick = it) },
+        if (canSave) Entry(stringResource(if (saved) Res.string.saved else Res.string.save), Glyph.Save, !saved, onSave) else null,
+        if (!trying) Entry(stringResource(Res.string.load), Glyph.Folder, onClick = onLoad) else null,
+        if (!trying) Entry(stringResource(Res.string.new_game), Glyph.Plus, onClick = onNew) else null,
+        if (!trying) Entry(stringResource(Res.string.multiplayer), Glyph.People, onClick = onPlayers) else null,
+        Entry(stringResource(Res.string.settings), Glyph.Gear, onClick = onSettings),
+        Entry(stringResource(if (leaving) Res.string.leave_unsaved else Res.string.title_screen), Glyph.Exit, leaving) {
             if (!trying || leaving) onTitle() else leaving = true
-        }
+        },
+    )
+    val world = listOf(
+        Entry(stringResource(Res.string.industries), Glyph.Factory, onClick = onIndustries),
+        Entry(stringResource(Res.string.companies), Glyph.Briefcase, onClick = onCompanies),
+        Entry(stringResource(Res.string.subsidies), Glyph.Money, onClick = onSubsidies),
+        Entry(stringResource(Res.string.goals), Glyph.Flag, onClick = onGoals),
+        Entry(stringResource(Res.string.chronicle), Glyph.Newspaper, onClick = onChronicle),
+    )
+    Window(stringResource(Res.string.menu), onClose, Glyph.Menu) {
+        Head(stringResource(Res.string.menu_head_game))
+        Grid(game) { e -> BigButton(e.text, e.primary, glyph = e.glyph, modifier = Modifier.fillMaxHeight(), onClick = e.onClick) }
+        Head(stringResource(Res.string.menu_head_world))
+        Grid(world) { e -> BigButton(e.text, e.primary, glyph = e.glyph, modifier = Modifier.fillMaxHeight(), onClick = e.onClick) }
     }
 }
 
@@ -598,7 +611,7 @@ private fun MoneyGraph(history: List<LongArray>, modifier: Modifier) {
 fun CompaniesWindow(world: World, onGo: (Float, Float) -> Unit, send: (com.rm.interchange.sim.Command) -> Unit, onInsignia: () -> Unit, onClose: () -> Unit) {
     val me = LocalCompany.current
     val c = LocalColors.current
-    Window(stringResource(Res.string.companies), onClose, Glyph.Home) {
+    Window(stringResource(Res.string.companies), onClose, Glyph.Briefcase) {
         world.companies.getOrNull(me)?.takeIf { !it.gone }?.let { own -> RenameCompany(world, own, send) }
         // Best first, by what each is worth, those gone at the end.
         val worth = world.worth
@@ -774,12 +787,7 @@ fun GoalsWindow(world: World, onGo: (Float, Float) -> Unit, onClose: () -> Unit)
                 Goal.FAILED -> stringResource(Res.string.goal_missed, g.deadline)
                 else -> if (viewer >= 0) goalCount(world, g, viewer, me < 0) else ""
             }
-            val glyph = when (g.kind) {
-                Goal.TOWN_POP -> Glyph.Home
-                Goal.DELIVER -> Glyph.Package
-                Goal.CONNECT -> Glyph.Station
-                else -> Glyph.Flag
-            }
+            val glyph = goalGlyph(g.kind)
             Column(
                 Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(c.button)
                     .then(if (place != null) Modifier.clickable(role = Role.Button) { onGo(place.first, place.second) } else Modifier)
@@ -832,7 +840,7 @@ private fun GoalBar(world: World, g: Goal, company: Int) {
 /** Subsidies on offer, and those won with whoever won them; a tap goes to where the route starts. */
 @Composable
 fun SubsidiesWindow(world: World, onGo: (Float, Float) -> Unit, onClose: () -> Unit) {
-    Window(stringResource(Res.string.subsidies), onClose, Glyph.Package) {
+    Window(stringResource(Res.string.subsidies), onClose, Glyph.Money) {
         val open = world.subsidies.withIndex().filter { it.value.open }.sortedWith(compareBy({ it.value.company >= 0 }, { it.index }))
         if (open.isEmpty()) Text(stringResource(Res.string.no_subsidies), color = LocalColors.current.textDim, fontSize = 14.sp)
         for ((i, s) in open) {
@@ -842,7 +850,7 @@ fun SubsidiesWindow(world: World, onGo: (Float, Float) -> Unit, onClose: () -> U
             val line = if (won == null) stringResource(Res.string.subsidy_offered_for, months)
                 else stringResource(Res.string.subsidy_won_by, if (won.id == LocalCompany.current) stringResource(Res.string.your_company) else won.name, months)
             val (x, y) = subsidyStart(world, i)
-            ListRow(Glyph.Package, subsidyRoute(world, i), line, { onGo(x, y) }, tint = won?.let { com.rm.interchange.map.companyColour(it.id) })
+            ListRow(Glyph.Money, subsidyRoute(world, i), line, { onGo(x, y) }, tint = won?.let { com.rm.interchange.map.companyColour(it.id) })
         }
     }
 }
@@ -853,7 +861,7 @@ fun IndustriesWindow(world: World, onGo: (Float, Float) -> Unit, send: (com.rm.i
     val me = LocalCompany.current
     val lang = languageCode()
     var funding by remember { mutableStateOf(false) }
-    Window(stringResource(Res.string.industries), onClose, Glyph.Layers) {
+    Window(stringResource(Res.string.industries), onClose, Glyph.Factory) {
         BigButton(stringResource(Res.string.fund_industry), primary = !funding, glyph = Glyph.Plus) { funding = !funding }
         if (funding) {
             // What can be built this year, and what it costs now.

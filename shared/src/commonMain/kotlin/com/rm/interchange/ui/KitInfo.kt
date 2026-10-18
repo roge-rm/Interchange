@@ -87,7 +87,10 @@ import kotlin.math.roundToInt
  * - PictureGroup: one picture beside a group of rows of the same kind, each an AmountsRow, a name with cargo
  *   amounts in columns that line up. For the industries of each kind.
  * - VehiclePicture, IndustryPicture, HousePicture: the game's drawings, for a PictureRow's picture.
- * - OptionGroup: one of a few choices, each a glyph with a short label, across the width.
+ * - OptionGroup: one of a few choices, each a glyph with a short label, across the width or in even rows.
+ * - PictureChip: one of many kinds with pictures, a picture over its name, for a scrolling row in the tool tray.
+ * - BulletRow: a sentence with a glyph or insignia as its bullet, tapped to go somewhere if it has a chevron. For
+ *   news in the chronicle.
  * - OptionButton (Chrome.kt) and StepSliderRow (Kit.kt): the tool tray's rows of choices, a glyph on each button
  *   sharing the width, and a stepped value on one line. For track pieces, road surface, airport kind, bridge style,
  *   signal kind, signal spacing and town size.
@@ -147,6 +150,8 @@ object KitSpace {
     val MeterText = 92.dp
     /** A cargo's swatch and amount in an [AmountsRow]. */
     val AmountWidth = 60.dp
+    /** A [PictureChip], wide enough for two short lines of its name. */
+    val ChipWidth = 76.dp
 }
 
 /** [label] with [value] right-aligned, and [glyph] before it; [valueColour] for a value to stand out, like a warning. */
@@ -481,14 +486,18 @@ fun PictureBox(modifier: Modifier = Modifier, content: @Composable () -> Unit) {
 }
 
 /**
- * One of [options] across the width, each a glyph with its short [label] under it, the [selected] one lit. With
- * [labels] off only the glyphs show, the label read out instead.
+ * One of [options] across the width, each a glyph with its short [label] under it, the [selected] one lit, in even
+ * rows of up to [perRow]. With [labels] off only the glyphs show, the label read out instead.
  */
 @Composable
-fun <T> OptionGroup(options: List<T>, selected: T, glyph: (T) -> Glyph, label: (T) -> String, labels: Boolean = true, onSelect: (T) -> Unit) {
+fun <T> OptionGroup(options: List<T>, selected: T, glyph: (T) -> Glyph, label: (T) -> String, labels: Boolean = true, perRow: Int = options.size, onSelect: (T) -> Unit) {
     val c = LocalColors.current
-    Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min).selectableGroup(), horizontalArrangement = Arrangement.spacedBy(KitSpace.Gap)) {
-        for (o in options) {
+    if (options.isEmpty()) return
+    val rows = (options.size + perRow - 1) / perRow
+    val across = (options.size + rows - 1) / rows
+    Column(Modifier.fillMaxWidth().selectableGroup(), verticalArrangement = Arrangement.spacedBy(KitSpace.Gap)) {
+    for (row in options.chunked(across)) Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(KitSpace.Gap)) {
+        for (o in row) {
             val on = o == selected
             val tint = if (on) c.onAccent else c.text
             Column(
@@ -508,6 +517,59 @@ fun <T> OptionGroup(options: List<T>, selected: T, glyph: (T) -> Glyph, label: (
                 if (labels) Text(label(o), color = tint, style = KitType.Small, textAlign = TextAlign.Center, maxLines = 2)
             }
         }
+        repeat(across - row.size) { Box(Modifier.weight(1f)) }
+    }
+    }
+}
+
+/**
+ * A sentence with a glyph, or [lead] such as a company's insignia, before it as its bullet, in [style]. With
+ * [onClick] the whole row is tapped and a chevron at its end shows it goes somewhere; without, it's only read.
+ */
+@Composable
+fun BulletRow(text: String, glyph: Glyph? = null, lead: (@Composable () -> Unit)? = null, onClick: (() -> Unit)? = null, style: TextStyle = KitType.Body) {
+    val c = LocalColors.current
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .heightIn(min = 30.dp)
+            .clip(RoundedCornerShape(KitSpace.InnerCorner))
+            .then(if (onClick != null) Modifier.clickable(role = Role.Button, onClick = onClick) else Modifier.semantics(mergeDescendants = true) {})
+            .padding(horizontal = 2.dp, vertical = KitSpace.Tight),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(KitSpace.Gap + 2.dp),
+    ) {
+        Box(Modifier.size(22.dp), contentAlignment = Alignment.Center) {
+            if (lead != null) lead() else if (glyph != null) GlyphIcon(glyph, c.accent, Modifier.size(KitSpace.Glyph + 2.dp))
+        }
+        Text(text, color = c.text, style = style, modifier = Modifier.weight(1f))
+        if (onClick != null) GlyphIcon(Glyph.Chevron, c.textDim, Modifier.size(14.dp))
+    }
+}
+
+/**
+ * A choice with a picture: [picture] over its [label] on a small tile, lit when [on]. For a scrolling row of kinds in
+ * the tool tray, such as industries to place.
+ */
+@Composable
+fun PictureChip(label: String, on: Boolean, picture: @Composable (Modifier) -> Unit, onClick: () -> Unit) {
+    val c = LocalColors.current
+    val shape = RoundedCornerShape(KitSpace.InnerCorner)
+    Column(
+        Modifier
+            .width(KitSpace.ChipWidth)
+            .clip(shape)
+            .background(if (on) c.accent.copy(alpha = 0.16f) else c.button)
+            .border(2.dp, if (on) c.accent else c.button, shape)
+            .selectable(selected = on, role = Role.RadioButton, onClick = onClick)
+            .padding(horizontal = 4.dp, vertical = 4.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(KitSpace.Tight),
+    ) {
+        Box(Modifier.size(KitSpace.ChipWidth - 8.dp, 34.dp).clip(RoundedCornerShape(6.dp)).background(c.page), contentAlignment = Alignment.Center) {
+            picture(Modifier.fillMaxSize().padding(2.dp))
+        }
+        Text(label, color = c.text, style = KitType.Small, textAlign = TextAlign.Center, maxLines = 2, minLines = 2, overflow = TextOverflow.Ellipsis)
     }
 }
 
