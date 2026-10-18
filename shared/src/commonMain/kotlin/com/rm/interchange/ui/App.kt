@@ -574,6 +574,7 @@ private fun Root(settings: Settings) {
                 onNew = { window = null; editorNew = false; screen = Screen.NewGame },
                 onPlayers = { hostProblem = null; window = Win.Players },
                 onSettings = { window = Win.Settings },
+                onFinances = { window = Win.Finances },
                 onIndustries = { window = Win.Industries },
                 onCompanies = { window = Win.Companies },
                 onSubsidies = { window = Win.Subsidies },
