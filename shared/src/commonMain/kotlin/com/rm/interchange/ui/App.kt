@@ -49,6 +49,7 @@ import com.rm.interchange.map.LandPainter
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.foundation.layout.RowScope
 import org.jetbrains.compose.resources.pluralStringResource
+import org.jetbrains.compose.resources.StringResource
 import com.rm.interchange.sim.VehicleKind
 import com.rm.interchange.sim.Autorenew
 import com.rm.interchange.sim.Crash
@@ -56,6 +57,9 @@ import com.rm.interchange.sim.crashFor
 import com.rm.interchange.sim.railCost
 import com.rm.interchange.sim.canalCost
 import com.rm.interchange.sim.bridgeCost
+import com.rm.interchange.sim.bridgeRefusal
+import com.rm.interchange.sim.airportRefusal
+import com.rm.interchange.sim.Refusal
 import com.rm.interchange.sim.roadCost
 import com.rm.interchange.sim.clearCost
 import com.rm.interchange.map.View
@@ -806,6 +810,11 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
     var refused by remember { mutableStateOf(false) }
     val edits = rememberCoroutineScope()
     LaunchedEffect(refusals) { if (refusals > 0) { refused = true; delay(3000); refused = false } }
+    // A bridge or airport that can't go where it was asked says why in the tray for a few seconds, on this screen only.
+    var refusal by remember { mutableIntStateOf(Refusal.NONE) }
+    var refusalShown by remember { mutableIntStateOf(0) }
+    LaunchedEffect(refusalShown) { if (refusalShown > 0) { delay(3000); refusal = Refusal.NONE } }
+    fun refuse(why: Int) { refusal = why; refusalShown++ }
 
     /** Runs editor command [c] on the game thread, and says so if it changed nothing. */
     fun edit(c: Command) {
@@ -910,7 +919,12 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
                     Tool.Dock -> { runner.request(Command.Dock(me, at.tileX, at.tileY)); built() }
                     Tool.Shipyard -> { runner.request(Command.Shipyard(me, at.tileX, at.tileY)); built() }
                     Tool.Buoy -> { runner.request(Command.Buoy(me, at.tileX, at.tileY)); built() }
-                    Tool.Airport -> { runner.request(Command.Airport(me, at.tileX, at.tileY, airportKind, if (runwayAlongX) Track.X else Track.Y)); built() }
+                    Tool.Airport -> Command.Airport(me, at.tileX, at.tileY, airportKind, if (runwayAlongX) Track.X else Track.Y).let { a ->
+                        val why = world.companies.getOrNull(me)?.let { world.airportRefusal(it, a) } ?: Refusal.NONE
+                        // Sent anyway, as the check reads the world a few ticks early; the sim has the last word.
+                        runner.request(a)
+                        if (why != Refusal.NONE) refuse(why) else built()
+                    }
                     Tool.Wires -> { runner.request(trackLine(me, at, at, removing).let { Command.Wire(me, it.sx, it.sy, it.ex, it.ey, it.first, it.remove) }); built() }
                     Tool.Signals -> if (removing) signalAt(world, me, at, signalled = true)?.let { runner.request(Command.SignalRun(me, at.tileX, at.tileY, at.tileX, at.tileY, it.piece, Signals.PLACED[signalKind], signalSpacing, true)); built() }
                         else signalAt(world, me, at)?.let { runner.request(it.copy(kind = Signals.PLACED[signalKind])); built() }
@@ -961,7 +975,12 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
                 }
                 plan?.let { runner.request(if (tool == Tool.Wires) Command.Wire(me, it.sx, it.sy, it.ex, it.ey, it.first, it.remove) else it); built() }
                 stationPlan?.let { runner.request(it); built() }
-                bridgePlan?.let { runner.request(it); built() }
+                bridgePlan?.let { b ->
+                    val why = world.companies.getOrNull(me)?.let { world.bridgeRefusal(it, b) } ?: Refusal.NONE
+                    // A drag that stays on one tile goes nowhere and says nothing.
+                    runner.request(b)
+                    if (why == Refusal.NONE) built() else if (b.x0 != b.x1 || b.y0 != b.y1) refuse(why)
+                }
                 roadPlan?.let { runner.request(it); built() }
                 canalPlan?.let { runner.request(it); built() }
                 clearPlan?.let { runner.request(it); built() }
@@ -1255,9 +1274,11 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
             }
             }
             if (tool.group != ToolGroup.Inspect && addingStops == null && addingRoadStops == null && addingCraftStops == null) {
-                val detail = if (editor) (if (refused) stringResource(Res.string.cant_edit_here) else null) else when (tool) {
+                val refusedHere = refusal != Refusal.NONE && (tool == Tool.Bridge || tool == Tool.Airport)
+                val detail = if (editor) (if (refused) stringResource(Res.string.cant_edit_here) else null) else if (refusedHere) stringResource(refusalText(refusal)) else when (tool) {
                     Tool.Track -> if (removing) stringResource(Res.string.cost_lift, money(world.price(Prices.TRACK_REMOVE))) else stringResource(Res.string.cost_track, money(world.price(Prices.TRACK)), money(world.price(Prices.FOUNDATION)))
-                    Tool.Signals, Tool.Waypoint -> stringResource(Res.string.cost_signal, money(world.price(Prices.SIGNAL)))
+                    Tool.Signals -> stringResource(Res.string.cost_signal, money(world.price(Prices.SIGNAL)))
+                    Tool.Waypoint -> stringResource(Res.string.cost_waypoint, money(world.price(Prices.SIGNAL)))
                     Tool.Bridge -> stringResource(Res.string.cost_tile, money(world.price(Spans.COST[bridgeStyle])))
                     Tool.Wires, Tool.TramRails -> stringResource(Res.string.cost_tile, money(world.price(Prices.WIRE)))
                     Tool.Road -> stringResource(Res.string.cost_tile, money(world.price(Surface.COST[roadSurface])))
@@ -1292,7 +1313,7 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
                     Tool.Signals -> if (removing) null else signalKinds.getOrNull(signalKind)
                     else -> null
                 }
-                val trayDetail = listOfNotNull(picked, detail).joinToString(stringResource(Res.string.list_join)).ifEmpty { null }
+                val trayDetail = listOfNotNull(picked.takeUnless { refusedHere }, detail).joinToString(stringResource(Res.string.list_join)).ifEmpty { null }
                 val trackOptions = mutableListOf<@Composable RowScope.() -> Unit>()
                 when (tool) {
                     Tool.PlaceIndustry -> trackOptions += { IndustryKinds(world, industryKind) { industryKind = it } }
@@ -1329,7 +1350,7 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
                     }
                     else -> {}
                 }
-                ToolTray(tool, { tool = it; plan = null; stationPlan = null; signalPlan = null; removing = false }, trayDetail, folded, { folded = it }, layout.compact, trayWidth, options = trackOptions, editor = editor, warning = editor && refused) {
+                ToolTray(tool, { tool = it; refusal = Refusal.NONE; plan = null; stationPlan = null; signalPlan = null; removing = false }, trayDetail, folded, { folded = it }, layout.compact, trayWidth, options = trackOptions, editor = editor, warning = editor && refused || !editor && refusedHere) {
                     if (tool == Tool.PlaceIndustry) TrayToggle(Glyph.TurnRight, stringResource(Res.string.turn_industry), industryTurn != 0) { industryTurn = (industryTurn + 1) % 4 }
                     if (tool == Tool.Track || tool == Tool.Wires || tool == Tool.Signals || tool == Tool.Road || tool == Tool.TramRails || tool == Tool.Canal) TrayToggle(Glyph.Lift, stringResource(Res.string.remove_track), removing) { removing = !removing }
                     if (tool == Tool.Airport && airportKind != Airports.SEAPLANE && airportKind != Airports.HELIPORT) TrayToggle(Glyph.TurnRight, stringResource(Res.string.runway_other_way), !runwayAlongX) { runwayAlongX = !runwayAlongX }
@@ -1650,3 +1671,20 @@ private const val CAMERA_SHARE = 0.3f
 
 /** How long a piece of news shows under the strip. */
 private const val NEWS_MILLIS = 5000L
+
+/** What the tray says for [Refusal] [why]. */
+private fun refusalText(why: Int): StringResource = when (why) {
+    Refusal.NOT_YET -> Res.string.refuse_not_yet
+    Refusal.MONEY -> Res.string.not_enough_money
+    Refusal.TOWN -> Res.string.refuse_town
+    Refusal.NO_ROOM -> Res.string.refuse_no_room
+    Refusal.NOT_FLAT -> Res.string.refuse_not_flat
+    Refusal.NO_WATER -> Res.string.refuse_no_water
+    Refusal.NOT_STRAIGHT -> Res.string.refuse_not_straight
+    Refusal.NOTHING_TO_SPAN -> Res.string.refuse_nothing_to_span
+    Refusal.TOO_LONG -> Res.string.refuse_too_long
+    Refusal.NOT_LEVEL -> Res.string.refuse_not_level
+    Refusal.HILL -> Res.string.refuse_hill
+    Refusal.ENDS -> Res.string.refuse_ends
+    else -> Res.string.refuse_in_the_way
+}

@@ -65,6 +65,7 @@
     <string name="cost_track">%1$s a piece, %2$s more on a slope</string>
     <string name="cost_lift">%1$s a piece to lift</string>
     <string name="cost_signal">%1$s, tap again to change</string>
+    <string name="cost_waypoint">%1$s, tap straight track to make it a waypoint</string>
     <string name="cost_tile">%1$s a tile</string>
     <string name="cost_corner">%1$s a corner</string>
 
@@ -594,6 +595,18 @@
     <string name="back_to_editor">Back to the editor</string>
     <string name="continue_editing">Continue editing</string>
     <string name="cant_edit_here">Can't do that here</string>
+    <string name="refuse_not_yet">Not available yet</string>
+    <string name="refuse_town">The town won't allow it</string>
+    <string name="refuse_in_the_way">Something's in the way</string>
+    <string name="refuse_no_room">Not enough room</string>
+    <string name="refuse_not_flat">The land isn't flat</string>
+    <string name="refuse_no_water">Needs open water in front</string>
+    <string name="refuse_not_straight">Bridges go in a straight line</string>
+    <string name="refuse_nothing_to_span">Nothing to bridge</string>
+    <string name="refuse_too_long">Too long for this kind</string>
+    <string name="refuse_not_level">The ends aren't at the same height</string>
+    <string name="refuse_hill">The ground is higher than the deck</string>
+    <string name="refuse_ends">Something's in the way at an end</string>
     <string name="leave_unsaved">Leave without saving?</string>
     <string name="scenario_won">Scenario won</string>
     <string name="scenario_lost">Scenario lost</string>

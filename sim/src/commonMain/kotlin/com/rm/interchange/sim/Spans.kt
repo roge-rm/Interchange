@@ -99,18 +99,28 @@ private fun World.headFree(company: Company, x: Int, y: Int, axis: Int): Boolean
     return !stationTiles.containsKey(i) && !depotTiles.containsKey(i) && !townBuilt(i) && industryOf[i].toInt() == 0 && !spanHeads.containsKey(i) && !deck.containsKey(i)
 }
 
-/** What building [c] would cost, or -1 if it can't be built: the reason it can't is in the checks. */
-fun World.bridgeCost(company: Company, c: Command.Bridge): Long {
+/** What building [c] would cost, or -1 if it can't be built. */
+fun World.bridgeCost(company: Company, c: Command.Bridge): Long = bridgeSurvey(company, c).coerceAtLeast(-1)
+
+/** Why [company] can't build bridge [c], a [Refusal]; [Refusal.NONE] if it can. */
+fun World.bridgeRefusal(company: Company, c: Command.Bridge): Int {
+    val cost = bridgeSurvey(company, c)
+    return if (cost < 0) (-cost).toInt() else if (company.money < cost) Refusal.MONEY else Refusal.NONE
+}
+
+/** What building [c] would cost, or less than 0 if it can't be built: minus its [Refusal]. */
+private fun World.bridgeSurvey(company: Company, c: Command.Bridge): Long {
     val year = Calendar.year(startYear, day)
-    if (c.style !in Spans.TRESTLE..Spans.CONCRETE || year < Spans.FROM[c.style]) return -1
-    if (c.x0 != c.x1 && c.y0 != c.y1) return -1
+    if (c.style !in Spans.TRESTLE..Spans.CONCRETE || year < Spans.FROM[c.style]) return -Refusal.NOT_YET.toLong()
+    if (c.x0 != c.x1 && c.y0 != c.y1) return -Refusal.NOT_STRAIGHT.toLong()
     val axis = if (c.y0 == c.y1) Track.X else Track.Y
     val len = maxOf(kotlin.math.abs(c.x1 - c.x0), kotlin.math.abs(c.y1 - c.y0)) - 1
-    if (len < 1 || len > Spans.LONGEST[c.style]) return -1
-    if (!headFree(company, c.x0, c.y0, axis) || !headFree(company, c.x1, c.y1, axis)) return -1
+    if (len < 1) return -Refusal.NOTHING_TO_SPAN.toLong()
+    if (len > Spans.LONGEST[c.style]) return -Refusal.TOO_LONG.toLong()
+    if (!headFree(company, c.x0, c.y0, axis) || !headFree(company, c.x1, c.y1, axis)) return -Refusal.ENDS.toLong()
     val toward = if (axis == Track.X) (if (c.x1 > c.x0) Track.XP else Track.XM) else (if (c.y1 > c.y0) Track.YP else Track.YM)
     val h = headHeight(c.x0, c.y0, axis, toward)
-    if (headHeight(c.x1, c.y1, axis, Track.opposite(toward)) != h) return -1
+    if (headHeight(c.x1, c.y1, axis, Track.opposite(toward)) != h) return -Refusal.NOT_LEVEL.toLong()
     val dx = Track.dx(toward)
     val dy = Track.dy(toward)
     var cost = 0L
@@ -120,12 +130,12 @@ fun World.bridgeCost(company: Company, c: Command.Bridge): Long {
         val y = c.y0 + dy * k
         val i = index(x, y)
         // Over the land, nowhere above the deck, and nothing in the way.
-        if (maxOf(maxOf(heightAt(x, y), heightAt(x + 1, y)), maxOf(heightAt(x + 1, y + 1), heightAt(x, y + 1))) > h) return -1
+        if (maxOf(maxOf(heightAt(x, y), heightAt(x + 1, y)), maxOf(heightAt(x + 1, y + 1), heightAt(x, y + 1))) > h) return -Refusal.HILL.toLong()
         lowest = minOf(lowest, minOf(minOf(heightAt(x, y), heightAt(x + 1, y)), minOf(heightAt(x + 1, y + 1), heightAt(x, y + 1))))
-        if (deck.containsKey(i) || spanHeads.containsKey(i) || stationTiles.containsKey(i) || depotTiles.containsKey(i) || house[i].toInt() != 0 || industryOf[i].toInt() != 0) return -1
+        if (deck.containsKey(i) || spanHeads.containsKey(i) || stationTiles.containsKey(i) || depotTiles.containsKey(i) || house[i].toInt() != 0 || industryOf[i].toInt() != 0) return -Refusal.IN_THE_WAY.toLong()
         cost += price(Spans.COST[c.style])
     }
-    if (lowest >= h) return -1
+    if (lowest >= h) return -Refusal.NOTHING_TO_SPAN.toLong()
     return cost + 2 * price(Prices.TRACK) + treeCost(index(c.x0, c.y0)) + treeCost(index(c.x1, c.y1))
 }
 

@@ -161,33 +161,51 @@ fun World.airportOf(id: Int): Airport? {
     return airportTiles[t]?.let { airports.getOrNull(it) }
 }
 
-/** Builds an airport of [c]'s kind with its corner at ([x], [y]), joining a station of the company's within a tile or starting one. */
-internal fun World.buildAirport(company: Company, c: Command.Airport) {
+/** Where airport [c] would go, its runway's way and its tiles; or why it can't, a [Refusal]. */
+private class AirportSite(val refusal: Int, val axis: Int = Track.X, val tiles: List<Int> = emptyList())
+
+private fun World.airportSite(company: Company, c: Command.Airport): AirportSite {
     val kind = c.kind
-    if (kind !in 0 until Airports.COUNT || Calendar.year(startYear, day) < Airports.FROM[kind]) return
+    if (kind !in 0 until Airports.COUNT || Calendar.year(startYear, day) < Airports.FROM[kind]) return AirportSite(Refusal.NOT_YET)
     val axis: Int
     val tiles: List<Int>
     if (kind == Airports.SEAPLANE) {
-        if (!inside(c.x, c.y)) return
+        if (!inside(c.x, c.y)) return AirportSite(Refusal.NO_ROOM)
         val i = index(c.x, c.y)
-        if (!buildable(i)) return
+        if (!buildable(i)) return AirportSite(Refusal.IN_THE_WAY)
         // Its water: three tiles of open water straight out from one edge.
         axis = intArrayOf(Track.XM, Track.XP, Track.YM, Track.YP).firstOrNull { e ->
             (1..3).all { k -> val x = c.x + Track.dx(e) * k; val y = c.y + Track.dy(e) * k; inside(x, y) && isWater(x, y) && industryOf[index(x, y)].toInt() == 0 }
-        } ?: return
+        } ?: return AirportSite(Refusal.NO_WATER)
         tiles = listOf(i)
     } else {
         axis = if (c.axis == Track.Y) Track.Y else Track.X
         val w = if (axis == Track.X) Airports.LENGTH[kind] else Airports.WIDTH[kind]
         val h = if (axis == Track.X) Airports.WIDTH[kind] else Airports.LENGTH[kind]
-        if (!inside(c.x, c.y) || !inside(c.x + w - 1, c.y + h - 1)) return
+        if (!inside(c.x, c.y) || !inside(c.x + w - 1, c.y + h - 1)) return AirportSite(Refusal.NO_ROOM)
         val level = heightAt(c.x, c.y)
         tiles = (c.y until c.y + h).flatMap { ty -> (c.x until c.x + w).map { tx -> index(tx, ty) } }
-        for (i in tiles) if (!isFlat(i % width, i / width) || heightAt(i % width, i / width) != level || !buildable(i)) return
+        for (i in tiles) {
+            if (!isFlat(i % width, i / width) || heightAt(i % width, i / width) != level) return AirportSite(Refusal.NOT_FLAT)
+            if (!buildable(i)) return AirportSite(Refusal.IN_THE_WAY)
+        }
     }
-    if (townRefuses(company, c.x, c.y)) return
+    if (townRefuses(company, c.x, c.y)) return AirportSite(Refusal.TOWN)
     val cost = price(Airports.COST[kind]) + tiles.sumOf { treeCost(it) }
-    if (company.money < cost) return
+    if (company.money < cost) return AirportSite(Refusal.MONEY)
+    return AirportSite(Refusal.NONE, axis, tiles)
+}
+
+/** Why [company] can't build airport [c], a [Refusal]; [Refusal.NONE] if it can. */
+fun World.airportRefusal(company: Company, c: Command.Airport): Int = airportSite(company, c).refusal
+
+/** Builds an airport of [c]'s kind with its corner at ([x], [y]), joining a station of the company's within a tile or starting one. */
+internal fun World.buildAirport(company: Company, c: Command.Airport) {
+    val site = airportSite(company, c)
+    if (site.refusal != Refusal.NONE) return
+    val kind = c.kind
+    val axis = site.axis
+    val tiles = site.tiles
     var station: Station? = null
     for (t in tiles) for (y in t / width - 1..t / width + 1) for (x in t % width - 1..t % width + 1) {
         if (station != null || !inside(x, y)) continue

@@ -54,6 +54,7 @@
     <string name="cost_track">%1$s le tronçon, %2$s de plus en pente</string>
     <string name="cost_lift">%1$s pour enlever un tronçon</string>
     <string name="cost_signal">%1$s, touchez encore pour changer</string>
+    <string name="cost_waypoint">%1$s, touchez une voie droite pour en faire un point de passage</string>
     <string name="cost_tile">%1$s la case</string>
     <string name="cost_corner">%1$s le coin</string>
 
@@ -577,6 +578,18 @@
     <string name="back_to_editor">Retour à l'éditeur</string>
     <string name="continue_editing">Reprendre l'édition</string>
     <string name="cant_edit_here">Impossible ici</string>
+    <string name="refuse_not_yet">Pas encore disponible</string>
+    <string name="refuse_town">La ville refuse</string>
+    <string name="refuse_in_the_way">Quelque chose gêne</string>
+    <string name="refuse_no_room">Pas assez de place</string>
+    <string name="refuse_not_flat">Le terrain n'est pas plat</string>
+    <string name="refuse_no_water">Il faut de l'eau libre devant</string>
+    <string name="refuse_not_straight">Un pont va en ligne droite</string>
+    <string name="refuse_nothing_to_span">Rien à franchir</string>
+    <string name="refuse_too_long">Trop long pour ce type</string>
+    <string name="refuse_not_level">Les extrémités ne sont pas à la même hauteur</string>
+    <string name="refuse_hill">Le sol dépasse le tablier</string>
+    <string name="refuse_ends">Quelque chose gêne à une extrémité</string>
     <string name="leave_unsaved">Quitter sans enregistrer ?</string>
     <string name="scenario_won">Scénario gagné</string>
     <string name="scenario_lost">Scénario perdu</string>
