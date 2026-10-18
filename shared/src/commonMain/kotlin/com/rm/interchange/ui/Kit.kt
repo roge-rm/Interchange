@@ -29,9 +29,15 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
@@ -70,9 +76,32 @@ fun BigButton(text: String, primary: Boolean = false, enabled: Boolean = true, g
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         glyph?.let { GlyphIcon(it, tint, Modifier.size(20.dp)) }
-        Text(text, color = tint, fontSize = 16.sp, fontWeight = if (primary) FontWeight.SemiBold else FontWeight.Normal)
+        // Smaller words when a line would break inside a word, so a narrow button in a Grid wraps between words only.
+        val style = KitType.Lead.copy(fontWeight = if (primary) FontWeight.SemiBold else FontWeight.Normal)
+        var scale by remember(text) { mutableFloatStateOf(1f) }
+        var width by remember(text) { mutableIntStateOf(-1) }
+        // Words aren't drawn while they're still shrinking, so a broken word never shows.
+        var settled by remember(text) { mutableStateOf(false) }
+        Text(
+            text, color = tint, style = if (scale < 1f) style.copy(fontSize = style.fontSize * scale) else style,
+            modifier = Modifier.drawWithContent { if (settled) drawContent() },
+            onTextLayout = { r ->
+                // A new width starts again from full size.
+                val room = r.layoutInput.constraints.maxWidth
+                val fresh = room != width
+                width = room
+                val shrink = scale > 0.7f && (0 until r.lineCount - 1).any { breaksWord(text, r.getLineEnd(it)) }
+                if (fresh && scale < 1f) { scale = 1f; settled = false }
+                else if (shrink) { scale = (scale - 0.05f).coerceAtLeast(0.7f); settled = false }
+                else settled = true
+            },
+        )
     }
 }
+
+/** Whether a line ending at [end] in [text] breaks inside a word. */
+private fun breaksWord(text: String, end: Int) =
+    end in 1 until text.length && !text[end - 1].isWhitespace() && !text[end].isWhitespace() && text[end - 1] != '-'
 
 /**
  * A window over whatever's behind it, which dims and closes the window when
@@ -153,8 +182,8 @@ fun ListRow(
     ) {
         Badge(glyph, tint, insignia)
         Column(Modifier.weight(1f)) {
-            Text(title, color = c.text, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
-            if (line != null) Text(line, color = c.textDim, fontSize = 13.sp)
+            Text(title, color = c.text, style = KitType.ListTitle)
+            if (line != null) Text(line, color = c.textDim, style = KitType.ListLine)
         }
         end()
     }
@@ -186,8 +215,8 @@ fun <T> StepSlider(label: String, options: List<T>, value: T, name: @Composable 
     Column {
         // The slider reads out its name and value itself, so this line is for the eyes only.
         Row(Modifier.fillMaxWidth().clearAndSetSemantics { }, verticalAlignment = Alignment.CenterVertically) {
-            Text(label, color = c.text, fontSize = 15.sp, modifier = Modifier.weight(1f))
-            Text(shown, color = c.text, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+            Text(label, color = c.text, style = KitType.Label, modifier = Modifier.weight(1f))
+            Text(shown, color = c.text, style = KitType.Label, fontWeight = FontWeight.SemiBold)
         }
         Slider(
             value = at.toFloat(),
@@ -248,7 +277,7 @@ fun <T> FillChips(options: List<T>, selected: T, label: @Composable (T) -> Strin
                     .padding(horizontal = 6.dp, vertical = 8.dp),
                 contentAlignment = Alignment.Center,
             ) {
-                Text(label(o), color = if (on) c.onAccent else c.text, fontSize = 14.sp, textAlign = TextAlign.Center, maxLines = 2)
+                Text(label(o), color = if (on) c.onAccent else c.text, style = KitType.Body, textAlign = TextAlign.Center, maxLines = 2)
             }
         }
     }
@@ -265,7 +294,7 @@ fun TogglePill(text: String, on: Boolean, modifier: Modifier = Modifier, onChang
             .padding(horizontal = 6.dp, vertical = 10.dp),
         contentAlignment = Alignment.Center,
     ) {
-        Text(text, color = if (on) c.onAccent else c.text, fontSize = 14.sp, textAlign = TextAlign.Center, maxLines = 2)
+        Text(text, color = if (on) c.onAccent else c.text, style = KitType.Body, textAlign = TextAlign.Center, maxLines = 2)
     }
 }
 

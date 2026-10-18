@@ -120,6 +120,14 @@ object KitType {
     val Dim = TextStyle(fontSize = 12.sp, fontFeatureSettings = "tnum")
     /** Labels over values in [StatColumns], percents by a bar. */
     val Small = TextStyle(fontSize = 11.sp, fontFeatureSettings = "tnum")
+    /** The title of a [ListRow], a goal or a company's money in a window. */
+    val ListTitle = TextStyle(fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+    /** The line under a [ListRow]'s title, notes and warnings under a control, the rows of a finance table. */
+    val ListLine = TextStyle(fontSize = 13.sp)
+    /** A setting's label in a window or screen, a [StepSlider]'s, and a scenario's briefing. */
+    val Label = TextStyle(fontSize = 15.sp)
+    /** The words on a [BigButton], a server or address to join, a scenario's title on its result. */
+    val Lead = TextStyle(fontSize = 16.sp)
 }
 
 /** Paddings, gaps and sizes. */

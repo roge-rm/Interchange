@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
@@ -155,8 +156,8 @@ fun ScenariosWindow(
     val shown = open
     if (shown != null) {
         Window(shown.title, { open = null; deleting = false }, Glyph.Flag) {
-            if (error != null) Text(error, color = c.bad, fontSize = 14.sp)
-            if (shown.startYear > 0) Text(stringResource(Res.string.scenario_line, shown.startYear), color = c.textDim, fontSize = 13.sp)
+            if (error != null) Text(error, color = c.bad, style = KitType.Body)
+            if (shown.startYear > 0) Text(stringResource(Res.string.scenario_line, shown.startYear), color = c.textDim, style = KitType.ListLine)
             Paragraphs(shown.intro)
             BigButton(stringResource(Res.string.play), primary = true, glyph = Glyph.Play) { onPlay(shown) }
             if (shown.own) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -171,11 +172,11 @@ fun ScenariosWindow(
         return
     }
     Window(stringResource(Res.string.scenarios), onClose, Glyph.Flag) {
-        if (error != null) Text(error, color = c.bad, fontSize = 14.sp)
+        if (error != null) Text(error, color = c.bad, style = KitType.Body)
         onContinue?.let { BigButton(stringResource(Res.string.continue_editing), primary = true, glyph = Glyph.Land, onClick = it) }
         BigButton(stringResource(Res.string.campaign), primary = onContinue == null, glyph = Glyph.Flag, onClick = onCampaign)
         BigButton(stringResource(Res.string.new_scenario), glyph = Glyph.Plus, onClick = onNew)
-        if (list.isEmpty()) Text(stringResource(Res.string.no_scenarios), color = c.textDim, fontSize = 14.sp)
+        if (list.isEmpty()) Text(stringResource(Res.string.no_scenarios), color = c.textDim, style = KitType.Body)
         val builtIn = stringResource(Res.string.scenario_built_in)
         for (e in list) {
             val year = if (e.startYear > 0) stringResource(Res.string.scenario_line, e.startYear) else null
@@ -189,22 +190,27 @@ fun ScenariosWindow(
 @Composable
 private fun Paragraphs(text: String) {
     val c = LocalColors.current
-    for (p in text.split(Regex("\n\\s*\n")).map { it.trim() }.filter { it.isNotEmpty() }) Text(p, color = c.text, fontSize = 15.sp)
+    for (p in text.split(Regex("\n\\s*\n")).map { it.trim() }.filter { it.isNotEmpty() }) Text(p, color = c.text, style = KitType.Label)
 }
 
 /** The menu in the scenario editor: the scenario, its goals, saving it, trying it, settings and the title screen, which asks once more. */
 @Composable
 fun EditorMenuWindow(saved: Boolean, onScenario: () -> Unit, onGoals: () -> Unit, onSave: () -> Unit, onTest: () -> Unit, onSettings: () -> Unit, onTitle: () -> Unit, onClose: () -> Unit) {
     var leaving by remember { mutableStateOf(false) }
-    Window(stringResource(Res.string.editor), onClose, Glyph.Menu) {
-        BigButton(stringResource(Res.string.scenario), glyph = Glyph.Flag, onClick = onScenario)
-        BigButton(stringResource(Res.string.goals), glyph = Glyph.Tick, onClick = onGoals)
-        BigButton(stringResource(if (saved) Res.string.saved else Res.string.save_scenario), primary = !saved, glyph = Glyph.Save, onClick = onSave)
-        BigButton(stringResource(Res.string.test_play), glyph = Glyph.Play, onClick = onTest)
-        BigButton(stringResource(Res.string.settings), glyph = Glyph.Gear, onClick = onSettings)
-        BigButton(stringResource(if (leaving && !saved) Res.string.leave_unsaved else Res.string.title_screen), primary = leaving && !saved, glyph = Glyph.Exit) {
+    // Each entry's words, glyph, whether it's the main one, and what it does, in two columns as the game's menu has.
+    class Entry(val text: String, val glyph: Glyph, val primary: Boolean = false, val onClick: () -> Unit)
+    val entries = listOf(
+        Entry(stringResource(Res.string.scenario), Glyph.Newspaper, onClick = onScenario),
+        Entry(stringResource(Res.string.goals), Glyph.Flag, onClick = onGoals),
+        Entry(stringResource(if (saved) Res.string.saved else Res.string.save_scenario), Glyph.Save, !saved, onSave),
+        Entry(stringResource(Res.string.test_play), Glyph.Play, onClick = onTest),
+        Entry(stringResource(Res.string.settings), Glyph.Gear, onClick = onSettings),
+        Entry(stringResource(if (leaving && !saved) Res.string.leave_unsaved else Res.string.title_screen), Glyph.Exit, leaving && !saved) {
             if (saved || leaving) onTitle() else leaving = true
-        }
+        },
+    )
+    Window(stringResource(Res.string.editor), onClose, Glyph.Menu) {
+        Grid(entries) { e -> BigButton(e.text, e.primary, glyph = e.glyph, modifier = Modifier.fillMaxHeight(), onClick = e.onClick) }
     }
 }
 
@@ -240,7 +246,7 @@ fun ScenarioWindow(world: World, send: (Command) -> Unit, onClose: () -> Unit) {
         send(Command.SetScenario(me, title, intro, moneyText.toLongOrNull() ?: s.money, loanText.toLongOrNull() ?: 0L, win, year, s.chapter))
         onClose()
     }
-    Window(stringResource(Res.string.scenario), ::set, Glyph.Flag) {
+    Window(stringResource(Res.string.scenario), ::set, Glyph.Newspaper) {
         Field(title, stringResource(Res.string.scenario_title), { title = it.take(Scenario.TITLE_MOST) })
         LongField(intro, stringResource(Res.string.scenario_intro)) { intro = it.take(Scenario.INTRO_MOST) }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -332,7 +338,7 @@ fun EditorGoalsWindow(world: World, draft: GoalDraft?, onDraft: (GoalDraft?) -> 
             BigButton(stringResource(Res.string.add_goal), primary = true, glyph = Glyph.Plus) {
                 onDraft(GoalDraft().also { it.deadline = (start + 10).toString(); it.amount = defaultAmount(world, it).toString() })
             }
-            if (goals.isEmpty()) Text(stringResource(Res.string.no_goals_yet), color = c.textDim, fontSize = 14.sp)
+            if (goals.isEmpty()) Text(stringResource(Res.string.no_goals_yet), color = c.textDim, style = KitType.Body)
             for ((k, g) in goals.withIndex()) {
                 ListRow(goalGlyph(g.kind), goalText(world, g), null, null) {
                     SquareButton(Glyph.Remove, stringResource(Res.string.delete), 34.dp) {
@@ -454,7 +460,7 @@ fun SaveScenarioWindow(world: World, onSave: (String) -> Unit, onClose: () -> Un
     val clean = SavedScenarios.fileName(name)
     Window(stringResource(Res.string.save_scenario), onClose, Glyph.Save) {
         Field(name, stringResource(Res.string.file_name), { name = it.take(Scenario.TITLE_MOST) })
-        if (clean.isNotEmpty() && SavedScenarios.exists(clean)) Text(stringResource(Res.string.file_exists), color = c.warn, fontSize = 13.sp)
+        if (clean.isNotEmpty() && SavedScenarios.exists(clean)) Text(stringResource(Res.string.file_exists), color = c.warn, style = KitType.ListLine)
         BigButton(stringResource(Res.string.save_scenario), primary = true, enabled = clean.isNotEmpty(), glyph = Glyph.Save) { onSave(clean) }
     }
 }
@@ -466,12 +472,12 @@ fun IntroWindow(world: World, onStart: () -> Unit) {
     val s = world.scenario ?: return
     val rules = stringArrayResource(Res.array.win_rules)
     Window(s.title.ifBlank { stringResource(Res.string.untitled) }, onStart, Glyph.Flag) {
-        Text(date(world.day, world.startYear), color = c.textDim, fontSize = 13.sp)
+        Text(date(world.day, world.startYear), color = c.textDim, style = KitType.ListLine)
         Paragraphs(s.intro)
         if (world.goals.isNotEmpty()) {
             Head(stringResource(Res.string.goals), Glyph.Flag)
             for (g in world.goals) ListRow(goalGlyph(g.kind), goalText(world, g), null, null)
-            if (world.goals.size > 1) Text(rules.getOrElse(s.win) { "" }, color = c.textDim, fontSize = 13.sp)
+            if (world.goals.size > 1) Text(rules.getOrElse(s.win) { "" }, color = c.textDim, style = KitType.ListLine)
         }
         BigButton(stringResource(Res.string.start), primary = true, glyph = Glyph.Play, onClick = onStart)
     }
@@ -484,8 +490,8 @@ fun OutcomeWindow(world: World, onKeepPlaying: () -> Unit, onTitle: () -> Unit) 
     val s = world.scenario ?: return
     val won = s.outcome == Scenario.WON
     Window(stringResource(if (won) Res.string.scenario_won else Res.string.scenario_lost), onKeepPlaying, if (won) Glyph.Tick else Glyph.Flag) {
-        if (s.title.isNotBlank()) Text(s.title, color = c.text, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
-        Text(stringResource(if (won) Res.string.scenario_won_line else Res.string.scenario_lost_line), color = c.text, fontSize = 15.sp)
+        if (s.title.isNotBlank()) Text(s.title, color = c.text, style = KitType.Lead, fontWeight = FontWeight.SemiBold)
+        Text(stringResource(if (won) Res.string.scenario_won_line else Res.string.scenario_lost_line), color = c.text, style = KitType.Label)
         BigButton(stringResource(Res.string.keep_playing), primary = true, glyph = Glyph.Play, onClick = onKeepPlaying)
         BigButton(stringResource(Res.string.title_screen), glyph = Glyph.Exit, onClick = onTitle)
     }

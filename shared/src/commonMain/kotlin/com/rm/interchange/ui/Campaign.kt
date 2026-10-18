@@ -48,7 +48,7 @@ fun CampaignWindow(won: Set<String>, error: String?, onPlay: (id: String, title:
     val locked = stringResource(Res.string.chapter_locked)
     val wonLine = stringResource(Res.string.chapter_won)
     Window(stringResource(Res.string.campaign), onClose, Glyph.Flag) {
-        if (error != null) Text(error, color = c.bad, fontSize = 14.sp)
+        if (error != null) Text(error, color = c.bad, style = KitType.Body)
         for ((k, ch) in Campaign.CHAPTERS.withIndex()) {
             val title = stringResource(chapterTitle(ch.id))
             val intro = chapterIntro(ch.id)?.let { stringResource(it) }

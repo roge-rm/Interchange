@@ -120,7 +120,7 @@ fun TitleScreen(continueLine: String?, onContinue: () -> Unit, onNew: () -> Unit
         }
         if (continueLine != null) {
             BigButton(stringResource(Res.string.continue_game), primary = true, glyph = Glyph.Play, onClick = onContinue)
-            Text(continueLine, color = c.textDim, fontSize = 13.sp, modifier = Modifier.padding(start = 4.dp, bottom = 6.dp))
+            Text(continueLine, color = c.textDim, style = KitType.ListLine, modifier = Modifier.padding(start = 4.dp, bottom = 6.dp))
         }
         BigButton(stringResource(Res.string.new_game), primary = continueLine == null, glyph = Glyph.Plus, onClick = onNew)
         BigButton(stringResource(Res.string.load), glyph = Glyph.Folder, onClick = onLoad)
@@ -202,7 +202,7 @@ fun NewGameScreen(packs: List<Pack>, onStart: (NewGame, List<Pack>) -> Unit, onB
         ) {
             val p = preview
             if (p != null) Image(p, null, Modifier.fillMaxSize().padding(6.dp), contentScale = ContentScale.Fit, filterQuality = FilterQuality.None)
-            else if (width.toLong() * height > PREVIEW_MOST) Text(stringResource(Res.string.no_preview), color = c.textDim, fontSize = 13.sp)
+            else if (width.toLong() * height > PREVIEW_MOST) Text(stringResource(Res.string.no_preview), color = c.textDim, style = KitType.ListLine)
         }
     }
     val identity: @Composable () -> Unit = {
@@ -232,7 +232,7 @@ fun NewGameScreen(packs: List<Pack>, onStart: (NewGame, List<Pack>) -> Unit, onB
     val lang = languageCode()
     val options: @Composable (Boolean) -> Unit = { wide ->
         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text(stringResource(Res.string.region), color = c.text, fontSize = 15.sp)
+            Text(stringResource(Res.string.region), color = c.text, style = KitType.Label)
             for (row in Region.entries.chunked(if (wide) 6 else 3)) FillChips(row, region, { r -> regionNames.getOrElse(r.ordinal) { r.name } }) { region = it }
         }
         SideBySide(wide, {
@@ -262,11 +262,11 @@ fun NewGameScreen(packs: List<Pack>, onStart: (NewGame, List<Pack>) -> Unit, onB
         val growthNames = stringArrayResource(Res.array.town_growth_levels)
         val goalNames = stringArrayResource(Res.array.goal_sets)
         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text(stringResource(Res.string.town_growth), color = c.text, fontSize = 15.sp)
+            Text(stringResource(Res.string.town_growth), color = c.text, style = KitType.Label)
             FillChips(com.rm.interchange.sim.TownGrowth.entries, townGrowth, { g -> growthNames.getOrElse(g.ordinal) { g.name } }) { townGrowth = it }
         }
         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text(stringResource(Res.string.goals), color = c.text, fontSize = 15.sp)
+            Text(stringResource(Res.string.goals), color = c.text, style = KitType.Label)
             val sets = com.rm.interchange.sim.GoalSet.entries
             // Narrow, none and mixed above the three of one kind.
             val rows = if (wide) listOf(sets) else listOf(listOf(sets.first(), sets.last()), sets.subList(1, sets.size - 1))
@@ -281,14 +281,14 @@ fun NewGameScreen(packs: List<Pack>, onStart: (NewGame, List<Pack>) -> Unit, onB
             TogglePill(stringResource(Res.string.collisions), collisions, Modifier.weight(1f).fillMaxHeight()) { collisions = it }
         }
         if (packs.isNotEmpty()) {
-            Text(stringResource(Res.string.packs), color = c.text, fontSize = 15.sp)
+            Text(stringResource(Res.string.packs), color = c.text, style = KitType.Label)
             for (row in packs.chunked(2)) {
                 Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     for (p in row) TogglePill(p.name(lang), p.id !in off, Modifier.weight(1f).fillMaxHeight()) { on -> off = if (on) off - p.id else off + p.id }
                     if (row.size == 1) Box(Modifier.weight(1f))
                 }
             }
-            if (clash != null) Text(stringResource(Res.string.packs_clash, clash), color = c.bad, fontSize = 13.sp)
+            if (clash != null) Text(stringResource(Res.string.packs_clash, clash), color = c.bad, style = KitType.ListLine)
         }
     }
     val footer: @Composable () -> Unit = {
@@ -396,8 +396,8 @@ fun LoadWindow(saves: List<SavedGames.Entry>, error: String?, onLoad: (SavedGame
     val c = LocalColors.current
     var deleting by remember { mutableStateOf<String?>(null) }
     Window(stringResource(Res.string.load), onClose, Glyph.Folder) {
-        if (error != null) Text(error, color = c.bad, fontSize = 14.sp)
-        if (saves.isEmpty()) Text(stringResource(Res.string.no_saves), color = c.textDim, fontSize = 14.sp)
+        if (error != null) Text(error, color = c.bad, style = KitType.Body)
+        if (saves.isEmpty()) Text(stringResource(Res.string.no_saves), color = c.textDim, style = KitType.Body)
         for (s in saves) {
             val auto = s.name == SavedGames.AUTOSAVE
             val day = date(s.day, s.startYear)
@@ -417,7 +417,7 @@ fun PacksWindow(packs: List<Pack>, adding: Boolean, message: String?, failed: Bo
     var removing by remember { mutableStateOf<String?>(null) }
     Window(stringResource(Res.string.packs), onClose, Glyph.Package) {
         BigButton(stringResource(if (adding) Res.string.adding_pack else Res.string.add_pack), primary = true, enabled = !adding, glyph = Glyph.Plus, onClick = onAdd)
-        if (message != null) Text(message, color = if (failed) c.bad else c.text, fontSize = 14.sp)
+        if (message != null) Text(message, color = if (failed) c.bad else c.text, style = KitType.Body)
         for (p in listOf(Packs.BASE) + packs) {
             val about = p.description(lang)
             PictureRow(
@@ -520,12 +520,10 @@ fun FinanceWindow(runner: com.rm.interchange.server.GameThread, onClose: () -> U
         while (true) androidx.compose.runtime.withFrameNanos { value = runner.view?.company }
     }
     val co = company ?: return
-    Window(stringResource(Res.string.finances), onClose, Glyph.Save) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Column(Modifier.weight(1f)) {
-                Text(stringResource(Res.string.money_line, money(co.money)), color = if (co.money < 0) c.bad else c.text, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
-                Text(stringResource(Res.string.loan_line, money(co.loan), money(co.maxLoan)), color = c.textDim, fontSize = 13.sp)
-            }
+    Window(stringResource(Res.string.finances), onClose, Glyph.Graph) {
+        InfoRow(stringResource(Res.string.stat_money), money(co.money), valueColour = if (co.money < 0) c.bad else null)
+        InfoRow(stringResource(Res.string.start_loan), stringResource(Res.string.loan_line, money(co.loan), money(co.maxLoan)))
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(KitSpace.Gap, Alignment.End)) {
             ActionButton(stringResource(Res.string.borrow), enabled = co.loan < co.maxLoan) { runner.request(com.rm.interchange.sim.Command.Loan(me, borrow = true)) }
             ActionButton(stringResource(Res.string.repay), enabled = co.loan > 0 && co.money >= com.rm.interchange.sim.Prices.LOAN_STEP) { runner.request(com.rm.interchange.sim.Command.Loan(me, borrow = false)) }
         }
@@ -542,9 +540,9 @@ fun FinanceWindow(runner: com.rm.interchange.server.GameThread, onClose: () -> U
         @Composable
         fun line(label: String, a: String, b: String, strong: Boolean = false, colour: androidx.compose.ui.graphics.Color = c.text) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(label, color = c.text, fontSize = 13.sp, modifier = Modifier.weight(1f), fontWeight = if (strong) FontWeight.SemiBold else FontWeight.Normal)
-                Text(a, color = colour, fontSize = 13.sp, modifier = Modifier.width(96.dp), textAlign = androidx.compose.ui.text.style.TextAlign.End, fontWeight = if (strong) FontWeight.SemiBold else FontWeight.Normal)
-                Text(b, color = c.textDim, fontSize = 13.sp, modifier = Modifier.width(96.dp), textAlign = androidx.compose.ui.text.style.TextAlign.End)
+                Text(label, color = c.text, style = KitType.ListLine, modifier = Modifier.weight(1f), fontWeight = if (strong) FontWeight.SemiBold else FontWeight.Normal)
+                Text(a, color = colour, style = KitType.ListLine, modifier = Modifier.width(96.dp), textAlign = androidx.compose.ui.text.style.TextAlign.End, fontWeight = if (strong) FontWeight.SemiBold else FontWeight.Normal)
+                Text(b, color = c.textDim, style = KitType.ListLine, modifier = Modifier.width(96.dp), textAlign = androidx.compose.ui.text.style.TextAlign.End)
             }
         }
         line("", stringResource(Res.string.this_year), stringResource(Res.string.last_year), colour = c.textDim)
@@ -772,7 +770,7 @@ fun GoalsWindow(world: World, onGo: (Float, Float) -> Unit, onClose: () -> Unit)
     val me = LocalCompany.current
     val months = stringArrayResource(Res.array.months)
     Window(stringResource(Res.string.goals), onClose, Glyph.Flag) {
-        if (world.goals.isEmpty()) Text(stringResource(Res.string.no_goals), color = c.textDim, fontSize = 14.sp)
+        if (world.goals.isEmpty()) Text(stringResource(Res.string.no_goals), color = c.textDim, style = KitType.Body)
         val order = world.goals.withIndex().sortedWith(compareBy({ it.value.status != Goal.OPEN }, { it.index }))
         for ((i, g) in order) {
             val place = goalPlace(world, i)
@@ -800,12 +798,10 @@ fun GoalsWindow(world: World, onGo: (Float, Float) -> Unit, onClose: () -> Unit)
                         Goal.FAILED -> c.textDim
                         else -> null
                     }
-                    Box(Modifier.size(36.dp).clip(RoundedCornerShape(8.dp)).background(tint ?: c.accent), contentAlignment = Alignment.Center) {
-                        GlyphIcon(glyph, if (tint != null) androidx.compose.ui.graphics.Color.White else c.onAccent, Modifier.size(18.dp))
-                    }
+                    Badge(glyph, tint)
                     Column(Modifier.weight(1f)) {
-                        Text(goalText(world, g), color = if (g.status == Goal.FAILED) c.textDim else c.text, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
-                        if (status.isNotEmpty()) Text(status, color = if (g.status == Goal.FAILED) c.bad else c.textDim, fontSize = 13.sp)
+                        Text(goalText(world, g), color = if (g.status == Goal.FAILED) c.textDim else c.text, style = KitType.ListTitle)
+                        if (status.isNotEmpty()) Text(status, color = if (g.status == Goal.FAILED) c.bad else c.textDim, style = KitType.ListLine)
                     }
                     if (g.status == Goal.MET) GlyphIcon(Glyph.Tick, c.good, Modifier.size(22.dp))
                 }
@@ -828,13 +824,10 @@ private fun goalCount(world: World, g: Goal, company: Int, named: Boolean): Stri
 /** How far [company] has got with [g], as a bar in its colour. */
 @Composable
 private fun GoalBar(world: World, g: Goal, company: Int) {
-    val c = LocalColors.current
     val got = world.goalProgress(g, company).coerceAtLeast(0L)
     val done = if (g.amount > 0) (got.toFloat() / g.amount).coerceIn(0f, 1f) else 1f
-    // Lined up under the goal's words, past its glyph.
-    Box(Modifier.fillMaxWidth().padding(start = 46.dp, bottom = 2.dp).height(8.dp).clip(RoundedCornerShape(4.dp)).background(c.page)) {
-        if (done > 0f) Box(Modifier.fillMaxHeight().fillMaxWidth(done).clip(RoundedCornerShape(4.dp)).background(com.rm.interchange.map.companyColour(company)))
-    }
+    // Lined up under the goal's words, past its badge.
+    FillBar(done, Modifier.fillMaxWidth().padding(start = 46.dp, bottom = 2.dp), com.rm.interchange.map.companyColour(company))
 }
 
 /** Subsidies on offer, and those won with whoever won them; a tap goes to where the route starts. */
@@ -842,7 +835,7 @@ private fun GoalBar(world: World, g: Goal, company: Int) {
 fun SubsidiesWindow(world: World, onGo: (Float, Float) -> Unit, onClose: () -> Unit) {
     Window(stringResource(Res.string.subsidies), onClose, Glyph.Money) {
         val open = world.subsidies.withIndex().filter { it.value.open }.sortedWith(compareBy({ it.value.company >= 0 }, { it.index }))
-        if (open.isEmpty()) Text(stringResource(Res.string.no_subsidies), color = LocalColors.current.textDim, fontSize = 14.sp)
+        if (open.isEmpty()) Text(stringResource(Res.string.no_subsidies), color = LocalColors.current.textDim, style = KitType.Body)
         for ((i, s) in open) {
             val won = world.companies.getOrNull(s.company)
             // A subsidy counts months of work; the window shows months on the calendar.

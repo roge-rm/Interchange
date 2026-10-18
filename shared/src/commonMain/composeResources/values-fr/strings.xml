@@ -234,8 +234,7 @@
 
     <!-- Argent -->
     <string name="finances">Finances</string>
-    <string name="money_line">Argent : %1$s</string>
-    <string name="loan_line">Emprunt %1$s sur %2$s</string>
+    <string name="loan_line">%1$s sur %2$s</string>
     <string name="borrow">Emprunter</string>
     <string name="repay">Rembourser</string>
     <string name="the_books">Comptes</string>

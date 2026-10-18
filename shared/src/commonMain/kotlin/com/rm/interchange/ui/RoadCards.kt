@@ -50,17 +50,13 @@ fun GarageCard(view: WorldView, roster: Roster, depot: Int, year: Int, funds: Lo
             },
             footer = {
                 picked?.let { e ->
-                    if (e.tram) Text(stringResource(Res.string.needs_tram_rails), color = c.textDim, fontSize = 13.sp)
+                    if (e.tram) Text(stringResource(Res.string.needs_tram_rails), color = c.textDim, style = KitType.ListLine)
                     BuyButton(price(e.cost), funds) { send(Command.BuyRoadVehicle(me, depot, e.id, if (cargo in e.cargoes) cargo else -1)) }
                 }
             },
             inDepot = {
                 for (v in view.roadVehicles.filter { it.depot == depot && it.inDepot }) {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text(roadVehicleName(v), color = c.text, fontSize = 13.sp, modifier = Modifier.weight(1f))
-                        ActionButton(stringResource(Res.string.orders)) { onVehicle(v.id) }
-                        ActionButton(stringResource(if (v.running) Res.string.stop else Res.string.start), strong = !v.running) { send(Command.RoadOrder(me, v.id, Command.TrainOrder.START_STOP)) }
-                    }
+                    InDepotRow(roadVehicleName(v), v.running, { onVehicle(v.id) }) { send(Command.RoadOrder(me, v.id, Command.TrainOrder.START_STOP)) }
                 }
             },
         )

@@ -187,18 +187,18 @@ fun DepotCard(view: WorldView, roster: Roster, depot: Int, year: Int, funds: Lon
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Text(
                             if (w == null || n == 0) e.name(lang) else stringResource(Res.string.consist_line, e.name(lang), n, if (n == 1) w.name(lang) else w.plural(lang)),
-                            color = c.text, fontSize = 13.sp, maxLines = 2, modifier = Modifier.weight(1f),
+                            color = c.text, style = KitType.ListLine, maxLines = 2, modifier = Modifier.weight(1f),
                         )
                         if (w != null) {
                             SquareButton(Glyph.Minus, stringResource(Res.string.fewer_wagons), 32.dp, enabled = count > 0) { count-- }
-                            Text(count.toString(), color = c.text, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center, modifier = Modifier.width(24.dp))
+                            Text(count.toString(), color = c.text, style = KitType.RowTitle, textAlign = TextAlign.Center, modifier = Modifier.width(24.dp))
                             SquareButton(Glyph.Plus, stringResource(Res.string.more_wagons), 32.dp, enabled = count < MAX_WAGONS) { count++ }
                         }
                     }
-                    if (w == null) Text(stringResource(Res.string.no_wagons_on_sale), color = c.warn, fontSize = 13.sp)
+                    if (w == null) Text(stringResource(Res.string.no_wagons_on_sale), color = c.warn, style = KitType.ListLine)
                     // Electric engines need wires over the depot to get out.
                     val unwired = e.traction == Traction.ELECTRIC && view.depots.firstOrNull { it.id == depot }?.wired != true
-                    if (unwired) Text(stringResource(Res.string.depot_needs_wires), color = c.warn, fontSize = 13.sp)
+                    if (unwired) Text(stringResource(Res.string.depot_needs_wires), color = c.warn, style = KitType.ListLine)
                     BuyButton(cost, funds, blocked = unwired || w == null) {
                         send(Command.BuyTrain(me, depot, e.id, w?.id ?: 0, n, if (cargo in choices) cargo else -1))
                     }
@@ -206,11 +206,7 @@ fun DepotCard(view: WorldView, roster: Roster, depot: Int, year: Int, funds: Lon
             },
             inDepot = {
                 for (t in view.trains.filter { it.depot == depot && it.inDepot }) {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text(trainName(t), color = c.text, fontSize = 13.sp, modifier = Modifier.weight(1f))
-                        ActionButton(stringResource(Res.string.orders)) { onTrain(t.id) }
-                        ActionButton(stringResource(if (t.running) Res.string.stop else Res.string.start), strong = !t.running) { send(Command.TrainOrder(me, t.id, Command.TrainOrder.START_STOP)) }
-                    }
+                    InDepotRow(trainName(t), t.running, { onTrain(t.id) }) { send(Command.TrainOrder(me, t.id, Command.TrainOrder.START_STOP)) }
                 }
             },
         )

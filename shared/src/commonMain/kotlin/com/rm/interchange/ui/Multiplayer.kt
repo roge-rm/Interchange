@@ -308,8 +308,8 @@ fun MultiplayerWindow(settings: Settings, onJoined: (Remote, World) -> Unit, onC
             ListRow(Glyph.Inspect, stringResource(Res.string.watch), null, if (busy == null) ({ join(game, Message.SPECTATE) }) else null)
             if (asked) Field(password, passwordLabel, { password = it }, secret = true)
             if (askedCompany) Field(companyPassword, stringResource(Res.string.company_password), { companyPassword = it.take(Host.PASSWORD_MOST) }, secret = true)
-            if (error != null) Text(error ?: "", color = c.bad, fontSize = 14.sp)
-            busy?.let { Text(it, color = c.textDim, fontSize = 14.sp) }
+            if (error != null) Text(error ?: "", color = c.bad, style = KitType.Body)
+            busy?.let { Text(it, color = c.textDim, style = KitType.Body) }
             cancel?.let { stop -> BigButton(stringResource(Res.string.cancel), glyph = Glyph.Remove) { stop.set(true) } }
             if (asked || askedCompany) BigButton(stringResource(Res.string.join), primary = true, enabled = busy == null, glyph = Glyph.Play) { join(game, choice) }
             BigButton(stringResource(Res.string.back), enabled = busy == null, glyph = Glyph.Back) {
@@ -317,11 +317,11 @@ fun MultiplayerWindow(settings: Settings, onJoined: (Remote, World) -> Unit, onC
                 error = null
             }
         } else {
-            if (error != null) Text(error ?: "", color = c.bad, fontSize = 14.sp)
-            busy?.let { Text(it, color = c.textDim, fontSize = 14.sp) }
+            if (error != null) Text(error ?: "", color = c.bad, style = KitType.Body)
+            busy?.let { Text(it, color = c.textDim, style = KitType.Body) }
 
             Head(stringResource(Res.string.games_nearby))
-            if (heard.isEmpty()) Text(stringResource(Res.string.looking_for_games), color = c.textDim, fontSize = 14.sp)
+            if (heard.isEmpty()) Text(stringResource(Res.string.looking_for_games), color = c.textDim, style = KitType.Body)
             for ((b, _) in heard.values.sortedBy { it.first.name }) {
                 val line = listOfNotNull(
                     b.address,
@@ -359,7 +359,7 @@ private fun CompanyPassword(locked: Boolean, lock: (String) -> Unit) {
     val c = LocalColors.current
     var text by remember { mutableStateOf("") }
     Head(stringResource(Res.string.company_password))
-    Text(stringResource(if (locked) Res.string.has_password else Res.string.no_password), color = c.textDim, fontSize = 14.sp)
+    Text(stringResource(if (locked) Res.string.has_password else Res.string.no_password), color = c.textDim, style = KitType.Body)
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         androidx.compose.foundation.layout.Box(Modifier.weight(1f)) {
             Field(text, stringResource(Res.string.password), { text = it.take(Host.PASSWORD_MOST) }, secret = true)
@@ -406,14 +406,14 @@ fun PlayersWindow(
     Window(stringResource(Res.string.multiplayer), onClose, Glyph.People) {
         when {
             remote != null -> {
-                Text(remote.server, color = c.text, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+                Text(remote.server, color = c.text, style = KitType.Lead, fontWeight = FontWeight.SemiBold)
                 Head(stringResource(Res.string.players))
                 PlayerRows(polled(remote) { remote.players }, world)
                 if (runner.company >= 0) {
                     val locked = polled(remote) { remote.companies.any { it.id == runner.company && it.locked } }
                     CompanyPassword(locked) { remote.lock(it) }
                 }
-                BigButton(stringResource(Res.string.leave), glyph = Glyph.Home, onClick = onLeave)
+                BigButton(stringResource(Res.string.leave), glyph = Glyph.Exit, onClick = onLeave)
             }
             host != null -> {
                 Head(stringResource(Res.string.players_join_at))
@@ -423,9 +423,9 @@ fun PlayersWindow(
                         delay(3_000)
                     }
                 }.value
-                if (addresses?.isEmpty() == true) Text(stringResource(Res.string.no_network), color = c.bad, fontSize = 14.sp)
+                if (addresses?.isEmpty() == true) Text(stringResource(Res.string.no_network), color = c.bad, style = KitType.Body)
                 for (a in addresses.orEmpty()) {
-                    Text(if (host.port == LanDiscovery.GAME_PORT) a else "$a:${host.port}", color = c.text, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+                    Text(if (host.port == LanDiscovery.GAME_PORT) a else "$a:${host.port}", color = c.text, style = KitType.Lead, fontWeight = FontWeight.SemiBold)
                 }
                 Head(stringResource(Res.string.players))
                 PlayerRows(polled(host) { host.players }, world)
@@ -439,7 +439,7 @@ fun PlayersWindow(
                 var password by remember { mutableStateOf("") }
                 Field(settings.playerName, stringResource(Res.string.your_name), { settings.playerName = it.take(Host.NAME_MOST) })
                 Field(password, stringResource(Res.string.password), { password = it }, secret = true)
-                if (problem != null) Text(problem, color = c.bad, fontSize = 14.sp)
+                if (problem != null) Text(problem, color = c.bad, style = KitType.Body)
                 BigButton(stringResource(Res.string.open_to_players), primary = true, enabled = !opening, glyph = Glyph.People) {
                     settings.save()
                     onOpen(password)
@@ -456,7 +456,7 @@ fun ChatWindow(read: () -> List<ChatLine>, say: (String) -> Unit, onClose: () ->
     val lines = polled(Unit) { read() }
     var text by remember { mutableStateOf("") }
     Window(stringResource(Res.string.chat), onClose, Glyph.Chat) {
-        if (lines.isEmpty()) Text(stringResource(Res.string.no_chat), color = c.textDim, fontSize = 14.sp)
+        if (lines.isEmpty()) Text(stringResource(Res.string.no_chat), color = c.textDim, style = KitType.Body)
         for (l in lines) {
             Text(
                 buildAnnotatedString {
@@ -464,7 +464,7 @@ fun ChatWindow(read: () -> List<ChatLine>, say: (String) -> Unit, onClose: () ->
                     append("  ")
                     append(l.text)
                 },
-                color = c.text, fontSize = 14.sp,
+                color = c.text, style = KitType.Body,
             )
         }
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -484,7 +484,7 @@ fun ChatWindow(read: () -> List<ChatLine>, say: (String) -> Unit, onClose: () ->
 fun LostWindow(onClose: () -> Unit) {
     val c = LocalColors.current
     Window(stringResource(Res.string.connection_lost), onClose, Glyph.People) {
-        Text(stringResource(Res.string.connection_lost_line), color = c.text, fontSize = 14.sp)
+        Text(stringResource(Res.string.connection_lost_line), color = c.text, style = KitType.Body)
         BigButton(stringResource(Res.string.title_screen), primary = true, glyph = Glyph.Exit, onClick = onClose)
     }
 }

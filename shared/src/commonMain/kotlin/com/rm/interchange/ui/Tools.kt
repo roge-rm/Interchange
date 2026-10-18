@@ -12,7 +12,7 @@ enum class ToolGroup(val title: StringResource, val glyph: Glyph, val editorOnly
     Air(Res.string.group_air, Glyph.Air),
     Land(Res.string.group_land, Glyph.Land),
     Towns(Res.string.group_towns, Glyph.Home, editorOnly = true),
-    Industry(Res.string.group_industry, Glyph.Layers, editorOnly = true),
+    Industry(Res.string.group_industry, Glyph.Factory, editorOnly = true),
 }
 
 /**
@@ -67,7 +67,7 @@ enum class Tool(
     PlaceTown(ToolGroup.Towns, Res.string.tool_place_town, Glyph.Home, editorReady = true, editorOnly = true),
     GrowTown(ToolGroup.Towns, Res.string.tool_grow_town, Glyph.Plus, editorReady = true, editorOnly = true),
 
-    PlaceIndustry(ToolGroup.Industry, Res.string.tool_place_industry, Glyph.Layers, editorReady = true, editorOnly = true),
+    PlaceIndustry(ToolGroup.Industry, Res.string.tool_place_industry, Glyph.Factory, editorReady = true, editorOnly = true),
     RemoveIndustry(ToolGroup.Industry, Res.string.tool_remove_industry, Glyph.Remove, editorReady = true, editorOnly = true);
 
     fun ready(editor: Boolean) = if (editor) editorReady else ready

@@ -61,7 +61,7 @@ fun ChronicleWindow(world: World, onGo: (Float, Float) -> Unit, onClose: () -> U
             all.filter { everything || it.kind in HEADLINES }
                 .groupBy { it.year * 12 + it.month }.entries.sortedByDescending { it.key }.take(MONTHS_SHOWN)
         }
-        if (told.isEmpty()) Text(stringResource(Res.string.chronicle_empty), color = c.textDim, fontSize = 14.sp)
+        if (told.isEmpty()) Text(stringResource(Res.string.chronicle_empty), color = c.textDim, style = KitType.Body)
         for ((at, stories) in told) {
             // Some news is only told to the company it's about, so a month can have none to show.
             val lines = stories.asReversed().mapNotNull { t -> newsText(world, News(t.kind, t.about, 0)).takeIf { it.isNotEmpty() }?.let { t to it } }
@@ -75,11 +75,11 @@ fun ChronicleWindow(world: World, onGo: (Float, Float) -> Unit, onClose: () -> U
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                     Text(
                         stringResource(paper, town).let { if (star) it.uppercase() else it },
-                        color = c.text, fontSize = 13.sp, fontFamily = family,
+                        color = c.text, style = KitType.ListLine, fontFamily = family,
                         fontWeight = if (gazette) FontWeight.Normal else FontWeight.Black,
                         fontStyle = if (gazette) FontStyle.Italic else FontStyle.Normal,
                     )
-                    Text(stringResource(Res.string.month_year, months.getOrElse(at % 12) { "" }, year), color = c.textDim, fontSize = 12.sp)
+                    Text(stringResource(Res.string.month_year, months.getOrElse(at % 12) { "" }, year), color = c.textDim, style = KitType.Dim)
                 }
                 HorizontalDivider(color = c.textDim.copy(alpha = 0.4f))
                 for ((t, text) in lines) {

@@ -251,8 +251,7 @@
 
     <!-- Money -->
     <string name="finances">Finances</string>
-    <string name="money_line">Money: %1$s</string>
-    <string name="loan_line">Loan %1$s of %2$s</string>
+    <string name="loan_line">%1$s of %2$s</string>
     <string name="borrow">Borrow</string>
     <string name="repay">Repay</string>
     <string name="the_books">Accounts</string>

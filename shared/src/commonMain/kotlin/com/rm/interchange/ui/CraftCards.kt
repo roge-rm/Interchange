@@ -49,7 +49,7 @@ fun NoneOnSale(roster: Roster, kind: VehicleKind, year: Int) {
     val first = roster.firstOf(kind)
     Text(
         if (first != null && first > year) stringResource(Res.string.none_on_sale_until, first) else stringResource(Res.string.none_on_sale),
-        color = LocalColors.current.textDim, fontSize = 13.sp,
+        color = LocalColors.current.textDim, style = KitType.ListLine,
     )
 }
 
@@ -77,17 +77,6 @@ private fun CraftBuyPanel(
     )
 }
 
-/** One craft in a shipyard or hangar, with buttons for its orders and to start or stop it. */
-@Composable
-private fun CraftInDepot(name: String, running: Boolean, onOrders: () -> Unit, onStartStop: () -> Unit) {
-    val c = LocalColors.current
-    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text(name, color = c.text, fontSize = 13.sp, modifier = Modifier.weight(1f))
-        ActionButton(stringResource(Res.string.orders), onClick = onOrders)
-        ActionButton(stringResource(if (running) Res.string.stop else Res.string.start), strong = !running, onClick = onStartStop)
-    }
-}
-
 /** A shipyard: buying a ship, and those in it. */
 @Composable
 fun ShipyardCard(view: WorldView, roster: Roster, depot: Int, year: Int, funds: Long, price: (Long) -> Long, send: (Command) -> Unit, onShip: (Int) -> Unit, onClose: () -> Unit, modifier: Modifier) {
@@ -95,7 +84,7 @@ fun ShipyardCard(view: WorldView, roster: Roster, depot: Int, year: Int, funds: 
     Card(stringResource(Res.string.tool_shipyard), onClose, modifier, scrolls = false) {
         CraftBuyPanel(roster, VehicleKind.SHIP, year, funds, price, { true }, { model, cargo -> send(Command.BuyCraft(me, depot, model, cargo)) }) {
             for (v in view.ships.filter { it.depot == depot && it.inDepot }) {
-                CraftInDepot(shipName(v), v.running, { onShip(v.id) }) { send(Command.CraftOrder(me, false, v.id, Command.TrainOrder.START_STOP)) }
+                InDepotRow(shipName(v), v.running, { onShip(v.id) }) { send(Command.CraftOrder(me, false, v.id, Command.TrainOrder.START_STOP)) }
             }
         }
     }
@@ -130,7 +119,7 @@ fun AirportCard(view: WorldView, roster: Roster, airport: AirportView, year: Int
             },
         ) {
             for (v in view.aircraft.filter { it.depot == airport.depot && it.inDepot }) {
-                CraftInDepot(aircraftName(v), v.running, { onAircraft(v.id) }) { send(Command.CraftOrder(me, true, v.id, Command.TrainOrder.START_STOP)) }
+                InDepotRow(aircraftName(v), v.running, { onAircraft(v.id) }) { send(Command.CraftOrder(me, true, v.id, Command.TrainOrder.START_STOP)) }
             }
         }
     }

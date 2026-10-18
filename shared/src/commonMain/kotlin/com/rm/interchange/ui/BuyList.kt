@@ -2,6 +2,7 @@ package com.rm.interchange.ui
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.rememberScrollState
@@ -15,6 +16,7 @@ import androidx.compose.runtime.withFrameNanos
 import androidx.compose.foundation.relocation.BringIntoViewRequester
 import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.layout.Layout
@@ -168,4 +170,15 @@ fun BuyButton(cost: Long, funds: Long, blocked: Boolean = false, onBuy: () -> Un
     val short = funds < cost
     if (short) Text(stringResource(Res.string.not_enough_money), color = c.warn, style = KitType.Dim)
     BigButton(stringResource(Res.string.buy_for, money(cost)), primary = true, enabled = !short && !blocked, glyph = Glyph.Plus, onClick = onBuy)
+}
+
+/** One vehicle in a depot, garage, shipyard or hangar, with buttons for its orders and to start or stop it. */
+@Composable
+fun InDepotRow(name: String, running: Boolean, onOrders: () -> Unit, onStartStop: () -> Unit) {
+    val c = LocalColors.current
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(name, color = c.text, style = KitType.ListLine, modifier = Modifier.weight(1f))
+        ActionButton(stringResource(Res.string.orders), onClick = onOrders)
+        ActionButton(stringResource(if (running) Res.string.stop else Res.string.start), strong = !running, onClick = onStartStop)
+    }
 }

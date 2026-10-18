@@ -322,8 +322,8 @@ fun ToolTray(
             ) {
                 if (folded) GlyphIcon(tool.glyph, c.text, Modifier.size(24.dp))
                 Column(Modifier.weight(1f)) {
-                    Text(stringResource(tool.title), color = c.text, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
-                    detail?.let { Text(it, color = if (warning) c.warn else c.textDim, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+                    Text(stringResource(tool.title), color = c.text, style = KitType.RowTitle, maxLines = 1)
+                    detail?.let { Text(it, color = if (warning) c.warn else c.textDim, style = KitType.Dim, maxLines = 1, overflow = TextOverflow.Ellipsis) }
                 }
                 extras()
             }
@@ -382,10 +382,10 @@ fun weekdayDate(day: Int, startYear: Int): String {
 fun MessageChip(text: String, lead: (@Composable () -> Unit)? = null, onClick: () -> Unit) {
     val c = LocalColors.current
     ChromeBox(Modifier.clickable(role = Role.Button, onClick = onClick)) {
-        if (lead == null) Text(text, color = c.text, fontSize = 14.sp, modifier = Modifier.padding(horizontal = 14.dp, vertical = 9.dp))
+        if (lead == null) Text(text, color = c.text, style = KitType.Body, modifier = Modifier.padding(horizontal = 14.dp, vertical = 9.dp))
         else Row(Modifier.padding(start = 8.dp, end = 14.dp, top = 5.dp, bottom = 5.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             lead()
-            Text(text, color = c.text, fontSize = 14.sp)
+            Text(text, color = c.text, style = KitType.Body)
         }
     }
 }
@@ -402,7 +402,7 @@ fun ActionButton(label: String, enabled: Boolean = true, strong: Boolean = false
             .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
             .padding(horizontal = 12.dp, vertical = 8.dp),
     ) {
-        Text(label, color = if (strong) c.onAccent else c.text, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+        Text(label, color = if (strong) c.onAccent else c.text, style = KitType.ListLine, fontWeight = FontWeight.SemiBold, maxLines = 1)
     }
 }
 
