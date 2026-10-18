@@ -216,9 +216,11 @@
     <string name="town_action_running">Under way</string>
     <string name="town_statue_up">Already put up</string>
     <string name="town_no_room">No room near the middle</string>
-    <string name="road_works_left">Road works: %1$d days left</string>
-    <string name="funded_left">New building: %1$d days left</string>
-    <string name="exclusive_left">Exclusive rights for %1$s: %2$d days left</string>
+    <string name="road_works">Road works</string>
+    <string name="funded_buildings">New buildings</string>
+    <string name="exclusive_for">Exclusive rights for %1$s</string>
+    <string name="days_left">%1$d days left</string>
+    <string name="head_approval">Approval</string>
     <string-array name="weekdays">
         <item>Mon</item><item>Tue</item><item>Wed</item><item>Thu</item><item>Fri</item><item>Sat</item><item>Sun</item>
     </string-array>
@@ -268,8 +270,6 @@
     <string name="rivals">Rivals</string>
     <string name="companies">Companies</string>
     <string name="your_company">Your company</string>
-    <string name="company_line">Made %1$s · %2$d vehicles · %3$d stations</string>
-    <string name="company_line_takeover">Made %1$s · %2$d vehicles · %3$d stations · buy for %4$s</string>
     <string name="company_name">Company name</string>
     <string name="rename">Rename</string>
     <string name="insignia">Insignia</string>
@@ -306,9 +306,13 @@
     <string name="month_year">%1$s %2$d</string>
     <string name="news_new_vehicle">New on sale: the %1$s, %2$s</string>
     <string name="company_gone">Bought out or gone under</string>
-    <string name="company_for_sale">For sale for %1$s</string>
-    <string name="buy_company">Buy</string>
-    <string name="buy_company_sure">Buy it?</string>
+    <string name="company_for_sale">For sale</string>
+    <string name="company_based">Based in %1$s</string>
+    <string name="buy_company_sure_for">Buy it for %1$s?</string>
+    <string name="stat_value">Value</string>
+    <string name="stat_money">Money</string>
+    <string name="stat_vehicles">Vehicles</string>
+    <string name="stat_stations">Stations</string>
     <string name="news_company_trouble">%1$s can't pay its way</string>
     <string name="news_your_trouble">Your company can't pay its way, even borrowing all the bank will lend</string>
     <string name="news_company_for_sale">%1$s is for sale</string>
@@ -337,7 +341,8 @@
     <string name="goal_progress">%1$s of %2$s</string>
     <string name="goal_leader">%1$s: %2$s</string>
     <string name="town_needs">To grow each month</string>
-    <string name="town_need_got">%1$s of %2$s last month</string>
+    <string name="town_need_got">%1$s / %2$s</string>
+    <string name="town_growth_now">Growth</string>
     <string name="town_heating">Heating, coal or fuel</string>
     <string name="town_growing">Growing</string>
     <string name="town_not_growing">Not growing</string>
@@ -350,8 +355,8 @@
     <string name="share_orders">Share orders with</string>
     <string name="stop_sharing">Stop sharing</string>
     <string name="fund_industry">Fund a new industry</string>
-    <string name="build_for">Build for %1$s</string>
-    <string name="prospect_for">Prospect for %1$s</string>
+    <string name="fund_build">Build</string>
+    <string name="fund_prospect">Prospect</string>
     <string name="news_prospect_failed">Prospecting found no %1$s</string>
     <!-- Weather. -->
     <string name="weather">Weather</string>
@@ -485,10 +490,9 @@
     </string-array>
     <string name="seasonal_gear">Floats and skis with the seasons</string>
     <string name="breaks_ice">Breaks ice up to %1$d cm</string>
-    <string name="landing_aids_for">Landing aids for %1$s</string>
-    <string name="deicing_for">De-icing for %1$s</string>
     <string name="has_landing_aids">Landing aids</string>
     <string name="has_deicing">De-icing</string>
+    <string name="available_from">From %1$d</string>
     <string name="news_diverted">%1$s gave up holding and flew on</string>
     <string name="kind_canal">Canal</string>
     <string name="kind_lock">Lock</string>

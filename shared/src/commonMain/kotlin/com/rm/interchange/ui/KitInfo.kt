@@ -6,6 +6,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
@@ -17,6 +18,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.selection.toggleable
@@ -44,6 +46,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -68,14 +71,21 @@ import kotlin.math.roundToInt
  *   temperature, money, a date, a count.
  * - StatColumns: a few short facts side by side, each a dim label over its value, lined up from row to row. For
  *   numbers read together: speed, capacity, power, or a company's value, money and loan.
+ *   StatGrid is the same wrapped into even rows when the width is short.
  * - CargoRow: a cargo's colour, its name and an amount right-aligned, with an optional bar and percent. For what a
  *   station has waiting, what an industry makes or a vehicle carries.
  * - FillBar and FillBarRow: a bar filled to a share, coloured from bad to good. For ratings, % carried, approval.
+ *   MeterRow is a compact one on a single line, a bar and a word at its end, for a town's approval of each company.
+ * - ActionRow: something to pay for or do, a glyph, its name and a price or how it stands right-aligned, or a
+ *   button or tick at its end. For town actions and airport facilities.
+ * - Badge (Kit.kt): a company's insignia in its colour, or a glyph on a tile.
  * - Grid: short items in two or more even columns. PlaceCell is a tile for one, a place's name over cargo amounts,
  *   for where a station's passengers and mail are going.
  * - PictureRow: a picture in a box, a title with a value at its end, a dim line, a stats line and anything under
- *   them, tappable and lit when selected. For lists of vehicles, industries, buildings and anything else with a
- *   picture. ListRow (Kit.kt) is the same for a glyph instead of a picture.
+ *   them, tappable and lit when selected. For lists of vehicles, industries, buildings, companies (a Badge for the
+ *   picture) and anything else with a picture. ListRow (Kit.kt) is the same for a glyph instead of a picture.
+ * - PictureGroup: one picture beside a group of rows of the same kind, each an AmountsRow, a name with cargo
+ *   amounts in columns that line up. For the industries of each kind.
  * - VehiclePicture, IndustryPicture, HousePicture: the game's drawings, for a PictureRow's picture.
  * - OptionGroup: one of a few choices, each a glyph with a short label, across the width.
  * - OptionButton (Chrome.kt) and StepSliderRow (Kit.kt): the tool tray's rows of choices, a glyph on each button
@@ -132,6 +142,11 @@ object KitSpace {
     /** A bar in a [CargoRow] and its percent beside it. */
     val BarWidth = 48.dp
     val PercentWidth = 36.dp
+    /** A [MeterRow]'s bar and the word after it, wide enough for the longest approval in French. */
+    val MeterWidth = 56.dp
+    val MeterText = 92.dp
+    /** A cargo's swatch and amount in an [AmountsRow]. */
+    val AmountWidth = 60.dp
 }
 
 /** [label] with [value] right-aligned, and [glyph] before it; [valueColour] for a value to stand out, like a warning. */
@@ -145,27 +160,47 @@ fun InfoRow(label: String, value: String, glyph: Glyph? = null, valueColour: Col
     ) {
         glyph?.let { GlyphIcon(it, c.textDim, Modifier.size(KitSpace.Glyph)) }
         Text(label, color = c.textDim, style = KitType.Body, modifier = Modifier.weight(1f))
-        // A long value wraps in up to half the row, so the label keeps its room.
-        Text(value, color = valueColour ?: c.text, style = KitType.Value, textAlign = TextAlign.End, modifier = Modifier.weight(1f, fill = false))
+        // A long value wraps past 180 dp, so the label keeps its room.
+        Text(value, color = valueColour ?: c.text, style = KitType.Value, textAlign = TextAlign.End, modifier = Modifier.widthIn(max = 180.dp))
     }
 }
 
 /**
  * [stats] side by side, each a label over its value, in [columns] equal shares so rows of them line up; blank shares
- * fill out a short row. [valueColours] picks out values, by place, like a loss in red.
+ * fill out a short row. [valueColours] picks out values, by place, like a loss in red; [weights] widen some shares, like
+ * money beside short counts.
  */
 @Composable
-fun StatColumns(stats: List<Pair<String, String>>, columns: Int = stats.size, modifier: Modifier = Modifier, valueColours: List<Color?> = emptyList()) {
+fun StatColumns(stats: List<Pair<String, String>>, columns: Int = stats.size, modifier: Modifier = Modifier, valueColours: List<Color?> = emptyList(), weights: List<Float> = emptyList()) {
     val c = LocalColors.current
     Row(modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(KitSpace.Gap)) {
         for ((i, stat) in stats.withIndex()) {
             val (label, value) = stat
-            Column(Modifier.weight(1f).semantics(mergeDescendants = true) {}) {
+            Column(Modifier.weight(weights.getOrElse(i) { 1f }).semantics(mergeDescendants = true) {}) {
                 Text(label, color = c.textDim, style = KitType.Small, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text(value, color = valueColours.getOrNull(i) ?: c.text, style = KitType.Value, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
         }
         repeat(columns - stats.size) { Box(Modifier.weight(1f)) }
+    }
+}
+
+/**
+ * [stats] as [StatColumns], in as few even rows as fit when each needs [least] across, so rows of them line up from
+ * one item to the next at any width.
+ */
+@Composable
+fun StatGrid(stats: List<Pair<String, String>>, least: Dp = 72.dp, valueColours: List<Color?> = emptyList(), weights: List<Float> = emptyList()) {
+    if (stats.isEmpty()) return
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
+        val fit = ((maxWidth + KitSpace.Gap) / (least + KitSpace.Gap)).toInt().coerceIn(1, stats.size)
+        val rows = (stats.size + fit - 1) / fit
+        val across = (stats.size + rows - 1) / rows
+        Column(verticalArrangement = Arrangement.spacedBy(KitSpace.Gap)) {
+            for ((r, row) in stats.chunked(across).withIndex()) {
+                StatColumns(row, across, valueColours = valueColours.drop(r * across), weights = if (rows == 1) weights else emptyList())
+            }
+        }
     }
 }
 
@@ -218,7 +253,7 @@ fun CargoRow(cargo: Int, amount: String, share: Float? = null, percent: String? 
         horizontalArrangement = Arrangement.spacedBy(KitSpace.Gap),
     ) {
         CargoSwatch(cargo)
-        Text(name ?: names.getOrElse(cargo) { "" }, color = c.text, style = KitType.Body, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+        Text(name ?: names.getOrElse(cargo) { "" }, color = c.text, style = KitType.Body, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
         Text(amount, color = c.text, style = KitType.Value, maxLines = 1, textAlign = TextAlign.End)
         if (share != null) {
             FillBar(share, Modifier.width(KitSpace.BarWidth))
@@ -248,6 +283,51 @@ fun FillBarRow(label: String, share: Float, text: String? = null, glyph: Glyph? 
     Column(Modifier.fillMaxWidth().semantics(mergeDescendants = true) {}, verticalArrangement = Arrangement.spacedBy(3.dp)) {
         InfoRow(label, text ?: stringResource(Res.string.percent, (share.coerceIn(0f, 1f) * 100).roundToInt()), glyph)
         FillBar(share, Modifier.fillMaxWidth(), colour)
+    }
+}
+
+/** [lead] (a badge, say), [label], a bar filled to [share] and [text] at the end, all on one line; bars line up from row to row. */
+@Composable
+fun MeterRow(label: String, share: Float, text: String, lead: (@Composable () -> Unit)? = null, colour: Color? = null) {
+    val c = LocalColors.current
+    Row(
+        Modifier.fillMaxWidth().heightIn(min = 28.dp).semantics(mergeDescendants = true) {},
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(KitSpace.Gap),
+    ) {
+        lead?.invoke()
+        Text(label, color = c.text, style = KitType.Body, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+        FillBar(share, Modifier.width(KitSpace.MeterWidth), colour)
+        Text(text, color = c.textDim, style = KitType.Dim, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.width(KitSpace.MeterText))
+    }
+}
+
+/**
+ * Something to pay for or do: [glyph], [label], and [value] (a price, or how it stands) right-aligned, or [end] in its
+ * place. A tap does [onClick]; the row is dimmed when [dim], as when it can't be done now.
+ */
+@Composable
+fun ActionRow(
+    glyph: Glyph, label: String, value: String? = null, onClick: (() -> Unit)? = null, dim: Boolean = onClick == null,
+    valueColour: Color? = null, end: (@Composable () -> Unit)? = null,
+) {
+    val c = LocalColors.current
+    val shape = RoundedCornerShape(KitSpace.Corner)
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .heightIn(min = 44.dp)
+            .clip(shape)
+            .background(c.button)
+            .then(if (onClick != null) Modifier.clickable(role = Role.Button, onClick = onClick) else Modifier.semantics(mergeDescendants = true) {})
+            .padding(horizontal = KitSpace.RowAcross, vertical = KitSpace.RowDown),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(KitSpace.Inline),
+    ) {
+        GlyphIcon(glyph, if (dim) c.textDim else c.accent, Modifier.size(22.dp))
+        Text(label, color = if (dim) c.textDim else c.text, style = KitType.Body, modifier = Modifier.weight(1f))
+        if (end != null) end()
+        else if (value != null) Text(value, color = valueColour ?: if (dim) c.textDim else c.text, style = KitType.Value, textAlign = TextAlign.End, maxLines = 2)
     }
 }
 
@@ -292,7 +372,7 @@ fun PlaceCell(name: String, amounts: List<Pair<Int, Int>>, line: String? = null)
 }
 
 /**
- * A row for a list with a picture: [picture] in a box, [title] with [titleEnd] (a price, say) at its end, a dim [line]
+ * A row for a list with a picture: [picture] in a box or [icon] as it is, [title] with [titleEnd] (a price, say) at its end, a dim [line]
  * with [lineEnd], a [stats] line, [end] at the far right, and [below] under it all. Lit when [selected]; tapping does
  * [onClick], as a choice of one when [role] is a radio button.
  */
@@ -301,6 +381,7 @@ fun PictureRow(
     title: String,
     modifier: Modifier = Modifier,
     picture: (@Composable (Modifier) -> Unit)? = null,
+    icon: (@Composable () -> Unit)? = null,
     titleEnd: String? = null,
     line: String? = null,
     lineEnd: String? = null,
@@ -330,6 +411,7 @@ fun PictureRow(
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(KitSpace.Inline)) {
             if (picture != null) PictureBox { picture(Modifier.fillMaxSize()) }
+            icon?.invoke()
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(title, color = c.text, style = KitType.RowTitle, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
@@ -344,6 +426,47 @@ fun PictureRow(
             end?.invoke()
         }
         below?.invoke()
+    }
+}
+
+/** [picture] in a box at the left of a group of rows, [content], on one background. */
+@Composable
+fun PictureGroup(picture: @Composable (Modifier) -> Unit, content: @Composable () -> Unit) {
+    val c = LocalColors.current
+    Row(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(KitSpace.Corner)).background(c.button)
+            .padding(horizontal = KitSpace.RowAcross, vertical = KitSpace.RowDown),
+        horizontalArrangement = Arrangement.spacedBy(KitSpace.Inline),
+    ) {
+        PictureBox { picture(Modifier.fillMaxSize()) }
+        Column(Modifier.weight(1f)) { content() }
+    }
+}
+
+/**
+ * [title], and each of [amounts] (cargo to amount) by its swatch in a column [columns] wide, so amounts line up from
+ * row to row; a tap does [onClick].
+ */
+@Composable
+fun AmountsRow(title: String, amounts: List<Pair<Int, Int>>, onClick: (() -> Unit)? = null, columns: Int = amounts.size) {
+    val c = LocalColors.current
+    val names = stringArrayResource(Res.array.cargoes)
+    Row(
+        Modifier.fillMaxWidth().heightIn(min = 32.dp).clip(RoundedCornerShape(KitSpace.InnerCorner))
+            .then(if (onClick != null) Modifier.clickable(role = Role.Button, onClick = onClick) else Modifier)
+            .semantics(mergeDescendants = true) {
+                contentDescription = listOf(title).plus(amounts.map { (cargo, n) -> "${names.getOrElse(cargo) { "" }} ${Numbers.grouped(n.toLong())}" }).joinToString(", ")
+            }
+            .padding(horizontal = 2.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(KitSpace.Gap),
+    ) {
+        Text(title, color = c.text, style = KitType.Body, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+        for ((cargo, n) in amounts) Row(Modifier.width(KitSpace.AmountWidth), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(KitSpace.Tight)) {
+            CargoSwatch(cargo)
+            Text(Numbers.grouped(n.toLong()), color = c.text, style = KitType.Value, maxLines = 1, textAlign = TextAlign.End, modifier = Modifier.weight(1f))
+        }
+        repeat(columns - amounts.size) { Box(Modifier.width(KitSpace.AmountWidth)) }
     }
 }
 

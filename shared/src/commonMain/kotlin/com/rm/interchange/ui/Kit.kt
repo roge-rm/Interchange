@@ -151,18 +151,29 @@ fun ListRow(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        if (tint != null && insignia != null && com.rm.interchange.sim.Insignia.valid(insignia)) {
-            Box(Modifier.size(36.dp).clip(RoundedCornerShape(8.dp)).background(c.page), contentAlignment = Alignment.Center) {
-                InsigniaImage(insignia, tint, Modifier.size(32.dp))
-            }
-        } else Box(Modifier.size(36.dp).clip(RoundedCornerShape(8.dp)).background(tint ?: c.accent), contentAlignment = Alignment.Center) {
-            GlyphIcon(glyph, if (tint != null) Color.White else c.onAccent, Modifier.size(18.dp))
-        }
+        Badge(glyph, tint, insignia)
         Column(Modifier.weight(1f)) {
             Text(title, color = c.text, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
             if (line != null) Text(line, color = c.textDim, fontSize = 13.sp)
         }
         end()
+    }
+}
+
+/**
+ * A tile [size] across with a company's [insignia] in its colour [tint], or [glyph] on [tint] (the accent if none)
+ * for a company with no insignia or a row that isn't a company's.
+ */
+@Composable
+fun Badge(glyph: Glyph, tint: Color? = null, insignia: ByteArray? = null, size: androidx.compose.ui.unit.Dp = 36.dp) {
+    val c = LocalColors.current
+    val shape = RoundedCornerShape(size * 0.22f)
+    if (tint != null && insignia != null && com.rm.interchange.sim.Insignia.valid(insignia)) {
+        Box(Modifier.size(size).clip(shape).background(c.page), contentAlignment = Alignment.Center) {
+            InsigniaImage(insignia, tint, Modifier.size(size * 0.89f))
+        }
+    } else Box(Modifier.size(size).clip(shape).background(tint ?: c.accent), contentAlignment = Alignment.Center) {
+        GlyphIcon(glyph, if (tint != null) Color.White else c.onAccent, Modifier.size(size / 2))
     }
 }
 

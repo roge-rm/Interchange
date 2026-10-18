@@ -602,7 +602,12 @@ private fun Root(settings: Settings) {
             )
             Win.Overlays -> OverlaysWindow(settings) { window = null }
             Win.Finances -> runner?.let { r -> FinanceWindow(r) { window = null } }
-            Win.Industries -> runner?.game?.world?.let { w -> IndustriesWindow(w, { x, y -> goTo.value = x to y; window = null }, { runner?.request(it) }) { window = null } }
+            Win.Industries -> runner?.game?.world?.let { w ->
+                // The map's sheets, for the pictures of each kind.
+                CompositionLocalProvider(LocalSheets provides sheets) {
+                    IndustriesWindow(w, { x, y -> goTo.value = x to y; window = null }, { runner?.request(it) }) { window = null }
+                }
+            }
             Win.Companies -> runner?.game?.world?.let { w -> CompaniesWindow(w, { x, y -> goTo.value = x to y; window = null }, { runner?.request(it) }, { window = Win.Insignia }) { window = null } }
             Win.Insignia -> runner?.game?.world?.let { w ->
                 val own = w.companies.getOrNull(LocalCompany.current)?.takeIf { !it.gone }

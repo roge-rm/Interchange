@@ -591,12 +591,13 @@ private fun MoneyGraph(history: List<LongArray>, modifier: Modifier) {
 }
 
 /**
- * Every company, the richest first, in its colour, with its money, vehicles and stations; a tap goes to a rival's
- * home town. The player's own company can be renamed at the top.
+ * Every company, the richest first, in its colour, with its value, money, vehicles and stations lined up; a tap goes
+ * to a rival's home town. The player's own company can be renamed at the top.
  */
 @Composable
 fun CompaniesWindow(world: World, onGo: (Float, Float) -> Unit, send: (com.rm.interchange.sim.Command) -> Unit, onInsignia: () -> Unit, onClose: () -> Unit) {
     val me = LocalCompany.current
+    val c = LocalColors.current
     Window(stringResource(Res.string.companies), onClose, Glyph.Home) {
         world.companies.getOrNull(me)?.takeIf { !it.gone }?.let { own -> RenameCompany(world, own, send) }
         // Best first, by what each is worth, those gone at the end.
@@ -608,34 +609,52 @@ fun CompaniesWindow(world: World, onGo: (Float, Float) -> Unit, send: (com.rm.in
                 world.ships.count { it?.owner == co.id } + world.aircraft.count { it?.owner == co.id }
             val stations = world.stations.count { it != null && it.owner == co.id && !it.waypoint }
             val home = world.rivals.firstOrNull { it.company == co.id }?.let { world.towns.getOrNull(it.home) }
-            val name = co.name
             val takeover = co.id != me && world.canTakeOver(co)
+            val forSale = world.forSale(co)
             val price = if (takeover) world.takeoverPrice(co) else world.salePrice(co)
             val line = when {
                 co.gone -> stringResource(Res.string.company_gone)
-                world.forSale(co) -> stringResource(Res.string.company_for_sale, money(price))
-                takeover -> stringResource(Res.string.company_line_takeover, money(worth[co.id]), vehicles, stations, money(price))
-                else -> stringResource(Res.string.company_line, money(worth[co.id]), vehicles, stations)
+                forSale -> stringResource(Res.string.company_for_sale)
+                co.id == me -> stringResource(Res.string.your_company)
+                home != null -> stringResource(Res.string.company_based, home.name)
+                else -> null
             }
-            ListRow(
-                Glyph.Home, name, line,
-                home?.let { t -> { onGo(t.x + 0.5f, t.y + 0.5f) } },
-                tint = if (co.gone) null else com.rm.interchange.map.companyColour(co.id),
-                insignia = co.insignia,
-            ) {
-                if (co.id == me && !co.gone) ActionButton(stringResource(Res.string.insignia), onClick = onInsignia)
-                if (world.forSale(co) || takeover) {
-                    var sure by remember(co.id) { mutableStateOf(false) }
-                    // A takeover asks again before paying.
-                    ActionButton(stringResource(if (sure) Res.string.buy_company_sure else Res.string.buy_company), enabled = mine >= price, strong = true) {
-                        if (takeover && !sure) sure = true
-                        else {
-                            send(com.rm.interchange.sim.Command.BuyCompany(me, co.id))
-                            onClose()
+            val tint = if (co.gone) null else com.rm.interchange.map.companyColour(co.id)
+            PictureRow(
+                co.name,
+                icon = { Badge(Glyph.Home, tint, co.insignia, 40.dp) },
+                line = line,
+                onClick = home?.let { t -> { onGo(t.x + 0.5f, t.y + 0.5f) } },
+                below = if (co.gone) null else ({
+                    StatGrid(
+                        listOf(
+                            stringResource(Res.string.stat_value) to money(worth[co.id]),
+                            stringResource(Res.string.stat_money) to money(co.money),
+                            stringResource(Res.string.stat_vehicles) to Numbers.grouped(vehicles.toLong()),
+                            stringResource(Res.string.stat_stations) to Numbers.grouped(stations.toLong()),
+                        ),
+                        valueColours = listOf(if (worth[co.id] < 0) c.bad else null, if (co.money < 0) c.bad else null),
+                        weights = listOf(3f, 3f, 2f, 2f),
+                        // Room for money past ten million on one row, or two rows on a phone.
+                        least = 100.dp,
+                    )
+                    val own = co.id == me
+                    if (own || forSale || takeover) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(KitSpace.Gap, Alignment.End)) {
+                        if (own) ActionButton(stringResource(Res.string.insignia), onClick = onInsignia)
+                        if (forSale || takeover) {
+                            var sure by remember(co.id) { mutableStateOf(false) }
+                            // A takeover asks again before paying.
+                            ActionButton(stringResource(if (sure) Res.string.buy_company_sure_for else Res.string.buy_for, money(price)), enabled = mine >= price, strong = true) {
+                                if (takeover && !sure) sure = true
+                                else {
+                                    send(com.rm.interchange.sim.Command.BuyCompany(me, co.id))
+                                    onClose()
+                                }
+                            }
                         }
                     }
-                }
-            }
+                }),
+            )
         }
     }
 }
@@ -666,54 +685,67 @@ fun TownWindow(world: World, t: com.rm.interchange.sim.Town, send: (com.rm.inter
     val levels = stringArrayResource(Res.array.approval_levels)
     val actions = stringArrayResource(Res.array.town_actions)
     Window(t.name, onClose, Glyph.Home) {
+        Head(stringResource(Res.string.head_approval))
         for (co in world.companies.filter { !it.gone }) {
             val name = if (co.id == me) stringResource(Res.string.your_company) else co.name
-            ListRow(Glyph.Home, name, levels.getOrElse(com.rm.interchange.sim.approvalLevel(t.approval[co.id])) { "" }, null, tint = com.rm.interchange.map.companyColour(co.id), insignia = co.insignia)
+            val level = com.rm.interchange.sim.approvalLevel(t.approval[co.id])
+            MeterRow(name, (level + 1f) / (levels.size.coerceAtLeast(1)), levels.getOrElse(level) { "" }, lead = {
+                Badge(Glyph.Home, com.rm.interchange.map.companyColour(co.id), co.insignia, 24.dp)
+            })
         }
         // Road works and exclusive rights count work days; the window shows days on the calendar.
         val dayLength = world.settings.dayLength
-        if (t.roadWorks > 0) ListRow(Glyph.Road, stringResource(Res.string.road_works_left, (t.roadWorks + dayLength - 1) / dayLength), null, null)
-        if (t.funded > 0) ListRow(Glyph.Home, stringResource(Res.string.funded_left, t.funded), null, null)
-        world.companies.getOrNull(t.exclusive)?.let { co ->
-            val name = if (co.id == me) stringResource(Res.string.your_company) else co.name
-            ListRow(Glyph.Station, stringResource(Res.string.exclusive_left, name, (t.exclusiveDays + dayLength - 1) / dayLength), null, null, tint = com.rm.interchange.map.companyColour(co.id))
+        val exclusive = world.companies.getOrNull(t.exclusive)
+        if (t.roadWorks > 0 || t.funded > 0 || exclusive != null) {
+            Head(stringResource(Res.string.town_action_running))
+            if (t.roadWorks > 0) InfoRow(stringResource(Res.string.road_works), stringResource(Res.string.days_left, (t.roadWorks + dayLength - 1) / dayLength), Glyph.RoadWorks)
+            if (t.funded > 0) InfoRow(stringResource(Res.string.funded_buildings), stringResource(Res.string.days_left, t.funded), Glyph.FundBuildings)
+            exclusive?.let { co ->
+                val name = if (co.id == me) stringResource(Res.string.your_company) else co.name
+                InfoRow(stringResource(Res.string.exclusive_for, name), stringResource(Res.string.days_left, (t.exclusiveDays + dayLength - 1) / dayLength), Glyph.Exclusive)
+            }
         }
-        if (world.settings.townGrowth == com.rm.interchange.sim.TownGrowth.SUPPLIED) {
-            TownNeeds(world, t)
-            Head(stringResource(Res.string.town_pay_for))
-        }
+        if (world.settings.townGrowth == com.rm.interchange.sim.TownGrowth.SUPPLIED) TownNeeds(world, t)
+        Head(stringResource(Res.string.town_pay_for))
         val money = world.companies.getOrNull(me)?.money ?: 0L
         for (a in 0 until com.rm.interchange.sim.TownActions.COUNT) {
             val cost = world.townActionCost(a)
             val open = world.townActionOpen(me, t, a)
-            val line = when {
+            val value = when {
                 open -> money(cost)
                 a == com.rm.interchange.sim.TownActions.STATUE && t.statue[0] >= 0 -> stringResource(Res.string.town_statue_up)
                 a == com.rm.interchange.sim.TownActions.STATUE -> stringResource(Res.string.town_no_room)
                 else -> stringResource(Res.string.town_action_running)
             }
-            ListRow(Glyph.Plus, actions.getOrElse(a) { "" }, line, if (open && money >= cost) ({
-                send(com.rm.interchange.sim.Command.TownAction(me, t.id, a))
-                onClose()
-            }) else null)
+            ActionRow(
+                TOWN_ACTION_GLYPHS.getOrElse(a) { Glyph.Plus }, actions.getOrElse(a) { "" }, value,
+                if (open && money >= cost) ({
+                    send(com.rm.interchange.sim.Command.TownAction(me, t.id, a))
+                    onClose()
+                }) else null,
+                valueColour = if (open && money < cost) LocalColors.current.bad else null,
+            )
         }
     }
 }
+
+/** Each town action's glyph, by its number in [com.rm.interchange.sim.TownActions]. */
+private val TOWN_ACTION_GLYPHS = listOf(Glyph.AdSmall, Glyph.AdMedium, Glyph.AdLarge, Glyph.RoadWorks, Glyph.Statue, Glyph.FundBuildings, Glyph.Exclusive)
 
 /** What [t] needs each month to grow, when towns grow only supplied: what it got last month against what it needs, and whether it's growing. */
 @Composable
 private fun TownNeeds(world: World, t: com.rm.interchange.sim.Town) {
     val c = LocalColors.current
-    val cargoes = stringArrayResource(Res.array.cargoes)
     Head(stringResource(Res.string.town_needs))
     val growing = t.funded > 0 || world.townSupplied(t)
-    ListRow(Glyph.Home, stringResource(if (growing) Res.string.town_growing else Res.string.town_not_growing), null, null, tint = if (growing) c.good else c.warn)
+    InfoRow(stringResource(Res.string.town_growth_now), stringResource(if (growing) Res.string.town_growing else Res.string.town_not_growing), Glyph.Home, valueColour = if (growing) c.good else c.warn)
     for (n in world.townNeeds(t)) {
-        val name = if (n.heating) stringResource(Res.string.town_heating) else cargoes.getOrElse(n.cargo) { "" }
-        val glyph = if (n.cargo == com.rm.interchange.sim.Cargo.PASSENGERS) Glyph.People else Glyph.Package
-        ListRow(glyph, name, stringResource(Res.string.town_need_got, Numbers.grouped(n.got.toLong()), Numbers.grouped(n.needed.toLong())), null) {
-            if (n.met) GlyphIcon(Glyph.Tick, c.good, Modifier.size(22.dp))
-        }
+        val name = if (n.heating) stringResource(Res.string.town_heating) else null
+        val share = if (n.needed > 0) n.got.toFloat() / n.needed else 1f
+        CargoRow(
+            n.cargo, stringResource(Res.string.town_need_got, Numbers.grouped(n.got.toLong()), Numbers.grouped(n.needed.toLong())),
+            share = if (n.met) 1f else share.coerceAtMost(0.99f), name = name,
+        )
     }
 }
 
@@ -815,12 +847,11 @@ fun SubsidiesWindow(world: World, onGo: (Float, Float) -> Unit, onClose: () -> U
     }
 }
 
-/** Every industry open on the map, by kind then name, with what it made last month; a tap goes to it. */
+/** Every industry open on the map, under a head and a picture for each kind, by name, with what it made last month; a tap goes to it. */
 @Composable
 fun IndustriesWindow(world: World, onGo: (Float, Float) -> Unit, send: (com.rm.interchange.sim.Command) -> Unit, onClose: () -> Unit) {
     val me = LocalCompany.current
     val lang = languageCode()
-    val names = stringArrayResource(Res.array.cargoes)
     var funding by remember { mutableStateOf(false) }
     Window(stringResource(Res.string.industries), onClose, Glyph.Layers) {
         BigButton(stringResource(Res.string.fund_industry), primary = !funding, glyph = Glyph.Plus) { funding = !funding }
@@ -829,19 +860,29 @@ fun IndustriesWindow(world: World, onGo: (Float, Float) -> Unit, send: (com.rm.i
             val year = com.rm.interchange.sim.Calendar.year(world.startYear, world.day)
             for (kind in world.roster.industries.filter { year >= it.from && year < it.until }) {
                 val prospect = kind.produces.any { it > 0 } && kind.accepts == 0
-                ListRow(Glyph.Plus, kind.name(lang), stringResource(if (prospect) Res.string.prospect_for else Res.string.build_for, money(world.price(com.rm.interchange.sim.fundCost(kind)))), {
-                    send(com.rm.interchange.sim.Command.FundIndustry(me, kind.id))
-                    onClose()
-                })
+                PictureRow(
+                    kind.name(lang),
+                    picture = { IndustryPicture(kind, it) },
+                    titleEnd = money(world.price(com.rm.interchange.sim.fundCost(kind))),
+                    line = stringResource(if (prospect) Res.string.fund_prospect else Res.string.fund_build),
+                    onClick = {
+                        send(com.rm.interchange.sim.Command.FundIndustry(me, kind.id))
+                        onClose()
+                    },
+                )
             }
             return@Window
         }
-        val open = world.industries.filter { !it.closed }.sortedWith(compareBy({ it.kind }, { industryName(world, it, lang) }))
-        for (ind in open) {
-            val kind = world.roster.industries[ind.kind]
-            val made = (0 until com.rm.interchange.sim.Cargo.COUNT).filter { kind.outputs and (1 shl it) != 0 }
-                .joinToString(" · ") { "${ind.madeLastMonth[it]} ${names.getOrElse(it) { "" }.lowercase()}" }
-            ListRow(Glyph.Layers, industryName(world, ind, lang), made, { onGo(ind.x + 1f, ind.y + 1f) })
+        val byKind = world.industries.filter { !it.closed }.groupBy { it.kind }.entries.sortedBy { it.key }
+        for ((k, list) in byKind) {
+            val kind = world.roster.industries[k]
+            val outputs = (0 until com.rm.interchange.sim.Cargo.COUNT).filter { kind.outputs and (1 shl it) != 0 }
+            Head(kind.name(lang))
+            PictureGroup({ IndustryPicture(kind, it) }) {
+                for (ind in list.sortedBy { industryName(world, it, lang) }) {
+                    AmountsRow(industryName(world, ind, lang), outputs.map { it to ind.madeLastMonth[it] }, { onGo(ind.x + 1f, ind.y + 1f) })
+                }
+            }
         }
     }
 }

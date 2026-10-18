@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -114,22 +115,16 @@ fun AirportCard(view: WorldView, roster: Roster, airport: AirportView, year: Int
         CraftBuyPanel(
             roster, VehicleKind.AIRCRAFT, year, funds, price, { stand.serves(it) }, { model, cargo -> send(Command.BuyCraft(me, airport.depot, model, cargo)) },
             top = {
-                Text(kinds.getOrElse(airport.kind) { "" }, color = c.textDim, fontSize = 13.sp)
-                val has = listOfNotNull(
-                    stringResource(Res.string.has_landing_aids).takeIf { airport.ils },
-                    stringResource(Res.string.has_deicing).takeIf { airport.deice },
-                )
-                if (has.isNotEmpty()) Text(has.joinToString(stringResource(Res.string.list_join)), color = c.textDim, fontSize = 13.sp)
-                val ils = !airport.ils && year >= ILS_FROM && Airports.CLASS[airport.kind] >= Runways.REGIONAL
-                val deice = !airport.deice && year >= DEICE_FROM && airport.kind != Airports.SEAPLANE
-                if (ils || deice) Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    if (ils) {
-                        val cost = price(ILS_COST)
-                        ActionButton(stringResource(Res.string.landing_aids_for, money(cost)), enabled = funds >= cost) { send(Command.AirportUpgrade(me, airport.id, 0)) }
+                Text(kinds.getOrElse(airport.kind) { "" }, color = c.textDim, style = KitType.Dim)
+                // A row for each facility this kind of airport can have: a tick once it has it, else its price.
+                if (Airports.CLASS[airport.kind] >= Runways.REGIONAL) {
+                    Facility(Glyph.LandingAids, stringResource(Res.string.has_landing_aids), airport.ils, year, ILS_FROM, price(ILS_COST), funds) {
+                        send(Command.AirportUpgrade(me, airport.id, 0))
                     }
-                    if (deice) {
-                        val cost = price(DEICE_COST)
-                        ActionButton(stringResource(Res.string.deicing_for, money(cost)), enabled = funds >= cost) { send(Command.AirportUpgrade(me, airport.id, 1)) }
+                }
+                if (airport.kind != Airports.SEAPLANE) {
+                    Facility(Glyph.Deicing, stringResource(Res.string.has_deicing), airport.deice, year, DEICE_FROM, price(DEICE_COST), funds) {
+                        send(Command.AirportUpgrade(me, airport.id, 1))
                     }
                 }
             },
@@ -139,6 +134,19 @@ fun AirportCard(view: WorldView, roster: Roster, airport: AirportView, year: Int
             }
         }
     }
+}
+
+/** An airport facility named [label]: a tick when [has] it, its year when it's not out by [year], else a Buy button with [cost]. */
+@Composable
+private fun Facility(glyph: Glyph, label: String, has: Boolean, year: Int, from: Int, cost: Long, funds: Long, buy: () -> Unit) {
+    val c = LocalColors.current
+    ActionRow(glyph, label, dim = !has && year < from, end = {
+        when {
+            has -> GlyphIcon(Glyph.Tick, c.good, Modifier.size(22.dp))
+            year < from -> Text(stringResource(Res.string.available_from, from), color = c.textDim, style = KitType.Dim)
+            else -> ActionButton(stringResource(Res.string.buy_for, money(cost)), enabled = funds >= cost, strong = true, onClick = buy)
+        }
+    })
 }
 
 /** A ship's or aircraft's stops under their Head, each marked with [glyph] and tapped open to change, and a button to add more. */

@@ -199,9 +199,11 @@
     <string name="town_action_running">En cours</string>
     <string name="town_statue_up">Déjà érigée</string>
     <string name="town_no_room">Pas de place près du centre</string>
-    <string name="road_works_left">Travaux de voirie : encore %1$d jours</string>
-    <string name="funded_left">Nouveaux bâtiments : encore %1$d jours</string>
-    <string name="exclusive_left">Droits exclusifs à %1$s : encore %2$d jours</string>
+    <string name="road_works">Travaux de voirie</string>
+    <string name="funded_buildings">Nouveaux bâtiments</string>
+    <string name="exclusive_for">Droits exclusifs à %1$s</string>
+    <string name="days_left">encore %1$d jours</string>
+    <string name="head_approval">Opinion</string>
     <string-array name="weekdays">
         <item>lun.</item><item>mar.</item><item>mer.</item><item>jeu.</item><item>ven.</item><item>sam.</item><item>dim.</item>
     </string-array>
@@ -251,8 +253,6 @@
     <string name="rivals">Concurrents</string>
     <string name="companies">Compagnies</string>
     <string name="your_company">Votre compagnie</string>
-    <string name="company_line">Gagné %1$s · %2$d véhicules · %3$d gares</string>
-    <string name="company_line_takeover">Gagné %1$s · %2$d véhicules · %3$d gares · rachat pour %4$s</string>
     <string name="company_name">Nom de la compagnie</string>
     <string name="rename">Renommer</string>
     <string name="insignia">Insigne</string>
@@ -289,9 +289,13 @@
     <string name="month_year">%1$s %2$d</string>
     <string name="news_new_vehicle">Nouveau en vente : %1$s, %2$s</string>
     <string name="company_gone">Rachetée ou en faillite</string>
-    <string name="company_for_sale">À vendre pour %1$s</string>
-    <string name="buy_company">Acheter</string>
-    <string name="buy_company_sure">L’acheter ?</string>
+    <string name="company_for_sale">À vendre</string>
+    <string name="company_based">Basée à %1$s</string>
+    <string name="buy_company_sure_for">L’acheter pour %1$s ?</string>
+    <string name="stat_value">Valeur</string>
+    <string name="stat_money">Argent</string>
+    <string name="stat_vehicles">Véhicules</string>
+    <string name="stat_stations">Gares</string>
     <string name="news_company_trouble">%1$s n’arrive plus à payer ses frais</string>
     <string name="news_your_trouble">Votre compagnie n’arrive plus à payer ses frais, même en empruntant tout ce que la banque prête</string>
     <string name="news_company_for_sale">%1$s est à vendre</string>
@@ -320,7 +324,8 @@
     <string name="goal_progress">%1$s sur %2$s</string>
     <string name="goal_leader">%1$s : %2$s</string>
     <string name="town_needs">Pour grandir, chaque mois</string>
-    <string name="town_need_got">%1$s sur %2$s le mois dernier</string>
+    <string name="town_need_got">%1$s / %2$s</string>
+    <string name="town_growth_now">Croissance</string>
     <string name="town_heating">Chauffage, charbon ou carburant</string>
     <string name="town_growing">En croissance</string>
     <string name="town_not_growing">Ne grandit pas</string>
@@ -333,8 +338,8 @@
     <string name="share_orders">Partager les ordres avec</string>
     <string name="stop_sharing">Ne plus partager</string>
     <string name="fund_industry">Financer une industrie</string>
-    <string name="build_for">Construire pour %1$s</string>
-    <string name="prospect_for">Prospecter pour %1$s</string>
+    <string name="fund_build">Construire</string>
+    <string name="fund_prospect">Prospecter</string>
     <string name="news_prospect_failed">Prospection infructueuse : %1$s</string>
     <!-- Météo. -->
     <string name="weather">Météo</string>
@@ -468,10 +473,9 @@
     </string-array>
     <string name="seasonal_gear">Flotteurs et skis selon la saison</string>
     <string name="breaks_ice">Brise la glace jusqu'à %1$d cm</string>
-    <string name="landing_aids_for">Aides à l'atterrissage pour %1$s</string>
-    <string name="deicing_for">Dégivrage pour %1$s</string>
     <string name="has_landing_aids">Aides à l'atterrissage</string>
     <string name="has_deicing">Dégivrage</string>
+    <string name="available_from">Dès %1$d</string>
     <string name="news_diverted">%1$s a cessé d'attendre et a poursuivi sa route</string>
     <string name="kind_canal">Canal</string>
     <string name="kind_lock">Écluse</string>

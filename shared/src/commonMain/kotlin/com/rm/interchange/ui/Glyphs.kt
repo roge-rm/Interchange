@@ -27,6 +27,7 @@ enum class Glyph {
     AirStrip, Seaplane, Heliport, AirRegional, AirCity, AirInternational,
     BridgeTrestle, BridgeTruss, BridgeConcrete,
     SignalPath, SignalEntry, SignalExit, SignalCombo, Spacing,
+    AdSmall, AdMedium, AdLarge, RoadWorks, Statue, FundBuildings, Exclusive, LandingAids, Deicing,
 }
 
 /** [glyph] drawn in [tint] on a 24 unit square scaled to fit. */
@@ -214,7 +215,38 @@ private class GlyphPen(val scope: DrawScope, val u: Float, val dx: Float, val dy
                 line(20f, 4f, 20f, 20f); shape(true, 18.5f, 4f, 21.5f, 4f, 21.5f, 9f, 18.5f, 9f)
                 line(7.5f, 15f, 16.5f, 15f, 1.5f); open(10f, 12.5f, 7.5f, 15f, 10f, 17.5f); open(14f, 12.5f, 16.5f, 15f, 14f, 17.5f)
             }
+            // Town actions: a loudhailer with more sound the bigger the campaign, a road cone, a figure on a plinth,
+            // a house with a plus, a key for exclusive rights.
+            Glyph.AdSmall -> loudhailer(1)
+            Glyph.AdMedium -> loudhailer(2)
+            Glyph.AdLarge -> loudhailer(3)
+            Glyph.RoadWorks -> {
+                shape(false, 10f, 4f, 14f, 4f, 18f, 19f, 6f, 19f); line(3f, 20f, 21f, 20f)
+                line(8.4f, 11f, 15.6f, 11f, 1.5f); line(7.3f, 15f, 16.7f, 15f, 1.5f)
+            }
+            Glyph.Statue -> {
+                circle(12f, 4.5f, 2f); line(12f, 6.5f, 12f, 12f); line(12f, 8.5f, 16f, 5.5f, 1.5f); line(12f, 8.5f, 9f, 11f, 1.5f)
+                line(12f, 12f, 10f, 14.5f, 1.5f); line(12f, 12f, 14f, 14.5f, 1.5f)
+                shape(false, 8f, 15.5f, 16f, 15.5f, 16f, 20f, 8f, 20f); line(5f, 21f, 19f, 21f)
+            }
+            Glyph.FundBuildings -> { small(Glyph.Home, 0f, 5f, 0.8f); line(18.5f, 2f, 18.5f, 10f); line(14.5f, 6f, 22.5f, 6f) }
+            Glyph.Exclusive -> { circle(7f, 12f, 4f); line(11f, 12f, 21f, 12f); line(17.5f, 12f, 17.5f, 16f); line(21f, 12f, 21f, 15f) }
+            // Airport facilities: a runway seen from its approach with the lights before it; a snowflake and a drop.
+            Glyph.LandingAids -> {
+                shape(false, 9.5f, 3f, 14.5f, 3f, 18.5f, 14f, 5.5f, 14f); line(12f, 6f, 12f, 7.5f, 1.2f); line(12f, 10f, 12f, 11.5f, 1.2f)
+                line(6.5f, 17.5f, 17.5f, 17.5f, 1.5f); line(9f, 21f, 15f, 21f, 1.5f)
+            }
+            Glyph.Deicing -> {
+                small(Glyph.Snow, 0f, 0f, 0.6f)
+                circle(16.5f, 17.5f, 3.5f); line(16.5f, 9.5f, 13.4f, 15.8f); line(16.5f, 9.5f, 19.6f, 15.8f)
+            }
         }
+    }
+
+    /** A loudhailer pointing right with [waves] arcs of sound before it. */
+    private fun loudhailer(waves: Int) {
+        shape(false, 2f, 10f, 5f, 10f, 12f, 5f, 12f, 19f, 5f, 14f, 2f, 14f); line(5f, 14f, 6.5f, 18.5f)
+        for (k in 0 until waves) arc(12f, 12f, 3.5f + k * 3.5f, -40f, 80f)
     }
 
     /** [g] drawn [s] times its size with its corner at ([x], [y]). */
