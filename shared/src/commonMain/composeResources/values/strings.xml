@@ -116,9 +116,6 @@
     <string name="more_wagons">More wagons</string>
     <string name="buy_for">Buy, %1$s</string>
     <string name="orders">Orders</string>
-    <string name="platform_tiles">%1$d platform tiles</string>
-    <string name="no_trains_call">No trains call here</string>
-    <string name="show">Show</string>
 
     <!-- The title screen and the menu. -->
     <string name="continue_game">Continue</string>
@@ -212,9 +209,7 @@
     <string name="mail_load">Mail %1$d/%2$d</string>
 
     <!-- Journeys -->
-    <string name="going_to">Going to, passengers · mail</string>
     <string name="anywhere">Anywhere</string>
-    <string name="via">%1$s, changing at %2$s</string>
 
     <!-- Ratings, approval and the week -->
     <string name="town_standing">Thinks of your company: %1$s</string>
@@ -242,7 +237,6 @@
     <string-array name="cargoes">
         <item>Passengers</item><item>Mail</item><item>Timber</item><item>Lumber</item><item>Grain</item><item>Coal</item><item>Iron ore</item><item>Steel</item><item>Goods</item><item>Oil</item><item>Fuel</item><item>Livestock</item><item>Food</item><item>Fish</item><item>Paper</item><item>Potash</item><item>Nickel ore</item><item>Nickel</item><item>Bauxite</item><item>Aluminium</item>
     </string-array>
-    <string name="cargo_waiting">%1$s waiting: %2$d, rating %3$d%</string>
     <string name="produced_last_month">%1$s last month: %2$d, %3$d% carried</string>
     <string name="takes">Takes: %1$s</string>
     <string name="brought_last_month">Brought last month: %1$d</string>
@@ -692,6 +686,14 @@
     <string name="range">Range</string>
     <string name="km">%1$s km</string>
     <string name="load_of">%1$d / %2$d</string>
+    <!-- Station card -->
+    <string name="platform_tiles_label">Platform tiles</string>
+    <string name="head_waiting">Waiting and rating</string>
+    <string name="head_going">Going to</string>
+    <string name="changing_at">changing at %1$s</string>
+    <string name="head_calling">Calling here</string>
+    <string name="here_now">Here now</string>
+    <string name="nothing_calls">Nothing calls here</string>
     <plurals name="shared_with">
         <item quantity="one">Shared with %1$d other train</item>
         <item quantity="other">Shared with %1$d other trains</item>

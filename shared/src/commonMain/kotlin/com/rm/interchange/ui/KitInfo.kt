@@ -34,6 +34,8 @@ import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.semantics.Role
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
@@ -69,6 +71,8 @@ import kotlin.math.roundToInt
  * - CargoRow: a cargo's colour, its name and an amount right-aligned, with an optional bar and percent. For what a
  *   station has waiting, what an industry makes or a vehicle carries.
  * - FillBar and FillBarRow: a bar filled to a share, coloured from bad to good. For ratings, % carried, approval.
+ * - Grid: short items in two or more even columns. PlaceCell is a tile for one, a place's name over cargo amounts,
+ *   for where a station's passengers and mail are going.
  * - PictureRow: a picture in a box, a title with a value at its end, a dim line, a stats line and anything under
  *   them, tappable and lit when selected. For lists of vehicles, industries, buildings and anything else with a
  *   picture. ListRow (Kit.kt) is the same for a glyph instead of a picture.
@@ -241,6 +245,46 @@ fun FillBarRow(label: String, share: Float, text: String? = null, glyph: Glyph? 
     Column(Modifier.fillMaxWidth().semantics(mergeDescendants = true) {}, verticalArrangement = Arrangement.spacedBy(3.dp)) {
         InfoRow(label, text ?: stringResource(Res.string.percent, (share.coerceIn(0f, 1f) * 100).roundToInt()), glyph)
         FillBar(share, Modifier.fillMaxWidth(), colour)
+    }
+}
+
+/** [items] in [columns] equal columns, row by row, each drawn by [cell]; blank shares fill out the last row. */
+@Composable
+fun <T> Grid(items: List<T>, columns: Int = 2, cell: @Composable (T) -> Unit) {
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(KitSpace.Gap)) {
+        for (row in items.chunked(columns)) {
+            Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(KitSpace.Gap)) {
+                for (item in row) Box(Modifier.weight(1f).fillMaxHeight()) { cell(item) }
+                repeat(columns - row.size) { Box(Modifier.weight(1f)) }
+            }
+        }
+    }
+}
+
+/**
+ * A place's [name] on a tile, a dim [line] under it if given, and how much of each cargo goes there, a swatch by each
+ * amount; [amounts] are cargo to amount. For a [Grid] of where things are going.
+ */
+@Composable
+@OptIn(ExperimentalLayoutApi::class)
+fun PlaceCell(name: String, amounts: List<Pair<Int, Int>>, line: String? = null) {
+    val c = LocalColors.current
+    val cargoNames = stringArrayResource(Res.array.cargoes)
+    val spoken = amounts.joinToString(", ") { (cargo, n) -> "${cargoNames.getOrElse(cargo) { "" }} ${Numbers.grouped(n.toLong())}" }
+    Column(
+        Modifier.fillMaxSize().clip(RoundedCornerShape(KitSpace.InnerCorner)).background(c.button)
+            .padding(horizontal = KitSpace.RowAcross, vertical = KitSpace.RowDown)
+            .semantics(mergeDescendants = true) { contentDescription = listOfNotNull(name, line, spoken).joinToString(", ") },
+        verticalArrangement = Arrangement.spacedBy(KitSpace.Tight),
+    ) {
+        Text(name, color = c.text, style = KitType.Body, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        if (line != null) Text(line, color = c.textDim, style = KitType.Dim, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        FlowRow(verticalArrangement = Arrangement.spacedBy(KitSpace.Tight), horizontalArrangement = Arrangement.spacedBy(KitSpace.Gap)) {
+            for ((cargo, n) in amounts) Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(KitSpace.Tight)) {
+                CargoSwatch(cargo)
+                Text(Numbers.grouped(n.toLong()), color = c.text, style = KitType.Value, maxLines = 1)
+            }
+        }
     }
 }
 

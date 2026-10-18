@@ -91,6 +91,8 @@ class TrainView(
     val needsWires: Boolean = false,
     /** The company it belongs to. */
     val owner: Int = 0,
+    /** The station it's standing at now, or -1. */
+    val at: Int = -1,
     /** A wreck, waiting to be cleared. */
     val wrecked: Boolean = false,
 )
@@ -125,6 +127,8 @@ class RoadVehicleView(
     val renewCost: Long,
     /** The company it belongs to. */
     val owner: Int = 0,
+    /** The station it's standing at now, or -1. */
+    val at: Int = -1,
     /** A wreck, waiting to be cleared. */
     val wrecked: Boolean = false,
 )
@@ -159,6 +163,8 @@ class ShipView(
     val stormbound: Boolean,
     /** The company it belongs to. */
     val owner: Int = 0,
+    /** The station it's standing at now, or -1. */
+    val at: Int = -1,
 )
 
 /** An aircraft as the screen shows it. */
@@ -192,6 +198,8 @@ class AircraftView(
     val holdingFor: String?,
     /** The company it belongs to. */
     val owner: Int = 0,
+    /** The station it's standing at now, or -1. */
+    val at: Int = -1,
     /** A wreck on the runway, waiting to be cleared. */
     val wrecked: Boolean = false,
 )
@@ -371,6 +379,7 @@ fun World.view(company: Int = 0, withReserved: Boolean = false): WorldView {
             age(t), t.reliability / 100, t.brokenFor > 0, t.breakdowns, t.service, t.servicing, price(t.price) - value(t), age(t) >= t.engineInfo.life,
             t.inDepot && t.engineInfo.traction == Traction.ELECTRIC && depots.getOrNull(t.depot)?.let { !depotWired(it) } == true,
             owner = t.owner, wrecked = t.wreckedFor > 0,
+            at = if (t.waiting > 0 && !t.inDepot) t.steps.lastOrNull()?.let { stationAt(stepTile(it))?.id } ?: -1 else -1,
         )
     }
     val stationViews = stations.filterNotNull().map { s ->
@@ -416,6 +425,7 @@ fun World.view(company: Int = 0, withReserved: Boolean = false): WorldView {
                 v.profitThisYear, v.profitLastYear, (workDay - v.built).coerceAtLeast(0) / 365, v.reliability / 100, v.brokenFor > 0 && !v.slid, v.slid,
                 v.service, v.servicing, v.tires, v.seasonalTires, price(v.price) - roadValue(v),
                 owner = v.owner, wrecked = v.wreckedFor > 0,
+                at = if (v.waiting > 0 && !v.inDepot) roadStops[roadStepTile(v.at)] ?: -1 else -1,
             )
         },
         ships.filterNotNull().map { v ->
@@ -429,6 +439,7 @@ fun World.view(company: Int = 0, withReserved: Boolean = false): WorldView {
                 v.service, v.servicing, price(v.price) - craftValue(v.price, v.built, v.info.life),
                 iced && (weather.ice[shipTile(v)].toInt() and 255) > 0, v.waiting == 1 && weather.wind >= STORM_WIND,
                 owner = v.owner,
+                at = if (v.waiting > 0 && !v.inDepot) shipTile(v).let { t -> stations.firstOrNull { it != null && !it.waypoint && t in berths(it.id) }?.id } ?: -1 else -1,
             )
         },
         aircraft.filterNotNull().map { v ->
@@ -441,6 +452,7 @@ fun World.view(company: Int = 0, withReserved: Boolean = false): WorldView {
                 v.service, v.servicing, price(v.price) - craftValue(v.price, v.built, v.info.life), v.gear, v.seasonalGear,
                 if (v.state == Flight.HOLD && dest != null) cantLand(v, dest) else null,
                 owner = v.owner, wrecked = v.wreckedFor > 0,
+                at = if (v.state == Flight.GATE && !v.inDepot) airports.getOrNull(v.at)?.station ?: -1 else -1,
             )
         },
         airports.filterNotNull().map { AirportView(it.id, it.station, it.kind, it.x, it.y, it.w, it.h, it.axis, it.depot, it.ils, it.deice) },

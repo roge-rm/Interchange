@@ -217,46 +217,85 @@ fun DepotCard(view: WorldView, roster: Roster, depot: Int, year: Int, funds: Lon
     }
 }
 
-/** A station: its platforms and the trains that call there. */
+/** A station: what's waiting there and its ratings, where passengers and mail are going, and what calls there. */
 @Composable
-fun StationCard(view: WorldView, s: StationView, onTrain: (Int) -> Unit, onClose: () -> Unit, modifier: Modifier) {
+fun StationCard(view: WorldView, roster: Roster, s: StationView, onVehicle: (VehicleKind, Int) -> Unit, onClose: () -> Unit, modifier: Modifier) {
     val c = LocalColors.current
+    val lang = languageCode()
     Card(stationName(view, s.id), onClose, modifier) {
-        Text(stringResource(Res.string.platform_tiles, s.platforms), color = c.textDim, fontSize = 13.sp)
+        if (s.platforms > 0) InfoRow(stringResource(Res.string.platform_tiles_label), s.platforms.toString(), Glyph.Station)
         // Each cargo it deals in, with how much is waiting and its rating; passengers and mail always.
-        val names = stringArrayResource(Res.array.cargoes)
+        Head(stringResource(Res.string.head_waiting))
+        // Also what the vehicles calling here could load, before any has.
+        var loadable = 0
+        fun loads(orders: IntArray, cargo: (Int) -> Boolean) {
+            if (orders.none { Order.station(it) == s.id && !Order.has(it, Order.NO_LOAD) }) return
+            for (cg in 0 until Cargo.COUNT) if (cargo(cg)) loadable = loadable or (1 shl cg)
+        }
+        for (t in view.trains) loads(t.orders) { t.capacity[it] > 0 }
+        for (v in view.roadVehicles) loads(v.orders) { it == v.carries }
+        for (v in view.ships) loads(v.orders) { it == v.carries }
+        for (v in view.aircraft) loads(v.orders) { it == v.carries }
         for (cg in 0 until Cargo.COUNT) {
-            if (cg > Cargo.MAIL && s.served and (1 shl cg) == 0) continue
-            Text(
-                stringResource(Res.string.cargo_waiting, names.getOrElse(cg) { "" }, s.waiting[cg], s.rating[cg] * 100 / 255),
-                color = c.text, fontSize = 13.sp,
-            )
+            if (cg > Cargo.MAIL && (s.served or loadable) and (1 shl cg) == 0) continue
+            CargoRow(cg, Numbers.grouped(s.waiting[cg].toLong()), share = s.rating[cg] / 255f, percent = if (s.served and (1 shl cg) == 0) "-" else null)
         }
         // Where it's going, the most first, and where it'll change on the way.
-        if (s.going.isNotEmpty()) Text(stringResource(Res.string.going_to), color = c.textDim, fontSize = 12.sp)
-        for (g in s.going.take(GOING_SHOWN)) {
-            val dest = if (g.dest < 0) stringResource(Res.string.anywhere) else stationName(view, g.dest)
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    if (g.via >= 0) stringResource(Res.string.via, dest, stationName(view, g.via)) else dest,
-                    color = c.text, fontSize = 13.sp, modifier = Modifier.weight(1f), maxLines = 1,
-                )
-                Text(
-                    (0 until Cargo.COUNT).filter { g.counts[it] > 0 }.joinToString(" · ") { "${g.counts[it]} ${names.getOrElse(it) { "" }.lowercase()}" },
-                    color = c.textDim, fontSize = 13.sp,
+        if (s.going.isNotEmpty()) {
+            Head(stringResource(Res.string.head_going))
+            val anywhere = stringResource(Res.string.anywhere)
+            val names = s.going.take(GOING_SHOWN).map { g ->
+                Triple(
+                    if (g.dest < 0) anywhere else stationName(view, g.dest),
+                    if (g.via >= 0) stringResource(Res.string.changing_at, stationName(view, g.via)) else null,
+                    (0 until Cargo.COUNT).filter { g.counts[it] > 0 }.map { it to g.counts[it] },
                 )
             }
+            Grid(names) { (name, via, amounts) -> PlaceCell(name, amounts, via) }
         }
-        val calling = view.trains.filter { tr -> tr.orders.any { Order.station(it) == s.id } }
-        if (calling.isEmpty()) Text(stringResource(Res.string.no_trains_call), color = c.textDim, fontSize = 13.sp)
-        for (t in calling) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(trainName(t), color = c.text, fontSize = 13.sp, modifier = Modifier.weight(1f))
-                ActionButton(stringResource(Res.string.show)) { onTrain(t.id) }
-            }
+        // Everything with a stop here, each tapped to open it.
+        Head(stringResource(Res.string.head_calling))
+        fun calls(orders: IntArray) = orders.any { Order.station(it) == s.id }
+        val hereNow = stringResource(Res.string.here_now)
+        var any = false
+        for (t in view.trains) if (calls(t.orders)) key("t", t.id) {
+            any = true
+            val e = roster[t.engine]
+            val w = roster[t.wagon]
+            CallingRow(
+                trainName(t), e,
+                stringResource(Res.string.consist_line, e.name(lang), t.wagons, (if (t.wagons == 1) w.name(lang) else w.plural(lang)).lowercase()),
+                t.load.sum(), t.capacity.sum(), if (t.at == s.id) hereNow else null,
+            ) { onVehicle(VehicleKind.ENGINE, t.id) }
         }
+        for (v in view.roadVehicles) if (calls(v.orders)) key("r", v.id) {
+            any = true
+            val e = roster[v.model]
+            CallingRow(roadVehicleName(v), e, e.name(lang), v.load, v.capacity, if (v.at == s.id) hereNow else null) { onVehicle(VehicleKind.ROAD, v.id) }
+        }
+        for (v in view.ships) if (calls(v.orders)) key("s", v.id) {
+            any = true
+            val e = roster[v.model]
+            CallingRow(shipName(v), e, e.name(lang), v.load, v.capacity, if (v.at == s.id) hereNow else null) { onVehicle(VehicleKind.SHIP, v.id) }
+        }
+        for (v in view.aircraft) if (calls(v.orders)) key("a", v.id) {
+            any = true
+            val e = roster[v.model]
+            CallingRow(aircraftName(v), e, e.name(lang), v.load, v.capacity, if (v.at == s.id) hereNow else null) { onVehicle(VehicleKind.AIRCRAFT, v.id) }
+        }
+        if (!any) Text(stringResource(Res.string.nothing_calls), color = c.textDim, style = KitType.Body)
     }
 }
 
-/** How many destinations a station's card lists. */
-private const val GOING_SHOWN = 6
+/** A vehicle that calls at a station: its picture, [name], [model], what it has on board and [here] if it's there now. */
+@Composable
+private fun CallingRow(name: String, e: Engine, model: String, load: Int, capacity: Int, here: String?, onClick: () -> Unit) {
+    PictureRow(
+        name, picture = { VehiclePicture(e, it) }, titleEnd = here,
+        line = model, lineEnd = if (capacity > 0) stringResource(Res.string.load_of, load, capacity) else null,
+        onClick = onClick,
+    )
+}
+
+/** How many destinations a station's card lists, two to a row. */
+private const val GOING_SHOWN = 8

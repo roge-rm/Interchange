@@ -49,6 +49,7 @@ import com.rm.interchange.map.LandPainter
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.foundation.layout.RowScope
 import org.jetbrains.compose.resources.pluralStringResource
+import com.rm.interchange.sim.VehicleKind
 import com.rm.interchange.sim.Autorenew
 import com.rm.interchange.sim.Crash
 import com.rm.interchange.sim.crashFor
@@ -1241,7 +1242,14 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
                 is Selection.Station -> {
                     val s = wv?.stations?.firstOrNull { it.id == sel.id }
                     if (s == null || wv == null) selected = null
-                    else StationCard(wv, s, { selected = Selection.Train(it) }, { selected = null }, cardSize)
+                    else StationCard(wv, world.roster, s, { kind, id ->
+                        selected = when (kind) {
+                            VehicleKind.ROAD -> Selection.RoadVehicle(id)
+                            VehicleKind.SHIP -> Selection.Ship(id)
+                            VehicleKind.AIRCRAFT -> Selection.Aircraft(id)
+                            else -> Selection.Train(id)
+                        }
+                    }, { selected = null }, cardSize)
                 }
                 null -> {}
             }

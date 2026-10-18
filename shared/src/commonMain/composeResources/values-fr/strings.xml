@@ -103,9 +103,6 @@
     <string name="more_wagons">Plus de wagons</string>
     <string name="buy_for">Acheter, %1$s</string>
     <string name="orders">Arrêts</string>
-    <string name="platform_tiles">%1$d cases de quai</string>
-    <string name="no_trains_call">Aucun train ne s'y arrête</string>
-    <string name="show">Voir</string>
 
     <string name="continue_game">Continuer</string>
     <string name="new_game">Nouvelle partie</string>
@@ -195,9 +192,7 @@
     <string name="mail_load">Courrier %1$d/%2$d</string>
 
     <!-- Trajets -->
-    <string name="going_to">Destination, voyageurs · courrier</string>
     <string name="anywhere">N'importe où</string>
-    <string name="via">%1$s, correspondance à %2$s</string>
 
     <!-- Notes, réputation et la semaine -->
     <string name="town_standing">Opinion de votre compagnie : %1$s</string>
@@ -225,7 +220,6 @@
     <string-array name="cargoes">
         <item>Voyageurs</item><item>Courrier</item><item>Bois rond</item><item>Bois d'œuvre</item><item>Grain</item><item>Charbon</item><item>Minerai de fer</item><item>Acier</item><item>Marchandises</item><item>Pétrole</item><item>Carburant</item><item>Bétail</item><item>Aliments</item><item>Poisson</item><item>Papier</item><item>Potasse</item><item>Minerai de nickel</item><item>Nickel</item><item>Bauxite</item><item>Aluminium</item>
     </string-array>
-    <string name="cargo_waiting">%1$s en attente : %2$d, note %3$d&#160;%</string>
     <string name="produced_last_month">%1$s le mois dernier : %2$d, %3$d&#160;% transportés</string>
     <string name="takes">Accepte : %1$s</string>
     <string name="brought_last_month">Reçu le mois dernier : %1$d</string>
@@ -675,6 +669,14 @@
     <string name="range">Autonomie</string>
     <string name="km">%1$s km</string>
     <string name="load_of">%1$d / %2$d</string>
+    <!-- Station card -->
+    <string name="platform_tiles_label">Cases de quai</string>
+    <string name="head_waiting">En attente et note</string>
+    <string name="head_going">Destinations</string>
+    <string name="changing_at">correspondance à %1$s</string>
+    <string name="head_calling">Desservie par</string>
+    <string name="here_now">Ici</string>
+    <string name="nothing_calls">Aucun véhicule ne s'y arrête</string>
     <plurals name="shared_with">
         <item quantity="one">Partagés avec %1$d autre train</item>
         <item quantity="other">Partagés avec %1$d autres trains</item>
