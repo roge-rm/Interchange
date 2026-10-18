@@ -135,6 +135,82 @@ class ServiceTest {
         assertEquals(1, v.depot)
     }
 
+    /** A closer garage on a long spur and a garage beside the road between the bus's stops. */
+    private fun garageDetour(): Pair<World, RoadVehicle> {
+        val w = World(64, 64, 1, startYear = 1965)
+        w.corners.fill(3)
+        w.companies[0].money = 10_000_000
+        w.apply(Command.Road(0, 10, 20, 40, 20, Surface.PAVED, remove = false))
+        w.apply(Command.Road(0, 36, 20, 36, 24, Surface.PAVED, remove = false))
+        w.apply(Command.Garage(0, 36, 25, Track.YM))
+        w.apply(Command.Garage(0, 25, 21, Track.YM))
+        w.apply(Command.RoadStop(0, 12, 20))
+        w.apply(Command.RoadStop(0, 38, 20))
+        assertEquals(2, w.depots.size)
+        assertEquals(2, w.stations.size)
+        w.apply(Command.BuyRoadVehicle(0, 0, w.roster.engines.first { it.key == "base:new_look" }.id))
+        val v = w.roadVehicles[0]!!
+        v.at = roadStep(w.index(38, 20), Track.XP, Track.XM)
+        v.inDepot = false
+        v.orders.addAll(listOf(0, 1))
+        v.toDepot = true
+        v.servicing = true
+        v.seasonalTires = false
+        return w to v
+    }
+
+    private fun chosenGarage(w: World, v: RoadVehicle) =
+        w.depotTiles[roadStepTile(w.planRoadRoute(v)!!.last())]
+
+    @Test
+    fun aBusServicesWithTheSmallestDetourToItsNextStop() {
+        val (w, v) = garageDetour()
+        assertEquals(1, chosenGarage(w, v), "chose the closer garage on the long spur")
+        // Planning on workers must leave the vehicle's orders and depot alone.
+        assertEquals(0, v.depot)
+        assertEquals(0, v.order)
+        assertEquals(listOf(0, 1), v.orders)
+        v.running = true
+        v.serviced = w.workDay - SERVICE_DAYS
+        var ticks = 0
+        while (ticks++ < 20_000 && v.serviced < 0) w.step()
+        assertEquals(1, v.depot)
+        assertTrue(v.serviced >= 0, "never serviced")
+        while (ticks++ < 20_000 && !called(w, 0, 0)) w.step()
+        assertTrue(called(w, 0, 0), "never resumed its orders")
+    }
+
+    @Test
+    fun aBusGarageChoiceFollowsItsNextOrder() {
+        val (w, v) = garageDetour()
+        v.order = 1
+        assertEquals(0, chosenGarage(w, v))
+    }
+
+    @Test
+    fun aBusWithNoOrdersServicesAtTheNearestGarage() {
+        val (w, v) = garageDetour()
+        v.orders.clear()
+        assertEquals(0, chosenGarage(w, v))
+    }
+
+    @Test
+    fun aBusSentInByHandStillGoesToItsOwnGarage() {
+        val (w, v) = garageDetour()
+        v.servicing = false
+        assertEquals(0, chosenGarage(w, v))
+    }
+
+    @Test
+    fun aBusWithAnUnreachableNextStopStillGetsServiced() {
+        val (w, v) = garageDetour()
+        w.apply(Command.Road(0, 10, 40, 15, 40, Surface.PAVED, remove = false))
+        w.apply(Command.RoadStop(0, 12, 40))
+        assertEquals(3, w.stations.size)
+        v.orders[0] = 2
+        assertEquals(0, chosenGarage(w, v))
+    }
+
     @Test
     fun aBusWithNoOrdersStillGoesInTwiceTheTime() {
         val w = World(64, 64, 1, startYear = 1965)

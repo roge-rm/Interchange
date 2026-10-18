@@ -316,7 +316,7 @@ private fun World.driveRoadVehicle(v: RoadVehicle, on: HashMap<Int, ArrayList<Ro
             }
             nextRoadOrder(v)
             v.route = null
-            // Due a service or a change of tires: from this stop to the nearest garage, then on to its next order.
+            // Due a service or a change of tires: choose a garage on the way to its next order.
             if (due) {
                 v.toDepot = true
                 v.servicing = true
@@ -576,33 +576,47 @@ internal fun World.planRoadRoute(v: RoadVehicle): IntArray? {
     val garage = if (target == -1 && !anyGarage) depots.getOrNull(v.depot)?.tile ?: return null else -1
     fun isGarage(tile: Int) = if (anyGarage) depotAt(tile)?.let { it.owner == v.owner && it.kind == Depots.ROAD } == true else tile == garage
     val tram = v.info.tram
+    val nextStop = if (v.servicing && target == -1) v.orders.getOrNull(v.order % v.orders.size.coerceAtLeast(1))?.let { Order.station(it) } else null
+    val onward = nextStop?.let { garageOnwardCosts(v, it) }?.takeIf { it.isNotEmpty() }
     val dist = HashMap<Int, Int>()
     val prev = HashMap<Int, Int>()
     val heap = RoadHeap()
     for (s in roadNext(v.at, tram)) { dist[s] = 0; heap.push(0, s) }
     var looked = 0
+    var nearest = -1
+    var best = -1
+    var bestCost = Int.MAX_VALUE
+    fun path(goal: Int): IntArray {
+        val back = ArrayList<Int>()
+        var k = goal
+        while (true) {
+            back += k
+            k = prev[k] ?: break
+        }
+        back.reverse()
+        return back.toIntArray()
+    }
     while (heap.size > 0) {
         val top = heap.pop()
         val cost = (top ushr 32).toInt()
         val s = top.toInt()
         if (cost > (dist[s] ?: Int.MAX_VALUE)) continue
         val tile = roadStepTile(s)
+        if (cost >= bestCost) break
         if ((target >= 0 && roadStops[tile] == target) || target == -1 && isGarage(tile)) {
-            val back = ArrayList<Int>()
-            var k = s
-            while (true) {
-                back += k
-                k = prev[k] ?: break
+            if (onward == null) return path(s)
+            if (nearest < 0) nearest = s
+            onward[s]?.let { after ->
+                if (cost + after < bestCost) { best = s; bestCost = cost + after }
             }
-            back.reverse()
-            return back.toIntArray()
+            continue
         }
-        if (++looked > MAX_ROAD_LOOK) return null
+        if (++looked > MAX_ROAD_LOOK) return if (onward != null && nearest >= 0) path(if (best >= 0) best else nearest) else null
         for (n in roadNext(s, tram)) {
             val nt = roadStepTile(n)
             // Garages only as the end of the way; other companies' stops are just road.
             if (depotTiles.containsKey(nt) && !(target == -1 && isGarage(nt))) continue
-            val c = cost + roadStepLength(n) / FIX * 110 / Surface.SPEED[surfaceAt(nt)] + if (roadStepEntry(n) == roadStepExit(n)) U_TURN else 0
+            val c = cost + roadRouteCost(n)
             if (c < (dist[n] ?: Int.MAX_VALUE)) {
                 dist[n] = c
                 prev[n] = s
@@ -610,7 +624,50 @@ internal fun World.planRoadRoute(v: RoadVehicle): IntArray? {
             }
         }
     }
-    return null
+    return if (nearest >= 0) path(if (best >= 0) best else nearest) else null
+}
+
+private fun World.roadRouteCost(s: Int) = roadStepLength(s) / FIX * 110 / Surface.SPEED[surfaceAt(roadStepTile(s))] +
+    if (roadStepEntry(s) == roadStepExit(s)) U_TURN else 0
+
+/** Costs from each garage out to the next stop, following the roads backwards with their usual turn and speed costs. */
+private fun World.garageOnwardCosts(v: RoadVehicle, station: Int): Map<Int, Int> {
+    val pending = depots.filterNotNull().filter { it.owner == v.owner && it.road }
+        .map { roadStep(it.tile, it.edge, it.edge) }.toHashSet()
+    val dist = HashMap<Int, Int>()
+    val result = HashMap<Int, Int>()
+    val heap = RoadHeap()
+    for (tile in stations.getOrNull(station)?.stops.orEmpty()) {
+        for (entry in 0 until 4) for (s in roadWays(tile, entry, v.info.tram)) {
+            dist[s] = 0
+            heap.push(0, s)
+        }
+    }
+    var looked = 0
+    while (heap.size > 0 && pending.isNotEmpty()) {
+        val top = heap.pop()
+        val cost = (top ushr 32).toInt()
+        val s = top.toInt()
+        if (cost > (dist[s] ?: Int.MAX_VALUE)) continue
+        if (pending.remove(s)) result[s] = cost
+        val tile = roadStepTile(s)
+        // A garage can start a journey, but cannot be driven through.
+        if (depotTiles.containsKey(tile)) continue
+        if (++looked > MAX_ROAD_LOOK) break
+        val before = roadAcross(tile, roadStepEntry(s))
+        if (before < 0) continue
+        val exit = Track.opposite(roadStepEntry(s))
+        for (entry in 0 until 4) for (p in roadWays(before, entry, v.info.tram)) {
+            if (roadStepExit(p) != exit) continue
+            val c = cost + roadRouteCost(s)
+            if (c < (dist[p] ?: Int.MAX_VALUE)) {
+                dist[p] = c
+                heap.push(c, p)
+            }
+        }
+    }
+    // Only settled garage costs are used if the search reached its limit.
+    return result
 }
 
 /** A min-heap of costs and road steps packed into longs. */
