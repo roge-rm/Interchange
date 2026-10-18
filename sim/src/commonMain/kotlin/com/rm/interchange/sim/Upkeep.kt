@@ -5,8 +5,8 @@ package com.rm.interchange.sim
  * falls a little every day it's out, and the lower it is the likelier a
  * breakdown, which stands it for a day or two; steam breaks down more in deep
  * cold. Once [SERVICE_DAYS] have gone by, a train set to be serviced finishes
- * its leg, calls at its next stop, then goes from there to the nearest depot
- * its company has that it can reach, and comes out as good as its age lets it
+ * its leg, calls at its next stop, then chooses a depot on the way to its
+ * following stop, and comes out as good as its age lets it
  * be. One that's gone twice as long, calling nowhere, goes from where it is.
  * Past its engine's life it's never as good again, and is worth less;
  * renewing it in the depot makes it new.
@@ -62,7 +62,7 @@ fun World.overdue(service: Boolean, serviced: Int) = service && workDay - servic
 /** Whether company [owner] has a depot of [kind] standing. */
 fun World.hasDepot(owner: Int, kind: Int) = depots.any { it != null && it.owner == owner && it.kind == kind }
 
-/** Sends train [t] off for a service at the nearest depot its route finds. */
+/** Sends train [t] off for a service, choosing a depot on the way to its next order. */
 internal fun World.forService(t: Train) {
     t.toDepot = true
     t.servicing = true

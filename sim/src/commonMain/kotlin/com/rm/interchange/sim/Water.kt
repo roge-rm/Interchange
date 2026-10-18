@@ -564,9 +564,12 @@ internal fun World.planShipRoute(v: Ship): IntArray? {
     if (goals.isEmpty()) return null
     val start = shipTile(v)
     if (start in goals) return IntArray(0)
+    val next = if (v.servicing && target == -1) v.orders.getOrNull(v.order % v.orders.size.coerceAtLeast(1))?.let { Order.station(it) } else null
+    val onward = next?.let { shipOnwardCosts(v, berths(it), goals) }?.takeIf { it.isNotEmpty() }
     val gx = goals.map { it % width }
     val gy = goals.map { it / width }
     fun guess(i: Int): Int {
+        if (onward != null) return 0
         var best = Int.MAX_VALUE
         for (k in gx.indices) {
             val dx = kotlin.math.abs(i % width - gx[k])
@@ -581,22 +584,33 @@ internal fun World.planShipRoute(v: Ship): IntArray? {
     dist[start] = 0
     heap.push(guess(start), start)
     var looked = 0
+    var nearest = -1
+    var best = -1
+    var bestCost = Int.MAX_VALUE
+    fun path(goal: Int): IntArray {
+        val back = ArrayList<Int>()
+        var k = goal
+        while (k != start) {
+            back += k
+            k = prev[k] ?: break
+        }
+        back.reverse()
+        return back.toIntArray()
+    }
     while (heap.size > 0) {
         val top = heap.pop()
         val a = top.toInt()
         val cost = dist[a] ?: continue
         if ((top ushr 32).toInt() > cost + guess(a)) continue
+        if (cost >= bestCost) break
         if (a in goals) {
-            val back = ArrayList<Int>()
-            var k = a
-            while (k != start) {
-                back += k
-                k = prev[k] ?: break
+            if (onward == null) return path(a)
+            if (nearest < 0) nearest = a
+            onward[a]?.let { after ->
+                if (cost + after < bestCost) { best = a; bestCost = cost + after }
             }
-            back.reverse()
-            return back.toIntArray()
         }
-        if (++looked > MAX_SHIP_LOOK) return null
+        if (++looked > MAX_SHIP_LOOK) break
         shipNeighbours(a, v) { b, step ->
             val c = cost + step
             if (c < (dist[b] ?: Int.MAX_VALUE)) {
@@ -606,7 +620,39 @@ internal fun World.planShipRoute(v: Ship): IntArray? {
             }
         }
     }
-    return null
+    return if (nearest >= 0) path(if (best >= 0) best else nearest) else null
+}
+
+/** Reverse water search, checking each forward move so lock costs and ice restrictions agree with sailing. */
+private fun World.shipOnwardCosts(v: Ship, stops: List<Int>, yards: Set<Int>): Map<Int, Int> {
+    val pending = yards.toMutableSet()
+    val dist = HashMap<Int, Int>()
+    val result = HashMap<Int, Int>()
+    val heap = WaterHeap()
+    for (tile in stops) { dist[tile] = 0; heap.push(0, tile) }
+    var looked = 0
+    while (heap.size > 0 && pending.isNotEmpty()) {
+        val top = heap.pop()
+        val cost = (top ushr 32).toInt()
+        val a = top.toInt()
+        if (cost > (dist[a] ?: Int.MAX_VALUE)) continue
+        if (pending.remove(a)) result[a] = cost
+        if (++looked > MAX_SHIP_LOOK) break
+        val x = a % width
+        val y = a / width
+        for (dy in -1..1) for (dx in -1..1) {
+            if (dx == 0 && dy == 0 || !inside(x + dx, y + dy)) continue
+            val b = index(x + dx, y + dy)
+            if (!navigable(b)) continue
+            shipNeighbours(b, v) { to, step ->
+                if (to == a && cost + step < (dist[b] ?: Int.MAX_VALUE)) {
+                    dist[b] = cost + step
+                    heap.push(cost + step, b)
+                }
+            }
+        }
+    }
+    return result
 }
 
 /** A min-heap of costs and tiles packed into longs. */

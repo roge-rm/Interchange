@@ -66,6 +66,55 @@ class ServiceTest {
         assertTrue(!t.inDepot && t.running)
     }
 
+    private fun railDetour(): Pair<World, Train> {
+        val w = World(64, 64, 1, startYear = 1900)
+        w.corners.fill(3)
+        w.companies[0].money = 10_000_000
+        w.apply(Command.Depot(0, 2, 10, Track.XP))
+        w.apply(Command.Rail(0, 3, 10, 41, 10, Track.X, remove = false))
+        w.apply(Command.Station(0, 10, 10, 13, 10, Track.X))
+        w.apply(Command.Station(0, 36, 10, 39, 10, Track.X))
+        w.apply(Command.Depot(0, 42, 10, Track.XM))
+        w.apply(Command.Rail(0, 25, 10, 25, 10, Track.S, remove = false))
+        w.apply(Command.Rail(0, 25, 10, 25, 10, Track.W, remove = false))
+        w.apply(Command.Depot(0, 25, 11, Track.YM))
+        assertEquals(3, w.depots.size)
+        w.apply(Command.BuyTrain(0, 0, w.roster.engines.first { it.key == "base:american" }.id, w.roster.engines.first { it.key == "base:coach_wood" }.id, 1))
+        val t = w.trains[0]!!
+        t.steps.clear()
+        for (x in 30..38) t.steps += step(w.index(x, 10), Track.index(Track.X), Track.XM)
+        t.nose = 8 * FIX
+        t.inDepot = false
+        t.orders.addAll(listOf(0, 1))
+        t.toDepot = true
+        t.servicing = true
+        return w to t
+    }
+
+    @Test
+    fun aTrainTurnsBackForAGarageAlongItsNextLeg() {
+        val (w, t) = railDetour()
+        val plan = w.planRoute(t)!!
+        assertTrue(plan.behind, "went beyond its stops instead of turning back")
+        assertEquals(2, w.depotTiles[stepTile(plan.steps.last())])
+        assertEquals(0, t.depot)
+        t.running = true
+        t.serviced = -SERVICE_DAYS
+        var ticks = 0
+        while (ticks++ < 20_000 && t.serviced < 0) w.step()
+        assertTrue(t.serviced >= 0, "never serviced")
+        assertEquals(2, t.depot)
+        while (ticks++ < 20_000 && !called(w, 0, 0)) w.step()
+        assertTrue(called(w, 0, 0), "never resumed its orders")
+    }
+
+    @Test
+    fun aTrainSentInByHandStillGoesHome() {
+        val (w, t) = railDetour()
+        t.servicing = false
+        assertEquals(0, w.depotTiles[stepTile(w.planRoute(t)!!.steps.last())])
+    }
+
     /** A train out on the line with its orders taken away, so it stands and calls nowhere. */
     private fun standing(service: Boolean): Pair<World, Train> {
         val w = World(64, 64, 1, startYear = 1900)
@@ -258,6 +307,76 @@ class ServiceTest {
         assertTrue(called(w, 1, trip.dueTick))
         assertTrue(trip.serviced, "never serviced")
         assertEquals(1, v.depot)
+    }
+
+    private fun shipDetour(): Pair<World, Ship> {
+        val w = World(64, 64, 1, startYear = 1965)
+        for (y in 0..64) for (x in 0..64) w.corners[w.corner(x, y)] = if (x in 10..50 && y in 10..30) 0 else 1
+        w.shoreChanged()
+        w.companies[0].money = 100_000_000
+        w.apply(Command.Dock(0, 9, 12))
+        w.apply(Command.Shipyard(0, 50, 16))
+        w.apply(Command.Shipyard(0, 30, 9))
+        assertEquals(2, w.depots.size)
+        w.apply(Command.BuyCraft(0, 0, w.roster.engines.first { it.key == "base:steam_laker" }.id))
+        val v = w.ships[0]!!
+        v.x = 46 * SHIP_UNIT
+        v.y = 12 * SHIP_UNIT
+        v.inDepot = false
+        v.orders.add(0)
+        v.toDepot = true
+        v.servicing = true
+        return w to v
+    }
+
+    @Test
+    fun aShipUsesTheShipyardAlongItsCrossing() {
+        val (w, v) = shipDetour()
+        assertEquals(w.shipyardWater(w.depots[1]!!), w.planShipRoute(v)!!.last())
+        v.running = true
+        v.serviced = -SERVICE_DAYS
+        var ticks = 0
+        while (ticks++ < 30_000 && v.serviced < 0) w.step()
+        assertTrue(v.serviced >= 0, "never serviced")
+        assertEquals(1, v.depot)
+        while (ticks++ < 30_000 && !called(w, 0, 0)) w.step()
+        assertTrue(called(w, 0, 0), "never resumed its orders")
+    }
+
+    @Test
+    fun aShipWithoutOrdersStillUsesTheNearestShipyard() {
+        val (w, v) = shipDetour()
+        v.orders.clear()
+        assertEquals(w.shipyardWater(w.depots[0]!!), w.planShipRoute(v)!!.last())
+    }
+
+    @Test
+    fun aShipSentInByHandStillGoesHome() {
+        val (w, v) = shipDetour()
+        v.servicing = false
+        assertEquals(w.shipyardWater(w.depots[0]!!), w.planShipRoute(v)!!.last())
+    }
+
+    @Test
+    fun anAircraftChoosesAHangarAlongItsFlight() {
+        val w = World(64, 64, 1, startYear = 1965)
+        w.corners.fill(1)
+        w.companies[0].money = 100_000_000
+        w.apply(Command.Airport(0, 5, 20, Airports.REGIONAL, Track.X))
+        w.apply(Command.Airport(0, 44, 30, Airports.REGIONAL, Track.X))
+        w.apply(Command.Airport(0, 25, 20, Airports.REGIONAL, Track.X))
+        assertEquals(3, w.airports.size)
+        w.apply(Command.BuyCraft(0, w.airports[1]!!.depot, w.roster.engines.first { it.key == "base:dc3" }.id))
+        val v = w.aircraft[0]!!
+        v.x = 40 * SHIP_UNIT
+        v.y = 20 * SHIP_UNIT
+        v.state = Flight.CRUISE
+        v.inDepot = false
+        v.orders.add(w.airports[0]!!.station)
+        assertEquals(w.airports[1]!!.id, w.nearestHangar(v)!!.id)
+        w.forService(v)
+        assertEquals(w.airports[2]!!.depot, v.depot)
+        assertEquals(0, v.order)
     }
 
     @Test

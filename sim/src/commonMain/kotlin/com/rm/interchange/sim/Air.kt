@@ -708,16 +708,19 @@ private fun World.intoHangar(v: Aircraft) {
 private fun World.needsGear(v: Aircraft) = v.seasonalGear && v.info.floats && v.gear != wantedGear(v)
 
 /**
- * The nearest airport with a hangar of [v]'s company that it can use, reach and land at on the gear it has,
- * the one it's at if that will do, or null.
+ * A compatible company hangar with the shortest flight through it to [next], or the nearest if none has an onward flight.
+ * Without [next], choose the nearest compatible hangar.
  */
-internal fun World.nearestHangar(v: Aircraft): Airport? {
+internal fun World.nearestHangar(v: Aircraft, next: Airport? = null): Airport? {
     // From the airport it's at, or where it is in the air, in tiles.
     val here = if (v.state == Flight.GATE) airports.getOrNull(v.at) else null
     val x = here?.x ?: (v.x / SHIP_UNIT)
     val y = here?.y ?: (v.y / SHIP_UNIT)
     var best: Airport? = null
     var bestDist = Long.MAX_VALUE
+    var bestOut = Long.MAX_VALUE
+    var nearest: Airport? = null
+    var nearestDist = Long.MAX_VALUE
     for (a in airports) {
         if (a == null || !a.serves(v.info)) continue
         val d = depots.getOrNull(a.depot) ?: continue
@@ -728,14 +731,21 @@ internal fun World.nearestHangar(v: Aircraft): Airport? {
         if (v.info.range > 0 && km > v.info.range) continue
         // Wheels don't land on water, nor floats on land.
         if (if (a.kind == Airports.SEAPLANE) v.gear == Gear.WHEELS else v.info.floats && v.gear == Gear.FLOATS) continue
-        if (dx * dx + dy * dy < bestDist) { best = a; bestDist = dx * dx + dy * dy }
+        val distance = isqrt((dx * dx + dy * dy) * 1_000_000)
+        if (distance < nearestDist) { nearest = a; nearestDist = distance }
+        if (next != null && (!next.serves(v.info) || tooFar(v, a, next))) continue
+        val nx = (next?.x ?: a.x) - a.x
+        val ny = (next?.y ?: a.y) - a.y
+        val trip = distance + isqrt((nx.toLong() * nx + ny.toLong() * ny) * 1_000_000)
+        if (trip < bestDist || trip == bestDist && distance < bestOut) { best = a; bestDist = trip; bestOut = distance }
     }
-    return best
+    return best ?: nearest
 }
 
 /** Sends [v] for a service at [nearestHangar], its home after. Nothing happens if there's none. */
 internal fun World.forService(v: Aircraft) {
-    val a = nearestHangar(v) ?: return
+    val next = v.orders.getOrNull(v.order % v.orders.size.coerceAtLeast(1))?.let { airportOf(Order.station(it)) }
+    val a = nearestHangar(v, next) ?: return
     v.depot = a.depot
     v.toDepot = true
     v.servicing = true

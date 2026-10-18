@@ -400,7 +400,7 @@ private fun World.drive(t: Train) {
             }
             nextOrder(t)
             t.route = null
-            // Due a service: from this stop to the nearest depot, then on to its next order.
+            // Due a service: choose a depot on the way to its next order.
             if (due) forService(t)
         }
         return
