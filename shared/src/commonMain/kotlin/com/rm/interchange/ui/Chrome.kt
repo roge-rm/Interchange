@@ -362,7 +362,7 @@ fun InfoCard(title: String, lines: List<String>, onClose: () -> Unit, modifier: 
     ChromeBox(modifier) {
         Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(title, color = c.text, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                Text(title, color = c.text, style = KitType.CardTitle, modifier = Modifier.weight(1f))
                 SquareButton(Glyph.Remove, stringResource(Res.string.close), 28.dp, onClick = onClose)
             }
             for (l in lines) Text(l, color = c.textDim, fontSize = 13.sp)
@@ -449,7 +449,7 @@ fun Card(title: String, onClose: () -> Unit, modifier: Modifier = Modifier, scro
     ChromeBox(modifier) {
         Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(title, color = c.text, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f), maxLines = 1)
+                Text(title, color = c.text, style = KitType.CardTitle, modifier = Modifier.weight(1f), maxLines = 1)
                 SquareButton(Glyph.Remove, stringResource(Res.string.close), 28.dp, onClick = onClose)
             }
             Column(

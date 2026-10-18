@@ -132,6 +132,7 @@
     <string name="new_seed">Nouvelle graine</string>
     <string name="sea">Mer</string>
     <string name="sea_percent">%1$d&#160;%</string>
+    <string name="percent">%1$d&#160;%</string>
     <string name="hills">Relief</string>
     <string-array name="hill_levels">
         <item>Plat</item><item>Vallonné</item><item>Accidenté</item><item>Montagneux</item>
@@ -366,18 +367,27 @@
         <item>Printemps</item><item>Été</item><item>Automne</item><item>Hiver</item>
     </string-array>
     <string-array name="winds">
-        <item>Vent d'ouest</item><item>Vent du nord-ouest</item><item>Vent du nord</item><item>Vent du nord-est</item>
-        <item>Vent d'est</item><item>Vent du sud-est</item><item>Vent du sud</item><item>Vent du sud-ouest</item>
+        <item>Ouest</item><item>Nord-ouest</item><item>Nord</item><item>Nord-est</item>
+        <item>Est</item><item>Sud-est</item><item>Sud</item><item>Sud-ouest</item>
     </string-array>
     <string name="wind_speed">%1$s, %2$d km/h</string>
+    <string name="weather_now">Maintenant</string>
+    <string name="weather_ground">Au sol</string>
+    <string name="weather_year">Période de l'année</string>
+    <string name="temperature">Température</string>
+    <string name="normal_temperature">Normale de saison</string>
+    <string name="wind">Vent</string>
+    <string name="ice">Glace</string>
+    <string name="frost">Gel</string>
+    <string name="season">Saison</string>
+    <string name="warmer_than_1900">Plus chaud qu'en 1900</string>
+    <string name="centimetres">%1$d cm</string>
+    <string name="hours_minutes">%1$d h %2$d min</string>
     <string name="calm">Calme</string>
-    <string name="temperature_line">%1$s, normale de saison %2$s</string>
     <string name="snow_on_ground">Neige au sol %1$d cm</string>
     <string name="ice_on_water">Glace de %1$d cm</string>
-    <string name="frost_line">Gel à %1$d cm sous terre</string>
     <string name="muddy">Boueux</string>
-    <string name="daylight">Jour de %1$d h %2$d min</string>
-    <string name="warmer_climate">Le climat est plus chaud de %1$s qu'en 1900</string>
+    <string name="daylight">Durée du jour</string>
     <string name="news_snowbound">%1$s est bloqué par la neige</string>
     <string name="snow_depth">Neige</string>
     <string name="broken_down">En panne</string>

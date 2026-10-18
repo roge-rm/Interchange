@@ -148,6 +148,7 @@
     <string name="new_seed">New seed</string>
     <string name="sea">Sea</string>
     <string name="sea_percent">%1$d%</string>
+    <string name="percent">%1$d%</string>
     <string name="hills">Hills</string>
     <string-array name="hill_levels">
         <item>Flat</item><item>Rolling</item><item>Hilly</item><item>Mountainous</item>
@@ -383,18 +384,27 @@
         <item>Spring</item><item>Summer</item><item>Fall</item><item>Winter</item>
     </string-array>
     <string-array name="winds">
-        <item>Wind from the west</item><item>Wind from the northwest</item><item>Wind from the north</item><item>Wind from the northeast</item>
-        <item>Wind from the east</item><item>Wind from the southeast</item><item>Wind from the south</item><item>Wind from the southwest</item>
+        <item>West</item><item>Northwest</item><item>North</item><item>Northeast</item>
+        <item>East</item><item>Southeast</item><item>South</item><item>Southwest</item>
     </string-array>
     <string name="wind_speed">%1$s, %2$d km/h</string>
+    <string name="weather_now">Now</string>
+    <string name="weather_ground">On the ground</string>
+    <string name="weather_year">Time of year</string>
+    <string name="temperature">Temperature</string>
+    <string name="normal_temperature">Normal for the time of year</string>
+    <string name="wind">Wind</string>
+    <string name="ice">Ice</string>
+    <string name="frost">Frost</string>
+    <string name="season">Season</string>
+    <string name="warmer_than_1900">Warmer than in 1900</string>
+    <string name="centimetres">%1$d cm</string>
+    <string name="hours_minutes">%1$d h %2$d min</string>
     <string name="calm">Calm</string>
-    <string name="temperature_line">%1$s, normal for the time of year %2$s</string>
     <string name="snow_on_ground">Snow on the ground %1$d cm</string>
     <string name="ice_on_water">Ice %1$d cm thick</string>
-    <string name="frost_line">Frost %1$d cm into the ground</string>
     <string name="muddy">Muddy</string>
-    <string name="daylight">Daylight %1$d h %2$d min</string>
-    <string name="warmer_climate">The climate is %1$s warmer than in 1900</string>
+    <string name="daylight">Daylight</string>
     <string name="news_snowbound">%1$s is stuck in a snowdrift</string>
     <string name="snow_depth">Snow</string>
     <string name="broken_down">Broken down</string>

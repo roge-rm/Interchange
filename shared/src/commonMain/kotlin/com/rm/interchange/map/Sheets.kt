@@ -121,6 +121,27 @@ class Sheets(private val packed: PackedSheets, private val scope: CoroutineScope
         return null
     }
 
+    private val statics = arrayOfNulls<ImageBitmap>(Atlas.LEVELS)
+    private val staticsUnpacking = BooleanArray(Atlas.LEVELS)
+
+    /**
+     * The static sheet at [level] as a bitmap, for pictures of buildings in windows, unpacked the first time it's asked
+     * for; null until then. Level 2 at the sharpest, some 6 MB as a bitmap, as it's a copy beside the renderer's.
+     */
+    @OptIn(ExperimentalResourceApi::class)
+    fun staticImage(level: Int): ImageBitmap? {
+        val at = level.coerceIn(PICTURE_SHARPEST, Atlas.LEVELS - 1)
+        statics[at]?.let { return it }
+        if (!staticsUnpacking[at]) {
+            staticsUnpacking[at] = true
+            scope.launch {
+                statics[at] = withContext(decoder) { packed.static[at].decodeToImageBitmap() }
+                revision.intValue++
+            }
+        }
+        return null
+    }
+
     /** The level nearest [level] that's unpacked, for drawing scaled until it is. */
     fun nearest(level: Int): Int? {
         get(level)?.let { return level }
@@ -129,6 +150,8 @@ class Sheets(private val packed: PackedSheets, private val scope: CoroutineScope
 
     private companion object {
         const val SHADE_ROWS = 256
+        /** The sharpest static sheet kept for pictures. */
+        const val PICTURE_SHARPEST = 2
     }
 }
 

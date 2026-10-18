@@ -107,7 +107,7 @@ fun Window(title: String, onClose: () -> Unit, glyph: Glyph? = null, content: @C
                         }
                     }
                     Text(
-                        title, color = c.text, fontSize = 18.sp, fontWeight = FontWeight.SemiBold,
+                        title, color = c.text, style = KitType.WindowTitle,
                         modifier = Modifier.weight(1f).semantics { heading() }, maxLines = 1, overflow = TextOverflow.Ellipsis,
                     )
                     SquareButton(Glyph.Remove, stringResource(Res.string.close), 34.dp, onClick = onClose)
@@ -118,14 +118,14 @@ fun Window(title: String, onClose: () -> Unit, glyph: Glyph? = null, content: @C
     }
 }
 
-/** A small heading over a group of settings or choices, with a glyph. */
+/** A small heading in capitals over a group of rows, settings or choices, with a glyph. See KitInfo.kt for the rest of the kit. */
 @Composable
 fun Head(text: String, glyph: Glyph? = null) {
     val c = LocalColors.current
     Row(Modifier.padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         glyph?.let { GlyphIcon(it, c.accent, Modifier.size(15.dp)) }
         Text(
-            text.uppercase(), color = c.textDim, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 0.6.sp,
+            text.uppercase(), color = c.textDim, style = KitType.Head,
             modifier = Modifier.semantics { heading(); contentDescription = text },
         )
     }
