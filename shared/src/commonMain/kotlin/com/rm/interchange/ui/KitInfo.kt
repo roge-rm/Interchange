@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -26,6 +27,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.FilterQuality
@@ -33,6 +35,7 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -73,6 +76,9 @@ import kotlin.math.roundToInt
  * - OptionGroup: one of a few choices, each a glyph with a short label, across the width. For tray choices like
  *   town size, road surface or signal kind.
  * - SegmentedChoice: one of many choices as even segments, wrapped into rows. For cargo choices.
+ * - ButtonTiles: a card's actions as even tiles, each a glyph over a short label, lit when on. For what a vehicle
+ *   or a building can be told to do.
+ * - SwitchRow: a setting that's on or off, its label with a small switch at the end, as tall as an InfoRow.
  * - FillChips, StepSlider, TogglePill, BigButton (Kit.kt): one of a few words, a stepped value, on or off, and a
  *   window's main actions.
  */
@@ -139,16 +145,17 @@ fun InfoRow(label: String, value: String, glyph: Glyph? = null, valueColour: Col
 
 /**
  * [stats] side by side, each a label over its value, in [columns] equal shares so rows of them line up; blank shares
- * fill out a short row.
+ * fill out a short row. [valueColours] picks out values, by place, like a loss in red.
  */
 @Composable
-fun StatColumns(stats: List<Pair<String, String>>, columns: Int = stats.size, modifier: Modifier = Modifier) {
+fun StatColumns(stats: List<Pair<String, String>>, columns: Int = stats.size, modifier: Modifier = Modifier, valueColours: List<Color?> = emptyList()) {
     val c = LocalColors.current
     Row(modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(KitSpace.Gap)) {
-        for ((label, value) in stats) {
+        for ((i, stat) in stats.withIndex()) {
+            val (label, value) = stat
             Column(Modifier.weight(1f).semantics(mergeDescendants = true) {}) {
                 Text(label, color = c.textDim, style = KitType.Small, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(value, color = c.text, style = KitType.Value, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(value, color = valueColours.getOrNull(i) ?: c.text, style = KitType.Value, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
         }
         repeat(columns - stats.size) { Box(Modifier.weight(1f)) }
@@ -330,6 +337,67 @@ fun <T> OptionGroup(options: List<T>, selected: T, glyph: (T) -> Glyph, label: (
                 GlyphIcon(glyph(o), tint, Modifier.size(if (labels) 20.dp else 24.dp))
                 if (labels) Text(label(o), color = tint, style = KitType.Small, textAlign = TextAlign.Center, maxLines = 2)
             }
+        }
+    }
+}
+
+/** A button for [ButtonTiles]: [glyph] over [label], edged in the accent when [lit] (on), filled with it when [strong] (the main action). */
+class TileButton(val glyph: Glyph, val label: String, val lit: Boolean = false, val strong: Boolean = false, val enabled: Boolean = true, val onClick: () -> Unit)
+
+/** [buttons] as tiles of one size, in as few even rows of up to [perRow] as they need. */
+@Composable
+fun ButtonTiles(buttons: List<TileButton>, perRow: Int = 4) {
+    val c = LocalColors.current
+    if (buttons.isEmpty()) return
+    val rows = (buttons.size + perRow - 1) / perRow
+    val across = (buttons.size + rows - 1) / rows
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(KitSpace.Gap)) {
+        for (row in buttons.chunked(across)) {
+            Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(KitSpace.Gap)) {
+                for (b in row) {
+                    val tint = if (b.strong) c.onAccent else c.text
+                    val shape = RoundedCornerShape(KitSpace.InnerCorner)
+                    Column(
+                        Modifier
+                            .weight(1f)
+                            .fillMaxHeight()
+                            .heightIn(min = 48.dp)
+                            .alpha(if (b.enabled) 1f else 0.4f)
+                            .clip(shape)
+                            .background(if (b.strong) c.accent else if (b.lit) c.accent.copy(alpha = 0.16f) else c.button)
+                            .border(2.dp, if (b.lit && !b.strong) c.accent else Color.Transparent, shape)
+                            .semantics { selected = b.lit }
+                            .clickable(enabled = b.enabled, role = Role.Button, onClick = b.onClick)
+                            .padding(horizontal = 4.dp, vertical = 6.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(3.dp, Alignment.CenterVertically),
+                    ) {
+                        GlyphIcon(b.glyph, tint, Modifier.size(18.dp))
+                        Text(b.label, color = tint, style = KitType.Small, textAlign = TextAlign.Center, maxLines = 2)
+                    }
+                }
+                repeat(across - row.size) { Box(Modifier.weight(1f)) }
+            }
+        }
+    }
+}
+
+/** [label] with a small switch at its end showing [on]; a tap anywhere on the row does [onChange]. */
+@Composable
+fun SwitchRow(label: String, on: Boolean, modifier: Modifier = Modifier, onChange: (Boolean) -> Unit) {
+    val c = LocalColors.current
+    Row(
+        modifier.fillMaxWidth().heightIn(min = 32.dp).clip(RoundedCornerShape(KitSpace.InnerCorner))
+            .toggleable(value = on, role = Role.Switch, onValueChange = onChange),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(KitSpace.Gap),
+    ) {
+        Text(label, color = c.text, style = KitType.Body, modifier = Modifier.weight(1f))
+        Box(
+            Modifier.size(36.dp, 20.dp).clip(RoundedCornerShape(10.dp)).background(if (on) c.good else c.button).padding(2.dp),
+            contentAlignment = if (on) Alignment.CenterEnd else Alignment.CenterStart,
+        ) {
+            Box(Modifier.size(16.dp).clip(RoundedCornerShape(8.dp)).background(if (on) Color.White else c.textDim))
         }
     }
 }

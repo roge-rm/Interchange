@@ -4,9 +4,9 @@ import com.rm.interchange.res.*
 import org.jetbrains.compose.resources.stringResource
 import org.jetbrains.compose.resources.stringArrayResource
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.height
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -141,24 +141,35 @@ fun AirportCard(view: WorldView, roster: Roster, airport: AirportView, year: Int
     }
 }
 
-/** The stops on a ship's or aircraft's orders, tapping one to take it off, and a chip to add more by tapping stations. */
-@OptIn(ExperimentalLayoutApi::class)
+/** A ship's or aircraft's stops under their Head, each marked with [glyph] and tapped open to change, and a button to add more. */
 @Composable
-private fun StopsRow(view: WorldView, orders: IntArray, order: Int, adding: Boolean, onAdd: () -> Unit, set: (IntArray) -> Unit) {
-    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        for ((i, o) in orders.withIndex()) {
-            Chip("${i + 1}. ${stationName(view, Order.station(o))}", i == order % orders.size) { set(orders.filterIndexed { j, _ -> j != i }.toIntArray()) }
-        }
-        Chip(stringResource(if (adding) Res.string.done_adding else Res.string.add_stops), adding, onClick = onAdd)
-    }
+private fun CraftOrders(view: WorldView, id: Int, orders: IntArray, order: Int, glyph: Glyph, adding: Boolean, onAdd: () -> Unit, set: (IntArray) -> Unit) {
+    Head(stringResource(Res.string.orders))
+    OrdersList(view, id, orders, order, OrderFlags.CRAFT, glyph, set)
+    ButtonTiles(listOf(addStopsTile(adding, onAdd)))
+    Box(Modifier.height(KitSpace.Tight))
 }
 
-/** A ship: what it's doing, its stops and buttons to run it. */
-@OptIn(ExperimentalLayoutApi::class)
+/** A ship's or aircraft's buttons: start or stop, to its [depot] or carry on, renew and sell, and the switches in [toggles] under them. */
+@Composable
+private fun CraftActions(running: Boolean, inDepot: Boolean, toDepot: Boolean, renewCost: Long, depot: org.jetbrains.compose.resources.StringResource, order: (Int) -> Unit, toggles: @Composable () -> Unit) {
+    ButtonTiles(
+        listOf(
+            TileButton(if (running) Glyph.Pause else Glyph.Play, stringResource(if (running) Res.string.stop else Res.string.start), strong = !running) { order(Command.TrainOrder.START_STOP) },
+        ) + if (!inDepot) listOf(
+            TileButton(Glyph.Depot, stringResource(if (toDepot) Res.string.carry_on else depot), lit = toDepot) { order(Command.TrainOrder.TO_DEPOT) },
+        ) else listOf(
+            TileButton(Glyph.Renew, stringResource(Res.string.renew_for, money(renewCost))) { order(Command.TrainOrder.RENEW) },
+            TileButton(Glyph.Minus, stringResource(Res.string.sell)) { order(Command.TrainOrder.SELL) },
+        ),
+    )
+    toggles()
+}
+
+/** A ship: its picture and what it's doing, its numbers, its stops and buttons to run it. */
 @Composable
 fun ShipCard(view: WorldView, roster: Roster, v: ShipView, addingStops: Boolean, onAddStops: () -> Unit, send: (Command) -> Unit, onClose: () -> Unit, modifier: Modifier) {
     val me = LocalCompany.current
-    val c = LocalColors.current
     val lang = languageCode()
     fun order(what: Int, stations: IntArray = IntArray(0)) = send(Command.CraftOrder(me, false, v.id, what, stations))
     Card(shipName(v), onClose, modifier) {
@@ -177,37 +188,26 @@ fun ShipCard(view: WorldView, roster: Roster, v: ShipView, addingStops: Boolean,
             target != null -> stringResource(Res.string.heading_for, stationName(view, target), v.kmh)
             else -> stringResource(Res.string.no_stops)
         }
-        Text(roster[v.model].name(lang), color = c.textDim, fontSize = 13.sp)
-        Text(doing, color = if (v.lost || v.broken || v.iced) c.warn else c.text, fontSize = 13.sp)
-        val names = stringArrayResource(Res.array.cargoes)
-        if (v.capacity > 0) Text(stringResource(Res.string.cargo_load, names.getOrElse(v.carries) { "" }, v.load, v.capacity), color = c.text, fontSize = 13.sp)
-        Text(stringResource(Res.string.profit_line, money(v.profitThisYear), money(v.profitLastYear)), color = if (v.profitThisYear < 0) c.bad else c.textDim, fontSize = 13.sp)
+        val e = roster[v.model]
+        val mine = v.owner == me
+        VehicleHeader(e, e.name(lang), doing, statusColour(false, v.lost || v.broken || v.iced), if (mine) null else view.companies.getOrElse(v.owner) { "" })
+        VehicleStats(
+            v.kmh, e.speed, v.age, false, v.reliability, v.profitThisYear, v.profitLastYear,
+            if (v.capacity > 0) listOf(VehicleLoad(v.carries, v.load, v.capacity)) else emptyList(),
+        )
         // Someone else's: what it is, but none of the controls.
-        if (v.owner != me) {
-            Text(stringResource(Res.string.owned_by, view.companies.getOrElse(v.owner) { "" }), color = c.textDim, fontSize = 13.sp)
-            return@Card
-        }
-        Text(stringResource(Res.string.age_line_road, v.age, v.reliability), color = c.textDim, fontSize = 13.sp)
-        StopsRow(view, v.orders, v.order, addingStops, onAddStops) { order(Command.TrainOrder.ORDERS, it) }
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            ActionButton(stringResource(if (v.running) Res.string.stop else Res.string.start), strong = !v.running) { order(Command.TrainOrder.START_STOP) }
-            if (!v.inDepot) {
-                ActionButton(stringResource(if (v.toDepot) Res.string.carry_on else Res.string.to_shipyard)) { order(Command.TrainOrder.TO_DEPOT) }
-            } else {
-                ActionButton(stringResource(Res.string.renew_for, money(v.renewCost))) { order(Command.TrainOrder.RENEW) }
-                ActionButton(stringResource(Res.string.sell)) { order(Command.TrainOrder.SELL) }
-            }
-            Chip(stringResource(Res.string.servicing), v.service) { order(Command.TrainOrder.SERVICE) }
+        if (!mine) return@Card
+        CraftOrders(view, v.id, v.orders, v.order, Glyph.Dock, addingStops, onAddStops) { order(Command.TrainOrder.ORDERS, it) }
+        CraftActions(v.running, v.inDepot, v.toDepot, v.renewCost, Res.string.to_shipyard, { order(it) }) {
+            SwitchRow(stringResource(Res.string.servicing), v.service) { order(Command.TrainOrder.SERVICE) }
         }
     }
 }
 
-/** An aircraft: what it's doing (and why, if it's holding), its stops, its gear, and buttons to run it. */
-@OptIn(ExperimentalLayoutApi::class)
+/** An aircraft: its picture and what it's doing (and why, if it's holding), its numbers, its stops, and buttons to run it. */
 @Composable
 fun AircraftCard(view: WorldView, roster: Roster, v: AircraftView, addingStops: Boolean, onAddStops: () -> Unit, send: (Command) -> Unit, onClose: () -> Unit, modifier: Modifier) {
     val me = LocalCompany.current
-    val c = LocalColors.current
     val lang = languageCode()
     val e = roster[v.model]
     fun order(what: Int, stations: IntArray = IntArray(0)) = send(Command.CraftOrder(me, true, v.id, what, stations))
@@ -229,35 +229,23 @@ fun AircraftCard(view: WorldView, roster: Roster, v: AircraftView, addingStops: 
             target != null -> stringResource(Res.string.heading_for, stationName(view, target), v.kmh)
             else -> stringResource(Res.string.no_stops)
         }
-        Text(e.name(lang), color = c.textDim, fontSize = 13.sp)
-        Text(doing, color = if (v.wrecked) c.bad else if (v.broken || v.state == Flight.HOLD) c.warn else c.text, fontSize = 13.sp)
-        val names = stringArrayResource(Res.array.cargoes)
-        if (v.capacity > 0) Text(stringResource(Res.string.cargo_load, names.getOrElse(v.carries) { "" }, v.load, v.capacity), color = c.text, fontSize = 13.sp)
-        Text(stringResource(Res.string.profit_line, money(v.profitThisYear), money(v.profitLastYear)), color = if (v.profitThisYear < 0) c.bad else c.textDim, fontSize = 13.sp)
-        // Someone else's: what it is, but none of the controls.
-        if (v.owner != me) {
-            Text(stringResource(Res.string.owned_by, view.companies.getOrElse(v.owner) { "" }), color = c.textDim, fontSize = 13.sp)
-            return@Card
-        }
-        // A wreck can't be given orders or sold; it's cleared away by itself.
-        if (v.wrecked) return@Card
-        Text(stringResource(Res.string.age_line_road, v.age, v.reliability), color = c.textDim, fontSize = 13.sp)
-        if (e.range > 0) Text(stringResource(Res.string.range_line, e.range), color = c.textDim, fontSize = 13.sp)
-        if (e.floats) {
-            val gear = stringArrayResource(Res.array.gear_kinds)
-            Text(stringResource(Res.string.tires_line, gear.getOrElse(v.gear) { "" }), color = c.textDim, fontSize = 13.sp)
-        }
-        StopsRow(view, v.orders, v.order, addingStops, onAddStops) { order(Command.TrainOrder.ORDERS, it) }
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            ActionButton(stringResource(if (v.running) Res.string.stop else Res.string.start), strong = !v.running) { order(Command.TrainOrder.START_STOP) }
-            if (!v.inDepot) {
-                ActionButton(stringResource(if (v.toDepot) Res.string.carry_on else Res.string.to_hangar)) { order(Command.TrainOrder.TO_DEPOT) }
-            } else {
-                ActionButton(stringResource(Res.string.renew_for, money(v.renewCost))) { order(Command.TrainOrder.RENEW) }
-                ActionButton(stringResource(Res.string.sell)) { order(Command.TrainOrder.SELL) }
-            }
-            Chip(stringResource(Res.string.servicing), v.service) { order(Command.TrainOrder.SERVICE) }
-            if (e.floats) Chip(stringResource(Res.string.seasonal_gear), v.seasonalGear) { order(Command.CraftOrder.GEAR) }
+        val mine = v.owner == me
+        VehicleHeader(e, e.name(lang), doing, statusColour(v.wrecked, v.broken || v.state == Flight.HOLD), if (mine) null else view.companies.getOrElse(v.owner) { "" })
+        val gear = stringArrayResource(Res.array.gear_kinds)
+        VehicleStats(
+            v.kmh, e.speed, v.age, false, v.reliability, v.profitThisYear, v.profitLastYear,
+            if (v.capacity > 0) listOf(VehicleLoad(v.carries, v.load, v.capacity)) else emptyList(),
+            listOfNotNull(
+                (stringResource(Res.string.range) to stringResource(Res.string.km, Numbers.grouped(e.range.toLong()))).takeIf { e.range > 0 },
+                (stringResource(Res.string.gear) to gear.getOrElse(v.gear) { "" }).takeIf { e.floats },
+            ),
+        )
+        // Someone else's shows what it is but none of the controls, and a wreck is cleared away by itself.
+        if (!mine || v.wrecked) return@Card
+        CraftOrders(view, v.id, v.orders, v.order, Glyph.Airport, addingStops, onAddStops) { order(Command.TrainOrder.ORDERS, it) }
+        CraftActions(v.running, v.inDepot, v.toDepot, v.renewCost, Res.string.to_hangar, { order(it) }) {
+            SwitchRow(stringResource(Res.string.servicing), v.service) { order(Command.TrainOrder.SERVICE) }
+            if (e.floats) SwitchRow(stringResource(Res.string.seasonal_gear), v.seasonalGear) { order(Command.CraftOrder.GEAR) }
         }
     }
 }

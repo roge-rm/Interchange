@@ -2,14 +2,15 @@ package com.rm.interchange.ui
 
 import com.rm.interchange.res.*
 import org.jetbrains.compose.resources.stringResource
+import org.jetbrains.compose.resources.pluralStringResource
+import androidx.compose.foundation.layout.height
 import org.jetbrains.compose.resources.stringArrayResource
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -45,8 +46,7 @@ fun stationName(view: WorldView, id: Int): String {
 @Composable
 fun trainName(t: TrainView): String = t.name.takeIf { it.isNotEmpty() } ?: stringResource(Res.string.train_n, t.id + 1)
 
-/** A train: what it's doing, where it calls, and buttons to run it. */
-@OptIn(ExperimentalLayoutApi::class)
+/** A train: its picture and what it's doing, its numbers, its orders, and buttons to run it. */
 @Composable
 fun TrainCard(
     view: WorldView,
@@ -59,7 +59,7 @@ fun TrainCard(
     modifier: Modifier,
 ) {
     val me = LocalCompany.current
-    val c = LocalColors.current
+    fun order(what: Int, stations: IntArray = IntArray(0)) = send(Command.TrainOrder(me, t.id, what, stations))
     Card(trainName(t), onClose, modifier) {
         val target = if (t.orders.isEmpty()) null else Order.station(t.orders[t.order % t.orders.size])
         val doing = when {
@@ -77,94 +77,71 @@ fun TrainCard(
             else -> stringResource(Res.string.no_stops)
         }
         val lang = languageCode()
+        val e = roster[t.engine]
         val w = roster[t.wagon]
-        Text(stringResource(Res.string.consist, roster[t.engine].name(lang), t.wagons, (if (t.wagons == 1) w.name(lang) else w.plural(lang)).lowercase()), color = c.textDim, fontSize = 13.sp)
-        Text(doing, color = if (t.wrecked) c.bad else if (t.lost || t.broken || t.needsWires) c.warn else c.text, fontSize = 13.sp)
-        Text(
-            stringResource(Res.string.age_line, t.age, t.reliability, t.breakdowns),
-            color = if (t.old) c.warn else c.textDim, fontSize = 13.sp,
+        val mine = t.owner == me
+        VehicleHeader(
+            e, stringResource(Res.string.consist, e.name(lang), t.wagons, (if (t.wagons == 1) w.name(lang) else w.plural(lang)).lowercase()),
+            doing, statusColour(t.wrecked, t.lost || t.broken || t.needsWires), if (mine) null else view.companies.getOrElse(t.owner) { "" },
         )
-        val names = stringArrayResource(Res.array.cargoes)
-        val loads = (0 until Cargo.COUNT).filter { t.capacity[it] > 0 }.map {
-            stringResource(Res.string.cargo_load, names.getOrElse(it) { "" }, t.load[it], t.capacity[it])
-        }
-        if (loads.isNotEmpty()) Text(loads.joinToString(" · "), color = c.text, fontSize = 13.sp)
-        Text(
-            stringResource(Res.string.profit_line, money(t.profitThisYear), money(t.profitLastYear)),
-            color = if (t.profitThisYear < 0) c.bad else c.textDim, fontSize = 13.sp,
+        VehicleStats(
+            t.kmh, e.speed, t.age, t.old, t.reliability, t.profitThisYear, t.profitLastYear,
+            (0 until Cargo.COUNT).filter { t.capacity[it] > 0 }.map { VehicleLoad(it, t.load[it], t.capacity[it]) },
+            listOf(stringResource(Res.string.breakdowns) to t.breakdowns.toString()),
         )
-        // Someone else's: what it is, but none of the controls.
-        if (t.owner != me) {
-            Text(stringResource(Res.string.owned_by, view.companies.getOrElse(t.owner) { "" }), color = c.textDim, fontSize = 13.sp)
-            return@Card
-        }
-        // A wreck can't be given orders or sold; it's cleared away by itself.
-        if (t.wrecked) return@Card
-        // The stops, the one it's heading for lit; a tap opens what to do there.
-        var open by remember(t.id) { mutableIntStateOf(-1) }
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            for ((i, o) in t.orders.withIndex()) {
-                val marks = buildString {
-                    if (Order.has(o, Order.FULL_LOAD)) append(" ⬤")
-                    if (Order.has(o, Order.UNLOAD) || Order.has(o, Order.TRANSFER)) append(" ↓")
-                    if (Order.has(o, Order.NO_LOAD)) append(" ⊘")
-                    if (Order.waitDays(o) > 0) append(" ${Order.waitDays(o)}d")
-                    if (Order.has(o, Order.VIA)) append(" →")
-                    if (Order.has(o, Order.SKIP_IF_NOTHING)) append(" ?")
-                }
-                Chip("${i + 1}. ${stationName(view, Order.station(o))}$marks", i == t.order % t.orders.size || i == open) { open = if (open == i) -1 else i }
-            }
-            Chip(stringResource(if (addingStops) Res.string.done_adding else Res.string.add_stops), addingStops, onClick = onAddStops)
-        }
-        t.orders.getOrNull(open)?.let { o ->
-            fun change(new: Int) = send(Command.TrainOrder(me, t.id, Command.TrainOrder.ORDERS, t.orders.copyOf().also { it[open] = new }))
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                for ((flag, label) in listOf(
-                    Order.FULL_LOAD to Res.string.full_load, Order.UNLOAD to Res.string.unload_all, Order.TRANSFER to Res.string.transfer,
-                    Order.NO_LOAD to Res.string.no_loading, Order.VIA to Res.string.go_via, Order.SKIP_IF_NOTHING to Res.string.skip_if_nothing,
-                )) {
-                    Chip(stringResource(label), Order.has(o, flag)) { change(Order.toggle(o, flag)) }
-                }
-            }
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                SquareButton(Glyph.Lower, stringResource(Res.string.wait_less), 32.dp, enabled = Order.waitDays(o) > 0) { change(Order.withWait(o, Order.waitDays(o) - 1)) }
-                Text(stringResource(Res.string.wait_days, Order.waitDays(o)), color = c.text, fontSize = 13.sp)
-                SquareButton(Glyph.Raise, stringResource(Res.string.wait_more), 32.dp, enabled = Order.waitDays(o) < Order.MAX_WAIT_DAYS) { change(Order.withWait(o, Order.waitDays(o) + 1)) }
-                Box(Modifier.weight(1f))
-                ActionButton(stringResource(Res.string.remove_stop)) {
-                    send(Command.TrainOrder(me, t.id, Command.TrainOrder.ORDERS, t.orders.filterIndexed { j, _ -> j != open }.toIntArray()))
-                    open = -1
-                }
-            }
-        }
-        // Sharing orders with another train: pick which, or stop sharing.
+        // Someone else's shows what it is but none of the controls, and a wreck is cleared away by itself.
+        if (!mine || t.wrecked) return@Card
+        Head(stringResource(Res.string.orders))
+        val group = if (t.shared >= 0) view.trains.count { it.id != t.id && it.shared == t.shared } else 0
+        // The last train left in a group shares with nobody, so it's shown as not sharing.
+        val shared = group > 0
+        if (shared) Text(pluralStringResource(Res.plurals.shared_with, group, group), color = LocalColors.current.textDim, style = KitType.Dim)
+        OrdersList(view, t.id, t.orders, t.order, OrderFlags.TRAIN, Glyph.Station) { order(Command.TrainOrder.ORDERS, it) }
+        // Sharing orders with another train: pick which from a list, or stop sharing.
         var sharing by remember(t.id) { mutableStateOf(false) }
         val others = view.trains.filter { it.id != t.id && it.owner == me }
-        if (t.shared >= 0) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(stringResource(Res.string.orders_shared), color = c.textDim, fontSize = 13.sp, modifier = Modifier.weight(1f))
-                ActionButton(stringResource(Res.string.stop_sharing)) { send(Command.TrainOrder(me, t.id, Command.TrainOrder.UNSHARE)) }
-            }
-        } else if (others.isNotEmpty()) {
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Chip(stringResource(Res.string.share_orders), sharing) { sharing = !sharing }
-                if (sharing) for (o in others) Chip(trainName(o), false) {
-                    send(Command.TrainOrder(me, t.id, Command.TrainOrder.SHARE, intArrayOf(o.id)))
-                    sharing = false
+        ButtonTiles(listOfNotNull(
+            addStopsTile(addingStops, onAddStops),
+            when {
+                shared -> TileButton(Glyph.Layers, stringResource(Res.string.stop_sharing)) { order(Command.TrainOrder.UNSHARE) }
+                others.isNotEmpty() -> TileButton(Glyph.Layers, stringResource(Res.string.share_orders), lit = sharing) { sharing = !sharing }
+                else -> null
+            },
+        ))
+        if (sharing && !shared) {
+            val stations = remember(view.stations) { view.stations.associateBy { it.id } }
+            val none = stringResource(Res.string.no_stops)
+            for (o in others) key(o.id) {
+                // Unnamed stations are rare, so their stand-in names are looked up one by one.
+                val unnamed = o.orders.map { Order.station(it) }.filter { stations[it]?.name.isNullOrEmpty() }.distinct()
+                    .associateWith { stringResource(Res.string.station_n, it + 1) }
+                val line = remember(o.orders.contentHashCode(), stations, unnamed) {
+                    if (o.orders.isEmpty()) none
+                    else o.orders.joinToString("  ·  ") { Order.station(it).let { id -> unnamed[id] ?: stations[id]?.name ?: "" } }
                 }
+                PictureRow(
+                    trainName(o), picture = { VehiclePicture(roster[o.engine], it) },
+                    line = line,
+                    onClick = {
+                        order(Command.TrainOrder.SHARE, intArrayOf(o.id))
+                        sharing = false
+                    },
+                )
             }
         }
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            ActionButton(stringResource(if (t.running) Res.string.stop else Res.string.start), strong = !t.running) { send(Command.TrainOrder(me, t.id, Command.TrainOrder.START_STOP)) }
-            if (!t.inDepot) {
-                ActionButton(stringResource(if (t.toDepot) Res.string.carry_on else Res.string.to_depot)) { send(Command.TrainOrder(me, t.id, Command.TrainOrder.TO_DEPOT)) }
-                ActionButton(stringResource(Res.string.turn_round)) { send(Command.TrainOrder(me, t.id, Command.TrainOrder.TURN)) }
-            } else {
-                ActionButton(stringResource(Res.string.renew_for, money(t.renewCost))) { send(Command.TrainOrder(me, t.id, Command.TrainOrder.RENEW)) }
-                ActionButton(stringResource(Res.string.sell)) { send(Command.TrainOrder(me, t.id, Command.TrainOrder.SELL)) }
-            }
-            Chip(stringResource(Res.string.servicing), t.service) { send(Command.TrainOrder(me, t.id, Command.TrainOrder.SERVICE)) }
-        }
+        Box(Modifier.height(KitSpace.Tight))
+        ButtonTiles(
+            listOf(
+                TileButton(if (t.running) Glyph.Pause else Glyph.Play, stringResource(if (t.running) Res.string.stop else Res.string.start), strong = !t.running) { order(Command.TrainOrder.START_STOP) },
+            ) + if (!t.inDepot) listOf(
+                TileButton(Glyph.Depot, stringResource(if (t.toDepot) Res.string.carry_on else Res.string.to_depot), lit = t.toDepot) { order(Command.TrainOrder.TO_DEPOT) },
+                TileButton(Glyph.TurnLeft, stringResource(Res.string.turn_round)) { order(Command.TrainOrder.TURN) },
+            ) else listOf(
+                TileButton(Glyph.Renew, stringResource(Res.string.renew_for, money(t.renewCost))) { order(Command.TrainOrder.RENEW) },
+                TileButton(Glyph.Minus, stringResource(Res.string.sell)) { order(Command.TrainOrder.SELL) },
+            ),
+        )
+        SwitchRow(stringResource(Res.string.servicing), t.service) { order(Command.TrainOrder.SERVICE) }
     }
 }
 

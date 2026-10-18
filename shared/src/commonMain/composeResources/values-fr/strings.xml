@@ -193,7 +193,6 @@
     <string name="mail_waiting">Courrier en attente : %1$d, note %2$d&#160;%</string>
     <string name="passengers_load">Voyageurs %1$d/%2$d</string>
     <string name="mail_load">Courrier %1$d/%2$d</string>
-    <string name="profit_line">Bénéfice cette année %1$s, l'an dernier %2$s</string>
 
     <!-- Trajets -->
     <string name="going_to">Destination, voyageurs · courrier</string>
@@ -227,7 +226,6 @@
         <item>Voyageurs</item><item>Courrier</item><item>Bois rond</item><item>Bois d'œuvre</item><item>Grain</item><item>Charbon</item><item>Minerai de fer</item><item>Acier</item><item>Marchandises</item><item>Pétrole</item><item>Carburant</item><item>Bétail</item><item>Aliments</item><item>Poisson</item><item>Papier</item><item>Potasse</item><item>Minerai de nickel</item><item>Nickel</item><item>Bauxite</item><item>Aluminium</item>
     </string-array>
     <string name="cargo_waiting">%1$s en attente : %2$d, note %3$d&#160;%</string>
-    <string name="cargo_load">%1$s %2$d/%3$d</string>
     <string name="produced_last_month">%1$s le mois dernier : %2$d, %3$d&#160;% transportés</string>
     <string name="takes">Accepte : %1$s</string>
     <string name="brought_last_month">Reçu le mois dernier : %1$d</string>
@@ -244,7 +242,6 @@
     <string name="unload_all">Tout décharger</string>
     <string name="transfer">Transfert</string>
     <string name="no_loading">Pas de chargement</string>
-    <string name="wait_days">Attendre %1$d jours</string>
     <string name="wait_less">Attendre un jour de moins</string>
     <string name="wait_more">Attendre un jour de plus</string>
     <string name="remove_stop">Retirer l'arrêt</string>
@@ -352,7 +349,6 @@
     <string name="go_via">Passer par</string>
     <string name="skip_if_nothing">Sauter si rien à faire</string>
     <string name="share_orders">Partager les ordres avec</string>
-    <string name="orders_shared">Ordres partagés avec d'autres trains</string>
     <string name="stop_sharing">Ne plus partager</string>
     <string name="fund_industry">Financer une industrie</string>
     <string name="build_for">Construire pour %1$s</string>
@@ -392,7 +388,6 @@
     <string name="snow_depth">Neige</string>
     <string name="broken_down">En panne</string>
     <string name="going_for_service">En route pour l'entretien, %1$d km/h</string>
-    <string name="age_line">%1$d ans, fiable à %2$d %, %3$d pannes</string>
     <string name="renew_for">Renouveler pour %1$s</string>
     <string name="servicing">Entretien</string>
     <string name="news_crash">%1$s a eu un accident près de %2$s</string>
@@ -447,11 +442,9 @@
     <string name="in_garage">Au garage</string>
     <string name="going_to_garage">En route pour le garage, %1$d km/h</string>
     <string name="to_garage">Au garage</string>
-    <string name="age_line_road">%1$d ans, fiable à %2$d %</string>
     <string-array name="tire_kinds">
         <item>pneus d'été</item><item>pneus d'hiver</item><item>chaînes</item>
     </string-array>
-    <string name="tires_line">Sur %1$s</string>
     <string name="seasonal_tires">Pneus selon la saison</string>
     <string name="news_slid">%1$s a glissé sur la glace</string>
     <string name="tool_one_way">Sens unique</string>
@@ -499,7 +492,6 @@
         <item>skis</item>
     </string-array>
     <string name="seasonal_gear">Flotteurs et skis selon la saison</string>
-    <string name="range_line">Autonomie de %1$d km</string>
     <string name="breaks_ice">Brise la glace jusqu'à %1$d cm</string>
     <string name="landing_aids_for">Aides à l'atterrissage pour %1$s</string>
     <string name="deicing_for">Dégivrage pour %1$s</string>
@@ -666,4 +658,33 @@
     <string name="engines">Locomotives</string>
     <string name="wagons">Wagons</string>
     <string name="consist_line">%1$s + %2$d %3$s</string>
+    <!-- Vehicle cards -->
+    <string name="head_running">En service</string>
+    <string name="head_profit">Bénéfice</string>
+    <string name="head_load">Chargement</string>
+    <string name="top_speed">Vitesse max.</string>
+    <string name="age">Âge</string>
+    <plurals name="years_n">
+        <item quantity="one">%1$d an</item>
+        <item quantity="other">%1$d ans</item>
+    </plurals>
+    <string name="reliability">Fiabilité</string>
+    <string name="breakdowns">Pannes</string>
+    <string name="tires">Pneus</string>
+    <string name="gear">Train d'atterrissage</string>
+    <string name="range">Autonomie</string>
+    <string name="km">%1$s km</string>
+    <string name="load_of">%1$d / %2$d</string>
+    <plurals name="shared_with">
+        <item quantity="one">Partagés avec %1$d autre train</item>
+        <item quantity="other">Partagés avec %1$d autres trains</item>
+    </plurals>
+    <plurals name="wait_days_n">
+        <item quantity="one">Attendre %1$d jour</item>
+        <item quantity="other">Attendre %1$d jours</item>
+    </plurals>
+    <string name="load_as_usual">Charger normalement</string>
+    <string name="unload_as_usual">Décharger normalement</string>
+    <string name="move_up">Monter</string>
+    <string name="move_down">Descendre</string>
 </resources>

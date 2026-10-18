@@ -210,7 +210,6 @@
     <string name="mail_waiting">Mail waiting: %1$d, rating %2$d%</string>
     <string name="passengers_load">Passengers %1$d/%2$d</string>
     <string name="mail_load">Mail %1$d/%2$d</string>
-    <string name="profit_line">Profit this year %1$s, last year %2$s</string>
 
     <!-- Journeys -->
     <string name="going_to">Going to, passengers · mail</string>
@@ -244,7 +243,6 @@
         <item>Passengers</item><item>Mail</item><item>Timber</item><item>Lumber</item><item>Grain</item><item>Coal</item><item>Iron ore</item><item>Steel</item><item>Goods</item><item>Oil</item><item>Fuel</item><item>Livestock</item><item>Food</item><item>Fish</item><item>Paper</item><item>Potash</item><item>Nickel ore</item><item>Nickel</item><item>Bauxite</item><item>Aluminium</item>
     </string-array>
     <string name="cargo_waiting">%1$s waiting: %2$d, rating %3$d%</string>
-    <string name="cargo_load">%1$s %2$d/%3$d</string>
     <string name="produced_last_month">%1$s last month: %2$d, %3$d% carried</string>
     <string name="takes">Takes: %1$s</string>
     <string name="brought_last_month">Brought last month: %1$d</string>
@@ -261,7 +259,6 @@
     <string name="unload_all">Unload all</string>
     <string name="transfer">Transfer</string>
     <string name="no_loading">No loading</string>
-    <string name="wait_days">Wait %1$d days</string>
     <string name="wait_less">Wait a day less</string>
     <string name="wait_more">Wait a day more</string>
     <string name="remove_stop">Remove stop</string>
@@ -369,7 +366,6 @@
     <string name="go_via">Go via</string>
     <string name="skip_if_nothing">Skip if nothing to do</string>
     <string name="share_orders">Share orders with</string>
-    <string name="orders_shared">Orders shared with other trains</string>
     <string name="stop_sharing">Stop sharing</string>
     <string name="fund_industry">Fund a new industry</string>
     <string name="build_for">Build for %1$s</string>
@@ -409,7 +405,6 @@
     <string name="snow_depth">Snow</string>
     <string name="broken_down">Broken down</string>
     <string name="going_for_service">Going for a service, %1$d km/h</string>
-    <string name="age_line">%1$d years old, %2$d% reliable, %3$d breakdowns</string>
     <string name="renew_for">Renew for %1$s</string>
     <string name="servicing">Servicing</string>
     <string name="news_crash">%1$s crashed near %2$s</string>
@@ -464,11 +459,9 @@
     <string name="in_garage">In the garage</string>
     <string name="going_to_garage">Going to the garage, %1$d km/h</string>
     <string name="to_garage">To garage</string>
-    <string name="age_line_road">%1$d years old, %2$d% reliable</string>
     <string-array name="tire_kinds">
         <item>Summer tires</item><item>Winter tires</item><item>Chains</item>
     </string-array>
-    <string name="tires_line">On %1$s</string>
     <string name="seasonal_tires">Change tires with the seasons</string>
     <string name="news_slid">%1$s slid off an icy road</string>
     <string name="tool_one_way">One-way</string>
@@ -516,7 +509,6 @@
         <item>skis</item>
     </string-array>
     <string name="seasonal_gear">Floats and skis with the seasons</string>
-    <string name="range_line">Range %1$d km</string>
     <string name="breaks_ice">Breaks ice up to %1$d cm</string>
     <string name="landing_aids_for">Landing aids for %1$s</string>
     <string name="deicing_for">De-icing for %1$s</string>
@@ -683,4 +675,33 @@
     <string name="engines">Engines</string>
     <string name="wagons">Wagons</string>
     <string name="consist_line">%1$s + %2$d %3$s</string>
+    <!-- Vehicle cards -->
+    <string name="head_running">Running</string>
+    <string name="head_profit">Profit</string>
+    <string name="head_load">Load</string>
+    <string name="top_speed">Top speed</string>
+    <string name="age">Age</string>
+    <plurals name="years_n">
+        <item quantity="one">%1$d year</item>
+        <item quantity="other">%1$d years</item>
+    </plurals>
+    <string name="reliability">Reliability</string>
+    <string name="breakdowns">Breakdowns</string>
+    <string name="tires">Tires</string>
+    <string name="gear">Gear</string>
+    <string name="range">Range</string>
+    <string name="km">%1$s km</string>
+    <string name="load_of">%1$d / %2$d</string>
+    <plurals name="shared_with">
+        <item quantity="one">Shared with %1$d other train</item>
+        <item quantity="other">Shared with %1$d other trains</item>
+    </plurals>
+    <plurals name="wait_days_n">
+        <item quantity="one">Wait %1$d day</item>
+        <item quantity="other">Wait %1$d days</item>
+    </plurals>
+    <string name="load_as_usual">Load as usual</string>
+    <string name="unload_as_usual">Set down as usual</string>
+    <string name="move_up">Move up</string>
+    <string name="move_down">Move down</string>
 </resources>

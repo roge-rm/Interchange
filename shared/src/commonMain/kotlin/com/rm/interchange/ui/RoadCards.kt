@@ -5,8 +5,9 @@ import org.jetbrains.compose.resources.stringResource
 import org.jetbrains.compose.resources.stringArrayResource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.height
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -66,13 +67,12 @@ fun GarageCard(view: WorldView, roster: Roster, depot: Int, year: Int, funds: Lo
     }
 }
 
-/** A road vehicle: what it's doing, its stops, its tires, and buttons to run it. */
-@OptIn(ExperimentalLayoutApi::class)
+/** A road vehicle: its picture and what it's doing, its numbers, its stops, and buttons to run it. */
 @Composable
 fun RoadVehicleCard(view: WorldView, roster: Roster, v: RoadVehicleView, addingStops: Boolean, onAddStops: () -> Unit, send: (Command) -> Unit, onClose: () -> Unit, modifier: Modifier) {
     val me = LocalCompany.current
-    val c = LocalColors.current
     val lang = languageCode()
+    fun order(what: Int, stations: IntArray = IntArray(0)) = send(Command.RoadOrder(me, v.id, what, stations))
     Card(roadVehicleName(v), onClose, modifier) {
         val target = if (v.orders.isEmpty()) null else Order.station(v.orders[v.order % v.orders.size])
         val doing = when {
@@ -89,56 +89,34 @@ fun RoadVehicleCard(view: WorldView, roster: Roster, v: RoadVehicleView, addingS
             target != null -> stringResource(Res.string.heading_for, stationName(view, target), v.kmh)
             else -> stringResource(Res.string.no_stops)
         }
-        Text(roster[v.model].name(lang), color = c.textDim, fontSize = 13.sp)
-        Text(doing, color = if (v.wrecked) c.bad else if (v.lost || v.broken || v.slid) c.warn else c.text, fontSize = 13.sp)
-        val names = stringArrayResource(Res.array.cargoes)
-        if (v.capacity > 0) Text(stringResource(Res.string.cargo_load, names.getOrElse(v.carries) { "" }, v.load, v.capacity), color = c.text, fontSize = 13.sp)
-        Text(stringResource(Res.string.profit_line, money(v.profitThisYear), money(v.profitLastYear)), color = if (v.profitThisYear < 0) c.bad else c.textDim, fontSize = 13.sp)
-        // Someone else's: what it is, but none of the controls.
-        if (v.owner != me) {
-            Text(stringResource(Res.string.owned_by, view.companies.getOrElse(v.owner) { "" }), color = c.textDim, fontSize = 13.sp)
-            return@Card
-        }
-        // A wreck can't be given orders or sold; it's cleared away by itself.
-        if (v.wrecked) return@Card
-        Text(stringResource(Res.string.age_line_road, v.age, v.reliability), color = c.textDim, fontSize = 13.sp)
-        val horses = roster[v.model].traction == Traction.HORSE
+        val e = roster[v.model]
+        val mine = v.owner == me
+        VehicleHeader(e, e.name(lang), doing, statusColour(v.wrecked, v.lost || v.broken || v.slid), if (mine) null else view.companies.getOrElse(v.owner) { "" })
+        val horses = e.traction == Traction.HORSE
         val tires = stringArrayResource(Res.array.tire_kinds)
-        if (!horses) Text(stringResource(Res.string.tires_line, tires.getOrElse(v.tires) { "" }), color = c.textDim, fontSize = 13.sp)
-        // The stops, the one it's heading for lit; a tap opens what to do there.
-        var open by remember(v.id) { mutableIntStateOf(-1) }
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            for ((i, o) in v.orders.withIndex()) {
-                val marks = buildString {
-                    if (Order.has(o, Order.FULL_LOAD)) append(" ⬤")
-                    if (Order.has(o, Order.NO_LOAD)) append(" ⊘")
-                }
-                Chip("${i + 1}. ${stationName(view, Order.station(o))}$marks", i == v.order % v.orders.size || i == open) { open = if (open == i) -1 else i }
-            }
-            Chip(stringResource(if (addingStops) Res.string.done_adding else Res.string.add_stops), addingStops, onClick = onAddStops)
-        }
-        v.orders.getOrNull(open)?.let { o ->
-            fun change(new: Int) = send(Command.RoadOrder(me, v.id, Command.TrainOrder.ORDERS, v.orders.copyOf().also { it[open] = new }))
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Chip(stringResource(Res.string.full_load), Order.has(o, Order.FULL_LOAD)) { change(Order.toggle(o, Order.FULL_LOAD)) }
-                Chip(stringResource(Res.string.no_loading), Order.has(o, Order.NO_LOAD)) { change(Order.toggle(o, Order.NO_LOAD)) }
-                ActionButton(stringResource(Res.string.remove_stop)) {
-                    send(Command.RoadOrder(me, v.id, Command.TrainOrder.ORDERS, v.orders.filterIndexed { j, _ -> j != open }.toIntArray()))
-                    open = -1
-                }
-            }
-        }
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            ActionButton(stringResource(if (v.running) Res.string.stop else Res.string.start), strong = !v.running) { send(Command.RoadOrder(me, v.id, Command.TrainOrder.START_STOP)) }
-            if (!v.inDepot) {
-                ActionButton(stringResource(if (v.toDepot) Res.string.carry_on else Res.string.to_garage)) { send(Command.RoadOrder(me, v.id, Command.TrainOrder.TO_DEPOT)) }
-                ActionButton(stringResource(Res.string.turn_round)) { send(Command.RoadOrder(me, v.id, Command.TrainOrder.TURN)) }
-            } else {
-                ActionButton(stringResource(Res.string.renew_for, money(v.renewCost))) { send(Command.RoadOrder(me, v.id, Command.TrainOrder.RENEW)) }
-                ActionButton(stringResource(Res.string.sell)) { send(Command.RoadOrder(me, v.id, Command.TrainOrder.SELL)) }
-            }
-            Chip(stringResource(Res.string.servicing), v.service) { send(Command.RoadOrder(me, v.id, Command.TrainOrder.SERVICE)) }
-            if (!horses) Chip(stringResource(Res.string.seasonal_tires), v.seasonalTires) { send(Command.RoadOrder(me, v.id, Command.RoadOrder.TIRES)) }
-        }
+        VehicleStats(
+            v.kmh, e.speed, v.age, false, v.reliability, v.profitThisYear, v.profitLastYear,
+            if (v.capacity > 0) listOf(VehicleLoad(v.carries, v.load, v.capacity)) else emptyList(),
+            if (horses) emptyList() else listOf(stringResource(Res.string.tires) to tires.getOrElse(v.tires) { "" }),
+        )
+        // Someone else's shows what it is but none of the controls, and a wreck is cleared away by itself.
+        if (!mine || v.wrecked) return@Card
+        Head(stringResource(Res.string.orders))
+        OrdersList(view, v.id, v.orders, v.order, OrderFlags.ROAD, Glyph.RoadStop) { order(Command.TrainOrder.ORDERS, it) }
+        ButtonTiles(listOf(addStopsTile(addingStops, onAddStops)))
+        Box(Modifier.height(KitSpace.Tight))
+        ButtonTiles(
+            listOf(
+                TileButton(if (v.running) Glyph.Pause else Glyph.Play, stringResource(if (v.running) Res.string.stop else Res.string.start), strong = !v.running) { order(Command.TrainOrder.START_STOP) },
+            ) + if (!v.inDepot) listOf(
+                TileButton(Glyph.Depot, stringResource(if (v.toDepot) Res.string.carry_on else Res.string.to_garage), lit = v.toDepot) { order(Command.TrainOrder.TO_DEPOT) },
+                TileButton(Glyph.TurnLeft, stringResource(Res.string.turn_round)) { order(Command.TrainOrder.TURN) },
+            ) else listOf(
+                TileButton(Glyph.Renew, stringResource(Res.string.renew_for, money(v.renewCost))) { order(Command.TrainOrder.RENEW) },
+                TileButton(Glyph.Minus, stringResource(Res.string.sell)) { order(Command.TrainOrder.SELL) },
+            ),
+        )
+        SwitchRow(stringResource(Res.string.servicing), v.service) { order(Command.TrainOrder.SERVICE) }
+        if (!horses) SwitchRow(stringResource(Res.string.seasonal_tires), v.seasonalTires) { order(Command.RoadOrder.TIRES) }
     }
 }
