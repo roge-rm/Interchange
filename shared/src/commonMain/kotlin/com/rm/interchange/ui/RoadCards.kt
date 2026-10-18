@@ -69,6 +69,11 @@ fun RoadVehicleCard(view: WorldView, roster: Roster, v: RoadVehicleView, addingS
     val me = LocalCompany.current
     val lang = languageCode()
     fun order(what: Int, stations: IntArray = IntArray(0)) = send(Command.RoadOrder(me, v.id, what, stations))
+    // While adding stops, only the orders and what goes with adding them, so the map stays clear.
+    if (addingStops && v.owner == me && !v.wrecked) {
+        AddingStopsCard(roadVehicleName(v), view, v.id, v.orders, v.order, OrderFlags.ROAD, Glyph.RoadStop, { order(Command.TrainOrder.ORDERS, it) }, onAddStops, onClose, modifier)
+        return
+    }
     Card(roadVehicleName(v), onClose, modifier) {
         val target = if (v.orders.isEmpty()) null else Order.station(v.orders[v.order % v.orders.size])
         val doing = when {

@@ -231,6 +231,7 @@
     <string name="wait_less">Attendre un jour de moins</string>
     <string name="wait_more">Attendre un jour de plus</string>
     <string name="remove_stop">Retirer l'arrêt</string>
+    <string name="remove_last_stop">Retirer le dernier</string>
 
     <!-- Argent -->
     <string name="finances">Finances</string>

@@ -60,6 +60,11 @@ fun TrainCard(
 ) {
     val me = LocalCompany.current
     fun order(what: Int, stations: IntArray = IntArray(0)) = send(Command.TrainOrder(me, t.id, what, stations))
+    // While adding stops, only the orders and what goes with adding them, so the map stays clear.
+    if (addingStops && t.owner == me && !t.wrecked) {
+        AddingStopsCard(trainName(t), view, t.id, t.orders, t.order, OrderFlags.TRAIN, Glyph.Station, { order(Command.TrainOrder.ORDERS, it) }, onAddStops, onClose, modifier)
+        return
+    }
     Card(trainName(t), onClose, modifier) {
         val target = if (t.orders.isEmpty()) null else Order.station(t.orders[t.order % t.orders.size])
         val doing = when {

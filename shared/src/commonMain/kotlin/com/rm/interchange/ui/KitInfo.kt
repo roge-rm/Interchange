@@ -98,6 +98,8 @@ import kotlin.math.roundToInt
  * - SegmentedChoice: one of many choices as even segments, wrapped into rows. For cargo choices.
  * - ButtonTiles: a card's actions as even tiles, each a glyph over a short label, lit when on. For what a vehicle
  *   or a building can be told to do.
+ * - SlimCard (Kit.kt): a card cut down to its title, a short scrolling list and its controls, for while the map
+ *   is being tapped. For a vehicle's orders while adding stops.
  * - SwitchRow: a setting that's on or off, its label with a small switch at the end, as tall as an InfoRow.
  * - FillChips, StepSlider, TogglePill, BigButton (Kit.kt): one of a few words, a stepped value, on or off, and a
  *   window's main actions.

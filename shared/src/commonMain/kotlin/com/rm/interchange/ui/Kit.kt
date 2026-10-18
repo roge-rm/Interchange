@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
@@ -29,7 +30,9 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
@@ -52,6 +55,9 @@ import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalWindowInfo
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.rm.interchange.res.Res
@@ -307,5 +313,36 @@ fun SideBySide(wide: Boolean, first: @Composable () -> Unit, second: @Composable
     } else {
         first()
         second()
+    }
+}
+
+/**
+ * A card cut down to a [list] and the [controls] under it, for while the map is being tapped, like adding stops. It's
+ * only as tall as it needs, and the list scrolls once it's taller than [listMax], a share of a short screen or the
+ * room left. It scrolls to its end when it opens and each time [follow] changes, so what was just added is in view.
+ */
+@Composable
+fun SlimCard(title: String, onClose: () -> Unit, modifier: Modifier = Modifier, follow: Any? = null, listMax: Dp = 150.dp, list: @Composable () -> Unit, controls: @Composable () -> Unit) {
+    val c = LocalColors.current
+    val scroll = rememberScrollState()
+    LaunchedEffect(follow) {
+        // After the list is laid out, so its new end is known.
+        withFrameNanos { }
+        scroll.animateScrollTo(scroll.maxValue)
+    }
+    ChromeBox(modifier) {
+        Column(Modifier.padding(KitSpace.Card), verticalArrangement = Arrangement.spacedBy(KitSpace.Gap)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(title, color = c.text, style = KitType.CardTitle, modifier = Modifier.weight(1f), maxLines = 1)
+                SquareButton(Glyph.Remove, stringResource(Res.string.close), 28.dp, onClick = onClose)
+            }
+            // On a short screen, like a phone on its side, the list gets less, so most of the map stays clear.
+            val screen = with(LocalDensity.current) { LocalWindowInfo.current.containerSize.height.toDp() }
+            Column(
+                Modifier.weight(1f, fill = false).heightIn(max = minOf(listMax, maxOf(screen * 0.22f, 110.dp))).verticalScroll(scroll),
+                verticalArrangement = Arrangement.spacedBy(KitSpace.Gap),
+            ) { list() }
+            controls()
+        }
     }
 }

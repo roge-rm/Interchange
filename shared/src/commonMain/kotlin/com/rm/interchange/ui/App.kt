@@ -1192,6 +1192,7 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
             stationPlan = null
             folded = false
             addingStops = null
+            addingRoadStops = null
             addingCraftStops = null
             if (g != ToolGroup.Inspect) selected = null
         }
@@ -1231,8 +1232,11 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
                 }
                 is Selection.Train -> {
                     val t = wv?.trains?.firstOrNull { it.id == sel.id }
-                    if (t == null || wv == null) selected = null
-                    else TrainCard(wv, world.roster, t, addingStops == t.id, { addingStops = if (addingStops == t.id) null else t.id }, runner::request, { selected = null; addingStops = null }, cardSize)
+                    if (t == null || wv == null) { selected = null; addingStops = null }
+                    else {
+                        if (t.wrecked && addingStops == t.id) addingStops = null
+                        TrainCard(wv, world.roster, t, addingStops == t.id, { addingStops = if (addingStops == t.id) null else t.id }, runner::request, { selected = null; addingStops = null }, cardSize)
+                    }
                 }
                 is Selection.Depot -> if (wv != null) DepotCard(
                     wv, world.roster, sel.id, Calendar.year(world.startYear, day), money, { world.price(it) }, runner::request,
@@ -1240,8 +1244,11 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
                 )
                 is Selection.RoadVehicle -> {
                     val v = wv?.roadVehicles?.firstOrNull { it.id == sel.id }
-                    if (v == null || wv == null) selected = null
-                    else RoadVehicleCard(wv, world.roster, v, addingRoadStops == v.id, { addingRoadStops = if (addingRoadStops == v.id) null else v.id }, runner::request, { selected = null; addingRoadStops = null }, cardSize)
+                    if (v == null || wv == null) { selected = null; addingRoadStops = null }
+                    else {
+                        if (v.wrecked && addingRoadStops == v.id) addingRoadStops = null
+                        RoadVehicleCard(wv, world.roster, v, addingRoadStops == v.id, { addingRoadStops = if (addingRoadStops == v.id) null else v.id }, runner::request, { selected = null; addingRoadStops = null }, cardSize)
+                    }
                 }
                 is Selection.Garage -> if (wv != null) GarageCard(
                     wv, world.roster, sel.id, Calendar.year(world.startYear, day), money, { world.price(it) }, runner::request,
@@ -1258,13 +1265,18 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
                 }
                 is Selection.Ship -> {
                     val v = wv?.ships?.firstOrNull { it.id == sel.id }
-                    if (v == null || wv == null) selected = null
-                    else ShipCard(wv, world.roster, v, addingCraftStops == (false to v.id), { addingCraftStops = if (addingCraftStops == (false to v.id)) null else false to v.id }, runner::request, { selected = null; addingCraftStops = null }, cardSize)
+                    if (v == null || wv == null) { selected = null; addingCraftStops = null }
+                    else {
+                        ShipCard(wv, world.roster, v, addingCraftStops == (false to v.id), { addingCraftStops = if (addingCraftStops == (false to v.id)) null else false to v.id }, runner::request, { selected = null; addingCraftStops = null }, cardSize)
+                    }
                 }
                 is Selection.Aircraft -> {
                     val v = wv?.aircraft?.firstOrNull { it.id == sel.id }
-                    if (v == null || wv == null) selected = null
-                    else AircraftCard(wv, world.roster, v, addingCraftStops == (true to v.id), { addingCraftStops = if (addingCraftStops == (true to v.id)) null else true to v.id }, runner::request, { selected = null; addingCraftStops = null }, cardSize)
+                    if (v == null || wv == null) { selected = null; addingCraftStops = null }
+                    else {
+                        if (v.wrecked && addingCraftStops == (true to v.id)) addingCraftStops = null
+                        AircraftCard(wv, world.roster, v, addingCraftStops == (true to v.id), { addingCraftStops = if (addingCraftStops == (true to v.id)) null else true to v.id }, runner::request, { selected = null; addingCraftStops = null }, cardSize)
+                    }
                 }
                 is Selection.Station -> {
                     val s = wv?.stations?.firstOrNull { it.id == sel.id }

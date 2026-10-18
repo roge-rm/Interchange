@@ -19,6 +19,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.MutableState
+import androidx.compose.runtime.withFrameNanos
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -130,9 +134,18 @@ private fun orderLine(o: Int): String? {
 private fun OrderRow(number: Int, name: String, line: String?, glyph: Glyph, current: Boolean, open: Boolean, onClick: () -> Unit, below: @Composable () -> Unit) {
     val c = LocalColors.current
     val shape = RoundedCornerShape(KitSpace.Corner)
+    // Opened, the stop and what's under it scroll into sight, once they're laid out.
+    val sight = remember { BringIntoViewRequester() }
+    LaunchedEffect(open) {
+        if (open) {
+            withFrameNanos { }
+            sight.bringIntoView()
+        }
+    }
     Column(
         Modifier
             .fillMaxWidth()
+            .bringIntoViewRequester(sight)
             .clip(shape)
             .background(if (open) c.accent.copy(alpha = 0.16f) else c.button)
             .border(2.dp, if (open) c.accent else c.button, shape)
@@ -181,29 +194,46 @@ private fun stopAt(orders: IntArray, i: Int): OpenStop {
 private const val EDIT_WAIT_MS = 1500L
 
 /**
+ * Sends edits of a vehicle's [orders] through [set]. The orders as they were when an edit was sent: until they
+ * change, the next edit would work from old orders and undo it, so edits wait for it to come back.
+ */
+class OrderEdits(private val orders: IntArray, private val sentFrom: MutableState<IntArray?>, private val set: (IntArray) -> Unit) {
+    val waiting get() = sentFrom.value?.contentEquals(orders) == true
+
+    fun send(new: IntArray) {
+        if (waiting) return
+        sentFrom.value = orders
+        set(new)
+    }
+}
+
+/** The [OrderEdits] for [vehicle]'s [orders], letting edits through again after a while if the orders never change. */
+@Composable
+fun rememberOrderEdits(vehicle: Int, orders: IntArray, set: (IntArray) -> Unit): OrderEdits {
+    val sentFrom = remember(vehicle) { mutableStateOf<IntArray?>(null) }
+    LaunchedEffect(sentFrom.value) {
+        if (sentFrom.value != null) {
+            delay(EDIT_WAIT_MS)
+            sentFrom.value = null
+        }
+    }
+    return OrderEdits(orders, sentFrom, set)
+}
+
+/**
  * A vehicle's [orders] as a numbered list, the one at [order] lit, and a tap on one opening what can be changed about
  * it: what [flags] lets this kind of vehicle do there, how long to wait, moving it and taking it off. [set] sends the
  * new orders. [stopGlyph] marks each stop, the waypoint glyph for waypoints and buoys. [vehicle] keys what's open.
  */
 @Composable
-fun OrdersList(view: WorldView, vehicle: Int, orders: IntArray, order: Int, flags: OrderFlags, stopGlyph: Glyph, set: (IntArray) -> Unit) {
+fun OrdersList(view: WorldView, vehicle: Int, orders: IntArray, order: Int, flags: OrderFlags, stopGlyph: Glyph, edits: OrderEdits? = null, set: (IntArray) -> Unit) {
     val c = LocalColors.current
+    val edits = edits ?: rememberOrderEdits(vehicle, orders, set)
     var open by remember(vehicle) { mutableStateOf<OpenStop?>(null) }
-    // The orders as they were when an edit was sent: until they change, the next edit would work from old orders and
-    // undo it, so edits wait for it to come back.
-    var sentFrom by remember(vehicle) { mutableStateOf<IntArray?>(null) }
-    val waiting = sentFrom?.contentEquals(orders) == true
-    LaunchedEffect(sentFrom) {
-        if (sentFrom != null) {
-            delay(EDIT_WAIT_MS)
-            sentFrom = null
-        }
-    }
     fun send(new: IntArray, opened: OpenStop?) {
-        if (waiting) return
-        sentFrom = orders
+        if (edits.waiting) return
         open = opened
-        set(new)
+        edits.send(new)
     }
     if (orders.isEmpty()) {
         Text(stringResource(Res.string.no_stops), color = c.textDim, style = KitType.Body)
@@ -272,3 +302,36 @@ private fun OrderEditor(o: Int, flags: OrderFlags, at: Int, count: Int, change: 
 @Composable
 fun addStopsTile(adding: Boolean, onClick: () -> Unit) =
     TileButton(Glyph.Plus, stringResource(if (adding) Res.string.done_adding else Res.string.add_stops), lit = adding, onClick = onClick)
+
+/**
+ * A vehicle's card while stops are added from the map: its [title], its [orders] in a short list that keeps the
+ * newest in view and still opens a stop to change it, and buttons to finish and to take off the last stop. The
+ * rest of the card comes back after [onDone].
+ */
+@Composable
+fun AddingStopsCard(
+    title: String,
+    view: WorldView,
+    vehicle: Int,
+    orders: IntArray,
+    order: Int,
+    flags: OrderFlags,
+    stopGlyph: Glyph,
+    set: (IntArray) -> Unit,
+    onDone: () -> Unit,
+    onClose: () -> Unit,
+    modifier: Modifier,
+) {
+    val edits = rememberOrderEdits(vehicle, orders, set)
+    SlimCard(title, onClose, modifier, follow = orders.size, list = {
+        OrdersList(view, vehicle, orders, order, flags, stopGlyph, edits, set)
+    }) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(KitSpace.Gap)) {
+            BigButton(stringResource(Res.string.done_adding), primary = true, glyph = Glyph.Tick, modifier = Modifier.weight(1f), onClick = onDone)
+            BigButton(
+                stringResource(Res.string.remove_last_stop), glyph = Glyph.Back, enabled = orders.isNotEmpty() && !edits.waiting,
+                modifier = Modifier.weight(1f),
+            ) { edits.send(orders.copyOf(orders.size - 1)) }
+        }
+    }
+}

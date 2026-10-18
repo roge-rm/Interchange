@@ -142,7 +142,7 @@ private fun Facility(glyph: Glyph, label: String, has: Boolean, year: Int, from:
 @Composable
 private fun CraftOrders(view: WorldView, id: Int, orders: IntArray, order: Int, glyph: Glyph, adding: Boolean, onAdd: () -> Unit, set: (IntArray) -> Unit) {
     Head(stringResource(Res.string.orders))
-    OrdersList(view, id, orders, order, OrderFlags.CRAFT, glyph, set)
+    OrdersList(view, id, orders, order, OrderFlags.CRAFT, glyph, set = set)
     ButtonTiles(listOf(addStopsTile(adding, onAdd)))
     Box(Modifier.height(KitSpace.Tight))
 }
@@ -169,6 +169,11 @@ fun ShipCard(view: WorldView, roster: Roster, v: ShipView, addingStops: Boolean,
     val me = LocalCompany.current
     val lang = languageCode()
     fun order(what: Int, stations: IntArray = IntArray(0)) = send(Command.CraftOrder(me, false, v.id, what, stations))
+    // While adding stops, only the orders and what goes with adding them, so the map stays clear.
+    if (addingStops && v.owner == me) {
+        AddingStopsCard(shipName(v), view, v.id, v.orders, v.order, OrderFlags.CRAFT, Glyph.Dock, { order(Command.TrainOrder.ORDERS, it) }, onAddStops, onClose, modifier)
+        return
+    }
     Card(shipName(v), onClose, modifier) {
         val target = if (v.orders.isEmpty()) null else Order.station(v.orders[v.order % v.orders.size])
         val doing = when {
@@ -208,6 +213,11 @@ fun AircraftCard(view: WorldView, roster: Roster, v: AircraftView, addingStops: 
     val lang = languageCode()
     val e = roster[v.model]
     fun order(what: Int, stations: IntArray = IntArray(0)) = send(Command.CraftOrder(me, true, v.id, what, stations))
+    // While adding stops, only the orders and what goes with adding them, so the map stays clear.
+    if (addingStops && v.owner == me && !v.wrecked) {
+        AddingStopsCard(aircraftName(v), view, v.id, v.orders, v.order, OrderFlags.CRAFT, Glyph.Airport, { order(Command.TrainOrder.ORDERS, it) }, onAddStops, onClose, modifier)
+        return
+    }
     Card(aircraftName(v), onClose, modifier) {
         val target = if (v.orders.isEmpty()) null else Order.station(v.orders[v.order % v.orders.size])
         val reasons = stringArrayResource(Res.array.hold_reasons)

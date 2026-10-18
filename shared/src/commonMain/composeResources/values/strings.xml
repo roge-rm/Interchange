@@ -248,6 +248,7 @@
     <string name="wait_less">Wait a day less</string>
     <string name="wait_more">Wait a day more</string>
     <string name="remove_stop">Remove stop</string>
+    <string name="remove_last_stop">Remove last</string>
 
     <!-- Money -->
     <string name="finances">Finances</string>
