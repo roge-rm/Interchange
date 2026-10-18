@@ -22,6 +22,7 @@ enum class Glyph {
     Save, Folder, Plus, Minus, Gear, Home, Package, Layers, Grid, Heights, Renew, Back, Waypoint, Wires, Shed, Fence, OneWay, Dome,
     TrackAuto, PieceX, PieceY, PieceN, PieceE, PieceS, PieceW,
     Chat, People, Flag, Tick, Up, Down,
+    Thermometer, Wind, Snow, Sun, Calendar, Alert,
 }
 
 /** [glyph] drawn in [tint] on a 24 unit square scaled to fit. */
@@ -140,6 +141,23 @@ private class GlyphPen(val scope: DrawScope, val u: Float, val dx: Float, val dy
             Glyph.Tick -> open(5f, 12.5f, 10f, 17.5f, 19f, 7f)
             Glyph.Up -> { line(12f, 19f, 12f, 5f, 2.5f); open(6f, 11f, 12f, 5f, 18f, 11f) }
             Glyph.Down -> { line(12f, 5f, 12f, 19f, 2.5f); open(6f, 13f, 12f, 19f, 18f, 13f) }
+            // A thermometer: a filled bulb and tube, with marks beside.
+            Glyph.Thermometer -> { circle(11f, 17.5f, 3.5f, true); line(11f, 4.5f, 11f, 15f, 4f); line(15.5f, 6f, 18f, 6f, 1.5f); line(15.5f, 9.5f, 18f, 9.5f, 1.5f); line(15.5f, 13f, 18f, 13f, 1.5f) }
+            // Three gusts, the top and bottom ones curling at their ends.
+            Glyph.Wind -> { line(3f, 9f, 15f, 9f); arc(15f, 6.5f, 2.5f, 90f, -270f); line(3f, 13f, 19f, 13f); line(3f, 17f, 13f, 17f); arc(13f, 19.5f, 2.5f, -90f, 270f) }
+            // A snowflake, three strokes through the middle.
+            Glyph.Snow -> { line(12f, 3f, 12f, 21f); line(4.2f, 7.5f, 19.8f, 16.5f); line(4.2f, 16.5f, 19.8f, 7.5f) }
+            Glyph.Sun -> {
+                circle(12f, 12f, 4f)
+                for (k in 0 until 8) {
+                    val a = k * kotlin.math.PI.toFloat() / 4
+                    line(12f + 7f * kotlin.math.cos(a), 12f + 7f * kotlin.math.sin(a), 12f + 9.5f * kotlin.math.cos(a), 12f + 9.5f * kotlin.math.sin(a))
+                }
+            }
+            // A calendar page with its two rings.
+            Glyph.Calendar -> { shape(false, 4f, 6f, 20f, 6f, 20f, 20f, 4f, 20f); line(4f, 10.5f, 20f, 10.5f, 1.5f); line(8f, 3.5f, 8f, 7.5f); line(16f, 3.5f, 16f, 7.5f) }
+            // A warning triangle with a mark in it.
+            Glyph.Alert -> { shape(false, 12f, 3.5f, 21f, 19.5f, 3f, 19.5f); line(12f, 9f, 12f, 13.5f); circle(12f, 16.5f, 1.1f, true) }
             // A tile seen from above as the map shows it, and the piece across it, between the middles of two edges.
             Glyph.PieceX -> { tile(); line(7.5f, 8f, 16.5f, 16f, 3f) }
             Glyph.PieceY -> { tile(); line(16.5f, 8f, 7.5f, 16f, 3f) }

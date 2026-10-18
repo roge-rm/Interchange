@@ -143,7 +143,8 @@ fun InfoRow(label: String, value: String, glyph: Glyph? = null, valueColour: Col
     ) {
         glyph?.let { GlyphIcon(it, c.textDim, Modifier.size(KitSpace.Glyph)) }
         Text(label, color = c.textDim, style = KitType.Body, modifier = Modifier.weight(1f))
-        Text(value, color = valueColour ?: c.text, style = KitType.Value, textAlign = TextAlign.End)
+        // A long value wraps in up to half the row, so the label keeps its room.
+        Text(value, color = valueColour ?: c.text, style = KitType.Value, textAlign = TextAlign.End, modifier = Modifier.weight(1f, fill = false))
     }
 }
 
@@ -234,7 +235,7 @@ fun FillBar(share: Float, modifier: Modifier = Modifier, colour: Color? = null) 
         s < 2f / 3 -> c.warn
         else -> c.good
     }
-    Box(modifier.height(6.dp).clip(RoundedCornerShape(3.dp)).background(c.button)) {
+    Box(modifier.height(6.dp).clip(RoundedCornerShape(3.dp)).background(c.textDim.copy(alpha = 0.25f))) {
         if (s > 0f) Box(Modifier.fillMaxHeight().fillMaxWidth(s).clip(RoundedCornerShape(3.dp)).background(fill))
     }
 }

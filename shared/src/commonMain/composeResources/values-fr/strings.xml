@@ -58,12 +58,9 @@
     <string name="cost_corner">%1$s le coin</string>
 
     <string name="close">Fermer</string>
-    <string name="tile_at">Case %1$d, %2$d</string>
     <string name="kind_water">Eau</string>
     <string name="kind_land">Terrain</string>
     <string name="kind_track">Voie</string>
-    <string name="height_of">Altitude %1$d</string>
-    <string name="track_pieces">Voie : %1$s</string>
     <string name="piece_x">en x</string>
     <string name="piece_y">en y</string>
     <string name="piece_n">nord</string>
@@ -179,11 +176,6 @@
     </string-array>
     <string name="dirt_road">Chemin de terre</string>
     <string name="paved_street">Rue pavée</string>
-    <string name="built_in">Construit en %1$d</string>
-    <string name="residents">Résidents : %1$d</string>
-    <string name="jobs">Emplois : %1$d</string>
-    <string name="town_of">Ville : %1$s</string>
-    <string name="population">Population : %1$s</string>
 
     <!-- Voyageurs et courrier -->
     <string name="passengers_waiting">Voyageurs en attente : %1$d, note %2$d&#160;%</string>
@@ -195,11 +187,9 @@
     <string name="anywhere">N'importe où</string>
 
     <!-- Notes, réputation et la semaine -->
-    <string name="town_standing">Opinion de votre compagnie : %1$s</string>
     <string-array name="approval_levels">
         <item>Épouvantable</item><item>Très mauvaise</item><item>Mauvaise</item><item>Médiocre</item><item>Bonne</item><item>Très bonne</item><item>Excellente</item><item>Exceptionnelle</item>
     </string-array>
-    <string name="picked_up">Pris en charge le mois dernier : %1$d</string>
     <string name="town_hall">Hôtel de ville</string>
     <string-array name="town_actions">
         <item>Petite campagne publicitaire</item><item>Campagne publicitaire moyenne</item><item>Grande campagne publicitaire</item>
@@ -220,9 +210,6 @@
     <string-array name="cargoes">
         <item>Voyageurs</item><item>Courrier</item><item>Bois rond</item><item>Bois d'œuvre</item><item>Grain</item><item>Charbon</item><item>Minerai de fer</item><item>Acier</item><item>Marchandises</item><item>Pétrole</item><item>Carburant</item><item>Bétail</item><item>Aliments</item><item>Poisson</item><item>Papier</item><item>Potasse</item><item>Minerai de nickel</item><item>Nickel</item><item>Bauxite</item><item>Aluminium</item>
     </string-array>
-    <string name="produced_last_month">%1$s le mois dernier : %2$d, %3$d&#160;% transportés</string>
-    <string name="takes">Accepte : %1$s</string>
-    <string name="brought_last_month">Reçu le mois dernier : %1$d</string>
     <string name="industries">Industries</string>
 
     <!-- Nouvelles -->
@@ -374,9 +361,6 @@
     <string name="centimetres">%1$d cm</string>
     <string name="hours_minutes">%1$d h %2$d min</string>
     <string name="calm">Calme</string>
-    <string name="snow_on_ground">Neige au sol %1$d cm</string>
-    <string name="ice_on_water">Glace de %1$d cm</string>
-    <string name="muddy">Boueux</string>
     <string name="daylight">Durée du jour</string>
     <string name="news_snowbound">%1$s est bloqué par la neige</string>
     <string name="snow_depth">Neige</string>
@@ -416,10 +400,6 @@
     <string name="news_renew_failed">Renouvellement automatique de %1$s impossible : pas assez d'argent</string>
     <string name="track_condition">Voies</string>
     <string name="reserved_track">Voies réservées</string>
-    <string name="condition_line">État %1$d %</string>
-    <string name="slow_order">Ralentissement, %1$d km/h</string>
-    <string name="closed_washout">Emportée, rouverte dans %1$d jours</string>
-    <string name="closed_fire">Fermée par un incendie, rouverte dans %1$d jours</string>
     <string name="news_washout">Voie emportée par les eaux</string>
     <string name="news_fire">Un incendie ferme la ligne</string>
     <string name="tool_snow_shed">Paraneige</string>
@@ -689,4 +669,30 @@
     <string name="unload_as_usual">Décharger normalement</string>
     <string name="move_up">Monter</string>
     <string name="move_down">Descendre</string>
+    <!-- Info cards -->
+    <string name="head_tile">Case</string>
+    <string name="tile_label">Position</string>
+    <string name="tile_xy">%1$d, %2$d</string>
+    <string name="built_label">Construit</string>
+    <string name="residents_label">Résidents</string>
+    <string name="jobs_label">Emplois</string>
+    <string name="height_label">Altitude</string>
+    <string name="ground_label">Sol</string>
+    <string name="mud_label">Boue</string>
+    <string name="population_label">Population</string>
+    <string name="picked_up_label">Pris en charge le mois dernier</string>
+    <string name="standing_label">Opinion de votre compagnie</string>
+    <string name="pieces_label">Pièces</string>
+    <string name="condition_label">État</string>
+    <string name="slow_order_label">Ralentissement</string>
+    <string name="closed_fire_label">Fermée par un incendie</string>
+    <string name="closed_washout_label">Emportée</string>
+    <string name="owner_label">Propriétaire</string>
+    <string name="head_made">Produit le mois dernier</string>
+    <string name="head_takes">Accepte</string>
+    <string name="brought_label">Reçu le mois dernier</string>
+    <plurals name="open_in_days">
+        <item quantity="one">Rouverte dans %1$d jour</item>
+        <item quantity="other">Rouverte dans %1$d jours</item>
+    </plurals>
 </resources>

@@ -1350,53 +1350,21 @@ private fun moving(runner: GameThread): Moving? = runner.view?.let { Moving(it, 
 
 @Composable
 private fun InspectCard(world: World, x: Int, y: Int, onTown: (Int) -> Unit, onClose: () -> Unit, modifier: Modifier) {
+    val c = LocalColors.current
     val water = world.isWater(x, y)
     val t = world.trackAt(x, y)
     val i = world.index(x, y)
+    val industry = world.industryAt(i)
+    if (industry != null) {
+        IndustryCard(world, industry, x, y, onClose, modifier)
+        return
+    }
     val grounds = stringArrayResource(Res.array.grounds)
     val lang = languageCode()
-    val pieces = listOf(Track.X to Res.string.piece_x, Track.Y to Res.string.piece_y, Track.N to Res.string.piece_n, Track.E to Res.string.piece_e, Track.S to Res.string.piece_s, Track.W to Res.string.piece_w)
-    val pieceNames = pieces.filter { t and it.first != 0 }.map { stringResource(it.second) }
-    val join = stringResource(Res.string.list_join)
     val levels = stringArrayResource(Res.array.approval_levels)
     val house = world.roster.houses.getOrNull(houseOf(world.house[i].toInt()))
     val road = world.road[i].toInt()
     val town = world.towns.getOrNull(world.townOf[i].toInt())
-    val lines = buildList {
-        add(stringResource(Res.string.tile_at, x, y))
-        if (house != null) {
-            add(stringResource(Res.string.built_in, world.houseYear[i].toInt()))
-            if (house.residents > 0) add(stringResource(Res.string.residents, house.residents))
-            if (house.jobs > 0) add(stringResource(Res.string.jobs, house.jobs))
-        } else if (!water) {
-            add(stringResource(Res.string.height_of, minOf(world.heightAt(x, y), world.heightAt(x + 1, y), world.heightAt(x + 1, y + 1), world.heightAt(x, y + 1))))
-            if (road == 0) add(grounds.getOrElse(world.ground[i].toInt()) { "" })
-        }
-        if (town != null) {
-            add(stringResource(Res.string.town_of, town.name))
-            add(stringResource(Res.string.population, Numbers.grouped(town.population.toLong())))
-            add(stringResource(Res.string.picked_up, town.servedLastMonth))
-            add(stringResource(Res.string.town_standing, levels.getOrElse(approvalLevel(town.approval[0])) { "" }))
-        }
-        val snow = world.weather.snow[i].toInt() and 255
-        val ice = world.weather.ice[i].toInt() and 255
-        if (water && ice >= 5) add(stringResource(Res.string.ice_on_water, ice))
-        if (snow > 0) add(stringResource(Res.string.snow_on_ground, snow))
-        if (!water && world.mud(i) > 0) add(stringResource(Res.string.muddy))
-        if (t != 0) {
-            add(stringResource(Res.string.track_pieces, pieceNames.joinToString(join)))
-            add(stringResource(Res.string.condition_line, (world.condition[i].toInt() and 255) * 100 / 255))
-            val limit = world.trackLimit(i)
-            if (limit > 0) add(stringResource(Res.string.slow_order, limit))
-            world.closed[i]?.let { v -> add(stringResource(if (v shr 16 == Closure.FIRE) Res.string.closed_fire else Res.string.closed_washout, v and 0xffff)) }
-            if (world.owner[i].toInt() == LocalCompany.current) add(stringResource(Res.string.owned_by, stringResource(Res.string.company)))
-        }
-    }
-    val industry = world.industryAt(i)
-    if (industry != null) {
-        IndustryCard(world, industry, lines.first(), onClose, modifier)
-        return
-    }
     val title = when {
         house != null -> house.name(lang)
         world.canals.contains(i) -> stringResource(Res.string.kind_canal)
@@ -1406,30 +1374,80 @@ private fun InspectCard(world: World, x: Int, y: Int, onTown: (Int) -> Unit, onC
         water -> stringResource(Res.string.kind_water)
         else -> stringResource(Res.string.kind_land)
     }
-    InfoCard(title, lines, onClose, modifier) {
-        if (town != null) ActionButton(stringResource(Res.string.town_hall)) { onTown(town.id) }
+    Card(title, onClose, modifier) {
+        Head(stringResource(Res.string.head_tile), Glyph.Land)
+        InfoRow(stringResource(Res.string.tile_label), stringResource(Res.string.tile_xy, x, y), Glyph.Grid)
+        if (house != null) {
+            InfoRow(stringResource(Res.string.built_label), world.houseYear[i].toInt().toString(), Glyph.Calendar)
+            if (house.residents > 0) InfoRow(stringResource(Res.string.residents_label), Numbers.grouped(house.residents.toLong()), Glyph.People)
+            if (house.jobs > 0) InfoRow(stringResource(Res.string.jobs_label), Numbers.grouped(house.jobs.toLong()), Glyph.Package)
+        } else if (!water) {
+            val h = minOf(world.heightAt(x, y), world.heightAt(x + 1, y), world.heightAt(x + 1, y + 1), world.heightAt(x, y + 1))
+            InfoRow(stringResource(Res.string.height_label), h.toString(), Glyph.Heights)
+            if (road == 0) InfoRow(stringResource(Res.string.ground_label), grounds.getOrElse(world.ground[i].toInt()) { "" }, Glyph.Tree)
+        }
+        // Snow, ice and mud, as the weather card has them.
+        val snow = world.weather.snow[i].toInt() and 255
+        val ice = world.weather.ice[i].toInt() and 255
+        val mud = if (water) 0 else world.mud(i)
+        if ((water && ice >= 5) || snow > 0 || mud > 0) {
+            Head(stringResource(Res.string.weather_ground), Glyph.Snow)
+            if (water && ice >= 5) InfoRow(stringResource(Res.string.ice), stringResource(Res.string.centimetres, ice), Glyph.Water)
+            if (snow > 0) InfoRow(stringResource(Res.string.snow_depth), stringResource(Res.string.centimetres, snow), Glyph.Snow)
+            if (mud > 0) FillBarRow(stringResource(Res.string.mud_label), mud / 255f, glyph = Glyph.Land, colour = c.warn)
+        }
+        if (t != 0) {
+            Head(stringResource(Res.string.kind_track), Glyph.Rail)
+            val pieces = listOf(
+                Track.X to Res.string.piece_x, Track.Y to Res.string.piece_y, Track.N to Res.string.piece_n,
+                Track.E to Res.string.piece_e, Track.S to Res.string.piece_s, Track.W to Res.string.piece_w,
+            )
+            val pieceNames = pieces.filter { t and it.first != 0 }.map { stringResource(it.second) }
+            InfoRow(stringResource(Res.string.pieces_label), pieceNames.joinToString(stringResource(Res.string.list_join)), Glyph.TrackAuto)
+            FillBarRow(stringResource(Res.string.condition_label), (world.condition[i].toInt() and 255) / 255f, glyph = Glyph.Renew)
+            val limit = world.trackLimit(i)
+            if (limit > 0) InfoRow(stringResource(Res.string.slow_order_label), stringResource(Res.string.kmh, limit), Glyph.Speed, c.warn)
+            world.closed[i]?.let { v ->
+                val days = v and 0xffff
+                InfoRow(
+                    stringResource(if (v shr 16 == Closure.FIRE) Res.string.closed_fire_label else Res.string.closed_washout_label),
+                    pluralStringResource(Res.plurals.open_in_days, days, days), Glyph.Alert, c.bad,
+                )
+            }
+            if (world.owner[i].toInt() == LocalCompany.current) InfoRow(stringResource(Res.string.owner_label), stringResource(Res.string.your_company), Glyph.Flag)
+        }
+        if (town != null) {
+            Head(town.name, Glyph.Home)
+            InfoRow(stringResource(Res.string.population_label), Numbers.grouped(town.population.toLong()), Glyph.People)
+            InfoRow(stringResource(Res.string.picked_up_label), Numbers.grouped(town.servedLastMonth.toLong()), Glyph.Station)
+            InfoRow(stringResource(Res.string.standing_label), levels.getOrElse(approvalLevel(town.approval[0])) { "" }, Glyph.Flag)
+            ButtonTiles(listOf(TileButton(Glyph.Home, stringResource(Res.string.town_hall)) { onTown(town.id) }))
+        }
     }
 }
 
-/** An industry: what it made last month and how much was carried, and what it takes. */
+/** An industry: what it made last month and how much of it was carried, and what it takes. */
 @Composable
-private fun IndustryCard(world: World, ind: Industry, where: String, onClose: () -> Unit, modifier: Modifier) {
+private fun IndustryCard(world: World, ind: Industry, x: Int, y: Int, onClose: () -> Unit, modifier: Modifier) {
     val lang = languageCode()
     val kind = world.roster.industries[ind.kind]
-    val names = stringArrayResource(Res.array.cargoes)
-    val lines = buildList {
-        add(where)
-        for (c in 0 until Cargo.COUNT) {
-            if (kind.outputs and (1 shl c) == 0) continue
-            val made = ind.madeLastMonth[c]
-            add(stringResource(Res.string.produced_last_month, names.getOrElse(c) { "" }, made, if (made == 0) 0 else ind.movedLastMonth[c] * 100 / made))
+    Card(industryName(world, ind, lang), onClose, modifier) {
+        PictureRow(
+            kind.name(lang), picture = { IndustryPicture(kind, it) },
+            line = world.towns.getOrNull(ind.town)?.name, lineEnd = stringResource(Res.string.tile_xy, x, y),
+        )
+        Head(stringResource(Res.string.head_made), Glyph.Up)
+        for (cg in 0 until Cargo.COUNT) {
+            if (kind.outputs and (1 shl cg) == 0) continue
+            val made = ind.madeLastMonth[cg]
+            CargoRow(cg, Numbers.grouped(made.toLong()), share = if (made == 0) 0f else ind.movedLastMonth[cg].toFloat() / made, percent = if (made == 0) "-" else null)
         }
         if (kind.secondary) {
-            add(stringResource(Res.string.takes, (0 until Cargo.COUNT).filter { kind.takes(it) }.joinToString(stringResource(Res.string.list_join)) { names.getOrElse(it) { "" }.lowercase() }))
-            add(stringResource(Res.string.brought_last_month, ind.broughtLastMonth))
+            Head(stringResource(Res.string.head_takes), Glyph.Down)
+            for (cg in 0 until Cargo.COUNT) if (kind.takes(cg)) CargoRow(cg, "")
+            InfoRow(stringResource(Res.string.brought_label), Numbers.grouped(ind.broughtLastMonth.toLong()), Glyph.Package)
         }
     }
-    InfoCard(industryName(world, ind, lang), lines, onClose, modifier)
 }
 
 /** The company a piece of news is about, if it's about one: for one bought, the buyer. */

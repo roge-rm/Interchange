@@ -69,25 +69,26 @@ fun WeatherCard(world: World, wv: WeatherView, x: Int, y: Int, onClose: () -> Un
     val drift = Climate.drift(wv.year)
     val light = daylightMinutes(Climate.LATITUDE[region.ordinal], wv.doy)
     Card(skies.getOrElse(skyKind(wv, x, y, sky)) { "" }, onClose, modifier) {
-        Head(stringResource(Res.string.weather_now))
-        InfoRow(stringResource(Res.string.temperature), degrees(sky.temperature))
-        InfoRow(stringResource(Res.string.normal_temperature), degrees(normal))
+        Head(stringResource(Res.string.weather_now), Glyph.Sun)
+        InfoRow(stringResource(Res.string.temperature), degrees(sky.temperature), Glyph.Thermometer)
+        InfoRow(stringResource(Res.string.normal_temperature), degrees(normal), Glyph.Thermometer)
         InfoRow(
             stringResource(Res.string.wind),
             if (wv.wind < 5) stringResource(Res.string.calm) else stringResource(Res.string.wind_speed, winds.getOrElse(wv.windFrom) { "" }, wv.wind),
+            Glyph.Wind,
         )
         val showIce = water && ice >= 5
         val showFrost = !water && frost > 0
         if (showIce || snow > 0 || showFrost) {
-            Head(stringResource(Res.string.weather_ground))
-            if (showIce) InfoRow(stringResource(Res.string.ice), stringResource(Res.string.centimetres, ice))
-            if (snow > 0) InfoRow(stringResource(Res.string.snow_depth), stringResource(Res.string.centimetres, snow))
-            if (showFrost) InfoRow(stringResource(Res.string.frost), stringResource(Res.string.centimetres, frost))
+            Head(stringResource(Res.string.weather_ground), Glyph.Snow)
+            if (showIce) InfoRow(stringResource(Res.string.ice), stringResource(Res.string.centimetres, ice), Glyph.Water)
+            if (snow > 0) InfoRow(stringResource(Res.string.snow_depth), stringResource(Res.string.centimetres, snow), Glyph.Snow)
+            if (showFrost) InfoRow(stringResource(Res.string.frost), stringResource(Res.string.centimetres, frost), Glyph.Land)
         }
-        Head(stringResource(Res.string.weather_year))
-        InfoRow(stringResource(Res.string.season), seasons.getOrElse(Climate.season(region, wv.year, wv.doy)) { "" })
-        InfoRow(stringResource(Res.string.daylight), stringResource(Res.string.hours_minutes, light / 60, light % 60))
-        if (drift >= 5) InfoRow(stringResource(Res.string.warmer_than_1900), degreesExact(drift))
+        Head(stringResource(Res.string.weather_year), Glyph.Calendar)
+        InfoRow(stringResource(Res.string.season), seasons.getOrElse(Climate.season(region, wv.year, wv.doy)) { "" }, Glyph.Tree)
+        InfoRow(stringResource(Res.string.daylight), stringResource(Res.string.hours_minutes, light / 60, light % 60), Glyph.Sun)
+        if (drift >= 5) InfoRow(stringResource(Res.string.warmer_than_1900), degreesExact(drift), Glyph.Thermometer)
     }
 }
 

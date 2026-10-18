@@ -355,22 +355,6 @@ fun TrayToggle(glyph: Glyph, label: String, on: Boolean, onClick: () -> Unit) {
     SquareButton(glyph, label, 32.dp, selected = on, onClick = onClick)
 }
 
-/** A panel of facts about something on the map, with a close button. */
-@Composable
-fun InfoCard(title: String, lines: List<String>, onClose: () -> Unit, modifier: Modifier = Modifier, actions: @Composable () -> Unit = {}) {
-    val c = LocalColors.current
-    ChromeBox(modifier) {
-        Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(title, color = c.text, style = KitType.CardTitle, modifier = Modifier.weight(1f))
-                SquareButton(Glyph.Remove, stringResource(Res.string.close), 28.dp, onClick = onClose)
-            }
-            for (l in lines) Text(l, color = c.textDim, fontSize = 13.sp)
-            actions()
-        }
-    }
-}
-
 /** An amount of money as $250,000, or as the language writes it; owing as −$861. */
 @Composable
 fun money(amount: Long): String =

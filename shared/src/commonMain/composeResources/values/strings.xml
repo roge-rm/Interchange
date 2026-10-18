@@ -70,12 +70,9 @@
 
     <!-- Inspecting a tile. -->
     <string name="close">Close</string>
-    <string name="tile_at">Tile %1$d, %2$d</string>
     <string name="kind_water">Water</string>
     <string name="kind_land">Land</string>
     <string name="kind_track">Track</string>
-    <string name="height_of">Height %1$d</string>
-    <string name="track_pieces">Track: %1$s</string>
     <string name="piece_x">along x</string>
     <string name="piece_y">along y</string>
     <string name="piece_n">north</string>
@@ -196,11 +193,6 @@
     </string-array>
     <string name="dirt_road">Dirt road</string>
     <string name="paved_street">Paved street</string>
-    <string name="built_in">Built in %1$d</string>
-    <string name="residents">Residents: %1$d</string>
-    <string name="jobs">Jobs: %1$d</string>
-    <string name="town_of">Town: %1$s</string>
-    <string name="population">Population: %1$s</string>
 
     <!-- Passengers and mail -->
     <string name="passengers_waiting">Passengers waiting: %1$d, rating %2$d%</string>
@@ -212,11 +204,9 @@
     <string name="anywhere">Anywhere</string>
 
     <!-- Ratings, approval and the week -->
-    <string name="town_standing">Thinks of your company: %1$s</string>
     <string-array name="approval_levels">
         <item>Appalling</item><item>Very poor</item><item>Poor</item><item>Mediocre</item><item>Good</item><item>Very good</item><item>Excellent</item><item>Outstanding</item>
     </string-array>
-    <string name="picked_up">Picked up last month: %1$d</string>
     <string name="town_hall">Town hall</string>
     <string-array name="town_actions">
         <item>Small advertising campaign</item><item>Medium advertising campaign</item><item>Large advertising campaign</item>
@@ -237,9 +227,6 @@
     <string-array name="cargoes">
         <item>Passengers</item><item>Mail</item><item>Timber</item><item>Lumber</item><item>Grain</item><item>Coal</item><item>Iron ore</item><item>Steel</item><item>Goods</item><item>Oil</item><item>Fuel</item><item>Livestock</item><item>Food</item><item>Fish</item><item>Paper</item><item>Potash</item><item>Nickel ore</item><item>Nickel</item><item>Bauxite</item><item>Aluminium</item>
     </string-array>
-    <string name="produced_last_month">%1$s last month: %2$d, %3$d% carried</string>
-    <string name="takes">Takes: %1$s</string>
-    <string name="brought_last_month">Brought last month: %1$d</string>
     <string name="industries">Industries</string>
 
     <!-- News -->
@@ -391,9 +378,6 @@
     <string name="centimetres">%1$d cm</string>
     <string name="hours_minutes">%1$d h %2$d min</string>
     <string name="calm">Calm</string>
-    <string name="snow_on_ground">Snow on the ground %1$d cm</string>
-    <string name="ice_on_water">Ice %1$d cm thick</string>
-    <string name="muddy">Muddy</string>
     <string name="daylight">Daylight</string>
     <string name="news_snowbound">%1$s is stuck in a snowdrift</string>
     <string name="snow_depth">Snow</string>
@@ -433,10 +417,6 @@
     <string name="news_renew_failed">Autorenew failed for %1$s: not enough money</string>
     <string name="track_condition">Track</string>
     <string name="reserved_track">Reserved track</string>
-    <string name="condition_line">Condition %1$d%</string>
-    <string name="slow_order">Slow order, %1$d km/h</string>
-    <string name="closed_washout">Washed out, open in %1$d days</string>
-    <string name="closed_fire">Closed by fire, open in %1$d days</string>
     <string name="news_washout">Track washed out</string>
     <string name="news_fire">Fire closes the line</string>
     <string name="tool_snow_shed">Snow shed</string>
@@ -706,4 +686,30 @@
     <string name="unload_as_usual">Set down as usual</string>
     <string name="move_up">Move up</string>
     <string name="move_down">Move down</string>
+    <!-- Info cards -->
+    <string name="head_tile">Tile</string>
+    <string name="tile_label">Position</string>
+    <string name="tile_xy">%1$d, %2$d</string>
+    <string name="built_label">Built</string>
+    <string name="residents_label">Residents</string>
+    <string name="jobs_label">Jobs</string>
+    <string name="height_label">Height</string>
+    <string name="ground_label">Ground</string>
+    <string name="mud_label">Mud</string>
+    <string name="population_label">Population</string>
+    <string name="picked_up_label">Picked up last month</string>
+    <string name="standing_label">Thinks of your company</string>
+    <string name="pieces_label">Pieces</string>
+    <string name="condition_label">Condition</string>
+    <string name="slow_order_label">Slow order</string>
+    <string name="closed_fire_label">Closed by fire</string>
+    <string name="closed_washout_label">Washed out</string>
+    <string name="owner_label">Owner</string>
+    <string name="head_made">Made last month</string>
+    <string name="head_takes">Takes</string>
+    <string name="brought_label">Brought last month</string>
+    <plurals name="open_in_days">
+        <item quantity="one">Open in %1$d day</item>
+        <item quantity="other">Open in %1$d days</item>
+    </plurals>
 </resources>
