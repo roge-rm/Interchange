@@ -8,7 +8,7 @@ You won't be alone, either. Computer companies build their own lines and go afte
 
 There's a campaign of seven chapters from 1836 on, goals to play for in your own games, and a scenario editor to make your own.
 
-It's at 0.11 and very playable, but not finished. Build things, run trains into each other, tell me what works and what doesn't.
+It's at 0.12 and very playable, but not finished. Build things, run trains into each other, tell me what works and what doesn't.
 
 Join me in the #interchange channel **[on my discord](https://discord.gg/9Wun47jGC6)** to discuss the game or report any bugs.
 <br>You can also add an issue here for me to look at.
@@ -90,7 +90,7 @@ Players on your network find it by themselves. The admin page is at `http://<thi
 
 ## Installing
 
-There's no release to download yet. For now, build it yourself (below).
+Download the signed APK from [GitHub releases](https://github.com/roge-rm/Interchange/releases/latest), or add [my F-Droid repo](https://hunke.ws/fdroid/repo) to your F-Droid client and install Interchange from there.
 
 ## Building it
 
