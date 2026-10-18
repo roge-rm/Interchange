@@ -192,6 +192,36 @@ fun <T> StepSlider(label: String, options: List<T>, value: T, name: @Composable 
     }
 }
 
+/**
+ * [StepSlider] on one line, for the tool tray: [glyph], the slider, then the one chosen named at the end. The slider
+ * reads out [label] and the value.
+ */
+@Composable
+fun <T> StepSliderRow(glyph: Glyph, label: String, options: List<T>, value: T, name: @Composable (T) -> String, modifier: Modifier = Modifier, set: (T) -> Unit) {
+    val c = LocalColors.current
+    val at = options.indexOf(value).coerceAtLeast(0)
+    val shown = name(value)
+    Row(modifier.fillMaxWidth().height(34.dp).padding(start = 6.dp, end = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        GlyphIcon(glyph, c.textDim, Modifier.size(20.dp).clearAndSetSemantics { })
+        Slider(
+            value = at.toFloat(),
+            onValueChange = { v -> options.getOrNull(v.roundToInt())?.let { if (it != value) set(it) } },
+            valueRange = 0f..(options.size - 1).toFloat(),
+            steps = (options.size - 2).coerceAtLeast(0),
+            modifier = Modifier.weight(1f).semantics { contentDescription = label; stateDescription = shown },
+            colors = SliderDefaults.colors(
+                thumbColor = c.accent, activeTrackColor = c.accent, inactiveTrackColor = c.button,
+                activeTickColor = c.onAccent, inactiveTickColor = c.textDim,
+            ),
+        )
+        // As wide as the widest name, so the slider keeps its length as the value changes.
+        Box(Modifier.clearAndSetSemantics { }, contentAlignment = Alignment.CenterEnd) {
+            for (o in options) Text(name(o), style = KitType.Value, maxLines = 1, modifier = Modifier.alpha(0f))
+            Text(shown, color = c.text, style = KitType.Value, maxLines = 1)
+        }
+    }
+}
+
 /** One of a set across the whole width, each choice an equal share and all as tall as the tallest. */
 @Composable
 fun <T> FillChips(options: List<T>, selected: T, label: @Composable (T) -> String, onSelect: (T) -> Unit) {

@@ -498,6 +498,7 @@
         <item quantity="other">%1$d tiles</item>
     </plurals>
     <string name="signal_spacing">Every %1$d tiles</string>
+    <string name="signal_spacing_label">Signal spacing</string>
     <plurals name="drag_signals">
         <item quantity="one">%1$d signal</item>
         <item quantity="other">%1$d signals</item>
@@ -629,6 +630,7 @@
     <string name="tool_place_industry">New industry</string>
     <string name="tool_remove_industry">Remove</string>
     <string-array name="town_sizes"><item>Small</item><item>Medium</item><item>Large</item><item>City</item></string-array>
+    <string name="town_size_label">Town size</string>
     <string name="turn_industry">Turn</string>
     <!-- Buying vehicles -->
     <string-array name="cargo_amounts">

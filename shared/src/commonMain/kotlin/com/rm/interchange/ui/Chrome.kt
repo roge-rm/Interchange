@@ -270,8 +270,8 @@ fun ToolTray(
     onFold: (Boolean) -> Unit,
     compact: Boolean,
     modifier: Modifier = Modifier,
-    /** A row of choices for the tool, under its tabs, shown while the tray's open. */
-    options: (@Composable RowScope.() -> Unit)? = null,
+    /** Rows of choices for the tool, under its tabs, shown while the tray's open. */
+    options: List<@Composable RowScope.() -> Unit> = emptyList(),
     /** In the scenario editor: its own tools are shown and ready. */
     editor: Boolean = false,
     /** [detail] is a warning, shown in the warning colour. */
@@ -309,7 +309,7 @@ fun ToolTray(
                     }
                 }
             }
-            if (options != null && !folded) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp), content = options)
+            if (!folded) for (row in options) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically, content = row)
             Row(
                 Modifier
                     .fillMaxWidth()

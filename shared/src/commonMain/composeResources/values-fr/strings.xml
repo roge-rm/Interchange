@@ -481,6 +481,7 @@
         <item quantity="other">%1$d cases</item>
     </plurals>
     <string name="signal_spacing">Toutes les %1$d cases</string>
+    <string name="signal_spacing_label">Espacement des signaux</string>
     <plurals name="drag_signals">
         <item quantity="one">%1$d signal</item>
         <item quantity="other">%1$d signaux</item>
@@ -612,6 +613,7 @@
     <string name="tool_place_industry">Nouvelle industrie</string>
     <string name="tool_remove_industry">Retirer</string>
     <string-array name="town_sizes"><item>Petite</item><item>Moyenne</item><item>Grande</item><item>Métropole</item></string-array>
+    <string name="town_size_label">Taille de la ville</string>
     <string name="turn_industry">Tourner</string>
     <!-- Achat de véhicules -->
     <string-array name="cargo_amounts">

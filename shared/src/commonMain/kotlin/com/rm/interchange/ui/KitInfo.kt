@@ -77,8 +77,10 @@ import kotlin.math.roundToInt
  *   them, tappable and lit when selected. For lists of vehicles, industries, buildings and anything else with a
  *   picture. ListRow (Kit.kt) is the same for a glyph instead of a picture.
  * - VehiclePicture, IndustryPicture, HousePicture: the game's drawings, for a PictureRow's picture.
- * - OptionGroup: one of a few choices, each a glyph with a short label, across the width. For tray choices like
- *   town size, road surface or signal kind.
+ * - OptionGroup: one of a few choices, each a glyph with a short label, across the width.
+ * - OptionButton (Chrome.kt) and StepSliderRow (Kit.kt): the tool tray's rows of choices, a glyph on each button
+ *   sharing the width, and a stepped value on one line. For track pieces, road surface, airport kind, bridge style,
+ *   signal kind, signal spacing and town size.
  * - SegmentedChoice: one of many choices as even segments, wrapped into rows. For cargo choices.
  * - ButtonTiles: a card's actions as even tiles, each a glyph over a short label, lit when on. For what a vehicle
  *   or a building can be told to do.

@@ -23,6 +23,10 @@ enum class Glyph {
     TrackAuto, PieceX, PieceY, PieceN, PieceE, PieceS, PieceW,
     Chat, People, Flag, Tick, Up, Down,
     Thermometer, Wind, Snow, Sun, Calendar, Alert,
+    RoadDirt, RoadGravel, RoadHighway,
+    AirStrip, Seaplane, Heliport, AirRegional, AirCity, AirInternational,
+    BridgeTrestle, BridgeTruss, BridgeConcrete,
+    SignalPath, SignalEntry, SignalExit, SignalCombo, Spacing,
 }
 
 /** [glyph] drawn in [tint] on a 24 unit square scaled to fit. */
@@ -166,8 +170,67 @@ private class GlyphPen(val scope: DrawScope, val u: Float, val dx: Float, val dy
             Glyph.PieceS -> { tile(); line(16.5f, 16f, 7.5f, 16f, 3f) }
             Glyph.PieceW -> { tile(); line(7.5f, 8f, 7.5f, 16f, 3f) }
             Glyph.TrackAuto -> { tile(); open(7.5f, 8f, 11f, 11f, 11f, 13f, 7.5f, 16f); line(12f, 12f, 16.5f, 16f, 3f) }
+            // Road surfaces: dirt has two wheel ruts, gravel is speckled, a highway is wide with two lanes each way.
+            Glyph.RoadDirt -> { line(8f, 3f, 4f, 21f); line(16f, 3f, 20f, 21f); line(10.5f, 3f, 9f, 21f, 1.2f); line(13.5f, 3f, 15f, 21f, 1.2f) }
+            Glyph.RoadGravel -> {
+                line(8f, 3f, 4f, 21f); line(16f, 3f, 20f, 21f)
+                for ((x, y) in listOf(10f to 6f, 13.5f to 8f, 11f to 11f, 14.5f to 13f, 9.5f to 15.5f, 12.5f to 17f, 15.5f to 19f, 9f to 19.5f)) circle(x, y, 0.9f, true)
+            }
+            Glyph.RoadHighway -> {
+                line(6f, 3f, 2f, 21f); line(18f, 3f, 22f, 21f); line(12f, 3f, 12f, 21f, 1.2f)
+                for (y in listOf(4f, 10f, 16f)) { line(9f - (y - 3f) / 9f, y, 9f - y / 9f, y + 3f, 1.5f); line(15f + (y - 3f) / 9f, y, 15f + y / 9f, y + 3f, 1.5f) }
+            }
+            // Airports from above: a strip of gravel; a plane on the water; a pad with an H; then a runway with more
+            // beside it as the airport gets bigger, a terminal, a tower, a second runway.
+            Glyph.AirStrip -> { shape(false, 2f, 10f, 22f, 10f, 22f, 14f, 2f, 14f); for (x in listOf(7f, 12f, 17f)) circle(x, 12f, 0.9f, true) }
+            Glyph.Seaplane -> { small(Glyph.Air, 4f, 0f, 0.66f); wave(20f) }
+            Glyph.Heliport -> { circle(12f, 12f, 9f); line(8.5f, 7.5f, 8.5f, 16.5f); line(15.5f, 7.5f, 15.5f, 16.5f); line(8.5f, 12f, 15.5f, 12f) }
+            Glyph.AirRegional -> { runway(16f); shape(false, 7f, 6f, 17f, 6f, 17f, 11f, 7f, 11f) }
+            Glyph.AirCity -> { runway(16f); shape(false, 3f, 7f, 13f, 7f, 13f, 11f, 3f, 11f); line(18f, 11f, 18f, 5f); shape(false, 16f, 3f, 20f, 3f, 20f, 5f, 16f, 5f) }
+            Glyph.AirInternational -> { runway(2f, 4f); runway(18f, 4f); shape(false, 4f, 10f, 13f, 10f, 13f, 14f, 4f, 14f); line(18f, 14f, 18f, 11f); shape(false, 16.5f, 9.5f, 19.5f, 9.5f, 19.5f, 11f, 16.5f, 11f) }
+            // Bridges: a timber trestle of braced posts, a steel truss, a thick concrete deck on piers.
+            Glyph.BridgeTrestle -> {
+                line(2f, 8f, 22f, 8f)
+                for (x in listOf(4f, 12f, 20f)) line(x, 8f, x, 21f)
+                line(4f, 9f, 12f, 20f, 1.2f); line(12f, 9f, 4f, 20f, 1.2f); line(12f, 9f, 20f, 20f, 1.2f); line(20f, 9f, 12f, 20f, 1.2f)
+            }
+            Glyph.BridgeTruss -> {
+                line(2f, 17f, 22f, 17f); line(6f, 7f, 18f, 7f); line(2f, 17f, 6f, 7f); line(22f, 17f, 18f, 7f)
+                open(6f, 7f, 10f, 17f, 14f, 7f, 18f, 17f); line(10f, 17f, 10f, 7f, 1.2f); line(14f, 17f, 14f, 7f, 1.2f)
+                line(2f, 17f, 2f, 21f); line(22f, 17f, 22f, 21f)
+            }
+            Glyph.BridgeConcrete -> {
+                line(2f, 8f, 22f, 8f, 3.5f)
+                shape(true, 5.5f, 9f, 8.5f, 9f, 9f, 21f, 5f, 21f); shape(true, 15.5f, 9f, 18.5f, 9f, 19f, 21f, 15f, 21f)
+            }
+            // Signal kinds: a path signal's head points up; entry, exit and combo signals have an arrow in, out or both.
+            Glyph.SignalPath -> { line(12f, 13f, 12f, 22f); shape(false, 12f, 2f, 16f, 6f, 16f, 13f, 8f, 13f, 8f, 6f); circle(12f, 9f, 1.5f, true) }
+            Glyph.SignalEntry -> { signalHead(); arrow(3f) }
+            Glyph.SignalExit -> { signalHead(); arrow(15f) }
+            Glyph.SignalCombo -> { signalHead(); arrow(3f); arrow(15f) }
+            // Two signals with the gap between them marked.
+            Glyph.Spacing -> {
+                line(4f, 4f, 4f, 20f); shape(true, 2.5f, 4f, 5.5f, 4f, 5.5f, 9f, 2.5f, 9f)
+                line(20f, 4f, 20f, 20f); shape(true, 18.5f, 4f, 21.5f, 4f, 21.5f, 9f, 18.5f, 9f)
+                line(7.5f, 15f, 16.5f, 15f, 1.5f); open(10f, 12.5f, 7.5f, 15f, 10f, 17.5f); open(14f, 12.5f, 16.5f, 15f, 14f, 17.5f)
+            }
         }
     }
+
+    /** [g] drawn [s] times its size with its corner at ([x], [y]). */
+    private fun small(g: Glyph, x: Float, y: Float, s: Float) = GlyphPen(scope, u * s, dx + x * u, dy + y * u, tint).draw(g)
+
+    /** A runway across from [y], [h] deep, with marks down its middle. */
+    private fun runway(y: Float, h: Float = 5f) {
+        shape(false, 2f, y, 22f, y, 22f, y + h, 2f, y + h)
+        if (h >= 5f) for (x in listOf(6f, 11f, 16f)) line(x, y + h / 2, x + 2f, y + h / 2, 1.2f)
+    }
+
+    /** A signal's head on its post, narrow enough for an arrow either side. */
+    private fun signalHead() { line(12f, 12f, 12f, 22f); shape(false, 9.5f, 2f, 14.5f, 2f, 14.5f, 12f, 9.5f, 12f); circle(12f, 5f, 1.2f, true); circle(12f, 9f, 1.2f, true) }
+
+    /** An arrow pointing right from [x], beside a signal's post. */
+    private fun arrow(x: Float) { line(x, 17f, x + 6f, 17f, 1.5f); open(x + 4f, 15f, x + 6.5f, 17f, x + 4f, 19f) }
 
     private fun tile() = shape(false, 12f, 3.5f, 21f, 12f, 12f, 20.5f, 3f, 12f)
 

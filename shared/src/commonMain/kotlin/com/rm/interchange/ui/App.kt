@@ -1279,50 +1279,61 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
                     else -> null
                 }
                 val pieceNames = listOf(Res.string.piece_x, Res.string.piece_y, Res.string.piece_n, Res.string.piece_e, Res.string.piece_s, Res.string.piece_w).map { stringResource(it) }
-                val trackOptions: (@Composable RowScope.() -> Unit)? = if (tool == Tool.PlaceIndustry) {
-                    { IndustryKinds(world, industryKind) { industryKind = it } }
-                } else if (tool != Tool.Track) null else {
-                    {
+                val year = Calendar.year(world.startYear, day)
+                val surfaces = stringArrayResource(Res.array.surfaces)
+                val airportKinds = stringArrayResource(Res.array.airport_kinds)
+                val bridgeStyles = stringArrayResource(Res.array.bridge_styles)
+                val signalKinds = stringArrayResource(Res.array.signal_kinds)
+                // The choice picked, named before the cost since the buttons only have glyphs.
+                val picked = when (tool) {
+                    Tool.Road -> surfaces.getOrNull(roadSurface)
+                    Tool.Airport -> airportKinds.getOrNull(airportKind)
+                    Tool.Bridge -> bridgeStyles.getOrNull(bridgeStyle)
+                    Tool.Signals -> if (removing) null else signalKinds.getOrNull(signalKind)
+                    else -> null
+                }
+                val trayDetail = listOfNotNull(picked, detail).joinToString(stringResource(Res.string.list_join)).ifEmpty { null }
+                val trackOptions = mutableListOf<@Composable RowScope.() -> Unit>()
+                when (tool) {
+                    Tool.PlaceIndustry -> trackOptions += { IndustryKinds(world, industryKind) { industryKind = it } }
+                    Tool.Track -> trackOptions += {
                         OptionButton(Glyph.TrackAuto, stringResource(Res.string.track_auto), trackPiece == 0) { trackPiece = 0 }
                         for ((k, piece) in VIEW_PIECES.withIndex()) OptionButton(PIECE_GLYPHS[k], pieceNames[k], trackPiece == piece) { trackPiece = piece }
                     }
-                }
-                ToolTray(tool, { tool = it; plan = null; stationPlan = null; signalPlan = null; removing = false }, detail, folded, { folded = it }, layout.compact, trayWidth, options = trackOptions, editor = editor, warning = editor && refused) {
-                    if (tool == Tool.PlaceTown || tool == Tool.GrowTown) {
+                    Tool.PlaceTown, Tool.GrowTown -> trackOptions += {
                         val sizes = stringArrayResource(Res.array.town_sizes)
-                        Chip(sizes.getOrElse(townSize) { "" }, true) { townSize = (townSize + 1) % TownSize.HOUSES.size }
+                        StepSliderRow(Glyph.Home, stringResource(Res.string.town_size_label), TownSize.HOUSES.indices.toList(), townSize, { sizes.getOrElse(it) { "" } }) { townSize = it }
                     }
+                    Tool.Road -> trackOptions += {
+                        for (s in Surface.entries(year)) OptionButton(SURFACE_GLYPHS[s], surfaces.getOrElse(s) { "" }, roadSurface == s) { roadSurface = s }
+                    }
+                    Tool.Airport -> if (Airports.entries(year).isNotEmpty()) trackOptions += {
+                        for (k in Airports.entries(year)) OptionButton(AIRPORT_GLYPHS[k], airportKinds.getOrElse(k) { "" }, airportKind == k) { airportKind = k }
+                    }
+                    Tool.Bridge -> trackOptions += {
+                        for (s in 0 until 3) if (year >= Spans.FROM[s] || s == bridgeStyle) OptionButton(BRIDGE_GLYPHS[s], bridgeStyles.getOrElse(s) { "" }, bridgeStyle == s) { bridgeStyle = s }
+                    }
+                    Tool.Signals -> if (!removing) {
+                        val kinds: @Composable RowScope.() -> Unit = {
+                            for (k in Signals.PLACED.indices) OptionButton(SIGNAL_GLYPHS[k], signalKinds.getOrElse(k) { "" }, signalKind == k) { signalKind = k }
+                        }
+                        val spacing: @Composable RowScope.(Modifier) -> Unit = { m ->
+                            StepSliderRow(
+                                Glyph.Spacing, stringResource(Res.string.signal_spacing_label), (SIGNAL_SPACING_MIN..SIGNAL_SPACING_MAX).toList(), signalSpacing,
+                                { stringResource(Res.string.signal_spacing, it) }, m,
+                            ) { signalSpacing = it }
+                        }
+                        // Landscape has room across but little down, so kind and spacing share a row there.
+                        if (layout.sideTools) trackOptions += { kinds(); spacing(Modifier.weight(Signals.PLACED.size + 2f)) }
+                        else { trackOptions += kinds; trackOptions += { spacing(Modifier) } }
+                    }
+                    else -> {}
+                }
+                ToolTray(tool, { tool = it; plan = null; stationPlan = null; signalPlan = null; removing = false }, trayDetail, folded, { folded = it }, layout.compact, trayWidth, options = trackOptions, editor = editor, warning = editor && refused) {
                     if (tool == Tool.PlaceIndustry) TrayToggle(Glyph.TurnRight, stringResource(Res.string.turn_industry), industryTurn != 0) { industryTurn = (industryTurn + 1) % 4 }
                     if (tool == Tool.Track || tool == Tool.Wires || tool == Tool.Signals || tool == Tool.Road || tool == Tool.TramRails || tool == Tool.Canal) TrayToggle(Glyph.Lift, stringResource(Res.string.remove_track), removing) { removing = !removing }
-                    if (tool == Tool.Road) {
-                        val surfaces = stringArrayResource(Res.array.surfaces)
-                        val built = Surface.entries(Calendar.year(world.startYear, day))
-                        Chip(surfaces.getOrElse(roadSurface) { "" }, true) { roadSurface = built[(built.indexOf(roadSurface) + 1) % built.size] }
-                    }
-                    if (tool == Tool.Airport) {
-                        val kinds = stringArrayResource(Res.array.airport_kinds)
-                        val open = Airports.entries(Calendar.year(world.startYear, day))
-                        Chip(kinds.getOrElse(airportKind) { "" }, true) { if (open.isNotEmpty()) airportKind = open[(open.indexOf(airportKind) + 1) % open.size] }
-                        if (airportKind != Airports.SEAPLANE && airportKind != Airports.HELIPORT) TrayToggle(Glyph.TurnRight, stringResource(Res.string.runway_other_way), !runwayAlongX) { runwayAlongX = !runwayAlongX }
-                    }
+                    if (tool == Tool.Airport && airportKind != Airports.SEAPLANE && airportKind != Airports.HELIPORT) TrayToggle(Glyph.TurnRight, stringResource(Res.string.runway_other_way), !runwayAlongX) { runwayAlongX = !runwayAlongX }
                     if (tool == Tool.Station) TrayToggle(Glyph.TurnRight, stringResource(Res.string.platforms_other_way), !stationAlongX) { stationAlongX = !stationAlongX }
-                    if (tool == Tool.Bridge) {
-                        val styles = stringArrayResource(Res.array.bridge_styles)
-                        val year = Calendar.year(world.startYear, day)
-                        Chip(styles.getOrElse(bridgeStyle) { "" }, true) {
-                            // The next style built this year.
-                            var s = bridgeStyle
-                            do s = (s + 1) % 3 while (year < Spans.FROM[s] && s != bridgeStyle)
-                            bridgeStyle = s
-                        }
-                    }
-                    if (tool == Tool.Signals) {
-                        val kinds = stringArrayResource(Res.array.signal_kinds)
-                        Chip(kinds.getOrElse(signalKind) { "" }, true) { signalKind = (signalKind + 1) % Signals.PLACED.size }
-                        Chip(stringResource(Res.string.signal_spacing, signalSpacing), true) {
-                            signalSpacing = if (signalSpacing >= SIGNAL_SPACING_MAX) SIGNAL_SPACING_MIN else signalSpacing + 1
-                        }
-                    }
                 }
             }
             if (!layout.sideTools && me >= 0) ToolBar(tool.group, ::pickGroup, vertical = false, compact = compactTools, modifier = trayWidth, editor = editor)
@@ -1619,6 +1630,12 @@ private val EDITOR_DRAGS = setOf(Tool.Raise, Tool.Lower, Tool.Level, Tool.Trees,
 
 /** The widest the trays and the bottom tool bar go. */
 private const val TRAY_WIDTH = 480
+
+/** The glyph on the tray's button for each road surface, airport kind, bridge style and signal kind, by its number. */
+private val SURFACE_GLYPHS = listOf(Glyph.RoadDirt, Glyph.RoadGravel, Glyph.Road, Glyph.RoadHighway)
+private val AIRPORT_GLYPHS = listOf(Glyph.AirStrip, Glyph.Seaplane, Glyph.Heliport, Glyph.AirRegional, Glyph.AirCity, Glyph.AirInternational)
+private val BRIDGE_GLYPHS = listOf(Glyph.BridgeTrestle, Glyph.BridgeTruss, Glyph.BridgeConcrete)
+private val SIGNAL_GLYPHS = listOf(Glyph.Signal, Glyph.SignalPath, Glyph.SignalEntry, Glyph.SignalExit, Glyph.SignalCombo)
 
 /**
  * Round a camera in the top edge, in dp: the gap above the strip, the deepest
