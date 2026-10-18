@@ -162,7 +162,7 @@ class CollisionTest {
         assertTrue(copy.trains.all { it == null })
     }
 
-    /** A rival railway with a passing loop and two trains, left to run and grow for three years. */
+    /** A rival railway with a passing loop and two trains, left to run for three years. */
     @Test
     fun rivalRailwaysDontCrash() {
         val w = World(NewGame(160, 160, 5, 1930, Region.MIXED, towns = 3, industries = 0, rivals = 1))
@@ -181,6 +181,8 @@ class CollisionTest {
             }
         }
         assertTrue(route != null && w.addLoop(c, route) && w.addTrain(c, route), "no railway with a loop to test with")
+        // Keep the line running: this checks signals and collisions, without the rival selling a losing route.
+        w.rivals.remove(r)
         repeat(Calendar.TICKS_PER_DAY * 365 * 3) { w.step() }
         assertEquals(0, w.crashes(), "crashes: ${w.crashes.list.map { "trains ${it.vehicles.map { v -> v.id }} at ${it.tile % w.width}, ${it.tile / w.width}" }}")
         assertTrue(w.trains.count { it != null && it.owner == r.company } >= 2, "the railway's trains are gone")
