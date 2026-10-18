@@ -637,4 +637,23 @@
     <string name="tool_remove_industry">Retirer</string>
     <string-array name="town_sizes"><item>Petite</item><item>Moyenne</item><item>Grande</item><item>Métropole</item></string-array>
     <string name="turn_industry">Tourner</string>
+    <!-- Achat de véhicules -->
+    <string-array name="cargo_amounts">
+        <item>%d voyageurs</item><item>%d sacs de courrier</item><item>%d t de bois rond</item><item>%d t de bois d'œuvre</item><item>%d t de grain</item><item>%d t de charbon</item><item>%d t de minerai de fer</item><item>%d t d'acier</item><item>%d t de marchandises</item><item>%d t de pétrole</item><item>%d t de carburant</item><item>%d têtes de bétail</item><item>%d t d'aliments</item><item>%d t de poisson</item><item>%d t de papier</item><item>%d t de potasse</item><item>%d t de minerai de nickel</item><item>%d t de nickel</item><item>%d t de bauxite</item><item>%d t d'aluminium</item>
+    </string-array>
+    <plurals name="or_others">
+        <item quantity="one">%1$s ou %2$d autre</item>
+        <item quantity="other">%1$s ou %2$d autres</item>
+    </plurals>
+    <string name="range_stat">rayon de %1$s km</string>
+    <string name="no_wagons_on_sale">Aucun wagon en vente pour l'instant</string>
+    <string name="kmh">%1$d km/h</string>
+    <string name="horsepower">%1$s ch</string>
+    <string name="kilonewtons">%1$d kN</string>
+    <string name="on_sale_until">jusqu'en %1$d</string>
+    <string name="a_year">%1$s par an</string>
+    <string name="not_enough_money">Pas assez d'argent</string>
+    <string name="engines">Locomotives</string>
+    <string name="wagons">Wagons</string>
+    <string name="consist_line">%1$s + %2$d %3$s</string>
 </resources>

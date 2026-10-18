@@ -1007,6 +1007,8 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
     val stationNumber = stringResource(Res.string.station_n, "%d")
     BoxWithConstraints(Modifier.fillMaxSize().background(c.page)) {
         val layout = screenLayout(maxWidth, maxHeight)
+        // A buying list takes up to a good share of an upright screen; on a short one, whatever its card has left.
+        val listHeight = if (layout.short) maxHeight else (maxHeight * 0.42f).coerceIn(160.dp, 400.dp)
         val gap = if (layout.compact) 6.dp else 10.dp
         val compactTools = layout.compact || layout.short || layout.narrow
         val safe = WindowInsets.safeDrawing
@@ -1183,60 +1185,66 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
                 .align(Alignment.BottomCenter)
                 .windowInsetsPadding(safe.only(WindowInsetsSides.Bottom + WindowInsetsSides.Horizontal))
                 .padding(gap)
+                // Kept below the status strip, so a tall card is cut to fit rather than running under it.
+                .padding(top = with(density) { stripHeight.toDp() })
                 .then(if (layout.sideTools) Modifier.padding(end = 80.dp) else Modifier),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(gap),
         ) {
             val trayWidth = Modifier.widthIn(max = TRAY_WIDTH.dp).fillMaxWidth()
+            // Measured after the tools below it, a card gets the height they leave.
+            val cardSize = trayWidth.weight(1f, fill = false)
             val wv = worldView.value
+            CompositionLocalProvider(LocalSheets provides sheets, LocalBuyListHeight provides listHeight) {
             when (val sel = selected) {
-                is Selection.Tile -> InspectCard(world, sel.x, sel.y, onTown, { selected = null }, trayWidth)
+                is Selection.Tile -> InspectCard(world, sel.x, sel.y, onTown, { selected = null }, cardSize)
                 Selection.Weather -> wv?.weather?.let { w ->
-                    WeatherCard(world, w, view.focusX.toInt().coerceIn(0, world.width - 1), view.focusY.toInt().coerceIn(0, world.height - 1), { selected = null }, trayWidth)
+                    WeatherCard(world, w, view.focusX.toInt().coerceIn(0, world.width - 1), view.focusY.toInt().coerceIn(0, world.height - 1), { selected = null }, cardSize)
                 }
                 is Selection.Train -> {
                     val t = wv?.trains?.firstOrNull { it.id == sel.id }
                     if (t == null || wv == null) selected = null
-                    else TrainCard(wv, world.roster, t, addingStops == t.id, { addingStops = if (addingStops == t.id) null else t.id }, runner::request, { selected = null; addingStops = null }, trayWidth)
+                    else TrainCard(wv, world.roster, t, addingStops == t.id, { addingStops = if (addingStops == t.id) null else t.id }, runner::request, { selected = null; addingStops = null }, cardSize)
                 }
                 is Selection.Depot -> if (wv != null) DepotCard(
                     wv, world.roster, sel.id, Calendar.year(world.startYear, day), money, { world.price(it) }, runner::request,
-                    { selected = Selection.Train(it) }, { selected = null }, trayWidth,
+                    { selected = Selection.Train(it) }, { selected = null }, cardSize,
                 )
                 is Selection.RoadVehicle -> {
                     val v = wv?.roadVehicles?.firstOrNull { it.id == sel.id }
                     if (v == null || wv == null) selected = null
-                    else RoadVehicleCard(wv, world.roster, v, addingRoadStops == v.id, { addingRoadStops = if (addingRoadStops == v.id) null else v.id }, runner::request, { selected = null; addingRoadStops = null }, trayWidth)
+                    else RoadVehicleCard(wv, world.roster, v, addingRoadStops == v.id, { addingRoadStops = if (addingRoadStops == v.id) null else v.id }, runner::request, { selected = null; addingRoadStops = null }, cardSize)
                 }
                 is Selection.Garage -> if (wv != null) GarageCard(
                     wv, world.roster, sel.id, Calendar.year(world.startYear, day), money, { world.price(it) }, runner::request,
-                    { selected = Selection.RoadVehicle(it) }, { selected = null }, trayWidth,
+                    { selected = Selection.RoadVehicle(it) }, { selected = null }, cardSize,
                 )
                 is Selection.Shipyard -> if (wv != null) ShipyardCard(
                     wv, world.roster, sel.id, Calendar.year(world.startYear, day), money, { world.price(it) }, runner::request,
-                    { selected = Selection.Ship(it) }, { selected = null }, trayWidth,
+                    { selected = Selection.Ship(it) }, { selected = null }, cardSize,
                 )
                 is Selection.Airport -> {
                     val a = wv?.airports?.firstOrNull { it.id == sel.id }
                     if (a == null || wv == null) selected = null
-                    else AirportCard(wv, world.roster, a, Calendar.year(world.startYear, day), money, { world.price(it) }, runner::request, { selected = Selection.Aircraft(it) }, { selected = null }, trayWidth)
+                    else AirportCard(wv, world.roster, a, Calendar.year(world.startYear, day), money, { world.price(it) }, runner::request, { selected = Selection.Aircraft(it) }, { selected = null }, cardSize)
                 }
                 is Selection.Ship -> {
                     val v = wv?.ships?.firstOrNull { it.id == sel.id }
                     if (v == null || wv == null) selected = null
-                    else ShipCard(wv, world.roster, v, addingCraftStops == (false to v.id), { addingCraftStops = if (addingCraftStops == (false to v.id)) null else false to v.id }, runner::request, { selected = null; addingCraftStops = null }, trayWidth)
+                    else ShipCard(wv, world.roster, v, addingCraftStops == (false to v.id), { addingCraftStops = if (addingCraftStops == (false to v.id)) null else false to v.id }, runner::request, { selected = null; addingCraftStops = null }, cardSize)
                 }
                 is Selection.Aircraft -> {
                     val v = wv?.aircraft?.firstOrNull { it.id == sel.id }
                     if (v == null || wv == null) selected = null
-                    else AircraftCard(wv, world.roster, v, addingCraftStops == (true to v.id), { addingCraftStops = if (addingCraftStops == (true to v.id)) null else true to v.id }, runner::request, { selected = null; addingCraftStops = null }, trayWidth)
+                    else AircraftCard(wv, world.roster, v, addingCraftStops == (true to v.id), { addingCraftStops = if (addingCraftStops == (true to v.id)) null else true to v.id }, runner::request, { selected = null; addingCraftStops = null }, cardSize)
                 }
                 is Selection.Station -> {
                     val s = wv?.stations?.firstOrNull { it.id == sel.id }
                     if (s == null || wv == null) selected = null
-                    else StationCard(wv, s, { selected = Selection.Train(it) }, { selected = null }, trayWidth)
+                    else StationCard(wv, s, { selected = Selection.Train(it) }, { selected = null }, cardSize)
                 }
                 null -> {}
+            }
             }
             if (tool.group != ToolGroup.Inspect && addingStops == null && addingRoadStops == null && addingCraftStops == null) {
                 val detail = if (editor) (if (refused) stringResource(Res.string.cant_edit_here) else null) else when (tool) {

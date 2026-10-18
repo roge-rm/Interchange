@@ -19,7 +19,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.foundation.layout.Box
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.layout.width
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import com.rm.interchange.sim.Command
+import com.rm.interchange.sim.Engine
+import com.rm.interchange.sim.VehicleKind
 import com.rm.interchange.sim.Traction
 import com.rm.interchange.sim.Cargo
 import com.rm.interchange.sim.Order
@@ -163,8 +168,7 @@ fun TrainCard(
     }
 }
 
-/** A depot: buying a train, and the trains in it. */
-@OptIn(ExperimentalLayoutApi::class)
+/** A depot: buying a train, its engine and wagons each picked from a list, and the trains in it. */
 @Composable
 fun DepotCard(view: WorldView, roster: Roster, depot: Int, year: Int, funds: Long, price: (Long) -> Long, send: (Command) -> Unit, onTrain: (Int) -> Unit, onClose: () -> Unit, modifier: Modifier) {
     val me = LocalCompany.current
@@ -172,46 +176,67 @@ fun DepotCard(view: WorldView, roster: Roster, depot: Int, year: Int, funds: Lon
     val lang = languageCode()
     val engines = roster.available(year, pulls = true)
     val wagons = roster.available(year, pulls = false)
-    var engine by remember { mutableIntStateOf(engines.firstOrNull()?.id ?: 0) }
-    var wagon by remember { mutableIntStateOf(wagons.firstOrNull()?.id ?: 0) }
+    var engineId by remember { mutableIntStateOf(-1) }
+    var wagonId by remember { mutableIntStateOf(-1) }
     var count by remember { mutableIntStateOf(3) }
     var cargo by remember { mutableIntStateOf(-1) }
-    val names = stringArrayResource(Res.array.cargoes)
-    Card(stringResource(Res.string.depot), onClose, modifier) {
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            for (e in engines) Chip(stringResource(Res.string.engine_speed, e.name(lang), e.type(lang), e.speed), e.id == engine) { engine = e.id }
-        }
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            for (w in wagons) Chip(w.name(lang), w.id == wagon) { wagon = w.id; cargo = -1 }
-        }
-        // What the wagons are to carry, where they can carry more than one thing.
-        val choices = roster.getOrNull(wagon)?.cargoes ?: IntArray(0)
-        if (choices.size > 1) {
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                for (cg in choices) Chip(names.getOrElse(cg) { "" }, cg == (if (cargo in choices) cargo else choices[0])) { cargo = cg }
-            }
-        }
-        val e = roster[engine]
-        val cost = price(e.cost + (roster.getOrNull(e.tender)?.cost ?: 0) + roster[wagon].cost * count)
-        // Electric engines need wires over the depot to get out.
-        val unwired = e.traction == Traction.ELECTRIC && view.depots.firstOrNull { it.id == depot }?.wired != true
-        if (unwired) Text(stringResource(Res.string.depot_needs_wires), color = c.warn, fontSize = 13.sp)
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            SquareButton(Glyph.Lower, stringResource(Res.string.fewer_wagons), 32.dp, enabled = count > 0) { count-- }
-            Text(stringResource(Res.string.wagons_count, count), color = c.text, fontSize = 13.sp)
-            SquareButton(Glyph.Raise, stringResource(Res.string.more_wagons), 32.dp, enabled = count < MAX_WAGONS) { count++ }
-            ActionButton(stringResource(Res.string.buy_for, money(cost)), enabled = funds >= cost && !unwired, strong = true) {
-                send(Command.BuyTrain(me, depot, engine, wagon, count, if (cargo in choices) cargo else -1))
-            }
-        }
-        val here = view.trains.filter { it.depot == depot && it.inDepot }
-        for (t in here) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(trainName(t), color = c.text, fontSize = 13.sp, modifier = Modifier.weight(1f))
-                ActionButton(stringResource(Res.string.orders)) { onTrain(t.id) }
-                ActionButton(stringResource(if (t.running) Res.string.stop else Res.string.start), strong = !t.running) { send(Command.TrainOrder(me, t.id, Command.TrainOrder.START_STOP)) }
-            }
-        }
+    var showWagons by remember { mutableStateOf(false) }
+    Card(stringResource(Res.string.depot), onClose, modifier, scrolls = false) {
+        // What's picked, or the first on sale once the one picked goes off sale.
+        val e = engines.firstOrNull { it.id == engineId } ?: engines.firstOrNull()
+        val w = wagons.firstOrNull { it.id == wagonId } ?: wagons.firstOrNull()
+        // An engine's price and running cost with its tender's, as it's bought.
+        fun tender(t: Engine) = roster.getOrNull(t.tender)
+        BuyPanel(
+            top = {
+                FillChips(listOf(false, true), showWagons, { stringResource(if (it) Res.string.wagons else Res.string.engines) }) { showWagons = it }
+            },
+            list = {
+                when {
+                    showWagons && w == null -> NoneOnSale(roster, VehicleKind.WAGON, year)
+                    showWagons && w != null -> BuyList(wagons, w.id, cargo, price, { wagonId = it; cargo = -1 }) { cargo = it }
+                    e == null -> NoneOnSale(roster, VehicleKind.ENGINE, year)
+                    else -> BuyList(
+                        engines, e.id, -1, price, { engineId = it },
+                        costOf = { it.cost + (tender(it)?.cost ?: 0) }, runningOf = { it.running + (tender(it)?.running ?: 0) },
+                    ) {}
+                }
+            },
+            footer = {
+                if (e != null) {
+                    val n = if (w == null) 0 else count
+                    val choices = w?.cargoes ?: IntArray(0)
+                    val cost = price(e.cost + (tender(e)?.cost ?: 0) + (w?.cost ?: 0) * n)
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(
+                            if (w == null || n == 0) e.name(lang) else stringResource(Res.string.consist_line, e.name(lang), n, if (n == 1) w.name(lang) else w.plural(lang)),
+                            color = c.text, fontSize = 13.sp, maxLines = 2, modifier = Modifier.weight(1f),
+                        )
+                        if (w != null) {
+                            SquareButton(Glyph.Minus, stringResource(Res.string.fewer_wagons), 32.dp, enabled = count > 0) { count-- }
+                            Text(count.toString(), color = c.text, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center, modifier = Modifier.width(24.dp))
+                            SquareButton(Glyph.Plus, stringResource(Res.string.more_wagons), 32.dp, enabled = count < MAX_WAGONS) { count++ }
+                        }
+                    }
+                    if (w == null) Text(stringResource(Res.string.no_wagons_on_sale), color = c.warn, fontSize = 13.sp)
+                    // Electric engines need wires over the depot to get out.
+                    val unwired = e.traction == Traction.ELECTRIC && view.depots.firstOrNull { it.id == depot }?.wired != true
+                    if (unwired) Text(stringResource(Res.string.depot_needs_wires), color = c.warn, fontSize = 13.sp)
+                    BuyButton(cost, funds, blocked = unwired || w == null) {
+                        send(Command.BuyTrain(me, depot, e.id, w?.id ?: 0, n, if (cargo in choices) cargo else -1))
+                    }
+                }
+            },
+            inDepot = {
+                for (t in view.trains.filter { it.depot == depot && it.inDepot }) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(trainName(t), color = c.text, fontSize = 13.sp, modifier = Modifier.weight(1f))
+                        ActionButton(stringResource(Res.string.orders)) { onTrain(t.id) }
+                        ActionButton(stringResource(if (t.running) Res.string.stop else Res.string.start), strong = !t.running) { send(Command.TrainOrder(me, t.id, Command.TrainOrder.START_STOP)) }
+                    }
+                }
+            },
+        )
     }
 }
 

@@ -35,37 +35,34 @@ fun roadVehicleName(v: RoadVehicleView): String = v.name.takeIf { it.isNotEmpty(
 fun GarageCard(view: WorldView, roster: Roster, depot: Int, year: Int, funds: Long, price: (Long) -> Long, send: (Command) -> Unit, onVehicle: (Int) -> Unit, onClose: () -> Unit, modifier: Modifier) {
     val me = LocalCompany.current
     val c = LocalColors.current
-    val lang = languageCode()
     val models = roster.availableRoad(year)
     var model by remember { mutableIntStateOf(models.firstOrNull()?.id ?: -1) }
     var cargo by remember { mutableIntStateOf(-1) }
-    val names = stringArrayResource(Res.array.cargoes)
-    Card(stringResource(Res.string.garage), onClose, modifier) {
-        if (models.isEmpty()) NoneOnSale(roster, VehicleKind.ROAD, year)
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            for (e in models) Chip(stringResource(Res.string.engine_speed, e.name(lang), e.type(lang), e.speed), e.id == model) { model = e.id; cargo = -1 }
-        }
-        val e = roster.getOrNull(model)
-        val choices = e?.cargoes ?: IntArray(0)
-        if (choices.size > 1) {
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                for (cg in choices) Chip(names.getOrElse(cg) { "" }, cg == (if (cargo in choices) cargo else choices[0])) { cargo = cg }
-            }
-        }
-        if (e != null) {
-            val cost = price(e.cost)
-            if (e.tram) Text(stringResource(Res.string.needs_tram_rails), color = c.textDim, fontSize = 13.sp)
-            ActionButton(stringResource(Res.string.buy_for, money(cost)), enabled = funds >= cost, strong = true) {
-                send(Command.BuyRoadVehicle(me, depot, e.id, if (cargo in choices) cargo else -1))
-            }
-        }
-        for (v in view.roadVehicles.filter { it.depot == depot && it.inDepot }) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(roadVehicleName(v), color = c.text, fontSize = 13.sp, modifier = Modifier.weight(1f))
-                ActionButton(stringResource(Res.string.orders)) { onVehicle(v.id) }
-                ActionButton(stringResource(if (v.running) Res.string.stop else Res.string.start), strong = !v.running) { send(Command.RoadOrder(me, v.id, Command.TrainOrder.START_STOP)) }
-            }
-        }
+    Card(stringResource(Res.string.garage), onClose, modifier, scrolls = false) {
+        // What's picked, or the first on sale once the one picked goes off sale.
+        val picked = models.firstOrNull { it.id == model } ?: models.firstOrNull()
+        BuyPanel(
+            top = {},
+            list = {
+                if (picked == null) NoneOnSale(roster, VehicleKind.ROAD, year)
+                else BuyList(models, picked.id, cargo, price, { model = it; cargo = -1 }) { cargo = it }
+            },
+            footer = {
+                picked?.let { e ->
+                    if (e.tram) Text(stringResource(Res.string.needs_tram_rails), color = c.textDim, fontSize = 13.sp)
+                    BuyButton(price(e.cost), funds) { send(Command.BuyRoadVehicle(me, depot, e.id, if (cargo in e.cargoes) cargo else -1)) }
+                }
+            },
+            inDepot = {
+                for (v in view.roadVehicles.filter { it.depot == depot && it.inDepot }) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(roadVehicleName(v), color = c.text, fontSize = 13.sp, modifier = Modifier.weight(1f))
+                        ActionButton(stringResource(Res.string.orders)) { onVehicle(v.id) }
+                        ActionButton(stringResource(if (v.running) Res.string.stop else Res.string.start), strong = !v.running) { send(Command.RoadOrder(me, v.id, Command.TrainOrder.START_STOP)) }
+                    }
+                }
+            },
+        )
     }
 }
 

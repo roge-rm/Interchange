@@ -439,9 +439,12 @@ fun ActionButton(label: String, enabled: Boolean = true, strong: Boolean = false
     }
 }
 
-/** A card with a title, a close button and whatever goes under them. */
+/**
+ * A card with a title, a close button and whatever goes under them, which scrolls if the card is cut short, unless
+ * [scrolls] is off for a body that fits itself to the height, like [BuyPanel].
+ */
 @Composable
-fun Card(title: String, onClose: () -> Unit, modifier: Modifier = Modifier, content: @Composable () -> Unit) {
+fun Card(title: String, onClose: () -> Unit, modifier: Modifier = Modifier, scrolls: Boolean = true, content: @Composable () -> Unit) {
     val c = LocalColors.current
     ChromeBox(modifier) {
         Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -449,7 +452,10 @@ fun Card(title: String, onClose: () -> Unit, modifier: Modifier = Modifier, cont
                 Text(title, color = c.text, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f), maxLines = 1)
                 SquareButton(Glyph.Remove, stringResource(Res.string.close), 28.dp, onClick = onClose)
             }
-            content()
+            Column(
+                if (scrolls) Modifier.verticalScroll(rememberScrollState()) else Modifier,
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+            ) { content() }
         }
     }
 }

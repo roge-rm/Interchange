@@ -52,48 +52,49 @@ fun NoneOnSale(roster: Roster, kind: VehicleKind, year: Int) {
     )
 }
 
-/** The models of [kind] on sale this year that [fits] lets in, to buy as a shipyard or hangar card offers them. */
-@OptIn(ExperimentalLayoutApi::class)
+/**
+ * A shipyard's or hangar's body: [top], then the models of [kind] on sale this year that [fits] lets in to pick one
+ * from, a button to buy it, and [inDepot], the craft in it.
+ */
 @Composable
-private fun BuyRow(roster: Roster, kind: VehicleKind, year: Int, funds: Long, price: (Long) -> Long, fits: (Engine) -> Boolean, buy: (Int, Int) -> Unit) {
-    val c = LocalColors.current
-    val lang = languageCode()
+private fun CraftBuyPanel(
+    roster: Roster, kind: VehicleKind, year: Int, funds: Long, price: (Long) -> Long, fits: (Engine) -> Boolean, buy: (Int, Int) -> Unit,
+    top: @Composable () -> Unit = {}, inDepot: @Composable () -> Unit,
+) {
     val models = roster.availableOf(kind, year).filter(fits)
-    if (models.isEmpty()) {
-        NoneOnSale(roster, kind, year)
-        return
-    }
-    var model by remember { mutableIntStateOf(models.firstOrNull()?.id ?: -1) }
+    var model by remember { mutableIntStateOf(-1) }
     var cargo by remember { mutableIntStateOf(-1) }
-    val names = stringArrayResource(Res.array.cargoes)
-    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        for (e in models) Chip(stringResource(Res.string.engine_speed, e.name(lang), e.type(lang), e.speed), e.id == model) { model = e.id; cargo = -1 }
+    val e = models.firstOrNull { it.id == model } ?: models.firstOrNull()
+    BuyPanel(
+        top = top,
+        list = {
+            if (e == null) NoneOnSale(roster, kind, year)
+            else BuyList(models, e.id, cargo, price, { model = it; cargo = -1 }) { cargo = it }
+        },
+        footer = { if (e != null) BuyButton(price(e.cost), funds) { buy(e.id, if (cargo in e.cargoes) cargo else -1) } },
+        inDepot = inDepot,
+    )
+}
+
+/** One craft in a shipyard or hangar, with buttons for its orders and to start or stop it. */
+@Composable
+private fun CraftInDepot(name: String, running: Boolean, onOrders: () -> Unit, onStartStop: () -> Unit) {
+    val c = LocalColors.current
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(name, color = c.text, fontSize = 13.sp, modifier = Modifier.weight(1f))
+        ActionButton(stringResource(Res.string.orders), onClick = onOrders)
+        ActionButton(stringResource(if (running) Res.string.stop else Res.string.start), strong = !running, onClick = onStartStop)
     }
-    val e = roster.getOrNull(model)?.takeIf { it in models } ?: return
-    val choices = e.cargoes
-    if (choices.size > 1) {
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            for (cg in choices) Chip(names.getOrElse(cg) { "" }, cg == (if (cargo in choices) cargo else choices[0])) { cargo = cg }
-        }
-    }
-    if (e.icebreaker > 0) Text(stringResource(Res.string.breaks_ice, e.icebreaker), color = c.textDim, fontSize = 13.sp)
-    if (e.range > 0) Text(stringResource(Res.string.range_line, e.range), color = c.textDim, fontSize = 13.sp)
-    val cost = price(e.cost)
-    ActionButton(stringResource(Res.string.buy_for, money(cost)), enabled = funds >= cost, strong = true) { buy(e.id, if (cargo in choices) cargo else -1) }
 }
 
 /** A shipyard: buying a ship, and those in it. */
 @Composable
 fun ShipyardCard(view: WorldView, roster: Roster, depot: Int, year: Int, funds: Long, price: (Long) -> Long, send: (Command) -> Unit, onShip: (Int) -> Unit, onClose: () -> Unit, modifier: Modifier) {
     val me = LocalCompany.current
-    val c = LocalColors.current
-    Card(stringResource(Res.string.tool_shipyard), onClose, modifier) {
-        BuyRow(roster, VehicleKind.SHIP, year, funds, price, { true }) { model, cargo -> send(Command.BuyCraft(me, depot, model, cargo)) }
-        for (v in view.ships.filter { it.depot == depot && it.inDepot }) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(shipName(v), color = c.text, fontSize = 13.sp, modifier = Modifier.weight(1f))
-                ActionButton(stringResource(Res.string.orders)) { onShip(v.id) }
-                ActionButton(stringResource(if (v.running) Res.string.stop else Res.string.start), strong = !v.running) { send(Command.CraftOrder(me, false, v.id, Command.TrainOrder.START_STOP)) }
+    Card(stringResource(Res.string.tool_shipyard), onClose, modifier, scrolls = false) {
+        CraftBuyPanel(roster, VehicleKind.SHIP, year, funds, price, { true }, { model, cargo -> send(Command.BuyCraft(me, depot, model, cargo)) }) {
+            for (v in view.ships.filter { it.depot == depot && it.inDepot }) {
+                CraftInDepot(shipName(v), v.running, { onShip(v.id) }) { send(Command.CraftOrder(me, false, v.id, Command.TrainOrder.START_STOP)) }
             }
         }
     }
@@ -109,29 +110,32 @@ fun AirportCard(view: WorldView, roster: Roster, airport: AirportView, year: Int
     val title = station?.let { stationName(view, it.id) } ?: kinds.getOrElse(airport.kind) { "" }
     // Only the kind and its runway matter for who can land, so a stand-in airport answers that.
     val stand = Airport(airport.id, 0, airport.station, airport.kind, airport.x, airport.y, airport.axis, airport.depot)
-    Card(title, onClose, modifier) {
-        Text(kinds.getOrElse(airport.kind) { "" }, color = c.textDim, fontSize = 13.sp)
-        val has = listOfNotNull(
-            stringResource(Res.string.has_landing_aids).takeIf { airport.ils },
-            stringResource(Res.string.has_deicing).takeIf { airport.deice },
-        )
-        if (has.isNotEmpty()) Text(has.joinToString(stringResource(Res.string.list_join)), color = c.textDim, fontSize = 13.sp)
-        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            if (!airport.ils && year >= ILS_FROM && Airports.CLASS[airport.kind] >= Runways.REGIONAL) {
-                val cost = price(ILS_COST)
-                ActionButton(stringResource(Res.string.landing_aids_for, money(cost)), enabled = funds >= cost) { send(Command.AirportUpgrade(me, airport.id, 0)) }
-            }
-            if (!airport.deice && year >= DEICE_FROM && airport.kind != Airports.SEAPLANE) {
-                val cost = price(DEICE_COST)
-                ActionButton(stringResource(Res.string.deicing_for, money(cost)), enabled = funds >= cost) { send(Command.AirportUpgrade(me, airport.id, 1)) }
-            }
-        }
-        BuyRow(roster, VehicleKind.AIRCRAFT, year, funds, price, { stand.serves(it) }) { model, cargo -> send(Command.BuyCraft(me, airport.depot, model, cargo)) }
-        for (v in view.aircraft.filter { it.depot == airport.depot && it.inDepot }) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(aircraftName(v), color = c.text, fontSize = 13.sp, modifier = Modifier.weight(1f))
-                ActionButton(stringResource(Res.string.orders)) { onAircraft(v.id) }
-                ActionButton(stringResource(if (v.running) Res.string.stop else Res.string.start), strong = !v.running) { send(Command.CraftOrder(me, true, v.id, Command.TrainOrder.START_STOP)) }
+    Card(title, onClose, modifier, scrolls = false) {
+        CraftBuyPanel(
+            roster, VehicleKind.AIRCRAFT, year, funds, price, { stand.serves(it) }, { model, cargo -> send(Command.BuyCraft(me, airport.depot, model, cargo)) },
+            top = {
+                Text(kinds.getOrElse(airport.kind) { "" }, color = c.textDim, fontSize = 13.sp)
+                val has = listOfNotNull(
+                    stringResource(Res.string.has_landing_aids).takeIf { airport.ils },
+                    stringResource(Res.string.has_deicing).takeIf { airport.deice },
+                )
+                if (has.isNotEmpty()) Text(has.joinToString(stringResource(Res.string.list_join)), color = c.textDim, fontSize = 13.sp)
+                val ils = !airport.ils && year >= ILS_FROM && Airports.CLASS[airport.kind] >= Runways.REGIONAL
+                val deice = !airport.deice && year >= DEICE_FROM && airport.kind != Airports.SEAPLANE
+                if (ils || deice) Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    if (ils) {
+                        val cost = price(ILS_COST)
+                        ActionButton(stringResource(Res.string.landing_aids_for, money(cost)), enabled = funds >= cost) { send(Command.AirportUpgrade(me, airport.id, 0)) }
+                    }
+                    if (deice) {
+                        val cost = price(DEICE_COST)
+                        ActionButton(stringResource(Res.string.deicing_for, money(cost)), enabled = funds >= cost) { send(Command.AirportUpgrade(me, airport.id, 1)) }
+                    }
+                }
+            },
+        ) {
+            for (v in view.aircraft.filter { it.depot == airport.depot && it.inDepot }) {
+                CraftInDepot(aircraftName(v), v.running, { onAircraft(v.id) }) { send(Command.CraftOrder(me, true, v.id, Command.TrainOrder.START_STOP)) }
             }
         }
     }

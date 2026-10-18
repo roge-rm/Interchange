@@ -654,4 +654,23 @@
     <string name="tool_remove_industry">Remove</string>
     <string-array name="town_sizes"><item>Small</item><item>Medium</item><item>Large</item><item>City</item></string-array>
     <string name="turn_industry">Turn</string>
+    <!-- Buying vehicles -->
+    <string-array name="cargo_amounts">
+        <item>%d passengers</item><item>%d bags of mail</item><item>%d t timber</item><item>%d t lumber</item><item>%d t grain</item><item>%d t coal</item><item>%d t iron ore</item><item>%d t steel</item><item>%d t goods</item><item>%d t oil</item><item>%d t fuel</item><item>%d head of livestock</item><item>%d t food</item><item>%d t fish</item><item>%d t paper</item><item>%d t potash</item><item>%d t nickel ore</item><item>%d t nickel</item><item>%d t bauxite</item><item>%d t aluminium</item>
+    </string-array>
+    <plurals name="or_others">
+        <item quantity="one">%1$s or %2$d other</item>
+        <item quantity="other">%1$s or %2$d others</item>
+    </plurals>
+    <string name="range_stat">%1$s km range</string>
+    <string name="no_wagons_on_sale">No wagons on sale yet</string>
+    <string name="kmh">%1$d km/h</string>
+    <string name="horsepower">%1$s hp</string>
+    <string name="kilonewtons">%1$d kN</string>
+    <string name="on_sale_until">until %1$d</string>
+    <string name="a_year">%1$s a year</string>
+    <string name="not_enough_money">Not enough money</string>
+    <string name="engines">Engines</string>
+    <string name="wagons">Wagons</string>
+    <string name="consist_line">%1$s + %2$d %3$s</string>
 </resources>

@@ -19,7 +19,7 @@ enum class Glyph {
     RoadStop, Canal, Dock, Lock, Airport,
     Raise, Lower, Level, Tree, Clear,
     Pause, Play, Speed, TurnLeft, TurnRight, Remove, Lift, Menu,
-    Save, Folder, Plus, Gear, Home, Package, Layers, Grid, Heights, Renew, Back, Waypoint, Wires, Shed, Fence, OneWay, Dome,
+    Save, Folder, Plus, Minus, Gear, Home, Package, Layers, Grid, Heights, Renew, Back, Waypoint, Wires, Shed, Fence, OneWay, Dome,
     TrackAuto, PieceX, PieceY, PieceN, PieceE, PieceS, PieceW,
     Chat, People, Flag, Tick,
 }
@@ -115,6 +115,7 @@ private class GlyphPen(val scope: DrawScope, val u: Float, val dx: Float, val dy
             Glyph.Save -> { shape(false, 4f, 4f, 17f, 4f, 20f, 7f, 20f, 20f, 4f, 20f); shape(false, 8f, 4f, 8f, 9f, 15f, 9f, 15f, 4f); shape(false, 7f, 13f, 17f, 13f, 17f, 20f, 7f, 20f) }
             Glyph.Folder -> { shape(false, 3f, 6f, 9f, 6f, 11f, 8f, 21f, 8f, 21f, 19f, 3f, 19f); line(3f, 11f, 21f, 11f, 1.5f) }
             Glyph.Plus -> { line(12f, 5f, 12f, 19f, 2.5f); line(5f, 12f, 19f, 12f, 2.5f) }
+            Glyph.Minus -> line(5f, 12f, 19f, 12f, 2.5f)
             Glyph.Gear -> {
                 circle(12f, 12f, 3f)
                 for (k in 0 until 8) {
