@@ -25,6 +25,7 @@ import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
@@ -436,11 +437,14 @@ fun PictureRow(
                 }
                 if (!stats.isNullOrEmpty()) Text(stats, color = c.text, style = KitType.Dim, maxLines = 2)
             }
-            end?.invoke()
+            end?.let { CompositionLocalProvider(LocalOnRow provides true, it) }
         }
-        below?.invoke()
+        below?.let { CompositionLocalProvider(LocalOnRow provides true, it) }
     }
 }
+
+/** True inside a row on the button colour, so an [ActionButton] there draws lighter and still reads as a button. */
+val LocalOnRow = staticCompositionLocalOf { false }
 
 /** [picture] in a box at the left of a group of rows, [content], on one background. */
 @Composable

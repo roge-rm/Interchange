@@ -25,6 +25,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.semantics.Role
@@ -398,7 +399,7 @@ fun ActionButton(label: String, enabled: Boolean = true, strong: Boolean = false
         Modifier
             .alpha(if (enabled) 1f else 0.4f)
             .clip(ButtonShape)
-            .background(if (strong) c.accent else c.button)
+            .background(if (strong) c.accent else if (LocalOnRow.current) c.text.copy(alpha = 0.12f).compositeOver(c.button) else c.button)
             .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
             .padding(horizontal = 12.dp, vertical = 8.dp),
     ) {

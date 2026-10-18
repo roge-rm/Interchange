@@ -522,7 +522,8 @@ fun FinanceWindow(runner: com.rm.interchange.server.GameThread, onClose: () -> U
     val co = company ?: return
     Window(stringResource(Res.string.finances), onClose, Glyph.Graph) {
         InfoRow(stringResource(Res.string.stat_money), money(co.money), valueColour = if (co.money < 0) c.bad else null)
-        InfoRow(stringResource(Res.string.start_loan), stringResource(Res.string.loan_line, money(co.loan), money(co.maxLoan)))
+        InfoRow(stringResource(Res.string.start_loan), money(co.loan))
+        InfoRow(stringResource(Res.string.loan_limit), money(co.maxLoan))
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(KitSpace.Gap, Alignment.End)) {
             ActionButton(stringResource(Res.string.borrow), enabled = co.loan < co.maxLoan) { runner.request(com.rm.interchange.sim.Command.Loan(me, borrow = true)) }
             ActionButton(stringResource(Res.string.repay), enabled = co.loan > 0 && co.money >= com.rm.interchange.sim.Prices.LOAN_STEP) { runner.request(com.rm.interchange.sim.Command.Loan(me, borrow = false)) }
