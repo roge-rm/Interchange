@@ -151,7 +151,7 @@ fun App() {
 private enum class Screen { Title, NewGame, Playing }
 
 /** A window open over the screen. */
-private enum class Win { Menu, Load, Settings, Packs, Overlays, Finances, Industries, Companies, Insignia, Town, Subsidies, Goals, Chronicle, Multiplayer, Players, Chat, Scenarios, Campaign, Scenario, SaveScenario, Intro, Outcome }
+private enum class Win { Menu, Load, Settings, Packs, Overlays, Map, Finances, Industries, Companies, Insignia, Town, Subsidies, Goals, Chronicle, Multiplayer, Players, Chat, Scenarios, Campaign, Scenario, SaveScenario, Intro, Outcome }
 
 /** Picking a place by tapping the map: what to tell the player, what a tapped tile does (false if nothing there will do), and giving up. */
 class MapPick(val prompt: String, val onTile: (Int) -> Boolean, val onCancel: () -> Unit)
@@ -545,6 +545,7 @@ private fun Root(settings: Settings) {
                     Box(Modifier.fillMaxSize().background(LocalColors.current.page))
                 } else {
                     Playing(r, s, settings, pick, onMenu = { saved = false; window = Win.Menu }, onOverlays = { window = Win.Overlays }, onFinances = { window = Win.Finances }, onTown = { town = it; window = Win.Town }, goTo = goTo,
+                        overview = window == Win.Map, onCloseOverview = { window = null },
                         onChat = if (inMultiplayer) ({ window = Win.Chat }) else null, chatUnread = lastChat != null && lastChat !== readChat)
                 }
             }
@@ -552,6 +553,7 @@ private fun Root(settings: Settings) {
         when (window) {
             Win.Menu -> if (editing) EditorMenuWindow(
                 saved,
+                onMap = { window = Win.Map },
                 onScenario = { window = Win.Scenario },
                 onGoals = { window = Win.Goals },
                 onSave = { window = Win.SaveScenario },
@@ -574,6 +576,7 @@ private fun Root(settings: Settings) {
                 onNew = { window = null; editorNew = false; screen = Screen.NewGame },
                 onPlayers = { hostProblem = null; window = Win.Players },
                 onSettings = { window = Win.Settings },
+                onMap = { window = Win.Map },
                 onFinances = { window = Win.Finances },
                 onIndustries = { window = Win.Industries },
                 onCompanies = { window = Win.Companies },
@@ -601,6 +604,7 @@ private fun Root(settings: Settings) {
                 },
                 onClose = { window = null },
             )
+            Win.Map -> Unit
             Win.Overlays -> OverlaysWindow(settings) { window = null }
             Win.Finances -> runner?.let { r -> FinanceWindow(r) { window = null } }
             Win.Industries -> runner?.game?.world?.let { w ->
@@ -686,7 +690,7 @@ private fun Root(settings: Settings) {
 
 /** A game being played: waits for the world to be made, then shows it. */
 @Composable
-private fun Playing(runner: GameThread, sheets: Sheets, settings: Settings, pick: MapPick?, onMenu: () -> Unit, onOverlays: () -> Unit, onFinances: () -> Unit, onTown: (Int) -> Unit, goTo: MutableState<Pair<Float, Float>?>, onChat: (() -> Unit)?, chatUnread: Boolean) {
+private fun Playing(runner: GameThread, sheets: Sheets, settings: Settings, pick: MapPick?, onMenu: () -> Unit, onOverlays: () -> Unit, onFinances: () -> Unit, onTown: (Int) -> Unit, goTo: MutableState<Pair<Float, Float>?>, onChat: (() -> Unit)?, chatUnread: Boolean, overview: Boolean, onCloseOverview: () -> Unit) {
     var world by remember(runner) { mutableStateOf<World?>(null) }
     // Redraws every display frame, and picks up the world once it's made, or when a server sends it again.
     val frame = remember(runner) { mutableLongStateOf(0L) }
@@ -701,11 +705,11 @@ private fun Playing(runner: GameThread, sheets: Sheets, settings: Settings, pick
         Box(Modifier.fillMaxSize().background(LocalColors.current.page))
         return
     }
-    key(runner, w) { GameScreen(runner, w, sheets, frame, settings, pick, onMenu, onOverlays, onFinances, onTown, goTo, onChat, chatUnread) }
+    key(runner, w) { GameScreen(runner, w, sheets, frame, settings, pick, onMenu, onOverlays, onFinances, onTown, goTo, onChat, chatUnread, overview, onCloseOverview) }
 }
 
 @Composable
-private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: State<Long>, settings: Settings, pick: MapPick?, onMenu: () -> Unit, onOverlays: () -> Unit, onFinances: () -> Unit, onTown: (Int) -> Unit, goTo: MutableState<Pair<Float, Float>?>, onChat: (() -> Unit)?, chatUnread: Boolean) {
+private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: State<Long>, settings: Settings, pick: MapPick?, onMenu: () -> Unit, onOverlays: () -> Unit, onFinances: () -> Unit, onTown: (Int) -> Unit, goTo: MutableState<Pair<Float, Float>?>, onChat: (() -> Unit)?, chatUnread: Boolean, overview: Boolean, onCloseOverview: () -> Unit) {
     val me = runner.company
     val c = LocalColors.current
     // The drawings of this game's vehicles: the base pack's come with the app, the others from their packs.
@@ -724,6 +728,7 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
             focusY = i / world.width + 0.5f
         }
     }
+    val overviewOptions = remember { OverviewOptions() }
     // Going where a window asked to.
     goTo.value?.let { (x, y) ->
         view.focusX = x
@@ -1379,6 +1384,7 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
             }
             if (!layout.sideTools && me >= 0) ToolBar(tool.group, ::pickGroup, vertical = false, compact = compactTools, modifier = trayWidth, editor = editor)
         }
+        if (overview) OverviewWindow(runner, view, mapSize, overviewOptions, onCloseOverview)
     }
 }
 

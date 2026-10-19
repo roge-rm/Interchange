@@ -479,7 +479,7 @@ fun OverlaysWindow(settings: Settings, onClose: () -> Unit) {
  * isn't saved here. A scenario tried from the editor has only the way back to it, and the title screen asks once more.
  */
 @Composable
-fun MenuWindow(saved: Boolean, canSave: Boolean, onEditor: (() -> Unit)?, onSave: () -> Unit, onLoad: () -> Unit, onNew: () -> Unit, onPlayers: () -> Unit, onSettings: () -> Unit, onFinances: () -> Unit, onIndustries: () -> Unit, onCompanies: () -> Unit, onSubsidies: () -> Unit, onGoals: () -> Unit, onChronicle: () -> Unit, onTitle: () -> Unit, onClose: () -> Unit) {
+fun MenuWindow(saved: Boolean, canSave: Boolean, onEditor: (() -> Unit)?, onSave: () -> Unit, onLoad: () -> Unit, onNew: () -> Unit, onPlayers: () -> Unit, onSettings: () -> Unit, onMap: () -> Unit, onFinances: () -> Unit, onIndustries: () -> Unit, onCompanies: () -> Unit, onSubsidies: () -> Unit, onGoals: () -> Unit, onChronicle: () -> Unit, onTitle: () -> Unit, onClose: () -> Unit) {
     val trying = onEditor != null
     var leaving by remember { mutableStateOf(false) }
     // Each entry's words, glyph, whether it's the main one, and what it does.
@@ -496,6 +496,7 @@ fun MenuWindow(saved: Boolean, canSave: Boolean, onEditor: (() -> Unit)?, onSave
         },
     )
     val world = listOf(
+        Entry(stringResource(Res.string.overview_map), Glyph.Map, onClick = onMap),
         Entry(stringResource(Res.string.finances), Glyph.Graph, onClick = onFinances),
         Entry(stringResource(Res.string.industries), Glyph.Factory, onClick = onIndustries),
         Entry(stringResource(Res.string.companies), Glyph.Briefcase, onClick = onCompanies),

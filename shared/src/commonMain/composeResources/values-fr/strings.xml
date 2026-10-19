@@ -13,6 +13,12 @@
     </string-array>
     <string name="date">%1$d %2$s %3$d</string>
 
+    <string name="overview_map">Carte</string>
+    <string name="map_rail">Voies ferrées</string>
+    <string name="map_roads">Routes</string>
+    <string name="map_stations">Gares et arrêts</string>
+    <string name="map_town_names">Noms des villes</string>
+    <string name="map_company_colours">Couleurs des compagnies</string>
     <string name="menu">Menu</string>
     <string name="menu_head_game">Partie</string>
     <string name="menu_head_world">Le monde</string>

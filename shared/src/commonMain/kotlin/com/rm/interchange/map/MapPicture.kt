@@ -36,8 +36,13 @@ private fun colourOf(world: World, x: Int, y: Int): Int {
     val r = world.heightAt(x + 1, y)
     val b = world.heightAt(x + 1, y + 1)
     val l = world.heightAt(x, y + 1)
+    return terrainColour(t, r, b, l, world.ground[world.index(x, y)].toInt(), Trees.count(world.trees[world.index(x, y)].toInt()))
+}
+
+/** Ground colours shared by the title picture and overview map. */
+internal fun terrainColour(t: Int, r: Int, b: Int, l: Int, ground: Int, trees: Int): Int {
     if (t == 0 && r == 0 && b == 0 && l == 0) return WATER
-    val base = if (minOf(minOf(t, r), minOf(b, l)) == 0) SAND else when (world.ground[world.index(x, y)].toInt()) {
+    val base = if (minOf(minOf(t, r), minOf(b, l)) == 0) SAND else when (ground) {
         Ground.MEADOW -> MEADOW
         Ground.PRAIRIE -> PRAIRIE
         Ground.FOREST -> FOREST
@@ -47,7 +52,6 @@ private fun colourOf(world: World, x: Int, y: Int): Int {
     }
     // Woods a shade darker, and the slope lit as the map is: from lower x and a little lower y, so land rising
     // that way faces the light.
-    val trees = Trees.count(world.trees[world.index(x, y)].toInt())
     val slope = (r + b) - (t + l) + 0.5f * ((l + b) - (t + r))
     var f = 1f + slope * 0.09f - trees * 0.05f
     f = f.coerceIn(0.6f, 1.3f)

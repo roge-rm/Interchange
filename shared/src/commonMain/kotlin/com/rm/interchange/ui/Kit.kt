@@ -115,7 +115,7 @@ private fun breaksWord(text: String, end: Int) =
  * camera cutout and the bars, and scrolls if the screen is short.
  */
 @Composable
-fun Window(title: String, onClose: () -> Unit, glyph: Glyph? = null, content: @Composable () -> Unit) {
+fun Window(title: String, onClose: () -> Unit, glyph: Glyph? = null, maxWidth: Dp = 480.dp, content: @Composable () -> Unit) {
     val c = LocalColors.current
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         Box(
@@ -129,7 +129,7 @@ fun Window(title: String, onClose: () -> Unit, glyph: Glyph? = null, content: @C
             Modifier
                 .windowInsetsPadding(WindowInsets.safeDrawing)
                 .padding(12.dp)
-                .widthIn(max = 480.dp)
+                .widthIn(max = maxWidth)
                 // Taps on the window stay in it.
                 .pointerInput(Unit) { detectTapGestures { } }
                 .semantics { paneTitle = title },

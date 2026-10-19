@@ -195,11 +195,12 @@ private fun Paragraphs(text: String) {
 
 /** The menu in the scenario editor: the scenario, its goals, saving it, trying it, settings and the title screen, which asks once more. */
 @Composable
-fun EditorMenuWindow(saved: Boolean, onScenario: () -> Unit, onGoals: () -> Unit, onSave: () -> Unit, onTest: () -> Unit, onSettings: () -> Unit, onTitle: () -> Unit, onClose: () -> Unit) {
+fun EditorMenuWindow(saved: Boolean, onMap: () -> Unit, onScenario: () -> Unit, onGoals: () -> Unit, onSave: () -> Unit, onTest: () -> Unit, onSettings: () -> Unit, onTitle: () -> Unit, onClose: () -> Unit) {
     var leaving by remember { mutableStateOf(false) }
     // Each entry's words, glyph, whether it's the main one, and what it does, in two columns as the game's menu has.
     class Entry(val text: String, val glyph: Glyph, val primary: Boolean = false, val onClick: () -> Unit)
     val entries = listOf(
+        Entry(stringResource(Res.string.overview_map), Glyph.Map, onClick = onMap),
         Entry(stringResource(Res.string.scenario), Glyph.Newspaper, onClick = onScenario),
         Entry(stringResource(Res.string.goals), Glyph.Flag, onClick = onGoals),
         Entry(stringResource(if (saved) Res.string.saved else Res.string.save_scenario), Glyph.Save, !saved, onSave),

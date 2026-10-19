@@ -22,6 +22,12 @@
     <string name="date">%1$d %2$s %3$d</string>
 
     <!-- The strip along the top. -->
+    <string name="overview_map">Map</string>
+    <string name="map_rail">Railways</string>
+    <string name="map_roads">Roads</string>
+    <string name="map_stations">Stations</string>
+    <string name="map_town_names">Town names</string>
+    <string name="map_company_colours">Company colours</string>
     <string name="menu">Menu</string>
     <string name="menu_head_game">Game</string>
     <string name="menu_head_world">The world</string>
