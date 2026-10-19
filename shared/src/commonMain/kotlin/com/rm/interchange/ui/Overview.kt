@@ -169,7 +169,7 @@ internal fun OverviewWindow(runner: GameThread, view: View, viewport: Size, opti
             val map: @Composable (Modifier) -> Unit = { modifier ->
                 Box(modifier) {
                     OverviewCanvas(current, traffic, view, viewport, options, filter, Modifier.fillMaxSize(),
-                        onIndustry = { selectedIndustry = it }, onClose = onClose)
+                        onIndustry = { selectedIndustry = it })
                     if (flow) {
                         val onBoard = current?.data?.info?.flows.orEmpty().filter { (filter < 0 || it.owner == filter) && (cargo < 0 || it.cargo == cargo) }.sumOf { it.count }
                         val loadLabel = stringResource(Res.string.map_on_board)

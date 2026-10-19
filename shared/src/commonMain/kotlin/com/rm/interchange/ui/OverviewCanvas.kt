@@ -26,14 +26,14 @@ import kotlin.math.ln
 
 @Composable
 internal fun OverviewCanvas(image: MapImage?, traffic: State<List<OverviewVehicle>>, view: View, viewport: Size,
-    options: OverviewOptions, owner: Int, modifier: Modifier, onIndustry: (Int) -> Unit, onClose: () -> Unit) {
+    options: OverviewOptions, owner: Int, modifier: Modifier, onIndustry: (Int) -> Unit) {
     val c = LocalColors.current
     val camera = options.camera
     val measurer = rememberTextMeasurer(cacheSize = 256)
     val title = stringResource(Res.string.overview_map)
     val latestImage by rememberUpdatedState(image)
     val latestIndustry by rememberUpdatedState(onIndustry)
-    val latestClose by rememberUpdatedState(onClose)
+    val cameraRevision = remember(view) { mutableIntStateOf(0) }
     val shape = RoundedCornerShape(10.dp)
     Canvas(modifier.onSizeChanged { camera.resize(Size(it.width.toFloat(), it.height.toFloat()), view.mapWidth, view.mapHeight) }.clip(shape).background(c.page).border(1.dp, c.chromeEdge, shape)
         .semantics { contentDescription = title }
@@ -71,11 +71,13 @@ internal fun OverviewCanvas(image: MapImage?, traffic: State<List<OverviewVehicl
                     if (industry != null) latestIndustry(industry.place.id) else {
                         view.focusX = (at.x * view.mapWidth).coerceIn(0f, view.mapWidth.toFloat())
                         view.focusY = (at.y * view.mapHeight).coerceIn(0f, view.mapHeight.toFloat())
-                        latestClose()
+                        cameraRevision.intValue++
                     }
                 }
             }
         }) {
+        // Redraw the camera outline immediately, even when paused with vehicle dots hidden.
+        cameraRevision.intValue
         val current = image ?: return@Canvas
         val data = current.data
         val scale = maxOf(size.width / data.width, size.height / data.height) * camera.zoom
