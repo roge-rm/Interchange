@@ -25,6 +25,8 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
@@ -95,6 +97,7 @@ fun StatusStrip(
     moneyLow: Boolean,
     onTurnLeft: () -> Unit,
     onTurnRight: () -> Unit,
+    onMap: () -> Unit,
     onMoney: () -> Unit,
     weather: String,
     onWeather: () -> Unit,
@@ -111,9 +114,14 @@ fun StatusStrip(
     chatUnread: Boolean = false,
 ) {
     val c = LocalColors.current
-    val side = if (compact) 36.dp else 40.dp
+    val preferredSide = if (compact) 36.dp else 40.dp
+    val gap = if (compact) (if (twoLines) 4.dp else 6.dp) else 8.dp
+    val width = with(LocalDensity.current) {
+        LocalWindowInfo.current.containerSize.width.toDp() - cameras.sumOf { (it.endInclusive - it.start).toDouble() }.toFloat().toDp()
+    } - 32.dp
+    val buttons = (if (timeControls) 4 else 2) + (if (onChat != null) 1 else 0) + 3
+    val side = if (twoLines) minOf(preferredSide, ((width - gap * (buttons - 1)) / buttons).coerceAtLeast(28.dp)) else preferredSide
     val textSize = if (compact) 13.sp else 15.sp
-    val gap = if (compact) 6.dp else 8.dp
     val time = @Composable {
         SquareButton(Glyph.Menu, stringResource(Res.string.menu), side, onClick = onMenu)
         if (timeControls) {
@@ -139,6 +147,7 @@ fun StatusStrip(
     }
     val turns = @Composable {
         Row(horizontalArrangement = Arrangement.spacedBy(gap)) {
+            SquareButton(Glyph.Map, stringResource(Res.string.overview_map), side, onClick = onMap)
             SquareButton(Glyph.TurnLeft, stringResource(Res.string.turn_left), side, onClick = onTurnLeft)
             SquareButton(Glyph.TurnRight, stringResource(Res.string.turn_right), side, onClick = onTurnRight)
         }

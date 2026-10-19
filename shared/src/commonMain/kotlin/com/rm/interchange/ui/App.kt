@@ -545,7 +545,7 @@ private fun Root(settings: Settings) {
                     Box(Modifier.fillMaxSize().background(LocalColors.current.page))
                 } else {
                     Playing(r, s, settings, pick, onMenu = { saved = false; window = Win.Menu }, onOverlays = { window = Win.Overlays }, onFinances = { window = Win.Finances }, onTown = { town = it; window = Win.Town }, goTo = goTo,
-                        overview = window == Win.Map, onCloseOverview = { window = null },
+                        onMap = { window = Win.Map }, overview = window == Win.Map, onCloseOverview = { window = null },
                         onChat = if (inMultiplayer) ({ window = Win.Chat }) else null, chatUnread = lastChat != null && lastChat !== readChat)
                 }
             }
@@ -690,7 +690,7 @@ private fun Root(settings: Settings) {
 
 /** A game being played: waits for the world to be made, then shows it. */
 @Composable
-private fun Playing(runner: GameThread, sheets: Sheets, settings: Settings, pick: MapPick?, onMenu: () -> Unit, onOverlays: () -> Unit, onFinances: () -> Unit, onTown: (Int) -> Unit, goTo: MutableState<Pair<Float, Float>?>, onChat: (() -> Unit)?, chatUnread: Boolean, overview: Boolean, onCloseOverview: () -> Unit) {
+private fun Playing(runner: GameThread, sheets: Sheets, settings: Settings, pick: MapPick?, onMenu: () -> Unit, onOverlays: () -> Unit, onFinances: () -> Unit, onTown: (Int) -> Unit, goTo: MutableState<Pair<Float, Float>?>, onChat: (() -> Unit)?, chatUnread: Boolean, onMap: () -> Unit, overview: Boolean, onCloseOverview: () -> Unit) {
     var world by remember(runner) { mutableStateOf<World?>(null) }
     // Redraws every display frame, and picks up the world once it's made, or when a server sends it again.
     val frame = remember(runner) { mutableLongStateOf(0L) }
@@ -705,11 +705,11 @@ private fun Playing(runner: GameThread, sheets: Sheets, settings: Settings, pick
         Box(Modifier.fillMaxSize().background(LocalColors.current.page))
         return
     }
-    key(runner, w) { GameScreen(runner, w, sheets, frame, settings, pick, onMenu, onOverlays, onFinances, onTown, goTo, onChat, chatUnread, overview, onCloseOverview) }
+    key(runner, w) { GameScreen(runner, w, sheets, frame, settings, pick, onMenu, onOverlays, onFinances, onTown, goTo, onChat, chatUnread, onMap, overview, onCloseOverview) }
 }
 
 @Composable
-private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: State<Long>, settings: Settings, pick: MapPick?, onMenu: () -> Unit, onOverlays: () -> Unit, onFinances: () -> Unit, onTown: (Int) -> Unit, goTo: MutableState<Pair<Float, Float>?>, onChat: (() -> Unit)?, chatUnread: Boolean, overview: Boolean, onCloseOverview: () -> Unit) {
+private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: State<Long>, settings: Settings, pick: MapPick?, onMenu: () -> Unit, onOverlays: () -> Unit, onFinances: () -> Unit, onTown: (Int) -> Unit, goTo: MutableState<Pair<Float, Float>?>, onChat: (() -> Unit)?, chatUnread: Boolean, onMap: () -> Unit, overview: Boolean, onCloseOverview: () -> Unit) {
     val me = runner.company
     val c = LocalColors.current
     // The drawings of this game's vehicles: the base pack's come with the app, the others from their packs.
@@ -1075,8 +1075,8 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
             },
         )
 
-        // Every upright phone: one line can't hold the buttons and the readings without crowding them.
-        val twoLines = layout.shape == ScreenShape.Tall && !layout.large
+        // Keep the buttons and readings on separate lines when one row would crowd them.
+        val twoLines = maxWidth < (if (onChat != null) 760.dp else 680.dp)
         // On an upright phone with its camera in the top edge, the strip goes up round it: if each camera is small
         // enough to leave room for the buttons, and short enough to stay within the strip's first row.
         val density = LocalDensity.current
@@ -1096,7 +1096,7 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
             settings.grid || settings.heights || settings.snow || settings.condition || settings.reserved, onOverlays,
             if (editor) stringResource(Res.string.editor) else weekdayDate(day, world.startYear),
             money(money), money < 0,
-            { view.turnBy(-1) }, { view.turnBy(1) }, onFinances,
+            { view.turnBy(-1) }, { view.turnBy(1) }, onMap, onFinances,
             weather, { selected = if (selected == Selection.Weather) null else Selection.Weather },
             compact = layout.compact || layout.narrow,
             twoLines = twoLines,
