@@ -763,4 +763,6 @@
     <string name="map_go_to">Go to industry</string>
     <string name="map_help">Drag to pan, pinch to zoom. Tap an industry for details or elsewhere to go there.</string>
     <string name="map_coverage_help">Building reach and industry calls in the last 90 work days.</string>
+    <string name="map_controls">Map controls</string>
+    <string name="map_controls_hint">Tap a tile to switch it on or off. Hold it to see its name.</string>
 </resources>

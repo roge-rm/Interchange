@@ -14,7 +14,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 
 /** The little drawings on buttons and tabs. */
 enum class Glyph {
-    Inspect, Rail, Road, Water, Air, Land, Map,
+    Inspect, Rail, Road, Water, Air, Land, Map, Train, Bus, Ship, Info,
     Signal, Station, Depot, Bridge, Tunnel,
     RoadStop, Canal, Dock, Lock, Airport,
     Raise, Lower, Level, Tree, Clear,
@@ -86,6 +86,10 @@ private class GlyphPen(val scope: DrawScope, val u: Float, val dx: Float, val dy
                 line(8f, 3f, 5f, 21f); line(16f, 3f, 19f, 21f)
                 for (y in listOf(6f, 11f, 16f)) line(6f, y, 18f, y, 1.5f)
             }
+            Glyph.Info -> { circle(12f, 12f, 9f); circle(12f, 7f, 0.8f, true); line(12f, 11f, 12f, 17f); line(10f, 17f, 14f, 17f) }
+            Glyph.Train -> { shape(false, 6f, 3f, 18f, 3f, 18f, 18f, 6f, 18f); line(6f, 11f, 18f, 11f); line(12f, 3f, 12f, 11f); circle(9f, 15f, 1f, true); circle(15f, 15f, 1f, true); line(8f, 18f, 5f, 22f); line(16f, 18f, 19f, 22f) }
+            Glyph.Bus -> { shape(false, 4f, 4f, 20f, 4f, 20f, 19f, 4f, 19f); line(4f, 12f, 20f, 12f); line(12f, 4f, 12f, 12f); circle(7f, 16f, 1f, true); circle(17f, 16f, 1f, true); line(7f, 19f, 7f, 22f); line(17f, 19f, 17f, 22f) }
+            Glyph.Ship -> { shape(false, 3f, 13f, 12f, 9f, 21f, 13f, 18f, 19f, 6f, 19f); shape(false, 8f, 11f, 8f, 4f, 16f, 4f, 16f, 11f); line(12f, 9f, 12f, 18f); wave(22f) }
             Glyph.Road -> { line(8f, 3f, 4f, 21f); line(16f, 3f, 20f, 21f); line(12f, 4f, 12f, 8f); line(12f, 11f, 12f, 14f); line(12f, 17f, 12f, 21f) }
             Glyph.Water -> { wave(8f); wave(13f); wave(18f) }
             Glyph.Air -> shape(true, 12f, 2f, 13.5f, 9f, 21f, 13f, 21f, 15f, 13.5f, 13f, 13f, 19f, 16f, 21f, 16f, 22f, 12f, 21f, 8f, 22f, 8f, 21f, 11f, 19f, 10.5f, 13f, 3f, 15f, 3f, 13f, 10.5f, 9f)

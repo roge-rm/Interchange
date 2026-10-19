@@ -1,11 +1,8 @@
 package com.rm.interchange.ui
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -13,12 +10,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalWindowInfo
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.rm.interchange.map.View
 import com.rm.interchange.map.companyColour
+import com.rm.interchange.map.View
 import com.rm.interchange.res.*
 import com.rm.interchange.server.GameThread
 import com.rm.interchange.sim.*
@@ -77,6 +75,7 @@ internal fun OverviewWindow(runner: GameThread, view: View, viewport: Size, opti
     var image by remember(runner) { mutableStateOf<MapImage?>(null) }
     val traffic = remember(runner) { mutableStateOf<List<OverviewVehicle>>(emptyList()) }
     var selectedIndustry by remember { mutableIntStateOf(-1) }
+    var showHelp by remember { mutableStateOf(false) }
     var rail by options.rail
     var roads by options.roads
     var stations by options.stations
@@ -106,80 +105,85 @@ internal fun OverviewWindow(runner: GameThread, view: View, viewport: Size, opti
     val height = with(LocalDensity.current) { screen.height.toDp() }
     val wide = screen.width > screen.height
     val ratio = view.mapWidth.toFloat() / view.mapHeight
-    val mapWidth = (if (wide) (height - 230.dp).coerceAtLeast(120.dp) else height * 0.38f) * ratio
-    val controlsHeight = if (wide) (height - 128.dp).coerceAtLeast(120.dp) else (height * 0.28f).coerceIn(140.dp, 300.dp)
+    val mapWidth = (if (wide) (height - 132.dp).coerceAtLeast(100.dp) else (height - 370.dp).coerceAtLeast(100.dp)) * ratio
     val current = image
     val companyIds = listOf(-1) + current?.data?.companies.orEmpty().map { it.first }
     val filter = owner.takeIf { it in companyIds } ?: -1
     val cargoNames = stringArrayResource(Res.array.cargoes)
     val lang = languageCode()
     val me = LocalCompany.current
-    Window(stringResource(Res.string.overview_map), onClose, Glyph.Map, maxWidth = 720.dp, scrollable = false) {
-        SideBySide(wide, first = {
-            Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                OverviewCanvas(current, traffic, view, viewport, options, filter,
-                    Modifier.widthIn(max = mapWidth).fillMaxWidth().aspectRatio(ratio),
-                    onIndustry = { selectedIndustry = it }, onClose = onClose)
-                Text(stringResource(Res.string.map_help), color = c.textDim, style = KitType.Dim)
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    SquareButton(Glyph.Minus, stringResource(Res.string.map_zoom_out), 32.dp, enabled = options.camera.zoom > 1f) { options.camera.move(Offset.Zero, 0.5f) }
-                    Text("${options.camera.zoom.roundToInt()}×", color = c.textDim, style = KitType.Value)
-                    SquareButton(Glyph.Plus, stringResource(Res.string.map_zoom_in), 32.dp, enabled = options.camera.zoom < 16f) { options.camera.move(Offset.Zero, 2f) }
-                    TogglePill(stringResource(Res.string.map_fit), false) { options.camera.fit() }
-                }
-            }
-        }, second = {
-            Column(Modifier.fillMaxWidth().heightIn(max = controlsHeight).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                StepSlider(stringResource(Res.string.company), companyIds, filter, { id ->
-                    when (id) {
-                        -1 -> stringResource(Res.string.map_everyone)
-                        me -> stringResource(Res.string.your_company)
-                        else -> current?.data?.companies?.firstOrNull { it.first == id }?.second.orEmpty()
-                    }
-                }) { owner = it }
-                Head(stringResource(Res.string.overlays), Glyph.Layers)
-                Grid(listOf(0, 1, 2, 3, 4, 5)) { option ->
-                    when (option) {
-                        0 -> TogglePill(stringResource(Res.string.map_rail), rail, Modifier.fillMaxWidth()) { rail = it }
-                        1 -> TogglePill(stringResource(Res.string.map_roads), roads, Modifier.fillMaxWidth()) { roads = it }
-                        2 -> TogglePill(stringResource(Res.string.map_stations), stations, Modifier.fillMaxWidth()) { stations = it }
-                        3 -> TogglePill(stringResource(Res.string.industries), industries, Modifier.fillMaxWidth()) { industries = it }
-                        4 -> TogglePill(stringResource(Res.string.map_town_names), names, Modifier.fillMaxWidth()) { names = it }
-                        else -> TogglePill(stringResource(Res.string.map_company_colours), companies, Modifier.fillMaxWidth()) { companies = it }
-                    }
-                }
-                Head(stringResource(Res.string.map_vehicles), Glyph.Inspect)
-                Grid((0..3).toList()) { mode ->
-                    val labels = listOf(Res.string.map_trains, Res.string.map_road_vehicles, Res.string.map_ships, Res.string.map_aircraft)
-                    TogglePill(stringResource(labels[mode]), modes and (1 shl mode) != 0, Modifier.fillMaxWidth()) { enabled ->
-                        modes = if (enabled) modes or (1 shl mode) else modes and (1 shl mode).inv()
-                    }
-                }
-                Head(stringResource(Res.string.map_planning), Glyph.Graph)
-                TogglePill(stringResource(Res.string.map_cargo_flow), flow, Modifier.fillMaxWidth()) { flow = it }
-                if (flow) {
-                    StepSlider(stringResource(Res.string.map_cargo), listOf(-1) + (0 until Cargo.COUNT), cargo,
-                        { if (it < 0) stringResource(Res.string.map_all_cargo) else cargoNames[it] }) { cargo = it }
-                    val onBoard = current?.data?.info?.flows.orEmpty().filter { (filter < 0 || it.owner == filter) && (cargo < 0 || it.cargo == cargo) }.sumOf { it.count }
-                    InfoRow(stringResource(Res.string.map_on_board), Numbers.grouped(onBoard), Glyph.Package)
-                }
-                TogglePill(stringResource(Res.string.map_coverage), coverage, Modifier.fillMaxWidth()) { coverage = it }
-                if (coverage) {
-                    Text(stringResource(Res.string.map_coverage_help), color = c.textDim, style = KitType.Dim)
-                    InfoRow(stringResource(Res.string.map_unserved), "0%", Glyph.Alert, c.bad)
-                    InfoRow(stringResource(Res.string.map_partial), "1-74%", Glyph.People, c.warn)
-                    InfoRow(stringResource(Res.string.map_served), "75-100%", Glyph.Tick, c.good)
-                }
-                if (companies) Grid(current?.data?.companies.orEmpty()) { (id, name) ->
-                    Row(Modifier.clip(RoundedCornerShape(6.dp)).background(if (filter == id) c.button else androidx.compose.ui.graphics.Color.Transparent)
-                        .clickable { owner = if (filter == id) -1 else id }.padding(4.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Box(Modifier.size(12.dp).clip(RoundedCornerShape(3.dp)).background(companyColour(id)))
-                        Text(name, color = if (filter == id) c.text else c.textDim, style = KitType.Dim, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    }
-                }
-            }
-        })
+    val companyLabel = when (filter) {
+        -1 -> stringResource(Res.string.map_everyone)
+        me -> stringResource(Res.string.your_company)
+        else -> current?.data?.companies?.firstOrNull { it.first == filter }?.second.orEmpty()
     }
+    Window(stringResource(Res.string.overview_map), onClose, Glyph.Map, maxWidth = 920.dp, scrollable = false) {
+        BoxWithConstraints {
+            val tile = ((if (wide) maxWidth / 2 else maxWidth) - 30.dp).div(6).coerceIn(36.dp, 46.dp)
+            val layers: @Composable () -> Unit = {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    MapTile(Glyph.Rail, stringResource(Res.string.map_rail), rail, tile) { rail = !rail }
+                    MapTile(Glyph.Road, stringResource(Res.string.map_roads), roads, tile) { roads = !roads }
+                    MapTile(Glyph.Station, stringResource(Res.string.map_stations), stations, tile) { stations = !stations }
+                    MapTile(Glyph.Factory, stringResource(Res.string.industries), industries, tile) { industries = !industries }
+                    MapTile(Glyph.Home, stringResource(Res.string.map_town_names), names, tile) { names = !names }
+                    MapTile(Glyph.Flag, stringResource(Res.string.map_company_colours), companies, tile) { companies = !companies }
+                }
+            }
+            val trafficTiles: @Composable () -> Unit = {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    val labels = listOf(Res.string.map_trains, Res.string.map_road_vehicles, Res.string.map_ships, Res.string.map_aircraft)
+                    val glyphs = listOf(Glyph.Train, Glyph.Bus, Glyph.Ship, Glyph.Air)
+                    for (mode in 0..3) MapTile(glyphs[mode], stringResource(labels[mode]), modes and (1 shl mode) != 0, tile) { modes = modes xor (1 shl mode) }
+                    MapTile(Glyph.Graph, stringResource(Res.string.map_cargo_flow), flow, tile) { flow = !flow }
+                    MapTile(Glyph.People, stringResource(Res.string.map_coverage), coverage, tile) { coverage = !coverage }
+                }
+            }
+            val controls: @Composable () -> Unit = {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    MapChoice(companyLabel, stringResource(Res.string.company), Glyph.Flag, Modifier.weight(1f), companyIds,
+                        { id -> if (id < 0) stringResource(Res.string.map_everyone) else if (id == me) stringResource(Res.string.your_company)
+                            else current?.data?.companies?.firstOrNull { it.first == id }?.second.orEmpty() }, filter, colour = { if (it >= 0) companyColour(it) else null }) { owner = it }
+                    MapChoice(if (cargo < 0) stringResource(Res.string.map_all_cargo) else cargoNames[cargo], stringResource(Res.string.map_cargo), Glyph.Package,
+                        Modifier.weight(1f), listOf(-1) + (0 until Cargo.COUNT),
+                        { if (it < 0) stringResource(Res.string.map_all_cargo) else cargoNames[it] }, cargo) { cargo = it }
+                }
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                    MapTile(Glyph.Minus, stringResource(Res.string.map_zoom_out), false, tile, options.camera.zoom > 1f) { options.camera.move(Offset.Zero, 0.5f) }
+                    Text("${options.camera.zoom.roundToInt()}×", color = c.textDim, style = KitType.Value)
+                    MapTile(Glyph.Plus, stringResource(Res.string.map_zoom_in), false, tile, options.camera.zoom < 16f) { options.camera.move(Offset.Zero, 2f) }
+                    MapTile(Glyph.Map, stringResource(Res.string.map_fit), false, tile) { options.camera.fit() }
+                    MapTile(Glyph.Info, stringResource(Res.string.map_controls), false, tile) { showHelp = true }
+                }
+                Row(Modifier.fillMaxWidth().height(24.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    if (flow) {
+                        val onBoard = current?.data?.info?.flows.orEmpty().filter { (filter < 0 || it.owner == filter) && (cargo < 0 || it.cargo == cargo) }.sumOf { it.count }
+                        GlyphIcon(Glyph.Package, c.textDim, Modifier.size(14.dp))
+                        val loadLabel = stringResource(Res.string.map_on_board)
+                        Text(Numbers.grouped(onBoard), color = c.textDim, style = KitType.Dim,
+                            modifier = Modifier.semantics { contentDescription = "$loadLabel: ${Numbers.grouped(onBoard)}" })
+                    }
+                    Spacer(Modifier.weight(1f))
+                    if (coverage) for ((colour, label) in listOf(c.bad to "0%", c.warn to "1-74%", c.good to "75-100%")) {
+                        Box(Modifier.size(7.dp).clip(RoundedCornerShape(4.dp)).background(colour))
+                        Text(label, color = c.textDim, style = KitType.Dim)
+                    }
+                }
+            }
+            SideBySide(wide, first = {
+                Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (!wide) layers()
+                    OverviewCanvas(current, traffic, view, viewport, options, filter,
+                        Modifier.widthIn(max = mapWidth).fillMaxWidth().aspectRatio(ratio),
+                        onIndustry = { selectedIndustry = it }, onClose = onClose)
+                    if (!wide) { trafficTiles(); controls() }
+                }
+            }, second = {
+                if (wide) Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) { layers(); trafficTiles(); controls() }
+            })
+        }
+    }
+    if (showHelp) MapControlsHelp { showHelp = false }
     current?.data?.industries?.firstOrNull { it.place.id == selectedIndustry }?.let { industry ->
         val info = industry.info
         val slot = if (filter < 0) OVERVIEW_ALL else filter

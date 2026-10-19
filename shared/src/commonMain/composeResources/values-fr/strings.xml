@@ -746,4 +746,6 @@
     <string name="map_go_to">Voir cette industrie</string>
     <string name="map_help">Glissez pour déplacer, pincez pour zoomer. Touchez une industrie pour ses détails ou ailleurs pour y aller.</string>
     <string name="map_coverage_help">Portée des bâtiments et visites aux industries dans les 90 derniers jours de travail.</string>
+    <string name="map_controls">Commandes de la carte</string>
+    <string name="map_controls_hint">Touchez une tuile pour l’activer ou la désactiver. Maintenez-la pour voir son nom.</string>
 </resources>
