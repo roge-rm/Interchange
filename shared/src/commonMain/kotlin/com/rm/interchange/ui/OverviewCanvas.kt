@@ -12,6 +12,7 @@ import androidx.compose.ui.geometry.*
 import androidx.compose.ui.graphics.*
 import androidx.compose.ui.graphics.drawscope.*
 import androidx.compose.ui.input.pointer.*
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.semantics.*
 import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.rememberTextMeasurer
@@ -34,7 +35,7 @@ internal fun OverviewCanvas(image: MapImage?, traffic: State<List<OverviewVehicl
     val latestIndustry by rememberUpdatedState(onIndustry)
     val latestClose by rememberUpdatedState(onClose)
     val shape = RoundedCornerShape(10.dp)
-    Canvas(modifier.clip(shape).background(c.page).border(1.dp, c.chromeEdge, shape)
+    Canvas(modifier.onSizeChanged { camera.resize(Size(it.width.toFloat(), it.height.toFloat()), view.mapWidth, view.mapHeight) }.clip(shape).background(c.page).border(1.dp, c.chromeEdge, shape)
         .semantics { contentDescription = title }
         .pointerInput(view, camera) {
             awaitEachGesture {
@@ -59,12 +60,12 @@ internal fun OverviewCanvas(image: MapImage?, traffic: State<List<OverviewVehicl
                     val at = camera.at(Offset(down.position.x / size.width, down.position.y / size.height))
                     val data = latestImage?.data
                     val industry = if (options.industries.value) data?.industries?.minByOrNull {
-                        val dx = (it.place.x / data.width - at.x) * size.width * camera.zoom
-                        val dy = (it.place.y / data.height - at.y) * size.height * camera.zoom
+                        val dx = (it.place.x / data.width - at.x) * size.width / camera.extent.width * camera.zoom
+                        val dy = (it.place.y / data.height - at.y) * size.height / camera.extent.height * camera.zoom
                         dx * dx + dy * dy
                     }?.takeIf {
-                        val dx = (it.place.x / data.width - at.x) * size.width * camera.zoom
-                        val dy = (it.place.y / data.height - at.y) * size.height * camera.zoom
+                        val dx = (it.place.x / data.width - at.x) * size.width / camera.extent.width * camera.zoom
+                        val dy = (it.place.y / data.height - at.y) * size.height / camera.extent.height * camera.zoom
                         dx * dx + dy * dy < 16.dp.toPx() * 16.dp.toPx()
                     } else null
                     if (industry != null) latestIndustry(industry.place.id) else {
@@ -77,9 +78,9 @@ internal fun OverviewCanvas(image: MapImage?, traffic: State<List<OverviewVehicl
         }) {
         val current = image ?: return@Canvas
         val data = current.data
-        val origin = Offset((0.5f - camera.x * camera.zoom) * size.width, (0.5f - camera.y * camera.zoom) * size.height)
-        val scale = size.width / data.width * camera.zoom
-        fun point(x: Float, y: Float) = origin + Offset(x / data.width * size.width * camera.zoom, y / data.height * size.height * camera.zoom)
+        val scale = maxOf(size.width / data.width, size.height / data.height) * camera.zoom
+        val origin = Offset(size.width / 2 - camera.x * data.width * scale, size.height / 2 - camera.y * data.height * scale)
+        fun point(x: Float, y: Float) = origin + Offset(x * scale, y * scale)
         fun tint(id: Int, fallback: Color) = if (options.companies.value && id >= 0) companyColour(id) else fallback
         fun visible(id: Int) = owner < 0 || id == owner
         val slot = if (owner < 0) OVERVIEW_ALL else owner
@@ -90,7 +91,7 @@ internal fun OverviewCanvas(image: MapImage?, traffic: State<List<OverviewVehicl
         }
         clipRect {
             drawImage(current.terrain, dstOffset = IntOffset(origin.x.toInt(), origin.y.toInt()),
-                dstSize = IntSize((size.width * camera.zoom).toInt(), (size.height * camera.zoom).toInt()))
+                dstSize = IntSize((data.width * scale).toInt(), (data.height * scale).toInt()))
             withTransform({ translate(origin.x, origin.y); scale(scale, scale, pivot = Offset.Zero) }) {
                 if (options.roads.value) for ((id, path) in current.roads) if (id < 0 || visible(id)) drawPath(path, tint(id, c.textDim), style = Stroke(1.dp.toPx() / scale))
                 if (options.rail.value) for ((id, path) in current.rail) if (visible(id)) drawPath(path, tint(id, c.accent), style = Stroke(1.5.dp.toPx() / scale))

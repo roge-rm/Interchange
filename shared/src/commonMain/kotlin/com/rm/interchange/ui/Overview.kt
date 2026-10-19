@@ -29,7 +29,7 @@ import org.jetbrains.compose.resources.stringResource
 import kotlin.coroutines.resume
 import kotlin.math.roundToInt
 
-/** A normalised camera, clamped to the map so zooming and panning leave no empty border. */
+/** A proportional camera for any canvas shape. Fit shows the whole world; normal zoom fills the canvas. */
 internal class OverviewCamera {
     var zoom by mutableFloatStateOf(1f)
         private set
@@ -37,14 +37,26 @@ internal class OverviewCamera {
         private set
     var y by mutableFloatStateOf(0.5f)
         private set
-    fun fit() { zoom = 1f; x = 0.5f; y = 0.5f }
-    fun at(p: Offset) = Offset(x + (p.x - 0.5f) / zoom, y + (p.y - 0.5f) / zoom)
+    var extent by mutableStateOf(Size(1f, 1f))
+        private set
+    val minZoom get() = minOf(extent.width, extent.height)
+    fun resize(canvas: Size, worldWidth: Int, worldHeight: Int) {
+        val scale = maxOf(canvas.width / worldWidth, canvas.height / worldHeight)
+        if (scale <= 0f) return
+        extent = Size(canvas.width / (worldWidth * scale), canvas.height / (worldHeight * scale))
+        move(Offset.Zero)
+    }
+    fun fit() { zoom = minZoom; x = 0.5f; y = 0.5f }
+    fun at(p: Offset) = Offset(x + (p.x - 0.5f) * extent.width / zoom, y + (p.y - 0.5f) * extent.height / zoom)
     fun move(pan: Offset, factor: Float = 1f, anchor: Offset = Offset(0.5f, 0.5f)) {
         val before = at(anchor)
-        zoom = (zoom * factor).coerceIn(1f, 16f)
-        val half = 0.5f / zoom
-        x = (before.x - (anchor.x - 0.5f + pan.x) / zoom).coerceIn(half, 1f - half)
-        y = (before.y - (anchor.y - 0.5f + pan.y) / zoom).coerceIn(half, 1f - half)
+        zoom = (zoom * factor).coerceIn(minZoom, 16f)
+        fun bound(value: Float, span: Float): Float {
+            val half = span / (2 * zoom)
+            return if (half >= 0.5f) 0.5f else value.coerceIn(half, 1f - half)
+        }
+        x = bound(before.x - (anchor.x - 0.5f + pan.x) * extent.width / zoom, extent.width)
+        y = bound(before.y - (anchor.y - 0.5f + pan.y) * extent.height / zoom, extent.height)
     }
 }
 
@@ -68,7 +80,7 @@ private suspend fun <T> mapRead(runner: GameThread, read: (World) -> T): T = sus
     runner.onGameThread { game -> if (continuation.isActive) continuation.resume(read(game.world)) }
 }
 
-/** A north-up map with independently scrolling Kit controls. */
+/** A north-up map with compact controls around a canvas that fills the window. */
 @Composable
 internal fun OverviewWindow(runner: GameThread, view: View, viewport: Size, options: OverviewOptions, onClose: () -> Unit) {
     val c = LocalColors.current
@@ -102,10 +114,7 @@ internal fun OverviewWindow(runner: GameThread, view: View, viewport: Size, opti
         }
     }
     val screen = LocalWindowInfo.current.containerSize
-    val height = with(LocalDensity.current) { screen.height.toDp() }
     val wide = screen.width > screen.height
-    val ratio = view.mapWidth.toFloat() / view.mapHeight
-    val mapWidth = (if (wide) (height - 132.dp).coerceAtLeast(100.dp) else (height - 370.dp).coerceAtLeast(100.dp)) * ratio
     val current = image
     val companyIds = listOf(-1) + current?.data?.companies.orEmpty().map { it.first }
     val filter = owner.takeIf { it in companyIds } ?: -1
@@ -117,11 +126,11 @@ internal fun OverviewWindow(runner: GameThread, view: View, viewport: Size, opti
         me -> stringResource(Res.string.your_company)
         else -> current?.data?.companies?.firstOrNull { it.first == filter }?.second.orEmpty()
     }
-    Window(stringResource(Res.string.overview_map), onClose, Glyph.Map, maxWidth = 920.dp, scrollable = false) {
+    Window(stringResource(Res.string.overview_map), onClose, Glyph.Map, maxWidth = with(LocalDensity.current) { screen.width.toDp() }, scrollable = false) {
         BoxWithConstraints {
-            val tile = ((if (wide) maxWidth / 2 else maxWidth) - 30.dp).div(6).coerceIn(36.dp, 46.dp)
+            val tile = 34.dp
             val layers: @Composable () -> Unit = {
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                MapTileGroup(wide) {
                     MapTile(Glyph.Rail, stringResource(Res.string.map_rail), rail, tile) { rail = !rail }
                     MapTile(Glyph.Road, stringResource(Res.string.map_roads), roads, tile) { roads = !roads }
                     MapTile(Glyph.Station, stringResource(Res.string.map_stations), stations, tile) { stations = !stations }
@@ -131,7 +140,7 @@ internal fun OverviewWindow(runner: GameThread, view: View, viewport: Size, opti
                 }
             }
             val trafficTiles: @Composable () -> Unit = {
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                MapTileGroup(wide) {
                     val labels = listOf(Res.string.map_trains, Res.string.map_road_vehicles, Res.string.map_ships, Res.string.map_aircraft)
                     val glyphs = listOf(Glyph.Train, Glyph.Bus, Glyph.Ship, Glyph.Air)
                     for (mode in 0..3) MapTile(glyphs[mode], stringResource(labels[mode]), modes and (1 shl mode) != 0, tile) { modes = modes xor (1 shl mode) }
@@ -139,48 +148,68 @@ internal fun OverviewWindow(runner: GameThread, view: View, viewport: Size, opti
                     MapTile(Glyph.People, stringResource(Res.string.map_coverage), coverage, tile) { coverage = !coverage }
                 }
             }
-            val controls: @Composable () -> Unit = {
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    MapChoice(companyLabel, stringResource(Res.string.company), Glyph.Flag, Modifier.weight(1f), companyIds,
-                        { id -> if (id < 0) stringResource(Res.string.map_everyone) else if (id == me) stringResource(Res.string.your_company)
-                            else current?.data?.companies?.firstOrNull { it.first == id }?.second.orEmpty() }, filter, colour = { if (it >= 0) companyColour(it) else null }) { owner = it }
-                    MapChoice(if (cargo < 0) stringResource(Res.string.map_all_cargo) else cargoNames[cargo], stringResource(Res.string.map_cargo), Glyph.Package,
-                        Modifier.weight(1f), listOf(-1) + (0 until Cargo.COUNT),
-                        { if (it < 0) stringResource(Res.string.map_all_cargo) else cargoNames[it] }, cargo) { cargo = it }
-                }
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                    MapTile(Glyph.Minus, stringResource(Res.string.map_zoom_out), false, tile, options.camera.zoom > 1f) { options.camera.move(Offset.Zero, 0.5f) }
-                    Text("${options.camera.zoom.roundToInt()}×", color = c.textDim, style = KitType.Value)
-                    MapTile(Glyph.Plus, stringResource(Res.string.map_zoom_in), false, tile, options.camera.zoom < 16f) { options.camera.move(Offset.Zero, 2f) }
-                    MapTile(Glyph.Map, stringResource(Res.string.map_fit), false, tile) { options.camera.fit() }
-                    MapTile(Glyph.Info, stringResource(Res.string.map_controls), false, tile) { showHelp = true }
-                }
-                Row(Modifier.fillMaxWidth().height(24.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    if (flow) {
-                        val onBoard = current?.data?.info?.flows.orEmpty().filter { (filter < 0 || it.owner == filter) && (cargo < 0 || it.cargo == cargo) }.sumOf { it.count }
-                        GlyphIcon(Glyph.Package, c.textDim, Modifier.size(14.dp))
-                        val loadLabel = stringResource(Res.string.map_on_board)
-                        Text(Numbers.grouped(onBoard), color = c.textDim, style = KitType.Dim,
-                            modifier = Modifier.semantics { contentDescription = "$loadLabel: ${Numbers.grouped(onBoard)}" })
-                    }
-                    Spacer(Modifier.weight(1f))
-                    if (coverage) for ((colour, label) in listOf(c.bad to "0%", c.warn to "1-74%", c.good to "75-100%")) {
-                        Box(Modifier.size(7.dp).clip(RoundedCornerShape(4.dp)).background(colour))
-                        Text(label, color = c.textDim, style = KitType.Dim)
+            val companyPicker: @Composable (Modifier) -> Unit = { modifier ->
+                MapChoice(companyLabel, stringResource(Res.string.company), Glyph.Flag, modifier, companyIds,
+                    { id -> if (id < 0) stringResource(Res.string.map_everyone) else if (id == me) stringResource(Res.string.your_company)
+                        else current?.data?.companies?.firstOrNull { it.first == id }?.second.orEmpty() }, filter, colour = { if (it >= 0) companyColour(it) else null }) { owner = it }
+            }
+            val cargoPicker: @Composable (Modifier) -> Unit = { modifier ->
+                MapChoice(if (cargo < 0) stringResource(Res.string.map_all_cargo) else cargoNames[cargo], stringResource(Res.string.map_cargo), Glyph.Package,
+                    modifier, listOf(-1) + (0 until Cargo.COUNT),
+                    { if (it < 0) stringResource(Res.string.map_all_cargo) else cargoNames[it] }, cargo) { cargo = it }
+            }
+            val navigation: @Composable () -> Unit = {
+                MapTile(Glyph.Minus, stringResource(Res.string.map_zoom_out), false, tile, options.camera.zoom > options.camera.minZoom) { options.camera.move(Offset.Zero, 0.5f) }
+                Text("${(options.camera.zoom * 100).roundToInt()}%", color = c.textDim, style = KitType.Value)
+                MapTile(Glyph.Plus, stringResource(Res.string.map_zoom_in), false, tile, options.camera.zoom < 16f) { options.camera.move(Offset.Zero, 2f) }
+                MapTile(Glyph.Map, stringResource(Res.string.map_fit), false, tile) { options.camera.fit() }
+                MapTile(Glyph.Info, stringResource(Res.string.map_controls), false, tile) { showHelp = true }
+            }
+            val map: @Composable (Modifier) -> Unit = { modifier ->
+                Box(modifier) {
+                    OverviewCanvas(current, traffic, view, viewport, options, filter, Modifier.fillMaxSize(),
+                        onIndustry = { selectedIndustry = it }, onClose = onClose)
+                    if (flow || coverage) Row(Modifier.align(Alignment.BottomCenter).padding(8.dp).fillMaxWidth()
+                        .clip(RoundedCornerShape(6.dp)).background(c.chrome.copy(alpha = 0.92f)).padding(horizontal = 8.dp, vertical = 4.dp),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                        if (flow) {
+                            val onBoard = current?.data?.info?.flows.orEmpty().filter { (filter < 0 || it.owner == filter) && (cargo < 0 || it.cargo == cargo) }.sumOf { it.count }
+                            GlyphIcon(Glyph.Package, c.textDim, Modifier.size(14.dp))
+                            val loadLabel = stringResource(Res.string.map_on_board)
+                            Text(Numbers.grouped(onBoard), color = c.textDim, style = KitType.Dim,
+                                modifier = Modifier.semantics { contentDescription = "$loadLabel: ${Numbers.grouped(onBoard)}" })
+                        }
+                        Spacer(Modifier.weight(1f))
+                        if (coverage) for ((colour, label) in listOf(c.bad to "0%", c.warn to "1-74%", c.good to "75-100%")) {
+                            Box(Modifier.size(6.dp).clip(RoundedCornerShape(3.dp)).background(colour))
+                            Text(label, color = c.textDim, style = KitType.Dim, maxLines = 1)
+                        }
                     }
                 }
             }
-            SideBySide(wide, first = {
-                Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    if (!wide) layers()
-                    OverviewCanvas(current, traffic, view, viewport, options, filter,
-                        Modifier.widthIn(max = mapWidth).fillMaxWidth().aspectRatio(ratio),
-                        onIndustry = { selectedIndustry = it }, onClose = onClose)
-                    if (!wide) { trafficTiles(); controls() }
+            Column(Modifier.fillMaxWidth().height(maxHeight), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                if (wide) {
+                    Row(Modifier.fillMaxWidth().weight(1f), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Box(Modifier.width(tile).fillMaxHeight()) { layers() }
+                        map(Modifier.weight(1f).fillMaxHeight())
+                        Box(Modifier.width(tile).fillMaxHeight()) { trafficTiles() }
+                    }
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        companyPicker(Modifier.weight(1f))
+                        cargoPicker(Modifier.weight(1f))
+                        navigation()
+                    }
+                } else {
+                    layers()
+                    map(Modifier.fillMaxWidth().weight(1f))
+                    trafficTiles()
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        companyPicker(Modifier.weight(1f))
+                        cargoPicker(Modifier.weight(1f))
+                    }
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) { navigation() }
                 }
-            }, second = {
-                if (wide) Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) { layers(); trafficTiles(); controls() }
-            })
+            }
         }
     }
     if (showHelp) MapControlsHelp { showHelp = false }

@@ -23,7 +23,12 @@ import org.jetbrains.compose.resources.stringResource
 internal fun MapTile(glyph: Glyph, label: String, selected: Boolean, side: Dp, enabled: Boolean = true, onClick: () -> Unit) {
     TooltipBox(positionProvider = TooltipDefaults.rememberTooltipPositionProvider(),
         tooltip = { PlainTooltip { Text(label) } }, state = rememberTooltipState()) {
-        SquareButton(glyph, label, side, selected, enabled, onClick)
+        val c = LocalColors.current
+        Box(Modifier.size(side).clip(RoundedCornerShape(9.dp)).background(if (selected) c.accent else c.button)
+            .semantics { contentDescription = label; this.selected = selected }
+            .clickable(enabled = enabled, role = Role.Button, onClick = onClick), contentAlignment = Alignment.Center) {
+            GlyphIcon(glyph, if (selected) c.onAccent else if (enabled) c.text else c.textDim.copy(alpha = 0.4f), Modifier.size(20.dp))
+        }
     }
 }
 
@@ -70,4 +75,12 @@ internal fun MapControlsHelp(onClose: () -> Unit) {
         Text(stringResource(Res.string.map_coverage_help), color = c.textDim, style = KitType.Dim)
         Text(stringResource(Res.string.map_on_board), color = c.textDim, style = KitType.Dim)
     }
+}
+
+/** Narrow rails beside a wide map, or compact rows above and below a tall map. */
+@Composable
+internal fun MapTileGroup(sidebar: Boolean, content: @Composable () -> Unit) {
+    if (sidebar) Column(Modifier.fillMaxHeight(), verticalArrangement = Arrangement.SpaceBetween,
+        horizontalAlignment = Alignment.CenterHorizontally) { content() }
+    else Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) { content() }
 }
