@@ -77,10 +77,11 @@ internal fun MapControlsHelp(onClose: () -> Unit) {
     }
 }
 
-/** Narrow rails beside a wide map, or compact rows above and below a tall map. */
+/** Compact banks beside a square map, or rows above and below it. */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 internal fun MapTileGroup(sidebar: Boolean, content: @Composable () -> Unit) {
-    if (sidebar) Column(Modifier.fillMaxHeight(), verticalArrangement = Arrangement.SpaceBetween,
-        horizontalAlignment = Alignment.CenterHorizontally) { content() }
-    else Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) { content() }
+    FlowRow(Modifier.fillMaxWidth(), maxItemsInEachRow = if (sidebar) 2 else 6,
+        horizontalArrangement = if (sidebar) Arrangement.spacedBy(10.dp, Alignment.CenterHorizontally) else Arrangement.SpaceBetween,
+        verticalArrangement = Arrangement.spacedBy(10.dp)) { content() }
 }

@@ -80,7 +80,7 @@ private suspend fun <T> mapRead(runner: GameThread, read: (World) -> T): T = sus
     runner.onGameThread { game -> if (continuation.isActive) continuation.resume(read(game.world)) }
 }
 
-/** A north-up map with compact controls around a canvas that fills the window. */
+/** A square north-up map with compact controls in either orientation. */
 @Composable
 internal fun OverviewWindow(runner: GameThread, view: View, viewport: Size, options: OverviewOptions, onClose: () -> Unit) {
     val c = LocalColors.current
@@ -126,7 +126,8 @@ internal fun OverviewWindow(runner: GameThread, view: View, viewport: Size, opti
         me -> stringResource(Res.string.your_company)
         else -> current?.data?.companies?.firstOrNull { it.first == filter }?.second.orEmpty()
     }
-    Window(stringResource(Res.string.overview_map), onClose, Glyph.Map, maxWidth = with(LocalDensity.current) { screen.width.toDp() }, scrollable = false) {
+    val windowWidth = with(LocalDensity.current) { if (wide) minOf(screen.width.toDp(), screen.height.toDp() + 100.dp) else 480.dp }
+    Window(stringResource(Res.string.overview_map), onClose, Glyph.Map, maxWidth = windowWidth, scrollable = false) {
         BoxWithConstraints {
             val tile = 34.dp
             val layers: @Composable () -> Unit = {
@@ -169,39 +170,56 @@ internal fun OverviewWindow(runner: GameThread, view: View, viewport: Size, opti
                 Box(modifier) {
                     OverviewCanvas(current, traffic, view, viewport, options, filter, Modifier.fillMaxSize(),
                         onIndustry = { selectedIndustry = it }, onClose = onClose)
-                    if (flow || coverage) Row(Modifier.align(Alignment.BottomCenter).padding(8.dp).fillMaxWidth()
-                        .clip(RoundedCornerShape(6.dp)).background(c.chrome.copy(alpha = 0.92f)).padding(horizontal = 8.dp, vertical = 4.dp),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-                        if (flow) {
-                            val onBoard = current?.data?.info?.flows.orEmpty().filter { (filter < 0 || it.owner == filter) && (cargo < 0 || it.cargo == cargo) }.sumOf { it.count }
+                    if (flow) {
+                        val onBoard = current?.data?.info?.flows.orEmpty().filter { (filter < 0 || it.owner == filter) && (cargo < 0 || it.cargo == cargo) }.sumOf { it.count }
+                        val loadLabel = stringResource(Res.string.map_on_board)
+                        Row(Modifier.align(Alignment.TopStart).padding(6.dp).clip(RoundedCornerShape(6.dp))
+                            .background(c.chrome.copy(alpha = 0.92f)).padding(6.dp),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
                             GlyphIcon(Glyph.Package, c.textDim, Modifier.size(14.dp))
-                            val loadLabel = stringResource(Res.string.map_on_board)
                             Text(Numbers.grouped(onBoard), color = c.textDim, style = KitType.Dim,
                                 modifier = Modifier.semantics { contentDescription = "$loadLabel: ${Numbers.grouped(onBoard)}" })
                         }
-                        Spacer(Modifier.weight(1f))
-                        if (coverage) for ((colour, label) in listOf(c.bad to "0%", c.warn to "1-74%", c.good to "75-100%")) {
+                    }
+                    if (coverage) Row(Modifier.align(Alignment.BottomCenter).padding(6.dp).clip(RoundedCornerShape(6.dp))
+                        .background(c.chrome.copy(alpha = 0.92f)).padding(6.dp),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
+                        for ((colour, label) in listOf(c.bad to "0%", c.warn to "1-74%", c.good to "75%+")) {
                             Box(Modifier.size(6.dp).clip(RoundedCornerShape(3.dp)).background(colour))
                             Text(label, color = c.textDim, style = KitType.Dim, maxLines = 1)
                         }
                     }
                 }
             }
-            Column(Modifier.fillMaxWidth().height(maxHeight), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            val mapSide = if (wide) minOf(maxHeight - 48.dp, maxWidth - 216.dp) else minOf(maxWidth, maxHeight - 168.dp)
+            Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 if (wide) {
-                    Row(Modifier.fillMaxWidth().weight(1f), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Box(Modifier.width(tile).fillMaxHeight()) { layers() }
-                        map(Modifier.weight(1f).fillMaxHeight())
-                        Box(Modifier.width(tile).fillMaxHeight()) { trafficTiles() }
+                    Row(Modifier.fillMaxWidth().height(mapSide), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
+                        verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.width(100.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            layers()
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                                MapTile(Glyph.Minus, stringResource(Res.string.map_zoom_out), false, tile, options.camera.zoom > options.camera.minZoom) { options.camera.move(Offset.Zero, 0.5f) }
+                                Text("${(options.camera.zoom * 100).roundToInt()}%", color = c.textDim, style = KitType.Dim, modifier = Modifier.weight(1f), maxLines = 1)
+                                MapTile(Glyph.Plus, stringResource(Res.string.map_zoom_in), false, tile, options.camera.zoom < 16f) { options.camera.move(Offset.Zero, 2f) }
+                            }
+                        }
+                        map(Modifier.size(mapSide))
+                        Column(Modifier.width(100.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            trafficTiles()
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+                                MapTile(Glyph.Map, stringResource(Res.string.map_fit), false, tile) { options.camera.fit() }
+                                MapTile(Glyph.Info, stringResource(Res.string.map_controls), false, tile) { showHelp = true }
+                            }
+                        }
                     }
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         companyPicker(Modifier.weight(1f))
                         cargoPicker(Modifier.weight(1f))
-                        navigation()
                     }
                 } else {
                     layers()
-                    map(Modifier.fillMaxWidth().weight(1f))
+                    map(Modifier.size(mapSide).align(Alignment.CenterHorizontally))
                     trafficTiles()
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         companyPicker(Modifier.weight(1f))
