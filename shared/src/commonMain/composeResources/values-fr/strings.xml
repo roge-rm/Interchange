@@ -723,4 +723,27 @@
         <item quantity="one">Rouverte dans %1$d jour</item>
         <item quantity="other">Rouverte dans %1$d jours</item>
     </plurals>
+    <string name="map_zoom_out">Zoom arrière</string>
+    <string name="map_zoom_in">Zoom avant</string>
+    <string name="map_fit">Carte entière</string>
+    <string name="map_everyone">Toutes les compagnies</string>
+    <string name="map_vehicles">Véhicules</string>
+    <string name="map_trains">Trains</string>
+    <string name="map_road_vehicles">Véhicules routiers</string>
+    <string name="map_ships">Navires</string>
+    <string name="map_aircraft">Avions</string>
+    <string name="map_planning">Planification</string>
+    <string name="map_cargo_flow">Flux de marchandises</string>
+    <string name="map_cargo">Marchandises</string>
+    <string name="map_all_cargo">Toutes les marchandises</string>
+    <string name="map_on_board">Marchandises à bord</string>
+    <string name="map_coverage">Couverture du service</string>
+    <string name="map_unserved">Non desservi</string>
+    <string name="map_partial">Partiellement desservi</string>
+    <string name="map_served">Bien desservi</string>
+    <string name="map_input_stock">Intrants en stock</string>
+    <string name="map_nearby_waiting">En attente aux gares proches</string>
+    <string name="map_go_to">Voir cette industrie</string>
+    <string name="map_help">Glissez pour déplacer, pincez pour zoomer. Touchez une industrie pour ses détails ou ailleurs pour y aller.</string>
+    <string name="map_coverage_help">Portée des bâtiments et visites aux industries dans les 90 derniers jours de travail.</string>
 </resources>

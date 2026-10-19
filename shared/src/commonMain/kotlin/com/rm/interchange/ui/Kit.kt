@@ -115,7 +115,7 @@ private fun breaksWord(text: String, end: Int) =
  * camera cutout and the bars, and scrolls if the screen is short.
  */
 @Composable
-fun Window(title: String, onClose: () -> Unit, glyph: Glyph? = null, maxWidth: Dp = 480.dp, content: @Composable () -> Unit) {
+fun Window(title: String, onClose: () -> Unit, glyph: Glyph? = null, maxWidth: Dp = 480.dp, scrollable: Boolean = true, content: @Composable () -> Unit) {
     val c = LocalColors.current
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         Box(
@@ -147,7 +147,7 @@ fun Window(title: String, onClose: () -> Unit, glyph: Glyph? = null, maxWidth: D
                     )
                     SquareButton(Glyph.Remove, stringResource(Res.string.close), 34.dp, onClick = onClose)
                 }
-                Column(Modifier.padding(top = 14.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) { content() }
+                Column(Modifier.padding(top = 14.dp).then(if (scrollable) Modifier.verticalScroll(rememberScrollState()) else Modifier), verticalArrangement = Arrangement.spacedBy(10.dp)) { content() }
             }
         }
     }

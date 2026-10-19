@@ -740,4 +740,27 @@
         <item quantity="one">Open in %1$d day</item>
         <item quantity="other">Open in %1$d days</item>
     </plurals>
+    <string name="map_zoom_out">Zoom out</string>
+    <string name="map_zoom_in">Zoom in</string>
+    <string name="map_fit">Fit map</string>
+    <string name="map_everyone">All companies</string>
+    <string name="map_vehicles">Vehicles</string>
+    <string name="map_trains">Trains</string>
+    <string name="map_road_vehicles">Road vehicles</string>
+    <string name="map_ships">Ships</string>
+    <string name="map_aircraft">Aircraft</string>
+    <string name="map_planning">Planning</string>
+    <string name="map_cargo_flow">Cargo flow</string>
+    <string name="map_cargo">Cargo</string>
+    <string name="map_all_cargo">All cargo</string>
+    <string name="map_on_board">Cargo on board</string>
+    <string name="map_coverage">Service coverage</string>
+    <string name="map_unserved">Unserved</string>
+    <string name="map_partial">Partly served</string>
+    <string name="map_served">Well served</string>
+    <string name="map_input_stock">Inputs in stock</string>
+    <string name="map_nearby_waiting">Waiting at nearby stations</string>
+    <string name="map_go_to">Go to industry</string>
+    <string name="map_help">Drag to pan, pinch to zoom. Tap an industry for details or elsewhere to go there.</string>
+    <string name="map_coverage_help">Building reach and industry calls in the last 90 work days.</string>
 </resources>

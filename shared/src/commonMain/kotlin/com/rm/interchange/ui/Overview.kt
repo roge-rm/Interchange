@@ -1,237 +1,143 @@
 package com.rm.interchange.ui
 
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.aspectRatio
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.ImageBitmap
-import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.graphics.drawscope.clipRect
-import androidx.compose.ui.graphics.drawscope.withTransform
-import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.drawText
-import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import com.rm.interchange.map.View
 import com.rm.interchange.map.companyColour
-import com.rm.interchange.map.imageBitmapOf
-import com.rm.interchange.map.terrainColour
 import com.rm.interchange.res.*
 import com.rm.interchange.server.GameThread
-import com.rm.interchange.sim.Track
-import com.rm.interchange.sim.Trees
-import com.rm.interchange.sim.World
-import com.rm.interchange.sim.roadBit
+import com.rm.interchange.sim.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
+import org.jetbrains.compose.resources.stringArrayResource
 import org.jetbrains.compose.resources.stringResource
 import kotlin.coroutines.resume
+import kotlin.math.roundToInt
 
-private data class MapPlace(val x: Float, val y: Float, val owner: Int = -1, val name: String = "", val population: Int = 0)
-private data class MapSpan(val x: Int, val y: Int, val ex: Int, val ey: Int, val owner: Int)
-
-/** Arrays and positions copied between ticks; rasterising and making paths run off the game thread. */
-private class MapSnapshot(w: World) {
-    val width = w.width
-    val height = w.height
-    val corners = w.corners.copyOf()
-    val ground = w.ground.copyOf()
-    val trees = w.trees.copyOf()
-    val rail = w.track.copyOf()
-    val roads = w.road.copyOf()
-    val owner = w.owner.copyOf()
-    val roadOwner = w.roadOwner.copyOf()
-    val canals = w.canals.toHashSet()
-    val spans = w.spans.filterNotNull().map { MapSpan(it.x0, it.y0, it.x1, it.y1, it.owner) }
-    val towns = w.towns.map { MapPlace(it.x + 0.5f, it.y + 0.5f, name = it.name, population = it.population) }.sortedByDescending { it.population }
-    val stations = w.stations.filterNotNull().map { MapPlace(it.signX + 0.5f, it.signY + 0.5f, it.owner) }
-    val industries = w.industries.filter { it.level > 0 }.map { MapPlace(it.x + 1f, it.y + 1f) }
-    val companies = w.companies.filter { !it.gone }.map { it.id to it.name }
-}
-
-private class MapImage(val data: MapSnapshot) {
-    val terrain: ImageBitmap
-    val rail = linkedMapOf<Int, Path>()
-    val roads = linkedMapOf<Int, Path>()
-    init {
-        val w = data.width
-        val pixels = IntArray(w * data.height)
-        for (i in pixels.indices) {
-            val corner = i / w * (w + 1) + i % w
-            pixels[i] = if (i in data.canals) terrainColour(0, 0, 0, 0, 0, 0) else terrainColour(
-                data.corners[corner].toInt(), data.corners[corner + 1].toInt(),
-                data.corners[corner + w + 2].toInt(), data.corners[corner + w + 1].toInt(),
-                data.ground[i].toInt(), Trees.count(data.trees[i].toInt()),
-            )
-            val x = i % w + 0.5f
-            val y = i / w + 0.5f
-            for (p in Track.PIECES) if (data.rail[i].toInt() and p != 0) {
-                val edges = Track.edges(p)
-                val a = edges and 3
-                val b = edges shr 2
-                rail.getOrPut(data.owner[i].toInt()) { Path() }.apply {
-                    moveTo(x + Track.dx(a) * 0.5f, y + Track.dy(a) * 0.5f)
-                    lineTo(x + Track.dx(b) * 0.5f, y + Track.dy(b) * 0.5f)
-                }
-            }
-            for (e in 0 until 4) if (data.roads[i].toInt() and roadBit(e) != 0) {
-                roads.getOrPut(data.roadOwner[i].toInt()) { Path() }.apply {
-                    moveTo(x, y)
-                    lineTo(x + Track.dx(e) * 0.5f, y + Track.dy(e) * 0.5f)
-                }
-            }
-        }
-        for (s in data.spans) rail.getOrPut(s.owner) { Path() }.apply {
-            moveTo(s.x + 0.5f, s.y + 0.5f)
-            lineTo(s.ex + 0.5f, s.ey + 0.5f)
-        }
-        terrain = imageBitmapOf(pixels, data.width, data.height)
+/** A normalised camera, clamped to the map so zooming and panning leave no empty border. */
+internal class OverviewCamera {
+    var zoom by mutableFloatStateOf(1f)
+        private set
+    var x by mutableFloatStateOf(0.5f)
+        private set
+    var y by mutableFloatStateOf(0.5f)
+        private set
+    fun fit() { zoom = 1f; x = 0.5f; y = 0.5f }
+    fun at(p: Offset) = Offset(x + (p.x - 0.5f) / zoom, y + (p.y - 0.5f) / zoom)
+    fun move(pan: Offset, factor: Float = 1f, anchor: Offset = Offset(0.5f, 0.5f)) {
+        val before = at(anchor)
+        zoom = (zoom * factor).coerceIn(1f, 16f)
+        val half = 0.5f / zoom
+        x = (before.x - (anchor.x - 0.5f + pan.x) / zoom).coerceIn(half, 1f - half)
+        y = (before.y - (anchor.y - 0.5f + pan.y) / zoom).coerceIn(half, 1f - half)
     }
 }
 
-/** Filters kept while this game screen is open, including between visits to the map. */
+/** Filters and camera kept between visits while this game screen is open. */
 internal class OverviewOptions {
+    val camera = OverviewCamera()
     val rail = mutableStateOf(true)
     val roads = mutableStateOf(true)
     val stations = mutableStateOf(true)
     val industries = mutableStateOf(true)
     val names = mutableStateOf(false)
     val companies = mutableStateOf(true)
+    val vehicleModes = mutableIntStateOf(15)
+    val owner = mutableIntStateOf(-1)
+    val flows = mutableStateOf(false)
+    val cargo = mutableIntStateOf(-1)
+    val coverage = mutableStateOf(false)
 }
 
-/** A north-up map in the same window and controls as the game's lists and settings. */
+private suspend fun <T> mapRead(runner: GameThread, read: (World) -> T): T = suspendCancellableCoroutine { continuation ->
+    runner.onGameThread { game -> if (continuation.isActive) continuation.resume(read(game.world)) }
+}
+
+/** A north-up map with independently scrolling Kit controls. */
 @Composable
 internal fun OverviewWindow(runner: GameThread, view: View, viewport: Size, options: OverviewOptions, onClose: () -> Unit) {
     val c = LocalColors.current
     var image by remember(runner) { mutableStateOf<MapImage?>(null) }
+    val traffic = remember(runner) { mutableStateOf<List<OverviewVehicle>>(emptyList()) }
+    var selectedIndustry by remember { mutableIntStateOf(-1) }
     var rail by options.rail
     var roads by options.roads
     var stations by options.stations
     var industries by options.industries
     var names by options.names
     var companies by options.companies
+    var modes by options.vehicleModes
+    var owner by options.owner
+    var flow by options.flows
+    var cargo by options.cargo
+    var coverage by options.coverage
     LaunchedEffect(runner) {
         while (true) {
-            val snapshot = suspendCancellableCoroutine<MapSnapshot> { continuation ->
-                runner.onGameThread { game ->
-                    if (continuation.isActive) continuation.resume(MapSnapshot(game.world))
-                }
-            }
+            val snapshot = mapRead(runner) { MapSnapshot(it) }
             image = withContext(Dispatchers.Default) { MapImage(snapshot) }
             delay(2_000)
         }
     }
-    val title = stringResource(Res.string.overview_map)
-    val measurer = rememberTextMeasurer()
+    LaunchedEffect(runner, modes) {
+        traffic.value = emptyList()
+        while (modes != 0) {
+            traffic.value = mapRead(runner) { it.overviewVehicles() }
+            delay(100)
+        }
+    }
     val screen = LocalWindowInfo.current.containerSize
-    val density = LocalDensity.current
+    val height = with(LocalDensity.current) { screen.height.toDp() }
     val wide = screen.width > screen.height
     val ratio = view.mapWidth.toFloat() / view.mapHeight
-    val mapWidth = with(density) { screen.height.toDp() }.let { if (wide) (it - 128.dp).coerceAtLeast(120.dp) else it * 0.55f } * ratio
-    Window(title, onClose, Glyph.Map, maxWidth = 720.dp) {
-        val current = image
-        val shape = RoundedCornerShape(10.dp)
+    val mapWidth = (if (wide) (height - 230.dp).coerceAtLeast(120.dp) else height * 0.38f) * ratio
+    val controlsHeight = if (wide) (height - 128.dp).coerceAtLeast(120.dp) else (height * 0.28f).coerceIn(140.dp, 300.dp)
+    val current = image
+    val companyIds = listOf(-1) + current?.data?.companies.orEmpty().map { it.first }
+    val filter = owner.takeIf { it in companyIds } ?: -1
+    val cargoNames = stringArrayResource(Res.array.cargoes)
+    val lang = languageCode()
+    val me = LocalCompany.current
+    Window(stringResource(Res.string.overview_map), onClose, Glyph.Map, maxWidth = 720.dp, scrollable = false) {
         SideBySide(wide, first = {
-            Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                Canvas(
-                    Modifier.widthIn(max = mapWidth).fillMaxWidth().aspectRatio(ratio).clip(shape).background(c.page).border(1.dp, c.chromeEdge, shape)
-                        .semantics { contentDescription = title }
-                        .pointerInput(view, onClose) {
-                            detectTapGestures { at ->
-                                view.focusX = (at.x / size.width * view.mapWidth).coerceIn(0f, view.mapWidth.toFloat())
-                                view.focusY = (at.y / size.height * view.mapHeight).coerceIn(0f, view.mapHeight.toFloat())
-                                onClose()
-                            }
-                        },
-                ) {
-                    if (current == null) return@Canvas
-                    val data = current.data
-                    fun point(x: Float, y: Float) = Offset(x / data.width * size.width, y / data.height * size.height)
-                    fun tint(owner: Int, fallback: Color) = if (companies && owner >= 0) companyColour(owner) else fallback
-                    drawImage(current.terrain, dstSize = IntSize(size.width.toInt(), size.height.toInt()))
-                    clipRect {
-                        val scale = size.width / data.width
-                        withTransform({ scale(scale, scale, pivot = Offset.Zero) }) {
-                            if (roads) for ((owner, path) in current.roads) drawPath(path, tint(owner, c.textDim), style = Stroke(1.dp.toPx() / scale))
-                            if (rail) for ((owner, path) in current.rail) drawPath(path, tint(owner, c.accent), style = Stroke(1.5.dp.toPx() / scale))
-                        }
-                        if (industries) for (p in data.industries) {
-                            val at = point(p.x, p.y)
-                            drawRect(c.page, at - Offset(3.dp.toPx(), 3.dp.toPx()), Size(6.dp.toPx(), 6.dp.toPx()))
-                            drawRect(c.warn, at - Offset(2.dp.toPx(), 2.dp.toPx()), Size(4.dp.toPx(), 4.dp.toPx()))
-                        }
-                        if (stations) for (p in data.stations) {
-                            val at = point(p.x, p.y)
-                            drawCircle(c.page, 3.dp.toPx(), at)
-                            drawCircle(tint(p.owner, c.text), 2.dp.toPx(), at)
-                        }
-                        val occupied = ArrayList<Rect>()
-                        for (p in data.towns) {
-                            val at = point(p.x, p.y)
-                            drawCircle(c.page, 2.5.dp.toPx(), at)
-                            drawCircle(c.text, 1.5.dp.toPx(), at)
-                            if (names) {
-                                val text = measurer.measure(p.name, KitType.Dim.copy(color = c.text))
-                                val x = (at.x + 4.dp.toPx()).coerceIn(0f, (size.width - text.size.width).coerceAtLeast(0f))
-                                val y = (at.y - text.size.height / 2).coerceIn(0f, (size.height - text.size.height).coerceAtLeast(0f))
-                                val rect = Rect(Offset(x, y), Size(text.size.width.toFloat(), text.size.height.toFloat()))
-                                if (occupied.none { it.overlaps(rect) }) {
-                                    drawRect(c.chrome, rect.topLeft, rect.size)
-                                    drawText(text, topLeft = rect.topLeft)
-                                    occupied += rect.inflate(2.dp.toPx())
-                                }
-                            }
-                        }
-                        // Project the game screen's four corners back onto the ground plane, including camera rotation.
-                        val outline = Path()
-                        for ((i, corner) in listOf(Offset.Zero, Offset(viewport.width, 0f), Offset(viewport.width, viewport.height), Offset(0f, viewport.height)).withIndex()) {
-                            val dx = (corner.x - viewport.width / 2) / view.halfWidth
-                            val dy = (corner.y - viewport.height / 2) / view.halfHeight
-                            val vx = view.focusViewX() + (dx + dy) / 2
-                            val vy = view.focusViewY() + (dy - dx) / 2
-                            val at = point(view.toWorldX(vx, vy), view.toWorldY(vx, vy))
-                            if (i == 0) outline.moveTo(at.x, at.y) else outline.lineTo(at.x, at.y)
-                        }
-                        outline.close()
-                        drawPath(outline, c.page, style = Stroke(4.dp.toPx()))
-                        drawPath(outline, c.accent, style = Stroke(2.dp.toPx()))
-                    }
+            Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OverviewCanvas(current, traffic, view, viewport, options, filter,
+                    Modifier.widthIn(max = mapWidth).fillMaxWidth().aspectRatio(ratio),
+                    onIndustry = { selectedIndustry = it }, onClose = onClose)
+                Text(stringResource(Res.string.map_help), color = c.textDim, style = KitType.Dim)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    SquareButton(Glyph.Minus, stringResource(Res.string.map_zoom_out), 32.dp, enabled = options.camera.zoom > 1f) { options.camera.move(Offset.Zero, 0.5f) }
+                    Text("${options.camera.zoom.roundToInt()}×", color = c.textDim, style = KitType.Value)
+                    SquareButton(Glyph.Plus, stringResource(Res.string.map_zoom_in), 32.dp, enabled = options.camera.zoom < 16f) { options.camera.move(Offset.Zero, 2f) }
+                    TogglePill(stringResource(Res.string.map_fit), false) { options.camera.fit() }
                 }
             }
         }, second = {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Column(Modifier.fillMaxWidth().heightIn(max = controlsHeight).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                StepSlider(stringResource(Res.string.company), companyIds, filter, { id ->
+                    when (id) {
+                        -1 -> stringResource(Res.string.map_everyone)
+                        me -> stringResource(Res.string.your_company)
+                        else -> current?.data?.companies?.firstOrNull { it.first == id }?.second.orEmpty()
+                    }
+                }) { owner = it }
+                Head(stringResource(Res.string.overlays), Glyph.Layers)
                 Grid(listOf(0, 1, 2, 3, 4, 5)) { option ->
                     when (option) {
                         0 -> TogglePill(stringResource(Res.string.map_rail), rail, Modifier.fillMaxWidth()) { rail = it }
@@ -242,13 +148,61 @@ internal fun OverviewWindow(runner: GameThread, view: View, viewport: Size, opti
                         else -> TogglePill(stringResource(Res.string.map_company_colours), companies, Modifier.fillMaxWidth()) { companies = it }
                     }
                 }
+                Head(stringResource(Res.string.map_vehicles), Glyph.Inspect)
+                Grid((0..3).toList()) { mode ->
+                    val labels = listOf(Res.string.map_trains, Res.string.map_road_vehicles, Res.string.map_ships, Res.string.map_aircraft)
+                    TogglePill(stringResource(labels[mode]), modes and (1 shl mode) != 0, Modifier.fillMaxWidth()) { enabled ->
+                        modes = if (enabled) modes or (1 shl mode) else modes and (1 shl mode).inv()
+                    }
+                }
+                Head(stringResource(Res.string.map_planning), Glyph.Graph)
+                TogglePill(stringResource(Res.string.map_cargo_flow), flow, Modifier.fillMaxWidth()) { flow = it }
+                if (flow) {
+                    StepSlider(stringResource(Res.string.map_cargo), listOf(-1) + (0 until Cargo.COUNT), cargo,
+                        { if (it < 0) stringResource(Res.string.map_all_cargo) else cargoNames[it] }) { cargo = it }
+                    val onBoard = current?.data?.info?.flows.orEmpty().filter { (filter < 0 || it.owner == filter) && (cargo < 0 || it.cargo == cargo) }.sumOf { it.count }
+                    InfoRow(stringResource(Res.string.map_on_board), Numbers.grouped(onBoard), Glyph.Package)
+                }
+                TogglePill(stringResource(Res.string.map_coverage), coverage, Modifier.fillMaxWidth()) { coverage = it }
+                if (coverage) {
+                    Text(stringResource(Res.string.map_coverage_help), color = c.textDim, style = KitType.Dim)
+                    InfoRow(stringResource(Res.string.map_unserved), "0%", Glyph.Alert, c.bad)
+                    InfoRow(stringResource(Res.string.map_partial), "1-74%", Glyph.People, c.warn)
+                    InfoRow(stringResource(Res.string.map_served), "75-100%", Glyph.Tick, c.good)
+                }
                 if (companies) Grid(current?.data?.companies.orEmpty()) { (id, name) ->
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Row(Modifier.clip(RoundedCornerShape(6.dp)).background(if (filter == id) c.button else androidx.compose.ui.graphics.Color.Transparent)
+                        .clickable { owner = if (filter == id) -1 else id }.padding(4.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         Box(Modifier.size(12.dp).clip(RoundedCornerShape(3.dp)).background(companyColour(id)))
-                        Text(name, color = c.textDim, style = KitType.Dim, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(name, color = if (filter == id) c.text else c.textDim, style = KitType.Dim, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
                 }
             }
         })
+    }
+    current?.data?.industries?.firstOrNull { it.place.id == selectedIndustry }?.let { industry ->
+        val info = industry.info
+        val slot = if (filter < 0) OVERVIEW_ALL else filter
+        Window(industry.name(lang), { selectedIndustry = -1 }, Glyph.Factory) {
+            PictureRow(industry.kind.name(lang), picture = { IndustryPicture(industry.kind, it) })
+            Head(stringResource(Res.string.head_made), Glyph.Up)
+            for (cg in 0 until Cargo.COUNT) if (industry.kind.outputs and (1 shl cg) != 0) {
+                val made = info.made[cg]
+                CargoRow(cg, Numbers.grouped(made.toLong()), share = if (made > 0) info.moved[cg].toFloat() / made else 0f)
+            }
+            if (industry.kind.accepts != 0) {
+                Head(stringResource(Res.string.head_takes), Glyph.Down)
+                for (cg in 0 until Cargo.COUNT) if (industry.kind.takes(cg)) CargoRow(cg, "")
+                InfoRow(stringResource(Res.string.map_input_stock), Numbers.grouped(info.stock.toLong()), Glyph.Package)
+            }
+            Head(stringResource(Res.string.map_nearby_waiting), Glyph.Station)
+            for (cg in 0 until Cargo.COUNT) if (industry.kind.outputs and (1 shl cg) != 0) CargoRow(cg, Numbers.grouped(info.waiting[slot][cg].toLong()))
+            InfoRow(stringResource(Res.string.map_coverage), "${info.coverage[slot]}%", Glyph.Station)
+            BigButton(stringResource(Res.string.map_go_to), primary = true, glyph = Glyph.Inspect) {
+                view.focusX = industry.place.x
+                view.focusY = industry.place.y
+                onClose()
+            }
+        }
     }
 }
