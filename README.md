@@ -35,54 +35,36 @@ Dan
 
 ## What's in it
 
-**Canada.** Maps in six regions (mixed, prairies, Canadian Shield, Rockies, Maritimes and the north), each with its own climate taken from a real town. Towns are named in English or French to suit where they are, and grow over the years.
+Six regions: mixed, prairies, Canadian Shield, Rockies, Maritimes and the north. The weather comes from a real town in that region. Towns are named in English or French depending on where they are, and they grow. Snow piles up and drifts, trains get stuck in it, lakes freeze over, the ground heaves in the spring and track washes out. Later on it's warmer than in 1900.
 
-**Seasons and weather.** Fronts cross the map, snow piles up, drifts and melts, lakes freeze over, the ground heaves in spring and the leaves turn in the fall. The climate warms as the years go by.
+Trains have grades and grip, bridges and tunnels, wires, and snow plows for the drifts. Drag along a line to signal it, path signals and presignals, and turn on the overlay to see what track a train has claimed. Leave the signals out and trains run into each other, as in OpenTTD. You can turn crashes off. Engines and cars from the 1830s on.
 
-**Rail.** Trains with grades and grip, bridges and tunnels, electrification, track that wears and washes out, and snow plows for the drifts. Drag along a line to signal it, with path signals and presignals, and turn on the overlay to see what track each train has claimed. Leave the signals out and trains can run into each other, as in OpenTTD (you can turn crashes off). Engines and cars from the 1830s on.
+Roads from dirt tracks to highways, one-way roads, trams, buses and trucks. Horse-drawn wagons and coaches early on, winter tires, salt and plows later. Level crossings flash when a train's coming. Don't let traffic queue across them. Canals and locks, ferries, lakers and icebreakers, strips, seaplane bases and airports, and bush planes on floats and skis with the seasons.
 
-**Road.** Dirt tracks to highways, one-way roads, trams, buses and trucks by era, horse-drawn wagons and coaches early on, and winter tires, salt and plows later. Level crossings flash when a train's coming, but don't let traffic queue across them.
+Logging camps, farms, mines, mills, oil sands and ports. Loans, subsidies, company value and a league table. Autorenew replaces your vehicles as they get old. Up to 7 computer companies run buses, trucks and railways. They open routes, give them up, and go under when they can't pay their way. Buy one outright, or pick up one that's in trouble. Name your company and give it an insignia, one of 24 or one you draw, in your company's colour. At the town hall you can advertise, fund new buildings, put up a statue, do road works or buy exclusive rights.
 
-**Water and air.** Canals and locks, ferries, lakers and icebreakers, strips, seaplane bases and airports, and bush planes on floats and skis.
-
-**Industries and money.** Logging camps, farms, mines, mills, oil sands and ports that make and take cargo. Loans, subsidies, company value and a league table, and autorenew to replace your vehicles as they get old.
-
-**Rivals.** Up to 7 computer companies that run buses, trucks and railways, open and give up routes and go broke if they're not careful. You can buy one outright, or pick up one that's in trouble.
-
-**Your company.** Give it a name and an insignia: pick one of 24 or draw your own in the pixel editor. It takes your company's colour.
-
-**Town councils.** Advertise, fund new buildings, put up a statue, do road works or buy exclusive rights.
-
-**Goals and the campaign.** Goals to grow towns, carry cargo and build up the company, a campaign of seven chapters from 1836 to 2072, and a scenario editor for your own.
-
-**The chronicle.** All the news kept in a newspaper of the era, to read back through.
-
-**Day length.** Slow the days down, up to 16 times, so vehicles get more done in a year.
-
-**Packs.** Vehicles, buildings and industries come from packs, and you can make your own. The spec is in [packs/SPEC.md](packs/SPEC.md), with a template in [packs/template](packs/template).
+Goals to grow towns, carry cargo and build the company up. The campaign runs from 1836 to 2072, and there's a scenario editor for your own. The chronicle keeps the news, and you can read back through it. Slow the days down, up to 16 times, so vehicles get more done in a year. Vehicles, buildings and industries come from packs, and you can make your own. The spec is in [packs/SPEC.md](packs/SPEC.md), with a template in [packs/template](packs/template).
 
 ---
 
 ## Playing together
 
-Everyone plays the same game, so building, vehicles and money are the same on every phone. You can start a company of your own, share one with a friend or just watch.
+Everyone plays the same game, so building, vehicles and money are the same on every phone. Start your own company, share one, or watch.
 
-- **Host from your phone.** In a game, open the menu, then Multiplayer, then Open to players. You can set a password. The game keeps running with the app in the background, and the notification has a button to stop.
-- **Join.** From the title screen, Multiplayer lists the games on your network. Pick one, then start a company, join one already being played or watch. You can also join by address.
-- **Packs.** If a game uses packs you don't have, they're sent to you when you join.
-- **Company passwords.** Set one in the Players window to keep others out of your company.
-- **Chat** from the button in the top bar.
+In a game, open the menu, then Multiplayer, then Open to players. You can set a password. The game keeps running in the background, and the notification has a button to stop.
+
+From the title screen, Multiplayer lists the games on your network. Pick one, then start a company, join one or watch. You can also join by address. Packs you don't have are sent when you join. Set a company password in the Players window to keep others out. Chat is the button in the top bar.
 
 ### Running a server
 
-A dedicated server keeps a game going whether anyone's playing or not, with a web page to run it from:
+A dedicated server keeps the game going with nobody playing. Easily run with docker:
 
 ```sh
 cp .env.example .env        # set ADMIN_PASSWORD
 docker compose up --build
 ```
 
-Players on your network find it by themselves. The admin page is at `http://<this machine>:8088`, and from there you can pause, change the speed, chat, kick, save or start a new game. All the settings are in [dedicated/README.md](dedicated/README.md).
+Players on your network find it by themselves. The admin page is at `http://<this machine>:8088`. From there you can pause, change the speed, chat, kick, save or start a new game. Settings are in [dedicated/README.md](dedicated/README.md).
 
 ---
 
