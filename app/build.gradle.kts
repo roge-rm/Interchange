@@ -21,8 +21,8 @@ android {
         applicationId = "com.rm.interchange"
         minSdk = 27
         targetSdk = 37
-        versionCode = 44
-        versionName = "0.12.0"
+        versionCode = 45
+        versionName = "0.12.1"
     }
 
     signingConfigs {
