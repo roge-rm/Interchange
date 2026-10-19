@@ -23,7 +23,7 @@ class LevelSheets(val ground: IntArray, val static: IntArray, val staticWidth: I
 class VehicleSource(val rects: IntArray, val sheet: (level: Int) -> ByteArray?)
 
 /** The packed sheets for each level, as read from the app, and each base vehicle's, by its place in [Atlas.VEHICLE_KEYS]. */
-class PackedSheets(val ground: List<ByteArray>, val static: List<ByteArray>, val shadows: List<ByteArray>, val signals: List<ByteArray>, val vehicles: List<List<ByteArray>>)
+class PackedSheets(val ground: List<ByteArray>, val static: List<ByteArray>, val staticSnow: List<ByteArray?>, val shadows: List<ByteArray>, val signals: List<ByteArray>, val vehicles: List<List<ByteArray>>)
 
 /**
  * The sheets, sharpest level first. They're kept packed and a level is only
@@ -56,6 +56,7 @@ class Sheets(private val packed: PackedSheets, private val scope: CoroutineScope
                     }
                     val (ground, _) = pixels(packed.ground[level])
                     val (static, width) = pixels(packed.static[level])
+                    packed.staticSnow[level]?.let { restoreStaticSnow(static, it) }
                     // Grey, so any one channel is how dark. Read a strip at a time, as the sharpest is some 70 MB as ints.
                     val shade = packed.shadows[level].decodeToImageBitmap()
                     val shadeWidth = shade.width
@@ -160,6 +161,9 @@ class Sheets(private val packed: PackedSheets, private val scope: CoroutineScope
 fun rememberPackedSheets(): State<PackedSheets?> = produceState<PackedSheets?>(null) {
     value = withContext(Dispatchers.Default) {
         suspend fun read(name: String) = (0 until Atlas.LEVELS).map { Res.readBytes("files/${name}_$it.webp") }
-        PackedSheets(read("ground"), read("static"), read("shadows"), read("signals"), Atlas.VEHICLE_KEYS.map { read("vehicle_$it") })
+        val snow = (0 until Atlas.LEVELS).map { level ->
+            if (level < 2) Res.readBytes("files/static_snow_$level.bin") else null
+        }
+        PackedSheets(read("ground"), read("static"), snow, read("shadows"), read("signals"), Atlas.VEHICLE_KEYS.map { read("vehicle_$it") })
     }
 }

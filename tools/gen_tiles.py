@@ -13,7 +13,8 @@ Three kinds of sheet, one of each per zoom level, sharpest first, each level
 half the last:
 - files/ground_<level>.webp: the ground textures, which the game paints the land with
 - files/static_<level>.webp: what the game bakes into the map: track, buildings, trees, with how
-  much each pixel faces the sky in the low two bits of its blue, for snow
+  much each pixel faces the sky for snow: static_snow_<level>.bin at levels 0 and 1,
+  otherwise in the low two bits of its blue
 - files/signals_<level>.webp: signals, drawn over the map each frame
 - files/vehicle_<key>_<level>.webp: one sheet for each vehicle, so only those on
   screen are unpacked, as packs will add many
@@ -44,6 +45,7 @@ import ground  # noqa: E402
 import textures  # noqa: E402
 import track  # noqa: E402
 import vehicles  # noqa: E402
+from sheet_encoding import save_sheet  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
 RENDERS = ROOT / "build/renders"
@@ -52,9 +54,6 @@ SCENERY = RENDERS / "scenery"
 OUT_PNG = ROOT / "shared/src/commonMain/composeResources/files"
 
 
-def save_sheet(img, path):
-    """A sheet for the game, as lossless WebP: about a third smaller than PNG, every pixel the same."""
-    img.save(path.with_suffix(".webp"), "WEBP", lossless=True, quality=100, method=6, exact=True)
 OUT_KT = ROOT / "shared/src/commonMain/kotlin/com/rm/interchange/map/Atlas.kt"
 PACKS = ROOT / "packs"
 BUILD_PACKS = ROOT / "build/packs"
@@ -340,7 +339,7 @@ def main():
         done = sorted(pool.map(render, range(len(JOBS)), chunksize=4))
     OUT_PNG.mkdir(parents=True, exist_ok=True)
     for pattern in ("atlas_*.png", "static_*.png", "shadows_*.png", "moving_*.png", "signals_*.png", "vehicle_*.png", "ground_*.png",
-                    "static_*.webp", "shadows_*.webp", "signals_*.webp", "vehicle_*.webp", "ground_*.webp"):
+                    "static_*.webp", "static_snow_*.bin", "shadows_*.webp", "signals_*.webp", "vehicle_*.webp", "ground_*.webp"):
         for old in OUT_PNG.glob(pattern):
             old.unlink()
 
