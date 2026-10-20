@@ -60,8 +60,10 @@ import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.rm.interchange.audio.Sounds
 import com.rm.interchange.res.Res
 import com.rm.interchange.res.close
+import com.rm.interchange.res.percent
 import org.jetbrains.compose.resources.stringResource
 import kotlin.math.roundToInt
 
@@ -76,7 +78,10 @@ fun BigButton(text: String, primary: Boolean = false, enabled: Boolean = true, g
             .alpha(if (enabled) 1f else 0.45f)
             .clip(RoundedCornerShape(10.dp))
             .background(if (primary) c.accent else c.button)
-            .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
+            .clickable(enabled = enabled, role = Role.Button) {
+                Sounds.click()
+                onClick()
+            }
             .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -233,6 +238,41 @@ fun <T> StepSlider(label: String, options: List<T>, value: T, name: @Composable 
             colors = SliderDefaults.colors(
                 thumbColor = c.accent, activeTrackColor = c.accent, inactiveTrackColor = c.button,
                 activeTickColor = c.onAccent, inactiveTickColor = c.textDim,
+            ),
+        )
+    }
+}
+
+/** A level from 0 to 100. [set] follows the finger and [settled] runs when it lifts. */
+@Composable
+fun VolumeSlider(label: String, value: Int, set: (Int) -> Unit, settled: () -> Unit) {
+    val c = LocalColors.current
+    val clamped = value.coerceIn(0, 100)
+    val shown = stringResource(Res.string.percent, clamped)
+    var dragging by remember { mutableStateOf(false) }
+    var dragged by remember { mutableFloatStateOf(clamped / 100f) }
+    val position = if (dragging) dragged else clamped / 100f
+    Column {
+        // The slider reads out its name and value itself, so this line is for the eyes only.
+        Row(Modifier.fillMaxWidth().clearAndSetSemantics { }, verticalAlignment = Alignment.CenterVertically) {
+            Text(label, color = c.text, style = KitType.Label, modifier = Modifier.weight(1f))
+            Text(shown, color = c.text, style = KitType.Value)
+        }
+        Slider(
+            value = position,
+            onValueChange = { v ->
+                dragging = true
+                dragged = v
+                val n = (v * 100f).roundToInt().coerceIn(0, 100)
+                if (n != clamped) set(n)
+            },
+            onValueChangeFinished = {
+                dragging = false
+                settled()
+            },
+            modifier = Modifier.semantics { contentDescription = label; stateDescription = shown },
+            colors = SliderDefaults.colors(
+                thumbColor = c.accent, activeTrackColor = c.accent, inactiveTrackColor = c.button,
             ),
         )
     }

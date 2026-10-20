@@ -111,6 +111,12 @@ class MainActivity : ComponentActivity(), Picker {
         setContent { App() }
     }
 
+    /** Brought back. */
+    override fun onStart() {
+        super.onStart()
+        Lifecycle.onShow?.invoke()
+    }
+
     /** Put away: the game saves itself. */
     override fun onStop() {
         super.onStop()

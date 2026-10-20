@@ -23,6 +23,21 @@ android {
         targetSdk = 37
         versionCode = 45
         versionName = "0.12.1"
+        // The synth (app/src/main/cpp).
+        ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64") }
+        externalNativeBuild {
+            cmake {
+                cppFlags += listOf("-std=c++17", "-O2", "-ffast-math")
+                arguments += listOf("-DANDROID_STL=c++_shared")
+            }
+        }
+    }
+    ndkVersion = "28.2.13676358"
+    externalNativeBuild {
+        cmake {
+            path = file("src/main/cpp/CMakeLists.txt")
+            version = "4.1.2"
+        }
     }
 
     signingConfigs {
@@ -59,6 +74,7 @@ android {
     }
     buildFeatures {
         compose = true
+        prefab = true
     }
 }
 
@@ -66,4 +82,5 @@ dependencies {
     implementation(project(":shared"))
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.core.ktx)
+    implementation(libs.oboe)
 }

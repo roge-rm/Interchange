@@ -154,6 +154,10 @@
     <string-array name="autosave_levels">
         <item>Jamais</item><item>Chaque mois</item><item>Aux 3 mois</item><item>Chaque année</item>
     </string-array>
+    <string name="sound">Son</string>
+    <string name="sound_everything">Tout</string>
+    <string name="sound_world">Le monde</string>
+    <string name="sound_tools">Outils et nouvelles</string>
 
     <!-- Packs de contenu -->
     <string name="packs">Packs</string>

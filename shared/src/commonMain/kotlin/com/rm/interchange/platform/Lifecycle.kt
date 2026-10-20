@@ -4,4 +4,7 @@ package com.rm.interchange.platform
 object Lifecycle {
     /** Called when the app is put away: the game saves itself. */
     var onHide: (() -> Unit)? = null
+
+    /** Called when the app is brought back. */
+    var onShow: (() -> Unit)? = null
 }

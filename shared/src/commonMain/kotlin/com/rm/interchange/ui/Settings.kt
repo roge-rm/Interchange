@@ -21,6 +21,10 @@ class Settings {
     var condition by mutableStateOf(false)
     /** The track trains hold paths through, lit over the map. */
     var reserved by mutableStateOf(false)
+    /** Master, the world, and tools and news, each from 0 to 100. A missing line stays at 100. */
+    var sound by mutableIntStateOf(100)
+    var world by mutableIntStateOf(100)
+    var tools by mutableIntStateOf(100)
     /** The name other players see, and the address last joined. */
     var playerName by mutableStateOf("")
     var lastAddress by mutableStateOf("")
@@ -33,6 +37,7 @@ class Settings {
 
     fun save() {
         files.write(FILE, ("language=$language\nautosave=$autosave\ngrid=$grid\nheights=$heights\nsnow=$snow\ncondition=$condition\nreserved=$reserved\n" +
+            "sound=$sound\nworld=$world\ntools=$tools\n" +
             "player=${playerName.replace('\n', ' ')}\naddress=${lastAddress.replace('\n', ' ')}\nclient=$client\n" +
             "chapters=${chaptersWon.sorted().joinToString(",")}\n").encodeToByteArray())
     }
@@ -56,6 +61,9 @@ class Settings {
                     "snow" -> s.snow = v == "true"
                     "condition" -> s.condition = v == "true"
                     "reserved" -> s.reserved = v == "true"
+                    "sound" -> v.toIntOrNull()?.let { s.sound = it.coerceIn(0, 100) }
+                    "world" -> v.toIntOrNull()?.let { s.world = it.coerceIn(0, 100) }
+                    "tools" -> v.toIntOrNull()?.let { s.tools = it.coerceIn(0, 100) }
                     "player" -> s.playerName = v
                     "address" -> s.lastAddress = v
                     "client" -> s.client = v

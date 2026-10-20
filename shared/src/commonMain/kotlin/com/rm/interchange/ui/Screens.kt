@@ -435,7 +435,7 @@ fun PacksWindow(packs: List<Pack>, adding: Boolean, message: String?, failed: Bo
     }
 }
 
-/** The player's settings: the language, how often the game saves itself, and what's drawn over the map. */
+/** The player's settings: the language, how often the game saves itself, what's drawn over the map, and the volume. */
 @Composable
 fun SettingsWindow(settings: Settings, onClose: () -> Unit) {
     Window(stringResource(Res.string.settings), onClose, Glyph.Gear) {
@@ -448,6 +448,10 @@ fun SettingsWindow(settings: Settings, onClose: () -> Unit) {
         FillChips(Settings.AUTOSAVE_DAYS.indices.toList(), settings.autosave, { levels.getOrElse(it) { "$it" } }) { settings.autosave = it; settings.save() }
         Head(stringResource(Res.string.overlays))
         OverlayToggles(settings)
+        Head(stringResource(Res.string.sound))
+        VolumeSlider(stringResource(Res.string.sound_everything), settings.sound, set = { settings.sound = it }, settled = { settings.save() })
+        VolumeSlider(stringResource(Res.string.sound_world), settings.world, set = { settings.world = it }, settled = { settings.save() })
+        VolumeSlider(stringResource(Res.string.sound_tools), settings.tools, set = { settings.tools = it }, settled = { settings.save() })
     }
 }
 

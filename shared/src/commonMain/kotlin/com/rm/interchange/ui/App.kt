@@ -31,6 +31,7 @@ import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -109,6 +110,7 @@ import com.rm.interchange.sim.industryAt
 import com.rm.interchange.sim.approvalLevel
 import com.rm.interchange.map.rememberTownLabels
 import com.rm.interchange.sim.World
+import com.rm.interchange.sim.WorldView
 import com.rm.interchange.sim.SIGNAL_SPACING_MAX
 import com.rm.interchange.sim.SIGNAL_SPACING_MIN
 import com.rm.interchange.sim.Signals
@@ -131,7 +133,14 @@ import com.rm.interchange.sim.Spans
 import com.rm.interchange.sim.mud
 import kotlin.math.roundToInt
 import androidx.compose.runtime.key
+import com.rm.interchange.audio.AudioEngine
+import com.rm.interchange.audio.Sounds
 import com.rm.interchange.platform.Lifecycle
+import com.rm.interchange.sim.sound.Buses
+import com.rm.interchange.sim.sound.Recipes
+import com.rm.interchange.sim.sound.WorldSound
+import com.rm.interchange.sim.sound.newsShot
+import kotlin.time.TimeSource
 import com.rm.interchange.res.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -142,9 +151,30 @@ import org.jetbrains.compose.resources.stringResource
 @Composable
 fun App() {
     val settings = remember { Settings.load() }
+    // Opening the stream waits on the device, so it stays off the UI thread. Bus gains follow the volume sliders.
+    LaunchedEffect(Unit) {
+        withContext(Dispatchers.Default) { AudioEngine.start(32) }
+        snapshotFlow { Triple(settings.sound, settings.world, settings.tools) }.collect { (sound, world, tools) ->
+            val gains = soundBusGains(sound, world, tools)
+            withContext(Dispatchers.Default) { AudioEngine.busGains(gains) }
+        }
+    }
     InLanguage(settings.language) {
         CompositionLocalProvider(LocalColors provides DarkColors) { Root(settings) }
     }
+}
+
+/** The four bus levels. The master scales the world and the tools, and music stays at 0. */
+private fun soundBusGains(sound: Int, world: Int, tools: Int): FloatArray {
+    val master = sound.coerceIn(0, 100) / 100f
+    val worldGain = world.coerceIn(0, 100) / 100f
+    val toolsGain = tools.coerceIn(0, 100) / 100f
+    val gains = FloatArray(Buses.COUNT)
+    gains[Buses.TOWN] = master * worldGain
+    gains[Buses.EFFECTS] = master * toolsGain
+    gains[Buses.UI] = master * toolsGain
+    gains[Buses.MUSIC] = 0f
+    return gains
 }
 
 /** Where the app is: one of its screens, or playing. */
@@ -204,16 +234,21 @@ private fun Root(settings: Settings) {
     }
     LaunchedEffect(Unit) { readPacks() }
 
-    // The game saves itself when the app is put away.
+    // The game saves itself when the app is put away, and sound pauses until it's brought back.
     DisposableEffect(Unit) {
         // A world being edited goes to the editor's own autosave, and a scenario being tried isn't saved at all.
         Lifecycle.onHide = {
+            AudioEngine.pause(true)
             runner?.takeIf { it.remote == null }?.let { r ->
                 if (editing) r.onGameThread { g -> SavedScenarios.autosaveEditor(g.world) }
                 else if (testing == null) SavedGames.save(r, SavedGames.AUTOSAVE)
             }
         }
-        onDispose { Lifecycle.onHide = null }
+        Lifecycle.onShow = { AudioEngine.pause(false) }
+        onDispose {
+            Lifecycle.onHide = null
+            Lifecycle.onShow = null
+        }
     }
     LaunchedEffect(runner, settings.reserved) { runner?.showReserved = settings.reserved }
     // Autosave follows the setting while a game runs.
@@ -795,6 +830,77 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
     var roadPlan by remember { mutableStateOf<Command.Road?>(null) }
     var roadSurface by remember { mutableIntStateOf(Surface.entries(Calendar.year(world.startYear, world.day)).last()) }
     var mapSize by remember { mutableStateOf(androidx.compose.ui.geometry.Size.Zero) }
+    // The land around the camera, a few times a second. The shore and the trees are counted again every couple of seconds.
+    val sound = remember(world) { WorldSound(world) }
+    LaunchedEffect(sound) {
+        val out = WorldSound.Frame()
+        val movers = ArrayList<WorldSound.Mover>(16)
+        val stations = ArrayList<WorldSound.StationSpot>(8)
+        val clock = TimeSource.Monotonic
+        var last = clock.markNow()
+        var surveyed = clock.markNow()
+        var first = true
+        var newsPrimed = false
+        var lastNewsTick = -1L
+        var chimeMark = clock.markNow()
+        var chimePlayed = false
+        try {
+            while (true) {
+                delay(200)
+                val dt = last.elapsedNow().inWholeMilliseconds / 1000f
+                last = clock.markNow()
+                if (first || surveyed.elapsedNow().inWholeMilliseconds >= 2_000) {
+                    withContext(Dispatchers.Default) { sound.survey() }
+                    surveyed = clock.markNow()
+                    first = false
+                }
+                val w = mapSize.width
+                val h = mapSize.height
+                if (w < 1f || h < 1f) continue
+                // Tiles from the middle to the edge. Zooming out makes a tile smaller and the reach wider.
+                val halfW = (w / (2f * view.halfWidth)).coerceAtLeast(4f)
+                val halfH = (h / (2f * view.halfHeight)).coerceAtLeast(4f)
+                val hour = (world.tick % world.dayTicks) * 24f / world.dayTicks
+                val fx = view.focusX
+                val fy = view.focusY
+                val listener = WorldSound.Listener(fx, fy, halfW, halfH, view.turn)
+                // The latest snapshot. Traction and top speed come from the roster.
+                val snap = runner.view
+                if (snap == null) sound.frame(listener, hour, dt, out)
+                else {
+                    heardMovers(world, snap, fx, fy, movers)
+                    stations.clear()
+                    for (s in snap.stations) stations.add(WorldSound.StationSpot(s.x, s.y, s.waypoint))
+                    sound.frame(listener, hour, dt, out, movers, snap.crossings, stations)
+                    // The news already on screen when this starts is old. Later items sound once.
+                    if (!newsPrimed) {
+                        lastNewsTick = snap.news.maxOfOrNull { it.tick } ?: -1L
+                        newsPrimed = true
+                    } else if (snap.news.isNotEmpty()) {
+                        var newest = lastNewsTick
+                        for (n in snap.news) {
+                            if (n.tick <= lastNewsTick) continue
+                            if (n.tick > newest) newest = n.tick
+                            val shot = newsShot(n.kind, newsInView(world, sound, listener, movers, n)) ?: continue
+                            if (shot.recipe == Recipes.CHIME) {
+                                if (chimePlayed && chimeMark.elapsedNow().inWholeMilliseconds < CHIME_GAP_MILLIS) continue
+                                chimePlayed = true
+                                chimeMark = clock.markNow()
+                            }
+                            out.shots.add(shot)
+                        }
+                        lastNewsTick = newest
+                    }
+                }
+                if (AudioEngine.running) {
+                    AudioEngine.scene(out.count, out.keys, out.recipes, out.flags, out.params)
+                    for (shot in out.shots) AudioEngine.event(shot.recipe, shot.params, shot.delay, flags = shot.flags)
+                }
+            }
+        } finally {
+            if (AudioEngine.running) AudioEngine.scene(0, IntArray(0), IntArray(0), IntArray(0), FloatArray(0))
+        }
+    }
     // The scenario editor: time stands still and its own tools are out. The size of town placed or grown, the kind
     // of industry placed and how it's turned, and the area a drag would change.
     val editor = world.editor
@@ -816,7 +922,15 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
     /** The height of the corner nearest [at], for levelling to. */
     fun cornerHeight(at: Pick) = world.heightAt(at.x.roundToInt().coerceIn(0, world.width), at.y.roundToInt().coerceIn(0, world.height))
 
-    fun built() { folded = true }
+    fun built() {
+        folded = true
+        // Once for the gesture. A drag's tiles share the one sound.
+        when (tool) {
+            Tool.Track, Tool.Road, Tool.TramRails, Tool.Canal, Tool.Clear -> Sounds.earth()
+            Tool.Signals, Tool.Bridge, Tool.Wires -> Sounds.clunk()
+            else -> {}
+        }
+    }
 
     // An editor command that changed nothing says so in the tray for a few seconds.
     var refusals by remember { mutableIntStateOf(0) }
@@ -1406,6 +1520,79 @@ private sealed interface Selection {
 /** What moves, from the game thread, ready to draw. */
 private fun moving(runner: GameThread): Moving? = runner.view?.let { Moving(it, runner.lastView, runner.sinceTick()) }
 
+/** Vehicles the listener can hear, from [snap]. One position per train, its car nearest [camX], [camY]. */
+private fun heardMovers(world: World, snap: WorldView, camX: Float, camY: Float, out: MutableList<WorldSound.Mover>) {
+    out.clear()
+    val cars = snap.vehicles
+    val roster = world.roster
+    val trainX = HashMap<Int, Float>()
+    val trainY = HashMap<Int, Float>()
+    val trainD = HashMap<Int, Float>()
+    for (i in 0 until cars.count) {
+        val id = cars.train(i)
+        if (id < 0 || cars.wrecked(i)) continue
+        val x = cars.x(i)
+        val y = cars.y(i)
+        val d = (x - camX) * (x - camX) + (y - camY) * (y - camY)
+        val had = trainD[id]
+        if (had != null && d >= had) continue
+        trainD[id] = d
+        trainX[id] = x
+        trainY[id] = y
+    }
+    val trains = snap.trains.associateBy { it.id }
+    for ((id, x) in trainX) {
+        val t = trains[id] ?: continue
+        if (t.inDepot || t.wrecked) continue
+        val engine = roster.getOrNull(t.engine) ?: continue
+        val y = trainY[id] ?: continue
+        out.add(WorldSound.Mover(WorldSound.TRAIN, t.id, x, y, speedFraction(t.kmh, engine.speed), engine.traction, waiting = t.waiting))
+    }
+    val roads = snap.roadVehicles.associateBy { it.id }
+    val ships = snap.ships.associateBy { it.id }
+    val aircraft = snap.aircraft.associateBy { it.id }
+    for (i in 0 until cars.count) {
+        if (cars.wrecked(i)) continue
+        val x = cars.x(i)
+        val y = cars.y(i)
+        val road = cars.roadVehicle(i)
+        if (road >= 0) {
+            val v = roads[road] ?: continue
+            if (v.inDepot || v.wrecked) continue
+            val model = roster.getOrNull(v.model) ?: continue
+            val kind = if (model.tram) WorldSound.TRAM else WorldSound.ROAD
+            out.add(WorldSound.Mover(kind, v.id, x, y, speedFraction(v.kmh, model.speed), model.traction))
+            continue
+        }
+        val ship = cars.ship(i)
+        if (ship >= 0) {
+            val v = ships[ship] ?: continue
+            if (v.inDepot) continue
+            val model = roster.getOrNull(v.model) ?: continue
+            out.add(WorldSound.Mover(WorldSound.SHIP, v.id, x, y, speedFraction(v.kmh, model.speed), model.traction, waiting = v.waiting))
+            continue
+        }
+        val air = cars.aircraft(i)
+        if (air >= 0) {
+            val v = aircraft[air] ?: continue
+            if (v.inDepot || v.wrecked) continue
+            val model = roster.getOrNull(v.model) ?: continue
+            val jet = model.speed >= WorldSound.JET_KMH
+            out.add(WorldSound.Mover(WorldSound.AIRCRAFT, v.id, x, y, speedFraction(v.kmh, model.speed), model.traction, jet))
+        }
+    }
+}
+
+private fun speedFraction(kmh: Int, top: Int) = (kmh.toFloat() / top.coerceAtLeast(1)).coerceIn(0f, 1f)
+
+/** A crash, slide, washout, fire or avalanche close enough to hear. Other news is handled without a place. */
+private fun newsInView(world: World, sound: WorldSound, at: WorldSound.Listener, movers: List<WorldSound.Mover>, n: News): Boolean = when (n.kind) {
+    News.CRASH -> world.crashFor(n.about)?.let { k -> sound.hears(at, k.tile % world.width + 0.5f, k.tile / world.width + 0.5f) } == true
+    News.SLID -> movers.any { m -> (m.kind == WorldSound.ROAD || m.kind == WorldSound.TRAM) && m.id == n.about && sound.hears(at, m.x, m.y) }
+    News.WASHOUT, News.FIRE, News.AVALANCHE -> n.about >= 0 && sound.hears(at, n.about % world.width + 0.5f, n.about / world.width + 0.5f)
+    else -> false
+}
+
 @Composable
 private fun InspectCard(world: World, x: Int, y: Int, onTown: (Int) -> Unit, onClose: () -> Unit, modifier: Modifier) {
     val c = LocalColors.current
@@ -1697,6 +1884,9 @@ private const val CAMERA_SHARE = 0.3f
 
 /** How long a piece of news shows under the strip. */
 private const val NEWS_MILLIS = 5000L
+
+/** How long to leave between chimes. */
+private const val CHIME_GAP_MILLIS = 4000L
 
 /** What the tray says for [Refusal] [why]. */
 private fun refusalText(why: Int): StringResource = when (why) {

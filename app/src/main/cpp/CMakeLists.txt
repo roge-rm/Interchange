@@ -1,0 +1,6 @@
+cmake_minimum_required(VERSION 3.22)
+project(interchange_audio CXX)
+find_package(oboe REQUIRED CONFIG)
+add_library(interchange_audio SHARED engine.cpp synth/synth.cpp)
+target_include_directories(interchange_audio PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(interchange_audio oboe::oboe log)

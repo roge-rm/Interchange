@@ -101,8 +101,8 @@ import kotlin.math.roundToInt
  * - SlimCard (Kit.kt): a card cut down to its title, a short scrolling list and its controls, for while the map
  *   is being tapped. For a vehicle's orders while adding stops.
  * - SwitchRow: a setting that's on or off, its label with a small switch at the end, as tall as an InfoRow.
- * - FillChips, StepSlider, TogglePill, BigButton (Kit.kt): one of a few words, a stepped value, on or off, and a
- *   window's main actions.
+ * - FillChips, StepSlider, VolumeSlider, TogglePill, BigButton (Kit.kt): one of a few words, a stepped value, a
+ *   level from 0 to 100, on or off, and a window's main actions.
  */
 
 /** The type scale. Colours come from [LocalColors]: [Colors.text] for titles and values, [Colors.textDim] for the rest. */
