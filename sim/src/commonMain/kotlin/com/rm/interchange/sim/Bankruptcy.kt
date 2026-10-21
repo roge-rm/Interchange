@@ -91,6 +91,8 @@ internal fun World.restart(c: Company, news: Boolean = true) {
     c.history.clear()
     c.monthIn = 0
     c.monthOut = 0
+    // The company starting again does not keep orders from vehicles the last one sold.
+    c.orderBackups.fill(null)
     for (g in goals) g.count[c.id] = 0
     for (t in towns) {
         t.approval[c.id] = START_APPROVAL
@@ -151,6 +153,8 @@ internal fun World.dissolve(c: Company) {
     for (v in roadVehicles) if (v != null && v.owner == c.id) roadVehicles[v.id] = null
     for (v in ships) if (v != null && v.owner == c.id) ships[v.id] = null
     for (v in aircraft) if (v != null && v.owner == c.id) aircraft[v.id] = null
+    for (groups in c.groups) groups.clear()
+    c.orderBackups.fill(null)
     // With nothing standing on them, Clear takes up what's on each of its tiles; the bank pays.
     c.money = Long.MAX_VALUE / 4
     for (i in 0 until width * height) {

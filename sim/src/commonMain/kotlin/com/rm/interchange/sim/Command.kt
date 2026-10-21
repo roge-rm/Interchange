@@ -1,5 +1,7 @@
 package com.rm.interchange.sim
 
+const val MAX_AT_ONCE = 20
+
 /**
  * Everything a player does to the world goes through a command, in single
  * player too. In a multiplayer game the server puts every player's commands in
@@ -11,6 +13,15 @@ sealed interface Command {
 
     /** Raises or lowers the corner ([x], [y]) a step, and the land round it as far as it has to. */
     data class Terraform(override val company: Int, val x: Int, val y: Int, val up: Boolean) : Command
+
+    /**
+     * Levels the corners of the tiles from ([x0], [y0]) to ([x1], [y1]) to [height], and the land round them
+     * as far as it has to. Each corner that moves costs what raising one does.
+     */
+    data class Level(override val company: Int, val x0: Int, val y0: Int, val x1: Int, val y1: Int, val height: Int) : Command
+
+    /** Plants trees on the open tiles from ([x0], [y0]) to ([x1], [y1]). Each tile that takes one costs what felling a tree does. */
+    data class PlantTrees(override val company: Int, val x0: Int, val y0: Int, val x1: Int, val y1: Int) : Command
 
     /** Lays or lifts a line of track, as [Track.line] makes it. */
     data class Rail(
@@ -61,7 +72,7 @@ sealed interface Command {
     data class Garage(override val company: Int, val x: Int, val y: Int, val edge: Int) : Command
 
     /** Buys road vehicle [model] in a garage, set to carry [cargo] if it can. */
-    data class BuyRoadVehicle(override val company: Int, val depot: Int, val model: Int, val cargo: Int = -1) : Command
+    data class BuyRoadVehicle(override val company: Int, val depot: Int, val model: Int, val cargo: Int = -1, val count: Int = 1) : Command
 
     /** Tells a road vehicle what to do, as [TrainOrder] does a train, or turns its seasonal tires on or off. */
     class RoadOrder(override val company: Int, val vehicle: Int, val what: Int, val stations: IntArray = IntArray(0)) : Command {
@@ -95,7 +106,7 @@ sealed interface Command {
     data class AirportUpgrade(override val company: Int, val airport: Int, val what: Int) : Command
 
     /** Buys a ship at a shipyard, or an aircraft in a hangar, set to carry [cargo] if it can. */
-    data class BuyCraft(override val company: Int, val depot: Int, val model: Int, val cargo: Int = -1) : Command
+    data class BuyCraft(override val company: Int, val depot: Int, val model: Int, val cargo: Int = -1, val count: Int = 1) : Command
 
     /** Tells a ship ([aircraft] false) or an aircraft what to do, as [TrainOrder] does a train, or turns a bush plane's seasonal gear on or off. */
     class CraftOrder(override val company: Int, val aircraft: Boolean, val vehicle: Int, val what: Int, val stations: IntArray = IntArray(0)) : Command {
@@ -129,7 +140,19 @@ sealed interface Command {
     data class RemoveArea(override val company: Int, val x0: Int, val y0: Int, val x1: Int, val y1: Int) : Command
 
     /** Buys a train in a depot, its wagons set to carry [cargo] if they can, or their first. */
-    data class BuyTrain(override val company: Int, val depot: Int, val engine: Int, val wagon: Int, val wagons: Int, val cargo: Int = -1) : Command
+    data class BuyTrain(override val company: Int, val depot: Int, val engine: Int, val wagon: Int, val wagons: Int, val cargo: Int = -1, val count: Int = 1) : Command
+
+    /** Builds the same vehicle in the given [depot] and shares its orders and gap. The source can be out on the line. */
+    data class CopyVehicle(override val company: Int, val kind: Int, val vehicle: Int, val depot: Int, val count: Int = 1) : Command {
+        companion object {
+            const val TRAIN = 0
+            const val ROAD = 1
+            const val SHIP = 2
+            const val AIRCRAFT = 3
+        }
+    }
+
+    data class CreateGroup(override val company: Int, val kind: Int, val vehicle: Int, val name: String) : Command
 
     /** Pays for a new industry of [kind] somewhere on the map: built for sure if it takes cargo, prospected if not. */
     data class FundIndustry(override val company: Int, val kind: Int) : Command
@@ -207,7 +230,7 @@ sealed interface Command {
         val chapter: String = "",
     ) : Edit
 
-    /** Tells a train what to do; [stations] only for [ORDERS]. */
+    /** Tells a train what to do; [stations] carries orders, a share target, gap days or a cargo id. */
     class TrainOrder(override val company: Int, val train: Int, val what: Int, val stations: IntArray = IntArray(0)) : Command {
         companion object {
             const val START_STOP = 0
@@ -222,6 +245,10 @@ sealed interface Command {
             const val SERVICE = 7
             /** Make it new again, in its depot, for its price less what it's worth. */
             const val RENEW = 8
+            const val GAP = 9
+            const val REFIT = 10
+            const val REPLACE = 11
+            const val GROUP = 12
         }
     }
 }

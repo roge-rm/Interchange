@@ -85,15 +85,22 @@ class Aircraft(
     override var owner: Int,
     val model: Int,
     var depot: Int,
-    val cargoChoice: Int = -1,
+    var cargoChoice: Int = -1,
 ) : Carrier {
     var name = ""
+
+    /** Its number in its company's aircraft, from 1. Each company counts its own. */
+    var number = 0
+    override var group = -1
+    override var shared = -1
+    override var gap = 0
+    override var departed = 0L
     override var renewAsked = NEVER_ASKED
     override var renewFailed = false
     val info get() = roster[model]
     var inDepot = true
     var running = false
-    var waiting = 0
+    override var waiting = 0
     /** Where it is, in 4096ths of a tile; how high, in 16ths of a step; the way it faces, in eighths. */
     var x = 0
     var y = 0
@@ -103,6 +110,7 @@ class Aircraft(
     /** A [Flight] state, the airport it's at or last left, and how long it's been holding. */
     var state = Flight.GATE
     var at = -1
+    // At a gate, -1 marks a retry or diversion rather than a station call.
     var holding = 0
     var gear = Gear.WHEELS
     var seasonalGear = true
@@ -288,6 +296,7 @@ internal fun World.buyAircraft(company: Company, depot: Depot, e: Engine, cargo:
     val a = airports.firstOrNull { it != null && it.depot == depot.id } ?: return
     if (!a.serves(e)) return
     val v = Aircraft(roster, aircraft.size, company.id, e.id, depot.id, if (cargo in e.cargoes) cargo else -1)
+    v.number = fleetNumber(company.id, aircraft, { it.owner }, { it.number })
     if (company.money < price(v.price)) return
     spend(company, Books.NEW_TRAINS, price(v.price))
     v.built = workDay
@@ -301,14 +310,42 @@ internal fun World.buyAircraft(company: Company, depot: Depot, e: Engine, cargo:
 internal fun World.aircraftCommand(company: Company, c: Command.CraftOrder) {
     val v = aircraft.getOrNull(c.vehicle) ?: return
     if (v.owner != company.id || v.wreckedFor > 0) return
-    linksDirty = true
+    if (c.what != Command.TrainOrder.REPLACE && c.what != Command.TrainOrder.GROUP) linksDirty = true
     when (c.what) {
+        Command.TrainOrder.GROUP -> setVehicleGroup(company, Command.CopyVehicle.AIRCRAFT, v, c.stations.firstOrNull())
+        Command.TrainOrder.REPLACE -> replaceAircraft(company, v, c.stations.firstOrNull())
+        Command.TrainOrder.REFIT -> {
+            val cargo = c.stations.firstOrNull() ?: return
+            if (!v.inDepot || cargo !in v.info.cargoes) return
+            v.cargoChoice = cargo
+            for (c in v.cargo.indices) if (v.capacity(c) == 0) v.cargo[c].clear()
+        }
         Command.TrainOrder.START_STOP -> if (v.inDepot) { if (v.running) v.running = false else outOfHangar(v) } else v.running = !v.running
         Command.TrainOrder.ORDERS -> {
+            val group = aircraft.filterNotNull().filter { v.shared >= 0 && it.shared == v.shared }.ifEmpty { listOf(v) }
+            for (g in group) {
+                g.orders.clear()
+                for (o in c.stations) if (stations.getOrNull(Order.station(o))?.owner == company.id) g.orders += o
+                g.order = 0
+            }
+        }
+        Command.TrainOrder.GAP -> {
+            val days = c.stations.firstOrNull() ?: return
+            if (days !in 0..Order.MAX_WAIT_DAYS) return
+            val group = aircraft.filterNotNull().filter { v.shared >= 0 && it.shared == v.shared }.ifEmpty { listOf(v) }
+            for (g in group) g.gap = days
+        }
+        Command.TrainOrder.SHARE -> {
+            val other = aircraft.getOrNull(c.stations.firstOrNull() ?: -1) ?: return
+            if (other.owner != company.id || other.id == v.id || other.wreckedFor > 0) return
+            if (other.shared < 0) other.shared = other.id
+            v.shared = other.shared
+            v.gap = other.gap
             v.orders.clear()
-            for (o in c.stations) if (stations.getOrNull(Order.station(o))?.owner == company.id) v.orders += o
+            v.orders += other.orders
             v.order = 0
         }
+        Command.TrainOrder.UNSHARE -> v.shared = -1
         Command.TrainOrder.TO_DEPOT -> if (!v.inDepot) {
             v.toDepot = !v.toDepot
             v.servicing = false
@@ -316,8 +353,11 @@ internal fun World.aircraftCommand(company: Company, c: Command.CraftOrder) {
             if (v.toDepot && depots.getOrNull(v.depot) == null) nearestHangar(v)?.let { v.depot = it.depot }
         }
         Command.TrainOrder.SELL -> if (v.inDepot) {
+            val backup = OrderBackup(ArrayList(v.orders), v.gap)
             earn(company, Books.TRAINS_SOLD, craftValue(v.price, v.built, v.info.life))
             aircraft[v.id] = null
+            pruneVehicleGroup(v.owner, Command.CopyVehicle.AIRCRAFT, v.group)
+            rememberOrders(company, Command.CopyVehicle.AIRCRAFT, v, backup)
         }
         Command.TrainOrder.SERVICE -> v.service = !v.service
         Command.TrainOrder.RENEW -> if (v.inDepot) {
@@ -440,7 +480,11 @@ internal fun World.moveAircraft() {
         if (v == null) continue
         if (v.inDepot) { if (v.running) outOfHangar(v); continue }
         if (v.wreckedFor > 0) {
-            if (--v.wreckedFor == 0) { aircraft[v.id] = null; linksDirty = true }
+            if (--v.wreckedFor == 0) {
+                aircraft[v.id] = null
+                pruneVehicleGroup(v.owner, Command.CopyVehicle.AIRCRAFT, v.group)
+                linksDirty = true
+            }
             continue
         }
         fly(v)
@@ -461,9 +505,18 @@ private fun World.fly(v: Aircraft) {
 private fun World.atGate(v: Aircraft) {
     if (v.waiting > 0) {
         if (--v.waiting == 0) {
+            val due = !v.toDepot && (due(v.service, v.serviced) || needsGear(v) || hasDepot(v.owner, Depots.HANGAR) && renewNow(v))
+            val here = airports.getOrNull(v.at)
+            val o = v.orders.getOrNull(v.order % v.orders.size.coerceAtLeast(1))
+            // Load and the gap run only when it is calling at the airport on this order.
+            if (v.holding >= 0 && here != null && o != null && Order.station(o) == here.station && here.serves(v.info)) {
+                if (!v.toDepot && !due && waitForLoad(v, o)) return
+                if (waitForGap(v, due)) return
+            }
+            v.holding = 0
             if (v.orders.isNotEmpty() && !v.toDepot) v.order = (v.order + 1) % v.orders.size
             // Due a service or a change of gear: from this stop to the nearest hangar, then on to its next order.
-            if (!v.toDepot && (due(v.service, v.serviced) || needsGear(v) || hasDepot(v.owner, Depots.HANGAR) && renewNow(v))) forService(v)
+            if (due) forService(v)
         }
         return
     }
@@ -480,6 +533,7 @@ private fun World.atGate(v: Aircraft) {
     // Somewhere it can't land at all, or out of its range from here: on to the next order.
     if (dest == null || !dest.serves(v.info) || here != null && tooFar(v, here, dest)) {
         v.order = (v.order + 1) % v.orders.size
+        v.holding = -1
         v.waiting = Calendar.TICKS_PER_DAY / 4
         return
     }
@@ -488,7 +542,7 @@ private fun World.atGate(v: Aircraft) {
         return
     }
     if (here == null) { depart(v, null); return }
-    if (!mayLeave(v, here)) { v.waiting = Calendar.TICKS_PER_DAY / 8; return }
+    if (!mayLeave(v, here)) { v.holding = -1; v.waiting = Calendar.TICKS_PER_DAY / 8; return }
     depart(v, here)
 }
 
@@ -667,6 +721,7 @@ private fun World.crashLanding(v: Aircraft, a: Airport) {
     v.holding = 0
     v.orders.clear()
     v.order = 0
+    v.shared = -1
     linksDirty = true
     val tile = index((v.x / SHIP_UNIT).coerceIn(0, width - 1), (v.y / SHIP_UNIT).coerceIn(0, height - 1))
     crashed(tile, listOf(CrashVehicle(Crash.AIRCRAFT, v.id, v.owner, v.name) to v))
@@ -689,6 +744,7 @@ private fun World.callHere(v: Aircraft, a: Airport) {
     val s = stations.getOrNull(a.station) ?: return
     val o = v.orders.getOrNull(v.order % v.orders.size.coerceAtLeast(1)) ?: 0
     v.waiting = maxOf(Calendar.TICKS_PER_DAY / 2, Calendar.TICKS_PER_DAY * Order.waitDays(o))
+    v.holding = if (v.target == s.id) 0 else -1
     if (v.target == s.id) callAt(v, s, o) else v.waiting = 1
 }
 

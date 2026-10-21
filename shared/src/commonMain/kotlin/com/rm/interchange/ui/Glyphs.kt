@@ -19,7 +19,7 @@ enum class Glyph {
     RoadStop, Canal, Dock, Lock, Airport,
     Raise, Lower, Level, Tree, Clear,
     Pause, Play, Speed, TurnLeft, TurnRight, Remove, Lift, Menu,
-    Save, Folder, Plus, Minus, Gear, Home, Package, Layers, Grid, Heights, Renew, Back, Waypoint, Wires, Shed, Fence, OneWay, Dome,
+    Save, Folder, Plus, Minus, Gear, Home, Package, Layers, Grid, Heights, Renew, Replace, Back, Waypoint, Wires, Shed, Fence, OneWay, Dome,
     TrackAuto, PieceX, PieceY, PieceN, PieceE, PieceS, PieceW,
     Chat, People, Flag, Tick, Up, Down,
     Thermometer, Wind, Snow, Sun, Calendar, Alert,
@@ -142,6 +142,7 @@ private class GlyphPen(val scope: DrawScope, val u: Float, val dx: Float, val dy
             Glyph.Grid -> { shape(false, 12f, 3f, 21f, 12f, 12f, 21f, 3f, 12f); line(7.5f, 7.5f, 16.5f, 16.5f, 1.5f); line(16.5f, 7.5f, 7.5f, 16.5f, 1.5f) }
             Glyph.Heights -> { open(2f, 19f, 8f, 9f, 12f, 14f, 15f, 10f, 22f, 19f); line(4.5f, 15f, 19.5f, 15f, 1.5f); line(6.5f, 12f, 17.5f, 12f, 1.5f) }
             Glyph.Renew -> { arc(12f, 12f, 7f, 30f, 280f); open(17f, 3f, 19.5f, 8.5f, 14f, 9.5f) }
+            Glyph.Replace -> { arc(12f, 12f, 7f, 210f, 130f); open(14f, 8f, 18.6f, 9.6f, 20f, 5f); arc(12f, 12f, 7f, 30f, 130f); open(10f, 16f, 5.4f, 14.4f, 4f, 19f) }
             Glyph.Back -> { line(5f, 12f, 19f, 12f, 2.5f); open(11f, 6f, 5f, 12f, 11f, 18f) }
             // A speech bubble with a tail at the bottom left, and two lines of words.
             Glyph.Chat -> { shape(false, 4f, 5f, 20f, 5f, 20f, 16f, 11f, 16f, 6f, 20f, 7f, 16f, 4f, 16f); line(8f, 9f, 16f, 9f, 1.5f); line(8f, 12.5f, 13f, 12.5f, 1.5f) }

@@ -61,6 +61,14 @@ object Codec {
     private const val AUTORENEW = 51
     private const val REMOVE = 52
     private const val REMOVE_AREA = 53
+    private const val LEVEL = 54
+    private const val PLANT_TREES = 55
+    private const val COPY_VEHICLE = 56
+    private const val BUY_TRAINS = 57
+    private const val BUY_ROAD_VEHICLES = 58
+    private const val BUY_CRAFTS = 59
+    private const val COPY_VEHICLES = 60
+    private const val CREATE_GROUP = 61
 
     /** The most goals a [Command.SetGoals] may carry. */
     const val MOST_GOALS = 100
@@ -80,7 +88,7 @@ object Codec {
             is Command.RoadOneWay -> { w.byte(ROAD_ONE_WAY); w.int(c.company); w.int(c.x); w.int(c.y) }
             is Command.RoadStop -> { w.byte(ROAD_STOP); w.int(c.company); w.int(c.x); w.int(c.y) }
             is Command.Garage -> { w.byte(GARAGE); w.int(c.company); w.int(c.x); w.int(c.y); w.int(c.edge) }
-            is Command.BuyRoadVehicle -> { w.byte(BUY_ROAD_VEHICLE); w.int(c.company); w.int(c.depot); w.int(c.model); w.int(c.cargo) }
+            is Command.BuyRoadVehicle -> { w.byte(if (c.count == 1) BUY_ROAD_VEHICLE else BUY_ROAD_VEHICLES); w.int(c.company); w.int(c.depot); w.int(c.model); w.int(c.cargo); if (c.count != 1) w.int(c.count) }
             is Command.RoadOrder -> { w.byte(ROAD_ORDER); w.int(c.company); w.int(c.vehicle); w.int(c.what); w.ints(c.stations) }
             is Command.SaltDepot -> { w.byte(SALT_DEPOT); w.int(c.company); w.int(c.x); w.int(c.y) }
             is Command.Canal -> { w.byte(CANAL); w.int(c.company); w.int(c.sx); w.int(c.sy); w.int(c.ex); w.int(c.ey); w.bool(c.remove) }
@@ -90,7 +98,7 @@ object Codec {
             is Command.Buoy -> { w.byte(BUOY); w.int(c.company); w.int(c.x); w.int(c.y) }
             is Command.Airport -> { w.byte(AIRPORT); w.int(c.company); w.int(c.x); w.int(c.y); w.int(c.kind); w.int(c.axis) }
             is Command.AirportUpgrade -> { w.byte(AIRPORT_UPGRADE); w.int(c.company); w.int(c.airport); w.int(c.what) }
-            is Command.BuyCraft -> { w.byte(BUY_CRAFT); w.int(c.company); w.int(c.depot); w.int(c.model); w.int(c.cargo) }
+            is Command.BuyCraft -> { w.byte(if (c.count == 1) BUY_CRAFT else BUY_CRAFTS); w.int(c.company); w.int(c.depot); w.int(c.model); w.int(c.cargo); if (c.count != 1) w.int(c.count) }
             is Command.CraftOrder -> { w.byte(CRAFT_ORDER); w.int(c.company); w.bool(c.aircraft); w.int(c.vehicle); w.int(c.what); w.ints(c.stations) }
             is Command.SnowWorks -> { w.byte(SNOW_WORKS); w.int(c.company); w.int(c.x); w.int(c.y); w.bool(c.shed) }
             is Command.SetUpkeep -> { w.byte(UPKEEP); w.int(c.company); w.int(c.level) }
@@ -100,7 +108,11 @@ object Codec {
             is Command.ClearArea -> { w.byte(CLEAR_AREA); w.int(c.company); w.int(c.x0); w.int(c.y0); w.int(c.x1); w.int(c.y1) }
             is Command.Remove -> { w.byte(REMOVE); w.int(c.company); w.int(c.x); w.int(c.y) }
             is Command.RemoveArea -> { w.byte(REMOVE_AREA); w.int(c.company); w.int(c.x0); w.int(c.y0); w.int(c.x1); w.int(c.y1) }
-            is Command.BuyTrain -> { w.byte(BUY_TRAIN_CARGO); w.int(c.company); w.int(c.depot); w.int(c.engine); w.int(c.wagon); w.int(c.wagons); w.int(c.cargo) }
+            is Command.Level -> { w.byte(LEVEL); w.int(c.company); w.int(c.x0); w.int(c.y0); w.int(c.x1); w.int(c.y1); w.int(c.height) }
+            is Command.PlantTrees -> { w.byte(PLANT_TREES); w.int(c.company); w.int(c.x0); w.int(c.y0); w.int(c.x1); w.int(c.y1) }
+            is Command.CreateGroup -> { w.byte(CREATE_GROUP); w.int(c.company); w.int(c.kind); w.int(c.vehicle); w.string(c.name) }
+            is Command.CopyVehicle -> { w.byte(if (c.count == 1) COPY_VEHICLE else COPY_VEHICLES); w.int(c.company); w.int(c.kind); w.int(c.vehicle); w.int(c.depot); if (c.count != 1) w.int(c.count) }
+            is Command.BuyTrain -> { w.byte(if (c.count == 1) BUY_TRAIN_CARGO else BUY_TRAINS); w.int(c.company); w.int(c.depot); w.int(c.engine); w.int(c.wagon); w.int(c.wagons); w.int(c.cargo); if (c.count != 1) w.int(c.count) }
             is Command.Loan -> { w.byte(LOAN); w.int(c.company); w.bool(c.borrow) }
             is Command.FundIndustry -> { w.byte(FUND_INDUSTRY); w.int(c.company); w.int(c.kind) }
             is Command.TownAction -> { w.byte(TOWN_ACTION); w.int(c.company); w.int(c.town); w.int(c.action) }
@@ -135,9 +147,15 @@ object Codec {
         CLEAR_AREA -> Command.ClearArea(r.int(), r.int(), r.int(), r.int(), r.int())
         REMOVE -> Command.Remove(r.int(), r.int(), r.int())
         REMOVE_AREA -> Command.RemoveArea(r.int(), r.int(), r.int(), r.int(), r.int())
+        LEVEL -> Command.Level(r.int(), r.int(), r.int(), r.int(), r.int(), r.int())
+        PLANT_TREES -> Command.PlantTrees(r.int(), r.int(), r.int(), r.int(), r.int())
+        CREATE_GROUP -> Command.CreateGroup(r.int(), r.int(), r.int(), r.string())
+        COPY_VEHICLE -> Command.CopyVehicle(r.int(), r.int(), r.int(), r.int())
+        COPY_VEHICLES -> Command.CopyVehicle(r.int(), r.int(), r.int(), r.int(), r.int())
         BUY_TRAIN -> Command.BuyTrain(r.int(), r.int(), r.int(), r.int(), r.int())
         TRAIN_ORDER -> Command.TrainOrder(r.int(), r.int(), r.int(), r.ints())
         BUY_TRAIN_CARGO -> Command.BuyTrain(r.int(), r.int(), r.int(), r.int(), r.int(), r.int())
+        BUY_TRAINS -> Command.BuyTrain(r.int(), r.int(), r.int(), r.int(), r.int(), r.int(), r.int())
         LOAN -> Command.Loan(r.int(), r.bool())
         FUND_INDUSTRY -> Command.FundIndustry(r.int(), r.int())
         TOWN_ACTION -> Command.TownAction(r.int(), r.int(), r.int())
@@ -160,6 +178,7 @@ object Codec {
         ROAD_STOP -> Command.RoadStop(r.int(), r.int(), r.int())
         GARAGE -> Command.Garage(r.int(), r.int(), r.int(), r.int())
         BUY_ROAD_VEHICLE -> Command.BuyRoadVehicle(r.int(), r.int(), r.int(), r.int())
+        BUY_ROAD_VEHICLES -> Command.BuyRoadVehicle(r.int(), r.int(), r.int(), r.int(), r.int())
         ROAD_ORDER -> Command.RoadOrder(r.int(), r.int(), r.int(), r.ints())
         CANAL -> Command.Canal(r.int(), r.int(), r.int(), r.int(), r.int(), r.bool())
         LOCK -> Command.Lock(r.int(), r.int(), r.int())
@@ -169,6 +188,7 @@ object Codec {
         AIRPORT -> Command.Airport(r.int(), r.int(), r.int(), r.int(), r.int())
         AIRPORT_UPGRADE -> Command.AirportUpgrade(r.int(), r.int(), r.int())
         BUY_CRAFT -> Command.BuyCraft(r.int(), r.int(), r.int(), r.int())
+        BUY_CRAFTS -> Command.BuyCraft(r.int(), r.int(), r.int(), r.int(), r.int())
         CRAFT_ORDER -> Command.CraftOrder(r.int(), r.bool(), r.int(), r.int(), r.ints())
         WIRE -> Command.Wire(r.int(), r.int(), r.int(), r.int(), r.int(), r.int(), r.bool())
         EDIT_TERRAIN -> Command.EditTerrain(r.int(), r.int(), r.int(), r.int(), r.int(), r.int(), r.int())

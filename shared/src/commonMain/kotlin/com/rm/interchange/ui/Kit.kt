@@ -173,11 +173,12 @@ fun Head(text: String, glyph: Glyph? = null) {
 
 /**
  * A row for a list in a window: a glyph in a tile, or a company's [insignia] in its colour [tint], a title and a line
- * under it, and what can be done with it at the end.
+ * under it, and what can be done with it at the end. [lineColour] draws the line in that colour, dim if it's left out.
  */
 @Composable
 fun ListRow(
     glyph: Glyph, title: String, line: String?, onClick: (() -> Unit)?, tint: Color? = null, insignia: ByteArray? = null,
+    lineColour: Color? = null,
     end: @Composable () -> Unit = {},
 ) {
     val c = LocalColors.current
@@ -194,7 +195,7 @@ fun ListRow(
         Badge(glyph, tint, insignia)
         Column(Modifier.weight(1f)) {
             Text(title, color = c.text, style = KitType.ListTitle)
-            if (line != null) Text(line, color = c.textDim, style = KitType.ListLine)
+            if (line != null) Text(line, color = lineColour ?: c.textDim, style = KitType.ListLine)
         }
         end()
     }

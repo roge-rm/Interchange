@@ -59,8 +59,8 @@ enum class Tool(
 
     Raise(ToolGroup.Land, Res.string.tool_raise, Glyph.Raise, ready = true),
     Lower(ToolGroup.Land, Res.string.tool_lower, Glyph.Lower, ready = true),
-    Level(ToolGroup.Land, Res.string.tool_level, Glyph.Level, editorReady = true),
-    Trees(ToolGroup.Land, Res.string.tool_trees, Glyph.Tree, editorReady = true),
+    Level(ToolGroup.Land, Res.string.tool_level, Glyph.Level, ready = true),
+    Trees(ToolGroup.Land, Res.string.tool_trees, Glyph.Tree, ready = true),
     ClearTrees(ToolGroup.Land, Res.string.tool_clear_trees, Glyph.Remove, editorReady = true, editorOnly = true),
     Clear(ToolGroup.Land, Res.string.tool_clear, Glyph.Clear, ready = true),
     Remove(ToolGroup.Land, Res.string.tool_remove, Glyph.Remove, ready = true),

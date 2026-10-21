@@ -15,6 +15,34 @@ package com.rm.interchange.sim
  * move in order of their ids.
  */
 
+/** A save from before each company counted its own: number them in the order they were bought. */
+internal fun <T> giveFleetNumbers(list: List<T?>, ownerOf: (T) -> Int, numberOf: (T) -> Int, set: (T, Int) -> Unit) {
+    val used = HashMap<Int, HashSet<Int>>()
+    for (v in list) if (v != null) {
+        val n = numberOf(v)
+        if (n > 0) used.getOrPut(ownerOf(v)) { HashSet() }.add(n)
+    }
+    for (v in list) if (v != null && numberOf(v) == 0) {
+        val taken = used.getOrPut(ownerOf(v)) { HashSet() }
+        var n = 1
+        while (n in taken) n++
+        set(v, n)
+        taken.add(n)
+    }
+}
+
+/** The smallest number from 1 that none of [owner]'s vehicles in [list] already has. */
+internal fun <T> fleetNumber(owner: Int, list: List<T?>, ownerOf: (T) -> Int, numberOf: (T) -> Int): Int {
+    val used = HashSet<Int>()
+    for (v in list) if (v != null && ownerOf(v) == owner) {
+        val n = numberOf(v)
+        if (n > 0) used += n
+    }
+    var n = 1
+    while (n in used) n++
+    return n
+}
+
 /** What carries cargo and calls at stations: trains, and road vehicles. */
 interface Carrier {
     val id: Int
@@ -23,6 +51,11 @@ interface Carrier {
     var profitThisYear: Long
     val orders: ArrayList<Int>
     val order: Int
+    var group: Int
+    var shared: Int
+    var gap: Int
+    var departed: Long
+    var waiting: Int
     fun capacity(c: Int): Int
     /** Its top speed, in km/h, for station ratings. */
     val topSpeed: Int
@@ -52,13 +85,20 @@ class RoadVehicle(
     val model: Int,
     var depot: Int,
     /** What it's set to carry, a [Cargo] number among those it can, or -1 for its first. */
-    val cargoChoice: Int = -1,
+    var cargoChoice: Int = -1,
 ) : Carrier {
     var name = ""
+
+    /** Its number in its company's road vehicles, from 1. Each company counts its own. */
+    var number = 0
+    override var group = -1
+    override var shared = -1
+    override var gap = 0
+    override var departed = 0L
     val info get() = roster[model]
     var inDepot = true
     var running = false
-    var waiting = 0
+    override var waiting = 0
     /** The step it's on, and how far along it. */
     var at = 0
     var along = 0
@@ -153,6 +193,7 @@ internal fun World.buyRoadVehicle(company: Company, c: Command.BuyRoadVehicle) {
     val year = Calendar.year(startYear, day)
     if (!e.enabled || e.kind != VehicleKind.ROAD || year < e.from || year >= e.until) return
     val v = RoadVehicle(roster, roadVehicles.size, company.id, e.id, depot.id, if (c.cargo in e.cargoes) c.cargo else -1)
+    v.number = fleetNumber(company.id, roadVehicles, { it.owner }, { it.number })
     if (company.money < price(v.price)) return
     spend(company, Books.NEW_TRAINS, price(v.price))
     v.built = workDay
@@ -165,20 +206,52 @@ internal fun World.buyRoadVehicle(company: Company, c: Command.BuyRoadVehicle) {
 internal fun World.roadVehicleCommand(company: Company, c: Command.RoadOrder) {
     val v = roadVehicles.getOrNull(c.vehicle) ?: return
     if (v.owner != company.id || v.wreckedFor > 0) return
-    linksDirty = true
+    if (c.what != Command.TrainOrder.REPLACE && c.what != Command.TrainOrder.GROUP) linksDirty = true
     when (c.what) {
+        Command.TrainOrder.GROUP -> setVehicleGroup(company, Command.CopyVehicle.ROAD, v, c.stations.firstOrNull())
+        Command.TrainOrder.REPLACE -> replaceRoadVehicle(company, v, c.stations.firstOrNull())
+        Command.TrainOrder.REFIT -> {
+            val cargo = c.stations.firstOrNull() ?: return
+            if (!v.inDepot || cargo !in v.info.cargoes) return
+            v.cargoChoice = cargo
+            for (c in v.cargo.indices) if (v.capacity(c) == 0) v.cargo[c].clear()
+        }
         Command.TrainOrder.START_STOP -> if (v.inDepot) { if (v.running) v.running = false else leaveGarage(v) } else v.running = !v.running
         Command.TrainOrder.ORDERS -> {
+            val group = roadVehicles.filterNotNull().filter { v.shared >= 0 && it.shared == v.shared }.ifEmpty { listOf(v) }
+            for (g in group) {
+                g.orders.clear()
+                for (o in c.stations) if (stations.getOrNull(Order.station(o))?.owner == company.id) g.orders += o
+                g.order = 0
+                g.route = null
+            }
+        }
+        Command.TrainOrder.GAP -> {
+            val days = c.stations.firstOrNull() ?: return
+            if (days !in 0..Order.MAX_WAIT_DAYS) return
+            val group = roadVehicles.filterNotNull().filter { v.shared >= 0 && it.shared == v.shared }.ifEmpty { listOf(v) }
+            for (g in group) g.gap = days
+        }
+        Command.TrainOrder.SHARE -> {
+            val other = roadVehicles.getOrNull(c.stations.firstOrNull() ?: -1) ?: return
+            if (other.owner != company.id || other.id == v.id || other.wreckedFor > 0) return
+            if (other.shared < 0) other.shared = other.id
+            v.shared = other.shared
+            v.gap = other.gap
             v.orders.clear()
-            for (o in c.stations) if (stations.getOrNull(Order.station(o))?.owner == company.id) v.orders += o
+            v.orders += other.orders
             v.order = 0
             v.route = null
         }
+        Command.TrainOrder.UNSHARE -> v.shared = -1
         Command.TrainOrder.TO_DEPOT -> if (!v.inDepot) { v.toDepot = !v.toDepot; v.servicing = false; v.route = null }
         Command.TrainOrder.TURN -> if (!v.inDepot) turnAround(v)
         Command.TrainOrder.SELL -> if (v.inDepot) {
+            val backup = OrderBackup(ArrayList(v.orders), v.gap)
             earn(company, Books.TRAINS_SOLD, roadValue(v))
             roadVehicles[v.id] = null
+            pruneVehicleGroup(v.owner, Command.CopyVehicle.ROAD, v.group)
+            rememberOrders(company, Command.CopyVehicle.ROAD, v, backup)
         }
         Command.TrainOrder.SERVICE -> v.service = !v.service
         Command.TrainOrder.RENEW -> if (v.inDepot) {
@@ -252,7 +325,11 @@ internal fun World.moveRoadVehicles() {
     for (v in list) {
         if (v.inDepot) continue
         if (v.wreckedFor > 0) {
-            if (--v.wreckedFor == 0) { roadVehicles[v.id] = null; linksDirty = true }
+            if (--v.wreckedFor == 0) {
+                roadVehicles[v.id] = null
+                pruneVehicleGroup(v.owner, Command.CopyVehicle.ROAD, v.group)
+                linksDirty = true
+            }
             continue
         }
         driveRoadVehicle(v, on)
@@ -288,12 +365,29 @@ internal fun World.wreckRoad(v: RoadVehicle) {
     v.route = null
     v.orders.clear()
     v.order = 0
+    v.shared = -1
     linksDirty = true
 }
 
+/** How much of [c] road vehicle [v] may carry under the current load limits. */
+private fun World.roadCapacity(v: RoadVehicle, c: Int) = if (c > Cargo.MAIL && loadLimits()) v.capacity(c) / 2 else v.capacity(c)
+
 /** Whether [v] has all it can carry, or all the spring load limits let it. */
 private fun World.roadFull(v: RoadVehicle): Boolean = (0 until Cargo.COUNT).all { c ->
-    v.load(c) >= if (c > Cargo.MAIL && loadLimits()) v.capacity(c) / 2 else v.capacity(c)
+    v.load(c) >= roadCapacity(v, c)
+}
+
+/** Full of at least one cargo under the current load limits, or unable to carry any cargo. */
+private fun World.roadAnyFull(v: RoadVehicle): Boolean {
+    var carries = false
+    for (c in 0 until Cargo.COUNT) {
+        val capacity = roadCapacity(v, c)
+        if (capacity > 0) {
+            carries = true
+            if (v.load(c) >= capacity) return true
+        }
+    }
+    return !carries
 }
 
 /** How long a road vehicle is, in the trains' units. */
@@ -307,13 +401,19 @@ private fun World.driveRoadVehicle(v: RoadVehicle, on: HashMap<Int, ArrayList<Ro
             val o = v.orders.getOrNull(v.order % v.orders.size.coerceAtLeast(1)) ?: 0
             val s = stations.getOrNull(Order.station(o))
             val due = !v.toDepot && hasDepot(v.owner, Depots.ROAD) && (due(v.service, v.serviced) || needsTires(v) || renewNow(v))
-            if (Order.has(o, Order.FULL_LOAD) && s != null && !v.toDepot && !due && !roadFull(v)) {
+            fun loaded() = when {
+                Order.has(o, Order.FULL_LOAD) -> roadFull(v)
+                Order.has(o, Order.FULL_LOAD_ANY) -> roadAnyFull(v)
+                else -> true
+            }
+            if (s != null && !v.toDepot && !due && !loaded()) {
                 loadAt(v, s)
-                if (!roadFull(v)) {
+                if (!loaded()) {
                     v.waiting = FULL_LOAD_RETRY
                     return
                 }
             }
+            if (waitForGap(v, due)) return
             nextRoadOrder(v)
             v.route = null
             // Due a service or a change of tires: choose a garage on the way to its next order.
@@ -501,8 +601,13 @@ private fun World.roadWearBy(tile: Int, v: RoadVehicle) {
 
 /** On to [v]'s next order, skipping those it has nothing to do at, as trains do. */
 private fun World.nextRoadOrder(v: RoadVehicle) {
-    if (v.orders.isEmpty()) return
-    v.order = (v.order + 1) % v.orders.size
+    val n = v.orders.size
+    if (n == 0) return
+    repeat(n) {
+        v.order = (v.order + 1) % n
+        val o = v.orders[v.order]
+        if (!Order.has(o, Order.SKIP_IF_NOTHING) || somethingAt(v, Order.station(o))) return
+    }
 }
 
 /** Whether [v], heading for a garage, may take any of its company's: off for a service, or with its home gone. */

@@ -483,7 +483,7 @@ fun OverlaysWindow(settings: Settings, onClose: () -> Unit) {
  * isn't saved here. A scenario tried from the editor has only the way back to it, and the title screen asks once more.
  */
 @Composable
-fun MenuWindow(saved: Boolean, canSave: Boolean, onEditor: (() -> Unit)?, onSave: () -> Unit, onLoad: () -> Unit, onNew: () -> Unit, onPlayers: () -> Unit, onSettings: () -> Unit, onMap: () -> Unit, onFinances: () -> Unit, onIndustries: () -> Unit, onCompanies: () -> Unit, onSubsidies: () -> Unit, onGoals: () -> Unit, onChronicle: () -> Unit, onTitle: () -> Unit, onClose: () -> Unit) {
+fun MenuWindow(saved: Boolean, canSave: Boolean, onEditor: (() -> Unit)?, onSave: () -> Unit, onLoad: () -> Unit, onNew: () -> Unit, onPlayers: () -> Unit, onSettings: () -> Unit, onMap: () -> Unit, onFinances: () -> Unit, onVehicles: () -> Unit, onIndustries: () -> Unit, onCompanies: () -> Unit, onSubsidies: () -> Unit, onGoals: () -> Unit, onChronicle: () -> Unit, onTitle: () -> Unit, onClose: () -> Unit) {
     val trying = onEditor != null
     var leaving by remember { mutableStateOf(false) }
     // Each entry's words, glyph, whether it's the main one, and what it does.
@@ -502,6 +502,7 @@ fun MenuWindow(saved: Boolean, canSave: Boolean, onEditor: (() -> Unit)?, onSave
     val world = listOf(
         Entry(stringResource(Res.string.overview_map), Glyph.Map, onClick = onMap),
         Entry(stringResource(Res.string.finances), Glyph.Graph, onClick = onFinances),
+        Entry(stringResource(Res.string.vehicles), Glyph.Train, onClick = onVehicles),
         Entry(stringResource(Res.string.industries), Glyph.Factory, onClick = onIndustries),
         Entry(stringResource(Res.string.companies), Glyph.Briefcase, onClick = onCompanies),
         Entry(stringResource(Res.string.subsidies), Glyph.Money, onClick = onSubsidies),
@@ -515,6 +516,94 @@ fun MenuWindow(saved: Boolean, canSave: Boolean, onEditor: (() -> Unit)?, onSave
         Grid(world) { e -> BigButton(e.text, e.primary, glyph = e.glyph, modifier = Modifier.fillMaxHeight(), onClick = e.onClick) }
     }
 }
+
+/** A vehicle picked in the list, for the map to open. */
+class ShowVehicle(val kind: Int, val id: Int, val x: Float, val y: Float) {
+    companion object {
+        const val ALL = -1
+        const val TRAIN = 0
+        const val ROAD = 1
+        const val SHIP = 2
+        const val AIRCRAFT = 3
+    }
+}
+
+/** Every vehicle the company has, and what it's doing. The chips keep to one kind. A tap goes to it and opens it. */
+@Composable
+fun VehiclesWindow(runner: com.rm.interchange.server.GameThread, onOpen: (ShowVehicle) -> Unit, onClose: () -> Unit) {
+    val me = LocalCompany.current
+    val c = LocalColors.current
+    val view by produceState(runner.view, runner) {
+        while (true) androidx.compose.runtime.withFrameNanos { value = runner.view }
+    }
+    val v = view ?: return
+    var kind by remember { mutableIntStateOf(ShowVehicle.ALL) }
+    var group by remember(kind) { mutableIntStateOf(-1) }
+    val groupKind = when (kind) {
+        ShowVehicle.TRAIN -> com.rm.interchange.sim.Command.CopyVehicle.TRAIN
+        ShowVehicle.ROAD -> com.rm.interchange.sim.Command.CopyVehicle.ROAD
+        ShowVehicle.SHIP -> com.rm.interchange.sim.Command.CopyVehicle.SHIP
+        ShowVehicle.AIRCRAFT -> com.rm.interchange.sim.Command.CopyVehicle.AIRCRAFT
+        else -> -1
+    }
+    val groups = v.groups.getOrNull(me)?.getOrNull(groupKind).orEmpty().sortedBy { it.id }
+    val selected = group.takeIf { id -> groups.any { it.id == id } } ?: -1
+    LaunchedEffect(groups, group) {
+        if (group >= 0 && groups.none { it.id == group }) group = -1
+    }
+    Window(stringResource(Res.string.vehicles), onClose, Glyph.Train) {
+        FillChips(listOf(ShowVehicle.ALL, ShowVehicle.TRAIN, ShowVehicle.ROAD, ShowVehicle.SHIP, ShowVehicle.AIRCRAFT), kind, { k ->
+            stringResource(when (k) {
+                ShowVehicle.TRAIN -> Res.string.group_rail
+                ShowVehicle.ROAD -> Res.string.group_road
+                ShowVehicle.SHIP -> Res.string.group_water
+                ShowVehicle.AIRCRAFT -> Res.string.group_air
+                else -> Res.string.vehicles_all
+            })
+        }) { kind = it }
+        if (kind != ShowVehicle.ALL) {
+            FillChips(listOf(-1) + groups.map { it.id }, selected, { id ->
+                if (id == -1) stringResource(Res.string.vehicles_all) else groups.first { it.id == id }.name
+            }) { group = it }
+        }
+        val trains = if (kind == ShowVehicle.ALL || kind == ShowVehicle.TRAIN) v.trains.filter { it.owner == me && (selected == -1 || it.group == selected) }.byFleet({ it.number }, { it.id }) else emptyList()
+        val roads = if (kind == ShowVehicle.ALL || kind == ShowVehicle.ROAD) v.roadVehicles.filter { it.owner == me && (selected == -1 || it.group == selected) }.byFleet({ it.number }, { it.id }) else emptyList()
+        val ships = if (kind == ShowVehicle.ALL || kind == ShowVehicle.SHIP) v.ships.filter { it.owner == me && (selected == -1 || it.group == selected) }.byFleet({ it.number }, { it.id }) else emptyList()
+        val aircraft = if (kind == ShowVehicle.ALL || kind == ShowVehicle.AIRCRAFT) v.aircraft.filter { it.owner == me && (selected == -1 || it.group == selected) }.byFleet({ it.number }, { it.id }) else emptyList()
+        if (trains.isEmpty() && roads.isEmpty() && ships.isEmpty() && aircraft.isEmpty()) {
+            Text(stringResource(Res.string.no_vehicles), color = c.textDim, style = KitType.Body)
+        }
+        vehicleKind(kind, ShowVehicle.TRAIN, stringResource(Res.string.group_rail), trains, Glyph.Train, { trainName(it) }, { trainStatus(v, it) }, { it.wrecked }, { trainWrong(it) }, { it.profitThisYear }, { it.id }, { it.x }, { it.y }, onOpen)
+        vehicleKind(kind, ShowVehicle.ROAD, stringResource(Res.string.group_road), roads, Glyph.Bus, { roadVehicleName(it) }, { roadStatus(v, it) }, { it.wrecked }, { roadWrong(it) }, { it.profitThisYear }, { it.id }, { it.x }, { it.y }, onOpen)
+        vehicleKind(kind, ShowVehicle.SHIP, stringResource(Res.string.group_water), ships, Glyph.Ship, { shipName(it) }, { shipStatus(v, it) }, { false }, { shipWrong(it) }, { it.profitThisYear }, { it.id }, { it.x }, { it.y }, onOpen)
+        vehicleKind(kind, ShowVehicle.AIRCRAFT, stringResource(Res.string.group_air), aircraft, Glyph.Air, { aircraftName(it) }, { aircraftStatus(v, it) }, { it.wrecked }, { aircraftWrong(it) }, { it.profitThisYear }, { it.id }, { it.x }, { it.y }, onOpen)
+    }
+}
+
+/** One kind in the vehicle list: a head when every kind is shown, then a row for each. */
+@Composable
+private fun <T> vehicleKind(
+    shown: Int, kind: Int, head: String, items: List<T>, glyph: Glyph,
+    name: @Composable (T) -> String, line: @Composable (T) -> String,
+    wrecked: (T) -> Boolean, wrong: (T) -> Boolean, profit: (T) -> Long, id: (T) -> Int, x: (T) -> Float, y: (T) -> Float,
+    onOpen: (ShowVehicle) -> Unit,
+) {
+    if (items.isEmpty()) return
+    val c = LocalColors.current
+    if (shown == ShowVehicle.ALL) Head(head)
+    for (item in items) {
+        val bad = wrecked(item)
+        val trouble = wrong(item)
+        val made = profit(item)
+        ListRow(glyph, name(item), line(item), { onOpen(ShowVehicle(kind, id(item), x(item), y(item))) }, lineColour = if (bad || trouble) statusColour(bad, trouble) else null) {
+            Text(money(made), color = if (made < 0) c.bad else c.textDim, style = KitType.ListLine, maxLines = 1)
+        }
+    }
+}
+
+/** By fleet number, then by the slot. */
+private fun <T> List<T>.byFleet(number: (T) -> Int, id: (T) -> Int) =
+    sortedWith(compareBy({ val n = number(it); if (n > 0) n else id(it) + 1 }, id))
 
 /** The company's money: its loan, borrowing and repaying, this year's and last year's books and a graph of the last two years. */
 @Composable

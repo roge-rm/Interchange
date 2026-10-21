@@ -95,6 +95,14 @@ class TrainView(
     val at: Int = -1,
     /** A wreck, waiting to be cleared. */
     val wrecked: Boolean = false,
+    /** Its number among its company's trains. */
+    val number: Int = 0,
+    /** Where it is, the middle of its tile, or of its depot when it's inside. */
+    val x: Float = 0f,
+    val y: Float = 0f,
+    val gap: Int = 0,
+    val wagonCargo: Int = -1,
+    val group: Int = -1,
 )
 
 /** A bus, truck or streetcar as the screen shows it. */
@@ -131,6 +139,14 @@ class RoadVehicleView(
     val at: Int = -1,
     /** A wreck, waiting to be cleared. */
     val wrecked: Boolean = false,
+    /** Its number among its company's road vehicles. */
+    val number: Int = 0,
+    /** Where it is, the middle of its tile, or of its garage when it's inside. */
+    val x: Float = 0f,
+    val y: Float = 0f,
+    val shared: Int = -1,
+    val gap: Int = 0,
+    val group: Int = -1,
 )
 
 /** A ship as the screen shows it. */
@@ -165,6 +181,14 @@ class ShipView(
     val owner: Int = 0,
     /** The station it's standing at now, or -1. */
     val at: Int = -1,
+    /** Its number among its company's ships. */
+    val number: Int = 0,
+    /** Where it is, or the middle of its shipyard when it's inside. */
+    val x: Float = 0f,
+    val y: Float = 0f,
+    val shared: Int = -1,
+    val gap: Int = 0,
+    val group: Int = -1,
 )
 
 /** An aircraft as the screen shows it. */
@@ -202,6 +226,14 @@ class AircraftView(
     val at: Int = -1,
     /** A wreck on the runway, waiting to be cleared. */
     val wrecked: Boolean = false,
+    /** Its number among its company's aircraft. */
+    val number: Int = 0,
+    /** Where it is, or the middle of its hangar when it's inside. */
+    val x: Float = 0f,
+    val y: Float = 0f,
+    val shared: Int = -1,
+    val gap: Int = 0,
+    val group: Int = -1,
 )
 
 /** An airport as the screen shows it. */
@@ -292,6 +324,7 @@ class WorldView(
     val reserved: IntArray = IntArray(0),
     /** Level crossings with a train near, their lights flashing, by tile. */
     val crossings: IntArray = IntArray(0),
+    val groups: List<List<List<VehicleGroup>>> = emptyList(),
 )
 
 /**
@@ -371,15 +404,20 @@ fun World.view(company: Int = 0, withReserved: Boolean = false): WorldView {
         cars += v.info.length / 16f
         cars += if (v.flying) v.altitude / 16f else -1f
     }
+    // The middle of a tile, or nothing if it isn't on the map.
+    fun atTile(tile: Int) = if (tile < 0) 0f to 0f else (tile % width + 0.5f) to (tile / width + 0.5f)
+    fun atDepot(id: Int) = atTile(depots.getOrNull(id)?.tile ?: -1)
     val trainViews = trains.filterNotNull().map { t ->
+        val (tx, ty) = if (t.inDepot) atDepot(t.depot) else atTile(t.steps.lastOrNull()?.let { stepTile(it) } ?: -1)
         TrainView(
             t.id, t.name, t.engine, t.wagon, t.wagons, t.depot, t.inDepot, t.running, t.toDepot,
             t.orders.toIntArray(), t.order, t.speed / 16 * 2700 / 4096, t.waiting > 0, t.running && !t.inDepot && t.lostUntil > tick,
             IntArray(Cargo.COUNT) { t.load(it) }, IntArray(Cargo.COUNT) { t.capacity(it) }, t.profitThisYear, t.profitLastYear, t.shared,
             age(t), t.reliability / 100, t.brokenFor > 0, t.breakdowns, t.service, t.servicing, price(t.price) - value(t), age(t) >= t.engineInfo.life,
             t.inDepot && t.engineInfo.traction == Traction.ELECTRIC && depots.getOrNull(t.depot)?.let { !depotWired(it) } == true,
-            owner = t.owner, wrecked = t.wreckedFor > 0,
+            owner = t.owner, wrecked = t.wreckedFor > 0, number = t.number,
             at = if (t.waiting > 0 && !t.inDepot) t.steps.lastOrNull()?.let { stationAt(stepTile(it))?.id } ?: -1 else -1,
+            x = tx, y = ty, gap = t.gap, wagonCargo = t.wagonCargo, group = t.group,
         )
     }
     val stationViews = stations.filterNotNull().map { s ->
@@ -419,17 +457,20 @@ fun World.view(company: Int = 0, withReserved: Boolean = false): WorldView {
         sheds.toIntArray(), fences.toIntArray(),
         roadVehicles.filterNotNull().map { v ->
             val c = v.carries
+            val (rx, ry) = if (v.inDepot) atDepot(v.depot) else atTile(roadStepTile(v.at))
             RoadVehicleView(
                 v.id, v.name, v.model, v.depot, v.inDepot, v.running, v.toDepot, v.orders.toIntArray(), v.order, v.speed / 16 * 2700 / 4096,
                 v.waiting > 0, v.running && !v.inDepot && v.lostUntil > tick, c, if (c >= 0) v.load(c) else 0, if (c >= 0) v.capacity(c) else 0,
                 v.profitThisYear, v.profitLastYear, (workDay - v.built).coerceAtLeast(0) / 365, v.reliability / 100, v.brokenFor > 0 && !v.slid, v.slid,
                 v.service, v.servicing, v.tires, v.seasonalTires, price(v.price) - roadValue(v),
-                owner = v.owner, wrecked = v.wreckedFor > 0,
+                owner = v.owner, wrecked = v.wreckedFor > 0, number = v.number,
                 at = if (v.waiting > 0 && !v.inDepot) roadStops[roadStepTile(v.at)] ?: -1 else -1,
+                x = rx, y = ry, shared = v.shared, gap = v.gap, group = v.group,
             )
         },
         ships.filterNotNull().map { v ->
             val c = v.carries
+            val (sx, sy) = if (v.inDepot) atDepot(v.depot) else (v.x / SHIP_UNIT.toFloat() to v.y / SHIP_UNIT.toFloat())
             val r = v.route
             val iced = !v.inDepot && v.running && r == null && v.lostUntil > tick
             ShipView(
@@ -438,12 +479,14 @@ fun World.view(company: Int = 0, withReserved: Boolean = false): WorldView {
                 v.profitThisYear, v.profitLastYear, (workDay - v.built).coerceAtLeast(0) / 365, v.reliability / 100, v.brokenFor > 0,
                 v.service, v.servicing, price(v.price) - craftValue(v.price, v.built, v.info.life),
                 iced && (weather.ice[shipTile(v)].toInt() and 255) > 0, v.waiting == 1 && weather.wind >= STORM_WIND,
-                owner = v.owner,
+                owner = v.owner, number = v.number,
                 at = if (v.waiting > 0 && !v.inDepot) shipTile(v).let { t -> stations.firstOrNull { it != null && !it.waypoint && t in berths(it.id) }?.id } ?: -1 else -1,
+                x = sx, y = sy, shared = v.shared, gap = v.gap, group = v.group,
             )
         },
         aircraft.filterNotNull().map { v ->
             val c = v.carries
+            val (ax, ay) = if (v.inDepot) atDepot(v.depot) else (v.x / SHIP_UNIT.toFloat() to v.y / SHIP_UNIT.toFloat())
             val dest = if (v.target >= 0) airportOf(v.target) else null
             AircraftView(
                 v.id, v.name, v.model, v.depot, v.inDepot, v.running, v.toDepot, v.orders.toIntArray(), v.order, v.speed / 16 * 2700 / 4096,
@@ -451,8 +494,9 @@ fun World.view(company: Int = 0, withReserved: Boolean = false): WorldView {
                 v.profitThisYear, v.profitLastYear, (workDay - v.built).coerceAtLeast(0) / 365, v.reliability / 100, v.brokenFor > 0,
                 v.service, v.servicing, price(v.price) - craftValue(v.price, v.built, v.info.life), v.gear, v.seasonalGear,
                 if (v.state == Flight.HOLD && dest != null) cantLand(v, dest) else null,
-                owner = v.owner, wrecked = v.wreckedFor > 0,
+                owner = v.owner, wrecked = v.wreckedFor > 0, number = v.number,
                 at = if (v.state == Flight.GATE && !v.inDepot) airports.getOrNull(v.at)?.station ?: -1 else -1,
+                x = ax, y = ay, shared = v.shared, gap = v.gap, group = v.group,
             )
         },
         airports.filterNotNull().map { AirportView(it.id, it.station, it.kind, it.x, it.y, it.w, it.h, it.axis, it.depot, it.ils, it.deice) },
@@ -460,6 +504,7 @@ fun World.view(company: Int = 0, withReserved: Boolean = false): WorldView {
         companies.map { it.name },
         if (withReserved) reservedView() else IntArray(0),
         litCrossings(),
+        companies.map { c -> c.groups.map { it.toList() } },
     )
 }
 

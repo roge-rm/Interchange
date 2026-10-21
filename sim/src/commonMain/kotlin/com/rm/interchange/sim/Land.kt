@@ -148,3 +148,47 @@ internal fun World.terraform(company: Company, cx: Int, cy: Int, up: Boolean) {
     }
     if (target == 0 || target == 1) shoreChanged()
 }
+
+/**
+ * Levels the tiles [c] names to [Command.Level.height], the land round them following, the same as the editor's level.
+ * Each corner that moves costs what raising one does. Short of the money, or with something built in the way, nothing moves.
+ */
+internal fun World.levelLand(company: Company, c: Command.Level) {
+    val changed = terrainChanges(c.x0, c.y0, c.x1, c.y1, Command.EditTerrain.LEVEL, c.height) ?: return
+    if (changed.isEmpty()) return
+    val cost = price(Prices.TERRAFORM) * changed.size
+    if (company.money < cost) return
+    spend(company, Books.CONSTRUCTION, cost)
+    applyTerrainChanges(changed)
+}
+
+/** What [c] would cost, and how many tiles it covers. Off the map, too big, or blocked, both are 0. Land that stays put costs nothing and still counts its tiles. */
+fun World.levelCost(c: Command.Level): Pair<Long, Int> {
+    val changed = terrainChanges(c.x0, c.y0, c.x1, c.y1, Command.EditTerrain.LEVEL, c.height) ?: return 0L to 0
+    val box = area(c.x0, c.y0, c.x1, c.y1) ?: return 0L to 0
+    val n = (box[2] - box[0] + 1) * (box[3] - box[1] + 1)
+    return price(Prices.TERRAFORM) * changed.size to n
+}
+
+/**
+ * Plants trees on the open tiles [c] names, the kinds the ground grows, the same as the editor.
+ * Each tile that takes one costs what felling a tree does. Short of the money, none are planted.
+ */
+internal fun World.plantTrees(company: Company, c: Command.PlantTrees) {
+    val (ax, ay, bx, by) = area(c.x0, c.y0, c.x1, c.y1) ?: return
+    var n = 0
+    for (y in ay..by) for (x in ax..bx) if (canPlantTree(x, y)) n++
+    if (n == 0) return
+    val cost = price(Prices.TREE) * n
+    if (company.money < cost) return
+    spend(company, Books.CONSTRUCTION, cost)
+    for (y in ay..by) for (x in ax..bx) if (canPlantTree(x, y)) plantTree(x, y)
+}
+
+/** What [c] would cost, and how many tiles would take a tree. */
+fun World.plantCost(c: Command.PlantTrees): Pair<Long, Int> {
+    val (ax, ay, bx, by) = area(c.x0, c.y0, c.x1, c.y1) ?: return 0L to 0
+    var n = 0
+    for (y in ay..by) for (x in ax..bx) if (canPlantTree(x, y)) n++
+    return price(Prices.TREE) * n to n
+}

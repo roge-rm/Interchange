@@ -1,10 +1,10 @@
 package com.rm.interchange.ui
 
 import com.rm.interchange.res.*
+import org.jetbrains.compose.resources.stringArrayResource
 import org.jetbrains.compose.resources.stringResource
 import org.jetbrains.compose.resources.pluralStringResource
 import androidx.compose.foundation.layout.height
-import org.jetbrains.compose.resources.stringArrayResource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.material3.Text
@@ -44,7 +44,7 @@ fun stationName(view: WorldView, id: Int): String {
 
 /** A train's name, or "Train 2" in the language shown if it hasn't one of its own. */
 @Composable
-fun trainName(t: TrainView): String = t.name.takeIf { it.isNotEmpty() } ?: stringResource(Res.string.train_n, t.id + 1)
+fun trainName(t: TrainView): String = t.name.takeIf { it.isNotEmpty() } ?: stringResource(Res.string.train_n, if (t.number > 0) t.number else t.id + 1)
 
 /** A train: its picture and what it's doing, its numbers, its orders, and buttons to run it. */
 @Composable
@@ -52,6 +52,9 @@ fun TrainCard(
     view: WorldView,
     roster: Roster,
     t: TrainView,
+    year: Int,
+    funds: Long,
+    price: (Long) -> Long,
     addingStops: Boolean,
     onAddStops: () -> Unit,
     send: (Command) -> Unit,
@@ -66,28 +69,14 @@ fun TrainCard(
         return
     }
     Card(trainName(t), onClose, modifier) {
-        val target = if (t.orders.isEmpty()) null else Order.station(t.orders[t.order % t.orders.size])
-        val doing = when {
-            t.wrecked -> stringResource(Res.string.wrecked)
-            t.broken -> stringResource(Res.string.broken_down)
-            t.needsWires -> stringResource(Res.string.needs_wires)
-            t.inDepot && t.running -> stringResource(Res.string.waiting_to_leave)
-            t.inDepot -> stringResource(Res.string.in_depot)
-            !t.running -> stringResource(Res.string.stopped)
-            t.servicing -> stringResource(Res.string.going_for_service, t.kmh)
-            t.toDepot -> stringResource(Res.string.going_to_depot, t.kmh)
-            t.waiting && target != null -> stringResource(Res.string.at_station, stationName(view, target))
-            t.lost -> stringResource(Res.string.lost)
-            target != null -> stringResource(Res.string.heading_for, stationName(view, target), t.kmh)
-            else -> stringResource(Res.string.no_stops)
-        }
+        val doing = trainStatus(view, t)
         val lang = languageCode()
         val e = roster[t.engine]
         val w = roster[t.wagon]
         val mine = t.owner == me
         VehicleHeader(
             e, stringResource(Res.string.consist, e.name(lang), t.wagons, (if (t.wagons == 1) w.name(lang) else w.plural(lang)).lowercase()),
-            doing, statusColour(t.wrecked, t.lost || t.broken || t.needsWires), if (mine) null else view.companies.getOrElse(t.owner) { "" },
+            doing, statusColour(t.wrecked, trainWrong(t)), if (mine) null else view.companies.getOrElse(t.owner) { "" },
         )
         VehicleStats(
             t.kmh, e.speed, t.age, t.old, t.reliability, t.profitThisYear, t.profitLastYear,
@@ -96,6 +85,12 @@ fun TrainCard(
         )
         // Someone else's shows what it is but none of the controls, and a wreck is cleared away by itself.
         if (!mine || t.wrecked) return@Card
+        VehicleGroupControls(view, Command.CopyVehicle.TRAIN, t.id, t.group, send) { order(Command.TrainOrder.GROUP, intArrayOf(it)) }
+        if (t.inDepot && w.cargoes.size > 1) {
+            val cargoes = stringArrayResource(Res.array.cargoes)
+            val selected = if (t.wagonCargo in w.cargoes) t.wagonCargo else w.cargoes.first()
+            SegmentedChoice(w.cargoes.toList(), selected, { cargoes[it] }) { order(Command.TrainOrder.REFIT, intArrayOf(it)) }
+        }
         Head(stringResource(Res.string.orders))
         val group = if (t.shared >= 0) view.trains.count { it.id != t.id && it.shared == t.shared } else 0
         // The last train left in a group shares with nobody, so it's shown as not sharing.
@@ -134,7 +129,9 @@ fun TrainCard(
                 )
             }
         }
+        GapControls(t.gap) { order(Command.TrainOrder.GAP, intArrayOf(it)) }
         Box(Modifier.height(KitSpace.Tight))
+        var replacing by remember(t.id) { mutableStateOf(false) }
         ButtonTiles(
             listOf(
                 TileButton(if (t.running) Glyph.Pause else Glyph.Play, stringResource(if (t.running) Res.string.stop else Res.string.start), strong = !t.running) { order(Command.TrainOrder.START_STOP) },
@@ -143,16 +140,28 @@ fun TrainCard(
                 TileButton(Glyph.TurnLeft, stringResource(Res.string.turn_round)) { order(Command.TrainOrder.TURN) },
             ) else listOf(
                 TileButton(Glyph.Renew, stringResource(Res.string.renew_for, money(t.renewCost))) { order(Command.TrainOrder.RENEW) },
+                TileButton(Glyph.Replace, stringResource(Res.string.replace), lit = replacing) { replacing = !replacing },
                 TileButton(Glyph.Minus, stringResource(Res.string.sell)) { order(Command.TrainOrder.SELL) },
             ),
         )
+        if (t.inDepot && replacing) {
+            fun base(engine: Engine) = engine.cost + (roster.getOrNull(engine.tender)?.cost ?: 0) + w.cost * t.wagons
+            ReplaceList(
+                roster.available(year, pulls = true).filter { it.id != t.engine }, funds,
+                costOf = { price(base(it)) - (price(base(e)) - t.renewCost) },
+                blocked = { it.traction == Traction.ELECTRIC && view.depots.firstOrNull { d -> d.id == t.depot }?.wired != true },
+            ) {
+                order(Command.TrainOrder.REPLACE, intArrayOf(it))
+                replacing = false
+            }
+        }
         SwitchRow(stringResource(Res.string.servicing), t.service) { order(Command.TrainOrder.SERVICE) }
     }
 }
 
 /** A depot: buying a train, its engine and wagons each picked from a list, and the trains in it. */
 @Composable
-fun DepotCard(view: WorldView, roster: Roster, depot: Int, year: Int, funds: Long, price: (Long) -> Long, send: (Command) -> Unit, onTrain: (Int) -> Unit, onClose: () -> Unit, modifier: Modifier) {
+fun DepotCard(view: WorldView, roster: Roster, depot: Int, year: Int, funds: Long, price: (Long) -> Long, send: (Command) -> Unit, onTrain: (Int) -> Unit, copying: Boolean, onCopy: (Int) -> Unit, onClose: () -> Unit, modifier: Modifier) {
     val me = LocalCompany.current
     val c = LocalColors.current
     val lang = languageCode()
@@ -161,6 +170,7 @@ fun DepotCard(view: WorldView, roster: Roster, depot: Int, year: Int, funds: Lon
     var engineId by remember { mutableIntStateOf(-1) }
     var wagonId by remember { mutableIntStateOf(-1) }
     var count by remember { mutableIntStateOf(3) }
+    var vehicleCount by remember(depot) { mutableIntStateOf(1) }
     var cargo by remember { mutableIntStateOf(-1) }
     var showWagons by remember { mutableStateOf(false) }
     Card(stringResource(Res.string.depot), onClose, modifier, scrolls = false) {
@@ -188,7 +198,7 @@ fun DepotCard(view: WorldView, roster: Roster, depot: Int, year: Int, funds: Lon
                 if (e != null) {
                     val n = if (w == null) 0 else count
                     val choices = w?.cargoes ?: IntArray(0)
-                    val cost = price(e.cost + (tender(e)?.cost ?: 0) + (w?.cost ?: 0) * n)
+                    val cost = price(e.cost + (tender(e)?.cost ?: 0) + (w?.cost ?: 0) * n) * vehicleCount
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Text(
                             if (w == null || n == 0) e.name(lang) else stringResource(Res.string.consist_line, e.name(lang), n, if (n == 1) w.name(lang) else w.plural(lang)),
@@ -205,13 +215,18 @@ fun DepotCard(view: WorldView, roster: Roster, depot: Int, year: Int, funds: Lon
                     val unwired = e.traction == Traction.ELECTRIC && view.depots.firstOrNull { it.id == depot }?.wired != true
                     if (unwired) Text(stringResource(Res.string.depot_needs_wires), color = c.warn, style = KitType.ListLine)
                     BuyButton(cost, funds, blocked = unwired || w == null) {
-                        send(Command.BuyTrain(me, depot, e.id, w?.id ?: 0, n, if (cargo in choices) cargo else -1))
+                        send(Command.BuyTrain(me, depot, e.id, w?.id ?: 0, n, if (cargo in choices) cargo else -1, vehicleCount))
                     }
                 }
+                VehicleCount(vehicleCount) { vehicleCount = it }
+                ActionButton(stringResource(Res.string.copy_one), strong = copying, onClick = { onCopy(vehicleCount) })
             },
             inDepot = {
                 for (t in view.trains.filter { it.depot == depot && it.inDepot }) {
-                    InDepotRow(trainName(t), t.running, { onTrain(t.id) }) { send(Command.TrainOrder(me, t.id, Command.TrainOrder.START_STOP)) }
+                    InDepotRow(
+                        trainName(t), t.running, { onTrain(t.id) },
+                        onCopy = if (t.owner == me) { { send(Command.CopyVehicle(me, Command.CopyVehicle.TRAIN, t.id, depot, vehicleCount)) } } else null,
+                    ) { send(Command.TrainOrder(me, t.id, Command.TrainOrder.START_STOP)) }
                 }
             },
         )

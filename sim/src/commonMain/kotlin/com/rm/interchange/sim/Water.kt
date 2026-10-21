@@ -28,15 +28,22 @@ class Ship(
     val model: Int,
     var depot: Int,
     /** What it's set to carry, a [Cargo] number among those it can, or -1 for its first. */
-    val cargoChoice: Int = -1,
+    var cargoChoice: Int = -1,
 ) : Carrier {
     var name = ""
+
+    /** Its number in its company's ships, from 1. Each company counts its own. */
+    var number = 0
+    override var group = -1
+    override var shared = -1
+    override var gap = 0
+    override var departed = 0L
     override var renewAsked = NEVER_ASKED
     override var renewFailed = false
     val info get() = roster[model]
     var inDepot = true
     var running = false
-    var waiting = 0
+    override var waiting = 0
     /** Where it is, in 4096ths of a tile, and the way it faces, in eighths. */
     var x = 0
     var y = 0
@@ -377,6 +384,7 @@ internal fun World.shipsChanged() {
 /** Buys a ship at a shipyard. */
 internal fun World.buyShip(company: Company, depot: Depot, e: Engine, cargo: Int) {
     val v = Ship(roster, ships.size, company.id, e.id, depot.id, if (cargo in e.cargoes) cargo else -1)
+    v.number = fleetNumber(company.id, ships, { it.owner }, { it.number })
     if (company.money < price(v.price)) return
     spend(company, Books.NEW_TRAINS, price(v.price))
     v.built = workDay
@@ -388,19 +396,51 @@ internal fun World.buyShip(company: Company, depot: Depot, e: Engine, cargo: Int
 internal fun World.shipCommand(company: Company, c: Command.CraftOrder) {
     val v = ships.getOrNull(c.vehicle) ?: return
     if (v.owner != company.id) return
-    linksDirty = true
+    if (c.what != Command.TrainOrder.REPLACE && c.what != Command.TrainOrder.GROUP) linksDirty = true
     when (c.what) {
+        Command.TrainOrder.GROUP -> setVehicleGroup(company, Command.CopyVehicle.SHIP, v, c.stations.firstOrNull())
+        Command.TrainOrder.REPLACE -> replaceShip(company, v, c.stations.firstOrNull())
+        Command.TrainOrder.REFIT -> {
+            val cargo = c.stations.firstOrNull() ?: return
+            if (!v.inDepot || cargo !in v.info.cargoes) return
+            v.cargoChoice = cargo
+            for (c in v.cargo.indices) if (v.capacity(c) == 0) v.cargo[c].clear()
+        }
         Command.TrainOrder.START_STOP -> if (v.inDepot) { if (v.running) v.running = false else launch(v) } else v.running = !v.running
         Command.TrainOrder.ORDERS -> {
+            val group = ships.filterNotNull().filter { v.shared >= 0 && it.shared == v.shared }.ifEmpty { listOf(v) }
+            for (g in group) {
+                g.orders.clear()
+                for (o in c.stations) if (stations.getOrNull(Order.station(o))?.owner == company.id) g.orders += o
+                g.order = 0
+                g.route = null
+            }
+        }
+        Command.TrainOrder.GAP -> {
+            val days = c.stations.firstOrNull() ?: return
+            if (days !in 0..Order.MAX_WAIT_DAYS) return
+            val group = ships.filterNotNull().filter { v.shared >= 0 && it.shared == v.shared }.ifEmpty { listOf(v) }
+            for (g in group) g.gap = days
+        }
+        Command.TrainOrder.SHARE -> {
+            val other = ships.getOrNull(c.stations.firstOrNull() ?: -1) ?: return
+            if (other.owner != company.id || other.id == v.id) return
+            if (other.shared < 0) other.shared = other.id
+            v.shared = other.shared
+            v.gap = other.gap
             v.orders.clear()
-            for (o in c.stations) if (stations.getOrNull(Order.station(o))?.owner == company.id) v.orders += o
+            v.orders += other.orders
             v.order = 0
             v.route = null
         }
+        Command.TrainOrder.UNSHARE -> v.shared = -1
         Command.TrainOrder.TO_DEPOT -> if (!v.inDepot) { v.toDepot = !v.toDepot; v.servicing = false; v.route = null }
         Command.TrainOrder.SELL -> if (v.inDepot) {
+            val backup = OrderBackup(ArrayList(v.orders), v.gap)
             earn(company, Books.TRAINS_SOLD, craftValue(v.price, v.built, v.info.life))
             ships[v.id] = null
+            pruneVehicleGroup(v.owner, Command.CopyVehicle.SHIP, v.group)
+            rememberOrders(company, Command.CopyVehicle.SHIP, v, backup)
         }
         Command.TrainOrder.SERVICE -> v.service = !v.service
         Command.TrainOrder.RENEW -> if (v.inDepot) {
@@ -466,10 +506,17 @@ private fun World.sail(v: Ship) {
         // Ships stay in port while a storm blows.
         if (v.waiting == 1 && weather.wind >= STORM_WIND && !v.info.hovercraft) return
         if (--v.waiting == 0) {
-            if (v.orders.isNotEmpty()) v.order = (v.order + 1) % v.orders.size
+            val due = !v.toDepot && hasDepot(v.owner, Depots.SHIPYARD) && (due(v.service, v.serviced) || renewNow(v))
+            val o = v.orders.getOrNull(v.order % v.orders.size.coerceAtLeast(1))
+            // Orders can change while it sits here. Load and count the call only if this dock is that stop.
+            if (o != null && shipTile(v) in berths(Order.station(o))) {
+                if (!v.toDepot && !due && waitForLoad(v, o)) return
+                if (waitForGap(v, due)) return
+                v.order = (v.order + 1) % v.orders.size
+            }
             v.route = null
             // Due a service: from this call to the nearest shipyard, so it never turns back halfway across a lake.
-            if (!v.toDepot && hasDepot(v.owner, Depots.SHIPYARD) && (due(v.service, v.serviced) || renewNow(v))) {
+            if (due) {
                 v.toDepot = true
                 v.servicing = true
             }

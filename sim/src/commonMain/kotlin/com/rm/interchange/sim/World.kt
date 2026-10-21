@@ -285,9 +285,13 @@ class World(settings: NewGame, val roster: Roster = Roster.BASE, generate: Boole
         run(company, command)
     }
 
+    // Buy loops stay outside the buy functions so Copy leaves the backup alone.
+    // Only the first successful buy takes the backup.
     private fun run(company: Company, command: Command) {
         when (command) {
             is Command.Terraform -> terraform(company, command.x, command.y, command.up)
+            is Command.Level -> levelLand(company, command)
+            is Command.PlantTrees -> plantTrees(company, command)
             is Command.Rail -> buildRail(company, command)
             is Command.Station -> buildStation(company, command)
             is Command.Depot -> buildDepot(company, command)
@@ -301,7 +305,14 @@ class World(settings: NewGame, val roster: Roster = Roster.BASE, generate: Boole
             is Command.RoadOneWay -> roadOneWay(company, command)
             is Command.RoadStop -> buildRoadStop(company, command)
             is Command.Garage -> buildGarage(company, command)
-            is Command.BuyRoadVehicle -> buyRoadVehicle(company, command)
+            is Command.BuyRoadVehicle -> {
+                for (i in 0 until command.count.coerceAtMost(MAX_AT_ONCE)) {
+                    val sizeBefore = roadVehicles.size
+                    buyRoadVehicle(company, command)
+                    if (roadVehicles.size == sizeBefore) break
+                    inheritOrders(company, Command.CopyVehicle.ROAD, roadVehicles.getOrNull(sizeBefore))
+                }
+            }
             is Command.RoadOrder -> roadVehicleCommand(company, command)
             is Command.SaltDepot -> saltDepot(company, command)
             is Command.Canal -> buildCanal(company, command)
@@ -311,7 +322,16 @@ class World(settings: NewGame, val roster: Roster = Roster.BASE, generate: Boole
             is Command.Buoy -> buildBuoy(company, command)
             is Command.Airport -> buildAirport(company, command)
             is Command.AirportUpgrade -> upgradeAirport(company, command)
-            is Command.BuyCraft -> buyCraft(company, command)
+            is Command.BuyCraft -> {
+                for (i in 0 until command.count.coerceAtMost(MAX_AT_ONCE)) {
+                    val shipsBefore = ships.size
+                    val aircraftBefore = aircraft.size
+                    buyCraft(company, command)
+                    if (ships.size == shipsBefore && aircraft.size == aircraftBefore) break
+                    if (ships.size > shipsBefore) inheritOrders(company, Command.CopyVehicle.SHIP, ships.getOrNull(shipsBefore))
+                    if (aircraft.size > aircraftBefore) inheritOrders(company, Command.CopyVehicle.AIRCRAFT, aircraft.getOrNull(aircraftBefore))
+                }
+            }
             is Command.CraftOrder -> if (command.aircraft) aircraftCommand(company, command) else shipCommand(company, command)
             is Command.SnowWorks -> snowWorks(company, command)
             is Command.SetUpkeep -> company.upkeep = command.level.coerceIn(Upkeep.LOW, Upkeep.HIGH)
@@ -320,7 +340,16 @@ class World(settings: NewGame, val roster: Roster = Roster.BASE, generate: Boole
             is Command.ClearArea -> clearArea(company, command)
             is Command.Remove -> removeProperty(company, command.x, command.y)
             is Command.RemoveArea -> removeArea(company, command)
-            is Command.BuyTrain -> buyTrain(company, command)
+            is Command.CopyVehicle -> copyVehicle(company, command)
+            is Command.CreateGroup -> createGroup(company, command)
+            is Command.BuyTrain -> {
+                for (i in 0 until command.count.coerceAtMost(MAX_AT_ONCE)) {
+                    val sizeBefore = trains.size
+                    buyTrain(company, command)
+                    if (trains.size == sizeBefore) break
+                    inheritOrders(company, Command.CopyVehicle.TRAIN, trains.getOrNull(sizeBefore))
+                }
+            }
             is Command.TrainOrder -> trainCommand(company, command)
             is Command.Loan -> loanCommand(company, command)
             is Command.FundIndustry -> fundIndustry(company, command)

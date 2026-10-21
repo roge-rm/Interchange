@@ -108,6 +108,8 @@
     <string name="depot">Dépôt</string>
     <string name="engine_speed">%1$s %2$s, %3$d km/h</string>
     <string name="wagons_count">%1$d wagons</string>
+    <string name="fewer_vehicles">Moins de véhicules</string>
+    <string name="more_vehicles">Plus de véhicules</string>
     <string name="fewer_wagons">Moins de wagons</string>
     <string name="more_wagons">Plus de wagons</string>
     <string name="buy_for">Acheter, %1$s</string>
@@ -229,6 +231,9 @@
         <item>Voyageurs</item><item>Courrier</item><item>Bois rond</item><item>Bois d'œuvre</item><item>Grain</item><item>Charbon</item><item>Minerai de fer</item><item>Acier</item><item>Marchandises</item><item>Pétrole</item><item>Carburant</item><item>Bétail</item><item>Aliments</item><item>Poisson</item><item>Papier</item><item>Potasse</item><item>Minerai de nickel</item><item>Nickel</item><item>Bauxite</item><item>Aluminium</item>
     </string-array>
     <string name="industries">Industries</string>
+    <string name="vehicles">Véhicules</string>
+    <string name="vehicles_all">Tous</string>
+    <string name="no_vehicles">Aucun véhicule</string>
 
     <!-- Nouvelles -->
     <string name="news_opens">Ouverture : %1$s</string>
@@ -238,9 +243,16 @@
 
     <!-- Ordres -->
     <string name="full_load">Plein chargement</string>
+    <string name="full_load_any">Une cargaison</string>
     <string name="unload_all">Tout décharger</string>
     <string name="transfer">Transfert</string>
     <string name="no_loading">Pas de chargement</string>
+    <string name="no_gap">Sans écart</string>
+    <string name="gap_less">Un jour d'écart de moins</string>
+    <string name="gap_more">Un jour d'écart de plus</string>
+    <string name="copy">Copier</string>
+    <string name="copy_one">En copier un</string>
+    <string name="tap_to_copy">Touchez un des vôtres</string>
     <string name="wait_less">Attendre un jour de moins</string>
     <string name="wait_more">Attendre un jour de plus</string>
     <string name="remove_stop">Retirer l'arrêt</string>
@@ -388,6 +400,7 @@
     <string name="broken_down">En panne</string>
     <string name="going_for_service">En route pour l'entretien, %1$d km/h</string>
     <string name="renew_for">Renouveler pour %1$s</string>
+    <string name="replace">Remplacer</string>
     <string name="servicing">Entretien</string>
     <string name="news_crash">%1$s a eu un accident près de %2$s</string>
     <string name="news_crash_lost">%1$s a eu un accident près de %2$s, %3$d personnes ont péri</string>
@@ -694,8 +707,13 @@
     <string name="here_now">Ici</string>
     <string name="nothing_calls">Aucun véhicule ne s'y arrête</string>
     <plurals name="shared_with">
-        <item quantity="one">Partagés avec %1$d autre train</item>
-        <item quantity="other">Partagés avec %1$d autres trains</item>
+        <item quantity="one">Partagés avec %1$d autre véhicule</item>
+        <item quantity="other">Partagés avec %1$d autres véhicules</item>
+    </plurals>
+    <plurals name="days_apart">
+        <item quantity="zero">Sans écart</item>
+        <item quantity="one">%1$d jour d'écart</item>
+        <item quantity="other">%1$d jours d'écart</item>
     </plurals>
     <plurals name="wait_days_n">
         <item quantity="one">Attendre %1$d jour</item>
@@ -756,4 +774,7 @@
     <string name="map_coverage_help">Portée des bâtiments et visites aux industries dans les 90 derniers jours de travail.</string>
     <string name="map_controls">Commandes de la carte</string>
     <string name="map_controls_hint">Touchez une tuile pour l’activer ou la désactiver. Maintenez-la pour voir son nom.</string>
+    <string name="no_group">Aucun groupe</string>
+    <string name="new_group">Nouveau groupe</string>
+    <string name="vehicle_group">Groupe</string>
 </resources>

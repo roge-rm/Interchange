@@ -15,6 +15,17 @@ stay about as short as the English ones, since they have to fit.
 | depot (trains), engine house | dépôt |
 | signal, two-way, one-way | signal, à double sens, à sens unique |
 | train, engine, tender | train, locomotive, tender |
+| vehicle | véhicule |
+| Fewer vehicles | Moins de véhicules |
+| More vehicles | Plus de véhicules |
+| gap (days apart) | écart |
+| copy (vehicle) | copier |
+| copy one | en copier un |
+| Replace | Remplacer |
+| No group | Aucun groupe |
+| New group | Nouveau groupe |
+| Group | Groupe |
+| tap one of yours | touchez un des vôtres |
 | coach, baggage car, boxcar | voiture, fourgon à bagages, wagon couvert |
 | flatcar, gondola, hopper, tank car, stock car, caboose | wagon plat, wagon-tombereau, wagon-trémie, wagon-citerne, wagon à bestiaux, fourgon de queue |
 | stops (a train's), add stops | arrêts, ajouter des arrêts |

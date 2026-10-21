@@ -36,6 +36,9 @@ class Company(val id: Int, var name: String, var money: Long) {
     var autorenew = true
     var renewMonths = Autorenew.MONTHS_DEFAULT
     var renewFloor = 0L
+    val orderBackups = arrayOfNulls<OrderBackup>(4)
+    // A group is a named list, separate from the shared order id.
+    val groups = Array(4) { ArrayList<VehicleGroup>() }
 }
 
 /** What money is booked to: what it was spent on or where it came from. */

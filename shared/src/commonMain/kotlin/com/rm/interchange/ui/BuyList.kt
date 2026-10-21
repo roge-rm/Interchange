@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.verticalScroll
@@ -21,9 +22,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.rm.interchange.res.*
 import com.rm.interchange.sim.Engine
+import com.rm.interchange.sim.MAX_AT_ONCE
 import org.jetbrains.compose.resources.pluralStringResource
 import org.jetbrains.compose.resources.stringArrayResource
 import org.jetbrains.compose.resources.stringResource
@@ -163,6 +166,15 @@ fun BuyPanel(top: @Composable () -> Unit, list: @Composable () -> Unit, footer: 
 private val LIST_LEAST = 96.dp
 private val IN_DEPOT_HEIGHT = 120.dp
 
+@Composable
+fun VehicleCount(count: Int, onCount: (Int) -> Unit) {
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        SquareButton(Glyph.Minus, stringResource(Res.string.fewer_vehicles), 32.dp, enabled = count > 1) { onCount(count - 1) }
+        Text(count.toString(), color = LocalColors.current.text, style = KitType.RowTitle, textAlign = TextAlign.Center, modifier = Modifier.width(24.dp))
+        SquareButton(Glyph.Plus, stringResource(Res.string.more_vehicles), 32.dp, enabled = count < MAX_AT_ONCE) { onCount(count + 1) }
+    }
+}
+
 /** The button to buy what's picked for [cost], greyed with a note when there's too little money or [blocked]. */
 @Composable
 fun BuyButton(cost: Long, funds: Long, blocked: Boolean = false, onBuy: () -> Unit) {
@@ -172,13 +184,14 @@ fun BuyButton(cost: Long, funds: Long, blocked: Boolean = false, onBuy: () -> Un
     BigButton(stringResource(Res.string.buy_for, money(cost)), primary = true, enabled = !short && !blocked, glyph = Glyph.Plus, onClick = onBuy)
 }
 
-/** One vehicle in a depot, garage, shipyard or hangar, with buttons for its orders and to start or stop it. */
+/** One vehicle in a depot, garage, shipyard or hangar, with its orders, copy and start or stop buttons. */
 @Composable
-fun InDepotRow(name: String, running: Boolean, onOrders: () -> Unit, onStartStop: () -> Unit) {
+fun InDepotRow(name: String, running: Boolean, onOrders: () -> Unit, onCopy: (() -> Unit)?, onStartStop: () -> Unit) {
     val c = LocalColors.current
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         Text(name, color = c.text, style = KitType.ListLine, modifier = Modifier.weight(1f))
         ActionButton(stringResource(Res.string.orders), onClick = onOrders)
+        if (onCopy != null) ActionButton(stringResource(Res.string.copy), onClick = onCopy)
         ActionButton(stringResource(if (running) Res.string.stop else Res.string.start), strong = !running, onClick = onStartStop)
     }
 }

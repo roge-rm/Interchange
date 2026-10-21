@@ -16,7 +16,7 @@ package com.rm.interchange.sim
  */
 object Save {
     private val MAGIC = "ICHG".encodeToByteArray()
-    const val VERSION = 40
+    const val VERSION = 45
 
     /** A vehicle's [built] day as saved by [version]: work days from 36, calendar days before. */
     private fun World.builtOut(built: Int, version: Int) = if (version >= 36) built else built / settings.dayLength
@@ -79,6 +79,7 @@ object Save {
                 w.bool(t != null)
                 if (t == null) continue
                 w.int(t.owner); w.int(t.engine); w.int(t.wagon); w.int(t.wagons); w.int(t.depot); w.int(t.wagonCargo); w.string(t.name)
+                if (version >= 41) w.int(t.number)
                 w.bool(t.inDepot); w.bool(t.running); w.int(t.waiting)
                 w.ints(t.steps.toIntArray()); w.int(t.nose); w.int(t.speed)
                 w.ints(t.orders.toIntArray()); w.int(t.order); w.bool(t.toDepot)
@@ -92,6 +93,8 @@ object Save {
                 if (version >= 28) w.bool(t.snowbound)
                 if (version >= 37) { w.int(t.headOn); w.bool(t.stuck); w.bool(t.held) }
                 if (version >= 38) { w.int(t.wreckedFor); w.bool(t.signalled) }
+                if (version >= 43) { w.int(t.gap); w.long(t.departed) }
+                if (version >= 45) w.int(t.group)
             }
             w.uvar(towns.size.toLong())
             for (t in towns) { w.string(t.name); w.int(t.x); w.int(t.y); w.int(t.grid); w.bool(t.french); w.int(t.population); w.int(t.houses); w.int(t.growIn); w.int(t.servedThisMonth); w.int(t.servedLastMonth); w.ints(t.approval)
@@ -126,6 +129,10 @@ object Save {
                 w.bool(v != null)
                 if (v == null) continue
                 w.int(v.owner); w.int(v.model); w.int(v.depot); w.int(v.cargoChoice); w.string(v.name)
+                if (version >= 41) w.int(v.number)
+                if (version >= 42) w.int(v.shared)
+                if (version >= 43) { w.int(v.gap); w.long(v.departed) }
+                if (version >= 45) w.int(v.group)
                 w.bool(v.inDepot); w.bool(v.running); w.int(v.waiting); w.int(v.at); w.int(v.along); w.int(v.speed)
                 writeCargo(w, v.cargo); w.long(v.profitThisYear); w.long(v.profitLastYear)
                 w.ints(v.orders.toIntArray()); w.int(v.order); w.bool(v.toDepot)
@@ -210,6 +217,18 @@ object Save {
             if (version >= 40) {
                 for (c in companies) { w.bool(c.autorenew); w.int(c.renewMonths); w.long(c.renewFloor) }
                 for (list in listOf<List<Carrier?>>(trains, roadVehicles, ships, aircraft)) for (v in list) if (v != null) { w.int(v.renewAsked); w.bool(v.renewFailed) }
+            }
+            if (version >= 44) {
+                for (c in companies) for (backup in c.orderBackups) {
+                    w.bool(backup != null)
+                    if (backup != null) { w.ints(backup.orders.toIntArray()); w.int(backup.gap); w.int(backup.shared) }
+                }
+            }
+            if (version >= 45) {
+                for (c in companies) for (groups in c.groups) {
+                    w.int(groups.size)
+                    for (group in groups) { w.int(group.id); w.string(group.name) }
+                }
             }
         }
         val body = Squeeze.pack(w.toByteArray())
@@ -331,6 +350,7 @@ object Save {
                 val depot = r.int()
                 val t = Train(roster, id, owner, engine, wagon, wagons, depot, if (version >= 7) r.int() else -1)
                 t.name = r.string()
+                if (version >= 41) t.number = r.int()
                 t.inDepot = r.bool(); t.running = r.bool(); t.waiting = r.int()
                 // Before bridges a step had no level and its tile one bit lower.
                 fun stepOf(v: Int) = if (version >= 13) v else ((v ushr 5) shl 6) or (v and 31)
@@ -348,6 +368,8 @@ object Save {
                         if (version >= 28) t.snowbound = r.bool()
                         if (version >= 37) { t.headOn = r.int(); t.stuck = r.bool(); t.held = r.bool() }
                         if (version >= 38) { t.wreckedFor = r.int(); t.signalled = r.bool() }
+                        if (version >= 43) { t.gap = r.int(); t.departed = r.long() }
+                        if (version >= 45) t.group = r.int()
                     } else {
                         t.built = (tick / Calendar.TICKS_PER_DAY).toInt()
                         t.serviced = t.built
@@ -362,6 +384,7 @@ object Save {
                 }
                 trains += t
             }
+            if (version < 41) giveFleetNumbers(trains, { it.owner }, { it.number }) { v, n -> v.number = n }
             if (version >= 3) {
                 repeat(r.uvar().toInt()) { id ->
                     val t = Town(id, r.string(), r.int(), r.int(), r.int(), if (version >= 4) r.bool() else false)
@@ -426,6 +449,10 @@ object Save {
                     val model = vehicle(r.int())
                     val v = RoadVehicle(roster, id, owner, model, r.int(), r.int())
                     v.name = r.string()
+                    if (version >= 41) v.number = r.int()
+                    if (version >= 42) v.shared = r.int()
+                    if (version >= 43) { v.gap = r.int(); v.departed = r.long() }
+                    if (version >= 45) v.group = r.int()
                     v.inDepot = r.bool(); v.running = r.bool(); v.waiting = r.int(); v.at = r.int(); v.along = r.int(); v.speed = r.int()
                     readCargo(r, v.cargo, version); v.profitThisYear = r.long(); v.profitLastYear = r.long()
                     v.orders += r.ints().toList(); v.order = r.int(); v.toDepot = r.bool()
@@ -435,6 +462,7 @@ object Save {
                     if (version >= 39) v.wreckedFor = r.int()
                     roadVehicles += v
                 }
+                if (version < 41) giveFleetNumbers(roadVehicles, { it.owner }, { it.number }) { v, n -> v.number = n }
             } else {
                 // Before company roads, a town's paved road was paved and the rest dirt.
                 for (i in road.indices) if (road[i].toInt() and PAVED != 0) roadKind[i] = Surface.PAVED.toByte()
@@ -520,6 +548,18 @@ object Save {
                 for (c in companies) { c.autorenew = r.bool(); c.renewMonths = r.int().coerceIn(-12, 12); c.renewFloor = r.long().coerceAtLeast(0) }
                 for (list in listOf<List<Carrier?>>(trains, roadVehicles, ships, aircraft)) for (v in list) if (v != null) { v.renewAsked = r.int(); v.renewFailed = r.bool() }
             }
+            if (version >= 44) {
+                for (c in companies) for (kind in c.orderBackups.indices) {
+                    if (r.bool()) c.orderBackups[kind] = OrderBackup(ArrayList(r.ints().toList()), r.int(), r.int())
+                }
+            }
+            if (version >= 45) {
+                for (c in companies) for (groups in c.groups) {
+                    repeat(r.int().also { if (it !in 0..1_000_000) throw BadData("too many groups") }) {
+                        groups += VehicleGroup(r.int(), r.string())
+                    }
+                }
+            }
         }
         // Vehicles' built day was a calendar day before 36, a work day since.
         if (version < 36) {
@@ -595,6 +635,10 @@ object Save {
             w.bool(v != null)
             if (v == null) continue
             w.int(v.owner); w.int(v.model); w.int(v.depot); w.int(v.cargoChoice); w.string(v.name)
+            if (version >= 41) w.int(v.number)
+            if (version >= 42) w.int(v.shared)
+            if (version >= 43) { w.int(v.gap); w.long(v.departed) }
+            if (version >= 45) w.int(v.group)
             w.bool(v.inDepot); w.bool(v.running); w.int(v.waiting); w.int(v.x); w.int(v.y); w.int(v.heading); w.int(v.speed); w.int(v.lockWait); w.bool(v.fogged)
             writeCargo(w, v.cargo); w.long(v.profitThisYear); w.long(v.profitLastYear)
             w.ints(v.orders.toIntArray()); w.int(v.order); w.bool(v.toDepot)
@@ -615,6 +659,10 @@ object Save {
             w.bool(v != null)
             if (v == null) continue
             w.int(v.owner); w.int(v.model); w.int(v.depot); w.int(v.cargoChoice); w.string(v.name)
+            if (version >= 41) w.int(v.number)
+            if (version >= 42) w.int(v.shared)
+            if (version >= 43) { w.int(v.gap); w.long(v.departed) }
+            if (version >= 45) w.int(v.group)
             w.bool(v.inDepot); w.bool(v.running); w.int(v.waiting); w.int(v.x); w.int(v.y); w.int(v.altitude); w.int(v.heading); w.int(v.speed)
             w.int(v.state); w.int(v.at); w.int(v.holding); w.int(v.gear); w.bool(v.seasonalGear)
             writeCargo(w, v.cargo); w.long(v.profitThisYear); w.long(v.profitLastYear)
@@ -634,6 +682,10 @@ object Save {
             val model = vehicle(r.int())
             val v = Ship(roster, id, owner, model, r.int(), r.int())
             v.name = r.string()
+            if (version >= 41) v.number = r.int()
+            if (version >= 42) v.shared = r.int()
+            if (version >= 43) { v.gap = r.int(); v.departed = r.long() }
+            if (version >= 45) v.group = r.int()
             v.inDepot = r.bool(); v.running = r.bool(); v.waiting = r.int(); v.x = r.int(); v.y = r.int(); v.heading = r.int(); v.speed = r.int(); v.lockWait = r.int(); v.fogged = r.bool()
             readCargo(r, v.cargo, version); v.profitThisYear = r.long(); v.profitLastYear = r.long()
             v.orders += r.ints().toList(); v.order = r.int(); v.toDepot = r.bool()
@@ -642,6 +694,7 @@ object Save {
             v.servicing = r.bool(); v.service = r.bool()
             ships += v
         }
+        if (version < 41) giveFleetNumbers(ships, { it.owner }, { it.number }) { v, n -> v.number = n }
         repeat(r.uvar().toInt().also { if (it > 1_000_000) throw BadData("too many airports") }) { id ->
             if (!r.bool()) { airports += null; return@repeat }
             val a = Airport(id, r.int(), r.int(), r.int(), r.int(), r.int(), r.int(), r.int())
@@ -656,6 +709,10 @@ object Save {
             val model = vehicle(r.int())
             val v = Aircraft(roster, id, owner, model, r.int(), r.int())
             v.name = r.string()
+            if (version >= 41) v.number = r.int()
+            if (version >= 42) v.shared = r.int()
+            if (version >= 43) { v.gap = r.int(); v.departed = r.long() }
+            if (version >= 45) v.group = r.int()
             v.inDepot = r.bool(); v.running = r.bool(); v.waiting = r.int(); v.x = r.int(); v.y = r.int(); v.altitude = r.int(); v.heading = r.int(); v.speed = r.int()
             v.state = r.int(); v.at = r.int(); v.holding = r.int(); v.gear = r.int(); v.seasonalGear = r.bool()
             readCargo(r, v.cargo, version); v.profitThisYear = r.long(); v.profitLastYear = r.long()
@@ -665,6 +722,7 @@ object Save {
             if (version >= 39) v.wreckedFor = r.int()
             aircraft += v
         }
+        if (version < 41) giveFleetNumbers(aircraft, { it.owner }, { it.number }) { v, n -> v.number = n }
     }
 
     private fun writeCargo(w: ByteWriter, cargo: Array<ArrayList<Packet>>) {

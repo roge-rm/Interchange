@@ -61,7 +61,7 @@ internal fun World.free(company: Company, run: () -> Unit) {
 }
 
 /** The tiles from ([x0], [y0]) to ([x1], [y1]) either way round, cut to the map; null if none of it is on the map or it's too big. */
-private fun World.area(x0: Int, y0: Int, x1: Int, y1: Int): IntArray? {
+internal fun World.area(x0: Int, y0: Int, x1: Int, y1: Int): IntArray? {
     val ax = maxOf(0, minOf(x0, x1))
     val ay = maxOf(0, minOf(y0, y1))
     val bx = minOf(width - 1, maxOf(x0, x1))
@@ -93,17 +93,28 @@ private fun World.shipsNear(): Set<Int> {
  * than a step from its neighbours. Nothing moves if any tile that would change has something built on it.
  */
 private fun World.editTerrain(c: Command.EditTerrain) {
-    val (ax, ay, bx, by) = area(c.x0, c.y0, c.x1, c.y1) ?: return
-    if (c.how !in Command.EditTerrain.RAISE..Command.EditTerrain.LEVEL) return
+    val changed = terrainChanges(c.x0, c.y0, c.x1, c.y1, c.how, c.height) ?: return
+    if (changed.isEmpty()) return
+    applyTerrainChanges(changed)
+}
+
+/**
+ * Corners [how] would move over the tiles from ([x0], [y0]) to ([x1], [y1]), empty if they'd stay put.
+ * Null if the area is off the map, too big, the work runs away, or a building or a ship is in the way.
+ * [how] is a [Command.EditTerrain] kind, and [height] is what a level aims at.
+ */
+internal fun World.terrainChanges(x0: Int, y0: Int, x1: Int, y1: Int, how: Int, height: Int): LinkedHashMap<Int, Int>? {
+    val (ax, ay, bx, by) = area(x0, y0, x1, y1) ?: return null
+    if (how !in Command.EditTerrain.RAISE..Command.EditTerrain.LEVEL) return null
     val changed = LinkedHashMap<Int, Int>()
     val fixed = HashSet<Int>()
     val queue = ArrayDeque<Int>()
     for (cy in ay..by + 1) for (cx in ax..bx + 1) {
         val h = heightAt(cx, cy)
-        val want = when (c.how) {
+        val want = when (how) {
             Command.EditTerrain.RAISE -> h + 1
             Command.EditTerrain.LOWER -> h - 1
-            else -> c.height
+            else -> height
         }.coerceIn(0, World.MAX_HEIGHT)
         val k = corner(cx, cy)
         fixed += k
@@ -113,7 +124,7 @@ private fun World.editTerrain(c: Command.EditTerrain) {
     // Each corner pulled to within a step of the one that changed beside it, spreading out until nothing more moves.
     var work = 0
     while (queue.isNotEmpty()) {
-        if (++work > TERRAIN_WORK_MOST) return
+        if (++work > TERRAIN_WORK_MOST) return null
         val k = queue.removeFirst()
         val x = k % (width + 1)
         val y = k / (width + 1)
@@ -133,13 +144,18 @@ private fun World.editTerrain(c: Command.EditTerrain) {
         }
     }
     changed.entries.removeAll { (k, h) -> h == heightAt(k % (width + 1), k / (width + 1)) }
-    if (changed.isEmpty()) return
+    if (changed.isEmpty()) return changed
     val boats = shipsNear()
     for (k in changed.keys) {
         val x = k % (width + 1)
         val y = k / (width + 1)
-        for (ty in y - 1..y) for (tx in x - 1..x) if (inside(tx, ty) && (built(index(tx, ty)) || index(tx, ty) in boats)) return
+        for (ty in y - 1..y) for (tx in x - 1..x) if (inside(tx, ty) && (built(index(tx, ty)) || index(tx, ty) in boats)) return null
     }
+    return changed
+}
+
+/** Writes [changed] corners and clears trees on tiles that end up under water. */
+internal fun World.applyTerrainChanges(changed: Map<Int, Int>) {
     var shore = false
     for ((k, h) in changed) {
         val x = k % (width + 1)
@@ -228,23 +244,38 @@ private fun World.removeIndustry(id: Int) {
 private fun World.editTrees(c: Command.EditTrees) {
     val (ax, ay, bx, by) = area(c.x0, c.y0, c.x1, c.y1) ?: return
     for (y in ay..by) for (x in ax..bx) {
-        val i = index(x, y)
-        if (!c.plant) { clearTrees(i); continue }
-        if (isWater(x, y) || built(i) || industryOf[i].toInt() != 0 || stationTiles.containsKey(i) || depotTiles.containsKey(i)) continue
-        val low = minOf(minOf(heightAt(x, y), heightAt(x + 1, y)), minOf(heightAt(x + 1, y + 1), heightAt(x, y + 1)))
-        if (low == 0) continue
-        val pick = rng.below(100)
-        val packed = when (ground[i].toInt()) {
-            Ground.FOREST -> Trees.pack(if (pick < 45) Trees.SPRUCE else if (pick < 70) Trees.FIR else if (pick < 85) Trees.PINE else if (pick < 95) Trees.BIRCH else Trees.ASPEN, 3)
-            Ground.MEADOW -> Trees.pack(if (pick < 50) Trees.MAPLE else if (pick < 80) Trees.BIRCH else Trees.ASPEN, 2)
-            Ground.PRAIRIE -> Trees.pack(Trees.ASPEN, 2)
-            Ground.ROCK -> Trees.pack(Trees.PINE, 1)
-            Ground.TUNDRA -> Trees.pack(Trees.SPRUCE, 1)
-            else -> continue
-        }
-        trees[i] = packed.toByte()
-        touched(x, y)
+        if (!c.plant) { clearTrees(index(x, y)); continue }
+        if (canPlantTree(x, y)) plantTree(x, y)
     }
+}
+
+/** Open dry land that grows trees: nothing built on it, and not beach or snow. */
+internal fun World.canPlantTree(x: Int, y: Int): Boolean {
+    if (!inside(x, y)) return false
+    val i = index(x, y)
+    if (isWater(x, y) || built(i) || industryOf[i].toInt() != 0 || stationTiles.containsKey(i) || depotTiles.containsKey(i)) return false
+    val low = minOf(minOf(heightAt(x, y), heightAt(x + 1, y)), minOf(heightAt(x + 1, y + 1), heightAt(x, y + 1)))
+    if (low == 0) return false
+    return when (ground[i].toInt()) {
+        Ground.FOREST, Ground.MEADOW, Ground.PRAIRIE, Ground.ROCK, Ground.TUNDRA -> true
+        else -> false
+    }
+}
+
+/** Plants one tile's trees from the kinds its ground grows. Draws from [rng]. */
+internal fun World.plantTree(x: Int, y: Int) {
+    val i = index(x, y)
+    val pick = rng.below(100)
+    val packed = when (ground[i].toInt()) {
+        Ground.FOREST -> Trees.pack(if (pick < 45) Trees.SPRUCE else if (pick < 70) Trees.FIR else if (pick < 85) Trees.PINE else if (pick < 95) Trees.BIRCH else Trees.ASPEN, 3)
+        Ground.MEADOW -> Trees.pack(if (pick < 50) Trees.MAPLE else if (pick < 80) Trees.BIRCH else Trees.ASPEN, 2)
+        Ground.PRAIRIE -> Trees.pack(Trees.ASPEN, 2)
+        Ground.ROCK -> Trees.pack(Trees.PINE, 1)
+        Ground.TUNDRA -> Trees.pack(Trees.SPRUCE, 1)
+        else -> return
+    }
+    trees[i] = packed.toByte()
+    touched(x, y)
 }
 
 /** Sets the goals to [list], each open and counted from nothing; the whole list is refused if any goal in it makes no sense. */

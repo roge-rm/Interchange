@@ -121,6 +121,8 @@
     <string name="depot">Depot</string>
     <string name="engine_speed">%1$s %2$s, %3$d km/h</string>
     <string name="wagons_count">%1$d wagons</string>
+    <string name="fewer_vehicles">Fewer vehicles</string>
+    <string name="more_vehicles">More vehicles</string>
     <string name="fewer_wagons">Fewer wagons</string>
     <string name="more_wagons">More wagons</string>
     <string name="buy_for">Buy, %1$s</string>
@@ -246,6 +248,9 @@
         <item>Passengers</item><item>Mail</item><item>Timber</item><item>Lumber</item><item>Grain</item><item>Coal</item><item>Iron ore</item><item>Steel</item><item>Goods</item><item>Oil</item><item>Fuel</item><item>Livestock</item><item>Food</item><item>Fish</item><item>Paper</item><item>Potash</item><item>Nickel ore</item><item>Nickel</item><item>Bauxite</item><item>Aluminium</item>
     </string-array>
     <string name="industries">Industries</string>
+    <string name="vehicles">Vehicles</string>
+    <string name="vehicles_all">All</string>
+    <string name="no_vehicles">No vehicles</string>
 
     <!-- News -->
     <string name="news_opens">%1$s opens</string>
@@ -255,9 +260,16 @@
 
     <!-- Orders -->
     <string name="full_load">Full load</string>
+    <string name="full_load_any">Any cargo</string>
     <string name="unload_all">Unload all</string>
     <string name="transfer">Transfer</string>
     <string name="no_loading">No loading</string>
+    <string name="no_gap">No gap</string>
+    <string name="gap_less">A day less apart</string>
+    <string name="gap_more">A day more apart</string>
+    <string name="copy">Copy</string>
+    <string name="copy_one">Copy one</string>
+    <string name="tap_to_copy">Tap one of yours</string>
     <string name="wait_less">Wait a day less</string>
     <string name="wait_more">Wait a day more</string>
     <string name="remove_stop">Remove stop</string>
@@ -405,6 +417,7 @@
     <string name="broken_down">Broken down</string>
     <string name="going_for_service">Going for a service, %1$d km/h</string>
     <string name="renew_for">Renew for %1$s</string>
+    <string name="replace">Replace</string>
     <string name="servicing">Servicing</string>
     <string name="news_crash">%1$s crashed near %2$s</string>
     <string name="news_crash_lost">%1$s crashed near %2$s, %3$d people lost</string>
@@ -711,8 +724,13 @@
     <string name="here_now">Here now</string>
     <string name="nothing_calls">Nothing calls here</string>
     <plurals name="shared_with">
-        <item quantity="one">Shared with %1$d other train</item>
-        <item quantity="other">Shared with %1$d other trains</item>
+        <item quantity="one">Shared with %1$d other vehicle</item>
+        <item quantity="other">Shared with %1$d other vehicles</item>
+    </plurals>
+    <plurals name="days_apart">
+        <item quantity="zero">No gap</item>
+        <item quantity="one">%1$d day apart</item>
+        <item quantity="other">%1$d days apart</item>
     </plurals>
     <plurals name="wait_days_n">
         <item quantity="one">Wait %1$d day</item>
@@ -773,4 +791,7 @@
     <string name="map_coverage_help">Building reach and industry calls in the last 90 work days.</string>
     <string name="map_controls">Map controls</string>
     <string name="map_controls_hint">Tap a tile to switch it on or off. Hold it to see its name.</string>
+    <string name="no_group">No group</string>
+    <string name="new_group">New group</string>
+    <string name="vehicle_group">Group</string>
 </resources>

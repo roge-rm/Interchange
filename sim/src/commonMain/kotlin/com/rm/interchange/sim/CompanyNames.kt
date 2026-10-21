@@ -63,11 +63,13 @@ private fun hasWord(text: String, word: String): Boolean {
  * [name] with control characters and halves of broken pairs left out, cut to [COMPANY_NAME_MOST] code points.
  * A lone half would be saved as a replacement character and put players' worlds out of step.
  */
-fun capCompanyName(name: String): String {
+fun capCompanyName(name: String): String = capName(name, COMPANY_NAME_MOST)
+
+internal fun capName(name: String, most: Int): String {
     val out = StringBuilder()
     var points = 0
     var i = 0
-    while (i < name.length && points < COMPANY_NAME_MOST) {
+    while (i < name.length && points < most) {
         val ch = name[i]
         when {
             ch.isHighSurrogate() && i + 1 < name.length && name[i + 1].isLowSurrogate() -> { out.append(ch).append(name[i + 1]); i++; points++ }

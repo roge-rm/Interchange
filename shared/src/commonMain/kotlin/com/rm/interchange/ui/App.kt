@@ -64,6 +64,8 @@ import com.rm.interchange.sim.Refusal
 import com.rm.interchange.sim.roadCost
 import com.rm.interchange.sim.clearCost
 import com.rm.interchange.sim.removeCost
+import com.rm.interchange.sim.levelCost
+import com.rm.interchange.sim.plantCost
 import com.rm.interchange.map.View
 import com.rm.interchange.map.buildingAt
 import com.rm.interchange.platform.logLine
@@ -182,10 +184,20 @@ private fun soundBusGains(sound: Int, world: Int, tools: Int): FloatArray {
 private enum class Screen { Title, NewGame, Playing }
 
 /** A window open over the screen. */
-private enum class Win { Menu, Load, Settings, Packs, Overlays, Map, Finances, Industries, Companies, Insignia, Town, Subsidies, Goals, Chronicle, Multiplayer, Players, Chat, Scenarios, Campaign, Scenario, SaveScenario, Intro, Outcome }
+private enum class Win { Menu, Load, Settings, Packs, Overlays, Map, Finances, Vehicles, Industries, Companies, Insignia, Town, Subsidies, Goals, Chronicle, Multiplayer, Players, Chat, Scenarios, Campaign, Scenario, SaveScenario, Intro, Outcome }
 
 /** Picking a place by tapping the map: what to tell the player, what a tapped tile does (false if nothing there will do), and giving up. */
 class MapPick(val prompt: String, val onTile: (Int) -> Boolean, val onCancel: () -> Unit)
+
+class CopyPick(val kind: Int, val depot: Int, val count: Int)
+
+private fun WorldView.canCopy(company: Int, kind: Int, id: Int): Boolean = when (kind) {
+    ShowVehicle.TRAIN -> trains.any { it.id == id && it.owner == company && !it.wrecked }
+    ShowVehicle.ROAD -> roadVehicles.any { it.id == id && it.owner == company && !it.wrecked }
+    ShowVehicle.SHIP -> ships.any { it.id == id && it.owner == company }
+    ShowVehicle.AIRCRAFT -> aircraft.any { it.id == id && it.owner == company && !it.wrecked }
+    else -> false
+}
 
 @Composable
 private fun Root(settings: Settings) {
@@ -197,6 +209,9 @@ private fun Root(settings: Settings) {
     var town by remember { mutableIntStateOf(-1) }
     // A world point for the map to go to, set from a window and taken by the game screen.
     val goTo = remember { mutableStateOf<Pair<Float, Float>?>(null) }
+    // A vehicle the list asked the map to open.
+    val showVehicle = remember { mutableStateOf<ShowVehicle?>(null) }
+    val copyPick = remember { mutableStateOf<CopyPick?>(null) }
     // Saved from the menu since it was opened.
     var saved by remember { mutableStateOf(false) }
     var runner by remember { mutableStateOf<GameThread?>(null) }
@@ -580,7 +595,7 @@ private fun Root(settings: Settings) {
                 if (r == null || s == null) {
                     Box(Modifier.fillMaxSize().background(LocalColors.current.page))
                 } else {
-                    Playing(r, s, settings, pick, onMenu = { saved = false; window = Win.Menu }, onOverlays = { window = Win.Overlays }, onFinances = { window = Win.Finances }, onTown = { town = it; window = Win.Town }, goTo = goTo,
+                    Playing(r, s, settings, pick, copyPick, onMenu = { saved = false; window = Win.Menu }, onOverlays = { window = Win.Overlays }, onFinances = { window = Win.Finances }, onTown = { town = it; window = Win.Town }, goTo = goTo, showVehicle = showVehicle,
                         onMap = { window = Win.Map }, overview = window == Win.Map, onCloseOverview = { window = null },
                         onChat = if (inMultiplayer) ({ window = Win.Chat }) else null, chatUnread = lastChat != null && lastChat !== readChat)
                 }
@@ -614,6 +629,7 @@ private fun Root(settings: Settings) {
                 onSettings = { window = Win.Settings },
                 onMap = { window = Win.Map },
                 onFinances = { window = Win.Finances },
+                onVehicles = { window = Win.Vehicles },
                 onIndustries = { window = Win.Industries },
                 onCompanies = { window = Win.Companies },
                 onSubsidies = { window = Win.Subsidies },
@@ -643,6 +659,17 @@ private fun Root(settings: Settings) {
             Win.Map -> Unit
             Win.Overlays -> OverlaysWindow(settings) { window = null }
             Win.Finances -> runner?.let { r -> FinanceWindow(r) { window = null } }
+            Win.Vehicles -> runner?.let { r -> VehiclesWindow(r, { vehicle ->
+                val copying = copyPick.value
+                if (copying == null) {
+                    showVehicle.value = vehicle
+                    window = null
+                } else if (vehicle.kind == copying.kind && r.view?.canCopy(r.company, vehicle.kind, vehicle.id) == true) {
+                    r.request(Command.CopyVehicle(r.company, copying.kind, vehicle.id, copying.depot, copying.count))
+                    copyPick.value = null
+                    window = null
+                }
+            }) { window = null } }
             Win.Industries -> runner?.game?.world?.let { w ->
                 // The map's sheets, for the pictures of each kind.
                 CompositionLocalProvider(LocalSheets provides sheets) {
@@ -726,7 +753,7 @@ private fun Root(settings: Settings) {
 
 /** A game being played: waits for the world to be made, then shows it. */
 @Composable
-private fun Playing(runner: GameThread, sheets: Sheets, settings: Settings, pick: MapPick?, onMenu: () -> Unit, onOverlays: () -> Unit, onFinances: () -> Unit, onTown: (Int) -> Unit, goTo: MutableState<Pair<Float, Float>?>, onChat: (() -> Unit)?, chatUnread: Boolean, onMap: () -> Unit, overview: Boolean, onCloseOverview: () -> Unit) {
+private fun Playing(runner: GameThread, sheets: Sheets, settings: Settings, pick: MapPick?, copyPick: MutableState<CopyPick?>, onMenu: () -> Unit, onOverlays: () -> Unit, onFinances: () -> Unit, onTown: (Int) -> Unit, goTo: MutableState<Pair<Float, Float>?>, showVehicle: MutableState<ShowVehicle?>, onChat: (() -> Unit)?, chatUnread: Boolean, onMap: () -> Unit, overview: Boolean, onCloseOverview: () -> Unit) {
     var world by remember(runner) { mutableStateOf<World?>(null) }
     // Redraws every display frame, and picks up the world once it's made, or when a server sends it again.
     val frame = remember(runner) { mutableLongStateOf(0L) }
@@ -741,11 +768,11 @@ private fun Playing(runner: GameThread, sheets: Sheets, settings: Settings, pick
         Box(Modifier.fillMaxSize().background(LocalColors.current.page))
         return
     }
-    key(runner, w) { GameScreen(runner, w, sheets, frame, settings, pick, onMenu, onOverlays, onFinances, onTown, goTo, onChat, chatUnread, onMap, overview, onCloseOverview) }
+    key(runner, w) { GameScreen(runner, w, sheets, frame, settings, pick, copyPick, onMenu, onOverlays, onFinances, onTown, goTo, showVehicle, onChat, chatUnread, onMap, overview, onCloseOverview) }
 }
 
 @Composable
-private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: State<Long>, settings: Settings, pick: MapPick?, onMenu: () -> Unit, onOverlays: () -> Unit, onFinances: () -> Unit, onTown: (Int) -> Unit, goTo: MutableState<Pair<Float, Float>?>, onChat: (() -> Unit)?, chatUnread: Boolean, onMap: () -> Unit, overview: Boolean, onCloseOverview: () -> Unit) {
+private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: State<Long>, settings: Settings, pick: MapPick?, copyPick: MutableState<CopyPick?>, onMenu: () -> Unit, onOverlays: () -> Unit, onFinances: () -> Unit, onTown: (Int) -> Unit, goTo: MutableState<Pair<Float, Float>?>, showVehicle: MutableState<ShowVehicle?>, onChat: (() -> Unit)?, chatUnread: Boolean, onMap: () -> Unit, overview: Boolean, onCloseOverview: () -> Unit) {
     val me = runner.company
     val c = LocalColors.current
     // The drawings of this game's vehicles: the base pack's come with the app, the others from their packs.
@@ -821,9 +848,46 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
     var addingRoadStops by remember { mutableStateOf<Int?>(null) }
     // A ship (false) or aircraft (true) having stops added by tapping, and which.
     var addingCraftStops by remember { mutableStateOf<Pair<Boolean, Int>?>(null) }
+    // A vehicle the list asked to open: go there and show its card.
+    showVehicle.value?.let { s ->
+        copyPick.value = null
+        view.focusX = s.x
+        view.focusY = s.y
+        addingStops = null
+        addingRoadStops = null
+        addingCraftStops = null
+        selected = when (s.kind) {
+            ShowVehicle.TRAIN -> Selection.Train(s.id)
+            ShowVehicle.ROAD -> Selection.RoadVehicle(s.id)
+            ShowVehicle.SHIP -> Selection.Ship(s.id)
+            else -> Selection.Aircraft(s.id)
+        }
+        showVehicle.value = null
+    }
+    copyPick.value?.let { copying ->
+        val matches = when (val sel = selected) {
+            is Selection.Depot -> copying.kind == ShowVehicle.TRAIN && copying.depot == sel.id
+            is Selection.Garage -> copying.kind == ShowVehicle.ROAD && copying.depot == sel.id
+            is Selection.Shipyard -> copying.kind == ShowVehicle.SHIP && copying.depot == sel.id
+            is Selection.Airport -> copying.kind == ShowVehicle.AIRCRAFT &&
+                worldView.value?.airports?.any { it.id == sel.id && it.depot == copying.depot } == true
+            else -> false
+        }
+        if (!matches) copyPick.value = null
+    }
+    fun pickCopy(kind: Int, depot: Int, count: Int) {
+        val active = copyPick.value
+        copyPick.value = if (active?.kind == kind && active.depot == depot) null else CopyPick(kind, depot, count)
+        addingStops = null
+        addingRoadStops = null
+        addingCraftStops = null
+        tool = Tool.Inspect
+    }
     var canalPlan by remember { mutableStateOf<Command.Canal?>(null) }
     var clearPlan by remember { mutableStateOf<Command.ClearArea?>(null) }
     var removePlan by remember { mutableStateOf<Command.RemoveArea?>(null) }
+    var levelPlan by remember { mutableStateOf<Command.Level?>(null) }
+    var treePlan by remember { mutableStateOf<Command.PlantTrees?>(null) }
     // The track tool lays lines on its own (0), or one piece, a view piece, at a time; and where the drag is now.
     var trackPiece by remember { mutableIntStateOf(0) }
     var dragAt by remember { mutableStateOf<Pick?>(null) }
@@ -928,7 +992,7 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
         folded = true
         // Once for the gesture. A drag's tiles share the one sound.
         when (tool) {
-            Tool.Track, Tool.Road, Tool.TramRails, Tool.Canal, Tool.Clear, Tool.Remove -> Sounds.earth()
+            Tool.Track, Tool.Road, Tool.TramRails, Tool.Canal, Tool.Clear, Tool.Remove, Tool.Level, Tool.Trees -> Sounds.earth()
             Tool.Signals, Tool.Bridge, Tool.Wires -> Sounds.clunk()
             else -> {}
         }
@@ -960,7 +1024,7 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
         if (trackPiece == 0 || tool != Tool.Track) trackLine(me, start, end, removing)
         else pieceLine(world, me, start, end, worldPiece(LandPainter(world, view, view.halfWidth), trackPiece), removing)
 
-    val input = remember(tool, removing, stationAlongX, addingStops, addingRoadStops, addingCraftStops, signalKind, signalSpacing, bridgeStyle, roadSurface, airportKind, runwayAlongX, trackPiece, townSize, industryKind, industryTurn, pick) {
+    val input = remember(tool, removing, stationAlongX, addingStops, addingRoadStops, addingCraftStops, signalKind, signalSpacing, bridgeStyle, roadSurface, airportKind, runwayAlongX, trackPiece, townSize, industryKind, industryTurn, pick, copyPick.value) {
         object : MapInput {
             var start: Pick? = null
             // The height Level levels to, from where the drag starts.
@@ -968,11 +1032,26 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
             val editing: Boolean
                 get() = editor && tool in EDITOR_DRAGS
             override val drags: Boolean
-                get() = pick == null && addingStops == null && addingRoadStops == null && addingCraftStops == null && (editing ||
-                    tool == Tool.Track || tool == Tool.Wires || tool == Tool.Signals || tool == Tool.Station || tool == Tool.Bridge || tool == Tool.Road || tool == Tool.TramRails || tool == Tool.Canal || tool == Tool.Clear || tool == Tool.Remove)
+                get() = pick == null && copyPick.value == null && addingStops == null && addingRoadStops == null && addingCraftStops == null && (editing ||
+                    tool == Tool.Track || tool == Tool.Wires || tool == Tool.Signals || tool == Tool.Station || tool == Tool.Bridge || tool == Tool.Road || tool == Tool.TramRails || tool == Tool.Canal || tool == Tool.Clear || tool == Tool.Remove || tool == Tool.Level || tool == Tool.Trees)
             override fun tap(at: Pick) {
                 val ground = world.index(at.tileX, at.tileY)
                 pick?.let { it.onTile(ground); return }
+                copyPick.value?.let { copying ->
+                    val key = vehicleAt(world, view, moving(runner), at.screenX, at.screenY, mapSize.width, mapSize.height)
+                    val (kind, id) = when {
+                        key == NO_VEHICLE -> -1 to -1
+                        key >= 0 -> ShowVehicle.TRAIN to key / 256
+                        VehicleView.craft(key, VehicleView.SHIP) >= 0 -> ShowVehicle.SHIP to VehicleView.craft(key, VehicleView.SHIP)
+                        VehicleView.craft(key, VehicleView.AIRCRAFT) >= 0 -> ShowVehicle.AIRCRAFT to VehicleView.craft(key, VehicleView.AIRCRAFT)
+                        else -> ShowVehicle.ROAD to VehicleView.craft(key, VehicleView.ROAD)
+                    }
+                    if (kind == copying.kind && runner.view?.canCopy(me, kind, id) == true) {
+                        runner.request(Command.CopyVehicle(me, kind, id, copying.depot, copying.count))
+                        copyPick.value = null
+                    }
+                    return
+                }
                 if (editor) {
                     editAreaCommand(tool, me, at.tileX, at.tileY, at.tileX, at.tileY, cornerHeight(at))?.let { edit(it); built(); return }
                     when (tool) {
@@ -1071,6 +1150,14 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
                         runner.request(Command.Terraform(me, at.x.roundToInt(), at.y.roundToInt(), tool == Tool.Raise))
                         built()
                     }
+                    Tool.Level -> {
+                        runner.request(Command.Level(me, at.tileX, at.tileY, at.tileX, at.tileY, cornerHeight(at)))
+                        built()
+                    }
+                    Tool.Trees -> {
+                        runner.request(Command.PlantTrees(me, at.tileX, at.tileY, at.tileX, at.tileY))
+                        built()
+                    }
                     else -> {}
                 }
             }
@@ -1094,6 +1181,8 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
                     Tool.Canal -> canalPlan = roadLine(me, s, at, 0, removing).let { Command.Canal(me, it.sx, it.sy, it.ex, it.ey, removing) }
                     Tool.Clear -> clearPlan = Command.ClearArea(me, s.tileX, s.tileY, at.tileX, at.tileY)
                     Tool.Remove -> removePlan = Command.RemoveArea(me, s.tileX, s.tileY, at.tileX, at.tileY)
+                    Tool.Level -> levelPlan = Command.Level(me, s.tileX, s.tileY, at.tileX, at.tileY, level)
+                    Tool.Trees -> treePlan = Command.PlantTrees(me, s.tileX, s.tileY, at.tileX, at.tileY)
                     Tool.Signals -> signalPlan = signalRun(me, s, at, Signals.PLACED[signalKind], signalSpacing, removing)
                     else -> plan = railFor(s, at)
                 }
@@ -1116,6 +1205,8 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
                 canalPlan?.let { runner.request(it); built() }
                 clearPlan?.let { runner.request(it); built() }
                 removePlan?.let { runner.request(it); built() }
+                levelPlan?.let { runner.request(it); built() }
+                treePlan?.let { runner.request(it); built() }
                 // A drag that stays on one tile is a tap on it.
                 signalPlan?.let { if (it.sx == it.ex && it.sy == it.ey) start?.let { s -> tap(s) } else { runner.request(it); built() } }
                 dragCancel()
@@ -1128,6 +1219,8 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
                 canalPlan = null
                 clearPlan = null
                 removePlan = null
+                levelPlan = null
+                treePlan = null
                 signalPlan = null
                 areaPlan = null
                 dragAt = null
@@ -1147,6 +1240,8 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
         ?: canalPlan?.let { p -> world.canalCost(company, p).let { (cost, n) -> n to cost } }
         ?: clearPlan?.let { p -> world.clearCost(me, p).let { (cost, n) -> n to cost } }
         ?: removePlan?.let { p -> world.removeCost(me, p).let { (cost, n) -> n to cost } }
+        ?: levelPlan?.let { p -> world.levelCost(p).let { (cost, n) -> n to cost } }
+        ?: treePlan?.let { p -> world.plantCost(p).let { (cost, n) -> n to cost } }
         ?: signalPlan?.takeIf { !it.remove }?.let { p -> world.signalRunCost(p).let { (cost, n) -> n to cost } }
         ?: stationPlan?.let { p -> ((kotlin.math.abs(p.x1 - p.x0) + 1) * (kotlin.math.abs(p.y1 - p.y0) + 1)).let { n -> n to n * world.price(Prices.PLATFORM) } }
         ?: bridgePlan?.let { p -> world.bridgeCost(company, p).takeIf { it >= 0 }?.let { (maxOf(kotlin.math.abs(p.x1 - p.x0), kotlin.math.abs(p.y1 - p.y0)) + 1) to it } }
@@ -1179,6 +1274,8 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
                 ?: canalPlan?.let { p -> { painter -> drawCanalPlan(world, painter, p) } }
                 ?: clearPlan?.let { p -> { painter -> drawClearPlan(world, painter, p) } }
                 ?: removePlan?.let { p -> { painter -> drawClearPlan(world, painter, p) } }
+                ?: levelPlan?.let { p -> { painter -> drawAreaPlan(world, painter, intArrayOf(p.x0, p.y0, p.x1, p.y1), removing = false) } }
+                ?: treePlan?.let { p -> { painter -> drawAreaPlan(world, painter, intArrayOf(p.x0, p.y0, p.x1, p.y1), removing = false) } }
                 ?: signalPlan?.let { p -> { painter -> drawSignalPlan(world, painter, p) } }
                 ?: areaPlan?.let { a ->
                     // An industry shows red where it won't fit.
@@ -1303,20 +1400,26 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
             }
         }
 
-        // Picking a place for a goal: what to tap, and a tap on this gives up.
-        if (pick != null) Box(
+        // The prompt stays above the map so picking can be cancelled with the card open.
+        if (pick != null || copyPick.value != null) Box(
             Modifier
                 .align(Alignment.TopCenter)
                 .padding(top = with(density) { stripHeight.toDp() } + gap)
                 .windowInsetsPadding(safe.only(WindowInsetsSides.Horizontal))
                 .padding(horizontal = gap),
         ) {
-            MessageChip(pick.prompt, { GlyphIcon(Glyph.Remove, c.text, Modifier.padding(4.dp).size(18.dp)) }, pick.onCancel)
+            MessageChip(
+                pick?.prompt ?: stringResource(Res.string.tap_to_copy),
+                { GlyphIcon(Glyph.Remove, c.text, Modifier.padding(4.dp).size(18.dp)) },
+            ) { if (pick != null) pick.onCancel() else copyPick.value = null }
         }
 
         fun endGesture(inspecting: Boolean) {
+            copyPick.value = null
             plan = null
             stationPlan = null
+            levelPlan = null
+            treePlan = null
             folded = false
             addingStops = null
             addingRoadStops = null
@@ -1324,9 +1427,19 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
             if (!inspecting) selected = null
         }
 
-        // The lit button again puts the tools away.
+        // Tabs and choices sit above the line, so folding the tray hides them. Remove's line is the whole tray.
+        fun trayFolds(g: ToolGroup): Boolean {
+            if (Tool.of(g, editor).size > 1) return true
+            return tool == Tool.Airport && Airports.entries(Calendar.year(world.startYear, day)).isNotEmpty()
+        }
+
+        // The lit button again puts the tools away. While the tray is only its line, the same press opens it back up.
         fun pickGroup(g: ToolGroup) {
             if (g != ToolGroup.Inspect && tool != Tool.Remove && tool.group == g) {
+                if (folded && trayFolds(g)) {
+                    folded = false
+                    return
+                }
                 lastTool[g] = tool
                 tool = Tool.Inspect
                 endGesture(true)
@@ -1386,39 +1499,39 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
                     if (t == null || wv == null) { selected = null; addingStops = null }
                     else {
                         if (t.wrecked && addingStops == t.id) addingStops = null
-                        TrainCard(wv, world.roster, t, addingStops == t.id, { addingStops = if (addingStops == t.id) null else t.id }, runner::request, { selected = null; addingStops = null }, cardSize)
+                        TrainCard(wv, world.roster, t, Calendar.year(world.startYear, day), money, { world.price(it) }, addingStops == t.id, { copyPick.value = null; addingStops = if (addingStops == t.id) null else t.id }, runner::request, { selected = null; addingStops = null }, cardSize)
                     }
                 }
                 is Selection.Depot -> if (wv != null) DepotCard(
                     wv, world.roster, sel.id, Calendar.year(world.startYear, day), money, { world.price(it) }, runner::request,
-                    { selected = Selection.Train(it) }, { selected = null }, cardSize,
+                    { selected = Selection.Train(it) }, copyPick.value?.kind == ShowVehicle.TRAIN, { pickCopy(ShowVehicle.TRAIN, sel.id, it) }, { copyPick.value = null; selected = null }, cardSize,
                 )
                 is Selection.RoadVehicle -> {
                     val v = wv?.roadVehicles?.firstOrNull { it.id == sel.id }
                     if (v == null || wv == null) { selected = null; addingRoadStops = null }
                     else {
                         if (v.wrecked && addingRoadStops == v.id) addingRoadStops = null
-                        RoadVehicleCard(wv, world.roster, v, addingRoadStops == v.id, { addingRoadStops = if (addingRoadStops == v.id) null else v.id }, runner::request, { selected = null; addingRoadStops = null }, cardSize)
+                        RoadVehicleCard(wv, world.roster, v, Calendar.year(world.startYear, day), money, { world.price(it) }, addingRoadStops == v.id, { copyPick.value = null; addingRoadStops = if (addingRoadStops == v.id) null else v.id }, runner::request, { selected = null; addingRoadStops = null }, cardSize)
                     }
                 }
                 is Selection.Garage -> if (wv != null) GarageCard(
                     wv, world.roster, sel.id, Calendar.year(world.startYear, day), money, { world.price(it) }, runner::request,
-                    { selected = Selection.RoadVehicle(it) }, { selected = null }, cardSize,
+                    { selected = Selection.RoadVehicle(it) }, copyPick.value?.kind == ShowVehicle.ROAD, { pickCopy(ShowVehicle.ROAD, sel.id, it) }, { copyPick.value = null; selected = null }, cardSize,
                 )
                 is Selection.Shipyard -> if (wv != null) ShipyardCard(
                     wv, world.roster, sel.id, Calendar.year(world.startYear, day), money, { world.price(it) }, runner::request,
-                    { selected = Selection.Ship(it) }, { selected = null }, cardSize,
+                    { selected = Selection.Ship(it) }, copyPick.value?.kind == ShowVehicle.SHIP, { pickCopy(ShowVehicle.SHIP, sel.id, it) }, { copyPick.value = null; selected = null }, cardSize,
                 )
                 is Selection.Airport -> {
                     val a = wv?.airports?.firstOrNull { it.id == sel.id }
                     if (a == null || wv == null) selected = null
-                    else AirportCard(wv, world.roster, a, Calendar.year(world.startYear, day), money, { world.price(it) }, runner::request, { selected = Selection.Aircraft(it) }, { selected = null }, cardSize)
+                    else AirportCard(wv, world.roster, a, Calendar.year(world.startYear, day), money, { world.price(it) }, runner::request, { selected = Selection.Aircraft(it) }, copyPick.value?.kind == ShowVehicle.AIRCRAFT, { pickCopy(ShowVehicle.AIRCRAFT, a.depot, it) }, { copyPick.value = null; selected = null }, cardSize)
                 }
                 is Selection.Ship -> {
                     val v = wv?.ships?.firstOrNull { it.id == sel.id }
                     if (v == null || wv == null) { selected = null; addingCraftStops = null }
                     else {
-                        ShipCard(wv, world.roster, v, addingCraftStops == (false to v.id), { addingCraftStops = if (addingCraftStops == (false to v.id)) null else false to v.id }, runner::request, { selected = null; addingCraftStops = null }, cardSize)
+                        ShipCard(wv, world.roster, v, Calendar.year(world.startYear, day), money, { world.price(it) }, addingCraftStops == (false to v.id), { copyPick.value = null; addingCraftStops = if (addingCraftStops == (false to v.id)) null else false to v.id }, runner::request, { selected = null; addingCraftStops = null }, cardSize)
                     }
                 }
                 is Selection.Aircraft -> {
@@ -1426,7 +1539,7 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
                     if (v == null || wv == null) { selected = null; addingCraftStops = null }
                     else {
                         if (v.wrecked && addingCraftStops == (true to v.id)) addingCraftStops = null
-                        AircraftCard(wv, world.roster, v, addingCraftStops == (true to v.id), { addingCraftStops = if (addingCraftStops == (true to v.id)) null else true to v.id }, runner::request, { selected = null; addingCraftStops = null }, cardSize)
+                        AircraftCard(wv, world.roster, v, Calendar.year(world.startYear, day), money, { world.price(it) }, addingCraftStops == (true to v.id), { copyPick.value = null; addingCraftStops = if (addingCraftStops == (true to v.id)) null else true to v.id }, runner::request, { selected = null; addingCraftStops = null }, cardSize)
                     }
                 }
                 is Selection.Station -> {
@@ -1467,9 +1580,9 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
                     Tool.Tunnel -> stringResource(Res.string.cost_tile, money(world.price(Spans.COST[Spans.TUNNEL])))
                     Tool.Station -> stringResource(Res.string.cost_tile, money(world.price(Prices.PLATFORM)))
                     Tool.Depot -> money(world.price(Prices.DEPOT))
-                    Tool.Raise, Tool.Lower -> stringResource(Res.string.cost_corner, money(world.price(Prices.TERRAFORM)))
+                    Tool.Raise, Tool.Lower, Tool.Level -> stringResource(Res.string.cost_corner, money(world.price(Prices.TERRAFORM)))
                     Tool.Remove -> stringResource(Res.string.cost_back, money(world.price(Prices.TRACK) / 2), money(world.price(Prices.PLATFORM) / 2))
-                    Tool.Clear -> stringResource(Res.string.cost_clear, money(world.price(Prices.TREE)))
+                    Tool.Clear, Tool.Trees -> stringResource(Res.string.cost_clear, money(world.price(Prices.TREE)))
                     else -> null
                 }
                 val pieceNames = listOf(Res.string.piece_x, Res.string.piece_y, Res.string.piece_n, Res.string.piece_e, Res.string.piece_s, Res.string.piece_w).map { stringResource(it) }
@@ -1523,7 +1636,7 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
                     }
                     else -> {}
                 }
-                ToolTray(tool, { tool = it; refusal = Refusal.NONE; plan = null; stationPlan = null; signalPlan = null; removing = false }, trayDetail, folded, { folded = it }, layout.compact, trayWidth, options = trackOptions, editor = editor, warning = editor && refused || !editor && refusedHere) {
+                ToolTray(tool, { tool = it; refusal = Refusal.NONE; plan = null; stationPlan = null; signalPlan = null; levelPlan = null; treePlan = null; removing = false }, trayDetail, folded, { folded = it }, layout.compact, trayWidth, options = trackOptions, editor = editor, warning = editor && refused || !editor && refusedHere) {
                     if (tool == Tool.PlaceIndustry) TrayToggle(Glyph.TurnRight, stringResource(Res.string.turn_industry), industryTurn != 0) { industryTurn = (industryTurn + 1) % 4 }
                     if (tool == Tool.Track || tool == Tool.Wires || tool == Tool.Signals || tool == Tool.Road || tool == Tool.TramRails || tool == Tool.Canal) TrayToggle(Glyph.Lift, stringResource(Res.string.remove_track), removing) { removing = !removing }
                     if (tool == Tool.Airport && airportKind != Airports.SEAPLANE && airportKind != Airports.HELIPORT) TrayToggle(Glyph.TurnRight, stringResource(Res.string.runway_other_way), !runwayAlongX) { runwayAlongX = !runwayAlongX }
@@ -1788,22 +1901,24 @@ internal fun newsText(world: World, n: News): String {
     if (n.kind == News.WASHOUT || n.kind == News.FIRE || n.kind == News.AVALANCHE) return stringResource(when (n.kind) { News.FIRE -> Res.string.news_fire; News.AVALANCHE -> Res.string.news_avalanche; else -> Res.string.news_washout })
     if (n.kind == News.DIVERTED) {
         if (world.aircraft.getOrNull(n.about)?.owner != me) return ""
-        val name = world.aircraft.getOrNull(n.about)?.name?.takeIf { it.isNotEmpty() } ?: stringResource(Res.string.aircraft_n, n.about + 1)
+        val craft = world.aircraft.getOrNull(n.about)
+        val name = craft?.name?.takeIf { it.isNotEmpty() } ?: stringResource(Res.string.aircraft_n, craft?.number?.takeIf { it > 0 } ?: n.about + 1)
         return stringResource(Res.string.news_diverted, name)
     }
     if (n.kind == News.RENEW_FAILED) {
         val id = n.about and ((1 shl Autorenew.KIND_SHIFT) - 1)
         val name = when (n.about shr Autorenew.KIND_SHIFT) {
-            Autorenew.TRAIN -> world.trains.getOrNull(id)?.takeIf { it.owner == me }?.let { it.name.ifEmpty { stringResource(Res.string.train_n, id + 1) } }
-            Autorenew.ROAD -> world.roadVehicles.getOrNull(id)?.takeIf { it.owner == me }?.let { it.name.ifEmpty { stringResource(Res.string.road_vehicle_n, id + 1) } }
-            Autorenew.SHIP -> world.ships.getOrNull(id)?.takeIf { it.owner == me }?.let { it.name.ifEmpty { stringResource(Res.string.ship_n, id + 1) } }
-            else -> world.aircraft.getOrNull(id)?.takeIf { it.owner == me }?.let { it.name.ifEmpty { stringResource(Res.string.aircraft_n, id + 1) } }
+            Autorenew.TRAIN -> world.trains.getOrNull(id)?.takeIf { it.owner == me }?.let { it.name.ifEmpty { stringResource(Res.string.train_n, if (it.number > 0) it.number else id + 1) } }
+            Autorenew.ROAD -> world.roadVehicles.getOrNull(id)?.takeIf { it.owner == me }?.let { it.name.ifEmpty { stringResource(Res.string.road_vehicle_n, if (it.number > 0) it.number else id + 1) } }
+            Autorenew.SHIP -> world.ships.getOrNull(id)?.takeIf { it.owner == me }?.let { it.name.ifEmpty { stringResource(Res.string.ship_n, if (it.number > 0) it.number else id + 1) } }
+            else -> world.aircraft.getOrNull(id)?.takeIf { it.owner == me }?.let { it.name.ifEmpty { stringResource(Res.string.aircraft_n, if (it.number > 0) it.number else id + 1) } }
         } ?: return ""
         return stringResource(Res.string.news_renew_failed, name)
     }
     if (n.kind == News.SLID) {
         if (world.roadVehicles.getOrNull(n.about)?.owner != me) return ""
-        val name = world.roadVehicles.getOrNull(n.about)?.name?.takeIf { it.isNotEmpty() } ?: stringResource(Res.string.road_vehicle_n, n.about + 1)
+        val road = world.roadVehicles.getOrNull(n.about)
+        val name = road?.name?.takeIf { it.isNotEmpty() } ?: stringResource(Res.string.road_vehicle_n, road?.number?.takeIf { it > 0 } ?: n.about + 1)
         return stringResource(Res.string.news_slid, name)
     }
     if (n.kind == News.CRASH) {
@@ -1812,10 +1927,10 @@ internal fun newsText(world: World, n: News): String {
             val company = world.companies.getOrNull(v.owner)?.name ?: ""
             when {
                 v.name.isNotEmpty() -> v.name
-                v.kind == Crash.ROAD -> if (v.owner == me) stringResource(Res.string.road_vehicle_n, v.id + 1) else stringResource(Res.string.company_road_vehicle, company, v.id + 1)
-                v.kind == Crash.AIRCRAFT -> if (v.owner == me) stringResource(Res.string.aircraft_n, v.id + 1) else stringResource(Res.string.company_aircraft, company, v.id + 1)
-                v.owner == me -> stringResource(Res.string.train_n, v.id + 1)
-                else -> stringResource(Res.string.company_train, company, v.id + 1)
+                v.kind == Crash.ROAD -> world.roadVehicles.getOrNull(v.id)?.number.let { n -> val shown = if (n != null && n > 0) n else v.id + 1; if (v.owner == me) stringResource(Res.string.road_vehicle_n, shown) else stringResource(Res.string.company_road_vehicle, company, shown) }
+                v.kind == Crash.AIRCRAFT -> world.aircraft.getOrNull(v.id)?.number.let { n -> val shown = if (n != null && n > 0) n else v.id + 1; if (v.owner == me) stringResource(Res.string.aircraft_n, shown) else stringResource(Res.string.company_aircraft, company, shown) }
+                v.owner == me -> stringResource(Res.string.train_n, world.trains.getOrNull(v.id)?.number.let { n -> if (n != null && n > 0) n else v.id + 1 })
+                else -> stringResource(Res.string.company_train, company, world.trains.getOrNull(v.id)?.number.let { n -> if (n != null && n > 0) n else v.id + 1 })
             }
         }
         val name = if (names.size < 2) names.firstOrNull() ?: "" else stringResource(Res.string.name_and, names.dropLast(1).joinToString(", "), names.last())
@@ -1824,7 +1939,8 @@ internal fun newsText(world: World, n: News): String {
     }
     if (n.kind == News.SNOWBOUND || n.kind == News.TRAIN_OLD || n.kind == News.TRAIN_STUCK) {
         if (world.trains.getOrNull(n.about)?.owner != me) return ""
-        val name = world.trains.getOrNull(n.about)?.name?.takeIf { it.isNotEmpty() } ?: stringResource(Res.string.train_n, n.about + 1)
+        val train = world.trains.getOrNull(n.about)
+        val name = train?.name?.takeIf { it.isNotEmpty() } ?: stringResource(Res.string.train_n, train?.number?.takeIf { it > 0 } ?: n.about + 1)
         return stringResource(when (n.kind) { News.SNOWBOUND -> Res.string.news_snowbound; News.TRAIN_STUCK -> Res.string.news_stuck; else -> Res.string.news_old }, name)
     }
     val ind = world.industries.getOrNull(n.about) ?: return ""
