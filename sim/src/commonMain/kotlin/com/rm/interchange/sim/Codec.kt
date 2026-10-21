@@ -59,6 +59,8 @@ object Codec {
     private const val SET_SCENARIO = 49
     private const val SIGNAL_RUN = 50
     private const val AUTORENEW = 51
+    private const val REMOVE = 52
+    private const val REMOVE_AREA = 53
 
     /** The most goals a [Command.SetGoals] may carry. */
     const val MOST_GOALS = 100
@@ -96,6 +98,8 @@ object Codec {
             is Command.Wire -> { w.byte(WIRE); w.int(c.company); w.int(c.sx); w.int(c.sy); w.int(c.ex); w.int(c.ey); w.int(c.first); w.bool(c.remove) }
             is Command.Clear -> { w.byte(CLEAR); w.int(c.company); w.int(c.x); w.int(c.y) }
             is Command.ClearArea -> { w.byte(CLEAR_AREA); w.int(c.company); w.int(c.x0); w.int(c.y0); w.int(c.x1); w.int(c.y1) }
+            is Command.Remove -> { w.byte(REMOVE); w.int(c.company); w.int(c.x); w.int(c.y) }
+            is Command.RemoveArea -> { w.byte(REMOVE_AREA); w.int(c.company); w.int(c.x0); w.int(c.y0); w.int(c.x1); w.int(c.y1) }
             is Command.BuyTrain -> { w.byte(BUY_TRAIN_CARGO); w.int(c.company); w.int(c.depot); w.int(c.engine); w.int(c.wagon); w.int(c.wagons); w.int(c.cargo) }
             is Command.Loan -> { w.byte(LOAN); w.int(c.company); w.bool(c.borrow) }
             is Command.FundIndustry -> { w.byte(FUND_INDUSTRY); w.int(c.company); w.int(c.kind) }
@@ -129,6 +133,8 @@ object Codec {
         SIGNAL -> Command.Signal(r.int(), r.int(), r.int(), r.int(), r.int())
         CLEAR -> Command.Clear(r.int(), r.int(), r.int())
         CLEAR_AREA -> Command.ClearArea(r.int(), r.int(), r.int(), r.int(), r.int())
+        REMOVE -> Command.Remove(r.int(), r.int(), r.int())
+        REMOVE_AREA -> Command.RemoveArea(r.int(), r.int(), r.int(), r.int(), r.int())
         BUY_TRAIN -> Command.BuyTrain(r.int(), r.int(), r.int(), r.int(), r.int())
         TRAIN_ORDER -> Command.TrainOrder(r.int(), r.int(), r.int(), r.ints())
         BUY_TRAIN_CARGO -> Command.BuyTrain(r.int(), r.int(), r.int(), r.int(), r.int(), r.int())

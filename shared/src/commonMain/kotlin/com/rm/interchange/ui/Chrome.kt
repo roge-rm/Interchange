@@ -224,28 +224,41 @@ private fun ClearOf(
 /** How many ticks run for each one at normal speed. */
 val SPEEDS = intArrayOf(1, 2, 4, 8)
 
-/** The tool buttons, in a row along the bottom or a column down the side. The row shares out the width. */
+/** The tool buttons, in a row along the bottom or a column down the side, with Remove after the groups. The row shares out the width. */
 @Composable
-fun ToolBar(selected: ToolGroup, onSelect: (ToolGroup) -> Unit, vertical: Boolean, compact: Boolean, modifier: Modifier = Modifier, editor: Boolean = false) {
+fun ToolBar(
+    selected: ToolGroup,
+    onSelect: (ToolGroup) -> Unit,
+    vertical: Boolean,
+    compact: Boolean,
+    remove: Boolean,
+    onRemove: () -> Unit,
+    modifier: Modifier = Modifier,
+    editor: Boolean = false,
+) {
     val groups = ToolGroup.entries.filter { editor || !it.editorOnly }
+    val removeLabel = stringResource(Res.string.tool_remove)
     if (vertical) {
         ChromeBox(modifier) {
             // Scrolls only on a screen too short for the whole rail.
             Column(Modifier.verticalScroll(rememberScrollState()).padding(4.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                for (g in groups) GroupButton(g, g == selected, compact, Modifier.width(if (compact) 56.dp else 64.dp)) { onSelect(g) }
+                val width = Modifier.width(if (compact) 56.dp else 64.dp)
+                for (g in groups) GroupButton(g.glyph, stringResource(g.title), g == selected && !remove, compact, width) { onSelect(g) }
+                GroupButton(Glyph.Remove, removeLabel, remove, compact, width, onRemove)
             }
         }
     } else {
         ChromeBox(modifier.fillMaxWidth()) {
             Row(Modifier.padding(4.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                for (g in groups) GroupButton(g, g == selected, compact, Modifier.weight(1f)) { onSelect(g) }
+                for (g in groups) GroupButton(g.glyph, stringResource(g.title), g == selected && !remove, compact, Modifier.weight(1f)) { onSelect(g) }
+                GroupButton(Glyph.Remove, removeLabel, remove, compact, Modifier.weight(1f), onRemove)
             }
         }
     }
 }
 
 @Composable
-private fun GroupButton(group: ToolGroup, selected: Boolean, compact: Boolean, modifier: Modifier, onClick: () -> Unit) {
+private fun GroupButton(glyph: Glyph, label: String, selected: Boolean, compact: Boolean, modifier: Modifier, onClick: () -> Unit) {
     val c = LocalColors.current
     Column(
         modifier
@@ -256,9 +269,9 @@ private fun GroupButton(group: ToolGroup, selected: Boolean, compact: Boolean, m
             .padding(horizontal = 2.dp, vertical = if (compact) 4.dp else 6.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        GlyphIcon(group.glyph, if (selected) c.onAccent else c.text, Modifier.size(if (compact) 24.dp else 28.dp))
+        GlyphIcon(glyph, if (selected) c.onAccent else c.text, Modifier.size(if (compact) 24.dp else 28.dp))
         BasicText(
-            stringResource(group.title), maxLines = 1,
+            label, maxLines = 1,
             style = TextStyle(color = if (selected) c.onAccent else c.textDim, textAlign = TextAlign.Center),
             autoSize = TextAutoSize.StepBased(minFontSize = 8.sp, maxFontSize = if (compact) 10.sp else 11.sp),
         )
@@ -289,7 +302,8 @@ fun ToolTray(
     extras: @Composable RowScope.() -> Unit = {},
 ) {
     val c = LocalColors.current
-    val tools = Tool.of(tool.group, editor)
+    // Remove keeps this cost line and skips the land tabs.
+    val tools = if (tool == Tool.Remove) emptyList() else Tool.of(tool.group, editor)
     ChromeBox(modifier) {
         Column(Modifier.padding(4.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             if (tools.size > 1 && !folded) {

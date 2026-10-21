@@ -116,11 +116,17 @@ sealed interface Command {
     /** Marks a tile of straight track as a waypoint, for orders to route trains through. */
     data class Waypoint(override val company: Int, val x: Int, val y: Int) : Command
 
-    /** Clears a tile of all the company's own things on it, its trees, or a town building on it. */
+    /** The bulldozer: the company's own things on a tile, its trees, or a town building. Selling that property pays scrap, about half what it cost. */
     data class Clear(override val company: Int, val x: Int, val y: Int) : Command
 
     /** Clears every tile from ([x0], [y0]) to ([x1], [y1]) as [Clear] does one. */
     data class ClearArea(override val company: Int, val x0: Int, val y0: Int, val x1: Int, val y1: Int) : Command
+
+    /** Sells the company's own property on tile ([x], [y]) for scrap, about half what it cost. Trees, town buildings and other companies' property stay. */
+    data class Remove(override val company: Int, val x: Int, val y: Int) : Command
+
+    /** Sells the company's own property on every tile from ([x0], [y0]) to ([x1], [y1]) as [Remove] does one. */
+    data class RemoveArea(override val company: Int, val x0: Int, val y0: Int, val x1: Int, val y1: Int) : Command
 
     /** Buys a train in a depot, its wagons set to carry [cargo] if they can, or their first. */
     data class BuyTrain(override val company: Int, val depot: Int, val engine: Int, val wagon: Int, val wagons: Int, val cargo: Int = -1) : Command

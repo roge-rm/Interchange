@@ -63,6 +63,7 @@ enum class Tool(
     Trees(ToolGroup.Land, Res.string.tool_trees, Glyph.Tree, editorReady = true),
     ClearTrees(ToolGroup.Land, Res.string.tool_clear_trees, Glyph.Remove, editorReady = true, editorOnly = true),
     Clear(ToolGroup.Land, Res.string.tool_clear, Glyph.Clear, ready = true),
+    Remove(ToolGroup.Land, Res.string.tool_remove, Glyph.Remove, ready = true),
 
     PlaceTown(ToolGroup.Towns, Res.string.tool_place_town, Glyph.Home, editorReady = true, editorOnly = true),
     GrowTown(ToolGroup.Towns, Res.string.tool_grow_town, Glyph.Plus, editorReady = true, editorOnly = true),
@@ -73,6 +74,7 @@ enum class Tool(
     fun ready(editor: Boolean) = if (editor) editorReady else ready
 
     companion object {
-        fun of(group: ToolGroup, editor: Boolean = false) = entries.filter { it.group == group && (editor || !it.editorOnly) }
+        /** The group's tabs. Remove is a button on the tool bar, so it stays out of the land strip. */
+        fun of(group: ToolGroup, editor: Boolean = false) = entries.filter { it.group == group && it != Remove && (editor || !it.editorOnly) }
     }
 }

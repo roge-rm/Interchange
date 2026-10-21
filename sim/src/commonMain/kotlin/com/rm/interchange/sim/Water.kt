@@ -295,51 +295,78 @@ internal fun World.buildBuoy(company: Company, c: Command.Buoy) {
     touched(c.x, c.y)
 }
 
-/** Clears what's on tile [i] of water and air: a dock, buoy, shipyard, canal, lock or a whole airport. True if it was one of those. */
-internal fun World.clearWaterOrAir(company: Company, i: Int): Boolean {
-    val x = i % width
-    val y = i / width
-    fun pay(): Boolean {
-        if (company.money < price(Prices.CLEAR)) return false
-        spend(company, Books.CONSTRUCTION, price(Prices.CLEAR))
-        return true
-    }
+/**
+ * What selling the water or air object on tile [i] pays, before inflation.
+ * [goes] is false when it stays. [airport] is set when the object is an airport, paid once from its kind.
+ */
+internal class WaterSale(val base: Long, val airport: Int, val goes: Boolean)
+
+/** The water or air object on tile [i], or null if the tile isn't a dock, buoy, shipyard, canal, lock or airport. */
+internal fun World.waterSale(company: Int, i: Int): WaterSale? {
     docks[i]?.let { id ->
-        val s = stations[id] ?: return true
-        if (s.owner != company.id || !pay()) return true
-        docks.remove(i); dockFacing.remove(i); owner[i] = -1
-        s.docks.remove(i)
-        if (s.empty) dropStation(id)
-        touched(x, y); networkChanged(); shipsChanged()
-        return true
+        val s = stations[id] ?: return WaterSale(0, -1, false)
+        return if (s.owner == company) WaterSale(DOCK_COST, -1, true) else WaterSale(0, -1, false)
     }
     buoys[i]?.let { id ->
-        val s = stations[id] ?: return true
-        if (s.owner != company.id || !pay()) return true
-        buoys.remove(i)
-        s.docks.remove(i)
-        dropStation(id)
-        touched(x, y); shipsChanged()
-        return true
+        val s = stations[id] ?: return WaterSale(0, -1, false)
+        return if (s.owner == company) WaterSale(BUOY_COST, -1, true) else WaterSale(0, -1, false)
     }
     depotAt(i)?.takeIf { it.kind == Depots.SHIPYARD }?.let { d ->
-        if (d.owner != company.id || ships.any { it != null && it.inDepot && it.depot == d.id } || !pay()) return true
-        depotTiles.remove(i); depots[d.id] = null; owner[i] = -1
-        depotGone(d)
-        touched(x, y); shipsChanged()
-        return true
+        val busy = ships.any { it != null && it.inDepot && it.depot == d.id }
+        return if (d.owner == company && !busy) WaterSale(SHIPYARD_COST, -1, true) else WaterSale(0, -1, false)
     }
     if (canals.contains(i) || locks.containsKey(i)) {
-        if (owner[i].toInt() != company.id || ships.any { it != null && !it.inDepot && shipTile(it) == i } || !pay()) return true
-        canals.remove(i); locks.remove(i); owner[i] = -1; weather.ice[i] = 0
-        touched(x, y); shipsChanged()
-        return true
+        val busy = ships.any { it != null && !it.inDepot && shipTile(it) == i }
+        val base = if (locks.containsKey(i)) LOCK_DOLLARS else CANAL_COST
+        return if (owner[i].toInt() == company && !busy) WaterSale(base, -1, true) else WaterSale(0, -1, false)
     }
     airportTiles[i]?.let { id ->
-        airports.getOrNull(id)?.let { a -> if (a.owner == company.id) removeAirport(company, a) }
+        val a = airports.getOrNull(id) ?: return WaterSale(0, -1, false)
+        return if (a.owner == company && !airportBusy(a)) WaterSale(Airports.COST[a.kind], a.id, true) else WaterSale(0, -1, false)
+    }
+    return null
+}
+
+/** Clears what's on tile [i] of water and air: a dock, buoy, shipyard, canal, lock or a whole airport. True if it was one of those. Selling it pays scrap. */
+internal fun World.clearWaterOrAir(company: Company, i: Int): Boolean {
+    val sale = waterSale(company.id, i) ?: return false
+    if (!sale.goes) return true
+    val x = i % width
+    val y = i / width
+    if (sale.airport >= 0) {
+        airports.getOrNull(sale.airport)?.let { removeAirport(company, it) }
         return true
     }
-    return false
+    scrap(company, sale.base)
+    when {
+        docks.containsKey(i) -> {
+            val id = docks.getValue(i)
+            val s = stations[id]
+            docks.remove(i); dockFacing.remove(i); owner[i] = -1
+            s?.docks?.remove(i)
+            if (s != null && s.empty) dropStation(id)
+            touched(x, y); networkChanged(); shipsChanged()
+        }
+        buoys.containsKey(i) -> {
+            val id = buoys.getValue(i)
+            val s = stations[id]
+            buoys.remove(i)
+            s?.docks?.remove(i)
+            if (s != null) dropStation(id)
+            touched(x, y); shipsChanged()
+        }
+        depotAt(i)?.kind == Depots.SHIPYARD -> {
+            val d = depotAt(i)!!
+            depotTiles.remove(i); depots[d.id] = null; owner[i] = -1
+            depotGone(d)
+            touched(x, y); shipsChanged()
+        }
+        else -> {
+            canals.remove(i); locks.remove(i); owner[i] = -1; weather.ice[i] = 0
+            touched(x, y); shipsChanged()
+        }
+    }
+    return true
 }
 
 /** Ships' routes are found again before the next move. */

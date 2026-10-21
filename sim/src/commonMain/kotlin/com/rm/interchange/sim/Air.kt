@@ -239,11 +239,14 @@ private fun World.buildable(i: Int): Boolean {
         !airportTiles.containsKey(i) && !saltDepots.contains(i) && !deck.containsKey(i) && !spanHeads.containsKey(i)
 }
 
-/** Takes airport [a] down, if no aircraft is at it or based there. */
+/** Whether an aircraft is at [a] or based there, so the airport stays. */
+internal fun World.airportBusy(a: Airport): Boolean =
+    aircraft.any { it != null && (it.inDepot && it.depot == a.depot || !it.inDepot && it.at == a.id && (it.state == Flight.GATE || it.wreckedFor > 0)) }
+
+/** Takes airport [a] down, if no aircraft is at it or based there, and pays scrap for its kind once. */
 internal fun World.removeAirport(company: Company, a: Airport) {
-    if (aircraft.any { it != null && (it.inDepot && it.depot == a.depot || !it.inDepot && it.at == a.id && (it.state == Flight.GATE || it.wreckedFor > 0)) }) return
-    if (company.money < price(Prices.CLEAR)) return
-    spend(company, Books.CONSTRUCTION, price(Prices.CLEAR))
+    if (airportBusy(a)) return
+    scrap(company, Airports.COST[a.kind])
     val s = stations[a.station]
     for (t in a.tiles(this)) {
         airportTiles.remove(t)

@@ -196,16 +196,16 @@ class WorldSound(private val world: World) {
 
         val wind = (world.weather.wind / WIND_FULL).coerceIn(0f, 1f)
         val high = (h / World.MAX_HEIGHT.toFloat()).coerceIn(0f, 1f)
-        val windGain = (0.22f + 0.78f * wind * wind) * (0.85f + 0.3f * high) * muffle
+        val windGain = (0.07f + 0.28f * wind * wind) * (0.85f + 0.3f * high) * muffle
         out.add(KEY_WIND, Recipes.WIND, windGain, 0f, lowpass, 1f, 0.25f + 0.75f * wind, 0.35f + 0.65f * wind)
 
         if (sky.precipitation > 0 && sky.temperature > 0) {
             val wet = (sky.precipitation / RAIN_FULL).coerceIn(0f, 1f)
-            out.add(KEY_RAIN, Recipes.RAIN, (0.25f + 0.75f * wet) * muffle, 0f, lowpass, 1f, 0.15f + 0.7f * wet)
+            out.add(KEY_RAIN, Recipes.RAIN, (0.12f + 0.35f * wet) * muffle, 0f, lowpass, 1f, 0.15f + 0.7f * wet)
         }
 
         val shoreHeard = heard(shore, at, pan)
-        if (shoreHeard > 0f) out.add(KEY_SHORE, Recipes.SEA, level(shoreHeard, SHORE_REF) * 0.7f * muffle, pan[0], lowpass, 1f, 0.35f, 0f)
+        if (shoreHeard > 0f) out.add(KEY_SHORE, Recipes.SEA, level(shoreHeard, SHORE_REF) * 0.35f * muffle, pan[0], lowpass, 1f, 0.35f, 0f)
 
         val day = daylight(hour)
         val birdsHeard = heard(trees, at, pan)
@@ -546,7 +546,7 @@ class WorldSound(private val world: World) {
         private const val RAIN_FULL = 2500f
         private const val SHORE_REF = 5f
         private const val TREES_REF = 8f
-        private const val BIRDS_LEVEL = 0.6f
+        private const val BIRDS_LEVEL = 0.3f
         private const val SNOW_MUFFLE = 0.6f
         private const val SNOW_LOWPASS = 3200f
         /** Claps a second under the middle of a storm. */

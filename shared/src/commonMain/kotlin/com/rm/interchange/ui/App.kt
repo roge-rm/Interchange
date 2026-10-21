@@ -63,6 +63,7 @@ import com.rm.interchange.sim.airportRefusal
 import com.rm.interchange.sim.Refusal
 import com.rm.interchange.sim.roadCost
 import com.rm.interchange.sim.clearCost
+import com.rm.interchange.sim.removeCost
 import com.rm.interchange.map.View
 import com.rm.interchange.map.buildingAt
 import com.rm.interchange.platform.logLine
@@ -822,6 +823,7 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
     var addingCraftStops by remember { mutableStateOf<Pair<Boolean, Int>?>(null) }
     var canalPlan by remember { mutableStateOf<Command.Canal?>(null) }
     var clearPlan by remember { mutableStateOf<Command.ClearArea?>(null) }
+    var removePlan by remember { mutableStateOf<Command.RemoveArea?>(null) }
     // The track tool lays lines on its own (0), or one piece, a view piece, at a time; and where the drag is now.
     var trackPiece by remember { mutableIntStateOf(0) }
     var dragAt by remember { mutableStateOf<Pick?>(null) }
@@ -926,7 +928,7 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
         folded = true
         // Once for the gesture. A drag's tiles share the one sound.
         when (tool) {
-            Tool.Track, Tool.Road, Tool.TramRails, Tool.Canal, Tool.Clear -> Sounds.earth()
+            Tool.Track, Tool.Road, Tool.TramRails, Tool.Canal, Tool.Clear, Tool.Remove -> Sounds.earth()
             Tool.Signals, Tool.Bridge, Tool.Wires -> Sounds.clunk()
             else -> {}
         }
@@ -967,7 +969,7 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
                 get() = editor && tool in EDITOR_DRAGS
             override val drags: Boolean
                 get() = pick == null && addingStops == null && addingRoadStops == null && addingCraftStops == null && (editing ||
-                    tool == Tool.Track || tool == Tool.Wires || tool == Tool.Signals || tool == Tool.Station || tool == Tool.Bridge || tool == Tool.Road || tool == Tool.TramRails || tool == Tool.Canal || tool == Tool.Clear)
+                    tool == Tool.Track || tool == Tool.Wires || tool == Tool.Signals || tool == Tool.Station || tool == Tool.Bridge || tool == Tool.Road || tool == Tool.TramRails || tool == Tool.Canal || tool == Tool.Clear || tool == Tool.Remove)
             override fun tap(at: Pick) {
                 val ground = world.index(at.tileX, at.tileY)
                 pick?.let { it.onTile(ground); return }
@@ -1064,6 +1066,7 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
                         built()
                     }
                     Tool.Clear -> { runner.request(Command.Clear(me, at.tileX, at.tileY)); built() }
+                    Tool.Remove -> { runner.request(Command.Remove(me, at.tileX, at.tileY)); built() }
                     Tool.Raise, Tool.Lower -> {
                         runner.request(Command.Terraform(me, at.x.roundToInt(), at.y.roundToInt(), tool == Tool.Raise))
                         built()
@@ -1090,6 +1093,7 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
                     Tool.Bridge -> bridgePlan = bridgePlan(me, s, at, bridgeStyle)
                     Tool.Canal -> canalPlan = roadLine(me, s, at, 0, removing).let { Command.Canal(me, it.sx, it.sy, it.ex, it.ey, removing) }
                     Tool.Clear -> clearPlan = Command.ClearArea(me, s.tileX, s.tileY, at.tileX, at.tileY)
+                    Tool.Remove -> removePlan = Command.RemoveArea(me, s.tileX, s.tileY, at.tileX, at.tileY)
                     Tool.Signals -> signalPlan = signalRun(me, s, at, Signals.PLACED[signalKind], signalSpacing, removing)
                     else -> plan = railFor(s, at)
                 }
@@ -1111,6 +1115,7 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
                 roadPlan?.let { runner.request(it); built() }
                 canalPlan?.let { runner.request(it); built() }
                 clearPlan?.let { runner.request(it); built() }
+                removePlan?.let { runner.request(it); built() }
                 // A drag that stays on one tile is a tap on it.
                 signalPlan?.let { if (it.sx == it.ex && it.sy == it.ey) start?.let { s -> tap(s) } else { runner.request(it); built() } }
                 dragCancel()
@@ -1122,6 +1127,7 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
                 roadPlan = null
                 canalPlan = null
                 clearPlan = null
+                removePlan = null
                 signalPlan = null
                 areaPlan = null
                 dragAt = null
@@ -1140,12 +1146,15 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
     } ?: roadPlan?.let { p -> world.roadCost(company, p).takeIf { it >= 0 }?.let { (maxOf(kotlin.math.abs(p.ex - p.sx), kotlin.math.abs(p.ey - p.sy)) + 1) to it } }
         ?: canalPlan?.let { p -> world.canalCost(company, p).let { (cost, n) -> n to cost } }
         ?: clearPlan?.let { p -> world.clearCost(me, p).let { (cost, n) -> n to cost } }
+        ?: removePlan?.let { p -> world.removeCost(me, p).let { (cost, n) -> n to cost } }
         ?: signalPlan?.takeIf { !it.remove }?.let { p -> world.signalRunCost(p).let { (cost, n) -> n to cost } }
         ?: stationPlan?.let { p -> ((kotlin.math.abs(p.x1 - p.x0) + 1) * (kotlin.math.abs(p.y1 - p.y0) + 1)).let { n -> n to n * world.price(Prices.PLATFORM) } }
         ?: bridgePlan?.let { p -> world.bridgeCost(company, p).takeIf { it >= 0 }?.let { (maxOf(kotlin.math.abs(p.x1 - p.x0), kotlin.math.abs(p.y1 - p.y0)) + 1) to it } }
     // Building's free in the editor.
     val dragText = if (editor) null else dragged?.takeIf { it.first > 0 }?.let { (n, cost) ->
-        stringResource(Res.string.drag_label, pluralStringResource(if (signalPlan != null) Res.plurals.drag_signals else Res.plurals.drag_tiles, n, n), money(cost))
+        val tiles = pluralStringResource(if (signalPlan != null) Res.plurals.drag_signals else Res.plurals.drag_tiles, n, n)
+        if (cost < 0) stringResource(Res.string.drag_back, tiles, money(-cost))
+        else stringResource(Res.string.drag_label, tiles, money(cost))
     }
     val shortOf = dragged != null && dragged.second > money
     val measurer = rememberTextMeasurer()
@@ -1169,6 +1178,7 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
                 ?: roadPlan?.let { p -> { painter -> drawRoadPlan(world, painter, p) } }
                 ?: canalPlan?.let { p -> { painter -> drawCanalPlan(world, painter, p) } }
                 ?: clearPlan?.let { p -> { painter -> drawClearPlan(world, painter, p) } }
+                ?: removePlan?.let { p -> { painter -> drawClearPlan(world, painter, p) } }
                 ?: signalPlan?.let { p -> { painter -> drawSignalPlan(world, painter, p) } }
                 ?: areaPlan?.let { a ->
                     // An industry shows red where it won't fit.
@@ -1304,22 +1314,44 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
             MessageChip(pick.prompt, { GlyphIcon(Glyph.Remove, c.text, Modifier.padding(4.dp).size(18.dp)) }, pick.onCancel)
         }
 
-        fun pickGroup(g: ToolGroup) {
-            if (tool.group != g) lastTool[tool.group] = tool
-            tool = lastTool[g] ?: Tool.of(g, editor).first { it.ready(editor) }
+        fun endGesture(inspecting: Boolean) {
             plan = null
             stationPlan = null
             folded = false
             addingStops = null
             addingRoadStops = null
             addingCraftStops = null
-            if (g != ToolGroup.Inspect) selected = null
+            if (!inspecting) selected = null
+        }
+
+        // The lit button again puts the tools away.
+        fun pickGroup(g: ToolGroup) {
+            if (g != ToolGroup.Inspect && tool != Tool.Remove && tool.group == g) {
+                lastTool[g] = tool
+                tool = Tool.Inspect
+                endGesture(true)
+                return
+            }
+            if (tool != Tool.Remove && tool.group != g) lastTool[tool.group] = tool
+            tool = lastTool[g]?.takeIf { it != Tool.Remove && it.ready(editor) } ?: Tool.of(g, editor).first { it.ready(editor) }
+            endGesture(g == ToolGroup.Inspect)
+        }
+
+        fun pickRemove() {
+            if (tool == Tool.Remove) {
+                tool = Tool.Inspect
+                endGesture(true)
+                return
+            }
+            if (tool != Tool.Inspect) lastTool[tool.group] = tool
+            tool = Tool.Remove
+            endGesture(false)
         }
 
         // Someone watching only looks, so the building tools are left out.
         if (layout.sideTools && me >= 0) {
             ToolBar(
-                tool.group, ::pickGroup, vertical = true, compact = compactTools, editor = editor,
+                tool.group, ::pickGroup, vertical = true, compact = compactTools, remove = tool == Tool.Remove, onRemove = ::pickRemove, editor = editor,
                 modifier = Modifier
                     .align(Alignment.CenterEnd)
                     .windowInsetsPadding(safe.only(WindowInsetsSides.End))
@@ -1436,6 +1468,8 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
                     Tool.Station -> stringResource(Res.string.cost_tile, money(world.price(Prices.PLATFORM)))
                     Tool.Depot -> money(world.price(Prices.DEPOT))
                     Tool.Raise, Tool.Lower -> stringResource(Res.string.cost_corner, money(world.price(Prices.TERRAFORM)))
+                    Tool.Remove -> stringResource(Res.string.cost_back, money(world.price(Prices.TRACK) / 2), money(world.price(Prices.PLATFORM) / 2))
+                    Tool.Clear -> stringResource(Res.string.cost_clear, money(world.price(Prices.TREE)))
                     else -> null
                 }
                 val pieceNames = listOf(Res.string.piece_x, Res.string.piece_y, Res.string.piece_n, Res.string.piece_e, Res.string.piece_s, Res.string.piece_w).map { stringResource(it) }
@@ -1493,10 +1527,17 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
                     if (tool == Tool.PlaceIndustry) TrayToggle(Glyph.TurnRight, stringResource(Res.string.turn_industry), industryTurn != 0) { industryTurn = (industryTurn + 1) % 4 }
                     if (tool == Tool.Track || tool == Tool.Wires || tool == Tool.Signals || tool == Tool.Road || tool == Tool.TramRails || tool == Tool.Canal) TrayToggle(Glyph.Lift, stringResource(Res.string.remove_track), removing) { removing = !removing }
                     if (tool == Tool.Airport && airportKind != Airports.SEAPLANE && airportKind != Airports.HELIPORT) TrayToggle(Glyph.TurnRight, stringResource(Res.string.runway_other_way), !runwayAlongX) { runwayAlongX = !runwayAlongX }
-                    if (tool == Tool.Station) TrayToggle(Glyph.TurnRight, stringResource(Res.string.platforms_other_way), !stationAlongX) { stationAlongX = !stationAlongX }
+                    if (tool == Tool.Station) {
+                        // PieceX runs down-right, world X while the map is unturned, and the two swap on a quarter turn.
+                        val glyph = if ((view.turn % 2 == 0) == stationAlongX) Glyph.PieceX else Glyph.PieceY
+                        TrayToggle(glyph, stringResource(Res.string.platforms_other_way), false) { stationAlongX = !stationAlongX }
+                    }
                 }
             }
-            if (!layout.sideTools && me >= 0) ToolBar(tool.group, ::pickGroup, vertical = false, compact = compactTools, modifier = trayWidth, editor = editor)
+            if (!layout.sideTools && me >= 0) ToolBar(
+                tool.group, ::pickGroup, vertical = false, compact = compactTools, remove = tool == Tool.Remove, onRemove = ::pickRemove,
+                modifier = trayWidth, editor = editor,
+            )
         }
         if (overview) OverviewWindow(runner, view, mapSize, overviewOptions, onCloseOverview)
     }

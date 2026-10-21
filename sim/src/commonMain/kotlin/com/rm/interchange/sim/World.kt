@@ -318,6 +318,8 @@ class World(settings: NewGame, val roster: Roster = Roster.BASE, generate: Boole
             is Command.SetAutorenew -> setAutorenew(company, command)
             is Command.Clear -> clearAll(company, command.x, command.y)
             is Command.ClearArea -> clearArea(company, command)
+            is Command.Remove -> removeProperty(company, command.x, command.y)
+            is Command.RemoveArea -> removeArea(company, command)
             is Command.BuyTrain -> buyTrain(company, command)
             is Command.TrainOrder -> trainCommand(company, command)
             is Command.Loan -> loanCommand(company, command)

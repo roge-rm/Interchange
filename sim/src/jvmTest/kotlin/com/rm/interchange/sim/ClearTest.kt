@@ -22,7 +22,10 @@ class ClearTest {
         w.trees[w.index(15, 11)] = Trees.pack(Trees.MAPLE, 3).toByte()
         val area = Command.ClearArea(0, 12, 10, 14, 12)
         val (cost, n) = w.clearCost(0, area)
-        assertTrue(cost > 0 && n == 7, "cost $cost over $n tiles")
+        val net = w.price(Prices.TREE) * Trees.count(w.trees[w.index(13, 11)].toInt()) -
+            3 * (w.price(Prices.TRACK) / 2) - 3 * (w.price(Surface.COST[Surface.DIRT]) / 2)
+        assertEquals(net, cost)
+        assertEquals(7, n)
         val before = w.companies[0].money
         w.apply(area)
         for (x in 12..14) {
@@ -69,5 +72,23 @@ class ClearTest {
         t.approval[0] = APPROVAL_REFUSES
         w.apply(Command.Clear(0, j % w.width, j / w.width))
         assertTrue(w.house[j].toInt() != 0)
+    }
+
+    @Test
+    fun clearOfTrackAndATreePaysScrapAndChargesTheTree() {
+        val w = flat()
+        w.apply(Command.Rail(0, 10, 10, 10, 10, Track.X, remove = false))
+        val i = w.index(10, 10)
+        w.trees[i] = Trees.pack(Trees.MAPLE, 1).toByte()
+        val area = Command.ClearArea(0, 10, 10, 10, 10)
+        val net = w.treeCost(i) - w.price(Prices.TRACK) / 2
+        val (cost, n) = w.clearCost(0, area)
+        assertEquals(net, cost)
+        assertEquals(1, n)
+        val before = w.companies[0].money
+        w.apply(area)
+        assertEquals(0, w.track[i].toInt())
+        assertEquals(0, Trees.count(w.trees[i].toInt()))
+        assertEquals(net, before - w.companies[0].money)
     }
 }

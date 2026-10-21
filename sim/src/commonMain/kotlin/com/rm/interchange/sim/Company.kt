@@ -120,6 +120,16 @@ internal fun World.spend(company: Company, kind: Int, amount: Long) {
     company.monthOut += amount
 }
 
+/** Pays [company] half of [base] back for selling its own property, booked to construction. Nothing if that half is 0. */
+internal fun World.scrap(company: Company, base: Long) {
+    val back = scrapBack(base)
+    if (back == 0L) return
+    spend(company, Books.CONSTRUCTION, -back)
+}
+
+/** Half of [base] now, the same amount [scrap] pays. */
+internal fun World.scrapBack(base: Long): Long = price(base) / 2
+
 /** Gives [amount] to [company] and books it to [kind]. */
 internal fun World.earn(company: Company, kind: Int, amount: Long) {
     company.money += amount

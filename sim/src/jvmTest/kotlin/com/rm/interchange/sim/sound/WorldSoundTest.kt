@@ -101,6 +101,7 @@ class WorldSoundTest {
         w.weather.wind = 40
         val blow = frame(sound, at())
         assertTrue(calm.loudness(WorldSound.KEY_WIND) > 0f)
+        assertTrue(calm.loudness(WorldSound.KEY_WIND) < 0.12f, "calm ${calm.loudness(WorldSound.KEY_WIND)}")
         assertTrue(blow.loudness(WorldSound.KEY_WIND) > calm.loudness(WorldSound.KEY_WIND))
     }
 

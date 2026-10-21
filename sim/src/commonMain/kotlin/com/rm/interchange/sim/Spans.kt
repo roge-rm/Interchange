@@ -230,12 +230,26 @@ private fun World.open(company: Company, s: Span) {
     networkChanged()
 }
 
+/** What span [s] cost to build, before inflation: each tile between the heads, and the track on both heads. */
+internal fun spanBuilt(s: Span): Long = s.length.toLong() * Spans.COST[s.style] + 2 * Prices.TRACK
+
+/** Whether a train is on span [s], a head or the track between. */
+internal fun World.spanBlocked(s: Span): Boolean {
+    val dx = (s.x1 - s.x0).coerceIn(-1, 1)
+    val dy = (s.y1 - s.y0).coerceIn(-1, 1)
+    for (k in 0..s.length + 1) {
+        val i = index(s.x0 + dx * k, s.y0 + dy * k)
+        if ((tileTrains[i] ?: 0) > 0 || (tileTrains[-i - 1] ?: 0) > 0) return true
+    }
+    return false
+}
+
 /** Takes span [s] away, heads and all, unless a train is on it. */
 internal fun World.removeSpan(s: Span): Boolean {
+    if (spanBlocked(s)) return false
     val dx = (s.x1 - s.x0).coerceIn(-1, 1)
     val dy = (s.y1 - s.y0).coerceIn(-1, 1)
     val tiles = (0..s.length + 1).map { index(s.x0 + dx * it, s.y0 + dy * it) }
-    if (tiles.any { (tileTrains[it] ?: 0) > 0 || (tileTrains[-it - 1] ?: 0) > 0 }) return false
     for ((k, i) in tiles.withIndex()) {
         if (k == 0 || k == tiles.size - 1) {
             spanHeads.remove(i)

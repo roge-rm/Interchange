@@ -54,6 +54,7 @@
     <string name="tool_level">Niveler</string>
     <string name="tool_trees">Arbres</string>
     <string name="tool_clear">Dégager</string>
+    <string name="tool_remove">Enlever</string>
     <string name="show_tools">Afficher les outils</string>
     <string name="hide_tools">Masquer les outils</string>
     <string name="remove_track">Enlever la voie</string>
@@ -65,6 +66,8 @@
     <string name="cost_waypoint">%1$s, touchez une voie droite pour en faire un point de passage</string>
     <string name="cost_tile">%1$s la case</string>
     <string name="cost_corner">%1$s le coin</string>
+    <string name="cost_back">%1$s de retour pour la voie, %2$s pour un quai</string>
+    <string name="cost_clear">%1$s l'arbre</string>
 
     <string name="close">Fermer</string>
     <string name="kind_water">Eau</string>
@@ -493,6 +496,7 @@
     <string name="kind_lock">Écluse</string>
     <string name="track_auto">Lignes et courbes</string>
     <string name="drag_label">%1$s · %2$s</string>
+    <string name="drag_back">%1$s · %2$s de retour</string>
     <plurals name="drag_tiles">
         <item quantity="one">%1$d case</item>
         <item quantity="other">%1$d cases</item>

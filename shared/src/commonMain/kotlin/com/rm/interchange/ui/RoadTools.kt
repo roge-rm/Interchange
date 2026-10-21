@@ -67,8 +67,15 @@ fun DrawScope.drawCanalPlan(world: World, painter: LandPainter, plan: Command.Ca
 private val CANAL_OK = Color(0x993A7AB0)
 
 /** The tiles a clearing [plan] covers, red. */
-fun DrawScope.drawClearPlan(world: World, painter: LandPainter, plan: Command.ClearArea) {
-    for (y in minOf(plan.y0, plan.y1)..maxOf(plan.y0, plan.y1)) for (x in minOf(plan.x0, plan.x1)..maxOf(plan.x0, plan.x1)) {
+fun DrawScope.drawClearPlan(world: World, painter: LandPainter, plan: Command.ClearArea) =
+    drawClearPlan(world, painter, plan.x0, plan.y0, plan.x1, plan.y1)
+
+/** The tiles a selling [plan] covers, red, the same rectangle as clearing. */
+fun DrawScope.drawClearPlan(world: World, painter: LandPainter, plan: Command.RemoveArea) =
+    drawClearPlan(world, painter, plan.x0, plan.y0, plan.x1, plan.y1)
+
+private fun DrawScope.drawClearPlan(world: World, painter: LandPainter, x0: Int, y0: Int, x1: Int, y1: Int) {
+    for (y in minOf(y0, y1)..maxOf(y0, y1)) for (x in minOf(x0, x1)..maxOf(x0, x1)) {
         if (world.inside(x, y)) with(painter) { tile(x, y, CLEAR_PLAN) }
     }
 }

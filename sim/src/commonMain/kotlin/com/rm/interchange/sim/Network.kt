@@ -107,13 +107,15 @@ fun World.signalFits(x: Int, y: Int, piece: Int): Boolean {
  * Lays platforms over the rectangle from ([x0], [y0]) to ([x1], [y1]), each
  * running along [axis] ([Track.X] or [Track.Y]). Each tile has to be flat and
  * dry, and empty or already straight track along [axis]. Joins the station
- * next to it if there's one of this company's, or makes a new one.
+ * next to it if there's one of this company's, or makes a new one. A rectangle
+ * of one station's platforms turns that whole station onto [axis], for nothing.
  */
 internal fun World.buildStation(company: Company, c: Command.Station) {
     if (c.axis != Track.X && c.axis != Track.Y) return
     val xs = minOf(c.x0, c.x1)..maxOf(c.x0, c.x1)
     val ys = minOf(c.y0, c.y1)..maxOf(c.y0, c.y1)
     if (xs.last - xs.first >= MAX_STATION || ys.last - ys.first >= MAX_STATION) return
+    if (turnWholeStation(company, c, xs, ys)) return
     if (townRefuses(company, xs.first, ys.first)) return
     val tiles = ArrayList<Int>()
     for (y in ys) for (x in xs) {
@@ -154,6 +156,43 @@ internal fun World.buildStation(company: Company, c: Command.Station) {
         touched(i % width, i / width)
     }
     networkChanged()
+}
+
+/**
+ * Turns the one station covering [xs] by [ys] onto [c]'s axis, when every tile
+ * there is its platform and [company] owns it. Returns false when the rectangle
+ * is anything else. Costs nothing, and leaves the station where a train is on
+ * it or the new axis would not fit.
+ */
+private fun World.turnWholeStation(company: Company, c: Command.Station, xs: IntRange, ys: IntRange): Boolean {
+    var station: Station? = null
+    for (y in ys) for (x in xs) {
+        if (!inside(x, y)) return false
+        val s = stationAt(index(x, y)) ?: return false
+        if (s.waypoint || s.owner != company.id) return false
+        val held = station
+        if (held != null && held.id != s.id) return false
+        station = s
+    }
+    val s = station ?: return false
+    if (s.tiles.any { trainOnTile(it) }) return true
+    if (s.tiles.all { track[it].toInt() == c.axis }) return true
+    val ours = s.tiles.toHashSet()
+    val fits = s.tiles.all { i ->
+        piecesFit(i % width, i / width, c.axis) { t -> if (t in ours) c.axis else track[t].toInt() }
+    }
+    if (!fits) return true
+    var changed = false
+    for (i in s.tiles) {
+        if (track[i].toInt() == c.axis) continue
+        // The old axis is gone, so every signal on the tile comes off with it.
+        for (p in Track.PIECES) signals.remove(pieceKey(i, p))
+        track[i] = c.axis.toByte()
+        touched(i % width, i / width)
+        changed = true
+    }
+    if (changed) networkChanged()
+    return true
 }
 
 /**
@@ -292,18 +331,18 @@ internal fun World.buildWaypoint(company: Company, c: Command.Waypoint) {
 
 /**
  * Clears tile ([x], [y]) of what this company has on it: track, signals, a
- * platform or a depot. Not while a train is on it or in the depot.
+ * platform or a depot. Not while a train is on it or in the depot. Selling
+ * it pays scrap, about half what it cost, and a company with no money can still sell.
  */
 internal fun World.clearTile(company: Company, c: Command.Clear) {
     if (!inside(c.x, c.y)) return
     val i = index(c.x, c.y)
     if (!owns(company.id, i) || trainOnTile(i)) return
     depotAt(i)?.let { d -> if (trains.any { it != null && it.depot == d.id && it.inDepot }) return }
-    if (company.money < price(Prices.CLEAR)) return
     // A road stop comes off its road; a garage goes, with its bit of road.
     roadStops[i]?.let { id ->
         if (roadVehicleOn(i)) return
-        spend(company, Books.CONSTRUCTION, price(Prices.CLEAR))
+        scrap(company, Prices.ROAD_STOP)
         roadStops.remove(i)
         val s = stations[id]!!
         s.stops.remove(i)
@@ -316,7 +355,7 @@ internal fun World.clearTile(company: Company, c: Command.Clear) {
     if (clearWaterOrAir(company, i)) return
     depotAt(i)?.takeIf { it.road }?.let { d ->
         if (roadVehicles.any { it != null && it.inDepot && it.depot == d.id }) return
-        spend(company, Books.CONSTRUCTION, price(Prices.CLEAR))
+        scrap(company, Prices.DEPOT)
         depotTiles.remove(i)
         depots[d.id] = null
         depotGone(d)
@@ -327,13 +366,13 @@ internal fun World.clearTile(company: Company, c: Command.Clear) {
         roadsChanged()
         return
     }
-    // A bridge or tunnel goes all at once, from either head.
+    // A bridge or tunnel goes all at once, from either head, and scrap is paid once for the span.
     spanHeads[i]?.let { id ->
         val s = spans[id] ?: return
-        if (removeSpan(s)) spend(company, Books.CONSTRUCTION, price(Prices.CLEAR))
+        if (removeSpan(s)) scrap(company, spanBuilt(s))
         return
     }
-    spend(company, Books.CONSTRUCTION, price(Prices.CLEAR))
+    scrapOwnedTrack(company, i)
     for (p in Track.PIECES) signals.remove(pieceKey(i, p))
     stationTiles.remove(i)?.let { id ->
         val s = stations[id]!!

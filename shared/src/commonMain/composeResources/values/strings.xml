@@ -64,6 +64,7 @@
     <string name="tool_level">Level</string>
     <string name="tool_trees">Trees</string>
     <string name="tool_clear">Clear</string>
+    <string name="tool_remove">Remove</string>
     <string name="show_tools">Show tools</string>
     <string name="hide_tools">Hide tools</string>
     <string name="remove_track">Remove track</string>
@@ -76,6 +77,8 @@
     <string name="cost_waypoint">%1$s, tap straight track to make it a waypoint</string>
     <string name="cost_tile">%1$s a tile</string>
     <string name="cost_corner">%1$s a corner</string>
+    <string name="cost_back">%1$s back for track, %2$s for a platform</string>
+    <string name="cost_clear">%1$s a tree</string>
 
     <!-- Inspecting a tile. -->
     <string name="close">Close</string>
@@ -510,6 +513,7 @@
     <string name="kind_lock">Lock</string>
     <string name="track_auto">Lines and corners</string>
     <string name="drag_label">%1$s · %2$s</string>
+    <string name="drag_back">%1$s · %2$s back</string>
     <plurals name="drag_tiles">
         <item quantity="one">%1$d tile</item>
         <item quantity="other">%1$d tiles</item>
