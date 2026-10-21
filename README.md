@@ -1,15 +1,14 @@
 # Interchange
 
-Interchange is a transport game for Android 8.1+ based on OpenTTD.
+Interchange is a transport game for Android 8.1 or newer based on OpenTTD.
 
-Move goods and people via rail, road, water, and ait. Build your company up over time, upgrade your vehicles, make complicated rail networks and fight your way through the weather. Play against computer rivals and/or other human players - or play with other people as the same company.
+Move goods and people by rail, road, water and air. Build your company, upgrade vehicles, lay out railway networks and deal with the weather. Play against computer rivals and other players, or run a company together.
 
 There's a campaign of seven chapters from 1836 on, goals to play for in your own games, and a scenario editor to make your own.
 
-Currently the game is playable but not finished. Build things, run trains into each other, tell me what works and what doesn't.
+The game is playable but still being worked on. Build things, run trains into each other, tell me what works and what doesn't.
 
-Join me in the #interchange channel **[on my discord](https://discord.gg/9Wun47jGC6)** to discuss the game or report any bugs.
-<br>You can also add an issue here for me to look at.
+Join me in #interchange [on my discord](https://discord.gg/9Wun47jGC6) to talk about the game or report bugs, or open an issue here.
 
 Enjoy!
 Dan
@@ -57,7 +56,7 @@ From the title screen, Multiplayer lists the games on your network. Pick one, th
 
 ### Running a server
 
-A dedicated server keeps the game going with nobody playing. Easily run with docker:
+A dedicated server keeps the game going when everyone leaves. From the repository root, run it with Docker:
 
 ```sh
 cp .env.example .env        # set ADMIN_PASSWORD

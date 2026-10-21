@@ -1,8 +1,10 @@
 # Interchange dedicated server
 
-A game hosted with no screen. Players join it from Multiplayer in the app, and it carries on when they leave. It saves every game month, when it's stopped and when the admin asks.
+Host a game that players join from Multiplayer in the app. It keeps running when they leave. It saves every game month, when it's stopped and when the admin asks.
 
-## Running it with Docker
+## Running with Docker
+
+From the repository root, set `ADMIN_PASSWORD` in `.env` before starting:
 
 ```sh
 cp .env.example .env        # set ADMIN_PASSWORD
@@ -18,7 +20,7 @@ The game listens on 45688, and the admin page is at `http://<this machine>:8088`
 
 Both use host networking, so phones on the same network find the game by themselves.
 
-## Running it without Docker
+## Running without Docker
 
 ```sh
 ./gradlew :dedicated:installDist
@@ -47,7 +49,7 @@ All are environment variables; `docker-compose.yml` sets them from the shorter n
 | `INTERCHANGE_DAY_LENGTH` | `10` | 1, 2, 4, 6, 10 or 16 |
 | `INTERCHANGE_TOWN_GROWTH` | `NORMAL` | `SUPPLIED`: towns grow only when supplied with what they need |
 | `INTERCHANGE_GOALS` | `NONE` | `TOWNS`, `DELIVERIES`, `CONNECTIONS` or `MIXED` |
-| `INTERCHANGE_SCENARIO` | none | a `.ichscn` scenario file to start from instead of a new map |
+| `INTERCHANGE_SCENARIO` | none | starts from a `.ichscn` scenario file |
 
 The admin page takes `ADMIN_PASSWORD`, `WEB_PORT` (8088), `WEB_BIND`, `HTTPS` (1 behind a reverse proxy that serves HTTPS) and `FORWARDED_ALLOW_IPS` (the proxy's address, 127.0.0.1 unless set).
 
@@ -63,7 +65,7 @@ Put `.ichpack` files in the packs folder (`packs` in the state folder unless set
 
 ## The admin channel
 
-A Unix socket, guarded by its file permissions. One tab-separated line goes in and one line of JSON comes out:
+The admin channel uses a Unix socket protected by file permissions. Requests are one line of tab separated fields, with one line of JSON returned:
 
 ```sh
 printf 'status\n' | socat - UNIX-CONNECT:/run/interchange/control.sock
