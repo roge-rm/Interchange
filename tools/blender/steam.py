@@ -40,8 +40,13 @@ def colours(scheme):
     }
 
 
-def engine(m, L, lead, drive, trail, r_drive, r_lead, boiler_r, stack, domes, scheme, pilot=True, cab_len=0.13):
-    """A steam engine L tiles long, nose at +y."""
+def engine(m, L, lead, drive, trail, r_drive, r_lead, boiler_r, stack, domes, scheme, pilot=True, cab_len=0.13,
+           cab=True, lagged=False, stack_h=0.44, drive_set=0.0):
+    """A steam engine L tiles long, nose at +y.
+
+    cab=False gives the earliest kind: an open footplate cab_len long at the back, a raised firebox ahead of it,
+    a deep frame over the wheels and no lamp or bell. lagged puts wooden lagging held by iron bands on the boiler.
+    stack_h is a straight chimney's height in steps, drive_set moves the drivers back from the front by that many tiles."""
     c = colours(scheme)
     back = -L / 2 + 0.01
     front = L / 2 - (0.07 if pilot else 0.02)
@@ -49,10 +54,16 @@ def engine(m, L, lead, drive, trail, r_drive, r_lead, boiler_r, stack, domes, sc
     # Frame and running boards.
     m.box(-0.08, 0.08, back, front, deck - 0.45, deck - 0.05, c["iron"])
     for side in (-1, 1):
-        m.box(side * 0.105, side * 0.13, back + cab_len, front - 0.02, deck - 0.05, deck, c["iron"], bevel=0.002)
+        m.box(side * 0.105, side * 0.13, back + (0 if not cab else cab_len), front - 0.02, deck - 0.05, deck, c["iron"], bevel=0.002)
+    if not cab:
+        # A deep frame plate down each side to just over the wheels, and beams across each end.
+        for side in (-1, 1):
+            m.box(side * 0.114, side * 0.13, back, front, deck - 0.12, deck - 0.02, c["paint"], bevel=0.002)
+        for y0, y1 in ((front - 0.012, front), (back, back + 0.012)):
+            m.box(-0.135, 0.135, y0, y1, deck - 0.2, deck, c["paint"], bevel=0.002)
     # Wheels: leading under the front, drivers in the middle, trailing under the cab.
     lead_pos = [front - 0.05 - i * r_lead * 2.5 for i in range(lead)]
-    d0 = (lead_pos[-1] - r_lead - r_drive - 0.03) if lead else front - r_drive - 0.02
+    d0 = (lead_pos[-1] - r_lead - r_drive - 0.03) if lead else front - r_drive - 0.02 - drive_set
     drive_pos = [d0 - i * r_drive * 2.2 for i in range(drive)]
     trail_pos = [drive_pos[-1] - r_drive - 0.03 - r_lead - i * r_lead * 2.4 for i in range(trail)]
     wmats = (c["steel"], c["wheel"], c["steel"])
@@ -61,59 +72,109 @@ def engine(m, L, lead, drive, trail, r_drive, r_lead, boiler_r, stack, domes, sc
             m.wheel(y, side, r_lead, wmats, spokes=10)
         for y in drive_pos:
             m.wheel(y, side, r_drive, wmats, spokes=14, counterweight=True)
-        # Steam cylinder, crosshead guide, main rod and side rods.
+        # Steam cylinder, crosshead guide, main rod and side rods; the open-footplate kind has its cylinders inside the frame.
         zc = r_drive / 0.2041
         cy0 = drive_pos[0] + r_drive + 0.03
-        m.tube(cy0, cy0 + 0.085, side * 0.115, zc + 0.15, 0.032, c["paint"])
-        m.box(side * 0.112, side * 0.118, drive_pos[0] + r_drive * 0.4, cy0, zc + 0.1, zc + 0.2, c["steel"])
         crank_z = zc - r_drive * 0.45 / 0.2041
-        m.rod((side * 0.121, cy0 - 0.01, zc + 0.15), (side * 0.121, drive_pos[-1 if drive < 3 else 1], crank_z), 0.006, c["steel"])
+        if cab:
+            m.tube(cy0, cy0 + 0.085, side * 0.115, zc + 0.15, 0.032, c["paint"])
+            m.box(side * 0.112, side * 0.118, drive_pos[0] + r_drive * 0.4, cy0, zc + 0.1, zc + 0.2, c["steel"])
+            m.rod((side * 0.121, cy0 - 0.01, zc + 0.15), (side * 0.121, drive_pos[-1 if drive < 3 else 1], crank_z), 0.006, c["steel"])
         if drive > 1:
             m.rod((side * 0.124, drive_pos[0], crank_z), (side * 0.124, drive_pos[-1], crank_z), 0.006, c["steel"])
     # Boiler, bands and smokebox.
     cab_front = back + cab_len
+    # The open-footplate kind has a second platform ahead of the smokebox.
+    nose = front if cab else front - 0.05
     bz = deck + boiler_r / 0.2041 + 0.02
     smoke = 0.07
-    m.tube(cab_front, front - smoke, 0, bz, boiler_r, c["boiler"])
-    for k in range(1, 4):
-        y = cab_front + (front - smoke - cab_front) * k / 4
-        m.tube(y - 0.004, y + 0.004, 0, bz, boiler_r * 1.03, c["brass"], cap=False)
-    m.tube(front - smoke, front, 0, bz, boiler_r * 1.06, c["black"])
+    if not cab:
+        # The firebox, a drum wider than the boiler and standing above it, with the fire door facing the footplate.
+        fire_len = 0.07
+        fr = boiler_r * 1.18
+        fz = deck + fr / 0.2041 + 0.01
+        m.tube(cab_front, cab_front + fire_len, 0, fz, fr, c["black"])
+        m.tube(cab_front - 0.002, cab_front + 0.001, 0, fz - 0.05, fr * 0.35, c["iron"])
+        for y in (cab_front + 0.004, cab_front + fire_len - 0.004):
+            m.tube(y - 0.003, y + 0.003, 0, fz, fr * 1.02, c["iron"], cap=False)
+        b0 = cab_front + fire_len
+    else:
+        b0 = cab_front
+    if lagged:
+        # Wooden staves, left faceted so each shows, held by iron bands.
+        wood = material("boiler lagging", "#8a6a48", rough=0.75)
+        staves = m.tube(b0, nose - smoke, 0, bz, boiler_r, wood, segments=22)
+        staves.data.polygons.foreach_set("use_smooth", [False] * len(staves.data.polygons))
+        bands, band_mat = 5, c["iron"]
+    else:
+        m.tube(b0, nose - smoke, 0, bz, boiler_r, c["boiler"])
+        bands, band_mat = 4, c["brass"]
+    for k in range(1, bands):
+        y = b0 + (nose - smoke - b0) * k / bands
+        m.tube(y - 0.004, y + 0.004, 0, bz, boiler_r * 1.03, band_mat, cap=False)
+    m.tube(nose - smoke, nose, 0, bz, boiler_r * 1.06, c["black"])
     # Handrails along the boiler.
-    for side in (-1, 1):
-        m.rod((side * (boiler_r + 0.012), cab_front, bz + 0.3), (side * (boiler_r + 0.012), front - smoke, bz + 0.3), 0.003, c["brass"])
+    if cab:
+        for side in (-1, 1):
+            x = side * (boiler_r * m.k(bz) + 0.012)
+            m.rod((x, cab_front, bz + 0.3), (x, nose - smoke, bz + 0.3), 0.003, c["brass"])
     top = bz + boiler_r / 0.2041
-    sy = front - smoke / 2
+    sy = nose - smoke / 2
     if stack == "balloon":
         m.lathe(0, sy, top - 0.1, [(0.02, 0), (0.022, 0.3), (0.045, 0.5), (0.056, 0.68), (0.052, 0.76), (0.028, 0.78)], c["black"])
     elif stack == "diamond":
         m.lathe(0, sy, top - 0.1, [(0.02, 0), (0.022, 0.32), (0.05, 0.52), (0.018, 0.7)], c["black"])
     else:
-        m.lathe(0, sy, top - 0.1, [(0.024, 0), (0.024, 0.35), (0.03, 0.4), (0.028, 0.44)], c["black"])
+        h = stack_h
+        m.lathe(0, sy, top - 0.1, [(0.024, 0), (0.024, h - 0.09), (0.03, h - 0.04), (0.028, h)], c["black"])
     # Domes, bell and whistle.
     for i in range(domes):
-        dy = cab_front + (front - smoke - cab_front) * (0.3 + 0.38 * i)
+        dy = b0 + (nose - smoke - b0) * (0.3 + 0.38 * i)
         m.lathe(0, dy, top - 0.15, [(0.036, 0), (0.034, 0.22), (0.028, 0.3), (0.016, 0.35), (0.0, 0.36)], c["brass"] if scheme == "victorian" else c["boiler"])
-    m.lathe(0, cab_front + (front - smoke - cab_front) * 0.5, top - 0.05, [(0.004, 0), (0.004, 0.1), (0.014, 0.12), (0.017, 0.22), (0.005, 0.25)], c["brass"])
-    m.lathe(0.0, cab_front + 0.02, top - 0.05, [(0.004, 0), (0.004, 0.2), (0.006, 0.22), (0.006, 0.3), (0.0, 0.32)], c["brass"])
-    # Headlamp on the smokebox.
-    if scheme == "victorian":
-        m.box(-0.025, 0.025, front - 0.045, front - 0.0, top - 0.02, top + 0.24, c["cab"], bevel=0.003)
-        m.tube(front - 0.002, front + 0.004, 0, top + 0.11, 0.014, c["brass"])
+    if cab:
+        m.lathe(0, cab_front + (front - smoke - cab_front) * 0.5, top - 0.05, [(0.004, 0), (0.004, 0.1), (0.014, 0.12), (0.017, 0.22), (0.005, 0.25)], c["brass"])
+        m.lathe(0.0, cab_front + 0.02, top - 0.05, [(0.004, 0), (0.004, 0.2), (0.006, 0.22), (0.006, 0.3), (0.0, 0.32)], c["brass"])
     else:
-        m.tube(front - 0.03, front + 0.005, 0, bz + 0.15, 0.022, c["black"])
-    # The cab, with windows on each side and at the front.
-    cab_h = deck + 1.0
-    m.box(-0.12, 0.12, back, cab_front, deck, cab_h, c["cab"], bevel=0.003)
-    m.box(-0.135, 0.135, back - 0.015, cab_front + 0.015, cab_h, cab_h + 0.12, c["roof"], bevel=0.012)
-    for side in (-1, 1):
-        m.box(side * 0.1205 - 0.0008, side * 0.1205 + 0.0008, cab_front - 0.06, cab_front - 0.015, deck + 0.5, deck + 0.88, c["glass"])
-        m.box(side * 0.1205 - 0.0008, side * 0.1205 + 0.0008, back + 0.015, back + 0.05, deck + 0.5, deck + 0.88, c["glass"])
-    for side in (-1, 1):
-        m.box(side * 0.05 - 0.025, side * 0.05 + 0.025, cab_front - 0.001, cab_front + 0.0015, deck + 0.55, deck + 0.88, c["glass"])
-    # Lettering on the cab sides.
-    for side in (-1, 1):
-        m.text(LETTERS, side * 0.1212, back + cab_len / 2, deck + 0.28, 0.03, c["letters"], side)
+        m.lathe(0.0, b0 + 0.012, top - 0.05, [(0.004, 0), (0.004, 0.2), (0.006, 0.22), (0.006, 0.3), (0.0, 0.32)], c["brass"])
+        # The open footplate: a low rail along each side on posts, and the reversing lever.
+        rail = deck + 0.4
+        for side in (-1, 1):
+            x = side * 0.125
+            for y in (back + 0.006, cab_front - 0.006):
+                m.rod((x, y, deck), (x, y, rail), 0.004, c["iron"])
+            m.rod((x, back + 0.006, rail), (x, cab_front - 0.006, rail), 0.004, c["iron"])
+        m.rod((0.06, cab_front - 0.03, deck), (0.06, cab_front - 0.015, deck + 0.45), 0.004, c["steel"])
+        for side in (-1, 1):
+            x = side * 0.125
+            for y in (nose + 0.006, front - 0.006):
+                m.rod((x, y, deck), (x, y, rail), 0.004, c["iron"])
+            m.rod((x, nose + 0.006, rail), (x, front - 0.006, rail), 0.004, c["iron"])
+            # A vertical cylinder standing on the frame over the front driver, its rod straight down to the crank.
+            y = drive_pos[0]
+            m.upright(side * 0.1, y, deck, deck + 0.3, 0.02, 0.02, c["iron"])
+            m.upright(side * 0.1, y, deck + 0.3, deck + 0.34, 0.024, 0.024, c["steel"])
+            m.upright(side * 0.1, y, deck, deck + 0.03, 0.025, 0.025, c["steel"])
+            m.rod((side * 0.121, y, deck + 0.05), (side * 0.121, y, crank_z), 0.005, c["steel"])
+            m.box(side * 0.121 - 0.006, side * 0.121 + 0.006, y - 0.012, y + 0.012, deck - 0.02, deck + 0.06, c["steel"])
+    if cab:
+        # Headlamp on the smokebox.
+        if scheme == "victorian":
+            m.box(-0.025, 0.025, front - 0.045, front - 0.0, top - 0.02, top + 0.24, c["cab"], bevel=0.003)
+            m.tube(front - 0.002, front + 0.004, 0, top + 0.11, 0.014, c["brass"])
+        else:
+            m.tube(front - 0.03, front + 0.005, 0, bz + 0.15, 0.022, c["black"])
+        # The cab, with windows on each side and at the front.
+        cab_h = deck + 1.0
+        m.box(-0.12, 0.12, back, cab_front, deck, cab_h, c["cab"], bevel=0.003)
+        m.box(-0.135, 0.135, back - 0.015, cab_front + 0.015, cab_h, cab_h + 0.12, c["roof"], bevel=0.012)
+        for side in (-1, 1):
+            m.box(side * 0.1205 - 0.0008, side * 0.1205 + 0.0008, cab_front - 0.06, cab_front - 0.015, deck + 0.5, deck + 0.88, c["glass"])
+            m.box(side * 0.1205 - 0.0008, side * 0.1205 + 0.0008, back + 0.015, back + 0.05, deck + 0.5, deck + 0.88, c["glass"])
+        for side in (-1, 1):
+            m.box(side * 0.05 - 0.025, side * 0.05 + 0.025, cab_front - 0.001, cab_front + 0.0015, deck + 0.55, deck + 0.88, c["glass"])
+        # Lettering on the cab sides.
+        for side in (-1, 1):
+            m.text(LETTERS, side * 0.1212, back + cab_len / 2, deck + 0.28, 0.03, c["letters"], side)
     # Pilot.
     if pilot:
         tip = front + 0.065
@@ -122,7 +183,8 @@ def engine(m, L, lead, drive, trail, r_drive, r_lead, boiler_r, stack, domes, sc
         m.box(-0.11, 0.11, front - 0.01, front + 0.005, deck - 0.35, deck - 0.05, c["paint"])
 
 
-def tender(m, L, scheme, small=False):
+def tender(m, L, scheme, small=False, plain=False):
+    """A tender L tiles long; plain is the earliest kind, a low wooden box with the coal showing over its sides."""
     c = colours(scheme)
     a0, a1 = -L / 2 + 0.01, L / 2 - 0.01
     underframe(m, a0, a1, c)
@@ -136,6 +198,14 @@ def tender(m, L, scheme, small=False):
     else:
         for y in (a0 + 0.08, a1 - 0.08):
             truck(m, y, c)
+    if plain:
+        h1 = 0.92
+        m.box(-0.122, 0.122, a0, a1, 0.62, h1, material("tender planks", "#6e5438", rough=0.8), bevel=0.003)
+        for y in (a0 + 0.004, a1 - 0.004):
+            for side in (-1, 1):
+                m.box(side * 0.124 - 0.004, side * 0.124 + 0.004, y - 0.006, y + 0.006, 0.6, h1 + 0.01, c["iron"])
+        m.box(-0.105, 0.105, a0 + 0.02, a1 - 0.03, h1 - 0.05, h1 + 0.1, material("coal", "#141414", rough=0.9), bevel=0.02)
+        return
     h1 = 1.15 if small else 1.35
     m.box(-0.122, 0.122, a0, a1, 0.62, h1, c["cab"] if scheme == "victorian" else c["paint"], bevel=0.003)
     # Coal boards flaring out at the top, and the coal heaped in them.

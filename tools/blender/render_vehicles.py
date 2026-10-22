@@ -34,6 +34,8 @@ def L(n):
 MODELS = {
     "dorchester": (7, lambda m: steam.engine(m, L(7), 0, 2, 0, 0.042, 0.03, 0.052, "straight", 1, "victorian", pilot=False, cab_len=0.09)),
     "dorchester_tender": (4, lambda m: steam.tender(m, L(4), "victorian", small=True)),
+    "samson": (8, lambda m: steam.engine(m, L(8), 0, 3, 0, 0.056, 0.03, 0.042, "straight", 1, "black", pilot=False, cab_len=0.07, cab=False, lagged=True, stack_h=0.62, drive_set=0.02)),
+    "samson_tender": (4, lambda m: steam.tender(m, L(4), "black", small=True, plain=True)),
     "american": (10, lambda m: steam.engine(m, L(10), 2, 2, 0, 0.055, 0.028, 0.063, "balloon", 2, "victorian")),
     "american_tender": (7, lambda m: steam.tender(m, L(7), "victorian")),
     "ten_wheeler": (11, lambda m: steam.engine(m, L(11), 2, 3, 0, 0.052, 0.028, 0.066, "diamond", 2, "victorian")),
@@ -130,6 +132,25 @@ ROAD = {"horse_omnibus", "stagecoach", "mail_coach", "freight_wagon", "red_river
         "tank_truck", "log_truck", "cattle_truck", "semi_van", "plow_truck", "streetcar", "pcc", "clrv", "flexity",
         "step_van", "electric_van", "flatbed_truck", "tandem_dump", "quad_dump", "fuel_truck", "tandem_plow", "highway_tractor",
         "aero_tractor", "tanker_train", "grain_train", "cattle_liner", "logger"}
+# How each kind is lowered, as (h, base): heights over base steps are scaled by h, wheels, horses and people keep
+# their size. Rail bodies come down onto their trucks' wheel tops, road ones onto their wheels; ships from the waterline,
+# helicopters and float planes from the ground. Fixed-wing aircraft are already in proportion.
+FLOAT_PLANES = {"fairchild_71", "norseman", "beaver", "otter", "twin_otter"}
+HELICOPTERS = {"bell_47", "s55", "jetranger", "s92"}
+
+
+def height(key):
+    if key in SHIPS:
+        return 0.45, 0.0
+    if key in HELICOPTERS:
+        return 0.35, 0.0
+    if key in FLOAT_PLANES:
+        return 0.65, 0.0
+    if key in AIRCRAFT:
+        return 1.0, 0.0
+    return (0.75, 0.3) if key in ROAD else (0.75, 0.36)
+
+
 # How far in from each end of its length a rail vehicle's body stops, in tiles, leaving a gap to the next car that its coupler bridges.
 END_GAP = 0.03
 
@@ -189,7 +210,7 @@ def main():
         parts._materials.clear()
         rig.setup(samples=40)
         catcher = shadow_catcher()
-        model = parts.Model(key)
+        model = parts.Model(key, *height(key))
         build(model)
         if key not in ROAD and key not in SHIPS and key not in AIRCRAFT:
             couple(model, L(length))

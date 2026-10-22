@@ -20,7 +20,12 @@ def _ring(cx, cz, rx, rz, n=10):
 
 
 def horse(m, x, y, coat, ox=False):
-    """A horse, or an ox, standing at x across with its rump at y, facing +y."""
+    """A horse, or an ox, standing at x across with its rump at y, facing +y; it keeps its size in a lowered model."""
+    with m.keep():
+        return _horse(m, x, y, coat, ox)
+
+
+def _horse(m, x, y, coat, ox):
     hide = material(f"coat {coat}", coat, rough=0.8)
     dark = material("hoof", "#1e1a18", rough=0.7)
     long = 0.1 if ox else 0.09
@@ -72,6 +77,11 @@ def team(m, y, pairs=1, coats=(0, 1)):
 
 def wheel(m, x, y, r, rim, spokes=10, hub_r=None):
     """A wooden spoked wheel across x at y, r tiles round, its foot on the road."""
+    with m.keep():
+        _wheel(m, x, y, r, rim, spokes, hub_r)
+
+
+def _wheel(m, x, y, r, rim, spokes, hub_r):
     zc = r / rig.RISE
 
     def at(a, f):
@@ -90,15 +100,21 @@ def axle(m, y, r, x, body, dark):
     """An axle across at y between wheels r tiles round at x either side, and a spring each side up to the body's
     underside at body steps."""
     hub = r / rig.RISE
-    m.rod((-x, y, hub), (x, y, hub), 0.004, dark, segments=6)
-    if body > hub + 0.02:
+    with m.keep():
+        m.rod((-x, y, hub), (x, y, hub), 0.004, dark, segments=6)
+    if m.z(body) > hub + 0.02:
         for side in (-1, 1):
-            m.box(side * x * 0.55 - 0.005, side * x * 0.55 + 0.005, y - 0.012, y + 0.012, hub, body, dark)
+            m.box(side * x * 0.55 - 0.005, side * x * 0.55 + 0.005, y - 0.012, y + 0.012, m.fixed(hub), body, dark)
 
 
 def driver(m, y, z, coat="#2a3a5a"):
     """A driver sat up front, reins forward."""
     cloth = material(f"driver {coat}", coat, rough=0.8)
+    with m.keep(z):
+        _driver(m, y, z, cloth)
+
+
+def _driver(m, y, z, cloth):
     m.upright(0.0, y, z, z + 0.22, 0.012, 0.01, cloth, segments=10)
     m.upright(0.0, y, z + 0.22, z + 0.3, 0.007, 0.007, material("face", "#d8b090", rough=0.6), segments=10)
     m.upright(0.0, y, z + 0.3, z + 0.34, 0.01, 0.007, material("hat", "#1e1e20", rough=0.6), segments=10)
@@ -229,7 +245,8 @@ def red_river_cart(m, L):
     for side in (-1, 1):
         wheel(m, side * (half + 0.006), y, r, wood, spokes=12, hub_r=0.012)
     zc = r / rig.RISE
-    m.rod((-half - 0.006, y, zc), (half + 0.006, y, zc), 0.005, wood, segments=6)
+    with m.keep():
+        m.rod((-half - 0.006, y, zc), (half + 0.006, y, zc), 0.005, wood, segments=6)
     m.box(-half, half, y - 0.045, y + 0.045, zc - 0.05, zc + 0.02, wood, bevel=0.003)
     for side in (-1, 1):
         m.box(side * half - 0.003, side * half + 0.003, y - 0.045, y + 0.045, zc + 0.02, zc + 0.25, wood)
@@ -264,7 +281,8 @@ def horsecar(m, L):
     m.box(-0.05, 0.05, p0 + 0.02, p1 - 0.02, zc, floor, dark)
     for y in (p0 + 0.04, p1 - 0.04):
         for side in (-1, 1):
-            m.tube_x(side * 0.058 - 0.005, side * 0.058 + 0.005, y, zc, 0.02, dark)
+            with m.keep():
+                m.tube_x(side * 0.058 - 0.005, side * 0.058 + 0.005, y, zc, 0.02, dark)
     driver(m, b1 - 0.015, floor + 0.07)
     pole(m, b1, b1 + 0.02, 0.38, dark)
     horse(m, 0.0, b1 + 0.02, COATS[0])

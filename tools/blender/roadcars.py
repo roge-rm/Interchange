@@ -27,10 +27,11 @@ def common():
 def wheels(m, ys, c, half=0.07):
     """A wheel each side at each of [ys] along the vehicle."""
     zc = WHEEL_R / rig.RISE
-    for y in ys:
-        for side in (-1, 1):
-            m.tube_x(side * half - 0.014, side * half + 0.014, y, zc, WHEEL_R, c["tire"])
-            m.tube_x(side * (half + 0.0145) - 0.001, side * (half + 0.0145) + 0.001, y, zc, WHEEL_R * 0.55, c["hub"])
+    with m.keep():
+        for y in ys:
+            for side in (-1, 1):
+                m.tube_x(side * half - 0.014, side * half + 0.014, y, zc, WHEEL_R, c["tire"])
+                m.tube_x(side * (half + 0.0145) - 0.001, side * (half + 0.0145) + 0.001, y, zc, WHEEL_R * 0.55, c["hub"])
 
 
 def windows(m, y0, y1, z0, z1, n, half, c, gap=0.3):
@@ -47,7 +48,8 @@ def fender(m, y, side, c, paint):
     ro, ri = WHEEL_R * 1.4, WHEEL_R * 1.12
     outer = [(y + math.cos(a) * ro, zc + math.sin(a) * ro / rig.RISE, 0, "paint") for a in [math.radians(d) for d in range(195, -20, -15)]]
     inner = [(y + math.cos(a) * ri, zc + math.sin(a) * ri / rig.RISE, 0, "paint") for a in [math.radians(d) for d in range(-15, 200, 15)]]
-    m.shell(outer + inner, 0.016, {"paint": paint}, x=side * 0.072, cols=(-1, 1))
+    with m.keep():
+        m.shell(outer + inner, 0.016, {"paint": paint}, x=side * 0.072, cols=(-1, 1))
 
 
 def lamps(m, outline, z, x, c):
@@ -435,7 +437,8 @@ def streetcar(m, L, era):
     for y in trucks:
         for side in (-1, 1):
             for dy in (-0.03, 0.03):
-                m.tube_x(side * 0.065 - 0.008, side * 0.065 + 0.008, y + dy, zc, WHEEL_R * 0.9, c["dark"])
+                with m.keep():
+                    m.tube_x(side * 0.065 - 0.008, side * 0.065 + 0.008, y + dy, zc, WHEEL_R * 0.9, c["dark"])
     if era == "wood":
         p0, p1 = a0 + 0.05, a1 - 0.05
         m.box(-half, half, p0, p1, floor, top, body, bevel=0.004)

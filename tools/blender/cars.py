@@ -64,7 +64,7 @@ def coach_steel(m, L):
     m.box(-0.12, 0.12, a0, a1, 0.62, 0.95, green, bevel=0.004)
     m.box(-0.1202, 0.1202, a0 + 0.004, a1 - 0.004, 0.95, 1.3, cream, bevel=0.002)
     m.box(-0.12, 0.12, a0, a1, 1.3, 1.45, green, bevel=0.004)
-    m.tube(a0, a1, 0, 1.38, 0.115, c["roof"], segments=32)
+    m.tube(a0, a1, 0, 1.38, 0.115, c["roof"], segments=32, oval=True)
     n = 8
     span = (a1 - a0 - 0.06) / n
     for side in (-1, 1):
@@ -82,7 +82,7 @@ def baggage(m, L, steel):
     _base(m, L, a0, a1, c)
     m.box(-0.12, 0.12, a0, a1, 0.62, 1.45, body, bevel=0.004)
     if steel:
-        m.tube(a0, a1, 0, 1.38, 0.115, c["roof"], segments=32)
+        m.tube(a0, a1, 0, 1.38, 0.115, c["roof"], segments=32, oval=True)
     else:
         m.box(-0.13, 0.13, a0 - 0.01, a1 + 0.01, 1.45, 1.53, c["roof"], bevel=0.004)
     door = material("door", "#1f2a22" if steel else "#4a2414", rough=0.5)

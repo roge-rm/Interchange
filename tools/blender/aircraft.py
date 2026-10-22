@@ -70,7 +70,7 @@ def fuselage(m, L, r, zc, body, belly, nose=0.16, tail=0.32, lift=0.6, hump=0.0,
             ring.append((rr * sx, zc + (rr * sz + top_extra * sz + lift_here + drop) / rig.RISE))
         sections.append((y, ring))
     # The top two thirds in the body colour, the belly below.
-    m.loft(sections, {"body": body, "belly": belly}, part=lambda k: "belly" if pts * 0.58 < k < pts * 0.92 else "body", sharp=60)
+    m.loft(sections, {"body": body, "belly": belly}, part=lambda k: "belly" if pts * 0.58 < k < pts * 0.92 else "body", sharp=60, round=True)
 
 
 def wing(m, y, z, half_span, root, tip, sweep, mat, x0=0.0, dihedral=0.0, thick=0.08, side=0):
@@ -108,8 +108,9 @@ def nacelle(m, x, y0, y1, z, r, mat, c, prop=False, jet=False):
 def wheels(m, ys, z, xs, c, r=0.012):
     for y in ys:
         for x in xs:
-            m.tube_x(x - 0.004, x + 0.004, y, r / rig.RISE, r, c["tire"], segments=14)
-            m.rod((x, y, r / rig.RISE), (x * 0.8, y, z), 0.0025, c["metal"])
+            with m.keep():
+                m.tube_x(x - 0.004, x + 0.004, y, r / rig.RISE, r, c["tire"], segments=14)
+            m.rod((x, y, m.fixed(r / rig.RISE)), (x * 0.8, y, z), 0.0025, c["metal"])
 
 
 def floats(m, L, half, zb, c):
@@ -145,33 +146,35 @@ def airliner(m, L, wing_pos="low", engines="jet_wing2", tail="normal", span=1.0,
     gear_h = 0.17 if not float_gear else 0.3
     zc = gear_h + r / rig.RISE
     fuselage(m, L, r, zc, body, c["grey"] if livery != "bush" else body, hump=hump)
+    # How much the fuselage shrank across, in a lowered model.
+    rx = r * m.k(zc)
     a0, a1 = -L / 2, L / 2
     # Cockpit glass, a cheatline and a row of cabin windows, each set into the round side at its own height: f of r up
     # the side sits sqrt(1 - f^2) of r out.
     def out(f):
-        return r * math.sqrt(1 - f * f)
+        return rx * math.sqrt(1 - f * f)
 
     nose_r = r * 0.85
-    m.box(-nose_r * 0.75, nose_r * 0.75, a1 - L * 0.1, a1 - L * 0.065, zc + nose_r * 0.2 / rig.RISE, zc + nose_r * 0.7 / rig.RISE, c["glass"])
+    m.box(-rx * 0.85 * 0.75, rx * 0.85 * 0.75, a1 - L * 0.1, a1 - L * 0.065, zc + nose_r * 0.2 / rig.RISE, zc + nose_r * 0.7 / rig.RISE, c["glass"])
     for s in (-1, 1):
-        m.box(s * out(0.12) - 0.0008, s * r + 0.0004 * s, a0 + L * 0.3, a1 - L * 0.12, zc - r * 0.12 / rig.RISE, zc + r * 0.06 / rig.RISE, line)
+        m.box(s * out(0.12) - 0.0008, s * rx + 0.0004 * s, a0 + L * 0.3, a1 - L * 0.12, zc - r * 0.12 / rig.RISE, zc + r * 0.06 / rig.RISE, line)
         if windows:
             y = a0 + L * 0.32
             while y + 0.008 < a1 - L * 0.16:
                 m.box(s * out(0.34) - 0.0006, s * out(0.18) + 0.0004 * s, y, y + 0.007, zc + r * 0.18 / rig.RISE, zc + r * 0.32 / rig.RISE, c["glass"])
                 y += 0.015
         if cargo_door:
-            m.box(s * out(0.4) - 0.0006, s * r + 0.0004 * s, a1 - L * 0.32, a1 - L * 0.2, zc - r * 0.4 / rig.RISE, zc + r * 0.4 / rig.RISE, line)
+            m.box(s * out(0.4) - 0.0006, s * rx + 0.0004 * s, a1 - L * 0.32, a1 - L * 0.2, zc - r * 0.4 / rig.RISE, zc + r * 0.4 / rig.RISE, line)
     if livery != "bush":
         m.text(LETTERS, out(0.45) + 0.001, 0, zc - r * 0.45 / rig.RISE, L * 0.05, line, 1)
     half = L * 0.5 * span
     wy = 0.02 * L if wing_pos == "low" else 0.05 * L
     wz = zc - r * 0.75 / rig.RISE if wing_pos == "low" else zc + r * 0.8 / rig.RISE
     chord = L * (0.16 if sweep < 0.05 else 0.2)
-    wing(m, wy, wz, half, chord, chord * 0.42, sweep, body, x0=r * 0.6, dihedral=0.25 if wing_pos == "low" else 0.0, thick=0.07)
+    wing(m, wy, wz, half, chord, chord * 0.42, sweep, body, x0=rx * 0.6, dihedral=0.25 if wing_pos == "low" else 0.0, thick=0.07)
     if struts or float_gear:
         for s in (-1, 1):
-            m.rod((s * half * 0.5, wy, wz), (s * r, wy, zc - r * 0.8 / rig.RISE), 0.003, c["metal"])
+            m.rod((s * half * 0.5, wy, wz), (s * rx, wy, zc - r * 0.8 / rig.RISE), 0.003, c["metal"])
     # Engines.
     n = int(engines[-1])
     eng = material("engine", body_c if livery != "bush" else "#3a3a3c", metal=0.5, rough=0.35)
@@ -197,8 +200,8 @@ def airliner(m, L, wing_pos="low", engines="jet_wing2", tail="normal", span=1.0,
     elif engines == "jet_tail2":
         er = r * 0.45
         for s in (-1, 1):
-            nacelle(m, s * r * 1.5, a0 + L * 0.12, a0 + L * 0.28, zc + r * 0.3 / rig.RISE, er, eng, c, jet=True)
-            m.box(s * r * 0.9, s * r * 1.3, a0 + L * 0.16, a0 + L * 0.24, zc + 0.15, zc + 0.22, eng)
+            nacelle(m, s * rx * 1.5, a0 + L * 0.12, a0 + L * 0.28, zc + r * 0.3 / rig.RISE, er, eng, c, jet=True)
+            m.box(s * rx * 0.9, s * rx * 1.3, a0 + L * 0.16, a0 + L * 0.24, zc + 0.15, zc + 0.22, eng)
     # Tail.
     ty = a0 + L * 0.1
     tz = zc + r * 0.55 / rig.RISE
@@ -216,10 +219,10 @@ def airliner(m, L, wing_pos="low", engines="jet_wing2", tail="normal", span=1.0,
             wing(m, ty, tz - 0.05, L * 0.18 * (1 + span * 0.1), L * 0.11, L * 0.06, tail_sweep, body, thick=0.04)
     # Gear.
     if float_gear:
-        floats(m, L, r * 2.2, zc - r / rig.RISE, c)
+        floats(m, L, rx * 2.2, zc - r / rig.RISE, c)
     else:
         mains = [wy - chord * 0.2]
-        wheels(m, mains, zc - r / rig.RISE, (-r * 1.6, r * 1.6) if wing_pos == "low" else (-r * 1.2, r * 1.2), c)
+        wheels(m, mains, zc - r / rig.RISE, (-rx * 1.6, rx * 1.6) if wing_pos == "low" else (-rx * 1.2, rx * 1.2), c)
         if gear == "nose":
             wheels(m, [a1 - L * 0.12], zc - r / rig.RISE, (0.0,), c, r=0.009)
         else:
@@ -236,7 +239,7 @@ def helicopter(m, L, kind):
     a0, a1 = -L / 2, L / 2
     blade = material("rotor blade", "#2a2a2c", rough=0.5)
     if kind == "bell47":
-        m.lathe(0, a1 - L * 0.25, GROUND, [(0.0, 0.0), (0.035, 0.12), (0.045, 0.4), (0.04, 0.7), (0.0, 0.85)], c["glass"], segments=20)
+        m.lathe(0, a1 - L * 0.25, GROUND, [(0.0, 0.0), (0.035, 0.12), (0.045, 0.4), (0.04, 0.7), (0.0, 0.85)], c["glass"], segments=20, round=True)
         m.box(-0.02, 0.02, a1 - L * 0.42, a1 - L * 0.3, GROUND - 0.03, GROUND + 0.4, c["metal"])
         m.rod((0, a1 - L * 0.42, GROUND + 0.3), (0, a0 + 0.01, GROUND + 0.45), 0.006, body)
         cab_top, rotor_y, skids = GROUND + 0.9, a1 - L * 0.32, True
@@ -244,12 +247,13 @@ def helicopter(m, L, kind):
         r = L * (0.2 if kind == "s55" else 0.17 if kind == "jetranger" else 0.15)
         zc = GROUND + r / rig.RISE
         fuselage(m, L * 0.62, r, zc, body, trim, nose=0.3, tail=0.25, lift=0.4, square=kind == "s92")
-        m.box(-r * 0.7, r * 0.7, L * 0.2, L * 0.28, zc + 0.05, zc + r * 0.8 / rig.RISE, c["glass"])
+        rx = r * m.k(zc)
+        m.box(-rx * 0.7, rx * 0.7, L * 0.2, L * 0.28, zc + 0.05, zc + r * 0.8 / rig.RISE, c["glass"])
         m.loft([(a0 + 0.01, [(-0.006, zc + 0.12), (0.006, zc + 0.12), (0.006, zc + 0.26), (-0.006, zc + 0.26)]),
-                (-L * 0.25, [(-r * 0.3, zc - 0.05), (r * 0.3, zc - 0.05), (r * 0.3, zc + 0.3), (-r * 0.3, zc + 0.3)])], {"b": body})
+                (-L * 0.25, [(-rx * 0.3, zc - 0.05), (rx * 0.3, zc - 0.05), (rx * 0.3, zc + 0.3), (-rx * 0.3, zc + 0.3)])], {"b": body})
         fin(m, a0 + 0.02, zc + 0.1, 0.3, 0.035, 0.025, 0.008, body)
         for s in (-1, 1):
-            m.box(s * r * 0.99 - 0.001, s * r * 0.99 + 0.001, -L * 0.2, L * 0.15, zc - 0.05, zc + 0.05, trim)
+            m.box(s * rx * 0.99 - 0.001, s * rx * 0.99 + 0.001, -L * 0.2, L * 0.15, zc - 0.05, zc + 0.05, trim)
         cab_top, rotor_y, skids = zc + r / rig.RISE + 0.15, L * 0.02, kind == "jetranger"
     m.rod((0, rotor_y, cab_top - 0.2), (0, rotor_y, cab_top), 0.004, c["metal"])
     blades = 2 if kind in ("bell47", "jetranger") else 4

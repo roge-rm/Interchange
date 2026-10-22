@@ -3,8 +3,14 @@
 A model is built facing +y (Blender's y is the game's u), across x, in tiles,
 with heights given in steps (rig.RISE tiles each). Everything is added to one
 collection so it can be turned to a heading as a whole.
+
+A model can be built lower than its builder draws it: heights over base steps are
+scaled by h, as each shape is made. Round parts stay round, shrinking about their
+middles, and what's built inside keep() (wheels, horses, people) keeps its size and
+only moves with what it stands on.
 """
 import math
+from contextlib import contextmanager
 
 import bmesh
 import bpy
@@ -75,10 +81,45 @@ def material(name, colour, metal=0.0, rough=0.5, clearcoat=0.0, grime=0.45):
 class Model:
     """Shapes added to a collection, in the model's own terms: y along it, x across it, z in steps."""
 
-    def __init__(self, name):
+    def __init__(self, name, h=1.0, base=0.0):
         self.col = bpy.data.collections.new(name)
         bpy.context.scene.collection.children.link(self.col)
         self.objects = []
+        self.h = h
+        self.base = base
+        # Inside keep(): how far shapes move up or down, in steps, instead of being scaled.
+        self._shift = None
+
+    def z(self, z):
+        """Where a height the builder gives, in steps, ends up."""
+        if self._shift is not None:
+            return z + self._shift
+        return z if z <= self.base else self.base + (z - self.base) * self.h
+
+    def fixed(self, z):
+        """The height to give for a shape to end up at z steps: for a part that has to meet a kept one, as an axle a wheel."""
+        if self._shift is not None:
+            return z - self._shift
+        return z if z <= self.base else self.base + (z - self.base) / self.h
+
+    def k(self, z):
+        """How much round parts shrink at a height of z steps."""
+        return 1.0 if self._shift is not None or z <= self.base else self.h
+
+    def _circle(self, z, r):
+        """A round section's middle in steps and radius in tiles once lowered: it fits between where its top and bottom go."""
+        lo, hi = self.z(z - r / rig.RISE), self.z(z + r / rig.RISE)
+        return (lo + hi) / 2, (hi - lo) / 2 * rig.RISE
+
+    @contextmanager
+    def keep(self, at=0.0):
+        """Shapes made inside keep their size, moved only as far as a height of at steps moves."""
+        outer = self._shift
+        self._shift = self.z(at) - at
+        try:
+            yield
+        finally:
+            self._shift = outer
 
     def _link(self, obj, mat):
         for c in obj.users_collection:
@@ -100,6 +141,7 @@ class Model:
 
     def box(self, x0, x1, y0, y1, z0, z1, mat, bevel=0.0):
         """A box across x0 to x1, along y0 to y1, z0 to z1 steps high, its edges rounded by bevel tiles."""
+        z0, z1 = self.z(z0), self.z(z1)
         bm = bmesh.new()
         bmesh.ops.create_cube(bm, size=1.0)
         sx, sy, sz = x1 - x0, y1 - y0, (z1 - z0) * rig.RISE
@@ -113,11 +155,16 @@ class Model:
             mod.limit_method = "NONE"
         return obj
 
-    def tube(self, y0, y1, x, z, r, mat, segments=24, cap=True):
-        """A cylinder lying along the model from y0 to y1, its middle at x across and z steps up, r tiles round."""
+    def tube(self, y0, y1, x, z, r, mat, segments=24, cap=True, oval=False):
+        """A cylinder lying along the model from y0 to y1, its middle at x across and z steps up, r tiles round.
+        oval keeps its width when lowered, for a roof."""
+        z, rz = self._circle(z, r)
+        if not oval:
+            r = rz
         bm = bmesh.new()
         bmesh.ops.create_cone(bm, cap_ends=cap, cap_tris=False, segments=segments, radius1=r, radius2=r, depth=y1 - y0)
         bmesh.ops.rotate(bm, verts=bm.verts, cent=(0, 0, 0), matrix=Matrix.Rotation(math.radians(90), 3, "X"))
+        bmesh.ops.scale(bm, vec=(1, 1, rz / r), verts=bm.verts)
         bmesh.ops.translate(bm, vec=(x, (y0 + y1) / 2, z * rig.RISE), verts=bm.verts)
         obj = self._mesh("tube", bm, mat)
         obj.data.polygons.foreach_set("use_smooth", [True] * len(obj.data.polygons))
@@ -125,6 +172,7 @@ class Model:
 
     def upright(self, x, y, z0, z1, r0, r1, mat, segments=20):
         """An upright cylinder or cone at x, y from z0 to z1 steps, r0 tiles round at the foot and r1 at the top."""
+        z0, z1 = self.z(z0), self.z(z1)
         bm = bmesh.new()
         bmesh.ops.create_cone(bm, cap_ends=True, cap_tris=False, segments=segments, radius1=r0, radius2=r1, depth=(z1 - z0) * rig.RISE)
         bmesh.ops.translate(bm, vec=(x, y, (z0 + z1) / 2 * rig.RISE), verts=bm.verts)
@@ -132,15 +180,17 @@ class Model:
         obj.data.polygons.foreach_set("use_smooth", [True] * len(obj.data.polygons))
         return obj
 
-    def lathe(self, x, y, z0, profile, mat, segments=24):
-        """A turned shape standing at x, y from z0 steps: profile is (radius in tiles, height in steps above z0) from the foot up."""
+    def lathe(self, x, y, z0, profile, mat, segments=24, round=False):
+        """A turned shape standing at x, y from z0 steps: profile is (radius in tiles, height in steps above z0) from the foot up.
+        round shrinks it all over when lowered, as a bubble canopy, where otherwise only its heights come down."""
+        k = self.k(z0 + max(h for _, h in profile) / 2) if round else 1.0
         bm = bmesh.new()
         rings = []
         for r, h in profile:
             ring = []
             for i in range(segments):
                 a = 2 * math.pi * i / segments
-                ring.append(bm.verts.new((x + r * math.cos(a), y + r * math.sin(a), (z0 + h) * rig.RISE)))
+                ring.append(bm.verts.new((x + r * k * math.cos(a), y + r * k * math.sin(a), self.z(z0 + h) * rig.RISE)))
             rings.append(ring)
         for a, b in zip(rings, rings[1:]):
             for i in range(segments):
@@ -154,8 +204,8 @@ class Model:
 
     def rod(self, a, b, r, mat, segments=8):
         """A thin round bar between points a and b, each (x, y, z in steps)."""
-        pa = Vector((a[0], a[1], a[2] * rig.RISE))
-        pb = Vector((b[0], b[1], b[2] * rig.RISE))
+        pa = Vector((a[0], a[1], self.z(a[2]) * rig.RISE))
+        pb = Vector((b[0], b[1], self.z(b[2]) * rig.RISE))
         d = pb - pa
         bm = bmesh.new()
         bmesh.ops.create_cone(bm, cap_ends=True, cap_tris=False, segments=segments, radius1=r, radius2=r, depth=d.length)
@@ -166,6 +216,10 @@ class Model:
 
     def wheel(self, y, side, r, mats, spokes=12, counterweight=False):
         """A spoked wheel at y along the model, on side (-1 or 1), r tiles round: a tire, a rim, spokes and a hub."""
+        with self.keep():
+            self._wheel(y, side, r, mats, spokes, counterweight)
+
+    def _wheel(self, y, side, r, mats, spokes, counterweight):
         tire, body, hub = mats
         x = side * 0.103
         zc = r / rig.RISE
@@ -183,6 +237,10 @@ class Model:
 
     def tube_x(self, x0, x1, y, z, r, mat, segments=28, ring_inner=None):
         """A short cylinder across the model from x0 to x1, at y and z steps, r tiles round; a ring if ring_inner is given."""
+        z, r1 = self._circle(z, r)
+        if ring_inner is not None:
+            ring_inner *= r1 / r
+        r = r1
         bm = bmesh.new()
         bmesh.ops.create_cone(bm, cap_ends=True, cap_tris=False, segments=segments, radius1=r, radius2=r, depth=abs(x1 - x0))
         bmesh.ops.rotate(bm, verts=bm.verts, cent=(0, 0, 0), matrix=Matrix.Rotation(math.radians(90), 3, "Y"))
@@ -194,8 +252,8 @@ class Model:
     def wedge(self, pts_bottom, pts_top, mat):
         """A solid from a polygon at the bottom to one at the top, each a list of (x, y, z in steps), the same length."""
         bm = bmesh.new()
-        bot = [bm.verts.new((x, y, z * rig.RISE)) for x, y, z in pts_bottom]
-        top = [bm.verts.new((x, y, z * rig.RISE)) for x, y, z in pts_top]
+        bot = [bm.verts.new((x, y, self.z(z) * rig.RISE)) for x, y, z in pts_bottom]
+        top = [bm.verts.new((x, y, self.z(z) * rig.RISE)) for x, y, z in pts_top]
         n = len(bot)
         bm.faces.new(list(reversed(bot)))
         bm.faces.new(top)
@@ -212,8 +270,10 @@ class Model:
         material in mats for the edge to the next point, and width (0 to 1 of half) lets a hood or nose narrow. A point
         given twice with two widths makes a step across, as a cab behind a narrower hood. crown drops the roof's edges by
         that many steps. Glass stops short of the outer columns, leaving pillars, unless pillars is False.
-        Returns the rounded outline as (y, z) points."""
-        pts = _round(profile)
+        Returns the rounded outline as (y, z) points, in the builder's heights."""
+        given = _round(profile)
+        pts = _round([(p[0], self.z(p[1])) + tuple(p[2:]) for p in profile])
+        crown *= self.k(max(p[1] for p in profile))
         keys = list(mats)
         z_top = max(p[1] for p in pts)
         bm = bmesh.new()
@@ -250,14 +310,19 @@ class Model:
         mod.segments = 2
         mod.limit_method = "ANGLE"
         mod.angle_limit = math.radians(38)
-        return [(p[0], p[1]) for p in pts]
+        return [(p[0], p[1]) for p in given]
 
-    def loft(self, sections, mats, part=None, caps=True, sharp=38):
+    def loft(self, sections, mats, part=None, caps=True, sharp=38, round=False):
         """A body through cross-sections along the model: sections is a list of (y, ring), each ring a closed list of
         (x, z in steps) with the same number of points. part(k) names the material in mats for the faces from ring point
-        k to the next, else the first. Hulls, fuselages, floats."""
+        k to the next, else the first. Hulls, fuselages, floats. round shrinks each ring about its middle when lowered,
+        as a fuselage, where otherwise only its heights come down."""
         keys = list(mats)
         bm = bmesh.new()
+        if round:
+            sections = [(y, self._shrink(ring)) for y, ring in sections]
+        else:
+            sections = [(y, [(x, self.z(z)) for x, z in ring]) for y, ring in sections]
         rings = [[bm.verts.new((x, y, z * rig.RISE)) for x, z in ring] for y, ring in sections]
         n = len(rings[0])
         for a, b in zip(rings, rings[1:]):
@@ -282,17 +347,27 @@ class Model:
             obj.data.materials.append(mats[k])
         return obj
 
+    def _shrink(self, ring):
+        """A cross-section lowered and shrunk about its middle, keeping its shape."""
+        lo, hi = min(z for _, z in ring), max(z for _, z in ring)
+        mid = (lo + hi) / 2
+        f = (self.z(hi) - self.z(lo)) / (hi - lo) if hi > lo else 1.0
+        new_mid = (self.z(hi) + self.z(lo)) / 2
+        cx = sum(x for x, _ in ring) / len(ring)
+        return [(cx + (x - cx) * f, new_mid + (z - mid) * f) for x, z in ring]
+
     def text(self, body, x, y, z, size, mat, side):
         """Lettering on the model's side (side -1 or 1), centred at y along it and z steps up."""
         cu = bpy.data.curves.new("text", "FONT")
         cu.body = body
         cu.align_x = "CENTER"
         cu.align_y = "CENTER"
-        cu.size = size
+        # Lettering comes down less than the body, so it still reads.
+        cu.size = size * math.sqrt(self.k(z))
         cu.extrude = 0.0005
         obj = bpy.data.objects.new("text", cu)
         bpy.context.scene.collection.objects.link(obj)
-        obj.location = (x, y, z * rig.RISE)
+        obj.location = (x, y, self.z(z) * rig.RISE)
         obj.rotation_euler = (math.radians(90), 0, math.radians(90 if side > 0 else -90))
         return self._link(obj, mat)
 

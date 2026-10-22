@@ -325,6 +325,8 @@ def L(n):
 ROSTER = [
     ("dorchester", 7, lambda f: steam(f, L(7), 0, 2, 0, 0.042, 0.03, 0.06, "straight", 1, EARLY, pilot=False, cab_len=0.08, early=True)),
     ("dorchester_tender", 4, lambda f: tender(f, L(4), EARLY, small=True)),
+    ("samson", 8, lambda f: steam(f, L(8), 0, 3, 0, 0.036, 0.03, 0.064, "straight", 1, BLACK_ENGINE, pilot=False, cab_len=0.08, early=True)),
+    ("samson_tender", 4, lambda f: tender(f, L(4), BLACK_ENGINE, small=True)),
     ("american", 10, lambda f: steam(f, L(10), 2, 2, 0, 0.055, 0.028, 0.075, "balloon", 2, VICTORIAN, early=True)),
     ("american_tender", 7, lambda f: tender(f, L(7), VICTORIAN)),
     ("ten_wheeler", 11, lambda f: steam(f, L(11), 2, 3, 0, 0.052, 0.028, 0.08, "diamond", 2, VICTORIAN, early=True)),

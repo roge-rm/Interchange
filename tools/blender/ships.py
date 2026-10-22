@@ -69,9 +69,11 @@ def house(m, y0, y1, half, z0, z1, mat, c, windows=True, round_front=0.02, rake=
             half, {"paint": mat}, crown=0.03)
     if windows:
         zw = z1 - (z1 - z0) * 0.35
-        m.box(-half * 0.85, half * 0.85, y1 - rake * 0.65 - 0.002, y1 - rake * 0.65 + 0.001, zw - 0.08, zw + 0.06, c["glass"])
+        # In a lowered ship the windows come down less than the house, so they still read, up to half its height.
+        g = min(1 / math.sqrt(m.k(zw)), (z1 - z0) * 0.5 / 0.14)
+        m.box(-half * 0.85, half * 0.85, y1 - rake * 0.65 - 0.002, y1 - rake * 0.65 + 0.001, zw - 0.08 * g, zw + 0.06 * g, c["glass"])
         for side in (-1, 1):
-            m.box(side * half - 0.001, side * half + 0.001, y0 + 0.01, y1 - 0.015, zw - 0.07, zw + 0.05, c["glass"])
+            m.box(side * half - 0.001, side * half + 0.001, y0 + 0.01, y1 - 0.015, zw - 0.07 * g, zw + 0.05 * g, c["glass"])
 
 
 def funnel(m, y, z0, z1, r, mat, band, x=0.0, rake=0.0):
