@@ -2509,6 +2509,34 @@
       "life": 30,
       "range": 5900,
       "runway": "city"
+    },
+    {
+      "id": "samson",
+      "kind": "engine",
+      "name": { "en": "Samson", "fr": "Samson" },
+      "type": { "en": "0-6-0", "fr": "0-6-0" },
+      "from": 1836,
+      "until": 1870,
+      "speed": 34,
+      "power": 175,
+      "tractive": 24,
+      "weight": 12,
+      "cost": 4200,
+      "running": 200,
+      "length": 8,
+      "tender": "samson_tender"
+    },
+    {
+      "id": "samson_tender",
+      "kind": "tender",
+      "name": { "en": "Samson tender", "fr": "Tender Samson" },
+      "type": { "en": "Tender", "fr": "Tender" },
+      "from": 1836,
+      "until": 1870,
+      "weight": 5,
+      "cost": 300,
+      "running": 0,
+      "length": 4
     }
   ]
 }
