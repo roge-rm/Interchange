@@ -22,10 +22,12 @@ internal fun World.replaceTrain(company: Company, old: Train, model: Int?) {
     if (e.id == old.engine) return
     val depot = depots.getOrNull(old.depot) ?: return
     if (e.traction == Traction.ELECTRIC && !depotWired(depot)) return
-    val made = Train(roster, old.id, old.owner, e.id, old.wagon, old.wagons, old.depot, old.wagonCargo)
+    val cars = old.formation.toMutableList()
+    val lead = cars.indexOfFirst { roster[it.model].pulls }
+    cars[lead] = TrainCar(e.id)
+    val made = Train(roster, old.id, old.owner, e.id, old.wagon, 0, old.depot, formation = cars)
     made.owner = old.owner
     made.depot = old.depot
-    made.wagonCargo = old.wagonCargo
     made.name = old.name
     made.number = old.number
     made.inDepot = old.inDepot
@@ -67,7 +69,7 @@ internal fun World.replaceTrain(company: Company, old: Train, model: Int?) {
     made.copyLoadAndOrders(old)
     made.built = workDay
     made.serviced = workDay
-    made.reliability = e.reliability * 100
+    made.reliability = made.newReliability
     val cost = price(made.price) - value(old)
     if (company.money < cost) return
     trains[old.id] = made

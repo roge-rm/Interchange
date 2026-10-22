@@ -69,6 +69,7 @@ object Codec {
     private const val BUY_CRAFTS = 59
     private const val COPY_VEHICLES = 60
     private const val CREATE_GROUP = 61
+    private const val EDIT_TRAIN = 62
 
     /** The most goals a [Command.SetGoals] may carry. */
     const val MOST_GOALS = 100
@@ -112,6 +113,7 @@ object Codec {
             is Command.PlantTrees -> { w.byte(PLANT_TREES); w.int(c.company); w.int(c.x0); w.int(c.y0); w.int(c.x1); w.int(c.y1) }
             is Command.CreateGroup -> { w.byte(CREATE_GROUP); w.int(c.company); w.int(c.kind); w.int(c.vehicle); w.string(c.name) }
             is Command.CopyVehicle -> { w.byte(if (c.count == 1) COPY_VEHICLE else COPY_VEHICLES); w.int(c.company); w.int(c.kind); w.int(c.vehicle); w.int(c.depot); if (c.count != 1) w.int(c.count) }
+            is Command.EditTrain -> { w.byte(EDIT_TRAIN); w.int(c.company); w.int(c.train); writeFormation(w, c.cars) }
             is Command.BuyTrain -> { w.byte(if (c.count == 1) BUY_TRAIN_CARGO else BUY_TRAINS); w.int(c.company); w.int(c.depot); w.int(c.engine); w.int(c.wagon); w.int(c.wagons); w.int(c.cargo); if (c.count != 1) w.int(c.count) }
             is Command.Loan -> { w.byte(LOAN); w.int(c.company); w.bool(c.borrow) }
             is Command.FundIndustry -> { w.byte(FUND_INDUSTRY); w.int(c.company); w.int(c.kind) }
@@ -153,6 +155,7 @@ object Codec {
         COPY_VEHICLE -> Command.CopyVehicle(r.int(), r.int(), r.int(), r.int())
         COPY_VEHICLES -> Command.CopyVehicle(r.int(), r.int(), r.int(), r.int(), r.int())
         BUY_TRAIN -> Command.BuyTrain(r.int(), r.int(), r.int(), r.int(), r.int())
+        EDIT_TRAIN -> Command.EditTrain(r.int(), r.int(), readFormation(r))
         TRAIN_ORDER -> Command.TrainOrder(r.int(), r.int(), r.int(), r.ints())
         BUY_TRAIN_CARGO -> Command.BuyTrain(r.int(), r.int(), r.int(), r.int(), r.int(), r.int())
         BUY_TRAINS -> Command.BuyTrain(r.int(), r.int(), r.int(), r.int(), r.int(), r.int(), r.int())

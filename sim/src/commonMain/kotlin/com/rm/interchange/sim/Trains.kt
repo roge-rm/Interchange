@@ -35,13 +35,14 @@ class Train(
     val roster: Roster,
     override val id: Int,
     override var owner: Int,
-    val engine: Int,
-    val wagon: Int,
-    val wagons: Int,
+    engine: Int,
+    wagon: Int,
+    wagons: Int,
     /** The depot it was bought in or last serviced at, and goes back to. */
     var depot: Int,
     /** What its wagons are set to carry, a [Cargo] number among those they can, or -1 for their first. */
-    var wagonCargo: Int = -1,
+    wagonCargo: Int = -1,
+    formation: List<TrainCar>? = null,
 ) : Carrier {
     /** Its own name, or empty to be called by its number in the screen's language. */
     var name = ""
@@ -49,19 +50,50 @@ class Train(
     /** Its number in its company's trains, from 1. Each company counts its own. */
     var number = 0
 
-    /** What each car is, nose first: the engine, its tender, then the wagons; snow plows go ahead of the engine. */
-    val carEngines: IntArray = buildList {
-        val plows = roster[wagon].plow != Plows.NONE
-        if (plows) repeat(wagons) { add(wagon) }
-        add(engine)
-        roster[engine].tender.takeIf { it >= 0 }?.let { add(it) }
-        if (!plows) repeat(wagons) { add(wagon) }
-    }.toIntArray()
+    internal val fallbackWagon = wagon
+    /** Editable cars, nose first. Each locomotive brings its own tender. */
+    var formation: List<TrainCar> = formation?.toList() ?: legacyFormation(roster, engine, wagon, wagons, wagonCargo)
+        private set
+    internal var locomotives = this.formation.filter { roster[it.model].pulls }.map { it.model }.toIntArray()
+        private set
+    val engine get() = locomotives.first()
+    val wagon get() = formation.firstOrNull { roster[it.model].kind == VehicleKind.WAGON }?.model ?: fallbackWagon
+    val wagons get() = formation.count { roster[it.model].kind == VehicleKind.WAGON }
+    var wagonCargo: Int
+        get() = formation.firstOrNull { it.model == wagon }?.cargo ?: -1
+        set(value) { setFormation(formation.map { if (it.model == wagon) it.copy(cargo = value) else it }) }
 
-    /** The best snow plow it has, a [Plows] kind. */
-    val plow get() = if (wagons > 0) roster[wagon].plow else Plows.NONE
+    /** Physical cars include the tender immediately behind each locomotive. */
+    var carEngines = formationModels(roster, this.formation)
+        private set
+    private var carCargoes = formationCargoes(roster, this.formation)
+    var plow = carEngines.takeWhile { !roster[it].pulls }.maxOfOrNull { roster[it].plow } ?: Plows.NONE
+        private set
     val cars get() = carEngines.size
-    val length = carEngines.sumOf { roster[it].length } * FIX
+    var length = carEngines.sumOf { roster[it].length } * FIX
+        private set
+    var electric = locomotives.any { roster[it].traction == Traction.ELECTRIC }
+        private set
+    var steam = locomotives.any { roster[it].traction == Traction.STEAM }
+        private set
+    var life = locomotives.minOf { roster[it].life }
+        private set
+    var newReliability = locomotives.minOf { roster[it].reliability } * 100
+        private set
+
+    internal fun setFormation(cars: List<TrainCar>) {
+        formation = cars.toList()
+        locomotives = formation.filter { roster[it.model].pulls }.map { it.model }.toIntArray()
+        electric = locomotives.any { roster[it].traction == Traction.ELECTRIC }
+        steam = locomotives.any { roster[it].traction == Traction.STEAM }
+        life = locomotives.minOf { roster[it].life }
+        newReliability = locomotives.minOf { roster[it].reliability } * 100
+        topSpeed = locomotives.minOf { roster[it].speed }
+        carEngines = formationModels(roster, formation)
+        carCargoes = formationCargoes(roster, formation)
+        length = carEngines.sumOf { roster[it].length } * FIX
+        plow = carEngines.takeWhile { !roster[it].pulls }.maxOfOrNull { roster[it].plow } ?: Plows.NONE
+    }
 
     /** How far behind the nose car [i]'s middle is. */
     fun carMiddle(i: Int): Int {
@@ -88,7 +120,7 @@ class Train(
     var profitLastYear = 0L
 
     /** How much of cargo [c] its cars hold. */
-    override fun capacity(c: Int) = carEngines.sumOf { e -> roster[e].let { if (carCargo(it) == c) it.capacity else 0 } }
+    override fun capacity(c: Int) = carEngines.indices.sumOf { i -> if (carCargoes[i] == c) roster[carEngines[i]].capacity else 0 }
 
     /** Full of everything it can carry. */
     fun full() = (0 until Cargo.COUNT).all { load(it) >= capacity(it) }
@@ -106,8 +138,8 @@ class Train(
         return !carries
     }
 
-    /** What car [e] carries in this train: the wagons what they're set to, anything else its first. */
-    fun carCargo(e: Engine): Int = if (e.id == wagon && wagonCargo in e.cargoes) wagonCargo else e.cargoes.firstOrNull() ?: -1
+    /** The cargo choice of physical car [index], including tenders. */
+    fun carCargo(index: Int): Int = carCargoes[index]
 
     override var group = -1
     /** The trains sharing their orders with this one have the same group, the first train's id; -1 for none. */
@@ -162,9 +194,10 @@ class Train(
     internal var onBlocks = IntArray(0)
 
     val engineInfo get() = roster[engine]
-    override val topSpeed get() = engineInfo.speed
+    override var topSpeed = locomotives.minOf { roster[it].speed }
+        private set
     val wagonInfo get() = roster[wagon]
-    val maxSpeed get() = engineInfo.speed * 4096 * 16 / 2700
+    val maxSpeed get() = topSpeed * 4096 * 16 / 2700
     val weight get() = carEngines.sumOf { roster[it].weight }
     /** What it cost new: the engine, its tender and its wagons. */
     val price get() = carEngines.sumOf { roster[it].cost }
@@ -203,17 +236,26 @@ internal fun World.buyTrain(company: Company, c: Command.BuyTrain) {
     val e = roster.getOrNull(c.engine) ?: return
     val w = roster.getOrNull(c.wagon) ?: return
     val year = Calendar.year(startYear, day)
-    if (!e.enabled || !w.enabled || !e.pulls || w.pulls || w.isTender || w.kind == VehicleKind.ROAD || year < e.from || year >= e.until || year < w.from || year >= w.until) return
+    if (!e.enabled || !w.enabled || !e.pulls || w.kind != VehicleKind.WAGON || year < e.from || year >= e.until || year < w.from || year >= w.until) return
     if (c.wagons !in 0..MAX_WAGONS) return
     // An electric engine can't get out of a depot with no wires over it.
     if (e.traction == Traction.ELECTRIC && !depotWired(depot)) return
-    val t = Train(roster, trains.size, company.id, e.id, w.id, c.wagons, depot.id, if (c.cargo in w.cargoes) c.cargo else -1)
+    buyTrainFormation(company, depot.id, legacyFormation(roster, e.id, w.id, c.wagons, if (c.cargo in w.cargoes) c.cargo else -1), w.id)
+}
+
+internal fun World.buyTrainFormation(company: Company, depotId: Int, cars: List<TrainCar>, fallbackWagon: Int) {
+    val depot = depots.getOrNull(depotId) ?: return
+    if (depot.owner != company.id || depot.kind != Depots.RAIL || !validTrainFormation(roster, cars)) return
+    if (cars.any { !onSale(roster[it.model]) }) return
+    val lead = cars.first { roster[it.model].pulls }.model
+    val t = Train(roster, trains.size, company.id, lead, fallbackWagon, 0, depot.id, formation = cars)
+    if (t.electric && !depotWired(depot)) return
     if (company.money < price(t.price)) return
     t.number = fleetNumber(company.id, trains, { it.owner }, { it.number })
     spend(company, Books.NEW_TRAINS, price(t.price))
     t.built = workDay
     t.serviced = workDay
-    t.reliability = e.reliability * 100
+    t.reliability = t.newReliability
     trains += t
 }
 
@@ -286,7 +328,7 @@ internal fun World.trainCommand(company: Company, c: Command.TrainOrder) {
             spend(company, Books.NEW_TRAINS, cost)
             t.built = workDay
             t.serviced = workDay
-            t.reliability = t.engineInfo.reliability * 100
+            t.reliability = t.newReliability
         }
         Command.TrainOrder.TURN -> if (!t.inDepot) {
             t.turnRound = true
@@ -307,7 +349,7 @@ internal fun World.trainCommand(company: Company, c: Command.TrainOrder) {
 private fun World.leaveDepot(t: Train) {
     val d = depots.getOrNull(t.depot) ?: return
     // Its wires taken down since: it stays in, stopped.
-    if (t.engineInfo.traction == Traction.ELECTRIC && !depotWired(d)) {
+    if (t.electric && !depotWired(d)) {
         t.running = false
         return
     }
@@ -684,7 +726,7 @@ private fun World.freeAhead(t: Train, brake: Int = BRAKE): Pair<Int, Stop> {
         if (next < 0) return free to Stop.END
         val nt = stepTile(next)
         if (stepLevel(next) == 0 && !mayPass(nt, stepPiece(next), stepEntry(next))) return free to Stop.END
-        if (t.engineInfo.traction == Traction.ELECTRIC && !wired(next)) return free to Stop.END
+        if (t.electric && !wired(next)) return free to Stop.END
         if (stepLevel(next) == 0 && closedTile(nt)) return free to Stop.END
         val signal = signalFor(cur, next)
         if (signal >= 0 && !signalLets(t, signal, next, at)) return free to Stop.SIGNAL

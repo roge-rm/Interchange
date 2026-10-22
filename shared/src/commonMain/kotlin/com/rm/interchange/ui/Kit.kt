@@ -309,22 +309,25 @@ fun <T> StepSliderRow(glyph: Glyph, label: String, options: List<T>, value: T, n
     }
 }
 
-/** One of a set across the whole width, each choice an equal share and all as tall as the tallest. */
+/** One of a set across the whole width, sized in proportion to its label and all as tall as the tallest. */
 @Composable
 fun <T> FillChips(options: List<T>, selected: T, label: @Composable (T) -> String, onSelect: (T) -> Unit) {
     val c = LocalColors.current
     Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min).selectableGroup(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         for (o in options) {
             val on = o == selected
+            // Give longer labels more room while keeping the entire set within the row.
+            val text = label(o)
+            val width = text.length.coerceAtLeast(1).toFloat()
             Box(
-                Modifier.weight(1f).fillMaxHeight()
+                Modifier.weight(width).fillMaxHeight()
                     .clip(RoundedCornerShape(8.dp))
                     .background(if (on) c.accent else c.button)
                     .selectable(selected = on, role = Role.RadioButton) { onSelect(o) }
                     .padding(horizontal = 6.dp, vertical = 8.dp),
                 contentAlignment = Alignment.Center,
             ) {
-                Text(label(o), color = if (on) c.onAccent else c.text, style = KitType.Body, textAlign = TextAlign.Center, maxLines = 2)
+                Text(text, color = if (on) c.onAccent else c.text, style = KitType.Body, textAlign = TextAlign.Center, maxLines = 2)
             }
         }
     }

@@ -794,4 +794,22 @@
     <string name="no_group">No group</string>
     <string name="new_group">New group</string>
     <string name="vehicle_group">Group</string>
+    <string name="edit_formation">Edit formation</string>
+    <string name="train_formation">Train formation</string>
+    <string name="formation_help">Nose first. Tenders stay with their engine. Select a car to move, refit or remove it. Put snow plows ahead of the first engine.</string>
+    <string name="formation_car">%1$d. %2$s</string>
+    <string name="formation_tender">With %1$s</string>
+    <string name="formation_add">Add engine or wagon</string>
+    <string name="formation_add_model">Add %1$s</string>
+    <string name="formation_preview">After changes</string>
+    <string name="formation_weight">Empty weight</string>
+    <string name="formation_tonnes">%1$d t</string>
+    <string name="formation_power">Power</string>
+    <string name="formation_running">Running cost</string>
+    <string name="formation_limits">Keep at least one engine, up to %1$d engines and %2$d wagons.</string>
+    <string name="formation_loaded">The cargo aboard must fit the new formation. Unload it before removing or refitting these cars.</string>
+    <string name="formation_apply_cost">Apply for %1$s</string>
+    <string name="formation_apply_credit">Apply and receive %1$s</string>
+    <string name="formation_length">Length</string>
+    <string name="formation_tiles">%1$d.%2$d tiles</string>
 </resources>

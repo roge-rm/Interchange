@@ -20,7 +20,10 @@ class FullLoadTest {
         w.apply(Command.BuyTrain(0, 0, engine, coach, wagons))
         val t = w.trains[0]!!
         // Replace one coach with a mail car of the same length.
-        if (wagons > 0) t.carEngines[t.carEngines.lastIndex] = w.roster.engines.first { it.key == "base:baggage_wood" }.id
+        if (wagons > 0) {
+            val mail = w.roster.engines.first { it.key == "base:baggage_wood" }.id
+            w.apply(Command.EditTrain(0, t.id, t.formation.dropLast(1) + TrainCar(mail)))
+        }
         w.apply(Command.TrainOrder(0, 0, Command.TrainOrder.ORDERS, intArrayOf(flags, 1)))
         w.apply(Command.TrainOrder(0, 0, Command.TrainOrder.START_STOP))
         var ticks = 0

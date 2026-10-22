@@ -350,6 +350,7 @@ class World(settings: NewGame, val roster: Roster = Roster.BASE, generate: Boole
                     inheritOrders(company, Command.CopyVehicle.TRAIN, trains.getOrNull(sizeBefore))
                 }
             }
+            is Command.EditTrain -> editTrain(company, command)
             is Command.TrainOrder -> trainCommand(company, command)
             is Command.Loan -> loanCommand(company, command)
             is Command.FundIndustry -> fundIndustry(company, command)
@@ -510,6 +511,10 @@ class World(settings: NewGame, val roster: Roster = Roster.BASE, generate: Boole
         for (a in airports) if (a != null) { mix(a.id.toLong()); mix(a.station.toLong()); mix(if (a.ils) 1L else 0L); mix(if (a.deice) 1L else 0L) }
         for (v in aircraft) if (v != null) { mix(v.id.toLong()); mix(v.x.toLong()); mix(v.y.toLong()); mix(v.altitude.toLong()); mix(v.state.toLong()); mix(v.waiting.toLong()); for (c in v.cargo) for (p in c) mix(p.count.toLong()) }
         for (s in spans) if (s != null) { mix(s.x0.toLong()); mix(s.y0.toLong()); mix(s.x1.toLong()); mix(s.y1.toLong()); mix(s.height.toLong()) }
+        for (t in trains) if (t != null) {
+            mix(t.formation.size.toLong())
+            for (car in t.formation) { mix(car.model.toLong()); mix(car.cargo.toLong()) }
+        }
         for (t in trains) {
             if (t == null) continue
             mix(t.id.toLong()); mix(t.nose.toLong()); mix(t.speed.toLong()); mix(t.waiting.toLong()); mix(t.order.toLong())

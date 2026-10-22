@@ -24,10 +24,10 @@ fun World.age(t: Train) = (workDay - t.built).coerceAtLeast(0) / 365
 
 /** The best train [t] can be, in hundredths of a percent: its engine's reliability new, less for each year past its life. */
 fun World.bestReliability(t: Train): Int =
-    (t.engineInfo.reliability * 100 - maxOf(0, age(t) - t.engineInfo.life) * OLD_AGE_LOSS).coerceAtLeast(LEAST_RELIABLE)
+    (t.newReliability - maxOf(0, age(t) - t.life) * OLD_AGE_LOSS).coerceAtLeast(LEAST_RELIABLE)
 
 /** What train [t] fetches sold: half its price new, less as it ages, never under a twentieth. */
-fun World.value(t: Train): Long = if (t.wreckedFor > 0) 0 else price(t.price) * maxOf(10, 100 - 100 * age(t) / t.engineInfo.life.coerceAtLeast(1)) / 200
+fun World.value(t: Train): Long = if (t.wreckedFor > 0) 0 else price(t.price) * maxOf(10, 100 - 100 * age(t) / t.life.coerceAtLeast(1)) / 200
 
 /** Each day: wear, breakdowns, trips to the depot for a service, and news of trains grown old. */
 internal fun World.trainsDay() {
@@ -36,7 +36,7 @@ internal fun World.trainsDay() {
         t.reliability = (t.reliability - WEAR_A_DAY).coerceAtLeast(LEAST_RELIABLE / 2)
         if (t.running && t.brokenFor == 0 && t.waiting == 0) {
             var odds = 10_000 - t.reliability
-            if (t.engineInfo.traction == Traction.STEAM) {
+            if (t.steam) {
                 val x = stepTile(t.steps.last()) % width
                 val y = stepTile(t.steps.last()) / width
                 if (skyAt(x, y).temperature < DEEP_COLD) odds *= 2
@@ -49,7 +49,7 @@ internal fun World.trainsDay() {
         // Due ones go after their next call; this catches one that's called nowhere in twice the time.
         if (t.running && !t.toDepot && overdue(t.service, t.serviced) && tick >= t.noDepotUntil && hasDepot(t.owner, Depots.RAIL)) forService(t)
         // Once, on the work day it comes of age.
-        if (workDay - t.built == t.engineInfo.life * 365) tell(News.TRAIN_OLD, t.id)
+        if (workDay - t.built == t.life * 365) tell(News.TRAIN_OLD, t.id)
     }
 }
 

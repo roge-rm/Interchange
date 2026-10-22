@@ -36,7 +36,7 @@ Dan
 
 Six regions: mixed, prairies, Canadian Shield, Rockies, Maritimes and the north. The weather comes from a real town in that region. Towns are named in English or French depending on where they are, and they grow. Snow piles up and drifts, trains get stuck in it, lakes freeze over, the ground heaves in the spring and track washes out. Later on it's warmer than in 1900.
 
-Trains have grades and grip, bridges and tunnels, wires, and snow plows for the drifts. Drag along a line to signal it, path signals and presignals, and turn on the overlay to see what track a train has claimed. Leave the signals out and trains run into each other, as in OpenTTD. You can turn crashes off. Engines and cars from the 1830s on.
+Trains have grades and grip, bridges and tunnels, wires, and snow plows for the drifts. Drag along a line to signal it, path signals and presignals, and turn on the overlay to see what track a train has claimed. Leave the signals out and trains run into each other, as in OpenTTD. You can turn crashes off. Engines and cars from the 1830s on. Mix wagons, add locomotives and rearrange a train in its depot, with a cargo choice for each car.
 
 Roads from dirt tracks to highways, one-way roads, trams, buses and trucks. Horse-drawn wagons and coaches early on, winter tires, salt and plows later. Level crossings flash when a train's coming. Don't let traffic queue across them. Canals and locks, ferries, lakers and icebreakers, strips, seaplane bases and airports, and bush planes on floats and skis with the seasons.
 

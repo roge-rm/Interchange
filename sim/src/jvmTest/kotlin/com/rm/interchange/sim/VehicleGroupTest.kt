@@ -125,7 +125,7 @@ class VehicleGroupTest {
 
     @Test
     fun olderSavesLeaveGroupsEmpty() {
-        assertEquals(45, Save.VERSION)
+        assertEquals(46, Save.VERSION)
         for (kind in kinds) {
             val f = fleet(kind)
             f.create()

@@ -117,7 +117,11 @@ class ReplaceTest {
         return f
     }
 
-    private fun fields(v: Carrier) = v.javaClass.declaredFields.filter { !Modifier.isStatic(it.modifiers) && !Modifier.isFinal(it.modifiers) }.onEach { it.isAccessible = true }
+    // Formation and its derived values are rebuilt for the new model, so seed only the operating state.
+    private val formationFields = setOf("formation", "locomotives", "carEngines", "carCargoes", "plow", "length", "electric", "steam", "life", "newReliability", "topSpeed")
+    private fun fields(v: Carrier) = v.javaClass.declaredFields.filter {
+        !Modifier.isStatic(it.modifiers) && !Modifier.isFinal(it.modifiers) && (v !is Train || it.name !in formationFields)
+    }.onEach { it.isAccessible = true }
 
     private fun seed(v: Carrier) {
         for (f in fields(v)) when (f.type) {
@@ -389,7 +393,7 @@ class ReplaceTest {
 
     @Test
     fun saveKeepsTheReplacementModel() {
-        assertEquals(45, Save.VERSION)
+        assertEquals(46, Save.VERSION)
         for (kind in kinds) {
             val f = fleet(kind)
             f.replace()

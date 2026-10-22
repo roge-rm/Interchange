@@ -68,6 +68,18 @@ fun TrainCard(
         AddingStopsCard(trainName(t), view, t.id, t.orders, t.order, OrderFlags.TRAIN, Glyph.Station, { order(Command.TrainOrder.ORDERS, it) }, onAddStops, onClose, modifier)
         return
     }
+    var editingFormation by remember(t.id) { mutableStateOf(false) }
+    if (editingFormation && t.owner == me && t.inDepot && !t.wrecked) {
+        Card(trainName(t), onClose, modifier) {
+            VehicleHeader(roster[t.engine], trainFormationName(roster, t), trainStatus(view, t), statusColour(false, trainWrong(t)))
+            TrainFormationEditor(
+                roster, t, year, funds, price, view.depots.firstOrNull { it.id == t.depot }?.wired == true,
+                apply = { send(Command.EditTrain(me, t.id, it)); editingFormation = false },
+                cancel = { editingFormation = false },
+            )
+        }
+        return
+    }
     Card(trainName(t), onClose, modifier) {
         val doing = trainStatus(view, t)
         val lang = languageCode()
@@ -75,18 +87,18 @@ fun TrainCard(
         val w = roster[t.wagon]
         val mine = t.owner == me
         VehicleHeader(
-            e, stringResource(Res.string.consist, e.name(lang), t.wagons, (if (t.wagons == 1) w.name(lang) else w.plural(lang)).lowercase()),
+            e, trainFormationName(roster, t),
             doing, statusColour(t.wrecked, trainWrong(t)), if (mine) null else view.companies.getOrElse(t.owner) { "" },
         )
         VehicleStats(
-            t.kmh, e.speed, t.age, t.old, t.reliability, t.profitThisYear, t.profitLastYear,
+            t.kmh, t.topSpeed, t.age, t.old, t.reliability, t.profitThisYear, t.profitLastYear,
             (0 until Cargo.COUNT).filter { t.capacity[it] > 0 }.map { VehicleLoad(it, t.load[it], t.capacity[it]) },
             listOf(stringResource(Res.string.breakdowns) to t.breakdowns.toString()),
         )
         // Someone else's shows what it is but none of the controls, and a wreck is cleared away by itself.
         if (!mine || t.wrecked) return@Card
         VehicleGroupControls(view, Command.CopyVehicle.TRAIN, t.id, t.group, send) { order(Command.TrainOrder.GROUP, intArrayOf(it)) }
-        if (t.inDepot && w.cargoes.size > 1) {
+        if (t.inDepot && t.formation.all { it.model == t.engine || it.model == t.wagon } && t.formation.filter { it.model == t.wagon }.map { it.cargo }.distinct().size <= 1 && w.cargoes.size > 1) {
             val cargoes = stringArrayResource(Res.array.cargoes)
             val selected = if (t.wagonCargo in w.cargoes) t.wagonCargo else w.cargoes.first()
             SegmentedChoice(w.cargoes.toList(), selected, { cargoes[it] }) { order(Command.TrainOrder.REFIT, intArrayOf(it)) }
@@ -139,13 +151,15 @@ fun TrainCard(
                 TileButton(Glyph.Depot, stringResource(if (t.toDepot) Res.string.carry_on else Res.string.to_depot), lit = t.toDepot) { order(Command.TrainOrder.TO_DEPOT) },
                 TileButton(Glyph.TurnLeft, stringResource(Res.string.turn_round)) { order(Command.TrainOrder.TURN) },
             ) else listOf(
+                TileButton(Glyph.Train, stringResource(Res.string.edit_formation)) { editingFormation = true },
                 TileButton(Glyph.Renew, stringResource(Res.string.renew_for, money(t.renewCost))) { order(Command.TrainOrder.RENEW) },
                 TileButton(Glyph.Replace, stringResource(Res.string.replace), lit = replacing) { replacing = !replacing },
                 TileButton(Glyph.Minus, stringResource(Res.string.sell)) { order(Command.TrainOrder.SELL) },
             ),
         )
         if (t.inDepot && replacing) {
-            fun base(engine: Engine) = engine.cost + (roster.getOrNull(engine.tender)?.cost ?: 0) + w.cost * t.wagons
+            val stockCost = t.formation.sumOf { car -> roster[car.model].let { it.cost + (roster.getOrNull(it.tender)?.cost ?: 0) } }
+            fun base(engine: Engine) = stockCost - e.cost - (roster.getOrNull(e.tender)?.cost ?: 0) + engine.cost + (roster.getOrNull(engine.tender)?.cost ?: 0)
             ReplaceList(
                 roster.available(year, pulls = true).filter { it.id != t.engine }, funds,
                 costOf = { price(base(it)) - (price(base(e)) - t.renewCost) },
@@ -280,7 +294,7 @@ fun StationCard(view: WorldView, roster: Roster, s: StationView, onVehicle: (Veh
             val w = roster[t.wagon]
             CallingRow(
                 trainName(t), e,
-                stringResource(Res.string.consist_line, e.name(lang), t.wagons, (if (t.wagons == 1) w.name(lang) else w.plural(lang)).lowercase()),
+                trainFormationName(roster, t),
                 t.load.sum(), t.capacity.sum(), if (t.at == s.id) hereNow else null,
             ) { onVehicle(VehicleKind.ENGINE, t.id) }
         }

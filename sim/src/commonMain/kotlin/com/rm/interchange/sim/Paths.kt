@@ -53,7 +53,7 @@ private fun World.search(from: Int, t: Train, avoid: Set<Int>? = null, onward: M
     // Off for a service, or with its home gone, it ends at any depot of its company's it can get into; sent in, only at its own.
     val anyDepot = anyDepot(t)
     val depotTile = if (target == -1 && !anyDepot) depots.getOrNull(t.depot)?.tile ?: return null else -1
-    val electric = t.engineInfo.traction == Traction.ELECTRIC
+    val electric = t.electric
     fun depotGoal(tile: Int, entry: Int): Boolean {
         val d = depotAt(tile) ?: return false
         if (d.edge != entry) return false
@@ -127,7 +127,7 @@ private fun World.search(from: Int, t: Train, avoid: Set<Int>? = null, onward: M
 
 /** Costs out of each depot to the next station, respecting track direction, power and ownership. */
 private fun World.railOnwardCosts(t: Train, target: Int): Map<Int, Int> {
-    val electric = t.engineInfo.traction == Traction.ELECTRIC
+    val electric = t.electric
     val pending = HashMap<Int, MutableList<Int>>()
     for (d in depots) {
         if (d == null || d.owner != t.owner || d.kind != Depots.RAIL || electric && !depotWired(d)) continue

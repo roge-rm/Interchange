@@ -16,7 +16,7 @@ package com.rm.interchange.sim
  */
 object Save {
     private val MAGIC = "ICHG".encodeToByteArray()
-    const val VERSION = 45
+    const val VERSION = 46
 
     /** A vehicle's [built] day as saved by [version]: work days from 36, calendar days before. */
     private fun World.builtOut(built: Int, version: Int) = if (version >= 36) built else built / settings.dayLength
@@ -78,7 +78,7 @@ object Save {
             for (t in trains) {
                 w.bool(t != null)
                 if (t == null) continue
-                w.int(t.owner); w.int(t.engine); w.int(t.wagon); w.int(t.wagons); w.int(t.depot); w.int(t.wagonCargo); w.string(t.name)
+                w.int(t.owner); w.int(t.engine); w.int(if (version >= 46) t.fallbackWagon else t.wagon); w.int(t.wagons); w.int(t.depot); w.int(t.wagonCargo); w.string(t.name)
                 if (version >= 41) w.int(t.number)
                 w.bool(t.inDepot); w.bool(t.running); w.int(t.waiting)
                 w.ints(t.steps.toIntArray()); w.int(t.nose); w.int(t.speed)
@@ -95,6 +95,7 @@ object Save {
                 if (version >= 38) { w.int(t.wreckedFor); w.bool(t.signalled) }
                 if (version >= 43) { w.int(t.gap); w.long(t.departed) }
                 if (version >= 45) w.int(t.group)
+                if (version >= 46) writeFormation(w, t.formation)
             }
             w.uvar(towns.size.toLong())
             for (t in towns) { w.string(t.name); w.int(t.x); w.int(t.y); w.int(t.grid); w.bool(t.french); w.int(t.population); w.int(t.houses); w.int(t.growIn); w.int(t.servedThisMonth); w.int(t.servedLastMonth); w.ints(t.approval)
@@ -370,6 +371,11 @@ object Save {
                         if (version >= 38) { t.wreckedFor = r.int(); t.signalled = r.bool() }
                         if (version >= 43) { t.gap = r.int(); t.departed = r.long() }
                         if (version >= 45) t.group = r.int()
+                        if (version >= 46) {
+                            val cars = readFormation(r).map { it.copy(model = vehicle(it.model)) }
+                            if (!validTrainFormation(roster, cars)) throw BadData("invalid train formation")
+                            t.setFormation(cars)
+                        }
                     } else {
                         t.built = (tick / Calendar.TICKS_PER_DAY).toInt()
                         t.serviced = t.built

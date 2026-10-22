@@ -777,4 +777,22 @@
     <string name="no_group">Aucun groupe</string>
     <string name="new_group">Nouveau groupe</string>
     <string name="vehicle_group">Groupe</string>
+    <string name="edit_formation">Modifier la composition</string>
+    <string name="train_formation">Composition du train</string>
+    <string name="formation_help">La tête du train est en premier. Les tenders restent avec leur locomotive. Choisissez un véhicule pour le déplacer, changer sa cargaison ou le retirer. Placez les chasse-neige devant la première locomotive.</string>
+    <string name="formation_car">%1$d. %2$s</string>
+    <string name="formation_tender">Avec %1$s</string>
+    <string name="formation_add">Ajouter une locomotive ou un wagon</string>
+    <string name="formation_add_model">Ajouter %1$s</string>
+    <string name="formation_preview">Après les modifications</string>
+    <string name="formation_weight">Poids à vide</string>
+    <string name="formation_tonnes">%1$d t</string>
+    <string name="formation_power">Puissance</string>
+    <string name="formation_running">Frais de fonctionnement</string>
+    <string name="formation_limits">Gardez au moins une locomotive, avec un maximum de %1$d locomotives et %2$d wagons.</string>
+    <string name="formation_loaded">La cargaison à bord doit tenir dans la nouvelle composition. Déchargez-la avant de retirer ces véhicules ou de changer leur cargaison.</string>
+    <string name="formation_apply_cost">Appliquer pour %1$s</string>
+    <string name="formation_apply_credit">Appliquer et recevoir %1$s</string>
+    <string name="formation_length">Longueur</string>
+    <string name="formation_tiles">%1$d,%2$d cases</string>
 </resources>

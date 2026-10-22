@@ -103,6 +103,8 @@ class TrainView(
     val gap: Int = 0,
     val wagonCargo: Int = -1,
     val group: Int = -1,
+    val formation: List<TrainCar> = emptyList(),
+    val topSpeed: Int = 0,
 )
 
 /** A bus, truck or streetcar as the screen shows it. */
@@ -413,11 +415,11 @@ fun World.view(company: Int = 0, withReserved: Boolean = false): WorldView {
             t.id, t.name, t.engine, t.wagon, t.wagons, t.depot, t.inDepot, t.running, t.toDepot,
             t.orders.toIntArray(), t.order, t.speed / 16 * 2700 / 4096, t.waiting > 0, t.running && !t.inDepot && t.lostUntil > tick,
             IntArray(Cargo.COUNT) { t.load(it) }, IntArray(Cargo.COUNT) { t.capacity(it) }, t.profitThisYear, t.profitLastYear, t.shared,
-            age(t), t.reliability / 100, t.brokenFor > 0, t.breakdowns, t.service, t.servicing, price(t.price) - value(t), age(t) >= t.engineInfo.life,
-            t.inDepot && t.engineInfo.traction == Traction.ELECTRIC && depots.getOrNull(t.depot)?.let { !depotWired(it) } == true,
+            age(t), t.reliability / 100, t.brokenFor > 0, t.breakdowns, t.service, t.servicing, price(t.price) - value(t), age(t) >= t.life,
+            t.inDepot && t.electric && depots.getOrNull(t.depot)?.let { !depotWired(it) } == true,
             owner = t.owner, wrecked = t.wreckedFor > 0, number = t.number,
             at = if (t.waiting > 0 && !t.inDepot) t.steps.lastOrNull()?.let { stationAt(stepTile(it))?.id } ?: -1 else -1,
-            x = tx, y = ty, gap = t.gap, wagonCargo = t.wagonCargo, group = t.group,
+            x = tx, y = ty, gap = t.gap, wagonCargo = t.wagonCargo, group = t.group, formation = t.formation.toList(), topSpeed = t.topSpeed,
         )
     }
     val stationViews = stations.filterNotNull().map { s ->

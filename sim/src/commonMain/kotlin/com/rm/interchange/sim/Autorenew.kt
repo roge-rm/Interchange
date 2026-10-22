@@ -39,8 +39,8 @@ internal fun World.renewDue(owner: Int, built: Int, life: Int): Boolean {
     return c.autorenew && !c.gone && workDay - built >= life * 365 + c.renewMonths * WORK_MONTH
 }
 
-internal fun World.renewDue(t: Train) = t.wreckedFor == 0 && renewDue(t.owner, t.built, t.engineInfo.life) &&
-    onSale(t.engineInfo) && (t.wagons == 0 || onSale(roster[t.wagon]))
+internal fun World.renewDue(t: Train) = t.wreckedFor == 0 && renewDue(t.owner, t.built, t.life) &&
+    t.formation.all { onSale(roster[it.model]) }
 internal fun World.renewDue(v: RoadVehicle) = v.wreckedFor == 0 && renewDue(v.owner, v.built, v.info.life) && onSale(v.info)
 internal fun World.renewDue(v: Ship) = renewDue(v.owner, v.built, v.info.life) && onSale(v.info)
 internal fun World.renewDue(v: Aircraft) = v.wreckedFor == 0 && renewDue(v.owner, v.built, v.info.life) && onSale(v.info)
@@ -111,7 +111,7 @@ internal fun World.autorenew(t: Train) {
     if (!renewDue(t) || !payRenewal(t, Autorenew.TRAIN, renewCost(t))) return
     t.built = workDay
     t.serviced = workDay
-    t.reliability = t.engineInfo.reliability * 100
+    t.reliability = t.newReliability
 }
 
 internal fun World.autorenew(v: RoadVehicle) {

@@ -58,12 +58,14 @@ fun resistance(mass: Long, speed: Int): Long {
 
 /** The engine's pull at [speed] units with [grip] percent of full grip, in newtons. */
 fun Train.tractiveForce(speed: Int, grip: Int): Long {
-    val e = engineInfo
-    val slip = e.tractive.toLong() * 1000 * grip / 100
-    // Power over speed, in cm/s so slow speeds don't lose it, never from less than 1.5 m/s.
     val cms = (speed.toLong() * 1144 / 1000).coerceAtLeast(150)
-    val power = e.power.toLong() * 74_570 / cms
-    return minOf(slip, power)
+    return locomotives.sumOf { id ->
+        val e = roster[id]
+        val slip = e.tractive.toLong() * 1000 * grip / 100
+        // Power over speed, in cm/s so slow speeds don't lose it, never from less than 1.5 m/s.
+        val power = e.power.toLong() * 74_570 / cms
+        minOf(slip, power)
+    }
 }
 
 /** How much train [t]'s speed changes this tick under power with [grip] percent grip, in speed units. */

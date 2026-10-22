@@ -142,6 +142,9 @@ sealed interface Command {
     /** Buys a train in a depot, its wagons set to carry [cargo] if they can, or their first. */
     data class BuyTrain(override val company: Int, val depot: Int, val engine: Int, val wagon: Int, val wagons: Int, val cargo: Int = -1, val count: Int = 1) : Command
 
+    /** Changes a train's ordered cars together, while it is in its depot. */
+    data class EditTrain(override val company: Int, val train: Int, val cars: List<TrainCar>) : Command
+
     /** Builds the same vehicle in the given [depot] and shares its orders and gap. The source can be out on the line. */
     data class CopyVehicle(override val company: Int, val kind: Int, val vehicle: Int, val depot: Int, val count: Int = 1) : Command {
         companion object {

@@ -20,6 +20,7 @@ class WireTest {
             Message.Lock("ours"),
             Message.PackGet(Wire.PROTOCOL, PackRef("prairie", 3, -77L)),
             Message.Request(Command.Loan(2, true)),
+            Message.Request(Command.EditTrain(2, 3, listOf(com.rm.interchange.sim.TrainCar(0), com.rm.interchange.sim.TrainCar(18, 1)))),
             Message.Say("bonjour, ça va"),
             Message.Resync,
             Message.Rejected(Reject.PASSWORD),

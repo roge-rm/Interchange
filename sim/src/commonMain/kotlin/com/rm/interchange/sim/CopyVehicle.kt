@@ -9,7 +9,7 @@ internal fun World.copyVehicle(company: Company, c: Command.CopyVehicle) {
                 val src = trains.getOrNull(c.vehicle) ?: return
                 if (src.owner != company.id || src.wreckedFor > 0) return
                 val sizeBefore = trains.size
-                buyTrain(company, Command.BuyTrain(company.id, c.depot, src.engine, src.wagon, src.wagons, src.wagonCargo))
+                buyTrainFormation(company, c.depot, src.formation, src.wagon)
                 val made = trains.getOrNull(sizeBefore) ?: return
                 trainCommand(company, Command.TrainOrder(company.id, made.id, Command.TrainOrder.SHARE, intArrayOf(src.id)))
             }
