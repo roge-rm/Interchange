@@ -467,6 +467,10 @@ internal class ChunkBaker(
         val rr = if (water) 0f else relief(vx + 1, vy)
         val rb = if (water) 0f else relief(vx + 1, vy + 1)
         val rl = if (water) 0f else relief(vx, vy + 1)
+        // The land's own slopes darken a little along their low edge, so each step down reads.
+        val low = minOf(minOf(t, r), minOf(b, l))
+        val rise = (maxOf(maxOf(t, r), maxOf(b, l)) - low).toFloat()
+        val foot = soft && !water && rise > 0f
         // What shows through on a slope: earth under plants, rock under snow.
         val bare = when (kind) {
             Atlas.MEADOW, Atlas.PRAIRIE, Atlas.FOREST, Atlas.TUNDRA -> Atlas.EARTH
@@ -583,6 +587,14 @@ internal class ChunkBaker(
             // Hollows darken less on slopes already in shadow.
             val dark = RELIEF_DARK - (256f - sun).coerceAtLeast(0f) * RELIEF_DARK_SLOPE
             var shade = sun * (1f + (rel * RELIEF_GAIN).coerceIn(-dark, RELIEF_LIGHT))
+            if (foot) {
+                // From the corners rather than the half's plane, so it doesn't break along the split.
+                val up = (t * (1f - u) * (1f - v) + r * u * (1f - v) + b * u * v + l * (1f - u) * v - low) / rise
+                if (up < FOOT_BAND && (road == 0 || roadTexel(u, v, road, ti, NOT_ROAD) == NOT_ROAD)) {
+                    val s = 1f - up / FOOT_BAND
+                    shade *= 1f - FOOT_SHADE * s * s
+                }
+            }
             if (worn >= 0) texel = mix(texel, if (worn < VERY_WORN) 0xffd03a2a.toInt() else if (worn < WORN) 0xffe8b030.toInt() else 0xff3aa048.toInt(), 0.6f)
             if (overlays and SNOW != 0) {
                 val depth = st * (1f - u) * (1f - v) + sr * u * (1f - v) + sb * u * v + sl * (1f - u) * v
@@ -912,8 +924,8 @@ internal class ChunkBaker(
         val d = (nx * LX + ny * LY + nz * LZ) / (n * LL)
         val flat = LZ / LL
         val raw = 1f + LIGHT_GAIN * (d / flat - 1f)
-        // Slopes away from the light ease off towards LIGHT_LOW rather than all stopping at it.
-        val f = if (raw >= 1f) minOf(raw, LIGHT_HIGH) else 1f - (1f - LIGHT_LOW) * tanh((1f - raw) / (1f - LIGHT_LOW))
+        // Slopes ease off towards LIGHT_HIGH and LIGHT_LOW rather than all stopping at them, so steeper still reads as steeper.
+        val f = if (raw >= 1f) 1f + (LIGHT_HIGH - 1f) * tanh((raw - 1f) / (LIGHT_HIGH - 1f)) else 1f - (1f - LIGHT_LOW) * tanh((1f - raw) / (1f - LIGHT_LOW))
         return (f * 256).toInt()
     }
 
@@ -1166,11 +1178,11 @@ internal class ChunkBaker(
         // Light from the top left of the screen and above, in (u, v, up), and how strongly slopes take it.
         private const val LX = -1f
         private const val LY = -0.55f
-        private const val LZ = 1.2f
+        private const val LZ = 1f
         private val LL = sqrt(LX * LX + LY * LY + LZ * LZ)
-        private const val LIGHT_GAIN = 0.8f
-        private const val LIGHT_LOW = 0.76f
-        private const val LIGHT_HIGH = 1.24f
+        private const val LIGHT_GAIN = 0.95f
+        private const val LIGHT_LOW = 0.58f
+        private const val LIGHT_HIGH = 1.3f
 
         /** Corners each way looked at for ridges and hollows, and how much lighter or darker a step above or below makes them. */
         private const val RELIEF = 3
@@ -1179,11 +1191,14 @@ internal class ChunkBaker(
         const val NO_ART = -2L
         /** Each level's tile [Cover]s by shape, shared by every baker. */
         private val COVERS = Array(Renderer.LEVELS.size) { HashMap<Int, Cover>() }
-        private const val RELIEF_GAIN = 0.07f
-        private const val RELIEF_DARK = 0.2f
+        private const val RELIEF_GAIN = 0.1f
+        private const val RELIEF_DARK = 0.24f
         /** How much less [RELIEF_DARK] darkens for each 256th a slope is in shadow. */
         private const val RELIEF_DARK_SLOPE = 0.4f / 256f
-        private const val RELIEF_LIGHT = 0.14f
+        private const val RELIEF_LIGHT = 0.18f
+        /** How far up a slope tile, as a share of its rise, the shade along its low edge reaches, and how dark it is there. */
+        private const val FOOT_BAND = 0.4f
+        private const val FOOT_SHADE = 0.1f
 
         /** Where the noise has to be past for bare ground to show on a slope: about a quarter of a slope shows it. */
         private const val BARE_FROM = 0.64f
