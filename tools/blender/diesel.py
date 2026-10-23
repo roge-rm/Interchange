@@ -28,13 +28,19 @@ def livery(scheme):
         "via_blue": ("#1e3a78", "#f0c020", "#4a4e54", "#f0c020", "#f0c020"),
         "bcr": ("#b82a26", "#f0f0ea", "#3a3c40", "#1e3a7a", "#1e3a7a"),
         "via_grey": ("#4c5158", "#f0c020", "#2a2c30", "#f0c020", "#f0c020"),
+        # VIA's LRC: light grey, a blue band lined in yellow.
+        "via_lrc": ("#c2c6ca", "#1e3a78", "#6a6e74", "#f0c020", "#c2c6ca"),
+        # CN's: a black hood behind a red cab and nose, with a white line along the sill, as (..., lower, cab).
+        "cn_red": ("#232426", "#ececea", "#2a2a2c", "#ececea", "#232426", "#c4321e"),
     }
-    body, stripe, roof, trim, *lower = schemes[scheme]
+    body, stripe, roof, trim, *rest = schemes[scheme]
+    lower = rest[:1]
     return {
         "louvre": material(f"{scheme} louvre", _shade(body, 0.6), metal=0.3, rough=0.6),
         "lower": material(f"{scheme} lower", lower[0] if lower else body, rough=0.4, clearcoat=0.4),
         "lamp": material("lamp glass", "#f0e6b8", rough=0.2),
         "body": material(f"{scheme} body", body, rough=0.4, clearcoat=0.4),
+        "cab": material(f"{scheme} cab", rest[1] if len(rest) > 1 else body, rough=0.4, clearcoat=0.4),
         "stripe": material(f"{scheme} stripe", stripe, rough=0.4, clearcoat=0.3),
         "roof": material(f"{scheme} roof", roof, rough=0.6),
         "trim": material(f"{scheme} trim", trim, rough=0.4),
@@ -77,9 +83,9 @@ def frame(m, L, c, axles, deck=0.62):
         truck(m, y, c, axles)
 
 
-def letters(m, L, c, z, at=0.0, size=0.04):
+def letters(m, L, c, z, at=0.0, size=0.04, x=0.1216):
     for side in (-1, 1):
-        m.text(LETTERS, side * 0.1216, at, z, size, c["trim"], side)
+        m.text(LETTERS, side * x, at, z, size, c["trim"], side)
 
 
 def fans(m, y0, y1, z, c, n=3, w=0.06):
@@ -92,8 +98,9 @@ def handrails(m, y0, y1, deck, c):
     for side in (-1, 1):
         x = side * 0.118
         m.rod((x, y0, deck + 0.45), (x, y1, deck + 0.45), 0.003, c["rail"])
-        for k in range(6):
-            y = y0 + (y1 - y0) * k / 5
+        posts = max(2, round((y1 - y0) / 0.09) + 1)
+        for k in range(posts):
+            y = y0 + (y1 - y0) * k / (posts - 1)
             m.rod((x, y, deck), (x, y, deck + 0.45), 0.003, c["rail"])
 
 
@@ -199,8 +206,27 @@ def cab_unit(m, L, scheme, axles=2, nose="bulldog"):
         letters(m, L, c, 1.18, at=(a0 + cab) / 2 - 0.04, size=0.036)
 
 
-def hood(m, L, scheme, axles=2, wide=False, dynamic=False, body="hood", nose="short"):
-    """A road switcher: a long hood, the cab, a short hood in front; wide puts a full-width safety cab and nose on it.
+# How hood units are painted along their sides, by scheme: a lower band from the deck up and the line over it, as
+# livery keys, or None. CP's maroon over a grey band lined in yellow, CN's green over black lined in yellow; the red
+# schemes have a white line along the sill instead.
+HOOD_PAINT = {
+    "cp_maroon": ("stripe", "trim", None),
+    "cn_green": ("lower", "stripe", None),
+    "red": (None, None, "stripe"),
+    "cn_red": (None, None, "stripe"),
+}
+
+
+def hood(m, L, scheme, axles=2, wide=False, dynamic=False, body="hood", nose="short", maker="emd", short=0.12, hood_top=1.62,
+         flare=False):
+    """A road switcher: a long hood behind the cab, a short hood in front, walkways and handrails along both sides.
+
+    maker: "alco" (a tall hood with squarer ends, one big stack, radiator shutters at the back), "emd" (a hood well below
+    the cab roof, rounded ends, fans flush in the roof at the back, louvred doors) or "ge" (the blower housing behind
+    the cab). short is the short hood's length in tiles, hood_top the long hood's top in steps. wide puts on a full-width
+    safety cab and nose: GE's with its nose corners angled back, EMD's squared off with the headlights high. flare widens
+    the radiator section at the back: GE's wings near the top, or EMD's sides sloping out. dynamic adds the dynamic
+    brake: a blister mid-hood, or on a safety cab unit the raised housing just behind the cab.
     body="cowl" covers it all in a full-width body with no walkways, see cowl()."""
     if body == "cowl":
         return cowl(m, L, scheme, axles, nose, dynamic)
@@ -208,37 +234,177 @@ def hood(m, L, scheme, axles=2, wide=False, dynamic=False, body="hood", nose="sh
     deck = 0.62
     frame(m, L, c, axles, deck)
     a0, a1 = -L / 2 + 0.03, L / 2 - 0.03
-    cab0 = a1 - (0.2 if wide else 0.18)
-    cab1 = cab0 + 0.1
-    # The long hood, with louvres, fans and the stack.
-    m.box(-0.075, 0.075, a0, cab0, deck, 1.72, c["body"], bevel=0.006)
-    for side in (-1, 1):
-        for k in range(5):
-            y = a0 + 0.04 + k * (cab0 - a0 - 0.08) / 4.5
-            m.box(side * 0.0755 - 0.001, side * 0.0755 + 0.001, y, y + 0.05, 1.2, 1.55, c["grille"])
-        m.box(side * 0.0756 - 0.001, side * 0.0756 + 0.001, a0, cab0, 0.95, 1.02, c["stripe"])
-    fans(m, a0 + 0.02, a0 + (cab0 - a0) * 0.45, 1.72, c, n=2 if axles == 2 else 3, w=0.07)
-    m.box(-0.015, 0.015, a0 + (cab0 - a0) * 0.62, a0 + (cab0 - a0) * 0.62 + 0.03, 1.72, 1.82, c["dark"])
-    if dynamic:
-        m.box(-0.08, 0.08, a0 + (cab0 - a0) * 0.68, a0 + (cab0 - a0) * 0.9, 1.72, 1.82, c["body"], bevel=0.004)
-        fans(m, a0 + (cab0 - a0) * 0.7, a0 + (cab0 - a0) * 0.88, 1.82, c, n=1, w=0.06)
-    # The cab.
-    half = 0.12 if wide else 0.11
-    m.box(-half, half, cab0, cab1, deck, 1.95, c["body"], bevel=0.006)
-    m.box(-half - 0.005, half + 0.005, cab0 - 0.005, cab1 + 0.005, 1.95, 2.01, c["roof"], bevel=0.004)
-    for side in (-1, 1):
-        m.box(side * (half + 0.0005) - 0.001, side * (half + 0.0005) + 0.001, cab0 + 0.015, cab1 - 0.015, 1.5, 1.82, c["glass"])
-    m.box(-half + 0.015, half - 0.015, cab1 - 0.001, cab1 + 0.002, 1.5, 1.82, c["glass"])
-    # The front: a short hood, or the wide nose of a safety cab.
-    if wide:
-        m.wedge([(-0.12, cab1, deck), (0.12, cab1, deck), (0.12, a1, deck), (-0.12, a1, deck)],
-                [(-0.12, cab1, 1.5), (0.12, cab1, 1.5), (0.1, a1, 1.25), (-0.1, a1, 1.25)], c["body"])
-        m.box(-0.1, 0.1, a1 - 0.003, a1 + 0.001, 0.75, 1.0, c["stripe"])
+    cab1 = a1 - short
+    cab0 = cab1 - (0.1 if wide else 0.095)
+    hh = 0.078 if maker == "alco" else 0.074
+    ht = hood_top
+    cab_top = 1.97
+    mats = {"paint": c["body"], "glass": c["glass"], "roof": c["roof"], "louvre": c["louvre"]}
+    cab_mats = dict(mats, paint=c["cab"])
+    band, line, sill = HOOD_PAINT.get(scheme, (None, None, None))
+
+    # The long hood, its back end rounded over the top and at the corners.
+    end_r, end_w = (0.012, 0.92) if maker == "alco" else (0.03, 0.84)
+    carbody(m, [(cab0 + 0.005, deck, 0, "paint"), (a0 + 0.03, deck, 0, "paint"), (a0 + 0.01, deck, 0, "paint", (1 + end_w) / 2),
+                (a0, deck, 0.004, "paint", end_w), (a0, ht, end_r, "paint", end_w), (a0 + 0.01, ht, 0, "paint", (1 + end_w) / 2),
+                (a0 + 0.03, ht, 0, "paint"), (cab0 + 0.005, ht, 0, "paint")], hh, mats, crown=0.05)
+    rad = 0.24 if axles == 3 else 0.16
+    if flare:
+        # The radiators at the back, wider than the hood: GE's wings stand out near the top, their undersides the
+        # radiator cores; EMD's sides slope out up to a wider roof.
+        lo, out, knee, top = (ht - 0.34, 0.113, ht - 0.15, ht + 0.02) if maker == "ge" else (ht - 0.5, 0.1, ht - 0.04, ht + 0.03)
+        ring = [(-out, top), (-out, knee), (-hh, lo), (hh, lo), (out, knee), (out, top)]
+        tuck = [(-hh * 0.98, ht - 0.01), (-hh * 0.98, knee), (-hh * 0.98, lo), (hh * 0.98, lo), (hh * 0.98, knee), (hh * 0.98, ht - 0.01)]
+        m.loft([(a0, ring), (a0 + rad - 0.04, ring), (a0 + rad, tuck)], mats, part=lambda k: "louvre" if k in (1, 3) else "paint")
+        fan_top = top
     else:
-        m.box(-0.07, 0.07, cab1, a1, deck, 1.42, c["body"], bevel=0.006)
-        m.box(-0.0705, 0.0705, a1 - 0.002, a1 + 0.001, 0.8, 1.0, c["stripe"])
+        fan_top = ht
+    # Doors as seams along the hood, louvres high on some, the radiator intakes at the back.
+    door = 0.055
+    n_doors = int((cab0 - a0 - rad - 0.02) / door)
+    for side in (-1, 1):
+        x = side * (hh + 0.0012)
+        for k in range(n_doors + 1):
+            y = a0 + rad + 0.01 + k * door
+            m.box(x - 0.0005, x + 0.0005, y, y + 0.003, deck + 0.06, ht - 0.05, c["grille"])
+        if maker == "alco":
+            louvres(m, x, a0 + 0.025, a0 + 0.12, 1.0, ht - 0.08, c)
+            for k in range(0, n_doors, 2):
+                y = a0 + rad + 0.018 + k * door
+                louvres(m, x, y, y + door - 0.016, ht - 0.2, ht - 0.07, c)
+        elif maker == "emd":
+            if not flare:
+                louvres(m, x, a0 + 0.035, a0 + rad - 0.01, ht - 0.26, ht - 0.05, c)
+            for k in range(1, n_doors, 2):
+                y = a0 + rad + 0.018 + k * door
+                louvres(m, x, y, y + door - 0.016, deck + 0.12, deck + 0.3, c)
+        else:
+            for k in range(1, n_doors, 3):
+                y = a0 + rad + 0.018 + k * door
+                louvres(m, x, y, y + door - 0.016, ht - 0.22, ht - 0.07, c)
+    # Paint along the sides: the lower band and its line, or the sill line.
+    spans = [(a0 + 0.03, cab0, hh)] + ([] if wide else [(cab0, cab1, 0.11), (cab1, a1 - 0.025, 0.07)])
+    for y0, y1, half in spans if band else ():
+        side_band(m, y0, y1, deck, 1.0, c[band], half=half)
+        side_band(m, y0, y1, 1.0, 1.03, c[line], half=half)
+    if sill:
+        side_band(m, a0 - 0.02, a1 + 0.02, deck - 0.07, deck - 0.03, c[sill])
+
+    # Fans flush in the roof at the back, and the stacks.
+    if maker == "alco":
+        roof_fans(m, a0 + 0.03, a0 + 0.11, fan_top, c, n=1, w=0.075)
+        sy = (a0 + cab0) / 2 + 0.04
+        m.box(-0.022, 0.022, sy - 0.03, sy + 0.03, ht - 0.02, ht + 0.07, c["dark"], bevel=0.005)
+    elif maker == "ge":
+        roof_fans(m, a0 + 0.02, a0 + rad - 0.05, fan_top, c, n=2, w=0.085)
+    else:
+        n = 3 if axles == 3 else 2
+        roof_fans(m, a0 + 0.02, a0 + rad - 0.01, fan_top, c, n=n, w=0.075 if flare else 0.07)
+        sy = (a0 + cab0) / 2 + 0.02
+        for dy in ((0.0,) if axles == 2 else (-0.02, 0.02)):
+            m.box(-0.01, 0.01, sy + dy - 0.012, sy + dy + 0.012, ht - 0.02, ht + 0.05, c["dark"], bevel=0.003)
+
+    # The dynamic brake: a blister mid-hood with its fan, or the housing behind a safety cab, grilles on its sides.
+    if dynamic and not wide:
+        y0, y1 = cab0 - 0.26, cab0 - 0.1
+        m.shell([(y0, ht - 0.03, 0, "paint"), (y1, ht - 0.03, 0, "paint"), (y1 - 0.012, ht + 0.09, 0.012, "paint"),
+                 (y0 + 0.012, ht + 0.09, 0.012, "paint")], hh + 0.006, mats, crown=0.03)
+        roof_fans(m, y0 + 0.03, y1 - 0.03, ht + 0.09, c, n=1, w=0.06)
+        for side in (-1, 1):
+            louvres(m, side * (hh + 0.0072), y0 + 0.02, y1 - 0.02, ht - 0.02, ht + 0.07, c)
+    housing = wide and (dynamic or maker == "ge")
+    if housing:
+        y0, y1 = cab0 - (0.12 if maker == "ge" else 0.15), cab0 + 0.005
+        rise = 0.07 if maker == "ge" else 0.04
+        m.shell([(y0, ht - 0.03, 0, "paint"), (y1, ht - 0.03, 0, "paint"), (y1, ht + rise, 0.01, "paint"),
+                 (y0 + 0.015, ht + rise, 0.015, "paint")], hh + 0.008, mats, crown=0.03)
+        for side in (-1, 1):
+            louvres(m, side * (hh + 0.0094), y0 + 0.02, y1 - 0.02, ht - 0.18, ht + rise - 0.02, c)
+        if maker == "ge":
+            # GE's stack just behind the blower housing.
+            m.box(-0.02, 0.02, y0 - 0.05, y0 - 0.01, ht - 0.02, ht + 0.05, c["dark"], bevel=0.004)
+
+    if wide:
+        cab_line = _safety_cab(m, cab0, cab1, a1, deck, cab_top, maker, cab_mats, c)
+    else:
+        cab_line = _cab(m, cab0, cab1, deck, cab_top, cab_mats, c)
+        _short_hood(m, cab1, a1, deck, maker, mats, c)
+    # Handrails along the walkways, round the front of the short hood.
     handrails(m, a0, cab0, deck, c)
-    letters(m, L, c, 1.3, at=(a0 + cab0) / 2, size=0.032)
+    if not wide:
+        handrails(m, cab1 + 0.01, a1, deck, c)
+        m.rod((-0.118, a1, deck + 0.45), (0.118, a1, deck + 0.45), 0.003, c["rail"])
+    letters(m, L, c, (ht + deck) / 2 + 0.08, at=(a0 + rad + cab0) / 2, size=0.032, x=hh + 0.0012)
+    return cab_line
+
+
+def _cab(m, cab0, cab1, deck, top, mats, c, half=0.11):
+    """The standard cab: windows all round and a roof curved across."""
+    outline = carbody(m, [(cab0, deck, 0, "paint"), (cab1, deck, 0, "paint"), (cab1, 1.5, 0, "glass"), (cab1 - 0.004, 1.84, 0, "paint"),
+                          (cab1 - 0.006, top, 0.02, "roof"), (cab0, top, 0.02, "paint"), (cab0, 1.84, 0, "glass"),
+                          (cab0, 1.68, 0, "paint")], half, mats, crown=0.09)
+    # A post between the two front windows, and the sliding side windows.
+    m.box(-0.006, 0.006, cab1 - 0.006, cab1 + 0.002, 1.48, 1.86, mats["paint"])
+    for side in (-1, 1):
+        x = side * (half + 0.0006)
+        m.box(x - 0.0008, x + 0.0008, cab0 + 0.012, cab1 - 0.012, 1.5, 1.82, c["glass"])
+        m.box(x - 0.0012, x + 0.0012, (cab0 + cab1) / 2 - 0.003, (cab0 + cab1) / 2 + 0.003, 1.5, 1.82, mats["paint"])
+    return outline
+
+
+def _short_hood(m, cab1, a1, deck, maker, mats, c):
+    """The short hood in front of the cab, narrower than the long one: rounded at the front, with its headlight and
+    number boards. Alco's is longer and steps down at the front."""
+    half = 0.07
+    if maker == "alco":
+        st = 1.58
+        line = carbody(m, [(cab1 - 0.005, deck, 0, "paint"), (a1 - 0.015, deck, 0, "paint"), (a1, deck, 0.004, "paint", 0.9), (a1, 1.42, 0.01, "paint", 0.9),
+                           (a1 - 0.015, 1.42, 0, "paint"), (a1 - 0.05, 1.42, 0.006, "paint"), (a1 - 0.058, st, 0.008, "paint"),
+                           (cab1 - 0.005, st, 0, "paint")], half, mats, crown=0.04)
+        lamp(m, line, 1.34, c, r=0.011)
+    else:
+        st = 1.44
+        line = carbody(m, [(cab1 - 0.005, deck, 0, "paint"), (a1 - 0.02, deck, 0, "paint"), (a1 - 0.008, deck, 0, "paint", 0.94), (a1, deck, 0.004, "paint", 0.86),
+                           (a1, st, 0.025, "paint", 0.86), (a1 - 0.008, st, 0, "paint", 0.94), (a1 - 0.02, st, 0, "paint"),
+                           (cab1 - 0.005, st, 0, "paint")], half, mats, crown=0.04)
+        lamp(m, line, st - 0.08, c, r=0.011)
+        # Number boards high on the front corners.
+        y = parts.outline_front(line, st - 0.08)
+        for x in (-0.04, 0.04):
+            m.box(x - 0.014, x + 0.014, y - 0.012, y - 0.004, st - 0.12, st - 0.05, material("number board", "#e8e4d4", rough=0.4))
+    return line
+
+
+def _safety_cab(m, cab0, cab1, a1, deck, top, maker, mats, c, half=0.12):
+    """The full-width safety cab and nose of the 1990s on. GE's nose slopes up to the windshield, its front corners
+    angled back, the headlights on the nose; EMD's is squared off, nearly flat on top, the headlights high on the cab."""
+    if maker == "ge":
+        shape = [(cab0, deck, 0, "paint"), (a1 - 0.025, deck, 0, "paint"), (a1, deck, 0.004, "paint", 0.78), (a1, 1.2, 0.01, "paint", 0.78),
+                 (a1 - 0.025, 1.27, 0, "paint"), (cab1, 1.44, 0.008, "glass"), (cab1 - 0.018, 1.84, 0.008, "paint"),
+                 (cab1 - 0.024, top, 0.02, "roof"), (cab0, top, 0.008, "paint")]
+        crown = 0.07
+    else:
+        shape = [(cab0, deck, 0, "paint"), (a1 - 0.01, deck, 0, "paint"), (a1, deck, 0.004, "paint", 0.94), (a1, 1.32, 0.008, "paint", 0.94),
+                 (a1 - 0.01, 1.35, 0, "paint"), (cab1, 1.42, 0.004, "glass"), (cab1 - 0.01, 1.84, 0.004, "paint"),
+                 (cab1 - 0.014, top, 0.01, "roof"), (cab0, top, 0.006, "paint")]
+        crown = 0.04
+    outline = carbody(m, shape, half, mats, crown=crown)
+    # The post between the two windshields, the side windows.
+    yw = parts.outline_front(outline, 1.64)
+    m.box(-0.006, 0.006, yw - 0.006, yw + 0.002, 1.44, 1.84, mats["paint"])
+    for side in (-1, 1):
+        x = side * (half + 0.0006)
+        m.box(x - 0.0008, x + 0.0008, cab0 + 0.012, cab1 - 0.025, 1.5, 1.82, c["glass"])
+    if maker == "ge":
+        for x in (-0.025, 0.025):
+            lamp(m, outline, 1.1, c, x=x, r=0.009)
+    else:
+        for x in (-0.03, 0.03):
+            lamp(m, outline, 1.9, c, x=x, r=0.009)
+    # Ditch lights low on the nose corners.
+    for x in (-0.08, 0.08):
+        lamp(m, outline, 0.76, c, x=x, r=0.007)
+    return outline
 
 
 def cowl(m, L, scheme, axles=2, nose="short", dynamic=False):
@@ -310,21 +476,57 @@ def pantograph(m, y, z, c):
 
 
 def boxcab(m, L, scheme="boxcab"):
-    """A boxcab electric of the 1910s: a plain steel box with a cab at each end and a pantograph on the roof."""
+    """A boxcab electric of the 1910s, as CN's for the Mount Royal Tunnel: a steel box with a cab at each end under an
+    arched roof, an end door with a window between two more, small platforms with railings at both ends, and the
+    pantograph and resistor grids on the roof."""
     c = livery(scheme)
-    frame(m, L, c, 2)
-    a0, a1 = -L / 2 + 0.03, L / 2 - 0.03
-    m.box(-0.12, 0.12, a0, a1, 0.62, 1.75, c["body"], bevel=0.005)
-    m.box(-0.125, 0.125, a0 - 0.005, a1 + 0.005, 1.75, 1.82, c["roof"], bevel=0.008)
-    for y in (a0, a1):
-        m.box(-0.09, 0.09, y - 0.002, y + 0.002, 1.35, 1.6, c["glass"])
-        m.box(-0.11, 0.11, y - 0.004, y + 0.004, 0.75, 0.8, c["trim"])
+    deck = 0.62
+    frame(m, L, c, 2, deck)
+    a0, a1 = -L / 2 + 0.012, L / 2 - 0.012
+    b0, b1 = a0 + 0.05, a1 - 0.05
+    top, crown, half = 1.9, 0.2, 0.118
+    mats = {"paint": c["body"], "roof": c["roof"]}
+    carbody(m, [(b0, deck, 0, "paint"), (b1, deck, 0, "paint"), (b1, top, 0.008, "roof"), (b0, top, 0.008, "paint")], half, mats, crown=crown)
+    door = c["louvre"]
+    for end in (-1, 1):
+        y = b1 if end > 0 else b0
+        face = y + end * 0.001
+        # The end door with its window, a window either side, the headlight over the door.
+        m.box(-0.026, 0.026, face - 0.0015, face + 0.0015, deck + 0.01, 1.62, door)
+        m.box(-0.017, 0.017, face - 0.002, face + 0.002, 1.32, 1.54, c["glass"])
+        for x in (-0.072, 0.072):
+            m.box(x - 0.022, x + 0.022, face - 0.0015, face + 0.0015, 1.3, 1.56, c["glass"])
+        lo, hi = sorted((face, face + end * 0.012))
+        m.box(-0.014, 0.014, lo, hi, 1.6, 1.7, c["dark"], bevel=0.002)
+        lo, hi = sorted((face + end * 0.012, face + end * 0.014))
+        m.box(-0.01, 0.01, lo, hi, 1.62, 1.68, c["lamp"])
+        # The platform's railing: across the end either side of the gangway, and back along the sides to the body.
+        edge = (a1 if end > 0 else a0) - end * 0.004
+        rail_z = deck + 0.4
+        for side in (-1, 1):
+            x0, x1 = side * 0.04, side * 0.114
+            m.rod((x0, edge, rail_z), (x1, edge, rail_z), 0.003, c["rail"])
+            m.rod((x1, edge, rail_z), (x1, y, rail_z), 0.003, c["rail"])
+            for x in (x0, x1):
+                m.rod((x, edge, deck), (x, edge, rail_z), 0.003, c["rail"])
+            # A step down at each corner.
+            lo, hi = sorted((edge, edge - end * 0.03))
+            m.box(x1 - 0.01, x1 + 0.006 * side, lo, hi, 0.42, 0.45, c["dark"])
     for side in (-1, 1):
+        x = side * (half + 0.0006)
+        # A cab window by each end, grilles high along the middle over a cream line.
+        for y in (b0 + 0.025, b1 - 0.065):
+            m.box(x - 0.0008, x + 0.0008, y, y + 0.04, 1.3, 1.56, c["glass"])
         for k in range(4):
-            y = a0 + 0.06 + k * (a1 - a0 - 0.12) / 3
-            m.box(side * 0.1205 - 0.001, side * 0.1205 + 0.001, y - 0.025, y + 0.025, 1.3, 1.55, c["glass"] if k in (0, 3) else c["grille"])
-    pantograph(m, 0.0, 1.82, c)
-    letters(m, L, c, 1.0, size=0.034)
+            y = b0 + 0.12 + k * (b1 - b0 - 0.24) / 3
+            louvres(m, x, y - 0.03, y + 0.03, 1.34, 1.58, c)
+    side_band(m, b0, b1, 0.86, 0.89, c["trim"], half=half)
+    # Roof gear: resistor grids either side of the pantograph, the bus bar along the roof's crown.
+    for y in (-0.15, 0.15):
+        m.box(-0.045, 0.045, y - 0.06, y + 0.06, top - 0.02, top + 0.06, c["grille"], bevel=0.004)
+    m.rod((0, -0.22, top + 0.08), (0, 0.22, top + 0.08), 0.003, c["steel"])
+    pantograph(m, 0.0, top, c)
+    letters(m, L, c, 1.12, size=0.034, x=half + 0.0012)
 
 
 def gf6c(m, L, scheme="bcr"):
@@ -339,22 +541,31 @@ def gf6c(m, L, scheme="bcr"):
         m.upright(0, y, top - 0.01, top + 0.1, 0.008, 0.006, material("insulator", "#e8e6e0", rough=0.3), segments=10)
 
 
-def lrc(m, L, scheme="silver"):
-    """A light, fast power car: a low rounded body and a long sloping nose."""
+def lrc(m, L, scheme="via_lrc"):
+    """A light, fast power car, VIA's LRC: a low body with rounded roof edges and a long nose curving down from the
+    roof, the windshield set low on it."""
     c = livery(scheme)
     frame(m, L, c, 2)
-    a0, a1 = -L / 2 + 0.015, L / 2 - 0.015
-    nose = a1 - 0.2
-    m.box(-0.12, 0.12, a0, nose, 0.62, 1.7, c["body"], bevel=0.02)
-    m.wedge([(-0.12, nose, 0.62), (0.12, nose, 0.62), (0.1, a1, 0.62), (-0.1, a1, 0.62)],
-            [(-0.12, nose, 1.7), (0.12, nose, 1.7), (0.08, a1 - 0.02, 0.95), (-0.08, a1 - 0.02, 0.95)], c["body"])
-    m.wedge([(-0.11, nose - 0.02, 1.62), (0.11, nose - 0.02, 1.62), (0.1, nose + 0.06, 1.42), (-0.1, nose + 0.06, 1.42)],
-            [(-0.11, nose - 0.02, 1.66), (0.11, nose - 0.02, 1.66), (0.1, nose + 0.06, 1.46), (-0.1, nose + 0.06, 1.46)], c["glass"])
+    a0, a1 = -L / 2 + 0.015, L / 2 - 0.012
+    deck, top, half = 0.62, 1.72, 0.12
+    mats = {"paint": c["body"], "glass": c["glass"], "roof": c["roof"], "lower": c["lower"]}
+    shape = [(a0, deck, 0.004, "paint"), (a1 - 0.03, deck, 0, "lower"), (a1, 0.74, 0.03, "lower", 0.86), (a1 - 0.004, 0.94, 0.04, "paint", 0.82),
+             (a1 - 0.06, 1.16, 0.05, "glass", 0.86), (a1 - 0.15, 1.46, 0.07, "paint", 0.95), (a1 - 0.27, top, 0.1, "roof"),
+             (a0, top, 0.012, "paint")]
+    outline = carbody(m, shape, half, mats, crown=0.16)
+    nose = a1 - 0.27
+    # VIA's yellow and blue along the sides, the cab's side window, grilles at the back.
+    side_band(m, a0 + 0.004, nose + 0.08, 0.84, 0.9, c["trim"])
+    side_band(m, a0 + 0.004, nose + 0.08, 0.9, 1.04, c["stripe"])
     for side in (-1, 1):
-        m.box(side * 0.1205 - 0.001, side * 0.1205 + 0.001, a0, nose, 0.9, 1.02, c["stripe"])
-        m.box(side * 0.1205 - 0.001, side * 0.1205 + 0.001, a0 + 0.04, a0 + 0.2, 1.3, 1.55, c["grille"])
-    fans(m, a0 + 0.03, a0 + 0.22, 1.7, c, n=2, w=0.05)
-    letters(m, L, c, 1.2, at=(a0 + nose) / 2, size=0.034)
+        x = side * (half + 0.0008)
+        m.box(x - 0.0008, x + 0.0008, nose - 0.02, nose + 0.06, 1.36, 1.56, c["glass"])
+        louvres(m, x, a0 + 0.04, a0 + 0.22, 1.28, 1.56, c)
+        louvres(m, x, a0 + 0.3, nose - 0.1, 1.4, 1.56, c)
+    roof_fans(m, a0 + 0.03, a0 + 0.22, top, c, n=2, w=0.05)
+    for x in (-0.05, 0.05):
+        lamp(m, outline, 0.82, c, x=x, r=0.008)
+    letters(m, L, c, 1.22, at=(a0 + nose) / 2, size=0.034)
 
 
 def charger(m, L, scheme="via_grey"):
