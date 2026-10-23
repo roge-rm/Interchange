@@ -143,9 +143,9 @@ def highway_coach(m, L):
 
 
 # How long each cab is, from its back to its bumper, in tiles.
-CAB_LEN = {"early": 0.15, "round": 0.17, "square": 0.17, "long": 0.25, "sleeper": 0.32, "aero": 0.27, "cabover": 0.1}
+CAB_LEN = {"early": 0.15, "round": 0.17, "square": 0.17, "fifties": 0.22, "long": 0.25, "sleeper": 0.32, "aero": 0.27, "cabover": 0.1}
 # Each cab's roof, in steps, for bodies sized to it.
-CAB_TOP = {"early": 0.9, "round": 0.9, "square": 0.96, "long": 1.34, "sleeper": 1.34, "aero": 1.62, "cabover": 1.32}
+CAB_TOP = {"early": 0.9, "round": 0.9, "square": 0.96, "fifties": 1.16, "long": 1.34, "sleeper": 1.34, "aero": 1.62, "cabover": 1.32}
 
 
 def _ring(m, x, y, zc, r, w, mat, n=20):
@@ -225,12 +225,121 @@ def _early_cab(m, y0, y1, c, paint):
     return hood
 
 
-def _cab(m, y0, y1, c, paint, style):
+def _stack(m, x, y, top, c):
+    """An exhaust stack standing at x, y up to top steps, with a heat shield and its end cut on a slant."""
+    m.upright(x, y, 0.42, top, 0.0055, 0.0055, c["chrome"], segments=10)
+    m.upright(x, y, 0.9, 1.3, 0.0078, 0.0078, c["chrome"], segments=12)
+    m.rod((x, y, top - 0.02), (x, y - 0.008, top + 0.05), 0.0055, c["chrome"], segments=10)
+
+
+def _fuel_tanks(m, y0, y1, c, half=0.064):
+    """Round fuel tanks along the frame each side from y0 to y1, with a step at the front of each."""
+    zc = 0.2 + 0.024 / rig.RISE
+    with m.keep():
+        for side in (-1, 1):
+            m.tube(y0, y1, side * half, zc, 0.024, c["chrome"], segments=16)
+            for y in (y0 + 0.008, y1 - 0.008):
+                m.tube(y - 0.002, y + 0.002, side * half, zc, 0.0255, c["dark"], segments=16)
+
+
+def _long_cab(m, y0, y1, c, paint, style, era, stacks):
+    """A long-nose conventional of the Kenworth W900, Hayes or Western Star kind: a long square hood behind a tall chrome
+    grille, flat-topped fenders over the steer wheels, air cleaners on the cowl, a flat two-piece windshield, stacks
+    behind the cab ("back") or beside the doors ("front") and fuel tanks under the doors. As "sleeper", a sleeper box
+    behind, flat on top level with the cab before 1980 and raised over it after. Returns where the hood meets the cab."""
+    half = 0.075
+    top = CAB_TOP[style]
+    grille = material("grille", "#3a3836", metal=0.4, rough=0.5)
+    mats = {"paint": paint, "glass": c["glass"], "grille": grille}
+    hood = y1 - 0.16
+    hw = 0.74
+    cb = y0 + (0.07 if style == "sleeper" else 0.0)
+    # The hood runs level from the cowl on older trucks and drops a little to the grille on later ones.
+    cowl, nose = (0.88, 0.87) if era < 1980 else (0.88, 0.82)
+    if style == "sleeper" and era >= 1980:
+        back = [(cb, top, 0.01, "paint"), (cb - 0.01, 1.52, 0.025, "paint"), (y0, 1.52, 0.015, "paint")]
+    else:
+        back = [(y0, top, 0.012, "paint")]
+    shape = [(y0, 0.34, 0.01, "paint"), (hood, 0.34, 0, "paint"), (hood, 0.34, 0, "paint", hw), (y1 - 0.006, 0.34, 0.004, "paint", hw),
+             (y1 - 0.006, nose, 0.01, "paint", hw), (hood + 0.01, cowl, 0.004, "paint", hw), (hood, cowl, 0, "paint", hw), (hood, cowl, 0, "paint"),
+             (hood - 0.003, cowl + 0.04, 0.006, "glass"), (hood - 0.013, 1.27, 0.01, "paint"), (hood - 0.022, top, 0.014, "paint")] + back
+    m.shell(shape, half, mats, crown=0.04)
+    if style == "sleeper" and era < 1980:
+        for side in (-1, 1):
+            m.box(side * half - 0.0015, side * half + 0.0015, cb - 0.0015, cb + 0.0015, 0.4, top - 0.02, c["dark"])
+    # The grille: a tall chrome shell with a dark core and a bar across, near the hood's full width.
+    m.box(-0.05, 0.05, y1 - 0.008, y1 - 0.002, 0.36, nose + 0.02, c["chrome"], bevel=0.003)
+    m.box(-0.042, 0.042, y1 - 0.0025, y1 - 0.001, 0.4, nose - 0.03, grille)
+    m.box(-0.042, 0.042, y1 - 0.0024, y1 - 0.0005, (0.4 + nose) / 2 - 0.01, (0.4 + nose) / 2 + 0.01, c["chrome"])
+    # Fenders: flat-topped wings beside the hood, arched over the steer wheels and stopping behind them.
+    yw, zc = y1 - 0.058, WHEEL_R / rig.RISE
+    ro = WHEEL_R * 1.3
+    arch = [(yw + math.cos(math.radians(d)) * ro, zc + math.sin(math.radians(d)) * ro / rig.RISE, 0, "paint") for d in range(20, 161, 20)]
+    wing = [(y1 - 0.004, 0.26, 0, "paint")] + arch + [(yw - ro - 0.012, 0.26, 0, "paint"), (yw - ro - 0.012, 0.5, 0.006, "paint"),
+                                                         (y1 - 0.004, 0.53, 0.016, "paint")]
+    with m.keep():
+        for side in (-1, 1):
+            m.shell(wing, 0.016, {"paint": paint}, x=side * 0.07, cols=(-1, 1))
+            m.tube(y1 - 0.012, y1 + 0.002, side * 0.07, 0.53, 0.012, c["chrome"], segments=12)
+            m.tube(y1 + 0.001, y1 + 0.003, side * 0.07, 0.53, 0.009, c["light"], segments=12)
+    for side in (-1, 1):
+        # Air cleaners standing on the cowl each side, and the stacks.
+        m.upright(side * 0.064, hood + 0.022, 0.6, 1.0, 0.014, 0.014, c["chrome"], segments=14)
+        if stacks == "back":
+            _stack(m, side * 0.062, y0 - 0.007, 1.95, c)
+        else:
+            _stack(m, side * (half + 0.008), hood - 0.008, 1.85, c)
+    if era < 1980:
+        # A sun visor over the windshield.
+        m.box(-0.07, 0.07, hood - 0.024, hood - 0.006, top - 0.05, top - 0.02, paint, bevel=0.002)
+    _fuel_tanks(m, cb + 0.006, hood + 0.016, c)
+    for side in (-1, 1):
+        m.box(side * half - 0.001, side * half + 0.001, hood - 0.054, hood - 0.014, cowl + 0.08, top - 0.1, c["glass"])
+        if style == "sleeper" and era >= 1980:
+            m.box(side * half - 0.001, side * half + 0.001, y0 + 0.02, y0 + 0.04, 1.2, 1.32, c["glass"])
+    m.box(-0.07, 0.07, y1 - 0.004, y1 + 0.01, 0.26, 0.36, c["chrome"], bevel=0.003)
+    return hood
+
+
+def _fifties_cab(m, y0, y1, c, paint):
+    """A 1950s highway tractor of the International R or Mack B kind: a rounded hood narrower than the cab between
+    pontoon fenders, a tall grille, a two-piece windshield under a rounded roof, a stack beside the cab and a fuel tank
+    under the door."""
+    half = 0.074
+    top = CAB_TOP["fifties"]
+    grille = material("grille", "#3a3836", metal=0.4, rough=0.5)
+    mats = {"paint": paint, "glass": c["glass"], "grille": grille}
+    hood = y1 - 0.12
+    hw = 0.7
+    shape = [(y0, 0.32, 0.01, "paint"), (hood, 0.32, 0, "paint"), (hood, 0.32, 0, "paint", hw), (y1 - 0.01, 0.32, 0.012, "grille", hw),
+             (y1 - 0.002, 0.7, 0.03, "paint", hw), (hood + 0.02, 0.78, 0.03, "paint", hw), (hood, 0.79, 0, "paint", hw), (hood, 0.79, 0, "paint"),
+             (hood - 0.003, 0.82, 0.006, "glass"), (hood - 0.014, 1.04, 0.012, "paint"), (hood - 0.03, top, 0.024, "paint"), (y0, top, 0.016, "paint")]
+    outline = m.shell(shape, half, mats, crown=0.07)
+    lamps(m, outline, 0.56, 0.06, c)
+    m.box(-0.002, 0.002, hood - 0.007, hood - 0.003, 0.82, 1.04, paint)
+    for k in range(5):
+        x = -0.03 + 0.015 * k
+        m.box(x - 0.002, x + 0.002, y1 - 0.009, y1 - 0.003, 0.36, 0.66, c["chrome"])
+    for side in (-1, 1):
+        fender(m, y1 - 0.06, side, c, paint)
+        m.box(side * half - 0.001, side * half + 0.001, hood - 0.05, hood - 0.012, 0.84, top - 0.08, c["glass"])
+    _stack(m, 0.062, y0 - 0.007, 1.62, c)
+    with m.keep():
+        m.tube(y0 + 0.006, hood - 0.006, -0.064, 0.2 + 0.022 / rig.RISE, 0.022, c["chrome"], segments=16)
+    m.box(-0.07, 0.07, y1 - 0.004, y1 + 0.01, 0.26, 0.36, c["chrome"], bevel=0.003)
+    return hood
+
+
+def _cab(m, y0, y1, c, paint, style, era=1970, stacks="back"):
     """A truck's cab from y0 to its front at y1, by era: an open 1910s C-cab, a 1930s rounded hood with fenders, a squarer
-    1960s hood with a wide grille, a long highway hood with stacks (with a sleeper behind as "sleeper"), a sloped aero hood
-    with a tall roof, or a cab-over. Returns where the hood meets the cab."""
+    1960s hood with a wide grille, a 1950s highway tractor, a long highway hood (with a sleeper behind as "sleeper"), a
+    sloped aero hood with a tall roof, or a cab-over. Returns where the hood meets the cab."""
     if style == "early":
         return _early_cab(m, y0, y1, c, paint)
+    if style in ("long", "sleeper"):
+        return _long_cab(m, y0, y1, c, paint, style, era, stacks)
+    if style == "fifties":
+        return _fifties_cab(m, y0, y1, c, paint)
     half = 0.075
     grille = material("grille", "#3a3836", metal=0.4, rough=0.5)
     mats = {"paint": paint, "glass": c["glass"], "grille": grille}
@@ -258,18 +367,6 @@ def _cab(m, y0, y1, c, paint, style):
         outline = m.shell(shape, half, mats, crown=0.04)
         lamps(m, outline, 0.5, 0.052, c)
         win = (0.68, top - 0.08)
-    elif style in ("long", "sleeper"):
-        hood = y1 - 0.16
-        hw = 0.8
-        back = [(y0 + 0.07, top, 0.01, "paint"), (y0 + 0.06, 1.52, 0.025, "paint"), (y0, 1.52, 0.015, "paint")] if style == "sleeper" else [(y0, top, 0.015, "paint")]
-        shape = [(y0, 0.32, 0.01, "paint"), (hood, 0.32, 0, "paint"), (hood, 0.32, 0, "paint", hw), (y1 - 0.003, 0.32, 0.01, "grille", hw),
-                 (y1, 0.86, 0.016, "paint", hw), (hood, 0.94, 0, "paint", hw), (hood, 0.94, 0, "paint"),
-                 (hood - 0.003, 0.98, 0.006, "glass"), (hood - 0.012, 1.27, 0.012, "paint"), (hood - 0.026, top, 0.018, "paint")] + back
-        outline = m.shell(shape, half, mats, crown=0.05)
-        lamps(m, outline, 0.74, 0.055, c)
-        for side in (-1, 1):
-            m.tube_x(side * half - 0.002, side * half + 0.004, hood - 0.03, 0.42, 0.02, c["chrome"])
-            m.rod((side * (half + 0.008), hood - 0.008, 0.6), (side * (half + 0.008), hood - 0.008, 1.75), 0.0055, c["chrome"])
     elif style == "aero":
         hood = y1 - 0.1
         hw = 0.9
@@ -280,8 +377,9 @@ def _cab(m, y0, y1, c, paint, style):
         outline = m.shell(shape, half, mats, crown=0.06)
         lamps(m, outline, 0.52, 0.058, c)
         for side in (-1, 1):
-            # Fairings between the steer wheels and the cab's back.
-            m.box(side * half - 0.003, side * half + 0.001, y0 + 0.01, hood - 0.07, 0.3, 0.62, paint, bevel=0.004)
+            # Fairings over the tanks between the steer wheels and the cab's back, and extenders closing the gap to the trailer.
+            m.box(side * half - 0.003, side * half + 0.001, y0 + 0.01, hood - 0.07, 0.26, 0.62, paint, bevel=0.004)
+            m.box(side * half - 0.003, side * half, y0 - 0.011, y0 + 0.004, 0.6, top - 0.1, paint, bevel=0.002)
     else:
         hood = y1 - 0.005
         shape = [(y0, 0.32, 0.01, "paint"), (y1 - 0.004, 0.32, 0.015, "grille", 0.92), (y1, 0.64, 0.006, "paint", 0.92),
@@ -292,19 +390,23 @@ def _cab(m, y0, y1, c, paint, style):
         # A wind fairing on the roof, sloping up from the windshield.
         m.shell([(y0 + 0.004, 1.3, 0, "paint"), (y1 - 0.045, 1.3, 0.01, "paint"), (y0 + 0.012, 1.46, 0.02, "paint"), (y0 + 0.004, 1.45, 0, "paint")],
                 half - 0.006, {"paint": paint}, crown=0.05)
-    if style in ("round", "square", "long"):
+    if style in ("round", "square"):
         for side in (-1, 1):
             fender(m, y1 - 0.045, side, c, paint)
     door = hood - 0.012 if style != "cabover" else y0 + 0.05
     for side in (-1, 1):
         m.box(side * half - 0.001, side * half + 0.001, door - 0.04, door, win[0] if style != "cabover" else 0.82, win[1], c["glass"])
-    m.box(-0.068, 0.068, y1 - 0.004, y1 + 0.01, 0.28, 0.36, c["chrome"], bevel=0.003)
+    if style == "aero":
+        # A bumper moulded in the body colour, wrapping round the corners.
+        m.box(-0.074, 0.074, y1 - 0.01, y1 + 0.006, 0.24, 0.4, paint, bevel=0.007)
+    else:
+        m.box(-0.068, 0.068, y1 - 0.004, y1 + 0.01, 0.28, 0.36, c["chrome"], bevel=0.003)
     return hood
 
 
 # Each kind's paint, the load's colour, and its body's colour where that differs.
 PAINTS = {"mail": "#b8322a", "stake": "#6a4a2a", "flatbed": "#2a5a8a", "dump": "#d8a020", "tank": "#d8d8d4", "log": "#3a5a2a",
-          "cattle": "#8a2a22", "semi": "#c83a2a", "plow": "#e07a20"}
+          "cattle": "#8a2a22", "plow": "#e07a20"}
 
 
 def rack(m, b0, b1, z0, top, boards, mat, post):
@@ -324,24 +426,43 @@ def rack(m, b0, b1, z0, top, boards, mat, post):
             m.box(side * 0.079 - 0.004, side * 0.079 + 0.004, y - 0.004, y + 0.004, z0 - 0.06, top + 0.02, post)
 
 
-def truck(m, L, kind, cab="round", gen=1, plow="wedge"):
-    """A truck: a cab of its era and a body for its load, sized to the cab's roof. Later generations run more axles.
-    A plow truck's plow is a V plow ("wedge") or a one-way plow with a side wing ("wing")."""
+def tank(m, y0, y1, z0, z1, half, mat, domes, c, walkway=False):
+    """A tank of elliptical section from y0 to y1 with dished heads, z0 to z1 steps and half tiles each side of the
+    middle, with domes along the top and a walkway between spill rails if asked."""
+    zc, hz = (z0 + z1) / 2, (z1 - z0) / 2
+    ring = [(math.cos(2 * math.pi * k / 24), math.sin(2 * math.pi * k / 24)) for k in range(24)]
+    heads = [(0.0, 0.5), (0.004, 0.8), (0.009, 0.93), (0.016, 1.0)]
+    stations = [(y0 + d, f) for d, f in heads] + [(y1 - d, f) for d, f in reversed(heads)]
+    m.loft([(y, [(half * f * u, zc + hz * f * v) for u, v in ring]) for y, f in stations], {"paint": mat})
+    for k in range(domes):
+        y = y0 + (y1 - y0) * (k + 0.5) / domes
+        m.upright(0.0, y, z1 - 0.06, z1 + 0.05, 0.017, 0.015, c["dark"], segments=14)
+    if walkway:
+        m.box(-0.014, 0.014, y0 + 0.02, y1 - 0.02, z1 - 0.02, z1 + 0.01, c["hub"])
+        for side in (-1, 1):
+            m.rod((side * 0.03, y0 + 0.02, z1 + 0.07), (side * 0.03, y1 - 0.02, z1 + 0.07), 0.0018, c["hub"])
+            for k in range(4):
+                y = y0 + 0.02 + (y1 - y0 - 0.04) * k / 3
+                m.rod((side * 0.03, y, z1 - 0.03), (side * 0.03, y, z1 + 0.07), 0.0016, c["hub"])
+
+
+def truck(m, L, kind, cab="round", gen=1, plow="wedge", lifts=0, era=1970):
+    """A truck: a cab of its era and a body for its load, sized to the cab's roof. Later generations run more axles, and
+    lifts more again, bunched just ahead of the drive. A plow truck's plow is a V plow ("wedge") or a one-way plow with a
+    side wing ("wing")."""
     c = common()
     paint = material(f"{kind} {cab} truck", PAINTS[kind], rough=0.45, clearcoat=0.2)
     wood = material("truck boards", "#8a6a44", rough=0.85)
     a0, a1 = -L / 2 + 0.01, L / 2 - 0.01
     cab0 = a1 - CAB_LEN[cab]
     top = CAB_TOP[cab]
-    if kind == "semi":
-        wheels(m, [a1 - 0.06, cab0 - 0.04, a0 + 0.06, a0 + 0.12], c)
+    if lifts:
+        rear = [a0 + 0.07 + 0.045 * k for k in range(2 + lifts)]
     else:
         rear = [a0 + 0.07] + ([a0 + 0.13] if L > 0.45 or gen > 1 else [])
-        if gen > 2:
-            rear += [cab0 - 0.04]
-        (spoked if cab == "early" else wheels)(m, [a1 - 0.055] + rear, c)
+    (spoked if cab == "early" else wheels)(m, [a1 - 0.055] + rear, c)
     m.box(-0.06, 0.06, a0, a1, 0.25, 0.35, c["dark"])
-    _cab(m, cab0, a1 - (0.005 if cab == "cabover" else 0.0), c, paint, cab)
+    _cab(m, cab0, a1 - (0.005 if cab == "cabover" else 0.0), c, paint, cab, era, "front")
     if gen == 3:
         guard(m, a1, c)
     b0, b1 = a0 + 0.005, cab0 - 0.012
@@ -399,14 +520,7 @@ def truck(m, L, kind, cab="round", gen=1, plow="wedge"):
             t0 = b0 + 0.035
             m.box(-0.074, 0.074, b0, t0 - 0.004, 0.4, top - 0.18, material("hose cabinet", "#8a8e92", metal=0.4, rough=0.45), bevel=0.004)
         m.box(-0.05, 0.05, t0 + 0.01, b1 - 0.01, 0.36, 0.46, c["dark"])
-        m.shell([(t0, 0.44, 0.035, "paint"), (b1, 0.44, 0.035, "paint"), (b1, top - 0.02, 0.035, "paint"), (t0, top - 0.02, 0.035, "paint")],
-                0.072 if gen == 1 else 0.076, {"paint": paint}, crown=0.14)
-        n = 2 if gen == 1 else 3
-        for k in range(n):
-            y = t0 + (b1 - t0) * (k + 0.5) / n
-            m.upright(0.0, y, top - 0.06, top + 0.03, 0.016, 0.014, c["dark"])
-        if gen > 1:
-            m.box(-0.012, 0.012, t0 + 0.02, b1 - 0.02, top - 0.04, top - 0.01, c["hub"])
+        tank(m, t0, b1, 0.42, top - 0.02, 0.072 if gen == 1 else 0.076, paint, 2 if gen == 1 else 3, c, walkway=gen > 1)
     elif kind == "log":
         # Bunks with stakes to the cab's roof, and a few big logs.
         for y in (b0 + 0.02, b1 - 0.02):
@@ -421,14 +535,6 @@ def truck(m, L, kind, cab="round", gen=1, plow="wedge"):
     elif kind == "cattle":
         m.box(-0.078, 0.078, b0, b1, 0.4, 0.45, wood)
         rack(m, b0, b1, 0.45, top + 0.02, 4, paint, material("rack posts", "#5a2420", rough=0.6))
-    elif kind == "semi":
-        # The trailer, its front over the tractor's fifth wheel.
-        t0, t1 = a0, cab0 - 0.012
-        m.box(-0.078, 0.078, t0, t1, 0.42, 1.35, material("trailer", "#e8e8e4", rough=0.4), bevel=0.006)
-        for side in (-1, 1):
-            m.box(side * 0.0782 - 0.001, side * 0.0782 + 0.001, t0 + 0.01, t1 - 0.01, 0.48, 0.52, paint)
-        m.text(LETTERS, 0.0792, (t0 + t1) / 2, 1.05, 0.03, paint, 1)
-
 
 def _blade(m, p0, p1, zb, h0, h1, mats):
     """A curved mouldboard seen from above running from p0 to p1, each (x, y), its hollow face to the left of that
@@ -492,58 +598,91 @@ def _plow(m, a0, a1, cab0, top, style, c):
     m.upright(0.0, a0 - 0.006, 0.18, 0.21, 0.016, 0.016, iron, segments=12)
 
 
-def tractor(m, L, trailer, cab, paint_hex, bumper=False):
+# Trailer axles by load: one group under a single trailer, the lead's and the pup's for a B-train.
+TRAILER_AXLES = {"van": (3,), "logs": (3,), "cattle": (2,), "tank": (3, 2), "hopper": (3, 2)}
+# Between axles in a group, in tiles.
+AXLE_GAP = 0.047
+
+
+def tractor(m, L, trailer, cab, paint_hex, bumper=False, era=1970, drive=2, axles=None, stacks="back"):
     """A highway tractor of its era pulling a trailer: a van, a B-train of tanks or grain hoppers, a cattle liner, or long
-    logs on a pole trailer. bumper adds a moose bumper."""
+    logs on a pole trailer. bumper adds a moose bumper. drive is the tractor's driving axles; axles the trailer's, one
+    count per trailer, by default TRAILER_AXLES. A B-train's lead trailer runs back on its axles to a fifth wheel the
+    pup's front sits on."""
     c = common()
     paint = material(f"{trailer} {cab} tractor", paint_hex, rough=0.4, clearcoat=0.3)
     a0, a1 = -L / 2 + 0.01, L / 2 - 0.01
     cab0 = a1 - CAB_LEN[cab]
-    drive = [cab0 - 0.03, cab0 - 0.075]
-    rear = [a0 + 0.06, a0 + 0.11] + ([a0 + 0.16] if trailer in ("van", "logs") else [])
-    wheels(m, [a1 - 0.06] + drive + rear, c)
-    m.box(-0.06, 0.06, cab0 - 0.11, a1, 0.25, 0.35, c["dark"])
-    _cab(m, cab0, a1, c, paint, cab)
+    axles = axles or TRAILER_AXLES[trailer]
+    drives = [cab0 - 0.04] if drive == 1 else [cab0 - 0.03 - AXLE_GAP * k for k in range(drive)]
+    rear = [a0 + 0.06 + AXLE_GAP * k for k in range(axles[-1])]
+    lead = [rear[-1] + 0.07 + AXLE_GAP * k for k in range(axles[0])] if len(axles) > 1 else []
+    wheels(m, [a1 - 0.06] + drives + rear + lead, c)
+    m.box(-0.06, 0.06, drives[-1] - 0.035, a1, 0.25, 0.35, c["dark"])
+    _cab(m, cab0, a1, c, paint, cab, era, stacks)
     if bumper:
         guard(m, a1, c, 0.95 if cab != "aero" else 0.75)
+    # The fifth wheel over the drive.
+    fifth = sum(drives) / len(drives)
+    if trailer != "logs":
+        m.box(-0.05, 0.05, fifth - 0.025, fifth + 0.025, 0.35, 0.41, c["dark"], bevel=0.004)
     t0, t1 = a0, cab0 - 0.012
+    if lead:
+        # Where the pup's front sits on the lead's tail, over the lead's middle axle.
+        j = lead[len(lead) // 2] + 0.02
+        m.box(-0.05, 0.05, lead[0] - 0.03, j + 0.01, 0.34, 0.42, c["dark"])
+        m.box(-0.05, 0.05, j - 0.04, j - 0.004, 0.42, 0.46, c["dark"], bevel=0.004)
+        bodies = ((j + 0.006, t1), (t0, j - 0.006))
+    else:
+        bodies = ((t0, t1),)
     alu = material("aluminium", "#c4c8cc", metal=0.7, rough=0.3)
     if trailer == "van":
-        m.box(-0.078, 0.078, t0, t1, 0.42, 1.55, material("trailer", "#e8e8e4", rough=0.4), bevel=0.006)
-        for side in (-1, 1):
-            m.box(side * 0.0782 - 0.001, side * 0.0782 + 0.001, t0 + 0.01, t1 - 0.01, 0.5, 0.56, paint)
-            if cab == "aero":
-                m.box(side * 0.075 - 0.002, side * 0.075 + 0.002, t0 + 0.2, t1 - 0.12, 0.28, 0.42, material("skirt", "#5a5e62", rough=0.5))
-        m.text(LETTERS, 0.0792, (t0 + t1) / 2, 1.1, 0.034, paint, 1)
+        if cab == "fifties":
+            # A 1950s riveted aluminium van with ribs down its sides, rounded at the front, on landing legs.
+            m.shell([(t0, 0.42, 0.004, "paint"), (t1, 0.42, 0.004, "paint"), (t1, 1.38, 0.03, "paint"), (t0, 1.38, 0.006, "paint")],
+                    0.078, {"paint": alu}, crown=0.04)
+            for k in range(1, 12):
+                y = t0 + (t1 - t0) * k / 12
+                for side in (-1, 1):
+                    m.box(side * 0.078 - 0.0012, side * 0.078 + 0.0012, y - 0.0015, y + 0.0015, 0.44, 1.34, alu)
+            for side in (-1, 1):
+                m.box(side * 0.0782 - 0.001, side * 0.0782 + 0.001, t0 + 0.01, t1 - 0.03, 0.5, 0.55, paint)
+                m.box(side * 0.05 - 0.003, side * 0.05 + 0.003, t1 - 0.12, t1 - 0.114, 0.12, 0.42, c["dark"])
+            m.text(LETTERS, 0.0792, (t0 + t1) / 2, 1.0, 0.03, paint, 1)
+        else:
+            m.box(-0.078, 0.078, t0, t1, 0.42, 1.55, material("trailer", "#e8e8e4", rough=0.4), bevel=0.006)
+            for side in (-1, 1):
+                m.box(side * 0.0782 - 0.001, side * 0.0782 + 0.001, t0 + 0.01, t1 - 0.01, 0.5, 0.56, paint)
+                if cab == "aero":
+                    m.box(side * 0.075 - 0.002, side * 0.075 + 0.002, t0 + 0.2, t1 - 0.12, 0.28, 0.42, material("skirt", "#5a5e62", rough=0.5))
+            m.text(LETTERS, 0.0792, (t0 + t1) / 2, 1.1, 0.034, paint, 1)
     elif trailer == "tank":
-        # Two tanks, a lead trailer and a pup behind it on one hitch.
-        mid = (t0 + t1) / 2
-        for y0, y1 in ((t0, mid - 0.012), (mid + 0.012, t1)):
-            m.shell([(y0, 0.45, 0.04, "paint"), (y1, 0.45, 0.04, "paint"), (y1, 1.2, 0.04, "paint"), (y0, 1.2, 0.04, "paint")], 0.076,
-                    {"paint": alu}, crown=0.15)
-            m.box(-0.012, 0.012, y0 + 0.02, y1 - 0.02, 1.2, 1.25, c["dark"])
-        wheels(m, [mid + 0.04, mid + 0.085], c)
+        # Smooth elliptical tanks, lower than a van, each on a frame with a walkway and three domes on top.
+        for y0, y1 in bodies:
+            m.box(-0.05, 0.05, y0 + 0.01, y1 - 0.01, 0.36, 0.5, c["dark"])
+            tank(m, y0, y1, 0.48, 1.24, 0.077, alu, 3, c, walkway=True)
     elif trailer == "hopper":
         # A Super B of grain hoppers: two trailers, each with a pair of hoppers under a tarp.
-        mid = (t0 + t1) / 2
         tarp = material("hopper tarp", "#3a4a5a", rough=0.7)
-        for y0, y1 in ((t0, mid - 0.012), (mid + 0.012, t1)):
+        for y0, y1 in bodies:
             m.shell([(y0, 0.75, 0.006, "paint"), (y0 + 0.03, 0.4, 0.004, "paint"), ((y0 + y1) / 2 - 0.02, 0.4, 0.004, "paint"),
                      ((y0 + y1) / 2, 0.62, 0, "paint"), ((y0 + y1) / 2 + 0.02, 0.4, 0.004, "paint"), (y1 - 0.03, 0.4, 0.004, "paint"),
                      (y1, 0.75, 0.006, "paint"), (y1, 1.35, 0.008, "paint"), (y0, 1.35, 0.008, "paint")], 0.078, {"paint": alu})
             m.shell([(y0 + 0.005, 1.34, 0, "paint"), (y1 - 0.005, 1.34, 0, "paint"), (y1 - 0.01, 1.42, 0.01, "paint"), (y0 + 0.01, 1.42, 0.01, "paint")],
                     0.074, {"paint": tarp}, crown=0.05)
-        wheels(m, [mid + 0.04, mid + 0.085], c)
     elif trailer == "cattle":
-        # A cattle liner: aluminium with a dropped belly between the axles, rows of air slots down its sides.
-        m.shell([(t0, 0.5, 0.01, "paint"), (t0 + 0.18, 0.5, 0, "paint"), (t0 + 0.2, 0.32, 0.01, "paint"), (t1 - 0.1, 0.32, 0.01, "paint"),
-                 (t1 - 0.08, 0.5, 0, "paint"), (t1, 0.5, 0.01, "paint"), (t1, 1.5, 0.012, "paint"), (t0, 1.5, 0.012, "paint")],
+        # A cattle liner: aluminium with a raised gooseneck over the fifth wheel, a dropped belly between it and the axles,
+        # and rows of air slots down its sides.
+        m.shell([(t0, 0.5, 0.01, "paint"), (t0 + 0.18, 0.5, 0, "paint"), (t0 + 0.2, 0.32, 0.01, "paint"), (t1 - 0.11, 0.32, 0.01, "paint"),
+                 (t1 - 0.09, 0.62, 0, "paint"), (t1, 0.62, 0.01, "paint"), (t1, 1.5, 0.012, "paint"), (t0, 1.5, 0.012, "paint")],
                 0.078, {"paint": alu})
         slot = material("air slots", "#2a2a2c", rough=0.8)
         for side in (-1, 1):
-            for z in (0.62, 0.86, 1.1, 1.32):
+            for z in (0.86, 1.1, 1.32):
                 m.box(side * 0.078 - 0.001, side * 0.078 + 0.001, t0 + 0.02, t1 - 0.02, z, z + 0.05, slot)
-            m.box(side * 0.078 - 0.0015, side * 0.078 + 0.0015, t0 + 0.2, t1 - 0.1, 0.36, 0.44, paint)
+            m.box(side * 0.078 - 0.001, side * 0.078 + 0.001, t0 + 0.02, t0 + 0.17, 0.62, 0.67, slot)
+            m.box(side * 0.078 - 0.001, side * 0.078 + 0.001, t0 + 0.21, t1 - 0.12, 0.5, 0.55, slot)
+            m.box(side * 0.078 - 0.0015, side * 0.078 + 0.0015, t0 + 0.2, t1 - 0.11, 0.36, 0.44, paint)
     elif trailer == "logs":
         # Bunks on the tractor and the pole trailer, with long logs between.
         for y in (cab0 - 0.03, cab0 - 0.075, a0 + 0.08, a0 + 0.14):
@@ -554,6 +693,12 @@ def tractor(m, L, trailer, cab, paint_hex, bumper=False):
         bark = material("logs", "#6a4a30", rough=0.95)
         for x, z in ((-0.045, 0.6), (0.0, 0.6), (0.045, 0.6), (-0.022, 0.86), (0.022, 0.86), (-0.045, 1.1), (0.0, 1.12), (0.045, 1.1)):
             m.tube(a0 + 0.02, cab0 - 0.015, x, z, 0.023, bark, segments=10)
+        # A headache rack behind the cab, over its roof, to stop the logs shifting forward.
+        y = cab0 - 0.009
+        for x in (-0.066, -0.022, 0.022, 0.066):
+            m.box(x - 0.003, x + 0.003, y - 0.003, y + 0.003, 0.36, 1.5, c["dark"])
+        for z in (0.95, 1.22, 1.48):
+            m.box(-0.07, 0.07, y - 0.004, y + 0.004, z - 0.025, z + 0.025, c["dark"], bevel=0.002)
 
 
 def van(m, L, era):
