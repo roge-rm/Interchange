@@ -303,12 +303,25 @@ def engine(m, L, lead, drive, trail, r_drive, r_lead, boiler_r, stack, domes, sc
                 m.box(-0.1 + 0.03 * (1 - f), 0.1 - 0.03 * (1 - f), y - 0.002, y + 0.004, z - 0.012, z, c["iron"])
 
 
-def tender(m, L, scheme, small=False, plain=False):
-    """A tender L tiles long; plain is the earliest kind, a low wooden box with the coal showing over its sides."""
+def tender(m, L, scheme, style="box", top=None):
+    """A tender L tiles long, its front (the end at the engine) at +y.
+
+    style: "early" (four wheels, low plank sides, a water barrel and firewood, the 1830s kind), "plain" (four wheels, a low
+    wooden box with the coal showing over its sides), "box" (a tank on two trucks with flared coal boards), "long" (a
+    bigger tank on two three-axle trucks, the coal bunker raised at the front), "vanderbilt" (a round tank behind a coal
+    bunker, on three-axle trucks, as CN's) or "oil" (a long tank with an oil bunker in place of the coal). top is the
+    tank's top in steps over the rail once lowered, to sit level with the engine's boiler top; heights here are given
+    as they end up and handed to m through m.fixed, as in engine()."""
     c = colours(scheme)
+    fz = m.fixed
+    rise = parts.rig.RISE
     a0, a1 = -L / 2 + 0.01, L / 2 - 0.01
+    # The deck as drawn (where the trucks' bolsters stop) and where it ends up.
+    deck, deck_f = 0.62, m.z(0.62)
+    coal = material("coal", "#141414", rough=0.9)
+    body = c["cab"] if scheme == "victorian" else c["paint"]
     underframe(m, a0, a1, c)
-    if small:
+    if style in ("early", "plain"):
         for side in (-1, 1):
             for y in (a0 + 0.045, a1 - 0.045):
                 m.wheel(y, side, 0.034, (c["steel"], c["wheel"], c["steel"]), spokes=8)
@@ -316,23 +329,149 @@ def tender(m, L, scheme, small=False, plain=False):
                 m.box(side * 0.112 - 0.008, side * 0.112 + 0.008, y - 0.03, y + 0.03, 0.12, 0.62, c["iron"], bevel=0.002)
                 m.box(side * 0.122 - 0.006, side * 0.122 + 0.006, y - 0.014, y + 0.014, 0.12, 0.26, material("journal", "#5a5c60", metal=0.4, rough=0.5))
     else:
-        for y in (a0 + 0.08, a1 - 0.08):
-            truck(m, y, c)
-    if plain:
+        axles = 2 if style == "box" else 3
+        inset = 0.08 if axles == 2 else 0.125
+        for y in (a0 + inset, a1 - inset):
+            truck(m, y, c, axles=axles)
+    planks = material("tender planks", "#6e5438", rough=0.8)
+    if style == "plain":
         h1 = 0.92
-        m.box(-0.122, 0.122, a0, a1, 0.62, h1, material("tender planks", "#6e5438", rough=0.8), bevel=0.003)
+        m.box(-0.122, 0.122, a0, a1, 0.62, h1, planks, bevel=0.003)
         for y in (a0 + 0.004, a1 - 0.004):
             for side in (-1, 1):
                 m.box(side * 0.124 - 0.004, side * 0.124 + 0.004, y - 0.006, y + 0.006, 0.6, h1 + 0.01, c["iron"])
-        m.box(-0.105, 0.105, a0 + 0.02, a1 - 0.03, h1 - 0.05, h1 + 0.1, material("coal", "#141414", rough=0.9), bevel=0.02)
+        m.box(-0.105, 0.105, a0 + 0.02, a1 - 0.03, h1 - 0.05, h1 + 0.1, coal, bevel=0.02)
         return
-    h1 = 1.15 if small else 1.35
-    m.box(-0.122, 0.122, a0, a1, 0.62, h1, c["cab"] if scheme == "victorian" else c["paint"], bevel=0.003)
-    # Coal boards flaring out at the top, and the coal heaped in them.
-    m.box(-0.13, 0.13, a0 + 0.005, a1 - 0.08, h1, h1 + 0.15, c["iron"], bevel=0.002)
-    m.box(-0.105, 0.105, a0 + 0.02, a1 - 0.1, h1 + 0.1, h1 + 0.32, material("coal", "#141414", rough=0.9), bevel=0.02)
+    if style == "early":
+        # Low plank sides on an open deck, iron straps at the corners.
+        side_top = fz(top or 0.72)
+        m.box(-0.118, 0.118, a0, a1, deck, fz(deck_f + 0.03), planks)
+        for side in (-1, 1):
+            m.box(side * 0.11, side * 0.122, a0, a1, deck, side_top, planks, bevel=0.002)
+            for y in (a0 + 0.006, a1 - 0.006):
+                m.box(side * 0.124 - 0.004, side * 0.124 + 0.004, y - 0.006, y + 0.006, deck - 0.02, side_top + 0.01, c["iron"])
+        for y0, y1 in ((a0, a0 + 0.012), (a1 - 0.012, a1)):
+            m.box(-0.122, 0.122, y0, y1, deck, side_top, planks, bevel=0.002)
+        # The water barrel lying along the back half on two chocks, with its hoops.
+        r = 0.052
+        bz_f = deck_f + 0.035 + r / rise
+        bz, br = fz(bz_f), r / m.k(fz(bz_f))
+        y0, y1 = a0 + 0.02, a0 + 0.02 + L * 0.5
+        staves = material("barrel staves", "#8a6440", rough=0.7)
+        m.tube(y0, y1, 0, bz, br, staves)
+        for f in (0.08, 0.5, 0.92):
+            y = y0 + (y1 - y0) * f
+            m.tube(y - 0.004, y + 0.004, 0, bz, br * 1.04, c["iron"], cap=False)
+        for y in (y0 + 0.03, y1 - 0.03):
+            m.box(-0.05, 0.05, y - 0.01, y + 0.01, deck, fz(deck_f + 0.06), c["iron"])
+        # Firewood stacked across the front.
+        wood = material("firewood", "#5a4128", rough=0.9)
+        lr = 0.011
+        for row in range(3):
+            z = fz(deck_f + 0.03 + (2 * row + 1) * lr / rise)
+            n = 6 - row
+            for k in range(n):
+                x = (k - (n - 1) / 2) * 0.034
+                m.tube(y1 + 0.02, a1 - 0.02, x, z, lr / m.k(z), wood, segments=8)
+        return
+    top_f = top or 1.1
+    tz = fz(top_f)
+    if style == "vanderbilt":
+        # A deck plate over the frame, the coal bunker at the front and the round tank behind it.
+        m.box(-0.124, 0.124, a0, a1, 0.62, fz(deck_f + 0.03), c["iron"], bevel=0.002)
+        bunker = a1 - L * 0.34
+        r = 0.088
+        cz_f = top_f - r / rise
+        cz, cr = fz(cz_f), r / m.k(fz(cz_f))
+        m.tube(a0 + 0.012, bunker + 0.01, 0, cz, cr, body)
+        # A dished end at the back, and hoops along the tank.
+        m.tube(a0 + 0.004, a0 + 0.012, 0, cz, cr * 0.93, body)
+        for k in range(1, 4):
+            y = a0 + 0.012 + (bunker - a0) * k / 4
+            m.tube(y - 0.003, y + 0.003, 0, cz, cr * 1.02, c["iron"], cap=False)
+        m.upright(0, a0 + 0.06, fz(top_f - 0.02), fz(top_f + 0.04), 0.022, 0.022, c["iron"])
+        # Saddles from the deck up under the tank.
+        for y in (a0 + 0.04, (a0 + bunker) / 2, bunker - 0.02):
+            m.box(-0.07, 0.07, y - 0.008, y + 0.008, fz(deck_f + 0.03), fz(cz_f - r / rise * 0.6), c["iron"])
+        m.box(-0.122, 0.122, bunker, a1, deck, tz, body, bevel=0.004)
+        boards(m, bunker + 0.004, a1 - 0.01, top_f, c)
+        heap(m, bunker + 0.015, a1 - 0.03, top_f - 0.02, top_f + 0.22, coal)
+        for side in (-1, 1):
+            m.text(LETTERS, side * (r + 0.002), (a0 + bunker) / 2, cz, 0.045, c["letters"], side)
+        return
+    # A tank with its top edges rounded, along the whole tender.
+    rr = 0.016
+    ring = [(0.122, deck)]
+    for k in range(5):
+        a = math.pi / 2 * k / 4
+        ring.append((0.122 - rr + rr * math.cos(a), fz(top_f - rr / rise + rr / rise * math.sin(a))))
+    ring += [(-x, z) for x, z in reversed(ring)]
+    m.loft([(a0, ring), (a1, ring)], {"body": body}, sharp=50)
+    m.box(-0.126, 0.126, a0 - 0.002, a1 + 0.002, deck - 0.05, deck + 0.005, c["iron"], bevel=0.002)
+    if style == "box":
+        # Coal boards flaring out over the front two thirds, the coal heaped in them, a water hatch behind.
+        c0 = a0 + L * 0.36
+        boards(m, c0, a1 - 0.01, top_f, c)
+        heap(m, c0 + 0.015, a1 - 0.04, top_f - 0.02, top_f + 0.25, coal)
+        m.upright(0, a0 + (c0 - a0) * 0.45, tz - 0.02, fz(top_f + 0.04), 0.022, 0.022, c["iron"])
+    elif style == "long":
+        # The coal bunker raised over the front half, its sides sloping down at the back to the tank top.
+        c0 = a0 + L * 0.42
+        hi = fz(top_f + 0.11)
+        for side in (-1, 1):
+            x0, x1 = side * 0.112, side * 0.123
+            m.wedge([(x0, c0, tz - 0.01), (x1, c0, tz - 0.01), (x1, a1 - 0.006, tz - 0.01), (x0, a1 - 0.006, tz - 0.01)],
+                    [(x0, c0 + 0.05, hi), (x1, c0 + 0.05, hi), (x1, a1 - 0.006, hi), (x0, a1 - 0.006, hi)], body)
+        m.wedge([(-0.112, c0, tz - 0.01), (0.112, c0, tz - 0.01), (0.112, c0 + 0.05, tz - 0.01), (-0.112, c0 + 0.05, tz - 0.01)],
+                [(-0.112, c0 + 0.05, hi), (0.112, c0 + 0.05, hi), (0.112, c0 + 0.06, hi), (-0.112, c0 + 0.06, hi)], body)
+        heap(m, c0 + 0.05, a1 - 0.03, top_f, top_f + 0.22, coal)
+        m.upright(0, a0 + (c0 - a0) * 0.4, tz - 0.02, fz(top_f + 0.04), 0.024, 0.024, c["iron"])
+    else:
+        # Oil: a raised bunker at the front with its filler, a water hatch at the back, no coal.
+        o0 = a0 + L * 0.5
+        hi = top_f + 0.08
+        ring2 = [(0.112, tz - 0.01)]
+        for k in range(5):
+            a = math.pi / 2 * k / 4
+            ring2.append((0.112 - rr + rr * math.cos(a), fz(hi - rr / rise + rr / rise * math.sin(a))))
+        ring2 += [(-x, z) for x, z in reversed(ring2)]
+        m.loft([(o0, ring2), (a1 - 0.012, ring2)], {"body": body}, sharp=50)
+        m.upright(0, (o0 + a1) / 2, fz(hi - 0.02), fz(hi + 0.04), 0.026, 0.026, c["iron"])
+        m.upright(0, a0 + (o0 - a0) * 0.4, tz - 0.02, fz(top_f + 0.04), 0.024, 0.024, c["iron"])
+    # A ladder up the back.
+    for x in (-0.03, 0.03):
+        m.rod((x, a0 - 0.004, deck), (x, a0 - 0.004, tz), 0.003, c["steel"])
     for side in (-1, 1):
-        m.text(LETTERS, side * 0.1232, 0, (0.62 + h1) / 2, 0.05, c["letters"], side)
+        m.text(LETTERS, side * 0.1232, 0, (deck + tz) / 2, 0.05, c["letters"], side)
+
+
+def boards(m, y0, y1, top_f, c):
+    """Coal boards flaring out from the tank's sides at top_f steps, from y0 to y1 along the tender."""
+    fz = m.fixed
+    lo, hi = fz(top_f - 0.02), fz(top_f + 0.1)
+    for side in (-1, 1):
+        x0, x1 = side * 0.112, side * 0.122
+        m.wedge([(x0, y0, lo), (x1, y0, lo), (x1, y1, lo), (x0, y1, lo)],
+                [(x0 + side * 0.012, y0, hi), (x1 + side * 0.012, y0, hi), (x1 + side * 0.012, y1, hi), (x0 + side * 0.012, y1, hi)], c["iron"])
+    m.wedge([(-0.112, y0, lo), (0.112, y0, lo), (0.112, y0 + 0.01, lo), (-0.112, y0 + 0.01, lo)],
+            [(-0.124, y0, hi), (0.124, y0, hi), (0.124, y0 + 0.01, hi), (-0.124, y0 + 0.01, hi)], c["iron"])
+
+
+def heap(m, y0, y1, z0_f, z1_f, coal):
+    """A heap of coal from y0 to y1 along the tender, its foot at z0_f and crown at z1_f steps, lower at its ends."""
+    fz = m.fixed
+    half = 0.11
+
+    def ring(h, w):
+        pts = [(half * w, fz(z0_f))]
+        for k in range(1, 8):
+            x = half * w * (1 - 2 * k / 8)
+            pts.append((x, fz(z0_f + h * (1 - (x / (half * w)) ** 2) ** 0.6)))
+        pts.append((-half * w, fz(z0_f)))
+        return pts
+
+    h = z1_f - z0_f
+    m.loft([(y0, ring(h * 0.3, 0.8)), (y0 + 0.04, ring(h, 1.0)), (y1 - 0.04, ring(h, 1.0)), (y1, ring(h * 0.3, 0.8))], {"coal": coal}, sharp=70)
 
 
 def underframe(m, a0, a1, c, deck=0.62):
@@ -343,14 +482,16 @@ def underframe(m, a0, a1, c, deck=0.62):
         m.box(side * 0.104, side * 0.121, a0, a1, deck - 0.14, deck, c["iron"], bevel=0.002)
 
 
-def truck(m, y, c, r=0.036, top=0.62):
-    """A two-axle arch-bar truck at y along the model, with the body bolster over it up to [top], where the body sits."""
+def truck(m, y, c, r=0.036, top=0.62, axles=2):
+    """An arch-bar truck of two or three axles at y along the model, with the body bolster over it up to [top], where the body sits."""
     zc = r / 0.2041
+    dys = (-0.045, 0.045) if axles == 2 else (-0.078, 0.0, 0.078)
+    span = 0.075 if axles == 2 else 0.11
     m.box(-0.11, 0.11, y - 0.03, y + 0.03, zc * 2.0, top, c["iron"], bevel=0.002)
     for side in (-1, 1):
-        for dy in (-0.045, 0.045):
+        for dy in dys:
             m.wheel(y + dy, side, r, (c["steel"], material("wheel dark", "#222224", rough=0.6), c["steel"]), spokes=0)
-        m.box(side * 0.111, side * 0.121, y - 0.075, y + 0.075, zc * 0.6, zc * 2.4, c["iron"], bevel=0.002)
-        for dy in (-0.045, 0.045):
+        m.box(side * 0.111, side * 0.121, y - span, y + span, zc * 0.6, zc * 2.4, c["iron"], bevel=0.002)
+        for dy in dys:
             m.box(side * 0.121, side * 0.127, y + dy - 0.013, y + dy + 0.013, zc * 0.65, zc * 1.4, material("journal", "#5a5c60", metal=0.4, rough=0.5))
     m.box(-0.111, 0.111, y - 0.016, y + 0.016, zc * 1.9, zc * 2.6, c["iron"])
