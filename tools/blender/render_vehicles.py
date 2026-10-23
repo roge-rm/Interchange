@@ -108,7 +108,7 @@ MODELS = {
     "tandem_dump": (7, lambda m: roadcars.truck(m, L(7), "dump", "square", 2)),
     "quad_dump": (8, lambda m: roadcars.truck(m, L(8), "dump", "long", 3)),
     "fuel_truck": (7, lambda m: roadcars.truck(m, L(7), "tank", "square", 2)),
-    "tandem_plow": (7, lambda m: roadcars.truck(m, L(7), "plow", "square", 2)),
+    "tandem_plow": (7, lambda m: roadcars.truck(m, L(7), "plow", "square", 2, plow="wing")),
     "highway_tractor": (12, lambda m: roadcars.tractor(m, L(12), "van", "sleeper", "#2a4a7a")),
     "aero_tractor": (12, lambda m: roadcars.tractor(m, L(12), "van", "aero", "#c83a2a")),
     "tanker_train": (13, lambda m: roadcars.tractor(m, L(13), "tank", "aero", "#2a2a2c")),
