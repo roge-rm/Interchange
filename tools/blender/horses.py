@@ -8,7 +8,7 @@ height, as a real horse's are.
 import math
 
 import bmesh
-from mathutils import Vector
+from mathutils import Matrix, Vector
 
 import rig
 import roadcars
@@ -114,10 +114,20 @@ def _strap(m, x, y, table, z, y0, y1, mat, r=0.0016, behind=False):
         _sweep(m, pts, mat, n=6, ref=(0.0, 0.0, 1.0))
 
 
-def horse(m, x, y, coat, ox=False, harness=True):
-    """A draught horse, or an ox, standing at x across with its rump at y, facing +y; it keeps its size in a lowered model."""
+def horse(m, x, y, coat, ox=False, harness=True, scale=1.0):
+    """A draught horse, or an ox, standing at x across with its rump at y, facing +y; it keeps its size in a lowered model.
+    scale shrinks it about the back of its rump on the ground, 0.016 tiles behind y."""
+    n0 = len(m.objects)
     with m.keep():
-        return _ox(m, x, y, coat) if ox else _horse(m, x, y, coat, harness)
+        front = _ox(m, x, y, coat) if ox else _horse(m, x, y, coat, harness)
+        ground = m.z(0.0) * rig.RISE
+    if scale != 1.0:
+        pivot = Vector((x, y - 0.016, ground))
+        mat = Matrix.Translation(pivot) @ Matrix.Scale(scale, 4) @ Matrix.Translation(-pivot)
+        for obj in m.objects[n0:]:
+            obj.matrix_world = mat @ obj.matrix_world
+        front = y - 0.016 + (front - y + 0.016) * scale
+    return front
 
 
 def _darker(coat, f):
@@ -543,8 +553,10 @@ def red_river_cart(m, L):
     on the shafts between them with a few bales in it, and the shafts running on to the ox."""
     a0, a1 = -L / 2 + 0.005, L / 2 - 0.005
     wood = material("cart wood", "#8c7c68", rough=0.9)
-    # The wheels as tall as the ox's back; the rear one's rim at the tile end, the ox's muzzle a little past the front.
+    # The wheels as tall as the ox's back, the rear one's rim at the tile end; the ox is a little small so its muzzle
+    # stops at the front.
     r = 0.068
+    ox = 0.855
     y = a0 + r
     half = 0.05
     for side in (-1, 1):
@@ -557,7 +569,7 @@ def red_river_cart(m, L):
     b0, b1 = y - 0.056, y + 0.034
     m.box(-half + 0.004, half - 0.004, b0, b1, floor, floor + 0.035, wood)
     for side in (-1, 1):
-        m.rod((side * half, b0 - 0.004, floor + 0.02), (side * 0.034, b1 + 0.124, 0.58), 0.0035, wood)
+        m.rod((side * half, b0 - 0.004, floor + 0.02), (side * 0.034 * ox, b1 + 0.124 * ox, m.fixed(m.z(0.58) * ox)), 0.0035, wood)
     # Open rails: posts round the bed with two rails along the top and middle.
     rail = floor + 0.32
     for side in (-1, 1):
@@ -573,7 +585,7 @@ def red_river_cart(m, L):
             m.rod((-half, yy, z), (half, yy, z), 0.0026, wood, segments=5)
     m.box(-0.036, 0.036, b0 + 0.008, (b0 + b1) / 2 - 0.003, floor + 0.035, floor + 0.21, material("cart bales", "#5a4232", rough=0.9), bevel=0.008)
     m.box(-0.034, 0.034, (b0 + b1) / 2 + 0.002, b1 - 0.008, floor + 0.035, floor + 0.17, material("cart sacks", "#c8bc98", rough=0.9), bevel=0.01)
-    horse(m, 0.0, b1 + 0.016, "#8a6a4a", ox=True)
+    horse(m, 0.0, b1 + 0.016, "#8a6a4a", ox=True, scale=ox)
 
 
 def horsecar(m, L):
