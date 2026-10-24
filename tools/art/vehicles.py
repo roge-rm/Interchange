@@ -408,7 +408,7 @@ ROSTER = [
     ("grain_train", 13, lambda f: hopper(f, L(13))),
     ("cattle_liner", 12, lambda f: stockcar(f, L(12))),
     ("logger", 12, lambda f: flatcar(f, L(12))),
-    ("streetcar", 8, lambda f: coach(f, L(8), False)),
+    ("streetcar", 6, lambda f: coach(f, L(6), False)),
     ("pcc", 10, lambda f: coach(f, L(10), True)),
     ("clrv", 11, lambda f: coach(f, L(11), True)),
     ("flexity", 16, lambda f: coach(f, L(16), True)),
@@ -457,9 +457,13 @@ ROSTER = [
     ("s55", 4, lambda f: coach(f, L(4), True)),
     ("jetranger", 3, lambda f: coach(f, L(3), True)),
     ("s92", 5, lambda f: coach(f, L(5), True)),
-    ("courier_coach", 9, lambda f: coach(f, L(9), True)),
-    ("mc5_coach", 9, lambda f: coach(f, L(9), True)),
+    ("courier_coach", 7, lambda f: coach(f, L(7), True)),
+    ("mc5_coach", 7, lambda f: coach(f, L(7), True)),
     ("d4500_coach", 9, lambda f: coach(f, L(9), True)),
+    ("sander_plow", 6, lambda f: caboose(f, L(6))),
+    ("tandem_semi", 11, lambda f: boxcar(f, L(11), True)),
+    ("boom_truck", 7, lambda f: flatcar(f, L(7))),
+    ("tanker_long", 13, lambda f: tankcar(f, L(13))),
 ]
 
 

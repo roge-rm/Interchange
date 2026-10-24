@@ -95,8 +95,8 @@ MODELS = {
     "low_floor": (8, lambda m: roadcars.bus(m, L(8), "lowfloor")),
     "electric_bus": (8, lambda m: roadcars.bus(m, L(8), "electric")),
     "highway_coach": (9, lambda m: roadcars.highway_coach(m, L(9), 1980)),
-    "courier_coach": (9, lambda m: roadcars.highway_coach(m, L(9), 1950)),
-    "mc5_coach": (9, lambda m: roadcars.highway_coach(m, L(9), 1965)),
+    "courier_coach": (7, lambda m: roadcars.highway_coach(m, L(7), 1950)),
+    "mc5_coach": (7, lambda m: roadcars.highway_coach(m, L(7), 1965)),
     "d4500_coach": (9, lambda m: roadcars.highway_coach(m, L(9), 2000)),
     "mail_truck": (5, lambda m: roadcars.truck(m, L(5), "mail", "early")),
     "stake_truck": (6, lambda m: roadcars.truck(m, L(6), "stake", "early")),
@@ -119,7 +119,11 @@ MODELS = {
     "grain_train": (13, lambda m: roadcars.tractor(m, L(13), "hopper", "sleeper", "#d8a020", bumper=True, era=1990)),
     "cattle_liner": (12, lambda m: roadcars.tractor(m, L(12), "cattle", "long", "#8a2a22", bumper=True, era=1970)),
     "logger": (12, lambda m: roadcars.tractor(m, L(12), "logs", "long", "#3a5a2a", bumper=True, era=1965, stacks="front")),
-    "streetcar": (8, lambda m: roadcars.streetcar(m, L(8), "wood")),
+    "sander_plow": (6, lambda m: roadcars.truck(m, L(6), "plow", "square", plow="vee")),
+    "tandem_semi": (11, lambda m: roadcars.tractor(m, L(11), "van", "long", "#c8782a", era=1975, axles=(2,), posts=True)),
+    "boom_truck": (7, lambda m: roadcars.truck(m, L(7), "boom", "medium", 2)),
+    "tanker_long": (13, lambda m: roadcars.tractor(m, L(13), "tank", "sleeper", "#7a1e1e", era=1985)),
+    "streetcar": (6, lambda m: roadcars.streetcar(m, L(6), "wood")),
     "pcc": (10, lambda m: roadcars.streetcar(m, L(10), "pcc")),
     "clrv": (11, lambda m: roadcars.streetcar(m, L(11), "clrv")),
     "flexity": (16, lambda m: roadcars.streetcar(m, L(16), "flexity")),
@@ -135,7 +139,7 @@ for _key, (_n, _build) in list(SHIPS.items()) + list(AIRCRAFT.items()):
 ROAD = {"horse_omnibus", "stagecoach", "mail_coach", "freight_wagon", "red_river_cart", "horsecar", "motor_bus", "brill_bus", "new_look", "low_floor", "electric_bus", "highway_coach", "courier_coach", "mc5_coach", "d4500_coach", "mail_truck", "stake_truck", "dump_truck",
         "tank_truck", "log_truck", "cattle_truck", "semi_van", "plow_truck", "streetcar", "pcc", "clrv", "flexity",
         "step_van", "electric_van", "flatbed_truck", "tandem_dump", "quad_dump", "fuel_truck", "tandem_plow", "highway_tractor",
-        "aero_tractor", "tanker_train", "grain_train", "cattle_liner", "logger"}
+        "aero_tractor", "tanker_train", "grain_train", "cattle_liner", "logger", "sander_plow", "tandem_semi", "boom_truck", "tanker_long"}
 # How each kind is lowered, as (h, base): heights over base steps are scaled by h, wheels, horses and people keep
 # their size. Rail bodies come down onto their trucks' wheel tops, road ones onto their wheels; ships from the waterline,
 # helicopters and float planes from the ground. Fixed-wing aircraft are already in proportion.
