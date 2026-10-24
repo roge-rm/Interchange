@@ -69,19 +69,56 @@ NOSES = {
 }
 
 
-def fuselage(m, L, r, zc, body, belly, c, nose="jet", glass=(0.38, 0.6), tail=0.32, upswept=False, hump=0.0, radome=None):
-    """A fuselage L long and r round (tiles), its middle zc steps up: a nose of one of the NOSES styles with the cockpit
-    glass from glass[0] to glass[1] of the way along it, a tail cone over the last tail share whose underside sweeps up
-    (sharply into a ramp when upswept), and hump raising the top from the wing forward, as a 747's upper deck."""
+# Ring faces by the angle of their middle, from the right side's middle up over the top: the belly, the windscreen's front
+# panels either side of a centre post and the cockpit side windows.
+RING = 48
+
+
+def _mid(k):
+    return (k + 0.5) * 360 / RING
+
+
+def _skin(k):
+    return "belly" if 225 < _mid(k) < 337.5 else "body"
+
+
+def _screen(k):
+    a = _mid(k)
+    return "glass" if 22 < a < 158 and not 82 < a < 98 else _skin(k)
+
+
+def _side(k):
+    a = _mid(k)
+    return "glass" if 12 < a < 52 or 128 < a < 168 else _skin(k)
+
+
+def _cockpit(top, L, r, t0, t1, slopes=(20, 38), side=0.035):
+    """Where along a nose (t, a share of L) the windscreen goes: where the top, top(t) in fuselage radii, slopes down
+    between slopes degrees; the side windows run side of L behind it."""
+    lo = hi = None
+    n = 200
+    for i in range(n):
+        t = t0 + (t1 - t0) * i / n
+        dt = (t1 - t0) / n
+        a = math.degrees(math.atan((top(t) - top(t + dt)) * r / (L * dt)))
+        if lo is None and a >= slopes[0]:
+            lo = t
+        if hi is None and a >= slopes[1]:
+            hi = t
+    lo = lo if lo is not None else t1 - (t1 - t0) * 0.3
+    hi = max(hi if hi is not None else t1, lo + 0.012)
+    return lo - side, lo, hi
+
+
+def fuselage(m, L, r, zc, body, belly, c, nose="jet", glass=True, tail=0.32, upswept=False, hump=0.0, radome=None):
+    """A fuselage L long and r round (tiles), its middle zc steps up: a nose of one of the NOSES styles with its windscreen
+    where the nose slopes down and side windows behind it, a tail cone over the last tail share whose underside sweeps up
+    (sharply into a ramp when upswept), and an upper deck hump radii high on top from the nose back over the forward
+    fuselage, as a 747's, with the cockpit in its front."""
     share, tipz, pt, pb, pw = NOSES[nose]
     a0 = -L / 2
     R = r / rig.RISE
-
-    def hump_at(t):
-        if not hump:
-            return 0.0
-        u = min(1.0, max(0.0, (t - 0.68) / 0.08))
-        return hump * u * u * (3 - 2 * u)
+    n0 = 1 - share
 
     def station(t):
         if t < tail:
@@ -90,40 +127,81 @@ def fuselage(m, L, r, zc, body, belly, c, nose="jet", glass=(0.38, 0.6), tail=0.
                 w, top, bot = 1 - 0.72 * s ** 1.2, 1 - 0.12 * s ** 1.5, -1 + 1.62 * s ** 0.75
             else:
                 w, top, bot = 1 - 0.8 * s ** 1.3, 1 - 0.2 * s ** 1.6, -1 + 1.4 * s ** 1.1
-        elif t <= 1 - share:
-            w, top, bot = 1.0, 1.0 + hump_at(t), -1.0
+        elif t <= n0:
+            w, top, bot = 1.0, 1.0, -1.0
         else:
-            s = min(0.985, (t - (1 - share)) / share)
-            hi = 1.0 + hump_at(t)
+            s = min(0.985, (t - n0) / share)
             w = max(0.04, _f(s, pw))
-            top = tipz + (hi - tipz) * _f(s, pt)
+            top = tipz + (1 - tipz) * _f(s, pt)
             bot = tipz - (1 + tipz) * _f(s, pb)
         return (a0 + L * t, r * w, zc + bot * R, zc + top * R)
 
-    # Ring faces 10 to 14 are the belly, 2 to 5 the windscreen's.
     paint = {"body": body, "belly": belly, "glass": c["glass"]}
-
-    def skin(k):
-        return "belly" if 9 < k < 15 else "body"
-
-    def screen(k):
-        return "glass" if 2 <= k < 6 else skin(k)
-    ts = [tail * k / 10 for k in range(10)] + [tail, 1 - share]
-    oval_loft(m, [station(t) for t in ts], paint, part=skin)
-    cuts = [0.0, 1.0] + ([glass[0], glass[1]] if glass else []) + ([radome] if radome else [])
-    ss = sorted(set([k / 14 for k in range(15)] + cuts))
-    pieces = []
-    for lo, hi in zip(sorted(set(cuts)), sorted(set(cuts))[1:]):
-        pieces.append([s for s in ss if lo <= s <= hi])
-    for piece in pieces:
-        mid = (piece[0] + piece[-1]) / 2
-        if glass and glass[0] <= mid <= glass[1]:
-            mats, part = paint, screen
-        elif radome and mid > radome:
+    ts = [tail * k / 10 for k in range(10)] + [tail, n0]
+    oval_loft(m, [station(t) for t in ts], paint, part=_skin, n=RING)
+    cuts = [n0, 1.0]
+    if glass and not hump:
+        g0, g1, g2 = _cockpit(lambda t: (station(t)[3] - zc) / R, L, r, n0, 1.0)
+        cuts += [g0, g1, g2]
+    if radome:
+        cuts.append(n0 + share * radome)
+    cuts = sorted(set(cuts))
+    ss = sorted(set([n0 + share * k / 14 for k in range(15)] + cuts))
+    for lo, hi in zip(cuts, cuts[1:]):
+        mid = (lo + hi) / 2
+        piece = [s for s in ss if lo <= s <= hi]
+        if radome and mid > n0 + share * radome:
             mats, part = {"r": material("radome", "#5a5e62", rough=0.5)}, None
+        elif glass and not hump and g0 < mid < g1:
+            mats, part = paint, _side
+        elif glass and not hump and g1 < mid < g2:
+            mats, part = paint, _screen
         else:
-            mats, part = paint, skin
-        oval_loft(m, [station(1 - share + share * s) for s in piece], mats, part=part)
+            mats, part = paint, _skin
+        oval_loft(m, [station(t) for t in piece], mats, part=part, n=RING)
+    if hump:
+        _upper_deck(m, L, r, zc, hump, station, paint, glass)
+
+
+def _upper_deck(m, L, r, zc, hump, station, paint, glass):
+    """A 747's upper deck: a narrower lobe standing out of the top from the wing root forward, faired down into the top
+    at the back and sloping down into the nose at the front with the cockpit in the slope."""
+    R = r / rig.RISE
+    a0 = -L / 2
+    back, full, front, end = 0.62, 0.73, 0.895, 0.962
+    bottom = zc - 0.2 * R
+
+    def top(t):
+        if t < full:
+            u = (t - back) / (full - back)
+            return 0.97 + (hump + 0.03) * u * u * (3 - 2 * u)
+        if t <= front:
+            return 1 + hump
+        u = (t - front) / (end - front)
+        low = (station(end)[3] - zc) / R - 0.06
+        return low + (1 + hump - low) * _f(u, 1.7)
+
+    def width(t):
+        if t < full:
+            u = (t - back) / (full - back)
+            return r * (0.35 + 0.25 * u)
+        if t <= front:
+            return r * 0.6
+        u = (t - front) / (end - front)
+        return r * (0.6 - 0.32 * u ** 1.5)
+
+    def st(t):
+        return (a0 + L * t, width(t), bottom, zc + top(t) * R)
+    ts = sorted(set([back + (full - back) * k / 8 for k in range(9)] + [front] + [front + (end - front) * k / 14 for k in range(15)]))
+    if glass:
+        g0, g1, g2 = _cockpit(top, L, r, front, end, slopes=(24, 50), side=0.03)
+        ts = sorted(set(ts + [g0, g1, g2]))
+        cuts = [ts[0], g0, g1, g2, ts[-1]]
+        parts_ = [_skin, _side, _screen, _skin]
+    else:
+        cuts, parts_ = [ts[0], ts[-1]], [_skin]
+    for (lo, hi), part in zip(zip(cuts, cuts[1:]), parts_):
+        oval_loft(m, [st(t) for t in ts if lo <= t <= hi], paint, part=part, n=RING)
 
 
 def wing(m, y, z, half_span, root, tip, sweep, mat, x0=0.0, dihedral=0.0, thick=0.08, side=0):
@@ -223,10 +301,12 @@ def wheels(m, ys, z, xs, c, r=0.012):
             m.rod((x, y, m.fixed(r / rig.RISE)), (x * 0.8 if abs(x) < 0.05 else x, y, z), 0.0025, c["metal"])
 
 
-# How each airliner's nose, engines and stance go: the nose style and its windscreen; the engine shape, its radius in
-# fuselage radii, where along each wing as a share of the half span, its length (in local wing chords for props, in
-# fuselage lengths for jets), how much of it sits ahead of the wing's leading edge and the prop's radius in fuselage radii;
-# for tail-wheel aircraft, how far the tail sits down, in degrees.
+# How each airliner's nose, engines and stance go: the nose style (glass None for no windscreen in it); the engine shape,
+# its radius in fuselage radii, where along each wing as a share of the half span, its length (in local wing chords for
+# props, in fuselage lengths for jets), how much of it sits ahead of the wing's leading edge and the prop's radius in
+# fuselage radii; drop, how far a jet's middle hangs under the wing in its radii; for tail-wheel aircraft, how far the
+# tail sits down, in degrees. The big fans are sized from the real engines against the fuselages, which are drawn fatter
+# than real: 747 JT9D and 767 CF6 about 2.7 m across, A220 PW1500G 2.2 m.
 AIRLINERS = {
     "electra_10": dict(nose="round", eng=("radial", 0.5, [0.3], 1.25, 0.45, 1.0), stance=8),
     "dc3": dict(nose="round", eng=("radial", 0.62, [0.24], 1.45, 0.45, 1.45), stance=11),
@@ -239,9 +319,9 @@ AIRLINERS = {
     "dc8": dict(nose="jet", eng=("cigar", 0.3, [0.32, 0.6], 0.13, 0.6, 0)),
     "b737_200": dict(nose="jet", eng=("cigar", 0.34, [0.3], 0.24, 0.45, 0), flush=True),
     "a320": dict(nose="jet", eng=("fan", 0.52, [0.34], 0.12, 0.7, 0)),
-    "a220": dict(nose="pointed", glass=(0.3, 0.58), eng=("fan", 0.6, [0.32], 0.13, 0.7, 0)),
-    "b767": dict(nose="jet", eng=("fan", 0.55, [0.32], 0.13, 0.7, 0)),
-    "b747f": dict(nose="jet", eng=("fan", 0.4, [0.36, 0.64], 0.1, 0.7, 0)),
+    "a220": dict(nose="pointed", eng=("fan", 0.6, [0.32], 0.125, 0.72, 0), drop=1.4),
+    "b767": dict(nose="jet", eng=("fan", 0.47, [0.32], 0.12, 0.72, 0), drop=1.3),
+    "b747f": dict(nose="jet", eng=("fan", 0.36, [0.4, 0.71], 0.095, 0.7, 0), drop=1.4),
     "dc9": dict(nose="jet", eng=("cigar", 0.42, None, 0.2, 0, 0)),
     "crj": dict(nose="pointed", eng=("fan", 0.5, None, 0.15, 0, 0)),
 }
@@ -262,7 +342,7 @@ def airliner(m, L, kind, wing_pos="low", tail="normal", span=1.0, sweep=0.0, liv
     # The belly sits just over the wheels.
     gear_h = 0.17
     zc = gear_h + r / rig.RISE
-    fuselage(m, L, r, zc, body, c["grey"], c, nose=t["nose"], glass=t.get("glass", (0.38, 0.6)), upswept=kind == "hercules",
+    fuselage(m, L, r, zc, body, c["grey"], c, nose=t["nose"], glass=t.get("glass", True), upswept=kind == "hercules",
              hump=hump, radome=t.get("radome"), tail=0.4 if kind == "hercules" else 0.32)
     rx = r
     a0, a1 = -L / 2, L / 2
@@ -349,7 +429,7 @@ def airliner(m, L, kind, wing_pos="low", tail="normal", span=1.0, sweep=0.0, liv
                         # Hung tight under the wing, no pylon.
                         ez = zb - er / rig.RISE * 0.92
                     else:
-                        ez = zb - er / rig.RISE * 1.12
+                        ez = zb - er / rig.RISE * t.get("drop", 1.12)
                         top = ez + er / rig.RISE * 0.95
                         flat(m, [(front - ln * 0.2, top), (lead + 0.004, zb + 0.02), (lead - ch * 0.45, zb + 0.02), (front - ln * 0.8, top)], eng, x, 0.0025)
                     nacelle(m, style, x, front, ez, er, ln, eng, c)
@@ -376,6 +456,17 @@ def airliner(m, L, kind, wing_pos="low", tail="normal", span=1.0, sweep=0.0, liv
         if t.get("stance") or kind == "bristol_freighter":
             round_fin(m, a0 + L * 0.005, tz - fin_h * 0.05, fin_h * (1.0 if kind == "dc3" else 1.05), L * 0.15, tail_m,
                       fillet=L * (0.22 if kind == "bristol_freighter" else 0.07))
+        elif kind == "hercules":
+            # From the L-100's metres (29.8 m long), points by metres forward of the tail and up from the ground: a
+            # broad fin 7 m along its root and 3.3 m at the tip, its top 11 m up (11.7 m real), the trailing edge near
+            # upright and a dorsal fillet running 3 m on forward.
+            sm = L / 29.8
+
+            def yz(fwd, up):
+                return (a0 + fwd * sm, up * sm / rig.RISE)
+            root, top = zc + 0.6 * R_, zc + 0.95 * R_
+            flat(m, [(a0 + 0.5 * sm, root), yz(0.9, 11.0), yz(4.2, 11.0), (a0 + 7.2 * sm, top + 1.2 * sm / rig.RISE),
+                     (a0 + 8.6 * sm, top + 0.35 * sm / rig.RISE), (a0 + 10.5 * sm, top - 0.02 * R_), (a0 + 10.5 * sm, root)], tail_m)
         else:
             fin(m, ty + 0.01, tz, fin_h, L * 0.16, L * 0.08, tail_sweep + L * 0.04, tail_m)
         if tail == "t":
@@ -775,7 +866,7 @@ def aircraft_builders():
         "a220": (9, lambda m, L: A(m, L, "a220", "low", span=0.92, sweep=0.08, livery="airline", r=L * 0.05)),
         "bristol_freighter": (6, lambda m, L: A(m, L, "bristol_freighter", "high", span=1.4, livery="freight", windows=False, cargo_door=True, gear="tail")),
         "hercules": (9, lambda m, L: A(m, L, "hercules", "high", span=1.3, livery="freight", windows=False, cargo_door=True, r=L * 0.075)),
-        "b747f": (13, lambda m, L: A(m, L, "b747f", "low", span=0.85, sweep=0.15, livery="freight", windows=False, cargo_door=True, hump=0.35, r=L * 0.065)),
+        "b747f": (13, lambda m, L: A(m, L, "b747f", "low", span=0.85, sweep=0.15, livery="freight", windows=False, cargo_door=True, hump=0.42, r=L * 0.065)),
         "bell_47": (3, lambda m, L: helicopter(m, L, "bell47")),
         "s55": (4, lambda m, L: helicopter(m, L, "s55")),
         "jetranger": (3, lambda m, L: helicopter(m, L, "jetranger")),
