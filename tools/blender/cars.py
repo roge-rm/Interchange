@@ -458,41 +458,61 @@ def ore_car(m, L):
 
 
 def covered_hopper(m, L):
-    """A cylindrical grain car of the 1970s: a long round grey body, a trough hatch along the top and four bays."""
+    """A cylindrical grain car of the 1970s: a long round grey body, a trough hatch along the top and four bays. The
+    body's section is drawn as it ends up after lowering: its upper half a true half circle the car's width across,
+    the lower half flatter, so the car reads round with the height cut."""
     c = common()
     body = material("hopper grey", "#a8aaa6", rough=0.55)
     dark = material("hopper grey dark", "#7e807c", rough=0.6)
     a0, a1 = -L / 2 + 0.015, L / 2 - 0.015
     for y in (-L / 2 + 0.08, L / 2 - 0.08):
         truck(m, y, c, top=0.91)
-    zc, hz, hw = 1.33, 0.45, 0.12
-    ring = [(hw * math.cos(2 * math.pi * i / 32), zc + hz * math.sin(2 * math.pi * i / 32)) for i in range(32)]
-    small = [(x * 0.82, zc + (z - zc) * 0.82 + 0.06) for x, z in ring]
+    # In lowered steps: the top where a 1.9 step tall car's comes down to, a 0.12 tile radius above the middle line.
+    hw = 0.12
+    top = m.z(1.9)
+    up = hw / rig.RISE
+    zc = top - up
+    down = zc - m.z(0.74)
+
+    def pt(a, dr=0.0, k=1.0, lift=0.0):
+        """A point round the section at angle a, dr tiles out from the skin, the section shrunk by k; in builder steps."""
+        r = (hw + dr) * k
+        sz = math.sin(a)
+        z = zc + lift + (up if sz > 0 else down) * (r / hw) * sz
+        return (r * math.cos(a), m.fixed(z))
+
+    angles = [2 * math.pi * i / 36 for i in range(36)]
+    ring = [pt(a) for a in angles]
+    small = [pt(a, k=0.84, lift=0.04) for a in angles]
     m.loft([(a0 + 0.012, small), (a0 + 0.03, ring), (a1 - 0.03, ring), (a1 - 0.012, small)], {"body": body}, sharp=30)
     for cy in (-0.125, -0.04, 0.04, 0.125):
         m.wedge([(-0.045, cy - 0.02, 0.4), (0.045, cy - 0.02, 0.4), (0.045, cy + 0.02, 0.4), (-0.045, cy + 0.02, 0.4)],
                 [(-0.1, cy - 0.04, 0.98), (0.1, cy - 0.04, 0.98), (0.1, cy + 0.04, 0.98), (-0.1, cy + 0.04, 0.98)], dark)
     for end in (a0, a1):
         inward = 1 if end == a0 else -1
-        _slope(m, end + inward * 0.03, 1.3, end + inward * 0.16, 0.9, 0.1, body)
+        _slope(m, end + inward * 0.03, 1.2, end + inward * 0.16, 0.9, 0.1, body)
         m.box(-0.12, 0.12, min(end, end + inward * 0.035), max(end, end + inward * 0.035), 0.86, 0.9, c["iron"])
         m.box(-0.025, 0.025, min(end, end + inward * 0.12), max(end, end + inward * 0.12), 0.48, 0.9, c["iron"])
         for side in (-1, 1):
-            m.rod((side * 0.11, end, 0.9), (side * 0.11, end, 1.15), 0.002, c["iron"])
-    m.box(-0.02, 0.02, a0 + 0.04, a1 - 0.04, zc + hz - 0.04, zc + hz + 0.05, dark, bevel=0.003)
-    m.box(-0.032, 0.032, a0 + 0.04, a1 - 0.04, zc + hz + 0.04, zc + hz + 0.055, material("hopper walk", "#5e605c", rough=0.7))
+            m.rod((side * 0.11, end, 0.9), (side * 0.11, end, 1.2), 0.002, c["iron"])
+    # The trough hatch and its running board along the crown.
+    crown = m.fixed(top)
+    m.box(-0.02, 0.02, a0 + 0.04, a1 - 0.04, crown - 0.05, crown + 0.05, dark, bevel=0.003)
+    m.box(-0.032, 0.032, a0 + 0.04, a1 - 0.04, crown + 0.04, crown + 0.055, material("hopper walk", "#5e605c", rough=0.7))
+    # Hoops round the sides, from under the middle line up over the shoulder.
+    arc = [-0.5 + 1.7 * i / 8 for i in range(9)]
     for side in (-1, 1):
+        sa = [a if side > 0 else math.pi - a for a in arc]
+        band = [pt(a, 0.002) for a in sa] + [pt(a, -0.004) for a in reversed(sa)]
         for y in (-0.21, -0.105, 0.0, 0.105, 0.21):
-            m.loft([(y - 0.003, [(side * (hw + 0.002) * math.cos(a), zc + (hz + 0.01) * math.sin(a)) for a in (-0.9, -0.3, 0.3, 0.9)] +
-                     [(side * (hw - 0.004) * math.cos(a), zc + (hz - 0.02) * math.sin(a)) for a in (0.9, 0.3, -0.3, -0.9)]),
-                    (y + 0.003, [(side * (hw + 0.002) * math.cos(a), zc + (hz + 0.01) * math.sin(a)) for a in (-0.9, -0.3, 0.3, 0.9)] +
-                     [(side * (hw - 0.004) * math.cos(a), zc + (hz - 0.02) * math.sin(a)) for a in (0.9, 0.3, -0.3, -0.9)])], {"rib": dark})
-        m.text("GRAIN", side * 0.1222, 0.0525, 1.33, 0.032, material("hopper letters", "#2a2a2a", rough=0.6), side)
+            m.loft([(y - 0.003, band), (y + 0.003, band)], {"rib": dark})
+        m.text("GRAIN", side * 0.1222, 0.0525, m.fixed(zc + 0.05), 0.032, material("hopper letters", "#2a2a2a", rough=0.6), side)
 
 
 def wedge_plow(m, L):
-    """A Russell wedge plow: a tall steel wedge filling the front half, its prow rising from the rails to the roof and
-    flaring to wings, then a short red cab with a small cupola."""
+    """A Russell wedge plow: a broad steel wedge the full width of the car filling its front half, two flat sloped
+    mouldboards meeting at a sharp prow that rises steeply from the rails to a flat top at the roof, then a short red
+    cab with a small cupola."""
     c = common()
     body = material("plow red", "#8a2a20", rough=0.55)
     blade = material("plow blade", "#26282b", metal=0.5, rough=0.5)
@@ -513,24 +533,26 @@ def wedge_plow(m, L):
         m.box(side * 0.0707 - 0.0008, side * 0.0707 + 0.0008, a0 + 0.07, a0 + 0.13, 1.5, 1.58, c["glass"])
         m.box(side * 0.1207 - 0.0008, side * 0.1207 + 0.0008, a0 + 0.03, a0 + 0.07, 0.95, 1.2, c["glass"])
         m.text(LETTERS, side * 0.1216, (a0 + back) / 2 + 0.04, 1.0, 0.03, c["letters"], side)
-    # The wedge, as sections from the cab forward: wide at the bottom, its top coming down to a point at the rails.
-    tip = a1 + 0.012
-    secs = []
-    for k in range(9):
-        t = k / 8
-        y = back + (tip - back) * t
-        wb = 0.142 * (1 - t ** 1.6) + 0.004
-        wt = 0.12 * (1 - t) ** 1.2 + 0.003
-        zt = top + 0.02 - (top + 0.02 - 0.5) * t ** 0.9
-        secs.append((y, [(-wb, 0.42), (wb, 0.42), (wt, zt), (0.0, zt + 0.06 * (1 - t)), (-wt, zt)]))
-    m.loft(secs, {"blade": blade}, sharp=30)
-    # A yellow line up the prow so it shows head on.
-    pts = [(secs[k][0] + 0.002, secs[k][1][3][1]) for k in range(9)]
-    for (ya, za), (yb, zb) in zip(pts, pts[1:]):
-        m.rod((0, ya, za + 0.005), (0, yb, zb + 0.005), 0.004, edge)
+    # The wedge: each mouldboard is the plane through the prow line (tip at the rails up to the top at prow) and the
+    # bottom edge (tip out to half width wide at the cab), so sections are taken where that outline bends.
+    tip, prow = a1 + 0.012, a1 - 0.035
+    low, high = 0.42, top + 0.015
+    wide = 0.142
+
+    def sec(y):
+        wb = max(0.004, wide * (tip - y) / (tip - back))
+        if y <= prow:
+            return [(-wb, low), (wb, low), (max(0.004, wide * (prow - y) / (tip - back)), high), (-max(0.004, wide * (prow - y) / (tip - back)), high)]
+        zt = low + 0.05 + (high - low - 0.05) * (tip - y) / (tip - prow)
+        return [(-wb, low), (wb, low), (0.004, zt), (-0.004, zt)]
+
+    m.loft([(y, sec(y)) for y in (back, prow, tip)], {"blade": blade}, sharp=20)
+    # A yellow line up the prow and along the top edges and the bottom so the wedge shows head on and against snow.
+    w_back = wide * (prow - back) / (tip - back)
+    m.rod((0, tip + 0.002, low + 0.05), (0, prow + 0.002, high + 0.004), 0.004, edge)
     for side in (-1, 1):
-        for a, b in zip(secs, secs[1:]):
-            m.rod((side * (a[1][1][0] + 0.002), a[0], 0.44), (side * (b[1][1][0] + 0.002), b[0], 0.44), 0.004, edge)
+        m.rod((0, prow, high + 0.004), (side * w_back, back, high + 0.004), 0.003, edge)
+        m.rod((0, tip, low + 0.02), (side * (wide + 0.002), back, low + 0.02), 0.004, edge)
 
 
 def rotary_plow(m, L):
