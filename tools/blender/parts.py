@@ -180,17 +180,20 @@ class Model:
         obj.data.polygons.foreach_set("use_smooth", [True] * len(obj.data.polygons))
         return obj
 
-    def lathe(self, x, y, z0, profile, mat, segments=24, round=False):
+    def lathe(self, x, y, z0, profile, mat, segments=24, round=False, lean=0.0, oval=1.0):
         """A turned shape standing at x, y from z0 steps: profile is (radius in tiles, height in steps above z0) from the foot up.
-        round shrinks it all over when lowered, as a bubble canopy, where otherwise only its heights come down."""
+        round shrinks it all over when lowered, as a bubble canopy, where otherwise only its heights come down. lean moves
+        the top back along y by that many tiles, for a raked funnel; oval stretches it along y."""
         k = self.k(z0 + max(h for _, h in profile) / 2) if round else 1.0
+        top = max(h for _, h in profile) or 1.0
         bm = bmesh.new()
         rings = []
         for r, h in profile:
             ring = []
+            dy = -lean * h / top
             for i in range(segments):
                 a = 2 * math.pi * i / segments
-                ring.append(bm.verts.new((x + r * k * math.cos(a), y + r * k * math.sin(a), self.z(z0 + h) * rig.RISE)))
+                ring.append(bm.verts.new((x + r * k * math.cos(a), y + dy + r * k * oval * math.sin(a), self.z(z0 + h) * rig.RISE)))
             rings.append(ring)
         for a, b in zip(rings, rings[1:]):
             for i in range(segments):
