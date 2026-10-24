@@ -514,19 +514,28 @@ def boxcab(m, L, scheme="boxcab"):
             m.box(x1 - 0.01, x1 + 0.006 * side, lo, hi, 0.42, 0.45, c["dark"])
     for side in (-1, 1):
         x = side * (half + 0.0006)
-        # A cab window by each end, grilles high along the middle over a cream line.
+        # A cab window by each end, and tall louvred grilles along the middle down to the cream line: a dark panel behind
+        # body-coloured slats standing out from the side, in a frame, taller than the windows so they don't read as more.
         for y in (b0 + 0.025, b1 - 0.065):
             m.box(x - 0.0008, x + 0.0008, y, y + 0.04, 1.3, 1.56, c["glass"])
         for k in range(4):
             y = b0 + 0.12 + k * (b1 - b0 - 0.24) / 3
-            louvres(m, x, y - 0.03, y + 0.03, 1.34, 1.58, c)
+            m.box(x - 0.0008, x + 0.0008, y - 0.026, y + 0.026, 0.98, 1.62, c["grille"])
+            out = side * 0.0022
+            for z0, z1 in ((0.95, 0.98), (1.62, 1.65)):
+                m.box(min(x, x + out), max(x, x + out), y - 0.03, y + 0.03, z0, z1, c["body"])
+            for yy in (y - 0.028, y + 0.028):
+                m.box(min(x, x + out), max(x, x + out), yy - 0.002, yy + 0.002, 0.98, 1.62, c["body"])
+            for j in range(8):
+                z = 1.0 + j * 0.08
+                m.box(min(x, x + out * 0.8), max(x, x + out * 0.8), y - 0.026, y + 0.026, z, z + 0.045, c["louvre"])
     side_band(m, b0, b1, 0.86, 0.89, c["trim"], half=half)
     # Roof gear: resistor grids either side of the pantograph, the bus bar along the roof's crown.
     for y in (-0.15, 0.15):
         m.box(-0.045, 0.045, y - 0.06, y + 0.06, top - 0.02, top + 0.06, c["grille"], bevel=0.004)
     m.rod((0, -0.22, top + 0.08), (0, 0.22, top + 0.08), 0.003, c["steel"])
     pantograph(m, 0.0, top, c)
-    letters(m, L, c, 1.12, size=0.034, x=half + 0.0012)
+    letters(m, L, c, 0.74, size=0.028, x=half + 0.0012)
 
 
 def gf6c(m, L, scheme="bcr"):

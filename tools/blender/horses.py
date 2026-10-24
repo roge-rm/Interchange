@@ -61,20 +61,22 @@ def _blob(m, x, y, z, rx, ry, rz, mat):
     return obj
 
 
-def _section(cx, top, bottom, half, n=14, p=2.15):
-    """A body's cross-section as (x, z) in tiles: rounded-square, flatter over the back than an ellipse, from bottom to top."""
+def _section(cx, top, bottom, half, n=14, p=2.15, low=1.0):
+    """A body's cross-section as (x, z) in tiles: rounded-square, flatter over the back than an ellipse, from bottom to top.
+    low scales the half width below the middle: over 1 for a barrel belly, under 1 for a keel such as a dewlap."""
     zc, rz = (top + bottom) / 2, (top - bottom) / 2
     ring = []
     for k in range(n):
         a = 2 * math.pi * k / n
         c, s = math.cos(a), math.sin(a)
-        ring.append((cx + half * math.copysign(abs(c) ** (2 / p), c), zc + rz * math.copysign(abs(s) ** (2 / p), s)))
+        w = half * (1 + (low - 1) * max(0.0, -s) ** 0.8)
+        ring.append((cx + w * math.copysign(abs(c) ** (2 / p), c), zc + rz * math.copysign(abs(s) ** (2 / p), s)))
     return ring
 
 
-def _body(m, x, y, table, mat):
-    """The trunk lofted through table rows of (y, top, bottom, half width), all in tiles from the rump at y."""
-    m.loft([(y + yy, [(sx, z / rig.RISE) for sx, z in _section(x, top, bottom, half)]) for yy, top, bottom, half in table],
+def _body(m, x, y, table, mat, p=2.15, n=14):
+    """The trunk lofted through table rows of (y, top, bottom, half width[, low]), all in tiles from the rump at y."""
+    m.loft([(y + r[0], [(sx, z / rig.RISE) for sx, z in _section(x, r[1], r[2], r[3], n, p, *r[4:])]) for r in table],
            {"hide": mat}, sharp=80)
 
 
@@ -83,8 +85,8 @@ def _along(table, yy):
     for (y0, *a), (y1, *b) in zip(table, table[1:]):
         if y0 <= yy <= y1:
             f = (yy - y0) / (y1 - y0)
-            return [u + (v - u) * f for u, v in zip(a, b)]
-    return table[0][1:] if yy < table[0][0] else table[-1][1:]
+            return [u + (v - u) * f for u, v in zip(a[:3], b[:3])]
+    return table[0][1:4] if yy < table[0][0] else table[-1][1:4]
 
 
 def _band(m, x, y, table, yy, width, mat, grow=1.06):
@@ -129,10 +131,14 @@ HORSE = [(-0.008, 0.112, 0.090, 0.008), (-0.004, 0.124, 0.074, 0.016), (0.006, 0
          (0.042, 0.128, 0.060, 0.021), (0.062, 0.129, 0.057, 0.021), (0.080, 0.136, 0.057, 0.020), (0.092, 0.134, 0.062, 0.018),
          (0.100, 0.124, 0.072, 0.014), (0.105, 0.108, 0.086, 0.007)]
 
-# The ox's: longer and lower, square at the pins, a hump over the withers and the brisket low between the forelegs.
-OX = [(-0.008, 0.112, 0.088, 0.010), (-0.003, 0.124, 0.070, 0.020), (0.010, 0.127, 0.058, 0.025), (0.035, 0.124, 0.050, 0.027),
-      (0.060, 0.125, 0.048, 0.027), (0.080, 0.136, 0.048, 0.025), (0.092, 0.137, 0.050, 0.022), (0.102, 0.126, 0.052, 0.018),
-      (0.109, 0.112, 0.060, 0.011)]
+# The ox's, on into its neck: the tail head over sloping pins, wide hooks, a long straight back, a barrel belly hanging
+# low and wide, a hump over the withers, then the neck carried low and forward with the dewlap as a keel under it.
+OX = [(-0.016, 0.108, 0.094, 0.004), (-0.013, 0.115, 0.084, 0.010), (-0.009, 0.121, 0.075, 0.015), (-0.004, 0.125, 0.068, 0.020),
+      (0.004, 0.127, 0.063, 0.024), (0.016, 0.126, 0.059, 0.026, 1.05), (0.030, 0.124, 0.053, 0.028, 1.12),
+      (0.045, 0.122, 0.049, 0.030, 1.15), (0.060, 0.123, 0.048, 0.030, 1.12), (0.072, 0.127, 0.049, 0.028, 1.05),
+      (0.082, 0.134, 0.050, 0.025), (0.090, 0.139, 0.051, 0.022), (0.097, 0.135, 0.052, 0.020, 0.9), (0.103, 0.127, 0.053, 0.018, 0.7),
+      (0.109, 0.120, 0.056, 0.0155, 0.5), (0.115, 0.114, 0.063, 0.013, 0.45), (0.120, 0.110, 0.073, 0.0115, 0.5),
+      (0.125, 0.107, 0.085, 0.0098, 0.65), (0.128, 0.106, 0.093, 0.0075)]
 
 
 def _horse(m, x, y, coat, harness):
@@ -212,18 +218,15 @@ def _ox(m, x, y, coat):
     dark = material("hoof", "#1e1a18", rough=0.7)
     horn = material("horn", "#d8ccb0", rough=0.5)
     wood = material("cart wood", "#8c7c68", rough=0.9)
-    _body(m, x, y, OX, hide)
+    _body(m, x, y, OX, hide, p=2.0, n=18)
+    # Hip bones standing up at the hooks, and the round thighs over the hind legs.
     for side in (-1, 1):
-        _blob(m, x + side * 0.012, y + 0.014, 0.094, 0.0125, 0.018, 0.024, hide)
-    # A short thick neck carried low and forward, the dewlap hanging under it to the brisket.
-    _sweep(m, [(x, y + 0.088, 0.108, 0.015, 0.024), (x, y + 0.104, 0.104, 0.013, 0.019), (x, y + 0.118, 0.100, 0.011, 0.013),
-               (x, y + 0.124, 0.098, 0.009, 0.010)], hide)
-    _sweep(m, [(x, y + 0.128, 0.084, 0.002, 0.002), (x, y + 0.120, 0.082, 0.0035, 0.006), (x, y + 0.108, 0.074, 0.004, 0.009),
-               (x, y + 0.098, 0.062, 0.004, 0.008), (x, y + 0.090, 0.056, 0.002, 0.002)], hide, n=8)
-    # The broad head low and forward, a wide muzzle at the end, ears out to the sides under the horns.
-    _sweep(m, [(x, y + 0.120, 0.108, 0.006, 0.006), (x, y + 0.126, 0.104, 0.0105, 0.0095), (x, y + 0.134, 0.093, 0.0092, 0.008),
-               (x, y + 0.141, 0.082, 0.0085, 0.0068), (x, y + 0.145, 0.076, 0.0085, 0.006), (x, y + 0.147, 0.073, 0.005, 0.004)], hide)
-    _blob(m, x, y + 0.145, 0.076, 0.0088, 0.0045, 0.0055, material("muzzle", _darker(coat, 0.55), rough=0.6))
+        _blob(m, x + side * 0.018, y + 0.006, 0.119, 0.006, 0.010, 0.0055, hide)
+        _blob(m, x + side * 0.0135, y + 0.008, 0.092, 0.0125, 0.020, 0.026, hide)
+    # The broad head low and forward from the poll, a short face and a wide muzzle, ears out to the sides under the horns.
+    _sweep(m, [(x, y + 0.121, 0.108, 0.007, 0.006), (x, y + 0.126, 0.105, 0.0108, 0.0095), (x, y + 0.132, 0.094, 0.0094, 0.008),
+               (x, y + 0.137, 0.083, 0.0084, 0.0066), (x, y + 0.140, 0.078, 0.0084, 0.006), (x, y + 0.142, 0.075, 0.005, 0.004)], hide, n=12)
+    _blob(m, x, y + 0.140, 0.077, 0.0088, 0.0045, 0.0055, material("muzzle", _darker(coat, 0.55), rough=0.6))
     for side in (-1, 1):
         _sweep(m, [(x + side * 0.008, y + 0.124, 0.106, 0.0016, 0.0016), (x + side * 0.015, y + 0.125, 0.103, 0.0022, 0.001),
                    (x + side * 0.018, y + 0.126, 0.101, 0.0005, 0.0005)], hide, n=6, ref=(0.0, 1.0, 0.0))
@@ -231,27 +234,31 @@ def _ox(m, x, y, coat):
         _sweep(m, [(x + side * 0.006, y + 0.125, 0.112, 0.0034, 0.0034), (x + side * 0.014, y + 0.125, 0.114, 0.0028, 0.0028),
                    (x + side * 0.020, y + 0.128, 0.119, 0.002, 0.002), (x + side * 0.023, y + 0.131, 0.126, 0.0012, 0.0012),
                    (x + side * 0.023, y + 0.133, 0.130, 0.0004, 0.0004)], horn, n=6, ref=(0.0, 1.0, 0.0))
-    # Short thick legs, a little bent at the hock, cloven hooves.
-    for ly, hock in ((0.088, 0.0), (0.012, 1.0)):
-        for side in (-1, 1):
-            lx = x + side * 0.014
-            _sweep(m, [(lx, y + ly, 0.074, 0.0085, 0.012), (lx, y + ly - 0.004 * hock, 0.052, 0.0068, 0.0085),
-                       (lx, y + ly - 0.006 * hock, 0.036, 0.0052, 0.006), (lx, y + ly - 0.003 * hock, 0.026, 0.0045, 0.0052),
-                       (lx, y + ly, 0.012, 0.0044, 0.005), (lx, y + ly + 0.001, 0.007, 0.0048, 0.0052)], hide)
+    # Legs from inside the trunk: a muscled forearm and gaskin tapering to slim cannons, the hind ones bent back at the
+    # hock, cloven hooves.
+    for side in (-1, 1):
+        lx = x + side * 0.0145
+        _sweep(m, [(lx, y + 0.092, 0.080, 0.009, 0.0135), (lx, y + 0.091, 0.062, 0.0078, 0.0105), (lx, y + 0.090, 0.046, 0.0056, 0.0068),
+                   (lx, y + 0.090, 0.038, 0.0052, 0.006), (lx, y + 0.090, 0.030, 0.0042, 0.0048), (lx, y + 0.090, 0.013, 0.0042, 0.0047),
+                   (lx, y + 0.091, 0.007, 0.0048, 0.0052)], hide, n=12)
+        _sweep(m, [(lx, y + 0.016, 0.086, 0.010, 0.017), (lx, y + 0.014, 0.066, 0.0082, 0.012), (lx, y + 0.008, 0.050, 0.006, 0.0078),
+                   (lx, y + 0.004, 0.040, 0.0048, 0.0062), (lx, y + 0.005, 0.032, 0.0042, 0.005), (lx, y + 0.008, 0.013, 0.0042, 0.0047),
+                   (lx, y + 0.009, 0.007, 0.0048, 0.0052)], hide, n=12)
+        for ly in (0.091, 0.009):
             for k in (-1, 1):
-                _sweep(m, [(lx + k * 0.0022, y + ly + 0.001, 0.007, 0.0026, 0.004), (lx + k * 0.0024, y + ly + 0.002, 0.0, 0.0032, 0.0052)],
+                _sweep(m, [(lx + k * 0.0022, y + ly, 0.007, 0.0026, 0.004), (lx + k * 0.0024, y + ly + 0.001, 0.0, 0.0032, 0.0052)],
                        dark, n=6)
     # A thin tail from the tail head down to a dark tuft.
     _sweep(m, [(x, y - 0.006, 0.120, 0.0022, 0.0022), (x, y - 0.010, 0.112, 0.0018, 0.0018), (x, y - 0.011, 0.085, 0.0015, 0.0015),
                (x, y - 0.010, 0.062, 0.0014, 0.0014)], hide, n=6)
     _blob(m, x, y - 0.010, 0.056, 0.0035, 0.0035, 0.008, tuft)
     # A wooden yoke over the neck in front of the hump, bows round the neck below it, for the cart's shafts to lash to.
-    _sweep(m, [(x - 0.037, y + 0.104, 0.118, 0.0022, 0.0026), (x - 0.012, y + 0.104, 0.124, 0.0034, 0.004), (x, y + 0.104, 0.125, 0.0036, 0.0042),
-               (x + 0.012, y + 0.104, 0.124, 0.0034, 0.004), (x + 0.037, y + 0.104, 0.118, 0.0022, 0.0026)], wood, n=8, ref=(0.0, 1.0, 0.0))
+    _sweep(m, [(x - 0.037, y + 0.107, 0.116, 0.0022, 0.0026), (x - 0.012, y + 0.107, 0.122, 0.0034, 0.004), (x, y + 0.107, 0.123, 0.0036, 0.0042),
+               (x + 0.012, y + 0.107, 0.122, 0.0034, 0.004), (x + 0.037, y + 0.107, 0.116, 0.0022, 0.0026)], wood, n=8, ref=(0.0, 1.0, 0.0))
     pts = []
     for k in range(9):
         a = math.pi * k / 8
-        pts.append((x + math.cos(a) * 0.016, y + 0.106, 0.123 - math.sin(a) * 0.04, 0.0018, 0.0018))
+        pts.append((x + math.cos(a) * 0.0175, y + 0.109, 0.121 - math.sin(a) * 0.045, 0.0018, 0.0018))
     _sweep(m, pts, wood, n=6, ref=(0.0, 1.0, 0.0))
     return y + 0.1
 
@@ -536,8 +543,9 @@ def red_river_cart(m, L):
     on the shafts between them with a few bales in it, and the shafts running on to the ox."""
     a0, a1 = -L / 2 + 0.005, L / 2 - 0.005
     wood = material("cart wood", "#8c7c68", rough=0.9)
+    # The wheels as tall as the ox's back; the rear one's rim at the tile end, the ox's muzzle a little past the front.
     r = 0.068
-    y = a0 + r - 0.008
+    y = a0 + r
     half = 0.05
     for side in (-1, 1):
         wheel(m, side * (half + 0.012), y, r, wood, spokes=12, hub_r=0.013, dish=0.012)
@@ -546,10 +554,10 @@ def red_river_cart(m, L):
         m.rod((-half - 0.004, y, zc), (half + 0.004, y, zc), 0.006, wood, segments=6)
     # The bed sits on the axle, its shafts the side rails, carrying on forward to the ox's shoulders.
     floor = m.fixed(zc + 0.03)
-    b0, b1 = y - 0.06, y + 0.036
+    b0, b1 = y - 0.056, y + 0.034
     m.box(-half + 0.004, half - 0.004, b0, b1, floor, floor + 0.035, wood)
     for side in (-1, 1):
-        m.rod((side * half, b0 - 0.008, floor + 0.02), (side * 0.034, b1 + 0.13, 0.58), 0.0035, wood)
+        m.rod((side * half, b0 - 0.004, floor + 0.02), (side * 0.034, b1 + 0.124, 0.58), 0.0035, wood)
     # Open rails: posts round the bed with two rails along the top and middle.
     rail = floor + 0.32
     for side in (-1, 1):
@@ -565,7 +573,7 @@ def red_river_cart(m, L):
             m.rod((-half, yy, z), (half, yy, z), 0.0026, wood, segments=5)
     m.box(-0.036, 0.036, b0 + 0.008, (b0 + b1) / 2 - 0.003, floor + 0.035, floor + 0.21, material("cart bales", "#5a4232", rough=0.9), bevel=0.008)
     m.box(-0.034, 0.034, (b0 + b1) / 2 + 0.002, b1 - 0.008, floor + 0.035, floor + 0.17, material("cart sacks", "#c8bc98", rough=0.9), bevel=0.01)
-    horse(m, 0.0, b1 + 0.024, "#8a6a4a", ox=True)
+    horse(m, 0.0, b1 + 0.016, "#8a6a4a", ox=True)
 
 
 def horsecar(m, L):
