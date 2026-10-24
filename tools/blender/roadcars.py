@@ -5,6 +5,8 @@ tall for a bus. Wheels sit on the road, their tops a little over a step's fifth 
 """
 import math
 
+import bmesh
+
 import parts
 import rig
 from parts import material
@@ -61,8 +63,8 @@ def lamps(m, outline, z, x, c):
 
 
 def bus(m, L, era):
-    """A city bus of its era: the 1920s motor bus with a hood, a rounded Brill, a New Look with its bulging windshield, a
-    low-floor bus, or a battery bus with packs on its roof."""
+    """A city bus of its era: the 1920s motor bus with a hood, a rounded Brill, a New Look with its bulging windshield,
+    standee windows and fluted sides, a low-floor bus with its windows set low, or a battery bus with a roof fairing."""
     c = common()
     paint = {"motor": ("#6a2a26", "#e6dcc0"), "brill": ("#8a2a22", "#e6dcc0"), "newlook": ("#e6dcc0", "#2a5a8a"),
              "lowfloor": ("#e8e8e4", "#2a7a4a"), "electric": ("#e8e8e4", "#2a8ab0")}[era]
@@ -72,80 +74,176 @@ def bus(m, L, era):
     mats = {"paint": body, "glass": c["glass"], "grille": grille}
     R, F = -L / 2 + 0.01, L / 2 - 0.01
     half = 0.078
-    fl = 0.32 if era in ("lowfloor", "electric") else 0.42
-    t = 1.15
-    front_axle = F - (0.16 if era == "motor" else 0.09)
-    wheels(m, [R + 0.08, front_axle], c)
+    low = era in ("lowfloor", "electric")
+    fl = 0.3 if low else 0.42
+    t = 1.06 if era == "motor" else 1.15
+    # The window row follows the floor: a high-floor bus's sills sit about half way up its side, a low-floor bus's
+    # about a third.
+    sill, head = {"motor": (0.76, 0.97), "brill": (0.8, 1.04), "newlook": (0.8, 1.0)}.get(era, (0.56, 1.07))
+    # A transit bus's front axle about 2 m behind its front and its rear axle about 3 m from its back; the motor bus's
+    # front axle is under its hood.
+    front_axle = F - (0.05 if era == "motor" else 0.075)
+    wheels(m, [R + (0.065 if era == "motor" else 0.07), front_axle], c)
     nose = F
     if era == "motor":
-        # The engine out front under a narrower hood, and a flat windshield behind it.
+        # The engine out front under a narrower hood, its top rising from the radiator back to the foot of the
+        # windshield, and a flat windshield over the cowl.
         nose = F - 0.09
-        hw = 0.68
+        hw = 0.66
+        cowl = sill
         shape = [(R, fl, 0.015, "paint"), (nose, fl, 0, "paint"), (nose, fl, 0, "paint", hw), (F - 0.006, fl, 0.01, "grille", hw),
-                 (F, 0.74, 0.03, "paint", hw), (nose, 0.84, 0, "paint", hw), (nose, 0.84, 0, "paint"),
-                 (nose - 0.004, 0.9, 0.008, "glass"), (nose - 0.012, t - 0.05, 0.015, "paint"), (nose - 0.03, t + 0.05, 0.03, "paint"),
-                 (R + 0.03, t + 0.05, 0.03, "paint"), (R, t - 0.08, 0.02, "paint")]
+                 (F, 0.68, 0.012, "paint", hw), (nose + 0.004, cowl, 0.0, "paint", hw), (nose, cowl, 0, "paint"),
+                 (nose - 0.004, cowl + 0.02, 0.006, "glass"), (nose - 0.01, t - 0.05, 0.015, "paint"), (nose - 0.026, t + 0.04, 0.03, "paint"),
+                 (R + 0.03, t + 0.04, 0.03, "paint"), (R, t - 0.08, 0.02, "paint")]
         crown = 0.06
         for side in (-1, 1):
             fender(m, front_axle, side, c, body)
     elif era == "brill":
-        shape = [(R, fl, 0.02, "paint"), (F - 0.006, fl, 0.025, "paint", 0.9), (F + 0.004, fl + 0.25, 0.03, "paint", 0.9),
-                 (F, fl + 0.4, 0.012, "glass", 0.9), (F - 0.024, t - 0.04, 0.035, "paint", 0.92), (F - 0.065, t + 0.06, 0.05, "paint"),
-                 (R + 0.05, t + 0.06, 0.05, "paint"), (R, t - 0.12, 0.04, "paint")]
+        # A rounded front, bowed in plan, the split windshield under a destination box.
+        shape = [(R, fl, 0.02, "paint"), (F - 0.006, fl, 0.025, "paint", 0.9, 0.01), (F + 0.004, fl + 0.25, 0.03, "paint", 0.9, 0.014),
+                 (F, sill - 0.02, 0.012, "glass", 0.9, 0.014), (F - 0.016, head - 0.02, 0.012, "paint", 0.92, 0.012),
+                 (F - 0.04, t + 0.03, 0.05, "paint", 1.0, 0.008), (R + 0.05, t + 0.06, 0.05, "paint"), (R, t - 0.12, 0.04, "paint")]
         crown = 0.1
     elif era == "newlook":
-        shape = [(R, fl, 0.015, "paint"), (F - 0.004, fl, 0.02, "paint", 0.9), (F + 0.003, fl + 0.18, 0.03, "paint", 0.9),
-                 (F, fl + 0.34, 0.015, "glass", 0.88), (F - 0.01, t - 0.03, 0.035, "paint", 0.9), (F - 0.035, t + 0.04, 0.03, "paint"),
-                 (R + 0.02, t + 0.04, 0.03, "paint"), (R, t - 0.06, 0.02, "paint")]
+        # The fishbowl: a windshield bowed out in plan and curving up into the roof.
+        shape = [(R, fl, 0.015, "paint"), (F - 0.004, fl, 0.02, "paint", 0.9, 0.006), (F + 0.003, fl + 0.18, 0.03, "paint", 0.9, 0.012),
+                 (F + 0.003, fl + 0.3, 0.015, "glass", 0.9, 0.016), (F - 0.008, t - 0.08, 0.04, "glass", 0.92, 0.014),
+                 (F - 0.04, t + 0.04, 0.03, "paint", 1.0, 0.004), (R + 0.02, t + 0.04, 0.03, "paint"), (R, t - 0.06, 0.02, "paint")]
         crown = 0.07
     else:
-        shape = [(R, fl, 0.015, "paint"), (F, fl, 0.015, "paint", 0.94), (F + 0.003, fl + 0.28, 0.012, "glass", 0.94),
-                 (F - 0.007, t - 0.02, 0.03, "paint", 0.94), (F - 0.022, t + 0.04, 0.02, "paint"),
+        # A big flat windshield nearly down to the bumper.
+        shape = [(R, fl, 0.015, "paint"), (F, fl, 0.015, "paint", 0.94), (F + 0.002, fl + 0.12, 0.012, "glass", 0.94, 0.004),
+                 (F - 0.004, t - 0.03, 0.03, "paint", 0.94, 0.004), (F - 0.02, t + 0.04, 0.02, "paint"),
                  (R + 0.012, t + 0.04, 0.02, "paint"), (R, t - 0.04, 0.015, "paint")]
         crown = 0.05
     outline = m.shell(shape, half, mats, crown=crown)
+    w0, w1 = R + 0.03, (nose - 0.02 if era == "motor" else nose - 0.07)
+    n = {"motor": 6, "brill": 5, "newlook": 6}.get(era, 5)
+    windows(m, w0, w1, sill, head, n, half + 0.0005, c, gap=0.15 if era != "newlook" else 0.1)
     for side in (-1, 1):
-        m.box(side * half - 0.0015, side * half + 0.0015, R + 0.02, nose - 0.03, fl + 0.15, fl + 0.28, band)
-    windows(m, R + 0.04, nose - 0.08 if era != "motor" else nose - 0.02, fl + 0.42 if fl < 0.4 else 0.82, t - 0.1, 5, half + 0.0005, c, gap=0.15)
+        if era == "newlook":
+            # Standee windows over the main row, and the fluted aluminium sides under the band.
+            windows(m, w0, w1, head + 0.04, head + 0.1, n, half + 0.0005, c, gap=0.25)
+            m.box(side * half - 0.0015, side * half + 0.0015, R + 0.02, F - 0.03, sill - 0.08, sill - 0.02, band)
+            flutes = material("flutes", "#b8bcc0", metal=0.6, rough=0.3)
+            for k in range(5):
+                z = fl + 0.05 + k * 0.05
+                m.box(side * half - 0.002, side * half + 0.002, R + 0.015, F - 0.02, z, z + 0.022, flutes)
+            # The engine grille at the back.
+            m.box(side * half - 0.002, side * half + 0.002, R + 0.01, R + 0.07, sill - 0.02, head - 0.04, grille)
+        elif era == "motor":
+            m.box(side * half - 0.0015, side * half + 0.0015, R + 0.02, nose - 0.005, sill - 0.08, sill - 0.03, band)
+        else:
+            m.box(side * half - 0.0015, side * half + 0.0015, R + 0.02, nose - 0.03, sill - (0.16 if low else 0.09),
+                  sill - (0.05 if low else 0.03), band)
     if era == "motor":
-        lamps(m, outline, 0.86, 0.04, c)
+        # The radiator shell, its lamps either side and a destination board over the windshield.
+        y = F - 0.004
+        m.box(-0.048, 0.048, y - 0.004, y + 0.004, fl + 0.02, 0.7, c["chrome"], bevel=0.003)
+        m.box(-0.04, 0.04, y + 0.002, y + 0.005, fl + 0.05, 0.66, grille)
+        lamps(m, outline, 0.64, 0.056, c)
+        m.box(-0.05, 0.05, nose - 0.032, nose - 0.026, t - 0.02, t + 0.04, c["dark"])
     else:
-        y = parts.outline_front(outline, fl + 0.16)
-        m.box(-0.05, 0.05, y - 0.006, y + 0.002, fl + 0.12, fl + 0.2, band)
+        y = parts.outline_front(outline, fl + 0.06)
         lamps(m, outline, fl + 0.1, 0.055, c)
         m.box(-0.07, 0.07, F - 0.01, F + 0.008, fl - 0.04, fl + 0.04, c["dark"], bevel=0.004)
-    if era == "electric":
-        m.box(-0.055, 0.055, R + 0.06, F - 0.12, t + 0.03, t + 0.2, material("battery pods", "#c8ccd0", rough=0.5), bevel=0.012)
-    m.text(LETTERS, half + 0.002, (R + nose) / 2, fl + 0.2, 0.025, body, 1)
+        if era == "brill":
+            # The destination box over the windshield and the post down its middle.
+            yt = parts.outline_front(outline, head + 0.02)
+            m.box(-0.04, 0.04, yt - 0.006, yt + 0.001, head, head + 0.06, c["dark"], bevel=0.002)
+            m.box(-0.003, 0.003, F - 0.004, F + 0.016, sill - 0.02, head - 0.04, body)
+        elif era == "newlook":
+            m.box(-0.05, 0.05, F - 0.024, F - 0.008, t - 0.1, t - 0.04, c["dark"], bevel=0.002)
+        else:
+            m.box(-0.05, 0.05, F - 0.012, F - 0.002, t - 0.1, t - 0.04, c["dark"])
+    if era == "lowfloor":
+        # The air conditioning pod on the roof at the back.
+        m.shell([(R + 0.03, t + 0.02, 0.01, "paint"), (R + 0.13, t + 0.02, 0.01, "paint"), (R + 0.12, t + 0.14, 0.02, "paint"),
+                 (R + 0.04, t + 0.14, 0.02, "paint")], 0.062, {"paint": material("roof pod", "#d4d6d8", rough=0.5)}, crown=0.03)
+    elif era == "electric":
+        # The batteries under a fairing along most of the roof, sloping up from over the windshield.
+        m.shell([(R + 0.02, t + 0.0, 0.01, "paint"), (F - 0.06, t + 0.0, 0.0, "paint"), (F - 0.11, t + 0.17, 0.05, "paint"),
+                 (R + 0.04, t + 0.17, 0.03, "paint"), (R + 0.02, t + 0.06, 0.02, "paint")], 0.07, {"paint": body}, crown=0.05)
+    m.text(LETTERS, half + 0.002, (R + nose) / 2, sill - (0.1 if low else 0.05), 0.025, body, 1)
 
 
-def highway_coach(m, L):
-    """An intercity coach: a high floor over the luggage bays, a band of tinted windows and a raked, rounded front."""
+def highway_coach(m, L, era=1980):
+    """An intercity coach of its era over luggage bays: a 1950 Courier with a round front and a raised rear deck, a 1965
+    MC-5 on two axles with fluted sides, a 1980 MC-9 on three with big tinted windows, or a 2000 D4500 with a raked,
+    curved front and one dark band of glass."""
     c = common()
     body = material("coach silver", "#c4c8cc", metal=0.6, rough=0.3)
     band = material("coach blue", "#2a4a7a", rough=0.4)
+    bays = material("bay doors", "#9a9ea2", metal=0.5, rough=0.35)
+    flutes = material("flutes", "#d4d8dc", metal=0.7, rough=0.25)
     R, F = -L / 2 + 0.01, L / 2 - 0.01
     half = 0.078
-    wheels(m, [R + 0.07, R + 0.13, F - 0.1], c)
-    shape = [(R, 0.32, 0.015, "paint"), (F - 0.004, 0.32, 0.02, "paint", 0.92), (F + 0.004, 0.6, 0.025, "paint", 0.92),
-             (F, 0.74, 0.012, "glass", 0.92), (F - 0.018, 1.24, 0.04, "paint", 0.93), (F - 0.055, 1.36, 0.04, "paint"),
-             (R + 0.02, 1.36, 0.03, "paint"), (R, 1.2, 0.02, "paint")]
-    outline = m.shell(shape, half, {"paint": body, "glass": c["glass"]}, crown=0.07)
+    fl = 0.32
+    # Three axles from the MC-7 of 1968, a tag axle behind the drive.
+    wheels(m, [R + 0.07, F - 0.085] if era < 1968 else [R + 0.07, R + 0.13, F - 0.085], c)
+    if era < 1960:
+        t, sill = 1.22, 0.8
+        shape = [(R, fl, 0.015, "paint"), (F - 0.006, fl, 0.03, "paint", 0.9, 0.01), (F + 0.006, 0.6, 0.04, "paint", 0.9, 0.016),
+                 (F, 0.76, 0.012, "glass", 0.9, 0.016), (F - 0.022, t - 0.06, 0.04, "paint", 0.92, 0.012), (F - 0.07, t + 0.04, 0.05, "paint"),
+                 (-0.02, t + 0.04, 0.0, "paint"), (-0.05, t + 0.16, 0.03, "paint"), (R + 0.03, t + 0.16, 0.04, "paint"), (R, t + 0.02, 0.03, "paint")]
+        crown = 0.08
+    elif era < 1975:
+        t, sill = 1.3, 0.84
+        shape = [(R, fl, 0.015, "paint"), (F - 0.004, fl, 0.02, "paint", 0.92), (F + 0.004, 0.6, 0.025, "paint", 0.92, 0.006),
+                 (F, 0.74, 0.012, "glass", 0.92, 0.008), (F - 0.016, t - 0.08, 0.03, "paint", 0.93, 0.006), (F - 0.045, t + 0.04, 0.04, "paint"),
+                 (R + 0.02, t + 0.04, 0.03, "paint"), (R, t - 0.1, 0.02, "paint")]
+        crown = 0.07
+    elif era < 1995:
+        t, sill = 1.34, 0.85
+        shape = [(R, fl, 0.015, "paint"), (F - 0.004, fl, 0.02, "paint", 0.92), (F + 0.004, 0.6, 0.025, "paint", 0.92, 0.004),
+                 (F, 0.74, 0.012, "glass", 0.92, 0.006), (F - 0.018, t - 0.1, 0.04, "paint", 0.93, 0.004), (F - 0.055, t + 0.02, 0.04, "paint"),
+                 (R + 0.02, t + 0.02, 0.03, "paint"), (R, t - 0.12, 0.02, "paint")]
+        crown = 0.07
+    else:
+        t, sill = 1.38, 0.82
+        shape = [(R, fl, 0.015, "paint"), (F - 0.002, fl, 0.02, "paint", 0.92, 0.006), (F + 0.004, 0.5, 0.02, "paint", 0.92, 0.01),
+                 (F + 0.002, 0.58, 0.02, "glass", 0.92, 0.012), (F - 0.04, t - 0.02, 0.05, "paint", 0.94, 0.008), (F - 0.08, t + 0.02, 0.04, "paint"),
+                 (R + 0.02, t + 0.02, 0.03, "paint"), (R, t - 0.12, 0.02, "paint")]
+        crown = 0.07
+    outline = m.shell(shape, half, {"paint": body, "glass": c["glass"]}, crown=crown)
+    w0, w1 = R + 0.03, F - 0.07
     for side in (-1, 1):
-        m.box(side * half - 0.0015, side * half + 0.0015, R + 0.01, F - 0.03, 0.5, 0.68, band)
-        m.box(side * half - 0.001, side * half + 0.001, R + 0.03, F - 0.06, 0.85, 1.2, c["glass"])
-        for k in range(3):
-            y = R + 0.05 + k * 0.1
-            m.box(side * half - 0.0012, side * half + 0.0012, y, y + 0.07, 0.4, 0.48, material("bay doors", "#9a9ea2", metal=0.5, rough=0.35))
+        if era < 1975:
+            # Fluted aluminium along the bays, a band and separate windows over them.
+            for k in range(4):
+                z = fl + 0.04 + k * 0.045
+                m.box(side * half - 0.002, side * half + 0.002, R + 0.015, F - 0.03, z, z + 0.02, flutes)
+            m.box(side * half - 0.0015, side * half + 0.0015, R + 0.01, F - 0.03, sill - 0.12, sill - 0.04, band)
+        else:
+            m.box(side * half - 0.0015, side * half + 0.0015, R + 0.01, F - 0.03, 0.5, 0.62 if era < 1995 else 0.58, band)
+            for k in range(3):
+                y = R + 0.05 + k * 0.1
+                m.box(side * half - 0.0012, side * half + 0.0012, y, y + 0.07, fl + 0.06, fl + 0.15, bays)
+    if era < 1960:
+        windows(m, w0, -0.06, sill + 0.02, t + 0.04, 3, half + 0.0005, c, gap=0.15)
+        windows(m, -0.03, w1, sill - 0.02, t - 0.1, 3, half + 0.0005, c, gap=0.15)
+    elif era < 1975:
+        windows(m, w0, w1, sill, t - 0.1, 6, half + 0.0005, c, gap=0.12)
+    elif era < 1995:
+        windows(m, w0, w1, sill, t - 0.12, 5, half + 0.0005, c, gap=0.06)
+    else:
+        m.box(-half - 0.001, half + 0.001, w0, F - 0.06, sill - 0.04, t - 0.1, c["glass"])
     lamps(m, outline, 0.45, 0.055, c)
     m.box(-0.07, 0.07, F - 0.01, F + 0.006, 0.28, 0.36, c["dark"], bevel=0.004)
-    m.text(LETTERS, half + 0.002, 0.0, 0.58, 0.025, c["chrome"], 1)
+    # The destination sign over the windshield.
+    yt = parts.outline_front(outline, t - 0.07)
+    m.box(-0.05, 0.05, yt - 0.01, yt - 0.002, t - 0.12, t - 0.06, c["dark"])
+    m.text(LETTERS, half + 0.002, 0.0, 0.56, 0.025, c["chrome"] if era >= 1975 else body, 1)
 
 
 # How long each cab is, from its back to its bumper, in tiles.
 CAB_LEN = {"early": 0.15, "round": 0.17, "square": 0.17, "fifties": 0.22, "long": 0.25, "sleeper": 0.32, "aero": 0.27, "cabover": 0.1}
 # Each cab's roof, in steps, for bodies sized to it.
 CAB_TOP = {"early": 0.9, "round": 0.9, "square": 0.96, "fifties": 1.16, "long": 1.34, "sleeper": 1.34, "aero": 1.62, "cabover": 1.32}
+# How far the steer axle sits behind each cab's front, in tiles: under the front of the hood, about a metre back.
+FRONT_AXLE = {"early": 0.045, "round": 0.045, "square": 0.045, "fifties": 0.05, "long": 0.05, "sleeper": 0.05, "aero": 0.05, "cabover": 0.045}
+# From a truck or trailer's back to its last axle, in tiles, about a metre and a quarter.
+REAR_AXLE = 0.05
 
 
 def _ring(m, x, y, zc, r, w, mat, n=20):
@@ -214,7 +312,7 @@ def _early_cab(m, y0, y1, c, paint):
     m.box(-0.06, 0.06, y0 + 0.004, y0 + 0.04, 0.37, 0.5, leather, bevel=0.004)
     m.box(-0.06, 0.06, y0 + 0.002, y0 + 0.014, 0.5, 0.7, leather, bevel=0.004)
     # Wings over the front wheels, sweeping down into flat running boards.
-    yw, zc = y1 - 0.055, WHEEL_R / rig.RISE
+    yw, zc = y1 - FRONT_AXLE["early"], WHEEL_R / rig.RISE
     ro = WHEEL_R * 1.25
     upper = [(yw + math.cos(math.radians(d)) * ro, zc + math.sin(math.radians(d)) * ro / rig.RISE) for d in range(15, 166, 15)]
     upper += [(yw - ro * 1.5, 0.31), (y0 - 0.01, 0.31)]
@@ -272,7 +370,7 @@ def _long_cab(m, y0, y1, c, paint, style, era, stacks):
     m.box(-0.042, 0.042, y1 - 0.0025, y1 - 0.001, 0.4, nose - 0.03, grille)
     m.box(-0.042, 0.042, y1 - 0.0024, y1 - 0.0005, (0.4 + nose) / 2 - 0.01, (0.4 + nose) / 2 + 0.01, c["chrome"])
     # Fenders: flat-topped wings beside the hood, arched over the steer wheels and stopping behind them.
-    yw, zc = y1 - 0.058, WHEEL_R / rig.RISE
+    yw, zc = y1 - FRONT_AXLE[style], WHEEL_R / rig.RISE
     ro = WHEEL_R * 1.3
     arch = [(yw + math.cos(math.radians(d)) * ro, zc + math.sin(math.radians(d)) * ro / rig.RISE, 0, "paint") for d in range(20, 161, 20)]
     wing = [(y1 - 0.004, 0.26, 0, "paint")] + arch + [(yw - ro - 0.012, 0.26, 0, "paint"), (yw - ro - 0.012, 0.5, 0.006, "paint"),
@@ -321,7 +419,7 @@ def _fifties_cab(m, y0, y1, c, paint):
         x = -0.03 + 0.015 * k
         m.box(x - 0.002, x + 0.002, y1 - 0.009, y1 - 0.003, 0.36, 0.66, c["chrome"])
     for side in (-1, 1):
-        fender(m, y1 - 0.06, side, c, paint)
+        fender(m, y1 - FRONT_AXLE["fifties"], side, c, paint)
         m.box(side * half - 0.001, side * half + 0.001, hood - 0.05, hood - 0.012, 0.84, top - 0.08, c["glass"])
     _stack(m, 0.062, y0 - 0.007, 1.62, c)
     with m.keep():
@@ -392,7 +490,7 @@ def _cab(m, y0, y1, c, paint, style, era=1970, stacks="back"):
                 half - 0.006, {"paint": paint}, crown=0.05)
     if style in ("round", "square"):
         for side in (-1, 1):
-            fender(m, y1 - 0.045, side, c, paint)
+            fender(m, y1 - FRONT_AXLE[style], side, c, paint)
     door = hood - 0.012 if style != "cabover" else y0 + 0.05
     for side in (-1, 1):
         m.box(side * half - 0.001, side * half + 0.001, door - 0.04, door, win[0] if style != "cabover" else 0.82, win[1], c["glass"])
@@ -457,10 +555,13 @@ def truck(m, L, kind, cab="round", gen=1, plow="wedge", lifts=0, era=1970):
     cab0 = a1 - CAB_LEN[cab]
     top = CAB_TOP[cab]
     if lifts:
-        rear = [a0 + 0.07 + 0.045 * k for k in range(2 + lifts)]
+        rear = [a0 + REAR_AXLE + 0.045 * k for k in range(2 + lifts)]
+    elif L > 0.45 or gen > 1:
+        rear = [a0 + REAR_AXLE, a0 + REAR_AXLE + 0.06]
     else:
-        rear = [a0 + 0.07] + ([a0 + 0.13] if L > 0.45 or gen > 1 else [])
-    (spoked if cab == "early" else wheels)(m, [a1 - 0.055] + rear, c)
+        # A single rear axle, its overhang a little longer.
+        rear = [a0 + REAR_AXLE + 0.01]
+    (spoked if cab == "early" else wheels)(m, [a1 - FRONT_AXLE[cab]] + rear, c)
     m.box(-0.06, 0.06, a0, a1, 0.25, 0.35, c["dark"])
     _cab(m, cab0, a1 - (0.005 if cab == "cabover" else 0.0), c, paint, cab, era, "front")
     if gen == 3:
@@ -615,9 +716,9 @@ def tractor(m, L, trailer, cab, paint_hex, bumper=False, era=1970, drive=2, axle
     cab0 = a1 - CAB_LEN[cab]
     axles = axles or TRAILER_AXLES[trailer]
     drives = [cab0 - 0.04] if drive == 1 else [cab0 - 0.03 - AXLE_GAP * k for k in range(drive)]
-    rear = [a0 + 0.06 + AXLE_GAP * k for k in range(axles[-1])]
+    rear = [a0 + REAR_AXLE + AXLE_GAP * k for k in range(axles[-1])]
     lead = [rear[-1] + 0.07 + AXLE_GAP * k for k in range(axles[0])] if len(axles) > 1 else []
-    wheels(m, [a1 - 0.06] + drives + rear + lead, c)
+    wheels(m, [a1 - FRONT_AXLE[cab]] + drives + rear + lead, c)
     m.box(-0.06, 0.06, drives[-1] - 0.035, a1, 0.25, 0.35, c["dark"])
     _cab(m, cab0, a1, c, paint, cab, era, stacks)
     if bumper:
@@ -709,7 +810,7 @@ def van(m, L, era):
     grille = material("grille", "#3a3836", metal=0.4, rough=0.5)
     R, F = -L / 2 + 0.01, L / 2 - 0.01
     half = 0.078
-    wheels(m, [R + 0.08, F - 0.07], c)
+    wheels(m, [R + 0.065, F - 0.055], c)
     if era == "step":
         shape = [(R, 0.32, 0.012, "paint"), (F - 0.004, 0.32, 0.015, "grille", 0.88), (F, 0.62, 0.02, "paint", 0.88),
                  (F - 0.035, 0.76, 0.02, "paint", 0.92), (F - 0.04, 0.8, 0.006, "glass", 0.95), (F - 0.05, 1.26, 0.02, "paint"),
@@ -834,18 +935,67 @@ def old_car(m, b0, b1, half, floor, eaves, plat, mats, c, closed, windows_n, ris
     return z1 + 0.035
 
 
+def _section_ring(w, zlo, ztop, half, zs, roof, square=2.6, n_roof=12):
+    """A body's cross-section as (x, z) points round from the bottom right: straight sides with a point at each height
+    in zs (clamped under the roof), then the roof rounding over, roof steps deep at most, square sets how square."""
+    xw = half * w
+    rt = min(roof, (ztop - zlo) * 0.6)
+    eaves = ztop - rt
+    side = [zlo] + list(zs)
+    pts = []
+    for i, z in enumerate(side):
+        z = min(max(z, zlo + 0.0005 * i), eaves - 0.0005 * (len(side) - i))
+        pts.append((xw, z))
+    for k in range(n_roof + 1):
+        a = math.pi * k / n_roof
+        c, s = math.cos(a), math.sin(a)
+        pts.append((xw * math.copysign(abs(c) ** (2 / square), c), eaves + rt * abs(s) ** (2 / square)))
+    pts += [(-x, z) for x, z in reversed(pts[:len(side)])]
+    return pts
+
+
+def _skin(m, sections, classify, mats, sharp=40):
+    """A body lofted through sections, each (y, ring of (x, z in steps)), every ring the same length. Each face takes
+    the material classify(x, y, z) names for its middle, in the builder's heights, so windows and bands follow the
+    shape round its ends. The two end rings are closed with paint."""
+    keys = list(mats)
+    bm = bmesh.new()
+    rings = [[bm.verts.new((x, y, m.z(z) * rig.RISE)) for x, z in ring] for y, ring in sections]
+    n = len(sections[0][1])
+    for (ya, ra), (yb, rb), va, vb in zip(sections, sections[1:], rings, rings[1:]):
+        for k in range(n):
+            j = (k + 1) % n
+            face = bm.faces.new((va[k], va[j], vb[j], vb[k]))
+            x = (ra[k][0] + ra[j][0] + rb[k][0] + rb[j][0]) / 4
+            z = (ra[k][1] + ra[j][1] + rb[k][1] + rb[j][1]) / 4
+            face.material_index = keys.index(classify(x, (ya + yb) / 2, z) if k < n - 1 else "paint")
+    for ring in (rings[0], rings[-1]):
+        face = bm.faces.new(ring)
+        face.material_index = keys.index("paint")
+        bmesh.ops.triangulate(bm, faces=[face])
+    bmesh.ops.remove_doubles(bm, verts=bm.verts, dist=1e-6)
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+    for f in bm.faces:
+        f.smooth = True
+    for e in bm.edges:
+        if len(e.link_faces) == 2 and e.calc_face_angle(0.0) > math.radians(sharp):
+            e.smooth = False
+    obj = m._mesh("skin", bm, None)
+    for k in keys:
+        obj.data.materials.append(mats[k])
+    return obj
+
+
 def streetcar(m, L, era):
-    """A streetcar: a wooden single-truck car with closed vestibules and a monitor roof, a rounded PCC, an angular CLRV, or a long low-floor tram."""
+    """A streetcar: a wooden single-truck car with closed vestibules and a monitor roof, a PCC with bullet ends, an
+    angular CLRV, or a five-section low-floor tram."""
     c = common()
     paint = {"wood": ("#8a2a22", "#e6c870"), "pcc": ("#c8302a", "#ece6d6"), "clrv": ("#c8302a", "#ece6d6"), "flexity": ("#c8302a", "#2a2a2a")}[era]
     body = material(f"{era} tram", paint[0], rough=0.4, clearcoat=0.3)
     trim = material(f"{era} trim", paint[1], rough=0.4)
     a0, a1 = -L / 2 + 0.01, L / 2 - 0.01
-    half = 0.085
-    floor = 0.3 if era == "flexity" else 0.42
-    top = 1.3
-    zc = WHEEL_R / rig.RISE
     if era == "wood":
+        floor = 0.42
         roof = material("car roof", "#6a625a", rough=0.75)
         deck = old_car(m, a0, a1, 0.082, floor, 1.1, 0.065, {"paint": body, "trim": trim, "roof": roof}, c, True, 8)
         # One small truck: four wheels showing between the bars of its side frames, and the trolley pole raked back
@@ -854,50 +1004,189 @@ def streetcar(m, L, era):
         zw = r / rig.RISE
         with m.keep():
             for side in (-1, 1):
-                for y in (-0.045, 0.045):
+                for y in (-0.06, 0.06):
                     m.tube_x(side * 0.066 - 0.006, side * 0.066 + 0.006, y, zw, r, c["dark"])
                     m.tube_x(side * 0.073 - 0.002, side * 0.073 + 0.002, y, zw, r * 0.4, c["hub"])
                 for z0, z1 in ((zw - 0.03, zw + 0.03), (zw + 0.2, zw + 0.25)):
-                    m.box(side * 0.076 - 0.003, side * 0.076 + 0.003, -0.078, 0.078, z0, z1, c["dark"], bevel=0.002)
+                    m.box(side * 0.076 - 0.003, side * 0.076 + 0.003, -0.093, 0.093, z0, z1, c["dark"], bevel=0.002)
                 m.box(side * 0.076 - 0.003, side * 0.076 + 0.003, -0.012, 0.012, zw - 0.03, zw + 0.25, c["dark"])
-        m.box(-0.055, 0.055, -0.065, 0.065, m.fixed(zw + 0.2), floor - 0.04, c["dark"])
+        m.box(-0.055, 0.055, -0.08, 0.08, m.fixed(zw + 0.2), floor - 0.04, c["dark"])
         m.rod((0.0, a0 + L * 0.5, deck), (0.0, a0 + L * 0.14, deck + 0.42), 0.004, c["dark"])
         m.box(-0.016, 0.016, a0 + L * 0.48, a0 + L * 0.54, deck - 0.01, deck + 0.03, c["dark"])
         m.text(LETTERS, 0.0842, 0.0, floor + 0.2, 0.025, trim, 1)
         return
-    for y in (a0 + L * 0.2, a1 - L * 0.2):
+    if era == "flexity":
+        _flexity(m, a0, a1, body, trim, c)
+        return
+    _modern_car(m, L, era, a0, a1, body, trim, c)
+
+
+# Each modern car's nose, from the tip back, as (distance from the tip in tiles, width of half, bottom, top in steps),
+# and its bands as (bottom, top, part) in steps.
+TRAM = {
+    # The PCC: a rounded bullet end, narrowing in plan and dropping over the windshield, skirts down over the trucks,
+    # standee windows over the main ones and cream belts.
+    "pcc": {"zlo": 0.33, "top": 1.3, "roof": 0.16, "square": 2.4,
+            "nose": [(0.0, 0.5, 0.46, 0.7), (0.008, 0.66, 0.39, 0.8), (0.02, 0.78, 0.35, 0.92), (0.036, 0.87, 0.33, 1.04),
+                     (0.056, 0.94, 0.33, 1.16), (0.08, 0.985, 0.33, 1.25), (0.105, 1.0, 0.33, 1.3)],
+            "bands": [(0.42, 0.46, "trim"), (0.7, 0.76, "trim"), (0.8, 1.06, "glass"), (1.1, 1.17, "standee"), (1.2, 1.23, "trim")]},
+    # The CLRV: square-cornered, a flat dash and a flat windshield sloping back, a deep black band round the windows
+    # and a white stripe low down.
+    "clrv": {"zlo": 0.35, "top": 1.34, "roof": 0.07, "square": 7,
+             "nose": [(0.0, 0.9, 0.42, 0.74), (0.004, 0.95, 0.37, 0.77), (0.008, 0.97, 0.35, 0.8), (0.036, 0.985, 0.35, 1.26),
+                      (0.044, 1.0, 0.35, 1.34)],
+             "bands": [(0.47, 0.53, "trim"), (0.76, 1.16, "glass")]},
+}
+
+
+def _ends(y0, y1, nose, zlo, top, mid, front=True, back=True):
+    """Sections (y, width, bottom, top) along a body from y0 to y1, shaped by nose at each end asked for, square
+    elsewhere, with a section at each y in mid as well."""
+    secs = [(y, 1.0, zlo, top) for y in mid if y0 + nose[-1][0] < y < y1 - nose[-1][0]]
+    if back:
+        secs += [(y0 + d, w, lo, hi) for d, w, lo, hi in nose]
+    else:
+        secs += [(y0, 1.0, zlo, top)]
+    if front:
+        secs += [(y1 - d, w, lo, hi) for d, w, lo, hi in nose]
+    else:
+        secs += [(y1, 1.0, zlo, top)]
+    return sorted(secs)
+
+
+def _band_of(bands, z):
+    for z0, z1, part in bands:
+        if z0 <= z <= z1:
+            return part
+    return "paint"
+
+
+def _pane_edges(y0, y1, n, pillar):
+    """The window edges along y0 to y1 for n windows, each followed by a pillar pillar of the window spacing wide."""
+    step = (y1 - y0) / n
+    return [y0 + k * step + d for k in range(n) for d in (0.0, step * (1 - pillar))] + [y1], step
+
+
+def _modern_car(m, L, era, a0, a1, body, trim, c):
+    """A PCC or a CLRV: one body on two trucks, both ends shaped alike as they run either way round or turn on loops."""
+    spec = TRAM[era]
+    half = 0.085
+    zlo, top = spec["zlo"], spec["top"]
+    zc = WHEEL_R / rig.RISE
+    for y in (a0 + L * 0.17, a1 - L * 0.17):
         for side in (-1, 1):
             for dy in (-0.03, 0.03):
                 with m.keep():
                     m.tube_x(side * 0.065 - 0.008, side * 0.065 + 0.008, y + dy, zc, WHEEL_R * 0.9, c["dark"])
-    # Both ends shaped alike, as these run either way round or turn on loops.
-    nose = {"pcc": (0.004, 0.03, 0.04, 0.88, 0.1), "clrv": (0.003, 0.012, 0.008, 0.94, 0.05), "flexity": (0.005, 0.025, 0.035, 0.9, 0.06)}[era]
-    lean, rake, r, w, crown = nose
-    shape = [(a0 + 0.004, floor, r * 0.6, "paint", w), (a1 - 0.004, floor, r * 0.6, "paint", w), (a1 + lean, floor + 0.25, r, "paint", w),
-             (a1, floor + 0.42, 0.01, "glass", w), (a1 - rake, top - 0.04, r, "paint", w), (a1 - rake - 0.03, top + 0.05, r, "paint"),
-             (a0 + rake + 0.03, top + 0.05, r, "paint"), (a0 + rake, top - 0.04, r, "glass", w), (a0, floor + 0.42, 0.01, "paint", w),
-             (a0 - lean, floor + 0.25, r, "paint", w)]
-    outline = m.shell(shape, half, {"paint": body, "glass": c["glass"]}, crown=crown)
-    if era == "pcc":
-        m.shell([(a0 + 0.08, top + 0.02, 0, "paint"), (a1 - 0.08, top + 0.02, 0, "paint"), (a1 - 0.1, top + 0.09, 0.02, "paint"),
-                 (a0 + 0.1, top + 0.09, 0.02, "paint")], 0.05, {"paint": trim}, crown=0.02)
-    for side in (-1, 1):
-        m.box(side * half - 0.0015, side * half + 0.0015, a0 + 0.03, a1 - 0.03, floor + 0.08, floor + 0.2, trim)
-    for y in (a0, a1):
+        m.box(-0.07, 0.07, y - 0.05, y + 0.05, m.fixed(zc + 0.02), zlo + 0.05, c["dark"])
+    nose = spec["nose"]
+    w0, w1 = a0 + nose[-1][0] + 0.012, a1 - nose[-1][0] - 0.012
+    n = max(4, round((w1 - w0) / 0.05))
+    edges, step = _pane_edges(w0, w1, n, 0.18)
+    band = [b for b in spec["bands"] if b[2] == "glass"][0]
+    mats = {"paint": body, "trim": trim, "glass": c["glass"], "band": material("window band", "#161616", rough=0.3)}
+
+    def classify(x, y, z):
+        part = _band_of(spec["bands"], z)
+        side = abs(x) > half * 0.8 and w0 - 0.012 < y < w1 + 0.012
+        if part in ("glass", "standee") and side:
+            if y < w0 or y > w1 or (y - w0) % step > step * 0.82:
+                return "band" if era == "clrv" else "paint"
+        if part == "standee":
+            return "glass" if side else "paint"
+        if part == "glass" and era == "clrv" and abs(x) <= half * 0.8 and band[0] + 0.02 > z:
+            return "band"
+        return part
+    zs = sorted({z for b in spec["bands"] for z in b[:2] if z < top})
+    secs = _ends(a0, a1, nose, zlo, top, edges)
+    _skin(m, [(y, _section_ring(w, lo, hi, half, zs, spec["roof"], spec["square"])) for y, w, lo, hi in secs], classify, mats)
+    for end in (-1, 1):
+        y = a1 if end > 0 else a0
+        if era == "pcc":
+            # One headlight in the middle of the dash, a bumper under it.
+            m.tube(y - 0.004, y + 0.004, 0.0, 0.6, 0.009, c["light"], segments=12)
+            m.box(-0.05, 0.05, min(y, y + end * 0.006), max(y, y + end * 0.006), 0.4, 0.46, c["dark"], bevel=0.003)
+        else:
+            # Square lamps low at the corners, an anticlimber across under them.
+            for s in (-1, 1):
+                m.box(s * 0.058 - 0.01, s * 0.058 + 0.01, min(y, y + end * 0.002), max(y, y + end * 0.002), 0.55, 0.62, c["light"])
+            m.box(-0.07, 0.07, min(y, y + end * 0.008), max(y, y + end * 0.008), 0.38, 0.47, c["dark"], bevel=0.002)
+    # A trolley pole raked back to the wire, on a base on the roof.
+    m.box(-0.016, 0.016, a0 + L * 0.42, a0 + L * 0.5, top - 0.01, top + 0.04, c["dark"])
+    m.rod((0.0, a0 + L * 0.46, top + 0.04), (0.0, a0 + L * 0.12, top + 0.55), 0.004, c["dark"])
+    m.text(LETTERS, half + 0.002, 0.0, 0.6 if era == "pcc" else 0.65, 0.025, trim, 1)
+
+
+def _flexity(m, a0, a1, body, trim, c):
+    """A Flexity Outlook: five sections on three trucks, flexible joints between them sitting flush under the roof
+    line, a rounded raked nose with a big windshield at each end, a black window band and skirts, and a half
+    pantograph on the middle section."""
+    half = 0.085
+    zlo, top = 0.24, 1.32
+    zc = WHEEL_R / rig.RISE
+    nose = [(0.0, 0.46, 0.34, 0.5), (0.008, 0.62, 0.29, 0.6), (0.02, 0.76, 0.26, 0.74), (0.036, 0.86, 0.24, 0.9),
+            (0.056, 0.93, 0.24, 1.06), (0.08, 0.975, 0.24, 1.2), (0.105, 0.995, 0.24, 1.29), (0.125, 1.0, 0.24, 1.32)]
+    bands = [(0.0, 0.36, "skirt"), (0.56, 1.1, "glass"), (1.31, 9, "roof")]
+    mats = {"paint": body, "skirt": material("tram skirt", "#1a1a1a", rough=0.5), "glass": material("window band", "#161616", rough=0.25),
+            "roof": material("flexity roof", "#8e8a86", rough=0.6)}
+    gap = 0.012
+    span = a1 - a0 - 4 * gap
+    sizes = [0.235, 0.165, 0.2, 0.165, 0.235]
+    zs = [0.36, 0.56, 1.1, 1.31]
+    y = a0
+    mods = []
+    for k, f in enumerate(sizes):
+        mods.append((y, y + span * f))
+        y += span * f + gap
+
+    def classify(x, yy, z):
+        return _band_of(bands, z)
+    for k, (y0, y1) in enumerate(mods):
+        joint = [(0.0, 0.985, zlo + 0.01, top - 0.008), (0.006, 1.0, zlo, top)]
+        secs = []
+        if k == 0:
+            secs += [(y0 + d, w, lo, hi) for d, w, lo, hi in nose]
+        else:
+            secs += [(y0 + d, w, lo, hi) for d, w, lo, hi in joint]
+        if k == 4:
+            secs += [(y1 - d, w, lo, hi) for d, w, lo, hi in nose]
+        else:
+            secs += [(y1 - d, w, lo, hi) for d, w, lo, hi in joint]
+        _skin(m, [(yy, _section_ring(w, lo, hi, half, zs, 0.14, 2.6)) for yy, w, lo, hi in sorted(secs)], classify, mats)
+        if 0 < k:
+            # The joint's bellows, set in from the sides and just under the roof.
+            jy0, jy1 = mods[k - 1][1] - 0.002, y0 + 0.002
+            ring = _section_ring(0.93, zlo + 0.04, top - 0.02, half, [0.56, 1.1], 0.12, 2.6)
+            m.loft([(jy0, ring), (jy1, ring)], {"skirt": mats["skirt"]})
+        # Panes along the window band, lighter than it.
+        if k in (0, 4):
+            p0, p1 = (y0 + 0.14, y1 - 0.02) if k == 0 else (y0 + 0.02, y1 - 0.14)
+        else:
+            p0, p1 = y0 + 0.02, y1 - 0.02
+        windows(m, p0, p1, 0.6, 1.06, max(2, round((p1 - p0) / 0.045)), half + 0.0006, c, gap=0.12)
+    # Trucks under the end sections and the middle one, hidden but for the wheels under the skirts.
+    for y in (mods[0][0] + 0.07, (mods[2][0] + mods[2][1]) / 2, mods[4][1] - 0.07):
+        for side in (-1, 1):
+            for dy in (-0.025, 0.025):
+                with m.keep():
+                    m.tube_x(side * 0.065 - 0.008, side * 0.065 + 0.008, y + dy, zc * 0.85, WHEEL_R * 0.85, c["dark"])
+    for end in (-1, 1):
+        y = a1 if end > 0 else a0
         for s in (-1, 1):
-            m.tube(y - 0.004, y + 0.004, s * 0.05, floor + 0.15, 0.009, c["light"], segments=12)
-    windows(m, a0 + 0.07, a1 - 0.07, floor + 0.45, top - 0.12, int(L * 14), half + 0.0005, c, gap=0.2)
-    if era == "flexity":
-        # Joints between the sections, and a pantograph.
-        for f in (1 / 3, 2 / 3):
-            y = a0 + (a1 - a0) * f
-            m.box(-half - 0.001, half + 0.001, y - 0.012, y + 0.012, floor, top + 0.04, c["dark"])
-        m.rod((0.0, 0.0, top + 0.06), (0.0, 0.05, top + 0.6), 0.004, c["hub"])
-        m.box(-0.06, 0.06, 0.04, 0.06, top + 0.58, top + 0.62, c["hub"])
-    else:
-        # A trolley pole raked back to the wire.
-        m.rod((0.0, a0 + L * 0.45, top + 0.08), (0.0, a0 + L * 0.12, top + 0.55), 0.004, c["dark"])
-    m.text(LETTERS, half + 0.002, 0.0, floor + 0.3, 0.025, trim, 1)
+            m.tube(min(y, y + end * 0.003) - 0.004, max(y, y + end * 0.003), s * 0.024, 0.42, 0.006, c["light"], segments=12)
+    # A half pantograph: a frame on the roof, the lower arm forward to the knee, the upper arm back to the head.
+    my = (mods[2][0] + mods[2][1]) / 2
+    base, knee, head = top + 0.03, top + 0.32, top + 0.62
+    m.box(-0.04, 0.04, my - 0.035, my + 0.035, top - 0.01, base, c["dark"])
+    for s in (-1, 1):
+        m.rod((s * 0.025, my - 0.03, base), (s * 0.008, my + 0.035, knee), 0.0028, c["hub"], segments=6)
+    m.rod((0.0, my + 0.035, knee), (0.0, my - 0.01, head), 0.0026, c["hub"], segments=6)
+    m.rod((-0.008, my - 0.03, base), (0.0, my + 0.03, knee - 0.06), 0.0012, c["hub"], segments=5)
+    for dy in (-0.006, 0.006):
+        m.rod((-0.05, my - 0.01 + dy, head), (0.05, my - 0.01 + dy, head), 0.002, c["hub"], segments=5)
+    for s in (-1, 1):
+        m.rod((s * 0.05, my - 0.01, head), (s * 0.065, my - 0.01, head - 0.05), 0.0018, c["hub"], segments=5)
+    m.text(LETTERS, half + 0.002, (mods[2][0] + mods[2][1]) / 2, 0.42, 0.025, trim, 1)
 
 
 def salt_dome(m):

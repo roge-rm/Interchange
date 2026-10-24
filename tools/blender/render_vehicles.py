@@ -93,7 +93,7 @@ MODELS = {
     "new_look": (8, lambda m: roadcars.bus(m, L(8), "newlook")),
     "low_floor": (8, lambda m: roadcars.bus(m, L(8), "lowfloor")),
     "electric_bus": (8, lambda m: roadcars.bus(m, L(8), "electric")),
-    "highway_coach": (9, lambda m: roadcars.highway_coach(m, L(9))),
+    "highway_coach": (9, lambda m: roadcars.highway_coach(m, L(9), 1980)),
     "mail_truck": (5, lambda m: roadcars.truck(m, L(5), "mail", "early")),
     "stake_truck": (6, lambda m: roadcars.truck(m, L(6), "stake", "early")),
     "dump_truck": (6, lambda m: roadcars.truck(m, L(6), "dump")),

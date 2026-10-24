@@ -344,8 +344,8 @@ def pole(m, y0, y1, z, wood):
 
 
 def omnibus(m, L):
-    """A horse omnibus: a long box body with a curved roof and windows all along, a door at the back, the driver up
-    front over the pair."""
+    """A horse omnibus: a long box body with a curved roof and windows all along, a door and step at the back, a rail
+    round the roof, small front wheels and big rear ones, the driver up front over the pair."""
     a0, a1 = -L / 2 + 0.005, L / 2 - 0.005
     body = material("omnibus", "#2c4c38", rough=0.45, clearcoat=0.3)
     trim = material("omnibus trim", "#e6dcc0", rough=0.45)
@@ -363,8 +363,15 @@ def omnibus(m, L):
             ya = b0 + 0.02 + k * 0.043
             m.box(side * half - 0.001, side * half + 0.001, ya, ya + 0.032, floor + 0.4, top - 0.18, glass)
         m.box(side * half - 0.0015, side * half + 0.0015, b0 + 0.01, b1 - 0.01, floor + 0.3, floor + 0.36, trim)
+    # The door at the back and its step, and a rail round the roof.
     m.box(-0.025, 0.025, b0 - 0.003, b0 + 0.002, floor, top - 0.15, glass)
     m.box(-half, half, b0 - 0.02, b0, floor - 0.04, floor, dark)
+    m.box(-0.03, 0.03, b0 - 0.03, b0 - 0.012, floor - 0.16, floor - 0.12, dark)
+    for side in (-1, 1):
+        m.rod((side * (half - 0.006), b0 + 0.012, top + 0.08), (side * (half - 0.006), b1 - 0.02, top + 0.08), 0.0016, dark, segments=5)
+        for k in range(6):
+            yy = b0 + 0.012 + (b1 - b0 - 0.032) * k / 5
+            m.rod((side * (half - 0.006), yy, top - 0.02), (side * (half - 0.006), yy, top + 0.08), 0.0013, dark, segments=5)
     # The driver's seat up at the front, the footboard below it.
     m.box(-0.04, 0.04, b1 - 0.005, b1 + 0.03, top - 0.02, top + 0.06, dark)
     driver(m, b1 + 0.012, top + 0.06)
@@ -378,9 +385,11 @@ def omnibus(m, L):
 
 
 def coach(m, L, mail):
-    """A Concord stagecoach slung on its leather braces: an egg-shaped body, a high box seat for the driver, a boot at the
-    back and luggage on the roof. The mail coach is the same in darker colours and lettered for the mail."""
-    a0, a1 = -L / 2 + 0.005, L / 2 - 0.005
+    """A Concord stagecoach slung on its leather braces: an egg-shaped body, its belly curved and its ends bowed out, big
+    rear wheels and smaller front ones, a high box seat for the driver, a leather boot at the back and luggage behind a
+    rail on the roof. The mail coach is boxier, in darker colours and lettered for the mail, with a locked mail box at
+    the back under the guard's seat in place of the boot and roof luggage."""
+    a0 = -L / 2 + 0.005
     paint, wheels = ("#5a1e22", "#1e1e20") if mail else ("#a2342a", "#d8a020")
     body = material("coach mail" if mail else "coach", paint, rough=0.4, clearcoat=0.4)
     gold = material("coach trim", "#c9a640", metal=0.4, rough=0.35)
@@ -388,66 +397,136 @@ def coach(m, L, mail):
     wood = material("coach wheels mail" if mail else "coach wheels", wheels, rough=0.6)
     dark = material("undercarriage", "#222224", rough=0.7)
     leather = material("boot", "#3a2a20", rough=0.75)
-    b0 = a0 + 0.03
-    b1 = b0 + (0.15 if not mail else 0.13)
+    # Rear wheels 60 inches, front 44.
+    rear, front = (a0 + 0.066, 0.064), (a0 + 0.066 + (0.1 if mail else 0.11), 0.047)
+    b0 = rear[0] - (0.02 if mail else 0.03)
+    b1 = front[0] + 0.006
     half = 0.062
-    lo, hi = 0.42, 1.04
-    # The body's curved belly and flat top, its ends leaning out.
-    m.shell([(b0 + 0.02, lo, 0.03, "paint", 0.92), (b1 - 0.02, lo, 0.03, "paint", 0.92), (b1 + 0.008, lo + 0.25, 0.03, "paint", 1),
-             (b1, hi, 0.012, "paint", 1), (b0, hi, 0.012, "paint", 1), (b0 - 0.008, lo + 0.25, 0.03, "paint", 1)],
-            half, {"paint": body}, crown=0.04)
-    for side in (-1, 1):
-        m.box(side * half - 0.001, side * half + 0.001, (b0 + b1) / 2 - 0.022, (b0 + b1) / 2 + 0.022, lo + 0.32, hi - 0.1, glass)
-        m.box(side * half - 0.0015, side * half + 0.0015, b0 + 0.004, b1 - 0.004, hi - 0.05, hi - 0.03, gold)
-    # The boot behind, the box seat in front with the driver, a rail of luggage on the roof.
-    m.box(-0.05, 0.05, b0 - 0.03, b0 - 0.002, lo + 0.05, lo + 0.4, leather, bevel=0.004)
-    m.box(-0.045, 0.045, b1 - 0.004, b1 + 0.035, hi - 0.15, hi - 0.06, body, bevel=0.003)
-    driver(m, b1 + 0.016, hi - 0.06)
-    for k, (yy, cc) in enumerate(((b0 + 0.03, "#6a5a40"), (b0 + 0.07, "#4a3a2a"))):
-        m.box(-0.035, 0.035, yy - 0.016, yy + 0.016, hi, hi + 0.12 - k * 0.03, material(f"trunk {cc}", cc, rough=0.7), bevel=0.003)
+    lo, mid, hi = 0.4, 0.72, 1.06
+    # The egg: a flat top, a deep round belly and ends bowed out at the waist, from side to side a little narrower at
+    # the ends. The mail coach's is squarer.
+    pt, pb = (5.0, 3.2) if mail else (4.0, 2.0)
+    yc, ly = (b0 + b1) / 2, (b1 - b0) / 2
+    secs = []
+    for k in range(17):
+        f = -1 + 2 * k / 16
+        s = math.copysign(abs(f) ** 0.9, f)
+        y = yc + s * ly
+        top = mid + (hi - mid) * (1 - abs(s) ** pt) ** (1 / pt)
+        bot = mid - (mid - lo) * (1 - abs(s) ** pb) ** (1 / pb)
+        if abs(s) == 1.0:
+            top, bot = mid + 0.08, mid - 0.06
+        w = 0.86 + 0.14 * (1 - abs(s) ** 4) ** 0.5
+        secs.append((y, roadcars._section_ring(w, bot, top, half, [mid - 0.03, mid, hi - 0.06, hi - 0.03], 0.05, 4.0)))
+    win = (yc - ly * 0.3, yc + ly * 0.3)
+
+    def classify(x, y, z):
+        if abs(x) > half * 0.7 and mid + 0.06 < z < hi - 0.1 and (abs(y - yc) < 0.022 or win[0] - 0.02 < y < win[0] - 0.004
+                                                                    or win[1] + 0.004 < y < win[1] + 0.02):
+            return "glass"
+        if mid - 0.03 <= z <= mid or hi - 0.06 <= z <= hi - 0.03:
+            return "trim"
+        return "paint"
+    roadcars._skin(m, secs, classify, {"paint": body, "trim": gold, "glass": glass})
+    # The box seat in front with the driver and footboard.
+    m.box(-0.045, 0.045, b1 - 0.008, b1 + 0.03, hi - 0.16, hi - 0.06, body, bevel=0.003)
+    m.box(-0.04, 0.04, b1 + 0.022, b1 + 0.04, mid - 0.06, mid - 0.02, dark)
+    driver(m, b1 + 0.014, hi - 0.06)
+    if mail:
+        # The mail box at the back, locked, and the guard on his seat over it.
+        m.box(-0.05, 0.05, b0 - 0.034, b0 + 0.004, lo + 0.08, hi - 0.06, body, bevel=0.004)
+        for z in (lo + 0.08, hi - 0.08):
+            m.box(-0.051, 0.051, b0 - 0.035, b0 - 0.03, z, z + 0.02, gold)
+        m.box(-0.006, 0.006, b0 - 0.036, b0 - 0.033, mid - 0.04, mid + 0.04, gold)
+        m.box(-0.045, 0.045, b0 - 0.03, b0 + 0.006, hi - 0.06, hi - 0.03, dark)
+        driver(m, b0 - 0.014, hi - 0.03, coat="#5a1e22")
+    else:
+        # A leather boot behind, and trunks behind a rail on the roof.
+        m.box(-0.05, 0.05, b0 - 0.034, b0 + 0.006, lo + 0.1, mid + 0.14, leather, bevel=0.008)
+        for k, (yy, cc) in enumerate(((b0 + 0.03, "#6a5a40"), (b0 + 0.07, "#4a3a2a"))):
+            m.box(-0.035, 0.035, yy - 0.016, yy + 0.016, hi, hi + 0.12 - k * 0.03, material(f"trunk {cc}", cc, rough=0.7), bevel=0.003)
+        for side in (-1, 1):
+            m.rod((side * 0.05, b0 + 0.006, hi + 0.06), (side * 0.05, b1 - 0.02, hi + 0.06), 0.0016, dark, segments=5)
+            for yy in (b0 + 0.006, (b0 + b1) / 2, b1 - 0.02):
+                m.rod((side * 0.05, yy, hi - 0.01), (side * 0.05, yy, hi + 0.06), 0.0014, dark, segments=5)
     # The undercarriage: a perch from axle to axle, and the body slung between them on leather braces.
-    rear, front = (b0 + 0.015, 0.05), (b1 + 0.005, 0.04)
     m.box(-0.006, 0.006, rear[0], front[0], 0.17, 0.21, dark)
     for y, r in (rear, front):
         axle(m, y, r, half + 0.008, 0.3, dark)
         for side in (-1, 1):
-            wheel(m, side * (half + 0.008), y, r, wood, spokes=12)
+            wheel(m, side * (half + 0.008), y, r, wood, spokes=12 if r < 0.06 else 14)
     for side in (-1, 1):
-        m.rod((side * 0.04, rear[0], 0.3), (side * 0.04, (rear[0] + front[0]) / 2, lo + 0.02), 0.004, leather, segments=6)
-        m.rod((side * 0.04, (rear[0] + front[0]) / 2, lo + 0.02), (side * 0.04, front[0], 0.3), 0.004, leather, segments=6)
+        m.rod((side * 0.04, rear[0], 0.34), (side * 0.04, yc, lo + 0.0), 0.004, leather, segments=6)
+        m.rod((side * 0.04, yc, lo + 0.0), (side * 0.04, front[0], 0.32), 0.004, leather, segments=6)
     pole(m, b1 + 0.02, b1 + 0.045, 0.4, dark)
     team(m, b1 + 0.045, coats=(1, 2) if mail else (0, 2))
-    m.text("MAIL" if mail else LETTERS, half + 0.002, (b0 + b1) / 2, lo + 0.18, 0.02, gold, 1)
+    m.text("MAIL" if mail else LETTERS, half + 0.002, yc, lo + 0.14, 0.02, gold, 1)
 
 
 def freight_wagon(m, L):
-    """A covered freight wagon: a deep bed sloping up at each end, canvas over hoops, big wheels behind."""
-    a0, a1 = -L / 2 + 0.005, L / 2 - 0.005
+    """A Conestoga freight wagon: a deep bed sagging in the middle, its ends raised and sloping out, canvas over hoops
+    that dips in the middle and flares out over each end, big wheels behind and smaller ones in front."""
+    a0 = -L / 2 + 0.005
     bed = material("wagon bed", "#2a4a7a", rough=0.6)
     canvas = material("canvas", "#e8e2d2", rough=0.9)
     wood = material("wagon wheels", "#a2342a", rough=0.6)
     dark = material("undercarriage", "#222224", rough=0.7)
-    b0, b1 = a0 + 0.01, a0 + 0.24
-    half = 0.06
-    lo = 0.36
-    m.shell([(b0 + 0.012, lo, 0.004, "paint", 1), (b1 - 0.012, lo, 0.004, "paint", 1), (b1 + 0.012, lo + 0.3, 0.004, "paint", 1),
-             (b0 - 0.012, lo + 0.3, 0.004, "paint", 1)], half, {"paint": bed})
-    # The canvas over its hoops, full at the middle and drawn in at the ends.
-    sections = []
-    for k in range(9):
-        f = k / 8
-        y = b0 + 0.005 + (b1 - b0 - 0.01) * f
-        rise = 0.52 + 0.05 * (abs(f - 0.5) * 2) ** 2
-        sections.append((y, [(math.cos(math.pi * j / 10) * (half + 0.004), lo + 0.3 + math.sin(math.pi * j / 10) * rise)
-                             for j in range(11)] + [(-half - 0.004, lo + 0.29), (half + 0.004, lo + 0.29)]))
-    m.loft(sections, {"canvas": canvas})
+    b0, b1 = a0 + 0.02, a0 + 0.235
+    half = 0.058
+    lo, deep = 0.36, 0.3
+    yc, ly = (b0 + b1) / 2, (b1 - b0) / 2
+
+    def rim(y):
+        """The bed's top edge at y: low in the middle, rising to the ends."""
+        s = (y - yc) / ly
+        return lo + deep + 0.12 * s * s
+    # The bed: its bottom sagging, its ends sloping out over the wheels.
+    secs = []
+    for k in range(13):
+        f = -1 + 2 * k / 12
+        y = yc + f * (ly + 0.012)
+        bot = lo + 0.03 * f * f + (0.22 * (abs(f) - 0.9) / 0.1 if abs(f) > 0.9 else 0.0)
+        top = rim(y)
+        secs.append((y, [(half, bot), (half, top), (-half, top), (-half, bot)]))
+    m.loft(secs, {"bed": bed}, sharp=30)
+    # Canvas over its hoops: lowest at the middle, rising to the ends and leaning out past them.
+    bm = bmesh.new()
+    rings = []
+    n_hoop, n_arc = 9, 12
+    for k in range(n_hoop):
+        f = -1 + 2 * k / (n_hoop - 1)
+        y = yc + f * (ly - 0.006)
+        base = rim(y) - 0.01
+        rise = 0.44 + 0.2 * f * f
+        flare = 0.035 * f ** 3
+        w = half + 0.004 + 0.004 * f * f
+        ring = []
+        for j in range(n_arc + 1):
+            a = math.pi * j / n_arc
+            z = base + math.sin(a) * rise
+            ring.append(bm.verts.new((math.cos(a) * w, y + flare * math.sin(a) ** 0.7, m.z(z) * rig.RISE)))
+        rings.append(ring)
+    for r0, r1 in zip(rings, rings[1:]):
+        for j in range(n_arc):
+            bm.faces.new((r0[j], r0[j + 1], r1[j + 1], r1[j]))
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+    obj = m._mesh("canvas", bm, canvas)
+    obj.data.polygons.foreach_set("use_smooth", [True] * len(obj.data.polygons))
+    solid = obj.modifiers.new("thick", "SOLIDIFY")
+    solid.thickness = 0.002
+    # The dark inside showing through each puckered end.
+    for f in (-1, 1):
+        y = yc + f * (ly - 0.012)
+        g = (ly - 0.012) / (ly - 0.006)
+        sec = [(math.cos(math.pi * j / 10) * half * 0.9, rim(y) + math.sin(math.pi * j / 10) * (0.44 + 0.2 * g * g) * 0.9) for j in range(11)]
+        m.loft([(y - 0.002, sec), (y + 0.002, sec)], {"inside": dark})
     m.box(-0.006, 0.006, b0 + 0.04, b1 - 0.035, 0.18, 0.22, dark)
-    for y, r in ((b0 + 0.045, 0.05), (b1 - 0.04, 0.042)):
+    for y, r in ((b0 + 0.045, 0.06), (b1 - 0.035, 0.046)):
         axle(m, y, r, half + 0.008, lo, dark)
-        m.box(-half * 0.8, half * 0.8, y - 0.01, y + 0.01, lo - 0.05, lo, dark)
+        m.box(-half * 0.8, half * 0.8, y - 0.01, y + 0.01, lo - 0.05, lo + 0.02, dark)
         for side in (-1, 1):
-            wheel(m, side * (half + 0.008), y, r, wood, spokes=12)
-    driver(m, b1 - 0.01, lo + 0.3, coat="#5a4a3a")
+            wheel(m, side * (half + 0.008), y, r, wood, spokes=12 if r < 0.05 else 14)
+    driver(m, b1 + 0.004, rim(b1) - 0.03, coat="#5a4a3a")
     pole(m, b1, b1 + 0.03, 0.38, dark)
     team(m, b1 + 0.03, coats=(2, 3))
 

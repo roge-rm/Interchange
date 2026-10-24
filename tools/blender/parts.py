@@ -267,7 +267,9 @@ class Model:
         """A body from its side outline, run across from x - half to x + half.
 
         profile is a list of (y, z in steps, corner radius in tiles, part, width) going round the outline; part names the
-        material in mats for the edge to the next point, and width (0 to 1 of half) lets a hood or nose narrow. A point
+        material in mats for the edge to the next point, and width (0 to 1 of half) lets a hood or nose narrow. An
+        optional sixth value bows the point forward by that many tiles at the middle, none at the sides, for a
+        windshield or nose round in plan. A point
         given twice with two widths makes a step across, as a cab behind a narrower hood. crown drops the roof's edges by
         that many steps. Glass stops short of the outer columns, leaving pillars, unless pillars is False.
         Returns the rounded outline as (y, z) points, in the builder's heights."""
@@ -278,9 +280,9 @@ class Model:
         z_top = max(p[1] for p in pts)
         bm = bmesh.new()
         rings = []
-        for y, z, part, w in pts:
+        for y, z, part, w, b in pts:
             roof = min(1.0, max(0.0, (z - (z_top - 0.15)) / 0.15))
-            rings.append([bm.verts.new((x + f * half * w, y, (z - crown * f * f * roof) * rig.RISE)) for f in cols])
+            rings.append([bm.verts.new((x + f * half * w, y + b * (1 - f * f), (z - crown * f * f * roof) * rig.RISE)) for f in cols])
         n = len(pts)
         for k in range(n):
             a, b = rings[k], rings[(k + 1) % n]
@@ -385,17 +387,17 @@ class Model:
 
 
 def _round(profile):
-    """The outline with each corner rounded by its radius, as (y, z, part, width); corners curve in tile space."""
-    pts = [(p[0], p[1], p[2], p[3], p[4] if len(p) > 4 else 1.0) for p in profile]
+    """The outline with each corner rounded by its radius, as (y, z, part, width, bow); corners curve in tile space."""
+    pts = [(p[0], p[1], p[2], p[3], p[4] if len(p) > 4 else 1.0, p[5] if len(p) > 5 else 0.0) for p in profile]
     n = len(pts)
     out = []
-    for k, (y, z, r, part, w) in enumerate(pts):
-        py, pz, _, prev_part, pw = pts[k - 1]
-        ny, nz, _, _, nw = pts[(k + 1) % n]
+    for k, (y, z, r, part, w, bow) in enumerate(pts):
+        py, pz, _, prev_part, pw, _ = pts[k - 1]
+        ny, nz, _, _, nw, _ = pts[(k + 1) % n]
         a = Vector((py - y, (pz - z) * rig.RISE))
         b = Vector((ny - y, (nz - z) * rig.RISE))
         if r <= 0 or a.length < 1e-6 or b.length < 1e-6 or abs(a.normalized().dot(b.normalized())) > 0.999:
-            out.append((y, z, part, w))
+            out.append((y, z, part, w, bow))
             continue
         half_angle = a.angle(b) / 2
         d = min(r / math.tan(half_angle), a.length * 0.48, b.length * 0.48)
@@ -406,7 +408,7 @@ def _round(profile):
         for i in range(steps + 1):
             t = i / steps
             q = p0 * (1 - t) ** 2 + pc * 2 * t * (1 - t) + p2 * t * t
-            out.append((q.x, q.y / rig.RISE, prev_part if t < 0.5 else part, w))
+            out.append((q.x, q.y / rig.RISE, prev_part if t < 0.5 else part, w, bow))
     return out
 
 
