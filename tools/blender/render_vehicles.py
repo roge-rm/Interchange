@@ -14,6 +14,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import math  # noqa: E402
 
 import bpy  # noqa: E402
+from mathutils import Matrix, Vector  # noqa: E402
 
 import cars  # noqa: E402
 import parts  # noqa: E402
@@ -215,6 +216,7 @@ def main():
         if key not in ROAD and key not in SHIPS and key not in AIRCRAFT:
             couple(model, L(length))
         pivot = model.place(0)
+        home = pivot.location.copy()
         # A step up over a tile, the steepest track climbs.
         tilt = math.atan2(rig.RISE, 1.0)
         shots = [(f"{key}_{h}.png", 0.0, h) for h in range(8)]
@@ -229,6 +231,15 @@ def main():
             if key in AIRCRAFT and k == 8:
                 catcher.hide_render = True
             pivot.rotation_euler = (pitch, 0, -h * math.pi / 4)
+            pivot.location = home
+            stance = getattr(model, "stance", None)
+            if stance and k < 8:
+                # A tail-wheel aircraft on the ground sits tipped back about its main wheels' contact.
+                y, angle = stance
+                pivot.rotation_euler = (angle, 0, -h * math.pi / 4)
+                p = Vector((0, y, 0))
+                spin = Matrix.Rotation(-h * math.pi / 4, 3, "Z")
+                pivot.location = home + spin @ (p - Matrix.Rotation(angle, 3, "X") @ p)
             rig.render(str(out / name))
 
 
