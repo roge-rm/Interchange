@@ -29,8 +29,8 @@ class IndustryTest {
     }
 
     /** A coal mine at one end of a line and a steel mill at the other, placed by hand on flat land. */
-    private fun chain(): World {
-        val w = World(96, 64, 1, startYear = 1900)
+    private fun chain(year: Int = 1900): World {
+        val w = World(96, 64, 1, startYear = year)
         for (i in w.corners.indices) w.corners[i] = 3
         w.companies[0].money = 10_000_000
         fun put(key: String, x: Int, y: Int) {
@@ -73,7 +73,7 @@ class IndustryTest {
 
     @Test
     fun coalCarriedToTheMillIsMadeIntoSteel() {
-        val w = chain()
+        val w = chain(1905)
         val hopper = w.roster.engines.first { it.key == "base:hopper" }
         assertTrue(Cargo.COAL in hopper.cargoes)
         w.apply(Command.BuyTrain(0, 0, 4, hopper.id, 5, Cargo.COAL))
@@ -91,7 +91,7 @@ class IndustryTest {
     fun wagonsCarryWhatTheyreSetTo() {
         val w = chain()
         val gondola = w.roster.engines.first { it.key == "base:gondola" }
-        w.apply(Command.BuyTrain(0, 0, 4, gondola.id, 3, Cargo.IRON_ORE))
+        w.apply(Command.BuyTrain(0, 0, 6, gondola.id, 3, Cargo.IRON_ORE))
         val t = w.trains[0]!!
         assertEquals(0, t.capacity(Cargo.STEEL))
         assertEquals(3 * gondola.capacity, t.capacity(Cargo.IRON_ORE))
@@ -139,7 +139,7 @@ class IndustryTest {
     fun aFullLoadOrderWaitsUntilTheTrainIsFull() {
         val w = chain()
         val hopper = w.roster.engines.first { it.key == "base:hopper" }
-        w.apply(Command.BuyTrain(0, 0, 4, hopper.id, 3, Cargo.COAL))
+        w.apply(Command.BuyTrain(0, 0, 6, hopper.id, 3, Cargo.COAL))
         w.apply(Command.TrainOrder(0, 0, Command.TrainOrder.ORDERS, intArrayOf(0 or Order.FULL_LOAD, 1)))
         w.apply(Command.TrainOrder(0, 0, Command.TrainOrder.START_STOP))
         val t = w.trains[0]!!
@@ -175,7 +175,7 @@ class IndustryTest {
         val hopper = w.roster.engines.first { it.key == "base:hopper" }
         // A station halfway along, where the train sets its coal down to transfer.
         w.apply(Command.Station(0, 44, 10, 46, 10, Track.X))
-        w.apply(Command.BuyTrain(0, 0, 4, hopper.id, 3, Cargo.COAL))
+        w.apply(Command.BuyTrain(0, 0, 6, hopper.id, 3, Cargo.COAL))
         w.apply(Command.TrainOrder(0, 0, Command.TrainOrder.ORDERS, intArrayOf(0, 2 or Order.TRANSFER)))
         w.apply(Command.TrainOrder(0, 0, Command.TrainOrder.START_STOP))
         repeat(Calendar.TICKS_PER_DAY * 120) { w.step() }
@@ -208,7 +208,7 @@ class IndustryTest {
     fun aGoViaOrderRunsThroughWithoutStopping() {
         val w = chain()
         w.apply(Command.Station(0, 44, 10, 46, 10, Track.X))
-        w.apply(Command.BuyTrain(0, 0, 4, 18, 2))
+        w.apply(Command.BuyTrain(0, 0, 6, 18, 2))
         w.apply(Command.TrainOrder(0, 0, Command.TrainOrder.ORDERS, intArrayOf(0, 2 or Order.VIA, 1)))
         w.apply(Command.TrainOrder(0, 0, Command.TrainOrder.START_STOP))
         val t = w.trains[0]!!
@@ -227,8 +227,8 @@ class IndustryTest {
     @Test
     fun sharedOrdersChangeTogether() {
         val w = chain()
-        w.apply(Command.BuyTrain(0, 0, 4, 18, 2))
-        w.apply(Command.BuyTrain(0, 0, 4, 18, 2))
+        w.apply(Command.BuyTrain(0, 0, 6, 18, 2))
+        w.apply(Command.BuyTrain(0, 0, 6, 18, 2))
         w.apply(Command.TrainOrder(0, 0, Command.TrainOrder.ORDERS, intArrayOf(0, 1)))
         w.apply(Command.TrainOrder(0, 1, Command.TrainOrder.SHARE, intArrayOf(0)))
         assertEquals(listOf(0, 1), w.trains[1]!!.orders.toList())
@@ -245,7 +245,7 @@ class IndustryTest {
         val w = chain()
         // A station in the middle with nothing round it, set to be skipped when there's nothing there.
         w.apply(Command.Station(0, 44, 10, 46, 10, Track.X))
-        w.apply(Command.BuyTrain(0, 0, 4, 18, 2))
+        w.apply(Command.BuyTrain(0, 0, 6, 18, 2))
         w.apply(Command.TrainOrder(0, 0, Command.TrainOrder.ORDERS, intArrayOf(0, 2 or Order.SKIP_IF_NOTHING, 1)))
         w.apply(Command.TrainOrder(0, 0, Command.TrainOrder.START_STOP))
         val t = w.trains[0]!!

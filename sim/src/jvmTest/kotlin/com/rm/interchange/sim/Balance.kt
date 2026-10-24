@@ -428,7 +428,7 @@ class Balance {
         val tug = runs("ship-freight", "tug_barge", 1980, 80, Cargo.LUMBER)
         val trains = train("mikado", 1920, 80) + train("pacific", 1950, 80) + train("sd40", 1980, 80) + train("dash9", 2010, 80) +
             train("pacific", 1950, 60) + train("sd40", 1980, 60) + train("dash9", 2010, 60)
-        val ferries = listOf("paddle_steamer" to 1850, "lake_steamer" to 1900, "car_ferry" to 1950, "superferry" to 1980, "hovercraft" to 1980, "battery_ferry" to 2020)
+        val ferries = listOf("paddle_steamer" to 1850, "lake_steamer" to 1900, "car_ferry" to 1950, "superferry" to 1980, "hovercraft" to 1990, "battery_ferry" to 2020)
             .flatMap { (k, y) -> runs("ship-pass", k, y, 12, Cargo.PASSENGERS) }
         val liners = listOf("north_star" to 1950, "dc8" to 1965, "b767" to 1985)
         val air = liners.flatMap { (k, y) -> listOf(20, 60, 120).flatMap { runs("air-pass", k, y, it, Cargo.PASSENGERS) } }

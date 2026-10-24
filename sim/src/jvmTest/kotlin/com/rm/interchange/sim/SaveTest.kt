@@ -225,7 +225,7 @@ class SaveTest {
      */
     @Test
     fun aCopyTakenMidDayDeliversToTheSameIndustry() {
-        val a = World(96, 64, 1, startYear = 1900)
+        val a = World(96, 64, 1, startYear = 1905)
         for (i in a.corners.indices) a.corners[i] = 3
         a.companies[0].money = 10_000_000
         for ((key, x) in listOf("base:coal_mine" to 10, "base:steel_mill" to 80)) {

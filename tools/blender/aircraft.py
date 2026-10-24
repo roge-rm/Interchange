@@ -866,7 +866,7 @@ def aircraft_builders():
         "a220": (9, lambda m, L: A(m, L, "a220", "low", span=0.92, sweep=0.08, livery="airline", r=L * 0.05)),
         "bristol_freighter": (6, lambda m, L: A(m, L, "bristol_freighter", "high", span=1.4, livery="freight", windows=False, cargo_door=True, gear="tail")),
         "hercules": (9, lambda m, L: A(m, L, "hercules", "high", span=1.3, livery="freight", windows=False, cargo_door=True, r=L * 0.075)),
-        "b747f": (13, lambda m, L: A(m, L, "b747f", "low", span=0.85, sweep=0.15, livery="freight", windows=False, cargo_door=True, hump=0.42, r=L * 0.065)),
+        "b747f": (15, lambda m, L: A(m, L, "b747f", "low", span=0.85, sweep=0.15, livery="freight", windows=False, cargo_door=True, hump=0.42, r=L * 0.065)),
         "bell_47": (3, lambda m, L: helicopter(m, L, "bell47")),
         "s55": (4, lambda m, L: helicopter(m, L, "s55")),
         "jetranger": (3, lambda m, L: helicopter(m, L, "jetranger")),

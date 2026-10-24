@@ -95,6 +95,9 @@ MODELS = {
     "low_floor": (8, lambda m: roadcars.bus(m, L(8), "lowfloor")),
     "electric_bus": (8, lambda m: roadcars.bus(m, L(8), "electric")),
     "highway_coach": (9, lambda m: roadcars.highway_coach(m, L(9), 1980)),
+    "courier_coach": (9, lambda m: roadcars.highway_coach(m, L(9), 1950)),
+    "mc5_coach": (9, lambda m: roadcars.highway_coach(m, L(9), 1965)),
+    "d4500_coach": (9, lambda m: roadcars.highway_coach(m, L(9), 2000)),
     "mail_truck": (5, lambda m: roadcars.truck(m, L(5), "mail", "early")),
     "stake_truck": (6, lambda m: roadcars.truck(m, L(6), "stake", "early")),
     "dump_truck": (6, lambda m: roadcars.truck(m, L(6), "dump")),
@@ -129,7 +132,7 @@ for _key, (_n, _build) in list(SHIPS.items()) + list(AIRCRAFT.items()):
 
 
 # Road vehicles stand alone; everything else runs coupled in trains.
-ROAD = {"horse_omnibus", "stagecoach", "mail_coach", "freight_wagon", "red_river_cart", "horsecar", "motor_bus", "brill_bus", "new_look", "low_floor", "electric_bus", "highway_coach", "mail_truck", "stake_truck", "dump_truck",
+ROAD = {"horse_omnibus", "stagecoach", "mail_coach", "freight_wagon", "red_river_cart", "horsecar", "motor_bus", "brill_bus", "new_look", "low_floor", "electric_bus", "highway_coach", "courier_coach", "mc5_coach", "d4500_coach", "mail_truck", "stake_truck", "dump_truck",
         "tank_truck", "log_truck", "cattle_truck", "semi_van", "plow_truck", "streetcar", "pcc", "clrv", "flexity",
         "step_van", "electric_van", "flatbed_truck", "tandem_dump", "quad_dump", "fuel_truck", "tandem_plow", "highway_tractor",
         "aero_tractor", "tanker_train", "grain_train", "cattle_liner", "logger"}

@@ -452,11 +452,14 @@ ROSTER = [
     ("a220", 9, lambda f: coach(f, L(9), True)),
     ("bristol_freighter", 6, lambda f: coach(f, L(6), True)),
     ("hercules", 9, lambda f: coach(f, L(9), True)),
-    ("b747f", 13, lambda f: coach(f, L(13), True)),
+    ("b747f", 15, lambda f: coach(f, L(15), True)),
     ("bell_47", 3, lambda f: coach(f, L(3), True)),
     ("s55", 4, lambda f: coach(f, L(4), True)),
     ("jetranger", 3, lambda f: coach(f, L(3), True)),
     ("s92", 5, lambda f: coach(f, L(5), True)),
+    ("courier_coach", 9, lambda f: coach(f, L(9), True)),
+    ("mc5_coach", 9, lambda f: coach(f, L(9), True)),
+    ("d4500_coach", 9, lambda f: coach(f, L(9), True)),
 ]
 
 

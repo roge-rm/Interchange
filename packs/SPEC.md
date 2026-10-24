@@ -65,7 +65,7 @@ Each vehicle:
 | traction | no | Engines and road vehicles: `steam` (the default), `diesel`, `electric` or `horse`. Electric engines only run under wires. Horse-drawn road vehicles need no winter tires and go on sleigh runners in deep snow, so it doesn't hold them up. |
 | life | no | Years it runs well before it wears out and breaks down more. 35 if left out. |
 | reliability | no | How reliable it is new, in percent. 85 if left out. |
-| plow | no | Wagons: `wedge` or `rotary` makes it a snow plow, run at the head of its train. A wedge clears up to a metre of snow and pushes through drifts four times as fast; a rotary clears anything. Road vehicles: a plow truck that clears the road it drives. |
+| plow | no | Wagons: `wedge` or `rotary` makes it a snow plow, run at the head of its train. A wedge clears up to a metre of snow and pushes through drifts four times as fast; a rotary clears anything. Road vehicles: `wedge` or `oneway`, a plow truck that clears the road it drives. |
 | tram | no | Road vehicles: `true` for a streetcar, which runs only on tram rails. |
 | icebreaker | no | Ships: the ice it breaks through, in cm, clearing a channel as it goes. Other ships stop at 15 cm. |
 | hovercraft | no | Ships: `true` rides over ice of any thickness. |

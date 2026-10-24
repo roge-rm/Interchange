@@ -44,7 +44,7 @@ class VehicleDef(
     /** Years it runs well before it wears out, and how reliable it is new, in percent. */
     val life: Int? = null,
     val reliability: Int? = null,
-    /** wedge or rotary, for a snow plow. */
+    /** wedge, rotary or oneway (road vehicles only), for a snow plow. */
     val plow: String? = null,
     /** A streetcar: a road vehicle that runs only on tram rails. */
     val tram: Boolean? = null,
@@ -258,7 +258,8 @@ object Packs {
                 val moves = kind == VehicleKind.ENGINE || kind == VehicleKind.ROAD || kind == VehicleKind.SHIP || kind == VehicleKind.AIRCRAFT
                 if (kind != null && !moves && (def.speed != null || def.power != null)) problems += "$at: only engines, road vehicles, ships and aircraft have speed and power"
                 if (kind != null && kind != VehicleKind.ENGINE && kind != VehicleKind.ROAD && (def.tractive != null || def.traction != null)) problems += "$at: only engines and road vehicles have tractive effort and traction"
-                if (def.plow != null && def.plow !in Plows.NAMES) problems += "$at: plow should be ${Plows.NAMES.joinToString(" or ")}"
+                if (def.plow != null && def.plow !in Plows.NAMES) problems += "$at: plow should be wedge, rotary or oneway"
+                if (def.plow == "oneway" && kind != null && kind != VehicleKind.ROAD) problems += "$at: only road vehicles have one-way plows"
                 if (def.plow != null && kind != null && kind != VehicleKind.WAGON && kind != VehicleKind.ROAD) problems += "$at: only wagons and road vehicles are plows"
                 if (def.tram != null && kind != null && kind != VehicleKind.ROAD) problems += "$at: only road vehicles are streetcars"
                 if ((def.icebreaker != null || def.hovercraft != null) && kind != null && kind != VehicleKind.SHIP) problems += "$at: only ships break ice or hover"

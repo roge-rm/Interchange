@@ -62,12 +62,16 @@ class Engine(
     fun type(language: String) = types[language] ?: types["en"] ?: ""
 }
 
-/** Snow plows: a wedge throws snow aside, a rotary blows it away through anything. */
+/**
+ * Snow plows: a wedge throws snow aside, a rotary blows it away through anything. A one-way plow throws it all to one
+ * side; only road vehicles have them, and they clear the road as a wedge does.
+ */
 object Plows {
     const val NONE = 0
     const val WEDGE = 1
     const val ROTARY = 2
-    val NAMES = listOf("wedge", "rotary")
+    const val ONE_WAY = 3
+    val NAMES = listOf("wedge", "rotary", "oneway")
 }
 
 /**
