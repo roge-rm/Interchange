@@ -32,12 +32,13 @@ def common():
 
 
 def hull(m, L, half, free, paint, c, bow=0.18, stern=0.08, sheer=0.12, sheer_aft=None, transom=0.8, deck=None, sharp=False,
-         rake=0.05, counter=0.03, flare=0.12, double=False, ice=False, blunt=0.0, boot=BOOT, at=0.0, n=36):
+         rake=0.05, counter=0.03, flare=0.12, double=False, ice=False, blunt=0.0, boot=BOOT, at=0.0, n=36, x=0.0):
     """A hull L long, centred at y = at, half wide, its deck free steps over the water amidships, rising by sheer at the
     bow and sheer_aft at the stern. bow and stern are how much of the length they take; transom is how wide the stern
     is and blunt how wide the bow stays, for a push boat. rake is how far, as part of the length, the stem's foot sits
     back from its head; ice rounds it into a cut-away icebreaker bow. counter lifts the stern out of the water over
     that much of the length. flare narrows the hull at the waterline. double gives a bow at both ends, as on a ferry.
+    x moves it across.
     Returns where the deck is at t (0 at the stern, 1 at the bow), with top.width(t) the deck's half width there."""
     a0 = at - L / 2
     sheer_aft = sheer * 0.35 if sheer_aft is None else sheer_aft
@@ -85,7 +86,7 @@ def hull(m, L, half, free, paint, c, bow=0.18, stern=0.08, sheer=0.12, sheer_aft
         zb = max(kz, min(boot, zm - 0.01))
         wm = wu * (1 - flare * 0.35)
         ring = [(-wu, z), (-wm, zm), (-wl, zb), (-wl * 0.8, kz), (wl * 0.8, kz), (wl, zb), (wm, zm), (wu, z)]
-        sections.append((y, ring))
+        sections.append((y, [(x + a, b) for a, b in ring]))
     # The sides above the boot top in the hull's paint, the boot top at the waterline dark red, the deck across the top.
     faces = {0: "paint", 1: "paint", 2: "boot", 3: "boot", 4: "boot", 5: "paint", 6: "paint", 7: "deck"}
     m.loft(sections, {"paint": paint, "boot": c["boot"], "deck": deck or c["deck"]}, part=lambda k: faces[k])

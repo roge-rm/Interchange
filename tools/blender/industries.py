@@ -8,6 +8,7 @@ one place across their tiles.
 import math
 import random
 
+import harbour
 import houses
 import rig
 import scenery
@@ -698,34 +699,98 @@ def elevator_annex(m):
     m.rod((-0.18, -0.2, 4.6), (-0.6, -0.2, 6.2), 0.02, material("spout", "#5a5650", metal=0.4, rough=0.5))
 
 
+def _wharf_deck(m, x0=-0.8, x1=0.5, y0=-0.5, y1=0.5, top=0.25, seed=1):
+    """A timber wharf deck out over the water at -x: planks on caps over round piles braced in their bents, fender
+    piles and a wale along the water face, bollards and a capstan along its edge."""
+    harbour.planks(m, x0, x1, y0, y1, top - 0.05, top, along_x=False, width=0.04, seed=seed)
+    cap = harbour.timber("wharf caps", "#4e3e2e")
+    ys = [y0 + 0.06 + k * (y1 - y0 - 0.12) / 3 for k in range(4)]
+    xs = [x0 + 0.05 + k * 0.28 for k in range(int((-0.05 - x0) / 0.28) + 1)]
+    for y in ys:
+        m.box(x0 + 0.01, x1 - 0.01, y - 0.018, y + 0.018, top - 0.12, top - 0.05, cap)
+    harbour.piles(m, xs, ys, -0.6, top - 0.1, r=0.022)
+    # Fender piles down the water face, with a wale and a curb along the top.
+    fender = harbour.timber("wharf fenders", "#3e3024")
+    n = int((y1 - y0) / 0.1)
+    for k in range(n + 1):
+        y = y0 + 0.03 + k * (y1 - y0 - 0.06) / n
+        m.upright(x0 - 0.015, y, -0.4, top + 0.02, 0.014, 0.013, fender, segments=8)
+    m.box(x0 - 0.035, x0 - 0.02, y0, y1, top - 0.13, top - 0.07, fender)
+    m.box(x0, x0 + 0.025, y0, y1, top, top + 0.05, fender)
+    return ys
+
+
 def wharf(m):
-    """Timber wharf along the water, out past the tile's edge, with bollards and stacked cargo."""
-    deck = material("wharf deck", "#7a6650", rough=0.9)
-    piles = material("wharf piles", "#4a3a2c", rough=0.9)
-    m.box(-0.8, 0.5, -0.5, 0.5, 0.3, 0.45, deck)
-    for y in (-0.42, -0.14, 0.14, 0.42):
-        for x in (-0.75, -0.45, -0.15):
-            m.upright(x, y, -0.6, 0.3, 0.025, 0.025, piles, segments=8)
-        m.upright(-0.76, y, 0.45, 0.62, 0.02, 0.02, material("bollard", "#2a2a2a", metal=0.5, rough=0.5), segments=10)
-    crate = material("wharf crates", "#a8885a", rough=0.85)
-    for x, y in ((0.2, -0.3), (0.3, -0.18), (0.2, 0.2), (0.32, 0.3)):
-        m.box(x - 0.05, x + 0.05, y - 0.05, y + 0.05, 0.45, 0.85, crate, 0.004)
+    """Timber wharf along the water, out past the tile's edge: planked deck on braced piles, fenders, bollards and a
+    capstan, and cargo waiting on it, crates, pallets and drums."""
+    _wharf_deck(m)
+    top = 0.25
+    for y in (-0.38, 0.0, 0.38):
+        harbour.bollard(m, -0.74, y, top)
+    harbour.capstan(m, -0.72, -0.19, top)
+    for y in (0.19,):
+        harbour.cleat(m, -0.75, y, top, along_x=False)
+    harbour.crate(m, 0.12, 0.26, -0.38, -0.24, top, top + 0.32, "#a8885a")
+    harbour.crate(m, 0.14, 0.25, -0.36, -0.26, top + 0.32, top + 0.56, "#9a7a50")
+    harbour.crate(m, 0.3, 0.42, -0.36, -0.22, top, top + 0.26, "#b89868")
+    harbour.pallet(m, 0.22, 0.02, top, size=0.12, load="sacks")
+    harbour.pallet(m, 0.36, 0.02, top, size=0.12, load="cartons")
+    harbour.pallet(m, 0.36, 0.17, top, size=0.12, load="sacks")
+    for i in range(3):
+        for j in range(2):
+            harbour.drum(m, 0.14 + i * 0.045, 0.28 + j * 0.045, top, colour=("#2a4a7a", "#c8302a", "#3a6a3a")[(i + j) % 3], r=0.018, h=0.3)
+    harbour.crate(m, 0.3, 0.44, 0.3, 0.42, top, top + 0.3, "#8a6a44")
+    harbour.crate(m, -0.12, 0.0, -0.08, 0.04, top, top + 0.28, "#b89868")
+    harbour.crate(m, -0.1, 0.0, -0.06, 0.03, top + 0.28, top + 0.5, "#a8885a")
+    for k, (x, y) in enumerate(((-0.25, 0.22), (-0.21, 0.25), (-0.23, 0.18))):
+        harbour.drum(m, x, y, top, colour=("#c8302a", "#2a4a7a")[k % 2], r=0.018, h=0.3)
+    harbour.pallet(m, -0.05, -0.3, top, size=0.12, load="cartons")
+    harbour.lamp(m, -0.45, 0.45, top, 1.3, toward=(-1.0, 0.0))
 
 
 def crane(m):
-    deck = material("wharf deck", "#7a6650", rough=0.9)
-    m.box(-0.8, 0.5, -0.5, 0.5, 0.3, 0.45, deck)
+    """A travelling portal crane on the wharf: braced legs over the deck, a machinery house with its cab on a turntable,
+    an A-frame and a lattice boom out over the water."""
+    _wharf_deck(m, seed=2)
+    top = 0.25
     steel = material("crane steel", "#b8862a", metal=0.4, rough=0.5)
-    # A travelling crane on its legs, its jib out over the water.
+    dark = material("crane dark", "#3a3a3c", metal=0.4, rough=0.5)
+    rail = material("crane rail", "#6a6a6c", metal=0.7, rough=0.4)
+    for x in (-0.55, -0.1):
+        m.box(x - 0.004, x + 0.004, -0.5, 0.5, top, top + 0.015, rail)
     for x in (-0.55, -0.1):
         for y in (-0.2, 0.2):
-            m.box(x - 0.02, x + 0.02, y - 0.02, y + 0.02, 0.45, 3.4, steel)
-    m.box(-0.6, -0.05, -0.24, 0.24, 3.4, 3.7, steel)
-    m.box(-0.2, 0.05, -0.12, 0.12, 3.7, 4.4, material("crane cab", "#d8d4cc", rough=0.6), 0.004)
-    m.rod((-0.3, 0.0, 4.4), (-1.1, 0.0, 3.6), 0.02, steel)
-    m.rod((-0.3, 0.0, 5.2), (-1.1, 0.0, 3.6), 0.01, steel)
-    m.rod((-0.3, 0.0, 3.7), (-0.3, 0.0, 5.2), 0.015, steel)
-    m.rod((-1.05, 0.0, 3.6), (-1.05, 0.0, 1.4), 0.004, material("cable", "#2a2a2a", rough=0.6))
+            m.box(x - 0.02, x + 0.02, y - 0.045, y + 0.045, top + 0.015, top + 0.09, dark, 0.004)
+            m.rod((x, y, top + 0.09), (x * 0.78 - 0.07, y * 0.6, 2.9), 0.016, steel)
+        m.rod((x, -0.2, 0.9), (x, 0.2, 0.9), 0.008, steel)
+        m.rod((x, -0.2, top + 0.1), (x * 0.9 - 0.03, 0.15, 2.0), 0.006, steel)
+        m.rod((x, 0.2, top + 0.1), (x * 0.9 - 0.03, -0.15, 2.0), 0.006, steel)
+    for y in (-0.2, 0.2):
+        m.rod((-0.55, y, 1.6), (-0.1, y, 1.6), 0.008, steel)
+    m.box(-0.5, -0.15, -0.14, 0.14, 2.9, 3.05, steel, 0.004)
+    m.upright(-0.32, 0.0, 3.05, 3.12, 0.1, 0.095, dark, segments=24)
+    # The machinery house on the turntable, rounded over, the cab forward of it beside the boom foot.
+    m.shell([(-0.12, 3.12, 0.006, "paint"), (0.12, 3.12, 0.006, "paint"), (0.12, 3.75, 0.04, "paint"), (-0.12, 3.75, 0.04, "paint")],
+            0.12, {"paint": steel}, crown=0.08, x=-0.26)
+    m.box(-0.145, -0.135, -0.1, 0.1, 3.2, 3.65, dark, 0.004)
+    for y in (-0.06, 0.0, 0.06):
+        m.box(-0.38, -0.14, y - 0.004, y + 0.004, 3.75, 3.78, dark)
+    glass = houses.glass()
+    cab = material("crane cab", "#d8d4cc", rough=0.6)
+    m.box(-0.47, -0.38, 0.06, 0.15, 3.2, 3.7, cab, 0.006)
+    m.box(-0.475, -0.468, 0.07, 0.14, 3.42, 3.66, glass)
+    m.box(-0.46, -0.39, 0.15, 0.156, 3.42, 3.66, glass)
+    m.box(-0.48, -0.37, 0.05, 0.16, 3.7, 3.74, steel, 0.003)
+    apex = (-0.2, 0.0, 4.9)
+    for s in (-1, 1):
+        m.rod((-0.16, s * 0.09, 3.75), apex, 0.012, steel)
+        m.rod((-0.36, s * 0.09, 3.75), apex, 0.01, steel)
+    tip = (-0.88, 0.0, 4.75)
+    harbour.lattice(m, (-0.4, 0.0, 3.45), tip, 0.11, 0.04, steel, n=10, r=0.008, axis=(0.0, 1.0))
+    m.rod(apex, tip, 0.004, dark)
+    m.rod((-0.22, 0.0, 4.85), (-0.86, 0.0, 4.68), 0.003, dark)
+    m.rod((-0.88, 0.0, 4.68), (-0.88, 0.0, 1.5), 0.003, dark)
+    m.box(-0.9, -0.86, -0.02, 0.02, 1.35, 1.5, steel, 0.003)
 
 
 def terminal_elevator(m):
@@ -752,20 +817,51 @@ def warehouse(m):
 
 
 def fish_wharf(m):
-    deck = material("fish wharf deck", "#8a7656", rough=0.9)
-    piles = material("wharf piles", "#4a3a2c", rough=0.9)
-    m.box(-0.7, 0.5, -0.35, 0.35, 0.25, 0.38, deck)
-    for y in (-0.3, 0.0, 0.3):
-        for x in (-0.65, -0.35):
-            m.upright(x, y, -0.6, 0.25, 0.02, 0.02, piles, segments=8)
-    # A fishing boat tied up alongside, and lobster traps on the wharf.
-    hull = material("boat hull", "#e8e2d8", rough=0.6)
-    m.wedge([(-0.92, -0.3, -0.1), (-0.78, -0.3, -0.1), (-0.78, 0.22, -0.1), (-0.85, 0.3, -0.1), (-0.92, 0.22, -0.1)],
-            [(-0.95, -0.3, 0.4), (-0.76, -0.3, 0.4), (-0.76, 0.24, 0.4), (-0.85, 0.34, 0.4), (-0.95, 0.24, 0.4)], hull)
-    m.box(-0.9, -0.8, -0.2, 0.0, 0.4, 0.95, material("wheelhouse", "#3e6a8a", rough=0.6), 0.004)
-    trap = material("lobster traps", "#a87a4a", rough=0.9)
+    """A fishing wharf: a planked timber wharf on braced piles with a ladder down, a Cape Islander tied up alongside,
+    lobster traps stacked with buoys, a small gabled bait shed, nets and totes."""
+    top = 0.25
+    _wharf_deck(m, x0=-0.7, x1=0.5, y0=-0.35, y1=0.35, top=top, seed=3)
+    harbour.ladder(m, -0.725, -0.12, -0.1, top, face_x=True, grab=0.15)
+    for y in (-0.3, 0.3):
+        harbour.bollard(m, -0.66, y, top, s=0.8)
+    harbour.cleat(m, -0.67, 0.08, top, along_x=False)
+    harbour.cape_islander(m, -0.87, -0.32, 0.32, 0.17, 0.55)
+    # Mooring lines from the boat to the wharf.
+    line = material("mooring line", "#d8c8a0", rough=0.9)
+    m.rod((-0.84, -0.28, 0.22), (-0.66, -0.3, top + 0.1), 0.0025, line, segments=5)
+    m.rod((-0.84, 0.26, 0.32), (-0.66, 0.3, top + 0.1), 0.0025, line, segments=5)
+    # Traps stacked high, buoys on and around them.
+    harbour.trap_stack(m, -0.5, -0.29, top, rows=4, cols=3, layers=3, seed=4)
+    harbour.trap_stack(m, -0.24, -0.29, top, rows=3, cols=2, layers=2, seed=5)
+    for k, (x, y) in enumerate(((-0.53, 0.04), (-0.5, 0.08), (-0.47, 0.03), (-0.44, 0.07), (-0.41, 0.02))):
+        harbour.buoy(m, x, y, top, colour=("#e84a2a", "#f0c020", "#2a8a4a")[k % 3], r=0.015)
+    # A heap of net and a stack of fish totes.
+    net = material("fishing net", "#2a6a5a", rough=1.0)
+    m.lathe(-0.3, 0.16, top, [(0.07, 0), (0.07, 0.04), (0.05, 0.1), (0.02, 0.13), (0.0, 0.135)], net, segments=16, oval=0.7)
+    for k in range(3):
+        m.box(-0.12, -0.04, 0.16, 0.22, top + k * 0.07, top + (k + 1) * 0.07 - 0.005, material("fish totes", "#3a7aaa", rough=0.6), 0.003)
+    # The bait shed: shingled walls, a gable roof, a door to the wharf and a window, buoys hung on its end.
+    shingle = material("bait shed shingles", "#9a8a72", rough=0.9)
+    trim = material("bait shed trim", "#c84a3a", rough=0.7)
+    roof = material("bait shed roof", "#4a4642", rough=0.85)
+    x0, x1, y0, y1, eave = 0.06, 0.44, -0.12, 0.26, 0.95
+    m.box(x0, x1, y0, y1, top, eave, shingle)
     for k in range(5):
-        m.box(0.0 + (k % 3) * 0.12, 0.1 + (k % 3) * 0.12, -0.2 + (k // 3) * 0.12, -0.12 + (k // 3) * 0.12, 0.38, 0.6 + 0.2 * (k // 3), trap, 0.003)
+        z = top + 0.04 + k * (eave - top - 0.05) / 5
+        for y, d in ((y0, -1), (y1, 1)):
+            m.box(x0, x1, y + d * 0.004 - 0.002, y + d * 0.004 + 0.002, z, z + 0.012, roof)
+        m.box(x1 + 0.002, x1 + 0.006, y0, y1, z, z + 0.012, roof)
+        m.box(x0 - 0.006, x0 - 0.002, y0, y1, z, z + 0.012, roof)
+    for x, y in ((x0, y0), (x1, y0), (x0, y1), (x1, y1)):
+        m.box(x - 0.008, x + 0.008, y - 0.008, y + 0.008, top, eave, trim)
+    houses.gable(m, x0, x1, y0, y1, eave, 1.35, roof, shingle, along_x=False, over=0.025, thick=0.06)
+    m.box(x0 - 0.008, x0 - 0.002, 0.0, 0.1, top, 0.82, material("bait shed door", "#3e6a8a", rough=0.6))
+    m.box(x0 - 0.01, x0 - 0.004, -0.005, 0.105, 0.82, 0.86, trim)
+    glass = houses.glass()
+    m.box(0.2, 0.3, y1 + 0.004, y1 + 0.009, 0.5, 0.78, glass)
+    m.box(0.195, 0.305, y1 + 0.006, y1 + 0.011, 0.46, 0.5, trim)
+    for k, y in enumerate((-0.05, 0.03, 0.11, 0.19)):
+        harbour.buoy(m, x1 + 0.016, y, 0.55, colour=("#e84a2a", "#f0c020")[k % 2], r=0.011)
 
 
 def fish_shed(m):

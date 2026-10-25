@@ -43,6 +43,8 @@ BUILDING_RISE = 0.75
 # Signals and tunnel mouths beside the track, drawn lower to sit right against trains.
 SIGNAL_RISE = 0.6
 PORTAL_RISE = 0.8
+# The seaplane base and strip hut, drawn at the float planes' scale: the shed comes to about 0.85 of a Beaver.
+PLANE_RISE = 0.33
 LEAFY = ["maple", "birch", "aspen"]
 DECOR = ["boulder", "shrub", "tall_grass"]
 PIECES = ["X", "Y", "N", "E", "S", "W"]
@@ -161,16 +163,16 @@ def main():
         shot(out, f"road_stop_{a}.png", lambda m, a=a: scenery.road_stop(m, a == 0), rise=BUILDING_RISE)
     shot(out, "salt_dome.png", roadcars.salt_dome, rise=BUILDING_RISE)
     for edge in EDGES:
-        shot(out, f"dock_{edge}.png", lambda m, edge=edge: waterside.dock(m, edge), rise=BUILDING_RISE)
-        shot(out, f"shipyard_{edge}.png", lambda m, edge=edge: waterside.shipyard(m, edge), rise=BUILDING_RISE)
+        shot(out, f"dock_{edge}.png", waterside.dock, heading=waterside.WATER_HEADING[edge], rise=BUILDING_RISE)
+        shot(out, f"shipyard_{edge}.png", waterside.shipyard, heading=waterside.WATER_HEADING[edge], rise=BUILDING_RISE)
         shot(out, f"lock_{edge}.png", lambda m, edge=edge: waterside.lock(m, edge))
-        shot(out, f"seaplane_{edge}.png", lambda m, edge=edge: waterside.seaplane_dock(m, edge), rise=BUILDING_RISE)
+        shot(out, f"seaplane_{edge}.png", waterside.seaplane_dock, heading=waterside.WATER_HEADING[edge], rise=PLANE_RISE)
         shot(out, f"hangar_small_{edge}.png", lambda m, edge=edge: waterside.hangar(m, edge, False), rise=BUILDING_RISE)
         shot(out, f"hangar_{edge}.png", lambda m, edge=edge: waterside.hangar(m, edge, True), rise=BUILDING_RISE)
         for size in ("small", "mid", "big"):
             shot(out, f"terminal_{size}_{edge}.png", lambda m, edge=edge, size=size: waterside.terminal(m, edge, size), rise=BUILDING_RISE)
     shot(out, "tower.png", waterside.tower, rise=BUILDING_RISE)
-    shot(out, "strip_hut.png", waterside.strip_hut, rise=BUILDING_RISE)
+    shot(out, "strip_hut.png", waterside.strip_hut, rise=PLANE_RISE)
     for kind in houses.BUILDERS:
         for edge in EDGES:
             shot(out, f"house_{kind}_{edge}.png", lambda m, kind=kind: houses.house(m, kind), heading=houses.FACING[edge], rise=BUILDING_RISE)
