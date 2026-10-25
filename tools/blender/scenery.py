@@ -149,8 +149,9 @@ def haze(name, colour):
 
 # ---- platforms, the engine house and signals ---------------------------------------------
 
-def station(m, along_u):
-    """A platform tile with its track running along y (the game's u) or along x. The track itself comes from the track sprite."""
+def station(m, along_u, canopy=True):
+    """A platform tile with its track running along y (the game's u) or along x. The track itself comes from the track
+    sprite. With no canopy, for the tile in front of a station building, the far platform keeps its benches."""
     concrete = material("platform", "#c9c3b5", rough=0.85)
     edge = material("platform edge", "#e2d8a0", rough=0.7)
     timber = material("timber", "#7a4e2e", rough=0.7)
@@ -171,10 +172,11 @@ def station(m, along_u):
         b(e0, e1, -0.5, 0.5, 0.42, 0.44, edge)
     # A canopy on cast iron posts over the far platform (the -x side), with benches and a lamp.
     # Underside at 2.1, 1.58 drawn at BUILDING_RISE, just over the tallest coach and caboose (1.56).
-    for y in (-0.33, 0.0, 0.33):
-        b(-0.4, -0.385, y - 0.008, y + 0.008, 0.42, 2.1, iron)
-    b(-0.5, -0.2, -0.48, 0.48, 2.1, 2.16, timber, 0.003)
-    b(-0.52, -0.18, -0.49, 0.49, 2.16, 2.32, roof, 0.006)
+    if canopy:
+        for y in (-0.33, 0.0, 0.33):
+            b(-0.4, -0.385, y - 0.008, y + 0.008, 0.42, 2.1, iron)
+        b(-0.5, -0.2, -0.48, 0.48, 2.1, 2.16, timber, 0.003)
+        b(-0.52, -0.18, -0.49, 0.49, 2.16, 2.32, roof, 0.006)
     for y in (-0.18, 0.18):
         b(-0.47, -0.43, y - 0.06, y + 0.06, 0.42, 0.62, timber, 0.003)
         b(-0.48, -0.475, y - 0.06, y + 0.06, 0.62, 0.85, timber)
@@ -229,6 +231,327 @@ def depot(m, edge):
     dy = y1 if doors_far else y0
     b(-0.2, 0.2, dy - 0.003, dy + 0.003, 0, 1.95, dark)
     b(-0.23, 0.23, dy - 0.006, dy + 0.006, 1.95, 2.08, trim)
+
+
+# ---- station buildings ---------------------------------------------------------------------
+# A station building stands on its own tile beside the platform, its front facing +y (the platform edge), turned
+# by place() like the houses. A metre is 0.04 tiles; the floor is at platform height, 0.42 steps, a storey 1.25.
+
+FLOOR = 0.42
+
+
+def _walls_along(m, x0, x1, y, d, z0, z1, mat, thick=0.004):
+    """A thin plate on the wall at y, standing out d of a side (1 front, -1 back), for battens, panes and trim."""
+    m.box(x0, x1, min(y, y + d * thick), max(y, y + d * thick), z0, z1, mat)
+
+
+def _pane(m, x, y, d, z0, z1, w, glass, frame):
+    """A framed window in the wall at y, its middle at x."""
+    _walls_along(m, x - w / 2 - 0.006, x + w / 2 + 0.006, y, d, z0 - 0.05, z1 + 0.05, frame, 0.004)
+    _walls_along(m, x - w / 2, x + w / 2, y, d, z0, z1, glass, 0.007)
+
+
+def _end_pane(m, x, d, y, z0, z1, w, glass, frame):
+    """A framed window in the end wall at x, its middle at y."""
+    m.box(min(x, x + d * 0.004), max(x, x + d * 0.004), y - w / 2 - 0.006, y + w / 2 + 0.006, z0 - 0.05, z1 + 0.05, frame)
+    m.box(min(x, x + d * 0.007), max(x, x + d * 0.007), y - w / 2, y + w / 2, z0, z1, glass)
+
+
+def _hip_roof(m, x0, x1, y0, y1, eave, ridge, roof, over=0.04, bell=0.0, kick=0.2):
+    """A hip roof over the box x0..x1 by y0..y1 from its eaves to a ridge along x. bell flares the eaves out that much
+    further on a shallow kick, kick steps high, as the bellcast roofs on standard-plan depots."""
+    yc = (y0 + y1) / 2
+    inset = (y1 - y0) / 2 + over
+    if bell:
+        o = over + bell
+        m.wedge([(x0 - o, y0 - o, eave), (x1 + o, y0 - o, eave), (x1 + o, y1 + o, eave), (x0 - o, y1 + o, eave)],
+                [(x0 - over, y0 - over, eave + kick), (x1 + over, y0 - over, eave + kick), (x1 + over, y1 + over, eave + kick), (x0 - over, y1 + over, eave + kick)], roof)
+        eave += kick
+    a, b = x0 - over + inset, x1 + over - inset
+    m.wedge([(x0 - over, y0 - over, eave), (x1 + over, y0 - over, eave), (x1 + over, y1 + over, eave), (x0 - over, y1 + over, eave)],
+            [(a, yc - 0.003, ridge), (b, yc - 0.003, ridge), (b, yc + 0.003, ridge), (a, yc + 0.003, ridge)], roof)
+
+
+def _apron(m, y):
+    """The platform carried on from the track's tile up to the building's front at y, at the platform's height."""
+    m.box(-0.5, 0.5, y - 0.02, 0.5, 0, FLOOR, material("platform", "#c9c3b5", rough=0.85))
+
+
+def _cart(m, x, y):
+    """A baggage cart: a deck on four iron wheels with a long handle."""
+    wood = material("cart deck", "#6e5034", rough=0.8)
+    iron = material("cart iron", "#2a2c2e", metal=0.5, rough=0.6)
+    m.box(x - 0.05, x + 0.05, y - 0.022, y + 0.022, FLOOR + 0.25, FLOOR + 0.31, wood, 0.002)
+    for wx in (x - 0.035, x + 0.035):
+        for wy in (y - 0.02, y + 0.02):
+            m.box(wx - 0.01, wx + 0.01, wy - 0.003, wy + 0.003, FLOOR, FLOOR + 0.25, iron)
+    m.box(x + 0.05, x + 0.1, y - 0.003, y + 0.003, FLOOR + 0.28, FLOOR + 0.31, iron)
+
+
+def _lamp(m, x, y):
+    iron = material("cast iron", "#2e3234", metal=0.6, rough=0.45)
+    m.box(x - 0.006, x + 0.006, y - 0.006, y + 0.006, FLOOR, FLOOR + 1.4, iron)
+    m.box(x - 0.02, x + 0.02, y - 0.02, y + 0.02, FLOOR + 1.4, FLOOR + 1.55, material("lamp glass", "#f4e8b0", rough=0.2), 0.002)
+
+
+def _parking(m, y0, y1):
+    """An asphalt lot behind the building with its stalls painted on."""
+    m.box(-0.5, 0.5, -0.5, y1, 0, 0.025, material("asphalt", "#4a4a4c", rough=0.95))
+    paint = material("lot paint", "#e8e4d8", rough=0.8)
+    for k in range(9):
+        x = -0.4 + k * 0.1
+        m.box(x - 0.003, x + 0.003, y0, y0 + 0.2, 0.025, 0.03, paint)
+
+
+def station_house(m, era):
+    """A station building in the style of its era: 0 a board-and-batten wooden depot with a freight end, 1 a
+    standard-plan depot of painted boards with a bellcast hip roof and an operator's bay, 2 brick and stone with a hip roof and
+    dormers, 3 a flat-roofed brick and glass building with a cantilevered canopy, 4 glass and steel under a curved roof."""
+    import houses
+    [_depot_wood, _depot_standard, _station_brick, _station_modern, _station_glass][era](m, houses)
+
+
+def _depot_wood(m, houses):
+    # 6 m deep, 18 m long, the last 7 m a freight shed; walls 3.7 m over the floor, a 40 degree gable roof.
+    wall = material("depot boards", "#c4a26a", rough=0.85)
+    batten = material("battens", "#a8864e", rough=0.85)
+    trim = material("depot trim", "#5a3a24", rough=0.7)
+    roof = material("cedar shingles", "#5c4a3a", rough=0.9)
+    glass = houses.glass()
+    x0, x1, y0, y1 = -0.36, 0.36, -0.06, 0.18
+    eave = 1.95
+    _apron(m, y1)
+    houses.paved(m, -0.5, 0.5, -0.5, y0, colour="#8a8070")
+    m.box(x0, x1, y0, y1, 0, eave, wall, 0.003)
+    # Battens every half metre all round, a corner board at each corner and the post between the rooms.
+    x = x0 + 0.012
+    while x < x1 - 0.005:
+        for y, d in ((y1, 1), (y0, -1)):
+            _walls_along(m, x - 0.003, x + 0.003, y, d, 0, eave, batten)
+        x += 0.02
+    y = y0 + 0.012
+    while y < y1 - 0.005:
+        for xx, d in ((x1, 1), (x0, -1)):
+            m.box(min(xx, xx + d * 0.004), max(xx, xx + d * 0.004), y - 0.003, y + 0.003, 0, eave, batten)
+        y += 0.02
+    for xx in (x0, x1, 0.08):
+        for y, d in ((y1, 1), (y0, -1)):
+            _walls_along(m, xx - 0.008, xx + 0.008, y, d, 0, eave, trim, 0.006)
+    houses.gable(m, x0, x1, y0, y1, eave, 3.0, roof, wall, along_x=True, over=0.04)
+    houses.chimney(m, -0.14, (y0 + y1) / 2, 2.4, 3.3, material("chimney brick", "#8a4a36", rough=0.9), 0.02)
+    # The waiting room and office: tall windows and a door front and back.
+    for y, d in ((y1, 1), (y0, -1)):
+        for x in (-0.3, -0.22, -0.04, 0.03):
+            _pane(m, x, y, d, FLOOR + 0.35, FLOOR + 1.1, 0.036, glass, trim)
+        _walls_along(m, -0.165, -0.115, y, d, FLOOR, FLOOR + 0.95, material("plank door", "#4a3220", rough=0.9), 0.008)
+        # The freight shed's sliding door and its track.
+        _walls_along(m, 0.14, 0.3, y, d, FLOOR, FLOOR + 1.15, trim, 0.008)
+        _walls_along(m, 0.12, 0.32, y, d, FLOOR + 1.17, FLOOR + 1.22, material("door track", "#2a2c2e", metal=0.5), 0.01)
+    _end_pane(m, x0, -1, (y0 + y1) / 2, FLOOR + 0.35, FLOOR + 1.1, 0.036, glass, trim)
+    # The name board along the front under the eaves.
+    _walls_along(m, -0.3, -0.02, y1, 1, 1.62, 1.82, material("name board", "#ece2c8", rough=0.7), 0.01)
+    # A team track dock at the back of the freight shed, crates and a cart on the platform.
+    m.box(0.1, 0.34, y0 - 0.08, y0, 0, FLOOR, material("dock planks", "#7a6448", rough=0.9), 0.002)
+    crate = material("crates", "#9a7a4e", rough=0.9)
+    m.box(0.2, 0.24, y1 + 0.03, y1 + 0.07, FLOOR, FLOOR + 0.35, crate, 0.003)
+    m.box(0.25, 0.28, y1 + 0.03, y1 + 0.06, FLOOR, FLOOR + 0.25, crate, 0.003)
+    m.upright(0.31, y1 + 0.05, FLOOR, FLOOR + 0.38, 0.016, 0.016, material("barrel", "#6a4a2a", rough=0.8), segments=12)
+    _cart(m, -0.02, y1 + 0.12)
+
+
+def _depot_standard(m, houses):
+    # 7 m deep, 22 m long; walls 3.7 m over the floor, eaves out 1.8 m on brackets, a bay window for the operator.
+    # Painted wood in CPR colours: a dark red body, clapboard below a belt rail and board-and-batten above, buff trim.
+    wall = material("depot paint red", "#6a2a20", rough=0.7)
+    lap = material("clapboard shadow", "#43180f", rough=0.85)
+    batten = material("batten red", "#5a2219", rough=0.7)
+    trim = material("buff trim", "#dcc89a", rough=0.7)
+    roof = material("depot shingles", "#3e4a42", rough=0.85)
+    glass = houses.glass()
+    x0, x1, y0, y1 = -0.44, 0.44, -0.08, 0.2
+    eave = 1.95
+    belt = FLOOR + 0.3
+    _apron(m, y1)
+    houses.paved(m, -0.5, 0.5, -0.5, y0, colour="#8a8070")
+    m.box(x0, x1, y0, y1, 0, eave, wall, 0.003)
+    # Clapboard: the lower edge of each board stands out a little and shades the one under it.
+    z = 0.06
+    while z < belt - 0.02:
+        m.box(x0 - 0.003, x1 + 0.003, y0 - 0.003, y1 + 0.003, z, z + 0.018, lap)
+        z += 0.075
+    x = x0 + 0.018
+    while x < x1 - 0.01:
+        for y, d in ((y1, 1), (y0, -1)):
+            _walls_along(m, x - 0.003, x + 0.003, y, d, belt, eave, batten, 0.005)
+        x += 0.026
+    y = y0 + 0.018
+    while y < y1 - 0.01:
+        for xx, d in ((x1, 1), (x0, -1)):
+            m.box(min(xx, xx + d * 0.005), max(xx, xx + d * 0.005), y - 0.003, y + 0.003, belt, eave, batten)
+        y += 0.026
+    m.box(x0 - 0.006, x1 + 0.006, y0 - 0.006, y1 + 0.006, belt, belt + 0.06, trim)
+    m.box(x0 - 0.004, x1 + 0.004, y0 - 0.004, y1 + 0.004, 0, 0.06, trim)
+    m.box(x0 - 0.006, x1 + 0.006, y0 - 0.006, y1 + 0.006, eave - 0.1, eave, trim)
+    for xx in (x0, x1):
+        for y in (y0, y1):
+            m.box(xx - 0.008, xx + 0.008, y - 0.008, y + 0.008, 0, eave, trim)
+    _hip_roof(m, x0, x1, y0, y1, eave, 3.45, roof, over=0.03, bell=0.05, kick=0.18)
+    brick = material("chimney brick", "#8a4a36", rough=0.9)
+    for x in (-0.2, 0.18):
+        houses.chimney(m, x, (y0 + y1) / 2, 2.6, 3.75, brick, 0.02)
+    # Brackets under the eaves all round.
+    for k in range(9):
+        x = x0 + 0.04 + k * (x1 - x0 - 0.08) / 8
+        for y, d in ((y1, 1), (y0, -1)):
+            m.wedge([(x - 0.004, y, eave - 0.45), (x - 0.004, y, eave), (x - 0.004, y + d * 0.07, eave)],
+                    [(x + 0.004, y, eave - 0.45), (x + 0.004, y, eave), (x + 0.004, y + d * 0.07, eave)], trim)
+    for xx, d in ((x0, -1), (x1, 1)):
+        for y in (y0 + 0.07, y1 - 0.07):
+            m.wedge([(xx, y - 0.004, eave - 0.45), (xx, y - 0.004, eave), (xx + d * 0.07, y - 0.004, eave)],
+                    [(xx, y + 0.004, eave - 0.45), (xx, y + 0.004, eave), (xx + d * 0.07, y + 0.004, eave)], trim)
+    # The operator's bay in the middle of the front, three sides of glass to see up and down the line.
+    bay_b = [(-0.055, y1, 0), (0.055, y1, 0), (0.035, y1 + 0.04, 0), (-0.035, y1 + 0.04, 0)]
+    m.wedge(bay_b, [(x, y, eave - 0.12) for x, y, _ in bay_b], wall)
+    pane_b = [(-0.052, y1, FLOOR + 0.45), (0.052, y1, FLOOR + 0.45), (0.038, y1 + 0.044, FLOOR + 0.45), (-0.038, y1 + 0.044, FLOOR + 0.45)]
+    m.wedge(pane_b, [(x, y, FLOOR + 1.2) for x, y, _ in pane_b], glass)
+    m.wedge([(x, y, eave - 0.12) for x, y, _ in bay_b], [(x, y, eave - 0.06) for x, y, _ in bay_b], trim)
+    # The waiting room to one side, the baggage room to the other.
+    for y, d in ((y1, 1), (y0, -1)):
+        for x in (-0.38, -0.3, -0.12, 0.12):
+            _pane(m, x, y, d, FLOOR + 0.4, FLOOR + 1.15, 0.036, glass, trim)
+        _walls_along(m, -0.225, -0.175, y, d, FLOOR, FLOOR + 0.95, material("panel door", "#3a2a1c", rough=0.6), 0.008)
+        _walls_along(m, 0.25, 0.37, y, d, FLOOR, FLOOR + 1.1, material("baggage door", "#5a2620", rough=0.7), 0.008)
+        _walls_along(m, 0.245, 0.375, y, d, FLOOR + 1.1, FLOOR + 1.16, trim, 0.01)
+    for xx, d in ((x0, -1), (x1, 1)):
+        _end_pane(m, xx, d, (y0 + y1) / 2, FLOOR + 0.4, FLOOR + 1.15, 0.036, glass, trim)
+    # Name boards on the ends, the platform lamp and a cart.
+    for xx, d in ((x0, -1), (x1, 1)):
+        m.box(min(xx, xx + d * 0.01), max(xx, xx + d * 0.01), y0 + 0.04, y1 - 0.04, 1.55, 1.75, material("name board", "#ece2c8", rough=0.7))
+    m.box(-0.2, -0.1, y0 - 0.06, y0, 0, FLOOR, material("dock planks", "#7a6448", rough=0.9), 0.002)
+    _lamp(m, -0.36, 0.44)
+    _cart(m, 0.3, y1 + 0.13)
+
+
+def _station_brick(m, houses):
+    # 8.5 m deep, 21 m long; a stone base to the window sills, brick walls 4.3 m over the floor, a slate hip roof
+    # with three dormers to the platform.
+    stone = material("station stone", "#8e8678", rough=0.95)
+    brick = material("station brick", "#9a5238", rough=0.9)
+    sill = material("stone trim", "#c8bca8", rough=0.8)
+    slate = material("slate", "#4e5866", rough=0.6)
+    glass = houses.glass()
+    frame = material("window frame", "#e8e2d4", rough=0.6)
+    x0, x1, y0, y1 = -0.42, 0.42, -0.12, 0.22
+    eave = 2.2
+    _apron(m, y1)
+    houses.paved(m, -0.5, 0.5, -0.5, y0, colour="#9a958c")
+    m.box(x0, x1, y0, y1, 0, eave, brick, 0.003)
+    m.box(x0 - 0.008, x1 + 0.008, y0 - 0.008, y1 + 0.008, 0, FLOOR + 0.42, stone, 0.003)
+    m.box(x0 - 0.01, x1 + 0.01, y0 - 0.01, y1 + 0.01, eave - 0.12, eave, sill)
+    for xx in (x0, x1):
+        for y in (y0, y1):
+            for z in (1.0, 1.3, 1.6, 1.9):
+                m.box(xx - 0.012, xx + 0.012, y - 0.012, y + 0.012, z, z + 0.15, stone)
+    _hip_roof(m, x0, x1, y0, y1, eave, 3.75, slate, over=0.05)
+    for x in (-0.28, 0.28):
+        houses.chimney(m, x, (y0 + y1) / 2 - 0.03, 3.0, 4.1, brick, 0.025)
+    # Dormers on the front slope, each with a window and its own little gable.
+    for x in (-0.22, 0.0, 0.22):
+        m.box(x - 0.035, x + 0.035, 0.05, y1 - 0.01, 2.3, 2.95, slate)
+        _walls_along(m, x - 0.02, x + 0.02, y1 - 0.01, 1, 2.42, 2.85, glass, 0.006)
+        houses.gable(m, x - 0.035, x + 0.035, 0.05, y1 - 0.01, 2.95, 3.3, slate, slate, along_x=False, over=0.01, thick=0.05)
+    # Tall windows with stone sills and heads all round, and the entrance in a stone surround in the middle.
+    for y, d in ((y1, 1), (y0, -1)):
+        for x in (-0.36, -0.27, -0.18, 0.18, 0.27, 0.36):
+            _pane(m, x, y, d, FLOOR + 0.5, FLOOR + 1.4, 0.042, glass, frame)
+            _walls_along(m, x - 0.03, x + 0.03, y, d, FLOOR + 1.43, FLOOR + 1.52, sill, 0.008)
+        _walls_along(m, -0.07, 0.07, y, d, FLOOR, FLOOR + 1.35, sill, 0.008)
+        _walls_along(m, -0.045, 0.045, y, d, FLOOR, FLOOR + 1.1, material("oak doors", "#5a3a22", rough=0.6), 0.012)
+        _walls_along(m, -0.04, 0.04, y, d, FLOOR + 1.12, FLOOR + 1.3, glass, 0.012)
+    for xx, d in ((x0, -1), (x1, 1)):
+        for y in (y0 + 0.1, y1 - 0.1):
+            _end_pane(m, xx, d, y, FLOOR + 0.5, FLOOR + 1.4, 0.042, glass, frame)
+    # A bracketed hood over the platform door, steps up at the back, lamps and a cart.
+    houses.slab(m, [(-0.09, y1, 2.0), (0.09, y1, 2.0), (0.09, y1 + 0.08, 1.88), (-0.09, y1 + 0.08, 1.88)], 0.05, slate)
+    m.box(-0.08, 0.08, y0 - 0.06, y0, 0, FLOOR, stone, 0.003)
+    for x in (-0.3, 0.3):
+        _lamp(m, x, 0.44)
+    _cart(m, -0.3, y1 + 0.12)
+
+
+def _station_modern(m, houses):
+    # 8 m deep, 19 m long, one storey of 3.8 m with a flat roof; a glass front between brick ends and a canopy
+    # cantilevered 4 m out over the platform.
+    brick = material("buff brick", "#b08a62", rough=0.9)
+    white = material("fascia white", "#e6e4de", rough=0.6)
+    curtain = material("curtain glass", "#3e5a6e", metal=0.3, rough=0.1, grime=0.15)
+    mullion = material("bronze mullions", "#3a3430", metal=0.5, rough=0.4)
+    x0, x1, y0, y1 = -0.38, 0.38, -0.14, 0.18
+    top = 2.05
+    _apron(m, y1)
+    _parking(m, -0.46, y0)
+    m.box(x0, x1, y0, y1, 0, top, brick, 0.003)
+    houses.flat_top(m, x0, x1, y0, y1, top, white, parapet=0.15)
+    # The front glazed from the floor nearly to the roof between brick ends, mullions every 2 m.
+    for y, d, a, b in ((y1, 1, -0.26, 0.3), (y0, -1, -0.12, 0.22)):
+        _walls_along(m, a, b, y, d, FLOOR + 0.05, top - 0.2, curtain, 0.006)
+        k = 0
+        while a + k * 0.05 <= b + 0.001:
+            x = a + k * 0.05
+            _walls_along(m, x - 0.004, x + 0.004, y, d, FLOOR + 0.05, top - 0.2, mullion, 0.01)
+            k += 1
+        _walls_along(m, a, b, y, d, top - 0.22, top - 0.18, mullion, 0.01)
+    # The canopy: a thin slab out from the front with no posts, a red band on its fascia.
+    m.box(x0 - 0.06, x1 + 0.06, y1, y1 + 0.16, 1.85, 1.95, white, 0.002)
+    m.box(x0 - 0.06, x1 + 0.06, y1 + 0.16, y1 + 0.166, 1.86, 1.92, material("fascia red", "#b8302a", rough=0.6))
+    m.box(-0.14, 0.12, -0.08, 0.06, top + 0.06, top + 0.4, material("roof unit", "#9a9c9a", metal=0.3, rough=0.6), 0.003)
+    m.box(-0.06, 0.06, y0 - 0.05, y0, 0, FLOOR, material("concrete steps", "#a8a49a", rough=0.9), 0.002)
+    for x in (-0.42, 0.42):
+        _lamp(m, x, 0.44)
+
+
+def _station_glass(m, houses):
+    # 7 m deep, 15 m long, glass walls on a steel frame over a precast base; the curved roof runs out 5 m over the
+    # platform on columns and 2 m at the back.
+    base = material("precast base", "#b4aea4", rough=0.9)
+    curtain = material("station glass", "#5a7a8a", metal=0.2, rough=0.08, grime=0.1)
+    steel = material("frame steel", "#3e4650", metal=0.6, rough=0.4)
+    roof = material("curved roof", "#c4c8cc", metal=0.5, rough=0.35)
+    band = material("roof band", "#2e6a3e", rough=0.6)
+    x0, x1, y0, y1 = -0.3, 0.3, -0.12, 0.16
+    top = 2.0
+    _apron(m, y1)
+    _parking(m, -0.46, y0 - 0.06)
+    m.box(x0, x1, y0, y1, 0, FLOOR + 0.25, base, 0.003)
+    m.box(x0 + 0.004, x1 - 0.004, y0 + 0.004, y1 - 0.004, FLOOR + 0.25, top, curtain)
+    m.box(x0 + 0.01, x1 - 0.01, y0 + 0.01, y1 - 0.01, FLOOR + 0.25, top, material("lobby light", "#d8d4c8", rough=0.8))
+    for x in [x0 + k * (x1 - x0) / 10 for k in range(11)]:
+        for y in (y0, y1):
+            m.box(x - 0.004, x + 0.004, y - 0.004, y + 0.004, FLOOR + 0.25, top, steel)
+    for y in [y0 + k * (y1 - y0) / 4 for k in range(5)]:
+        for x in (x0, x1):
+            m.box(x - 0.004, x + 0.004, y - 0.004, y + 0.004, FLOOR + 0.25, top, steel)
+    for z in (FLOOR + 0.25, top - 0.02):
+        m.box(x0 - 0.002, x1 + 0.002, y0 - 0.002, y1 + 0.002, z, z + 0.04, steel)
+    _walls_along(m, -0.06, 0.06, y1, 1, FLOOR, FLOOR + 1.0, steel, 0.003)
+    _walls_along(m, -0.055, 0.055, y1, 1, FLOOR, FLOOR + 0.96, material("door glass", "#2c3a48", rough=0.1), 0.006)
+    # The roof, a shallow arch from back to front in flat strips, with a coloured band at each edge.
+    ya, yb, n = y0 - 0.08, y1 + 0.2, 12
+    pts = [(ya + (yb - ya) * k / n, top + 0.05 + 0.3 * math.sin(math.pi * k / n)) for k in range(n + 1)]
+    for (ys, zs), (ye, ze) in zip(pts, pts[1:]):
+        houses.slab(m, [(x0 - 0.1, ys, zs), (x1 + 0.1, ys, zs), (x1 + 0.1, ye, ze), (x0 - 0.1, ye, ze)], 0.07, roof)
+    for yy, z in ((ya, pts[0][1]), (yb, pts[-1][1])):
+        m.box(x0 - 0.1, x1 + 0.1, yy - 0.006, yy + 0.006, z - 0.06, z + 0.08, band)
+    # Columns under the platform end of the roof, and benches out there.
+    yc = y1 + 0.17
+    zc = top + 0.05 + 0.3 * math.sin(math.pi * (yc - ya) / (yb - ya))
+    for x in (x0 - 0.05, 0.0, x1 + 0.05):
+        m.box(x - 0.008, x + 0.008, yc - 0.008, yc + 0.008, FLOOR, zc + 0.02, steel)
+    bench = material("bench steel", "#5a6068", metal=0.4, rough=0.5)
+    for x in (-0.17, 0.17):
+        m.box(x - 0.05, x + 0.05, yc - 0.03, yc - 0.01, FLOOR, FLOOR + 0.2, bench)
+    for x in (-0.45, 0.45):
+        _lamp(m, x, 0.44)
 
 
 def signal(m, red):

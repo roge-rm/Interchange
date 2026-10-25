@@ -1065,17 +1065,17 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
                 // Adding stops or looking, a tap on a building's roof means the building, not the land behind it.
                 val picking = addingStops != null || addingRoadStops != null || addingCraftStops != null || tool == Tool.Inspect
                 val tile = if (!picking) ground else view.buildingAt(world, at, mapSize.width, mapSize.height) {
-                    world.depotTiles.containsKey(it) || world.stationTiles.containsKey(it) || world.roadStops.containsKey(it) ||
+                    world.depotTiles.containsKey(it) || world.stationTiles.containsKey(it) || world.stationBuildings.containsKey(it) || world.roadStops.containsKey(it) ||
                         world.docks.containsKey(it) || world.airportTiles.containsKey(it) || world.buoys.containsKey(it)
                 } ?: ground
                 addingStops?.let { id ->
-                    val station = world.stationTiles[tile]
+                    val station = world.stationTiles[tile] ?: world.stationBuildings[tile]
                     val t = worldView.value?.trains?.firstOrNull { it.id == id }
                     if (station != null && t != null) runner.request(Command.TrainOrder(me, id, Command.TrainOrder.ORDERS, t.orders + station))
                     return
                 }
                 addingRoadStops?.let { id ->
-                    val station = world.roadStops[tile] ?: world.stationTiles[tile]
+                    val station = world.roadStops[tile] ?: world.stationTiles[tile] ?: world.stationBuildings[tile]
                     val v = worldView.value?.roadVehicles?.firstOrNull { it.id == id }
                     if (station != null && v != null) runner.request(Command.RoadOrder(me, id, Command.TrainOrder.ORDERS, v.orders + station))
                     return
@@ -1103,6 +1103,7 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
                             } ?: Selection.Tile(at.tileX, at.tileY)
                             world.docks.containsKey(tile) -> Selection.Station(world.docks.getValue(tile))
                             world.stationTiles.containsKey(tile) -> Selection.Station(world.stationTiles.getValue(tile))
+                            world.stationBuildings.containsKey(tile) -> Selection.Station(world.stationBuildings.getValue(tile))
                             world.roadStops.containsKey(tile) -> Selection.Station(world.roadStops.getValue(tile))
                             world.depotTiles.containsKey(tile) -> world.depotTiles.getValue(tile).let {
                                 if (world.depots[it]?.owner != me) Selection.Tile(at.tileX, at.tileY)

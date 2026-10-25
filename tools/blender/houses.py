@@ -102,9 +102,15 @@ def porch(m, x0, x1, y0, y1, z, roof, floor, post, posts=4):
 def flat_top(m, x0, x1, y0, y1, z, cap, parapet=0.25):
     """A flat roof with a low parapet and a coping round its edge."""
     m.box(x0, x1, y0, y1, z, z + 0.06, material("tar roof", "#3a3a3c", rough=0.95))
-    for xa, xb, ya, yb in ((x0, x1, y0, y0 + 0.012), (x0, x1, y1 - 0.012, y1), (x0, x0 + 0.012, y0, y1), (x1 - 0.012, x1, y0, y1)):
+    # The sides along x run the full length and the ends fit between them, so no two pieces overlap at a corner
+    # (overlaps render as dark specks).
+    t, o = 0.012, 0.006
+    for xa, xb, ya, yb in ((x0, x1, y0, y0 + t), (x0, x1, y1 - t, y1)):
         m.box(xa, xb, ya, yb, z, z + parapet - 0.06, cap)
-        m.box(xa - 0.006, xb + 0.006, ya - 0.006, yb + 0.006, z + parapet - 0.06, z + parapet, cap)
+        m.box(xa - o, xb + o, ya - o, yb + o, z + parapet - 0.06, z + parapet, cap)
+    for xa, xb in ((x0, x0 + t), (x1 - t, x1)):
+        m.box(xa, xb, y0 + t, y1 - t, z, z + parapet - 0.06, cap)
+        m.box(xa - o, xb + o, y0 + t + o, y1 - t - o, z + parapet - 0.06, z + parapet, cap)
 
 
 # ---- the lot round a building: fences, gardens, trees, sheds and drives ---------------------

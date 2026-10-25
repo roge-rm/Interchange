@@ -18,6 +18,8 @@ import com.rm.interchange.sim.industryAt
 import com.rm.interchange.sim.part
 import com.rm.interchange.sim.houseOf
 import com.rm.interchange.sim.townBuilt
+import com.rm.interchange.sim.stationBuildingAt
+import com.rm.interchange.sim.stationEra
 import kotlin.math.abs
 import com.rm.interchange.sim.hasFoundation
 import com.rm.interchange.sim.surfaceHeight
@@ -342,7 +344,7 @@ internal class ChunkBaker(
 
     /**
      * The building on view tile ([vx], [vy]) with no track: a house, an industry's piece, a dock, a lock, an airport's,
-     * a garage, a shipyard, a salt dome or a road stop, as its sprite (or its shadow's) in the high half and the height
+     * a garage, a shipyard, a salt dome, a road stop or a station building, as its sprite (or its shadow's) in the high half and the height
      * it stands at in the low; [NO_ART] for something there with no drawing, or [NOTHING].
      */
     fun building(vx: Int, vy: Int, shadow: Boolean = false): Long {
@@ -390,6 +392,10 @@ internal class ChunkBaker(
             val base = maxOf(maxOf(cornerHeight(vx, vy), cornerHeight(vx + 1, vy)), maxOf(cornerHeight(vx + 1, vy + 1), cornerHeight(vx, vy + 1)))
             return if (art >= 0) art((if (shadow) Atlas.PART_SHADOW else Atlas.PART)[art * 4 + viewEdge(INDUSTRY_FACING[ind.turn])], base) else NO_ART
         }
+        world.stationBuildingAt(tile)?.let { st ->
+            val e = viewEdge(st.buildingFacing)
+            return art((if (shadow) Atlas.STATION_HOUSE_SHADOW else Atlas.STATION_HOUSE)[stationEra(st.buildingYear) * 4 + e], base)
+        }
         val built = world.house[tile].toInt()
         if (built != 0) {
             val art = houseArt(houseOf(built))
@@ -433,8 +439,25 @@ internal class ChunkBaker(
         if (world.isPlatform(tile)) {
             val st = world.surfaceHeight(wx, wy, pieces, worldCorner(wx, wy, vx, vy))
             val a = viewPieceIndex(Track.index(pieces))
-            sprite(if (shadow) Atlas.STATION_SHADOW[a] else Atlas.STATION[a], vx, vy, st, shadow)
+            val bare = buildingBehind(vx, vy, a)
+            val cell = if (bare) (if (shadow) Atlas.STATION_BARE_SHADOW else Atlas.STATION_BARE)[a] else (if (shadow) Atlas.STATION_SHADOW else Atlas.STATION)[a]
+            sprite(cell, vx, vy, st, shadow)
         }
+    }
+
+    /**
+     * Whether a station building stands on the canopy side of the platform at view tile ([vx], [vy]) along view axis
+     * [a], facing it. The platform sprite's canopy is on the view's far side (v - 1 along u, u - 1 along v), so that
+     * platform is drawn without one to leave the building's front in sight.
+     */
+    private fun buildingBehind(vx: Int, vy: Int, a: Int): Boolean {
+        val bx = if (a == 0) vx else vx - 1
+        val by = if (a == 0) vy - 1 else vy
+        val wx = view.worldX(bx, by)
+        val wy = view.worldY(bx, by)
+        if (wx !in 0 until world.width || wy !in 0 until world.height) return false
+        val st = world.stationBuildingAt(world.index(wx, wy)) ?: return false
+        return viewEdge(st.buildingFacing) == (if (a == 0) Track.YP else Track.XP)
     }
 
     // ---- ground --------------------------------------------------------------------------

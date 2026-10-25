@@ -4,10 +4,11 @@
 
 ONLY, if given, renders just the files whose names start with it.
 
-Files: tree_<kind>_<look>.png, station_<0 along u, 1 along v>.png,
-depot_<edge>.png, signal_<0 clear, 1 stop>.png, house_<kind>_<edge>.png (a town
+Files: tree_<kind>_<look>.png, station_<0 along u, 1 along v>.png and
+station_bare_<a>.png (no canopy), depot_<edge>.png, signal_<0 clear, 1 stop>.png, house_<kind>_<edge>.png (a town
 building facing that view edge), part_<piece>_<edge>.png (a piece of an
-industry), each a whole cell at twice the sharpest level.
+industry), station_house_<era>_<edge>.png (a station building facing its
+platform at that edge), each a whole cell at twice the sharpest level.
 A file already there is left alone.
 
 Everything but signals comes twice: the thing itself with no shadow, and
@@ -149,6 +150,7 @@ def main():
                 shot(out, f"tree_{kind}_{look}_{season}.png", lambda m, kind=kind, look=look, season=season: scenery.tree(m, kind, look, season))
     for a in (0, 1):
         shot(out, f"station_{a}.png", lambda m, a=a: scenery.station(m, a == 0), rise=BUILDING_RISE)
+        shot(out, f"station_bare_{a}.png", lambda m, a=a: scenery.station(m, a == 0, canopy=False), rise=BUILDING_RISE)
     for edge in EDGES:
         shot(out, f"depot_{edge}.png", lambda m, edge=edge: scenery.depot(m, edge), rise=BUILDING_RISE)
         shot(out, f"garage_{edge}.png", lambda m, edge=edge: scenery.garage(m, edge), rise=BUILDING_RISE)
@@ -169,6 +171,9 @@ def main():
     for kind in houses.BUILDERS:
         for edge in EDGES:
             shot(out, f"house_{kind}_{edge}.png", lambda m, kind=kind: houses.house(m, kind), heading=houses.FACING[edge], rise=BUILDING_RISE)
+    for era in range(5):
+        for edge in EDGES:
+            shot(out, f"station_house_{era}_{edge}.png", lambda m, era=era: scenery.station_house(m, era), heading=houses.FACING[edge], rise=BUILDING_RISE)
     for key in industries.PARTS:
         for edge in EDGES:
             shot(out, f"part_{key}_{edge}.png", lambda m, key=key: industries.part(m, key), heading=houses.FACING[edge], rise=BUILDING_RISE)

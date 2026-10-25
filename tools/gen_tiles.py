@@ -121,6 +121,9 @@ for a in (0, 1):
     JOBS.append(("static", ("station", a), lambda a=a: over(track.track("X" if a == 0 else "Y", 0), scenery(f"station_{a}.png", lambda: track.station(a == 0))), None))
     JOBS.append(("shadows", ("station_shadow", a), lambda a=a: scenery(f"station_{a}_shadow.png", base.cell), None))
     UP[("station", a)] = f"station_{a}.png"
+    JOBS.append(("static", ("station_bare", a), lambda a=a: over(track.track("X" if a == 0 else "Y", 0), scenery(f"station_bare_{a}.png", lambda: track.station(a == 0))), None))
+    JOBS.append(("shadows", ("station_bare_shadow", a), lambda a=a: scenery(f"station_bare_{a}_shadow.png", base.cell), None))
+    UP[("station_bare", a)] = f"station_bare_{a}.png"
 for e, edge in enumerate(EDGES):
     JOBS.append(("static", ("garage", e), lambda edge=edge: scenery(f"garage_{edge}.png", base.cell), None))
     JOBS.append(("shadows", ("garage_shadow", e), lambda edge=edge: scenery(f"garage_{edge}_shadow.png", base.cell), None))
@@ -179,6 +182,13 @@ for k, kind in enumerate(HOUSES):
         JOBS.append(("static", ("house", k, e), lambda kind=kind, edge=edge: scenery(f"house_{kind}_{edge}.png", base.cell), None))
         JOBS.append(("shadows", ("house_shadow", k, e), lambda kind=kind, edge=edge: scenery(f"house_{kind}_{edge}_shadow.png", base.cell), None))
         UP[("house", k, e)] = f"house_{kind}_{edge}.png"
+# Station buildings by era (sim stationEra), each facing every view edge, with its shadow apart.
+STATION_ERAS = 5
+for era in range(STATION_ERAS):
+    for e, edge in enumerate(EDGES):
+        JOBS.append(("static", ("station_house", era, e), lambda era=era, edge=edge: scenery(f"station_house_{era}_{edge}.png", base.cell), None))
+        JOBS.append(("shadows", ("station_house_shadow", era, e), lambda era=era, edge=edge: scenery(f"station_house_{era}_{edge}_shadow.png", base.cell), None))
+        UP[("station_house", era, e)] = f"station_house_{era}_{edge}.png"
 # Industry pieces, every one named in the base pack's industries.json layouts, each facing every view edge, with
 # its shadow apart.
 PARTS = []
@@ -464,6 +474,9 @@ object Atlas {{
     /** A platform with its track, along view u (0) or v (1), and its shadow, on the shadows sheet. On the static sheet. */
     val STATION = intArrayOf({index[("station", 0)]}, {index[("station", 1)]})
     val STATION_SHADOW = intArrayOf({index[("station_shadow", 0)]}, {index[("station_shadow", 1)]})
+    /** A platform with no canopy, for the one in front of a station building, and its shadow. */
+    val STATION_BARE = intArrayOf({index[("station_bare", 0)]}, {index[("station_bare", 1)]})
+    val STATION_BARE_SHADOW = intArrayOf({index[("station_bare_shadow", 0)]}, {index[("station_bare_shadow", 1)]})
 
     /** A depot with its doors at view edge XM, XP, YM or YP, and its shadow, on the shadows sheet. On the static sheet. */
     val DEPOT = intArrayOf({", ".join(str(index[("depot", e)]) for e in range(4))})
@@ -498,6 +511,9 @@ object Atlas {{
     /** A building, at its place in HOUSE_KEYS * 4 + the view edge it faces, and its shadow, on the shadows sheet. On the static sheet. */
     val HOUSE = intArrayOf({arr([index[("house", k, e)] for k in range(len(HOUSES)) for e in range(4)])})
     val HOUSE_SHADOW = intArrayOf({arr([index[("house_shadow", k, e)] for k in range(len(HOUSES)) for e in range(4)])})
+    /** A station building, at its era * 4 + the view edge it faces, and its shadow, on the shadows sheet. On the static sheet. */
+    val STATION_HOUSE = intArrayOf({arr([index[("station_house", k, e)] for k in range(STATION_ERAS) for e in range(4)])})
+    val STATION_HOUSE_SHADOW = intArrayOf({arr([index[("station_house_shadow", k, e)] for k in range(STATION_ERAS) for e in range(4)])})
 
     /** The industry pieces drawn here, by the names in the base pack's industries.json layouts. */
     val PART_KEYS = listOf({", ".join(f'"{k}"' for k in PARTS)})
