@@ -123,6 +123,7 @@ MODELS = {
     "tandem_semi": (11, lambda m: roadcars.tractor(m, L(11), "van", "long", "#c8782a", era=1975, axles=(2,), posts=True)),
     "boom_truck": (7, lambda m: roadcars.truck(m, L(7), "boom", "medium", 2)),
     "tanker_long": (13, lambda m: roadcars.tractor(m, L(13), "tank", "sleeper", "#7a1e1e", era=1985)),
+    "wing_sander": (7, lambda m: roadcars.truck(m, L(7), "plow", "sloped", 2, plow="sander")),
     "streetcar": (6, lambda m: roadcars.streetcar(m, L(6), "wood")),
     "pcc": (10, lambda m: roadcars.streetcar(m, L(10), "pcc")),
     "clrv": (11, lambda m: roadcars.streetcar(m, L(11), "clrv")),
@@ -144,7 +145,7 @@ for _key, (_n, _build) in list(SHIPS.items()) + list(AIRCRAFT.items()):
 ROAD = {"horse_omnibus", "stagecoach", "mail_coach", "freight_wagon", "red_river_cart", "horsecar", "motor_bus", "brill_bus", "new_look", "low_floor", "electric_bus", "highway_coach", "courier_coach", "mc5_coach", "d4500_coach", "mail_truck", "stake_truck", "dump_truck",
         "tank_truck", "log_truck", "cattle_truck", "semi_van", "plow_truck", "streetcar", "pcc", "clrv", "flexity",
         "step_van", "electric_van", "flatbed_truck", "tandem_dump", "quad_dump", "fuel_truck", "tandem_plow", "highway_tractor",
-        "aero_tractor", "tanker_train", "grain_train", "cattle_liner", "logger", "sander_plow", "tandem_semi", "boom_truck", "tanker_long"}
+        "aero_tractor", "tanker_train", "grain_train", "cattle_liner", "logger", "sander_plow", "tandem_semi", "boom_truck", "tanker_long", "wing_sander"}
 # How each kind is lowered, as (h, base): heights over base steps are scaled by h, wheels, horses and people keep
 # their size. Rail bodies come down onto their trucks' wheel tops, road ones onto their wheels; ships from the waterline,
 # helicopters and float planes from the ground. Fixed-wing aircraft are already in proportion.

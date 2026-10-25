@@ -237,11 +237,11 @@ def highway_coach(m, L, era=1980):
 
 
 # How long each cab is, from its back to its bumper, in tiles.
-CAB_LEN = {"early": 0.15, "round": 0.17, "square": 0.17, "medium": 0.17, "fifties": 0.22, "long": 0.25, "sleeper": 0.32, "aero": 0.27, "cabover": 0.1}
+CAB_LEN = {"early": 0.15, "round": 0.17, "square": 0.17, "medium": 0.17, "sloped": 0.21, "fifties": 0.22, "long": 0.25, "sleeper": 0.32, "aero": 0.27, "cabover": 0.1}
 # Each cab's roof, in steps, for bodies sized to it.
-CAB_TOP = {"early": 0.9, "round": 0.9, "square": 0.96, "medium": 1.04, "fifties": 1.16, "long": 1.34, "sleeper": 1.34, "aero": 1.62, "cabover": 1.32}
+CAB_TOP = {"early": 0.9, "round": 0.9, "square": 0.96, "medium": 1.04, "sloped": 1.14, "fifties": 1.16, "long": 1.34, "sleeper": 1.34, "aero": 1.62, "cabover": 1.32}
 # How far the steer axle sits behind each cab's front, in tiles: under the front of the hood, about a metre back.
-FRONT_AXLE = {"early": 0.045, "round": 0.045, "square": 0.045, "medium": 0.04, "fifties": 0.05, "long": 0.05, "sleeper": 0.05, "aero": 0.05, "cabover": 0.045}
+FRONT_AXLE = {"early": 0.045, "round": 0.045, "square": 0.045, "medium": 0.04, "sloped": 0.05, "fifties": 0.05, "long": 0.05, "sleeper": 0.05, "aero": 0.05, "cabover": 0.045}
 # From a truck or trailer's back to its last axle, in tiles, about a metre and a quarter.
 REAR_AXLE = 0.05
 
@@ -458,6 +458,36 @@ def _medium_cab(m, y0, y1, c, paint):
     return hood
 
 
+def _sloped_cab(m, y0, y1, c, paint):
+    """A heavy set-back-axle conventional of the International 7400 or Western Star 4900 kind, as plow trucks have run
+    since the mid 1990s: a long hood sloping down to a tall grille, black flares over the steer wheels, a big windshield,
+    a roof a little over the medium cab's and a stack behind the cab. Returns where the hood meets the cab."""
+    half = 0.077
+    top = CAB_TOP["sloped"]
+    grille = material("grille", "#3a3836", metal=0.4, rough=0.5)
+    mats = {"paint": paint, "glass": c["glass"], "grille": grille}
+    hood = y1 - 0.135
+    hw = 0.9
+    shape = [(y0, 0.32, 0.01, "paint"), (hood, 0.32, 0, "paint"), (hood, 0.32, 0, "paint", hw), (y1 - 0.004, 0.32, 0.01, "grille", hw),
+             (y1, 0.6, 0.016, "paint", hw), (y1 - 0.03, 0.68, 0.03, "paint", hw), (hood, 0.76, 0, "paint", hw), (hood, 0.76, 0, "paint"),
+             (hood - 0.004, 0.79, 0.008, "glass"), (hood - 0.026, 1.04, 0.016, "paint"), (hood - 0.036, top, 0.02, "paint"), (y0, top, 0.014, "paint")]
+    outline = m.shell(shape, half, mats, crown=0.05)
+    lamps(m, outline, 0.5, 0.056, c)
+    # The grille: a tall dark core across the nose under a chrome surround.
+    gy = parts.outline_front(outline, 0.46)
+    m.box(-0.05, 0.05, gy - 0.004, gy + 0.001, 0.36, 0.56, grille)
+    m.box(-0.053, 0.053, gy - 0.003, gy + 0.002, 0.56, 0.58, c["chrome"])
+    for side in (-1, 1):
+        fender(m, y1 - FRONT_AXLE["sloped"], side, c, c["dark"])
+        m.box(side * half - 0.001, side * half + 0.001, hood - 0.05, hood - 0.012, 0.8, top - 0.08, c["glass"])
+        m.box(side * (half + 0.012) - 0.003, side * (half + 0.012) + 0.003, hood - 0.008, hood - 0.002, 0.8, 1.0, c["dark"])
+        # Steps under the doors.
+        m.box(side * half - 0.006, side * half + 0.002, hood - 0.05, hood - 0.012, 0.3, 0.34, c["dark"])
+    m.box(-0.072, 0.072, y1 - 0.004, y1 + 0.01, 0.27, 0.37, c["chrome"], bevel=0.003)
+    _stack(m, 0.05, y0 - 0.008, top + 0.12, c)
+    return hood
+
+
 def _cab(m, y0, y1, c, paint, style, era=1970, stacks="back"):
     """A truck's cab from y0 to its front at y1, by era: an open 1910s C-cab, a 1930s rounded hood with fenders, a squarer
     1960s hood with a wide grille, a 1950s highway tractor, a long highway hood (with a sleeper behind as "sleeper"), a
@@ -470,6 +500,8 @@ def _cab(m, y0, y1, c, paint, style, era=1970, stacks="back"):
         return _fifties_cab(m, y0, y1, c, paint)
     if style == "medium":
         return _medium_cab(m, y0, y1, c, paint)
+    if style == "sloped":
+        return _sloped_cab(m, y0, y1, c, paint)
     half = 0.075
     grille = material("grille", "#3a3836", metal=0.4, rough=0.5)
     mats = {"paint": paint, "glass": c["glass"], "grille": grille}
@@ -579,7 +611,8 @@ def tank(m, y0, y1, z0, z1, half, mat, domes, c, walkway=False):
 def truck(m, L, kind, cab="round", gen=1, plow="wedge", lifts=0, era=1970):
     """A truck: a cab of its era and a body for its load, sized to the cab's roof. Later generations run more axles, and
     lifts more again, bunched just ahead of the drive. A plow truck's plow is a V plow ("wedge"), a one-way plow with a
-    side wing ("wing"), or a hydraulic V plow with a V-box sander behind ("vee")."""
+    side wing ("wing"), a hydraulic V plow with a V-box sander behind ("vee"), or a one-way plow and wing with a
+    stainless V-box sander ("sander")."""
     c = common()
     paint = material(f"{kind} {cab} truck", PAINTS[kind], rough=0.45, clearcoat=0.2)
     wood = material("truck boards", "#8a6a44", rough=0.85)
@@ -633,8 +666,8 @@ def truck(m, L, kind, cab="round", gen=1, plow="wedge", lifts=0, era=1970):
         for z in (0.55, 0.64):
             m.box(-0.0665, 0.0665, b0 + 0.01, mid - 0.004, z, z + 0.01, material("lumber wrap", "#3a5a8a", rough=0.6))
         m.box(-0.064, 0.064, mid + 0.004, k0 - 0.008, 0.47, 0.62, board, bevel=0.003)
-    elif kind == "plow" and plow == "vee":
-        _sander(m, b0, b1, c)
+    elif kind == "plow" and plow in ("vee", "sander"):
+        _sander(m, b0, b1, c, plow == "sander")
         _plow(m, a0, a1, cab0, top, plow, c)
     elif kind == "dump" or kind == "plow":
         load = material("load" if kind == "dump" else "sand", "#3a3a3a" if kind == "dump" else "#a89878", rough=0.95)
@@ -711,10 +744,13 @@ def _crane(m, y0, y1, c):
     m.rod((0.012, ym - 0.022, 1.3), (0.018, ym - 0.012, 0.92), 0.0035, c["chrome"], segments=8)
 
 
-def _sander(m, b0, b1, c):
-    """A V-box sander from b0 to b1: a steel hopper narrowing to a conveyor along its floor, heaped with sand and ribbed
-    down its sides, on legs on the frame, its chute dropping onto a spinner under the back."""
-    steel = material("sander box", "#a4a8aa", metal=0.5, rough=0.45)
+def _sander(m, b0, b1, c, stainless=False):
+    """A V-box sander from b0 to b1: a steel (or stainless) hopper narrowing to a conveyor along its floor, heaped with
+    sand and ribbed down its sides, on legs on the frame, its chute dropping onto a spinner under the back."""
+    if stainless:
+        steel = material("stainless sander", "#c8ccce", metal=0.8, rough=0.28)
+    else:
+        steel = material("sander box", "#a4a8aa", metal=0.5, rough=0.45)
     sand = material("sand", "#a89878", rough=0.95)
     ring = [(-0.024, 0.46), (0.024, 0.46), (0.076, 0.66), (0.076, 0.86), (-0.076, 0.86), (-0.076, 0.66)]
     m.loft([(b0 + 0.012, ring), (b1, ring)], {"paint": steel}, sharp=30)
@@ -756,7 +792,8 @@ def _blade(m, p0, p1, zb, h0, h1, mats):
 def _plow(m, a0, a1, cab0, top, style, c):
     """The plow on a truck's front on a push frame at the bumper: a V plow with a lifting frame over it ("wedge"), or a
     one-way plow throwing to the right with a long wing out along the right side ("wing"), a beacon and a sand spinner
-    at the back, as highway plows have had since the 1950s."""
+    at the back, as highway plows have had since the 1950s. "sander" is the wing plow with plow lights on posts over
+    the hood, its spinner left to the sander body."""
     paint = material("plow blade", "#e8b020", metal=0.3, rough=0.4)
     mats = {"paint": paint, "edge": material("cutting edge", "#4a4a4c", metal=0.7, rough=0.4)}
     iron = c["dark"]
@@ -810,6 +847,13 @@ def _plow(m, a0, a1, cab0, top, style, c):
     m.rod((0.06, rear[1] + 0.02, 0.33), (rear[0] - 0.014, rear[1] + 0.03, 0.3), 0.0055, iron)
     # An amber beacon on the cab roof and the sander's spinner under the tailgate.
     m.upright(0.0, cab0 + 0.07, top - 0.02, top + 0.06, 0.012, 0.01, material("beacon", "#f0a020", rough=0.3), segments=12)
+    if style == "sander":
+        for side in (-1, 1):
+            x = side * 0.05
+            m.rod((x, a1 - 0.03, 0.62), (x, a1 - 0.03, 0.96), 0.0025, iron)
+            m.box(x - 0.009, x + 0.009, a1 - 0.034, a1 - 0.022, 0.94, 1.0, iron, bevel=0.002)
+            m.box(x - 0.007, x + 0.007, a1 - 0.023, a1 - 0.021, 0.95, 0.99, c["light"])
+        return
     m.rod((0.0, a0 + 0.012, 0.42), (0.0, a0 - 0.004, 0.22), 0.006, iron)
     m.upright(0.0, a0 - 0.006, 0.18, 0.21, 0.016, 0.016, iron, segments=12)
 

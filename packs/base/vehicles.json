@@ -1779,7 +1779,7 @@
       "name": { "en": "Self-unloader", "fr": "Autodéchargeur" },
       "plural": { "en": "Self-unloaders", "fr": "Autodéchargeurs" },
       "type": { "en": "Bulk freighter", "fr": "Vraquier" },
-      "from": 1965,
+      "from": 1975,
       "until": 2100,
       "speed": 26,
       "power": 8000,
@@ -2620,7 +2620,7 @@
       "plural": { "en": "Plow sanders", "fr": "Chasse-neige épandeurs" },
       "type": { "en": "Snow plow", "fr": "Chasse-neige" },
       "from": 1965,
-      "until": 2100,
+      "until": 1995,
       "speed": 70,
       "power": 210,
       "weight": 10,
@@ -2788,6 +2788,67 @@
         "fish"
       ],
       "capacity": 40
+    },
+    {
+      "id": "self_unloader_fwd",
+      "kind": "ship",
+      "name": { "en": "Forward-house self-unloader", "fr": "Autodéchargeur à passerelle avant" },
+      "plural": { "en": "Forward-house self-unloaders", "fr": "Autodéchargeurs à passerelle avant" },
+      "type": { "en": "Bulk freighter", "fr": "Vraquier" },
+      "from": 1965,
+      "until": 1975,
+      "speed": 26,
+      "power": 7500,
+      "weight": 10000,
+      "cost": 67000,
+      "running": 2800,
+      "length": 14,
+      "carries": [
+        "grain",
+        "iron_ore",
+        "coal",
+        "potash"
+      ],
+      "capacity": 1400,
+      "life": 50
+    },
+    {
+      "id": "srn5",
+      "kind": "ship",
+      "name": { "en": "SR.N5 hovercraft", "fr": "Aéroglisseur SR.N5" },
+      "plural": { "en": "SR.N5 hovercraft", "fr": "Aéroglisseurs SR.N5" },
+      "type": { "en": "Hovercraft", "fr": "Aéroglisseur" },
+      "from": 1968,
+      "until": 1987,
+      "speed": 70,
+      "power": 1000,
+      "weight": 7,
+      "cost": 7000,
+      "running": 600,
+      "length": 4,
+      "carries": [
+        "passengers",
+        "mail"
+      ],
+      "capacity": 20,
+      "life": 25,
+      "hovercraft": true
+    },
+    {
+      "id": "wing_sander",
+      "kind": "road",
+      "name": { "en": "Wing plow sander", "fr": "Chasse-neige épandeur à aile" },
+      "plural": { "en": "Wing plow sanders", "fr": "Chasse-neige épandeurs à aile" },
+      "type": { "en": "Snow plow", "fr": "Chasse-neige" },
+      "from": 1995,
+      "until": 2100,
+      "speed": 80,
+      "power": 350,
+      "weight": 14,
+      "cost": 9500,
+      "running": 650,
+      "length": 7,
+      "plow": "oneway"
     }
   ]
 }

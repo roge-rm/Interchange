@@ -185,10 +185,12 @@ def fore_house(m, top, L, half, c, at=0.06, zs=(0.34, 0.64), mast=1.1):
 
 def laker(m, L, kind):
     """A Great Lakes bulk carrier: pilothouse forward, a long run of hatches, the engine house and funnel aft.
-    kind is steam, seaway or self: a modern self-unloader with all its cabins aft and the unloading boom laid forward
-    along the deck from the front of the house."""
+    kind is steam, seaway, early (a 1960s self-unloader of the Algorail or Tarantau kind: pilothouse forward, the boom
+    on its elevator casing in front of the engine house and laid forward along the deck) or self: a modern
+    self-unloader with all its cabins aft and the unloading boom laid forward along the deck from the front of the house."""
     c = common()
-    paint = material(f"{kind} laker hull", {"steam": "#3a3d40", "seaway": "#8a2a22", "self": "#2a3a5a"}[kind], rough=0.5, clearcoat=0.2)
+    paint = material(f"{kind} laker hull", {"steam": "#3a3d40", "seaway": "#8a2a22", "early": "#2e4a3e", "self": "#2a3a5a"}[kind],
+                     rough=0.5, clearcoat=0.2)
     half = 0.065 if kind == "steam" else 0.075
     top = hull(m, L, half, 0.3, paint, c, bow=0.08, stern=0.05, sheer=0.12, transom=0.88 if kind == "steam" else 0.95, rake=0.025,
                counter=0.04 if kind == "steam" else 0.02, flare=0.06, deck=material("red deck", "#7a3a30", rough=0.8))
@@ -206,7 +208,22 @@ def laker(m, L, kind):
            c["dark"] if kind == "steam" else paint, material(f"{kind} funnel band", "#e0b020", rough=0.4),
            rake=0.008 if kind == "steam" else 0.004)
     masts(m, [aft + 0.085], z + 0.68, z + 1.2, c)
-    hatches(m, aft + 0.12, fwd - 0.09, int(L * 22), half * 0.7, z, c, "#4a5a4a" if kind == "steam" else "#2a2a2a")
+    h0 = aft + 0.12
+    if kind == "early":
+        # The loop belt's elevator casing just forward of the engine house, the boom's pivot on top of it and the boom
+        # laid forward over the hatches to its cradle, with the hoist wires back to an A-frame on the casing.
+        y = aft + 0.105
+        m.box(-0.018, 0.018, y, y + 0.024, z, z + 0.52, c["steel"], bevel=0.002)
+        boom0, boom1 = y + 0.02, y + L * 0.38
+        m.box(-0.012, 0.012, boom0, boom1, z + 0.38, z + 0.46, c["steel"], bevel=0.003)
+        m.rod((0, boom1 - 0.008, z + 0.38), (0, boom1 + 0.006, z + 0.46), 0.003, c["dark"])
+        for side in (-1, 1):
+            m.rod((side * 0.03, y + 0.004, z), (side * 0.008, y + 0.012, z + 0.8), 0.003, c["steel"])
+            m.rod((side * 0.008, y + 0.012, z + 0.8), (side * 0.008, (boom0 + boom1) / 2, z + 0.46), 0.0012, c["dark"])
+            m.rod((side * 0.022, boom1 - 0.02, z), (side * 0.008, boom1 - 0.02, z + 0.38), 0.0035, c["steel"])
+        m.box(-0.026, 0.026, boom1 - 0.024, boom1 - 0.016, z, z + 0.05, c["steel"])
+        h0 = y + 0.04
+    hatches(m, h0, fwd - 0.09, int(L * 22), half * 0.7, z, c, "#4a5a4a" if kind == "steam" else "#2a2a2a")
     m.text(LETTERS, half + 0.002, 0, z * 0.6, 0.03, c["white"], 1)
 
 
@@ -656,6 +673,68 @@ def hovercraft(m, L):
             m.box(x - 0.01, x + 0.01, a0 + 0.012, a0 + 0.028, zd, zc - r * 0.9 / rig.RISE, c["white"])
 
 
+def srn5(m, L):
+    """The Coast Guard's first hovercraft, a Saunders-Roe SR.N5 of 1968: about 12 m by 7, a red buoyancy tank on a black
+    skirt, a long white cabin with side decks round it and the control cabin raised at its front, and one big pusher
+    propeller on a pylon at the back of the cabin, with two fins and rudders at the stern corners."""
+    c = common()
+    a0, a1 = -L / 2, L / 2
+    half = 0.066
+    skirt = material("skirt", "#202022", rough=0.85)
+    red = material("hovercraft red", "#c8302a", rough=0.4, clearcoat=0.3)
+    zs, zd = 0.26, 0.34
+
+    def plan(t):
+        """Half width at t along: square sided, well rounded at the bow and a little at the stern."""
+        bow = max(0.0, (t - 0.7) / 0.3)
+        aft = max(0.0, (0.12 - t) / 0.12)
+        return half * math.sqrt(max(0.0, 1 - bow ** 2)) ** 0.5 * (1 - 0.18 * aft ** 2)
+
+    sections, deck = [], []
+    for k in range(25):
+        t = k / 24
+        y = a0 + L * t
+        w = max(plan(t), 0.004)
+        sections.append((y, [(-w * 0.92, zs), (-w * 1.0, zs * 0.7), (-w * 1.03, zs * 0.4), (-w * 0.95, 0.04), (-w * 0.85, 0.0),
+                             (w * 0.85, 0.0), (w * 0.95, 0.04), (w * 1.03, zs * 0.4), (w * 1.0, zs * 0.7), (w * 0.92, zs)]))
+        deck.append((y, [(-w * 0.94, zs), (-w * 0.94, zd), (w * 0.94, zd), (w * 0.94, zs)]))
+    m.loft(sections, {"skirt": skirt})
+    m.loft(deck, {"red": red}, sharp=50)
+    # The cabin, narrower than the craft so side decks show, its front sloped and glazed, windows down the sides.
+    y0, y1 = a0 + L * 0.2, a1 - L * 0.16
+    cw = half * 0.6
+    m.shell([(y0, zd, 0.006, "paint"), (y1, zd, 0.01, "paint"), (y1 - 0.008, zd + 0.16, 0.006, "glass"), (y1 - 0.024, zd + 0.34, 0.01, "paint"),
+             (y0, zd + 0.34, 0.008, "paint")], cw, {"paint": c["white"], "glass": c["glass"]}, crown=0.04)
+    zw = zd + 0.22
+    for side in (-1, 1):
+        m.box(side * cw - 0.001, side * cw + 0.001, y0 + 0.01, y1 - 0.024, zw - 0.05, zw + 0.03, c["glass"])
+        m.box(side * cw - 0.0012, side * cw + 0.0012, y0 + 0.004, y1 - 0.006, zd + 0.01, zd + 0.07, red)
+    # The control cabin on the roof at the front, glazed all round.
+    house(m, y1 - 0.06, y1 - 0.022, cw * 0.7, zd + 0.34, zd + 0.54, c["white"], c, round_front=0.006, rake=0.008, back=True)
+    # The engine's air intake on the roof behind it and the pylon at the back carrying the propeller.
+    m.box(-cw * 0.6, cw * 0.6, y0 + 0.006, y0 + 0.05, zd + 0.34, zd + 0.42, c["steel"], bevel=0.004)
+    r = 0.03
+    with m.keep(at=zd + 0.34):
+        zc = zd + 0.34 + 0.012 + r / rig.RISE
+        yp = y0 - 0.004
+        m.box(-0.008, 0.008, y0 - 0.006, y0 + 0.02, zd + 0.34, zc, c["white"], bevel=0.002)
+        m.tube(yp - 0.012, y0 + 0.012, 0.0, zc, 0.007, c["white"], segments=12)
+        m.tube(yp - 0.016, yp - 0.01, 0.0, zc, 0.004, c["dark"], segments=10)
+        # Four blades, one painted tip each.
+        for k in range(4):
+            a = math.pi / 4 + k * math.pi / 2
+            tip = (math.cos(a) * r, yp - 0.013, zc + math.sin(a) * r / rig.RISE)
+            m.rod((0.0, yp - 0.013, zc), tip, 0.0035, c["dark"], segments=6)
+            m.rod((tip[0] * 0.85, tip[1], zc + (tip[2] - zc) * 0.85), tip, 0.0036, material("prop tip", "#e8c020", rough=0.4), segments=6)
+    # The fins and rudders at the stern corners.
+    for side in (-1, 1):
+        x = side * half * 0.78
+        m.shell([(a0 + 0.004, zd, 0.002, "paint"), (a0 + 0.034, zd, 0.002, "paint"), (a0 + 0.026, zd + 0.62, 0.004, "paint"),
+                 (a0 + 0.008, zd + 0.66, 0.004, "paint")], 0.0025, {"paint": c["white"]}, x=x, cols=(-1, 1))
+        m.box(x - 0.0028, x + 0.0028, a0 + 0.0, a0 + 0.008, zd + 0.04, zd + 0.58, red)
+    m.text(LETTERS, half * 0.94 + 0.002, a0 + L * 0.45, (zs + zd) / 2, 0.02, c["white"], 1)
+
+
 def ship_builders():
     """The ship models by key, as render_vehicles registers them, with their lengths in sixteenths."""
     return {
@@ -674,6 +753,8 @@ def ship_builders():
         "self_unloader": (15, lambda m, L: laker(m, L, "self")),
         "superferry": (13, lambda m, L: car_ferry(m, L, "super")),
         "hovercraft": (5, hovercraft),
+        "self_unloader_fwd": (14, lambda m, L: laker(m, L, "early")),
+        "srn5": (4, srn5),
         "container_feeder": (14, lambda m, L: freighter(m, L, "container")),
         "product_tanker": (14, lambda m, L: freighter(m, L, "product")),
         "battery_ferry": (9, lambda m, L: car_ferry(m, L, "battery")),

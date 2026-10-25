@@ -469,6 +469,9 @@ ROSTER = [
     ("tank_domeless", 12, lambda f: tankcar(f, L(12))),
     ("boxcar_50", 12, lambda f: boxcar(f, L(12), True)),
     ("reefer_mech", 12, lambda f: boxcar(f, L(12), True)),
+    ("wing_sander", 7, lambda f: caboose(f, L(7))),
+    ("self_unloader_fwd", 14, lambda f: coach(f, L(14), True)),
+    ("srn5", 4, lambda f: coach(f, L(4), True)),
 ]
 
 
