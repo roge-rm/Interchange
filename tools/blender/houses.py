@@ -20,24 +20,88 @@ def slab(m, pts, thick, mat):
     m.wedge(pts, [(x, y, z + thick) for x, y, z in pts], mat)
 
 
-def gable(m, x0, x1, y0, y1, eave, ridge, roof, wall, along_x=True, over=0.03, thick=0.08):
-    """A pitched roof over x0..x1 by y0..y1 from the eaves up to its ridge, with the gable ends walled in."""
+def gable(m, x0, x1, y0, y1, eave, ridge, roof, wall, along_x=True, over=0.03, thick=0.08, trim=None, fascia=0.07,
+          barge=False, returns=False, ends=(True, True), gap=None):
+    """A pitched roof over x0..x1 by y0..y1 from the eaves up to its ridge, with the gable ends walled in.
+
+    With trim, the eaves get a fascia and soffit and the gable ends rake boards; barge makes those a deep gingerbread
+    bargeboard with drops and a finial, and returns gives the eaves short returns round the gable-end corners. ends says
+    which gable ends (low, high side) get rake boards and returns. gap (a, b, top) leaves the high side's slope open between
+    a and b along the ridge, for a cross gable that wide rising from the wall there with its ridge top high."""
+    # u runs along the ridge, v across it; pt and blk turn them back into x and y.
     if along_x:
-        yc = (y0 + y1) / 2
-        for ya in (y0 - over, y1 + over):
-            slab(m, [(x0 - over, ya, eave), (x1 + over, ya, eave), (x1 + over, yc, ridge), (x0 - over, yc, ridge)], thick, roof)
-        for x in (x0, x1):
-            m.wedge([(x - 0.003, y0, eave), (x - 0.003, y1, eave), (x - 0.003, yc, ridge)], [(x + 0.003, y0, eave), (x + 0.003, y1, eave), (x + 0.003, yc, ridge)], wall)
+        u0, u1, v0, v1 = x0, x1, y0, y1
     else:
-        xc = (x0 + x1) / 2
-        for xa in (x0 - over, x1 + over):
-            slab(m, [(xa, y0 - over, eave), (xa, y1 + over, eave), (xc, y1 + over, ridge), (xc, y0 - over, ridge)], thick, roof)
-        for y in (y0, y1):
-            m.wedge([(x0, y - 0.003, eave), (x1, y - 0.003, eave), (xc, y - 0.003, ridge)], [(x0, y + 0.003, eave), (x1, y + 0.003, eave), (xc, y + 0.003, ridge)], wall)
+        u0, u1, v0, v1 = y0, y1, x0, x1
+
+    def pt(u, v, z):
+        return (u, v, z) if along_x else (v, u, z)
+
+    def blk(ua, ub, va, vb, za, zb, mat):
+        if along_x:
+            m.box(ua, ub, va, vb, za, zb, mat)
+        else:
+            m.box(va, vb, ua, ub, za, zb, mat)
+
+    vc = (v0 + v1) / 2
+    spans = [(u0 - over, u1 + over)]
+    for k, va in enumerate((v0 - over, v1 + over)):
+        runs = [(u0 - over, gap[0]), (gap[1], u1 + over)] if gap and k == 1 else spans
+        if gap and k == 1:
+            # Behind the cross gable the slope carries on up from the valleys, which meet at its ridge, gap[2] high.
+            gm = (gap[0] + gap[1]) / 2
+            vv = va + (gap[2] - eave) / (ridge - eave) * (vc - va)
+            for ga in gap[:2]:
+                slab(m, [pt(ga, va, eave), pt(gm, vv, gap[2]), pt(gm, vc, ridge), pt(ga, vc, ridge)], thick, roof)
+        for ua, ub in runs:
+            slab(m, [pt(ua, va, eave), pt(ub, va, eave), pt(ub, vc, ridge), pt(ua, vc, ridge)], thick, roof)
+            if trim is not None:
+                # The fascia board along the eave and the soffit back to the wall under it.
+                blk(ua, ub, va - 0.004, va + 0.004, eave - fascia, eave + thick + 0.004, trim)
+                blk(ua, ub, min(va, (v0, v1)[k]), max(va, (v0, v1)[k]), eave - 0.025, eave, trim)
+    for u in (u0, u1):
+        m.wedge([pt(u - 0.003, v0, eave), pt(u - 0.003, v1, eave), pt(u - 0.003, vc, ridge)], [pt(u + 0.003, v0, eave), pt(u + 0.003, v1, eave), pt(u + 0.003, vc, ridge)], wall)
+    if trim is None:
+        return
+    deep = 0.16 if barge else fascia
+    for side, (ue, uw, d) in enumerate(((u0 - over, u0, -1), (u1 + over, u1, 1))):
+        if not ends[side]:
+            continue
+        # Rake boards under each sloping edge of the gable end.
+        for va in (v0 - over, v1 + over):
+            band = [pt(ue - 0.004, va, eave - deep), pt(ue - 0.004, vc, ridge - deep), pt(ue - 0.004, vc, ridge + thick + 0.01), pt(ue - 0.004, va, eave + thick + 0.01)]
+            m.wedge(band, [(x + (0.008 if along_x else 0), y + (0 if along_x else 0.008), z) for x, y, z in band], trim)
+            if barge:
+                # Gingerbread drops hanging from the board.
+                n = 6
+                for j in range(1, n):
+                    t = j / n
+                    v, z = va + (vc - va) * t, eave + (ridge - eave) * t
+                    blk(ue - 0.003, ue + 0.003, v - 0.005, v + 0.005, z - deep - 0.09, z - deep + 0.01, trim)
+        if barge:
+            blk(ue - 0.005, ue + 0.005, vc - 0.006, vc + 0.006, ridge - deep - 0.22, ridge + thick + 0.16, trim)
+        if returns:
+            # Eave returns: the eave carried a short way round each corner of the gable end, with a little roof on top.
+            for va, vb in ((v0 - over, v0 + 0.06), (v1 - 0.06, v1 + over)):
+                ua, ub = sorted((uw - d * 0.004, uw + d * 0.03))
+                blk(ua, ub, va, vb, eave - fascia, eave + 0.03, trim)
+                blk(ua - 0.004, ub + 0.004, va - 0.004, vb + 0.004, eave + 0.03, eave + 0.07, roof)
 
 
-def hip(m, x0, x1, y0, y1, eave, ridge, roof, over=0.03, thick=0.08):
-    """A hipped roof, sloping on all four sides to a short ridge along the longer side."""
+def hip(m, x0, x1, y0, y1, eave, ridge, roof, over=0.03, thick=0.08, trim=None, fascia=0.07):
+    """A hipped roof, sloping on all four sides to a short ridge along the longer side. With trim, a fascia and soffit
+    run round the eaves."""
+    if trim is not None:
+        xa, xb, ya, yb = x0 - over, x1 + over, y0 - over, y1 + over
+        for a, b in ((ya, y0), (y1, yb)):
+            m.box(xa, xb, a, b, eave - 0.025, eave, trim)
+        for a, b in ((xa, x0), (x1, xb)):
+            m.box(a, b, y0, y1, eave - 0.025, eave, trim)
+        t = 0.004
+        for y in (ya, yb):
+            m.box(xa - t, xb + t, y - t, y + t, eave - fascia, eave + thick + t, trim)
+        for x in (xa, xb):
+            m.box(x - t, x + t, ya + t, yb - t, eave - fascia, eave + thick + t, trim)
     x0, x1, y0, y1 = x0 - over, x1 + over, y0 - over, y1 + over
     inset = min(x1 - x0, y1 - y0) / 2
     if x1 - x0 >= y1 - y0:
@@ -56,8 +120,10 @@ def hip(m, x0, x1, y0, y1, eave, ridge, roof, over=0.03, thick=0.08):
         slab(m, [(x0, y1, eave), (x1, y1, eave), (xc, b, ridge)], thick, roof)
 
 
-def windows(m, x0, x1, y0, y1, z0, storeys, per_front, per_side, glass, frame, skip_door=False, w=WINDOW_W, h=WINDOW_H, sill=0.35):
-    """Windows on all four walls of a box, storey by storey, set a little proud with a frame round each."""
+def windows(m, x0, x1, y0, y1, z0, storeys, per_front, per_side, glass, frame, skip_door=False, w=WINDOW_W, h=WINDOW_H, sill=0.35,
+            trim=None, sash=True, skip=()):
+    """Windows on all four walls of a box, storey by storey, set a little proud with a frame round each. With trim, each is
+    drawn by pane() with a sill and head of that; skip lists (storey, front window) places on the front to leave out."""
     for s in range(storeys):
         z = z0 + s * STOREY + sill
         for k in range(per_front):
@@ -65,19 +131,186 @@ def windows(m, x0, x1, y0, y1, z0, storeys, per_front, per_side, glass, frame, s
             for y, d in ((y1, 1), (y0, -1)):
                 if skip_door and s == 0 and d == 1 and k == per_front // 2:
                     continue
+                if d == 1 and (s, k) in skip:
+                    continue
+                if trim is not None:
+                    pane(m, "y", y, d, x, z, z + h, w, glass, frame, trim, sash)
+                    continue
                 m.box(x - w / 2 - 0.006, x + w / 2 + 0.006, y + d * 0.002 - 0.003, y + d * 0.002 + 0.003, z - 0.05, z + h + 0.05, frame)
                 m.box(x - w / 2, x + w / 2, y + d * 0.005 - 0.003, y + d * 0.005 + 0.003, z, z + h, glass)
         for k in range(per_side):
             y = y0 + (k + 0.5) * (y1 - y0) / per_side
             for x, d in ((x1, 1), (x0, -1)):
+                if trim is not None:
+                    pane(m, "x", x, d, y, z, z + h, w, glass, frame, trim, sash)
+                    continue
                 m.box(x + d * 0.002 - 0.003, x + d * 0.002 + 0.003, y - w / 2 - 0.006, y + w / 2 + 0.006, z - 0.05, z + h + 0.05, frame)
                 m.box(x + d * 0.005 - 0.003, x + d * 0.005 + 0.003, y - w / 2, y + w / 2, z, z + h, glass)
 
 
-def door(m, x, y, mat, frame, w=0.05, h=0.95):
-    """A front door in the wall at y, its middle at x."""
-    m.box(x - w / 2 - 0.008, x + w / 2 + 0.008, y - 0.002, y + 0.006, 0, h + 0.07, frame)
-    m.box(x - w / 2, x + w / 2, y, y + 0.009, 0, h, mat)
+def on_wall(m, face, at, d, a0, a1, o0, o1, z0, z1, mat):
+    """A box on the wall at x or y = at (face "x" or "y"), facing d (1 or -1): a0..a1 along the wall, o0..o1 out from it."""
+    p, q = sorted((at + d * o0, at + d * o1))
+    if face == "y":
+        m.box(a0, a1, p, q, z0, z1, mat)
+    else:
+        m.box(p, q, a0, a1, z0, z1, mat)
+
+
+def pane(m, face, at, d, c, z0, z1, w, glass, frame, trim, sash=True, bars=0):
+    """A window centred at c in the wall at x or y = at: a frame standing proud of the glass, a sash bar across the middle,
+    bars upright mullions, a sill under it and a head over it of trim."""
+    b = 0.007
+    a0, a1 = c - w / 2, c + w / 2
+    on_wall(m, face, at, d, a0, a1, -0.002, 0.003, z0, z1, glass)
+    for s0, s1 in ((a0 - b, a0), (a1, a1 + b)):
+        on_wall(m, face, at, d, s0, s1, 0, 0.007, z0 - b, z1 + b, frame)
+    for zz in (z0 - b, z1):
+        on_wall(m, face, at, d, a0, a1, 0, 0.007, zz, zz + b, frame)
+    if sash:
+        zm = (z0 + z1) / 2
+        on_wall(m, face, at, d, a0, a1, 0, 0.005, zm - 0.012, zm + 0.012, frame)
+    for k in range(bars):
+        a = a0 + (k + 1) * w / (bars + 1)
+        on_wall(m, face, at, d, a - 0.003, a + 0.003, 0, 0.005, z0, z1, frame)
+    on_wall(m, face, at, d, a0 - b - 0.008, a1 + b + 0.008, 0, 0.014, z0 - b - 0.04, z0 - b, trim)
+    on_wall(m, face, at, d, a0 - b - 0.005, a1 + b + 0.005, 0, 0.01, z1 + b, z1 + b + 0.05, trim)
+
+
+def gothic_pane(m, x, y, z0, z1, point, w, glass, frame, trim):
+    """A pointed Gothic window in the front wall at y, its middle at x, from z0 to z1 with its point at point."""
+    for (a, out, mat) in ((w / 2 + 0.008, 0.006, frame), (w / 2, 0.009, glass)):
+        lo = z0 - 0.008 if mat is frame else z0
+        top = point + 0.03 if mat is frame else point
+        poly = [(x - a, y, lo), (x + a, y, lo), (x + a, y, z1), (x, y, top), (x - a, y, z1)]
+        m.wedge(poly, [(px, py + out, pz) for px, py, pz in poly], mat)
+    m.box(x - w / 2 - 0.016, x + w / 2 + 0.016, y, y + 0.014, z0 - 0.05, z0 - 0.008, trim)
+
+
+def door(m, x, y, mat, frame, w=0.05, h=0.95, z0=0.0, transom=None):
+    """A front door in the wall at y, its middle at x, its sill at z0, with a glass transom over it if given."""
+    top = h + (0.2 if transom is not None else 0.0)
+    m.box(x - w / 2 - 0.008, x + w / 2 + 0.008, y - 0.002, y + 0.006, z0, z0 + top + 0.07, frame)
+    m.box(x - w / 2, x + w / 2, y, y + 0.009, z0, z0 + h, mat)
+    if transom is not None:
+        m.box(x - w / 2, x + w / 2, y, y + 0.008, z0 + h + 0.03, z0 + h + 0.18, transom)
+
+
+def corner_boards(m, x0, x1, y0, y1, z0, z1, mat, w=0.01):
+    """Boards up each corner of a box, standing a little proud of both walls."""
+    o = 0.004
+    for x, sx in ((x0, -1), (x1, 1)):
+        for y, sy in ((y0, -1), (y1, 1)):
+            xa, xb = sorted((x + sx * o, x - sx * w))
+            ya, yb = sorted((y + sy * o, y - sy * w))
+            m.box(xa, xb, ya, yb, z0, z1, mat)
+
+
+def foundation(m, x0, x1, y0, y1, h, mat, out=0.007):
+    """The foundation wall showing under a house, h steps high."""
+    m.box(x0 - out, x1 + out, y0 - out, y1 + out, 0, h, mat, 0.002)
+
+
+def steps(m, x, y, w, rise, mat, n=3, d=1, run=0.022, landing=0.02):
+    """Steps from the ground up to rise at the wall at y, out the d side, w wide, their middle at x."""
+    # Each step a little wider than the one over it, so their sides don't share a plane (that renders as dark specks).
+    for k in range(n):
+        reach = landing + k * run
+        a, b = sorted((y, y + d * reach))
+        half = w / 2 + k * 0.002
+        m.box(x - half, x + half, a, b, 0, rise * (n - k) / n, mat)
+
+
+def lap_siding(m, x0, x1, y0, y1, z0, z1, mat, gap=0.11):
+    """Lines of clapboard shadow round a box, each a thin band standing just proud."""
+    z = z0
+    while z < z1 - 0.02:
+        m.box(x0 - 0.002, x1 + 0.002, y0 - 0.002, y1 + 0.002, z, z + 0.012, mat)
+        z += gap
+
+
+def verandah(m, x0, x1, y0, y1, deck, z, roof, floor, post, trim, posts=4, step_at=None, rail=True, brackets=False, taper=None,
+             skirt=None, pitch=0.25):
+    """A porch along the front wall at y0 out to y1: a deck deck steps high on a skirt, posts up to z with a beam and
+    fascia, a roof sloping out from pitch higher at the wall, a railing between the posts and steps at step_at. taper (a
+    pier height) sets each post on a brick pier and tapers it, as on a Craftsman porch; brackets adds fretwork at the
+    post heads."""
+    m.box(x0, x1, y0, y1, 0, deck, floor, 0.002)
+    if skirt is not None:
+        m.box(x0 + 0.004, x1 - 0.004, y0, y1 + 0.003, 0.02, deck - 0.04, skirt)
+    xs = [x0 + 0.01 + k * (x1 - x0 - 0.02) / (posts - 1) for k in range(posts)]
+    py = y1 - 0.012
+    for x in xs:
+        if taper is not None:
+            m.box(x - 0.016, x + 0.016, py - 0.016, py + 0.016, 0, taper, skirt if skirt is not None else floor, 0.002)
+            sq = [(x - 0.012, py - 0.012, taper), (x + 0.012, py - 0.012, taper), (x + 0.012, py + 0.012, taper), (x - 0.012, py + 0.012, taper)]
+            m.wedge(sq, [(px + (x - px) * 0.45, py_ + (py - py_) * 0.45, z) for px, py_, _ in sq], post)
+        else:
+            m.box(x - 0.006, x + 0.006, py - 0.006, py + 0.006, deck, z, post)
+        if brackets:
+            for s in (-1, 1):
+                m.wedge([(x, py - 0.002, z - 0.22), (x, py - 0.002, z), (x + s * 0.04, py - 0.002, z)],
+                        [(x, py + 0.002, z - 0.22), (x, py + 0.002, z), (x + s * 0.04, py + 0.002, z)], trim)
+    m.box(x0, x1, py - 0.008, py + 0.008, z - 0.09, z, trim)
+    if rail:
+        for a, b in zip(xs, xs[1:]):
+            if step_at is not None and a < step_at < b:
+                continue
+            m.box(a, b, py - 0.004, py + 0.004, deck + 0.3, deck + 0.34, trim)
+            m.box(a, b, py - 0.003, py + 0.003, deck + 0.03, deck + 0.06, trim)
+            t = a + 0.012
+            while t < b - 0.006:
+                m.box(t - 0.002, t + 0.002, py - 0.002, py + 0.002, deck + 0.06, deck + 0.3, trim)
+                t += 0.012
+    slab(m, [(x0 - 0.012, y0, z + pitch), (x1 + 0.012, y0, z + pitch), (x1 + 0.012, y1 + 0.02, z), (x0 - 0.012, y1 + 0.02, z)], 0.06, roof)
+    m.box(x0 - 0.012, x1 + 0.012, y1 + 0.016, y1 + 0.024, z - 0.06, z + 0.07, trim)
+    if step_at is not None:
+        steps(m, step_at, y1, 0.07, deck, floor, n=max(1, round(deck / 0.08)))
+
+
+def face_pane(m, p, q, z0, z1, glass, frame, out, t0=0.18, t1=0.82):
+    """A window on a wall running from p to q (each (x, y)), on its outer side by out, from t0 to t1 of the way along."""
+    (px, py), (qx, qy) = p, q
+    L = ((qx - px) ** 2 + (qy - py) ** 2) ** 0.5
+    nx, ny = (qy - py) / L * out, -(qx - px) / L * out
+
+    def strip(a, b, za, zb, o0, o1, mat):
+        pts = [(px + (qx - px) * a, py + (qy - py) * a), (px + (qx - px) * b, py + (qy - py) * b)]
+        base = [(x + nx * o0, y + ny * o0) for x, y in pts] + [(x + nx * o1, y + ny * o1) for x, y in reversed(pts)]
+        m.wedge([(x, y, za) for x, y in base], [(x, y, zb) for x, y in base], mat)
+
+    strip(t0 - 0.06, t1 + 0.06, z0 - 0.05, z1 + 0.05, 0.0, 1.0, frame)
+    strip(t0, t1, z0, z1, 1.0, 1.6, glass)
+
+
+def lamp_post(m, x, y, h=0.62):
+    """A yard lamp: a black post and a lantern."""
+    iron = material("lamp post", "#2a2a2c", metal=0.5, rough=0.5)
+    m.upright(x, y, 0, h, 0.005, 0.004, iron, segments=8)
+    m.box(x - 0.008, x + 0.008, y - 0.008, y + 0.008, h, h + 0.12, material("lamp glass", "#f4e8b0", rough=0.2))
+    m.box(x - 0.011, x + 0.011, y - 0.011, y + 0.011, h + 0.12, h + 0.15, iron)
+
+
+def car(m, x, y, colour="#7a2a2a", along_y=True):
+    """A parked car of the 1960s, nose to +y if along_y: a long body, a glass cabin and dark wheels."""
+    body = material("car " + colour, colour, metal=0.4, rough=0.35)
+    dark = material("tires", "#1e1e1e", rough=0.9)
+    chrome = material("car chrome", "#c8ccd0", metal=0.8, rough=0.25)
+    L, W = 0.1, 0.038
+
+    def b(a0, a1, c0, c1, z0, z1, mat, bevel=0.0):
+        if along_y:
+            m.box(x + c0, x + c1, y + a0, y + a1, z0, z1, mat, bevel)
+        else:
+            m.box(x + a0, x + a1, y + c0, y + c1, z0, z1, mat, bevel)
+
+    for a in (-L * 0.62, L * 0.62):
+        b(a - 0.014, a + 0.014, -W - 0.002, W + 0.002, 0, 0.16, dark)
+    b(-L, L, -W, W, 0.08, 0.32, body, 0.006)
+    b(-L * 0.35, L * 0.35, -W + 0.004, W - 0.004, 0.32, 0.52, glass(), 0.004)
+    b(-L * 0.38, L * 0.38, -W + 0.002, W - 0.002, 0.52, 0.56, body, 0.003)
+    for a in (-L - 0.003, L - 0.002):
+        b(a, a + 0.005, -W, W, 0.1, 0.16, chrome)
 
 
 def path(m, x, y0, y1, w=0.05):
@@ -88,15 +321,6 @@ def path(m, x, y0, y1, w=0.05):
 def chimney(m, x, y, z0, z1, mat, w=0.035):
     m.box(x - w, x + w, y - w, y + w, z0, z1, mat, 0.002)
     m.box(x - w - 0.005, x + w + 0.005, y - w - 0.005, y + w + 0.005, z1, z1 + 0.08, mat)
-
-
-def porch(m, x0, x1, y0, y1, z, roof, floor, post, posts=4):
-    """A porch across the front: a deck, posts and a roof sloping out."""
-    m.box(x0, x1, y0, y1, 0, 0.18, floor, 0.002)
-    for k in range(posts):
-        x = x0 + 0.01 + k * (x1 - x0 - 0.02) / (posts - 1)
-        m.box(x - 0.006, x + 0.006, y1 - 0.016, y1 - 0.004, 0.18, z, post)
-    slab(m, [(x0 - 0.01, y0, z + 0.25), (x1 + 0.01, y0, z + 0.25), (x1 + 0.01, y1 + 0.02, z), (x0 - 0.01, y1 + 0.02, z)], 0.06, roof)
 
 
 def flat_top(m, x0, x1, y0, y1, z, cap, parapet=0.25):
@@ -253,6 +477,12 @@ def glass():
     return material("window glass", "#2c3a48", rough=0.12, grime=0.2)
 
 
+def gable_glass():
+    """Glass for small windows up in a gable, a little lighter and without grime, as they sit in the shade of the eaves.
+    They go on the face of the gable's thin end wall (0.003 out), so the glass doesn't share a plane with it."""
+    return material("gable glass", "#4a6078", rough=0.3, grime=0.0)
+
+
 # ---- the kinds of building ------------------------------------------------------------------
 
 def log_cabin(m):
@@ -290,16 +520,45 @@ def farmhouse(m):
     trim = material("green trim", "#3e5a3a", rough=0.6)
     roof = material("asphalt shingles", "#5a3a34", rough=0.85)
     brick = material("chimney brick", "#8a4a36", rough=0.9)
+    white = material("white trim", "#f4f0e6", rough=0.6)
+    stone = material("fieldstone", "#7c766c", rough=0.95)
+    lap = material("clapboard shadow", "#c8c4b8", rough=0.8)
+    # The Ontario Gothic house: two storeys on a fieldstone foundation, a steep centre gable over the front door with a
+    # pointed window, gingerbread bargeboards, a verandah across the front and a summer kitchen ell at the back.
     x0, x1, y0, y1 = -0.2, 0.2, -0.16, 0.1
+    base = 0.25
+    foundation(m, x0, x1, y0, y1, base, stone)
     m.box(x0, x1, y0, y1, 0, 2.5, siding, 0.003)
-    for z in [0.2 + 0.11 * k for k in range(21)]:
-        m.box(x0 - 0.002, x1 + 0.002, y0 - 0.002, y1 + 0.002, z, z + 0.012, material("clapboard shadow", "#c8c4b8", rough=0.8))
-    gable(m, x0, x1, y0, y1, 2.5, 3.9, roof, siding, along_x=True)
-    chimney(m, -0.1, -0.03, 2.5, 4.3, brick)
-    windows(m, x0, x1, y0, y1, 0, 2, 3, 2, glass(), trim, skip_door=True)
-    door(m, 0.0, y1, trim, siding)
-    porch(m, x0, x1, y1, y1 + 0.09, 1.3, roof, material("porch floor", "#8a7a66", rough=0.8), siding, posts=5)
-    path(m, 0.0, y1 + 0.09, 0.5)
+    lap_siding(m, x0, x1, y0, y1, base + 0.06, 2.45, lap)
+    corner_boards(m, x0, x1, y0, y1, base, 2.5, white)
+    gable(m, x0, x1, y0, y1, 2.5, 3.9, roof, siding, along_x=True, over=0.04, trim=trim, barge=True, gap=(-0.105, 0.105, 3.8))
+    yc = (y0 + y1) / 2
+    gable(m, -0.075, 0.075, 0.0, y1, 2.5, 3.8, roof, siding, along_x=False, over=0.03, trim=trim, barge=True, ends=(False, True))
+    gothic_pane(m, 0.0, y1 + 0.003, 2.72, 3.12, 3.36, 0.045, gable_glass(), white, white)
+    chimney(m, -0.13, yc, 2.5, 4.3, brick)
+    windows(m, x0, x1, y0, y1, 0.1, 2, 3, 2, glass(), white, skip_door=True, trim=trim)
+    door(m, 0.0, y1, material("farm door", "#5a3a26", rough=0.6), white, z0=base, transom=glass())
+    verandah(m, x0, x1, y1, y1 + 0.09, base, 1.4, roof, material("porch floor", "#8a7a66", rough=0.8), white, trim, posts=5,
+             step_at=0.0, brackets=True, skirt=material("lattice skirt", "#4e4a42", rough=0.9), pitch=0.2)
+    # The summer kitchen: a storey and a half of board and batten behind the house, with its own chimney and back door.
+    kx0, kx1, ky0, ky1 = 0.0, 0.15, -0.33, y0
+    foundation(m, kx0, kx1, ky0, ky1, 0.15, stone)
+    m.box(kx0, kx1, ky0, ky1, 0, 1.6, siding, 0.003)
+    y = ky0 + 0.015
+    while y < ky1 - 0.005:
+        for x, d in ((kx0, -1), (kx1, 1)):
+            on_wall(m, "x", x, d, y - 0.003, y + 0.003, 0, 0.004, 0.15, 1.6, lap)
+        y += 0.024
+    corner_boards(m, kx0, kx1, ky0, ky1, 0.15, 1.6, white)
+    gable(m, kx0, kx1, ky0, ky1 + 0.04, 1.6, 2.55, roof, siding, along_x=False, over=0.03, trim=trim, ends=(True, False))
+    chimney(m, (kx0 + kx1) / 2, ky0 + 0.03, 1.6, 2.95, brick, 0.028)
+    for y in (ky0 + 0.06, ky1 - 0.06):
+        pane(m, "x", kx0, -1, y, 0.5, 1.1, WINDOW_W, glass(), white, trim)
+    pane(m, "x", kx1, 1, ky0 + 0.06, 0.5, 1.1, WINDOW_W, glass(), white, trim)
+    m.box(kx1, kx1 + 0.009, ky1 - 0.07, ky1 - 0.02, 0.15, 1.1, material("kitchen door", "#3e5a3a", rough=0.6))
+    m.box(kx1, kx1 + 0.04, ky1 - 0.075, ky1 - 0.015, 0, 0.15, stone, 0.002)
+    pane(m, "y", ky0 - 0.003, -1, (kx0 + kx1) / 2, 1.72, 2.02, 0.04, gable_glass(), white, trim, sash=False)
+    path(m, 0.0, y1 + 0.09 + 0.08, 0.5)
     picket(m, (-EDGE, EDGE), (EDGE, EDGE), material("white pickets", "#eeeae0", rough=0.7), gap=0.0)
     # Rail fences down the sides and back, a big kitchen garden, a shed and the old maple.
     fence_round(m, "rails", material("fence rails", "#8a7458", rough=0.95))
@@ -313,23 +572,26 @@ def clapboard_house(m, look=0):
     siding = material("siding", colours[look % len(colours)], rough=0.7)
     trim = material("white trim", "#f0ece2", rough=0.6)
     roof = material("asphalt shingles dark", "#3e3a38", rough=0.85)
+    stone = material("foundation stone", "#8a847a", rough=0.95)
     x0, x1, y0, y1 = -0.13, 0.13, -0.2, 0.14
+    base = 0.18
+    foundation(m, x0, x1, y0, y1, base, stone)
     m.box(x0, x1, y0, y1, 0, 2.2, siding, 0.003)
-    for z in [0.2 + 0.11 * k for k in range(18)]:
-        m.box(x0 - 0.002, x1 + 0.002, y0 - 0.002, y1 + 0.002, z, z + 0.012, material("siding shadow " + str(look), colours[look % len(colours)], rough=0.9, grime=0.7))
-    # Gable end to the street.
-    gable(m, x0, x1, y0, y1, 2.2, 3.7, roof, siding, along_x=False)
-    windows(m, x0, x1, y0, y1, 0, 2, 2, 3, glass(), trim)
-    m.box(-0.03, 0.03, y1 - 0.003, y1 + 0.003, 2.6, 3.1, trim)
-    m.box(-0.025, 0.025, y1, y1 + 0.006, 2.65, 3.05, glass())
-    door(m, 0.07, y1, material("red door", "#8a2a22", rough=0.5), trim)
-    porch(m, x0, x1, y1, y1 + 0.08, 1.25, roof, material("porch floor", "#8a7a66", rough=0.8), trim, posts=3)
-    path(m, 0.07, y1 + 0.08, 0.5)
+    lap_siding(m, x0, x1, y0, y1, base + 0.04, 2.15, material("siding shadow " + str(look), colours[look % len(colours)], rough=0.9, grime=0.7))
+    corner_boards(m, x0, x1, y0, y1, base, 2.2, trim)
+    # Gable end to the street, with eave returns at its corners.
+    gable(m, x0, x1, y0, y1, 2.2, 3.7, roof, siding, along_x=False, over=0.035, trim=trim, returns=True)
+    windows(m, x0, x1, y0, y1, 0, 2, 2, 3, glass(), trim, trim=trim, skip=((0, 1),))
+    pane(m, "y", y1 + 0.003, 1, 0.0, 2.62, 3.05, 0.045, gable_glass(), trim, trim, sash=False)
+    door(m, 0.07, y1, material("red door", "#8a2a22", rough=0.5), trim, z0=base)
+    verandah(m, x0, x1, y1, y1 + 0.08, base, 1.3, roof, material("porch floor", "#8a7a66", rough=0.8), trim, trim, posts=3,
+             step_at=0.07, skirt=material("lattice skirt", "#5a564e", rough=0.9), pitch=0.22)
+    path(m, 0.07, y1 + 0.08 + 0.06, 0.5)
     chimney(m, x1 - 0.04, -0.1, 2.6, 3.9, material("chimney brick", "#8a4a36", rough=0.9))
     # A picket fence along the front with a gate at the walk, board fences behind, a backyard maple and a bed of flowers.
     fence_round(m, "board", material("board fence", "#8a7a64", rough=0.9), side_front=0.14)
     picket(m, (-EDGE, EDGE), (EDGE, EDGE), material("white pickets", "#eeeae0", rough=0.7), gap=0.07)
-    flowers(m, -0.12, 0.0, 0.145, 0.175)
+    flowers(m, -0.12, 0.0, 0.225, 0.255)
     yard_tree(m, -0.3, -0.32, 0.9, seed=3)
     shed(m, 0.32, -0.38, w=0.06, d=0.05, colour="#7a6a52")
 
@@ -402,28 +664,52 @@ def church(m):
 def brick_row(m):
     brick = material("red brick", "#9a4a36", rough=0.9)
     trim = material("stone trim", "#c8bca8", rough=0.8)
+    wood = material("row wood trim", "#eae2d0", rough=0.6)
     roof = material("row roof", "#3a3634", rough=0.85)
+    stone = material("row foundation", "#7a7268", rough=0.95)
+    iron = material("iron railings", "#2a2a2a", metal=0.5, rough=0.5)
     doors = ["#2a3e5a", "#5a2a22", "#2e4a2e"]
+    # Three Toronto bay-and-gable houses: a two-storey bay under a steep gable with bargeboard, and a door up a stoop.
     x0, x1, y0, y1 = -0.39, 0.39, -0.2, 0.12
+    base = 0.4
+    foundation(m, x0, x1, y0, y1, base, stone)
     m.box(x0, x1, y0, y1, 0, 2.9, brick, 0.003)
     m.box(x0 - 0.008, x1 + 0.008, y0 - 0.008, y1 + 0.008, 2.9, 3.05, trim)
     hip(m, x0, x1, y0, y1, 3.05, 3.9, roof, over=0.01)
+    yc = (y0 + y1) / 2
     for k in range(3):
         cx = x0 + (k + 0.5) * (x1 - x0) / 3
-        # Each house its own door up a stoop, a bay window beside it, and windows above.
-        door(m, cx - 0.06, y1, material("row door " + str(k), doors[k], rough=0.5), trim)
-        m.box(cx - 0.09, cx - 0.03, y1, y1 + 0.05, 0, 0.18, trim)
-        m.box(cx + 0.01, cx + 0.11, y1, y1 + 0.04, 0.2, 1.3, brick, 0.003)
-        m.box(cx + 0.02, cx + 0.1, y1 + 0.04, y1 + 0.046, 0.4, 1.15, glass())
-        m.box(cx + 0.005, cx + 0.115, y1 - 0.002, y1 + 0.05, 1.3, 1.38, trim)
-        for x in (cx - 0.06, cx + 0.06):
-            m.box(x - 0.03, x + 0.03, y1 + 0.002, y1 + 0.007, 1.75, 2.45, glass())
-            m.box(x - 0.034, x + 0.034, y1 + 0.001, y1 + 0.009, 2.45, 2.52, trim)
+        dx = cx - 0.06
+        door(m, dx, y1, material("row door " + str(k), doors[k], rough=0.5), wood, z0=base, transom=glass())
+        m.box(dx - 0.04, dx + 0.04, y1, y1 + 0.012, base + 1.23, base + 1.31, trim)
+        steps(m, dx, y1, 0.065, base, trim, n=4, run=0.018, landing=0.03)
+        for sx in (dx - 0.034, dx + 0.034):
+            m.rod((sx, y1 + 0.03, base + 0.3), (sx, y1 + 0.084, 0.3), 0.003, iron, segments=5)
+            m.box(sx - 0.003, sx + 0.003, y1 + 0.081, y1 + 0.087, 0, 0.32, iron)
+        pane(m, "y", y1, 1, dx, 1.65, 2.4, 0.05, glass(), wood, trim)
+        # The canted bay: a front and two angled sides, brick up to a cornice under the gable.
+        bx0, bx1, bd = cx - 0.005, cx + 0.115, 0.05
+        bay = [(bx1, y1), (bx0, y1), (bx0 + 0.025, y1 + bd), (bx1 - 0.025, y1 + bd)]
+        m.wedge([(x, y, 0) for x, y in bay], [(x, y, 2.75) for x, y in bay], brick)
+        m.wedge([(x, y, 0) for x, y in [(bx1 + 0.004, y1), (bx0 - 0.004, y1), (bx0 + 0.023, y1 + bd + 0.006), (bx1 - 0.023, y1 + bd + 0.006)]],
+                [(x, y, base) for x, y in [(bx1 + 0.004, y1), (bx0 - 0.004, y1), (bx0 + 0.023, y1 + bd + 0.006), (bx1 - 0.023, y1 + bd + 0.006)]], stone)
+        cap = [(bx1 + 0.008, y1), (bx0 - 0.008, y1), (bx0 + 0.022, y1 + bd + 0.01), (bx1 - 0.022, y1 + bd + 0.01)]
+        m.wedge([(x, y, 2.75) for x, y in cap], [(x, y, 2.88) for x, y in cap], trim)
+        for z0, z1 in ((base + 0.25, base + 1.05), (1.65, 2.4)):
+            face_pane(m, (bx1 - 0.025, y1 + bd), (bx0 + 0.025, y1 + bd), z0, z1, glass(), wood, 0.005, 0.12, 0.88)
+            face_pane(m, (bx0 + 0.025, y1 + bd), (bx0, y1), z0, z1, glass(), wood, 0.005, 0.2, 0.8)
+            face_pane(m, (bx1, y1), (bx1 - 0.025, y1 + bd), z0, z1, glass(), wood, 0.005, 0.2, 0.8)
+            m.box(bx0 + 0.02, bx1 - 0.02, y1 + bd, y1 + bd + 0.014, z0 - 0.09, z0 - 0.05, trim)
+        # The gable over the bay, with its window and bargeboard.
+        gable(m, bx0 - 0.005, bx1 + 0.005, yc + 0.02, y1 + 0.012, 3.05, 3.85, roof, brick, along_x=False, over=0.02, thick=0.06, trim=wood,
+              barge=True, ends=(False, True))
+        pane(m, "y", y1 + 0.015, 1, cx + 0.055, 3.15, 3.45, 0.035, gable_glass(), wood, trim, sash=False)
         chimney(m, cx + (x1 - x0) / 6 - 0.01, -0.04, 3.3, 4.3, brick)
-        path(m, cx - 0.06, y1 + 0.05, 0.5, 0.04)
-    windows(m, x0, x1, y0, y1, 0, 2, 0, 2, glass(), trim)
+        path(m, dx, y1 + 0.084, 0.5, 0.04)
+    windows(m, x0, x1, y0, y1, 0.1, 2, 0, 2, glass(), wood, trim=trim)
+    for k in range(3):
+        pane(m, "y", y0, -1, x0 + (k + 0.5) * (x1 - x0) / 3, 1.65, 2.3, 0.05, glass(), wood, trim)
     # Iron railings in front, three back yards divided by board fences, each with its shed.
-    iron = material("iron railings", "#2a2a2a", metal=0.5, rough=0.5)
     picket(m, (-EDGE, 0.3), (EDGE, 0.3), iron, height=0.32)
     fence = material("board fence", "#8a7a64", rough=0.9)
     fence_round(m, "board", fence, side_front=-0.2)
@@ -456,25 +742,157 @@ def brick_block(m, look=0):
 
 
 def bungalow(m, look=0):
-    colours = ["#d8cdb0", "#a8b8b0", "#c0a088"]
-    stucco = material("bungalow siding", colours[look % len(colours)], rough=0.85)
-    trim = material("bungalow trim", "#f0ece2", rough=0.6)
+    """A Craftsman bungalow, 1915 to 1942: a low front gable with exposed rafter tails and knee braces, and a deep porch
+    under its own gable on tapered posts set on brick piers."""
+    colours = ["#b8a47a", "#8a9a7a", "#a88a6a"]
+    shingle = material("bungalow shingles " + str(look), colours[look % len(colours)], rough=0.9)
+    trim = material("craftsman trim", "#ece4cc", rough=0.6)
     roof = material("bungalow roof", "#4e4844", rough=0.85)
-    x0, x1, y0, y1 = -0.17, 0.17, -0.14, 0.12
-    m.box(x0, x1, y0, y1, 0, 1.3, stucco, 0.003)
-    hip(m, x0, x1, y0, y1, 1.3, 2.3, roof, over=0.04)
-    windows(m, x0, x1, y0, y1, 0, 1, 3, 2, glass(), trim, skip_door=True)
-    door(m, 0.0, y1, material("bungalow door", "#5a3a26", rough=0.6), trim)
-    porch(m, -0.08, 0.08, y1, y1 + 0.07, 1.1, roof, material("porch floor", "#8a7a66", rough=0.8), trim, posts=2)
-    path(m, 0.0, y1 + 0.07, 0.5)
+    brick = material("craftsman brick", "#8a4a36", rough=0.9)
+    rafter = material("rafter tails", "#5a3e2a", rough=0.8)
+    x0, x1, y0, y1 = -0.16, 0.16, -0.16, 0.1
+    base, eave, over = 0.2, 1.3, 0.06
+    foundation(m, x0, x1, y0, y1, base, brick)
+    m.box(x0, x1, y0, y1, 0, eave, shingle, 0.003)
+    lap_siding(m, x0, x1, y0, y1, base + 0.04, eave - 0.05, material("shingle shadow " + str(look), colours[look % len(colours)], rough=0.95, grime=0.8), gap=0.09)
+    corner_boards(m, x0, x1, y0, y1, base, eave, trim)
+    gable(m, x0, x1, y0, y1, eave, 2.15, roof, shingle, along_x=False, over=over, trim=trim, fascia=0.05)
+    # Rafter tails under the eaves down both sides, and knee braces under the gable ends.
+    for k in range(10):
+        y = y0 - over + 0.012 + k * (y1 - y0 + 2 * over - 0.024) / 9
+        for x, d in ((x0, -1), (x1, 1)):
+            m.box(min(x, x + d * (over + 0.012)), max(x, x + d * (over + 0.012)), y - 0.004, y + 0.004, eave - 0.07, eave - 0.01, rafter)
+    slope = (2.15 - eave) / ((x1 - x0) / 2 + over)
+    for y, d in ((y0, -1), (y1, 1)):
+        for x in (x0 + 0.04, x1 - 0.04):
+            top = eave + ((x1 - x0) / 2 + over - abs(x)) * slope - 0.05
+            m.wedge([(x - 0.003, y, top - 0.3), (x - 0.003, y, top), (x - 0.003, y + d * (over - 0.01), top)],
+                    [(x + 0.003, y, top - 0.3), (x + 0.003, y, top), (x + 0.003, y + d * (over - 0.01), top)], rafter)
+    pane(m, "y", y1 + 0.003, 1, 0.0, 1.68, 1.9, 0.05, gable_glass(), trim, trim, sash=False, bars=1)
+    windows(m, x0, x1, y0, y1, 0.05, 1, 3, 3, glass(), trim, w=0.05, h=0.55, trim=trim, skip=((0, 1),))
+    door(m, 0.0, y1, material("bungalow door", "#5a3a26", rough=0.6), trim, w=0.045, z0=base)
+    # The porch across the front under its own low gable.
+    py1 = y1 + 0.1
+    verandah(m, -0.15, 0.15, y1, py1, base, 1.15, roof, material("porch floor", "#8a7a66", rough=0.8), trim, trim, posts=2,
+             step_at=0.0, rail=False, taper=0.62, skirt=brick, pitch=0.0)
+    gable(m, -0.15, 0.15, y1 - 0.02, py1, 1.15, 1.6, roof, shingle, along_x=False, over=0.035, thick=0.06, trim=trim, fascia=0.05, ends=(False, True))
+    for x in (-0.12, 0.12):
+        m.box(x - 0.004, x + 0.004, y1, py1 + 0.03, 1.08, 1.13, rafter)
+    chimney(m, x0 - 0.025, -0.06, 0, 2.4, brick, 0.03)
+    path(m, 0.0, py1 + 0.06, 0.5)
     # A driveway down the side to a garage at the back, a board fence round the back yard and a shade tree.
     drive(m, 0.32, -0.3, 0.5)
-    m.box(0.22, 0.42, -0.44, -0.26, 0, 1.0, stucco, 0.003)
-    gable(m, 0.22, 0.42, -0.44, -0.26, 1.0, 1.4, roof, stucco, along_x=False, over=0.02, thick=0.05)
-    m.box(0.25, 0.39, -0.26, -0.255, 0, 0.8, material("garage door", "#e8e4dc", rough=0.6))
+    m.box(0.22, 0.42, -0.44, -0.26, 0, 1.0, shingle, 0.003)
+    gable(m, 0.22, 0.42, -0.44, -0.26, 1.0, 1.4, roof, shingle, along_x=False, over=0.03, thick=0.05, trim=trim, fascia=0.04)
+    for x0g in (0.25, 0.325):
+        m.box(x0g, x0g + 0.065, -0.26, -0.254, 0, 0.8, material("garage doors", "#5a4632", rough=0.7))
+        m.box(x0g + 0.008, x0g + 0.057, -0.254, -0.251, 0.55, 0.72, glass())
     fence_round(m, "board", material("cedar fence", "#9a7a5a", rough=0.9), side_front=-0.2)
-    flowers(m, -0.16, -0.04, 0.125, 0.15)
-    yard_tree(m, -0.28, -0.3, 1.0, seed=5)
+    flowers(m, -0.15, -0.05, 0.215, 0.24)
+    yard_tree(m, -0.3, -0.3, 1.0, seed=5)
+
+
+def wartime_house(m, look=0):
+    """The wartime Victory house, 1942 to 1955: a storey and a half under a steep side gable, plain siding, small windows,
+    a stoop with a little hood over the door."""
+    looks = [("#e8e4d8", "#3e5a3a"), ("#c8d0b8", "#7a2a22"), ("#d8c8a0", "#2a3e5a")]
+    face, accent = looks[look % len(looks)]
+    siding = material("wartime siding " + str(look), face, rough=0.8)
+    trim = material("wartime trim " + str(look), accent, rough=0.6)
+    white = material("wartime white", "#f0ece2", rough=0.6)
+    roof = material("wartime roof", "#3e3a38", rough=0.85)
+    concrete = material("concrete foundation", "#a8a49a", rough=0.95)
+    x0, x1, y0, y1 = -0.13, 0.13, -0.12, 0.1
+    base, eave = 0.2, 1.4
+    foundation(m, x0, x1, y0, y1, base, concrete)
+    m.box(x0, x1, y0, y1, 0, eave, siding, 0.003)
+    lap_siding(m, x0, x1, y0, y1, base + 0.05, eave - 0.05, material("wartime lap " + str(look), face, rough=0.9, grime=0.7), gap=0.09)
+    corner_boards(m, x0, x1, y0, y1, base, eave, white, w=0.007)
+    gable(m, x0, x1, y0, y1, eave, 2.75, roof, siding, along_x=True, over=0.018, trim=white, fascia=0.04)
+    # Two front windows, one in each gable end lighting the rooms upstairs, two at the back.
+    for x in (-0.075, 0.075):
+        pane(m, "y", y1, 1, x, base + 0.3, base + 0.85, 0.05, glass(), white, white)
+        for sx in (x - 0.046, x + 0.034):
+            m.box(sx, sx + 0.012, y1, y1 + 0.006, base + 0.28, base + 0.87, trim)
+        pane(m, "y", y0, -1, x, base + 0.35, base + 0.85, 0.045, glass(), white, white)
+    for xx, d in ((x0, -1), (x1, 1)):
+        pane(m, "x", xx + d * 0.003, d, (y0 + y1) / 2, 1.62, 2.05, 0.05, gable_glass(), white, white)
+        pane(m, "x", xx, d, 0.0, base + 0.35, base + 0.85, 0.045, glass(), white, white)
+    door(m, 0.0, y1, trim, white, w=0.042, z0=base)
+    steps(m, 0.0, y1, 0.065, base, concrete, n=2, landing=0.035)
+    gable(m, -0.035, 0.035, y1 - 0.01, y1 + 0.04, 1.3, 1.5, roof, white, along_x=False, over=0.008, thick=0.04, trim=white, fascia=0.03, ends=(False, True))
+    chimney(m, 0.0, 0.0, 2.0, 3.05, material("chimney brick", "#8a4a36", rough=0.9), 0.025)
+    path(m, 0.0, y1 + 0.06, 0.5)
+    # A picket fence along the front, a victory garden and a clothesline out back.
+    picket(m, (-EDGE, EDGE), (EDGE, EDGE), material("white pickets", "#eeeae0", rough=0.7), gap=0.0)
+    fence_round(m, "board", material("board fence", "#8a7a64", rough=0.9), side_front=-0.12)
+    garden(m, -0.4, -0.06, -0.42, -0.22, rows=5)
+    pole = material("clothesline pole", "#5a5a5a", metal=0.4, rough=0.6)
+    for y in (-0.2, -0.42):
+        m.box(0.25, 0.258, y - 0.004, y + 0.004, 0, 0.9, pole)
+        m.box(0.22, 0.29, y - 0.003, y + 0.003, 0.86, 0.9, pole)
+    for x in (0.225, 0.285):
+        m.rod((x, -0.2, 0.87), (x, -0.42, 0.87), 0.0015, pole, segments=4)
+    for k, c in enumerate(("#e8e4dc", "#6a8ab0", "#c84a4a", "#e8e4dc")):
+        y = -0.25 - k * 0.04
+        m.box(0.22, 0.23, y - 0.012, y + 0.012, 0.6, 0.86, material("washing " + c, c, rough=0.9))
+    shed(m, 0.36, 0.0, w=0.05, d=0.05, colour="#6a6a5e")
+    yard_tree(m, -0.38, -0.08, 0.8, seed=13)
+
+
+def ranch_bungalow(m, look=0):
+    """The postwar ranch bungalow, 1955 to 2010: long and low under a hip roof with wide eaves, a brick front with a
+    picture window, siding round the sides and back, and a carport at one end."""
+    bricks = ["#9a5a42", "#b89a7a", "#8a6a5a"]
+    brick = material("ranch brick " + str(look), bricks[look % len(bricks)], rough=0.9)
+    siding = material("ranch siding", "#d8d4c4", rough=0.75)
+    trim = material("ranch trim", "#f0ece2", rough=0.6)
+    roof = material("ranch roof", "#54504c", rough=0.85)
+    concrete = material("ranch concrete", "#a8a49a", rough=0.95)
+    x0, x1, y0, y1 = -0.34, 0.12, -0.13, 0.1
+    base, eave = 0.1, 1.15
+    foundation(m, x0, x1, y0, y1, base, concrete)
+    m.box(x0, x1, y0, y1, 0, eave, siding, 0.003)
+    lap_siding(m, x0, x1, y0, y1, base + 0.05, eave - 0.04, material("ranch lap", "#c4c0b0", rough=0.85), gap=0.08)
+    # Brick veneer across the front.
+    m.box(x0 - 0.002, x1 + 0.002, y1, y1 + 0.008, base, eave, brick, 0.001)
+    corner_boards(m, x0, x1, y0, y1 - 0.0, base, eave, trim, w=0.006)
+    hip(m, x0, x1, y0, y1, eave, 1.9, roof, over=0.06, thick=0.06, trim=trim, fascia=0.09)
+    # The picture window in the living room, smaller windows to the bedrooms and the door between.
+    fy = y1 + 0.008
+    pane(m, "y", fy, 1, -0.2, 0.38, 0.98, 0.14, glass(), trim, concrete, sash=False, bars=2)
+    for x in (0.04, 0.09):
+        pane(m, "y", fy, 1, x, 0.6, 0.98, 0.04, glass(), trim, concrete, sash=False)
+    for x in (-0.31,):
+        pane(m, "y", fy, 1, x, 0.6, 0.98, 0.04, glass(), trim, concrete, sash=False)
+    door(m, -0.07, fy, material("ranch door", "#2a4a5a", rough=0.5), trim, w=0.045, z0=base)
+    m.box(-0.065, -0.05, fy, fy + 0.005, base + 0.05, base + 0.9, glass())
+    steps(m, -0.07, fy, 0.09, base, concrete, n=1, landing=0.05)
+    for x in (-0.3, -0.15, 0.05):
+        pane(m, "y", y0, -1, x, 0.55, 0.98, 0.05, glass(), trim, trim, sash=False)
+    pane(m, "x", x0, -1, 0.0, 0.55, 0.98, 0.05, glass(), trim, trim, sash=False)
+    chimney(m, -0.2, -0.04, 1.4, 2.2, brick, 0.03)
+    # The carport: a flat roof with a deep fascia on thin steel posts, a storage room at its back and a car under it.
+    cx0, cx1 = x1, 0.38
+    paved(m, cx0, cx1, y0 - 0.02, y1 + 0.04, colour="#8a8680")
+    m.box(cx0, cx1 - 0.02, y0, y0 + 0.07, 0, 1.05, siding, 0.002)
+    m.box(cx0 + 0.04, cx0 + 0.09, y0 + 0.07, y0 + 0.074, base, 0.9, material("store door", "#e8e4dc", rough=0.6))
+    m.box(cx0, cx1 + 0.02, y0 - 0.03, y1 + 0.06, 1.05, 1.12, roof)
+    m.box(cx0, cx1 + 0.024, y0 - 0.034, y1 + 0.064, 0.98, 1.06, trim)
+    m.box(cx0 + 0.004, cx1 + 0.02, y0 - 0.03, y1 + 0.06, 0.96, 0.98, trim)
+    for y in (y1 + 0.04, y0 + 0.08):
+        m.box(cx1 - 0.008, cx1 + 0.002, y - 0.005, y + 0.005, 0, 0.98, material("carport posts", "#3a3a3a", metal=0.5, rough=0.5))
+    car(m, (cx0 + cx1) / 2, 0.03, ["#6a8aa0", "#b84a3a", "#e8dcb8"][look % 3])
+    drive(m, (cx0 + cx1) / 2, y1 + 0.06, 0.5, w=0.1, colour="#8a8680")
+    path(m, -0.07, fy + 0.05, 0.5)
+    # Shrubs along the front, a lamp post by the walk, a fence round the back yard and a young maple.
+    shrub = scenery.leafy("foundation shrubs", "#3e6a2a", "#6a9a3e")
+    for k, x in enumerate((-0.32, -0.23, -0.15, 0.03)):
+        scenery.blob(m, x, fy + 0.03, 0.15, 0.028, shrub, 40 + k, squash=0.8)
+    lamp_post(m, -0.12, 0.4)
+    fence_round(m, "board", material("cedar fence", "#9a7a5a", rough=0.9), side_front=-0.16)
+    paved(m, -0.3, -0.1, -0.3, -0.13, colour="#a8a296")
+    yard_tree(m, 0.3, -0.34, 0.85, seed=14)
 
 
 def walkup(m):
@@ -506,26 +924,50 @@ def walkup(m):
 def split_level(m, look=0):
     brick = material("split brick", ["#b8a48a", "#a87a5a"][look % 2], rough=0.9)
     siding = material("split siding", "#d8d4c8", rough=0.75)
+    lap = material("split lap", "#c4c0b2", rough=0.85)
     roof = material("split roof", "#5a5450", rough=0.85)
     trim = material("split trim", "#f0ece2", rough=0.6)
-    # The low wing, the raised wing beside it, and a garage with its drive.
+    concrete = material("split concrete", "#a8a49a", rough=0.95)
+    # The low wing in brick veneer, the raised wing beside it brick up to the upper floor and siding above, low eaves
+    # with a wide fascia, and a carport on the end.
+    base = 0.1
+    foundation(m, -0.2, 0.02, -0.12, 0.12, base, concrete)
     m.box(-0.2, 0.02, -0.12, 0.12, 0, 1.3, brick, 0.003)
-    gable(m, -0.2, 0.02, -0.12, 0.12, 1.3, 2.0, roof, brick, along_x=True, over=0.04)
-    m.box(0.02, 0.2, -0.14, 0.1, 0, 2.3, siding, 0.003)
-    gable(m, 0.02, 0.2, -0.14, 0.1, 2.3, 3.0, roof, siding, along_x=True, over=0.04)
-    windows(m, -0.2, 0.02, -0.12, 0.12, 0, 1, 2, 0, glass(), trim)
-    windows(m, 0.02, 0.2, -0.14, 0.1, 0.9, 1, 2, 1, glass(), trim)
-    door(m, -0.03, 0.12, material("split door", "#2a3a4a", rough=0.5), trim)
-    m.box(0.2, 0.36, -0.1, 0.12, 0, 1.15, siding, 0.003)
-    gable(m, 0.2, 0.36, -0.1, 0.12, 1.15, 1.7, roof, siding, along_x=False, over=0.03)
-    m.box(0.22, 0.34, 0.12, 0.126, 0, 0.95, material("garage door", "#e8e4dc", rough=0.6))
-    m.box(0.21, 0.35, 0.12, 0.5, 0, 0.025, material("driveway", "#6a6866", rough=0.95))
-    path(m, -0.03, 0.12, 0.5)
+    gable(m, -0.2, 0.02, -0.12, 0.12, 1.3, 2.0, roof, brick, along_x=True, over=0.06, trim=trim, fascia=0.1)
+    m.box(0.02, 0.2, -0.14, 0.1, 0, 1.05, brick, 0.003)
+    m.box(0.02, 0.2, -0.14, 0.1, 1.05, 2.3, siding, 0.003)
+    m.box(0.016, 0.204, -0.144, 0.104, 1.03, 1.08, trim)
+    lap_siding(m, 0.02, 0.2, -0.14, 0.1, 1.15, 2.25, lap, gap=0.08)
+    corner_boards(m, 0.02, 0.2, -0.14, 0.1, 1.08, 2.3, trim, w=0.007)
+    gable(m, 0.02, 0.2, -0.14, 0.1, 2.3, 3.0, roof, siding, along_x=True, over=0.06, trim=trim, fascia=0.1)
+    # The picture window in the living room, and the windows of both levels in the raised wing.
+    pane(m, "y", 0.12, 1, -0.13, 0.38, 1.0, 0.11, glass(), trim, concrete, sash=False, bars=2)
+    pane(m, "y", -0.12, -1, -0.09, 0.5, 1.0, 0.06, glass(), trim, trim)
+    for x in (0.065, 0.155):
+        pane(m, "y", 0.1, 1, x, 1.3, 1.85, 0.05, glass(), trim, trim)
+        pane(m, "y", 0.1, 1, x, 0.35, 0.72, 0.05, glass(), trim, concrete, sash=False)
+        pane(m, "y", -0.14, -1, x, 1.3, 1.85, 0.05, glass(), trim, trim)
+    pane(m, "x", -0.2, -1, 0.0, 0.5, 1.0, 0.06, glass(), trim, trim)
+    pane(m, "x", 0.2, 1, -0.04, 1.3, 1.85, 0.05, glass(), trim, trim)
+    door(m, -0.03, 0.12, material("split door", "#2a3a4a", rough=0.5), trim, z0=base)
+    steps(m, -0.03, 0.12, 0.08, base, concrete, n=1, landing=0.04)
+    m.box(-0.06, 0.0, 0.12, 0.16, 1.2, 1.25, trim)
+    # The carport: its low gable on thin posts, a storage wall at the back and a car under it.
+    m.box(0.2, 0.36, -0.1, -0.04, 0, 1.15, siding, 0.003)
+    m.box(0.24, 0.29, -0.04, -0.036, base, 0.9, material("store door", "#e8e4dc", rough=0.6))
+    gable(m, 0.2, 0.36, -0.1, 0.13, 1.15, 1.7, roof, siding, along_x=False, over=0.03, trim=trim, fascia=0.08, ends=(False, True))
+    for x in (0.215, 0.345):
+        m.box(x - 0.005, x + 0.005, 0.118, 0.128, 0, 1.15, material("carport posts", "#e8e4dc", rough=0.6))
+    m.box(0.2, 0.36, 0.115, 0.13, 1.07, 1.15, trim)
+    m.box(0.21, 0.35, -0.1, 0.5, 0, 0.025, material("driveway", "#6a6866", rough=0.95))
+    car(m, 0.28, 0.03, ["#3e6a5a", "#c8b47a"][look % 2])
+    path(m, -0.03, 0.16, 0.5)
+    lamp_post(m, -0.1, 0.42)
     # A cedar privacy fence round the back yard, a patio and a young tree out front.
     fence_round(m, "board", material("cedar fence", "#9a7a5a", rough=0.9), side_front=-0.15)
     paved(m, -0.18, 0.0, -0.3, -0.14, colour="#a8a296")
     yard_tree(m, -0.3, 0.32, 0.75, seed=8)
-    flowers(m, -0.19, -0.07, 0.125, 0.15)
+    flowers(m, -0.19, -0.07, 0.135, 0.16)
 
 
 def office_block(m):
@@ -627,6 +1069,8 @@ BUILDERS = {
     "office_block": office_block,
     "apartment_tower": apartment_tower,
     "statue": statue,
+    "wartime_house": wartime_house,
+    "ranch_bungalow": ranch_bungalow,
 }
 
 # Which way each view edge is, as a heading in eighths for place(): the front faces +y, the game's +u.

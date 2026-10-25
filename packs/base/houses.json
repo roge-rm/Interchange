@@ -76,7 +76,7 @@
       "id": "bungalow",
       "name": { "en": "Bungalow", "fr": "Bungalow" },
       "from": 1915,
-      "until": 2010,
+      "until": 1942,
       "residents": 6,
       "jobs": 0,
       "zones": ["outskirts", "suburbs"],
@@ -133,6 +133,26 @@
       "residents": 0,
       "jobs": 0,
       "monument": true
+    },
+    {
+      "id": "wartime_house",
+      "name": { "en": "Wartime house", "fr": "Maison du temps de guerre" },
+      "from": 1942,
+      "until": 1955,
+      "residents": 6,
+      "jobs": 0,
+      "zones": ["outskirts", "suburbs"],
+      "weight": 8
+    },
+    {
+      "id": "ranch_bungalow",
+      "name": { "en": "Ranch bungalow", "fr": "Bungalow de style ranch" },
+      "from": 1955,
+      "until": 2010,
+      "residents": 6,
+      "jobs": 0,
+      "zones": ["outskirts", "suburbs"],
+      "weight": 8
     }
   ]
 }
