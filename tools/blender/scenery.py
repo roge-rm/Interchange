@@ -229,8 +229,11 @@ def depot(m, edge):
             b(side * 0.381 - 0.002, side * 0.381 + 0.002, y - 0.05, y + 0.05, 0.9, 1.8, glass)
             b(side * 0.382 - 0.002, side * 0.382 + 0.002, y - 0.06, y + 0.06, 1.8, 1.9, trim)
     dy = y1 if doors_far else y0
-    b(-0.2, 0.2, dy - 0.003, dy + 0.003, 0, 1.95, dark)
-    b(-0.23, 0.23, dy - 0.006, dy + 0.006, 1.95, 2.08, trim)
+    # The door clears every engine's roof, framed in trim up to the eaves band.
+    b(-0.2, 0.2, dy - 0.003, dy + 0.003, 0, 2.2, dark)
+    b(-0.23, 0.23, dy - 0.006, dy + 0.006, 2.2, 2.3, trim)
+    for side in (-1, 1):
+        b(min(side * 0.2, side * 0.23), max(side * 0.2, side * 0.23), dy - 0.006, dy + 0.006, 0, 2.2, trim)
 
 
 # ---- station buildings ---------------------------------------------------------------------
@@ -980,7 +983,8 @@ def garage(m, edge):
     b(-0.42, 0.42, -0.44, 0.44, 2.3, 2.45, roof, 0.004)
     b(-0.41, 0.41, -0.43, 0.43, 2.1, 2.3, trim)
     y = 0.42 if far else -0.42
-    b(-0.25, 0.25, y - 0.006, y + 0.006, 0.0, 1.7, door)
-    for k in range(1, 7):
-        z = k * 1.7 / 7
+    # The door clears tractors' stacks and streetcar poles, under the red band.
+    b(-0.25, 0.25, y - 0.006, y + 0.006, 0.0, 1.95, door)
+    for k in range(1, 8):
+        z = k * 1.95 / 8
         b(-0.25, 0.25, y - 0.008, y + 0.008, z - 0.01, z + 0.01, roof)

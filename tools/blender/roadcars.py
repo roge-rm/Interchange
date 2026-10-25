@@ -1367,7 +1367,18 @@ def salt_dome(m):
     shingle = material("dome roof", "#5e5a54", rough=0.75)
     salt = material("road salt", "#e8e4dc", rough=0.9)
     m.lathe(0, 0, 0.0, [(0.4, 0.0), (0.4, 0.5), (0.38, 0.55)], concrete, segments=32)
-    m.lathe(0, 0, 0.55, [(0.39, 0.0), (0.34, 0.9), (0.24, 1.6), (0.1, 2.0), (0.0, 2.1)], shingle, segments=32)
-    m.box(-0.12, 0.12, 0.3, 0.42, 0.0, 1.3, shingle, 0.006)
-    m.box(-0.1, 0.1, 0.41, 0.425, 0.0, 1.1, material("dome door", "#1a1816", rough=1.0))
+    # The dome is tall enough for the door's portal to sit back into it.
+    rise = 1.35
+    m.lathe(0, 0, 0.55, [(0.39, 0.0), (0.34, 0.9 * rise), (0.24, 1.6 * rise), (0.1, 2.0 * rise), (0.0, 2.1 * rise)], shingle, segments=32)
+    # A concrete portal set into the dome wall, its back hidden inside, under a gabled shingle roof that runs back
+    # into the dome. The opening clears the plow truck.
+    portal = material("dome portal", "#b8b2a6", rough=0.85)
+    y0, y1, w, eave, ridge = 0.2, 0.43, 0.16, 2.0, 2.45
+    m.box(-w, w, y0, y1, 0.0, eave, portal, 0.004)
+    m.wedge([(-w, y0, eave), (w, y0, eave), (0, y0, ridge - 0.04)], [(-w, y1, eave), (w, y1, eave), (0, y1, ridge - 0.04)], portal)
+    for side in (-1, 1):
+        m.wedge([(side * (w + 0.025), y0, eave - 0.03), (side * (w + 0.025), y1 + 0.02, eave - 0.03),
+                 (side * (w + 0.025), y1 + 0.02, eave), (side * (w + 0.025), y0, eave)],
+                [(0, y0, ridge - 0.03), (0, y1 + 0.02, ridge - 0.03), (0, y1 + 0.02, ridge), (0, y0, ridge)], shingle)
+    m.box(-0.1, 0.1, y1 - 0.004, y1 + 0.004, 0.0, 1.9, material("dome door", "#1a1816", rough=1.0))
     m.lathe(0, 0.3, 0.0, [(0.12, 0.0), (0.06, 0.4), (0.0, 0.5)], salt, segments=16)
