@@ -28,11 +28,16 @@ sixteen cells at the sharpest level: the base pack in build/packs, with each
 vehicle's length written into packs/base/vehicles.json, and the template pack
 in packs/template, its vehicles recoloured from the base ones.
 """
+import hashlib
 import json
+import os
+import pickle
 import re
+import zlib
 import zipfile
 import multiprocessing
 import sys
+import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent / "art"))
@@ -61,6 +66,11 @@ BUILD_PACKS = ROOT / "build/packs"
 CELL = 256
 STAND_X, STAND_Y = 128, 160
 
+# Finished sprites are kept here, so a run only redraws what changed. --full ignores them.
+CACHE = ROOT / "build/gen_tiles_cache"
+# What the sprite being drawn read: [path, mtime, size] of each file, size None if it wasn't there.
+DEPS = []
+
 LEVELS = 6
 GRID = 1 << (LEVELS - 1)
 SHEET_W = 2048
@@ -71,9 +81,19 @@ TRACK_SURFACES = {"X": [0, 6, 9], "Y": [0, 3, 12]}
 EDGES = ["XM", "XP", "YM", "YP"]
 
 
+def dep(path):
+    """Notes a file the sprite being drawn depends on, whether it's there or not."""
+    try:
+        st = path.stat()
+        DEPS.append([str(path), st.st_mtime_ns, st.st_size])
+    except OSError:
+        DEPS.append([str(path), None, None])
+
+
 def rendered(key, h, build):
     """The Blender render of a vehicle if there is one, else the plain drawing."""
     path = RENDERS / f"{key}_{h}.png"
+    dep(path)
     if path.exists():
         return Image.open(path).convert("RGBA")
     print(f"No render for {key} heading {h}; drawing it plain.")
@@ -83,6 +103,7 @@ def rendered(key, h, build):
 def scenery(name, fallback):
     """A Blender render of scenery if there is one, else the plain drawing."""
     path = SCENERY / name
+    dep(path)
     if path.exists():
         return Image.open(path).convert("RGBA")
     print(f"No render for {name}; drawing it plain.")
@@ -220,6 +241,7 @@ for e, edge in enumerate(EDGES):
 def rendered_slope(key, h, way, build):
     """A vehicle tilted up or down a slope, from Blender, or flat if there's no render."""
     path = RENDERS / f"{key}_s{h}_{way}.png"
+    dep(path)
     return Image.open(path).convert("RGBA") if path.exists() else rendered(key, h, build)
 
 
@@ -265,23 +287,26 @@ def pack_cell(img):
 
 
 def render(i):
+    DEPS.clear()
     sheet, key, fn, finish = JOBS[i]
     img = shrink(fn(), base.SS)
     if finish == "outline":
         img = outline(img)
     cell = pack_cell(img) if sheet.startswith("vehicle_") else None
     up = None
+    if key in UP:
+        dep(SCENERY / UP[key].replace(".png", "_up.png"))
     if key in UP and (SCENERY / UP[key].replace(".png", "_up.png")).exists():
         raw = Image.open(SCENERY / UP[key].replace(".png", "_up.png")).convert("L")
         up = raw.resize((raw.width // base.SS, raw.height // base.SS), Image.BOX)
     # Trimmed to where it's more than faint, so a soft shadow's last wisps don't stretch the box.
     box = img.getchannel("A").point(lambda v: 255 if v > 12 else 0).getbbox()
     if box is None:
-        return i, None, (0, 0, 0, 0), cell, None
+        return i, None, (0, 0, 0, 0), cell, None, list(DEPS)
     l, t, r, b = box
     l, t = l // GRID * GRID, t // GRID * GRID
     r, b = -(-r // GRID) * GRID, -(-b // GRID) * GRID
-    return i, img.crop((l, t, r, b)), (l, t, r, b), cell, up.crop((l, t, r, b)) if up else None
+    return i, img.crop((l, t, r, b)), (l, t, r, b), cell, up.crop((l, t, r, b)) if up else None, list(DEPS)
 
 
 def pack(sizes, sheet_w=SHEET_W):
@@ -301,28 +326,32 @@ def pack(sizes, sheet_w=SHEET_W):
     return pos, -(-(y + shelf) // GRID) * GRID
 
 
-def write_sheet(name, done, sheet_w=SHEET_W):
-    """Packs one sheet's sprites and writes it at every level. Returns each sprite's rect and where it sits from its anchor."""
-    sizes = [(im.width, im.height) if im else (0, 0) for _, im, _, _, _ in done]
+def layout(done, sheet_w=SHEET_W):
+    """Packs one sheet's sprites. Returns the sheet, its snow values, each sprite's rect and where it sits from its anchor, and the height."""
+    sizes = [(im.width, im.height) if im else (0, 0) for im, _, _, _ in done]
     pos, height = pack(sizes, sheet_w)
     sheet = Image.new("RGBA", (sheet_w, max(GRID, height)))
     ups = Image.new("L", sheet.size)
-    for (_, im, _, _, up), p in zip(done, pos):
+    for (im, _, _, up), p in zip(done, pos):
         if im:
             sheet.paste(im, p)
         if up:
             ups.paste(up, p)
-    for level in range(LEVELS):
-        f = 1 << level
-        out = sheet if f == 1 else shrink(sheet, f)
-        if name == "static":
-            out = with_up(out, ups if f == 1 else ups.resize((ups.width // f, ups.height // f), Image.BOX))
-        # Shadows are black, so their sheet keeps only how dark each pixel is, a byte each.
-        save_sheet(out.getchannel("A") if name == "shadows" else out, OUT_PNG / f"{name}_{level}.png")
     rects = []
-    for (_, im, (l, t, r, b), _, _), p in zip(done, pos):
+    for (_, (l, t, r, b), _, _), p in zip(done, pos):
         rects += [p[0], p[1], r - l, b - t, l - base.HW, t - base.TOP]
-    return rects, height
+    return sheet, ups, rects, height
+
+
+def write_level(name, level):
+    """Writes one zoom level of a laid out sheet."""
+    sheet, ups = SHEETS[name]
+    f = 1 << level
+    out = sheet if f == 1 else shrink(sheet, f)
+    if name == "static":
+        out = with_up(out, ups if f == 1 else ups.resize((ups.width // f, ups.height // f), Image.BOX))
+    # Shadows are black, so their sheet keeps only how dark each pixel is, a byte each.
+    save_sheet(out.getchannel("A") if name == "shadows" else out, OUT_PNG / f"{name}_{level}.png")
 
 
 def with_up(img, up):
@@ -344,36 +373,209 @@ def arr(xs):
     return ",\n        ".join(out)
 
 
-def main():
-    with multiprocessing.get_context("fork").Pool() as pool:
-        done = sorted(pool.map(render, range(len(JOBS)), chunksize=4))
-    OUT_PNG.mkdir(parents=True, exist_ok=True)
-    for pattern in ("atlas_*.png", "static_*.png", "shadows_*.png", "moving_*.png", "signals_*.png", "vehicle_*.png", "ground_*.png",
-                    "static_*.webp", "static_snow_*.bin", "shadows_*.webp", "signals_*.webp", "vehicle_*.webp", "ground_*.webp"):
-        for old in OUT_PNG.glob(pattern):
-            old.unlink()
+TIMES = {}
+# Laid out sheets, the ground texture and the vehicles' pack cells, set before the pool forks so its workers have them.
+SHEETS = {}
+TEX = None
+PACK_CELLS = {}
 
-    # Each sheet's sprites numbered in their own sheet.
-    index = {}
-    rects = {}
+
+def timed(name, since):
+    """Adds the time since `since` to the phase called name; returns now."""
+    now = time.time()
+    TIMES[name] = TIMES.get(name, 0) + now - since
+    return now
+
+
+def code_hash():
+    """A hash of the drawing code: anything in it changing redraws everything."""
+    h = hashlib.sha1()
+    for f in [Path(__file__).resolve()] + sorted((ROOT / "tools/art").glob("*.py")):
+        h.update(f.name.encode() + f.read_bytes())
+    return h.hexdigest()
+
+
+def job_file(i):
+    return CACHE / "jobs" / hashlib.sha1(repr((JOBS[i][:2], [d for d in JOBS[i][2].__defaults__ or () if isinstance(d, (str, int))])).encode()).hexdigest()[:24]
+
+
+def load_meta(i, code):
+    """The saved details of sprite i if it's still good: same code, and none of the files it read have changed."""
+    f = job_file(i)
+    try:
+        m = json.loads(f.with_suffix(".json").read_text())
+    except (OSError, ValueError):
+        return None
+    if m["code"] != code or not f.with_suffix(".bin").exists():
+        return None
+    for path, mtime, size in m["deps"]:
+        try:
+            st = Path(path).stat()
+            cur = [st.st_mtime_ns, st.st_size]
+        except OSError:
+            cur = [None, None]
+        if cur != [mtime, size]:
+            return None
+    return m
+
+
+def freeze(im):
+    return None if im is None else (im.mode, im.size, zlib.compress(im.tobytes(), 1))
+
+
+def thaw(t):
+    return None if t is None else Image.frombytes(t[0], t[1], zlib.decompress(t[2]))
+
+
+def save_job(i, code, img, rect, cell, up, deps):
+    f = job_file(i)
+    f.parent.mkdir(parents=True, exist_ok=True)
+    f.with_suffix(".bin").write_bytes(pickle.dumps((freeze(img), freeze(cell), freeze(up))))
+    meta = {"code": code, "deps": deps, "rect": list(rect), "key": repr(JOBS[i][:2])}
+    f.with_suffix(".json").write_text(json.dumps(meta))
+    return meta
+
+
+def load_job(i, meta):
+    img, cell, up = pickle.loads(job_file(i).with_suffix(".bin").read_bytes())
+    return thaw(img), tuple(meta["rect"]), thaw(cell), thaw(up)
+
+
+def stamp(files):
+    """Size and mtime of each file, to tell if one has been replaced since it was written."""
+    out = []
+    for f in files:
+        try:
+            st = f.stat()
+            out.append([st.st_size, st.st_mtime_ns])
+        except OSError:
+            out.append(None)
+    return out
+
+
+def sheet_outputs(name):
+    """Every file written for a sheet."""
+    out = [OUT_PNG / f"{name}_{level}.webp" for level in range(LEVELS)]
+    if name == "static":
+        out += [OUT_PNG / f"static_snow_{level}.bin" for level in (0, 1)]
+    if name.startswith("vehicle_"):
+        key = name.removeprefix("vehicle_")
+        out.append(BUILD_PACKS / "base/sprites" / f"{key}.png")
+        out += [PACKS / "template/sprites" / f"{t}.png" for t, source, _ in TEMPLATE if source == key]
+    return out
+
+
+def run_task(task):
+    """One piece of encoding for the pool: a zoom level of a sheet, of the ground, or a vehicle's pack sprites. Returns its group and seconds."""
+    start = time.time()
+    kind, name, level = task
+    if kind == "level":
+        write_level(name, level)
+    elif kind == "ground":
+        f = 1 << level
+        save_sheet(TEX.resize((TEX.width // f, TEX.height // f), Image.BOX), OUT_PNG / f"ground_{level}.png")
+    else:
+        write_pack_sheets(name)
+    return name.split("_")[0] if kind == "level" else kind, time.time() - start
+
+
+def main():
+    full = "--full" in sys.argv[1:]
+    global TEX
+    t = time.time()
+    code = code_hash()
+    ctx = multiprocessing.get_context("fork")
+    workers = min(os.cpu_count() or 4, 12)
+    metas = [None if full else load_meta(i, code) for i in range(len(JOBS))]
+    stale = [i for i, m in enumerate(metas) if m is None]
+    fresh = {}
+    if stale:
+        with ctx.Pool(workers) as pool:
+            for i, img, rect, cell, up, deps in pool.imap_unordered(render, stale, chunksize=4):
+                fresh[i] = (img, rect, cell, up)
+                metas[i] = save_job(i, code, img, rect, cell, up, deps)
+    print(f"{len(stale)} of {len(JOBS)} sprites drawn.")
+    t = timed("render", t)
+
+    OUT_PNG.mkdir(parents=True, exist_ok=True)
     names = []
     for job in JOBS:
         if job[0] not in names:
             names.append(job[0])
+    index = {}
+    rects = {}
+    heights = {}
+    states = {}
+    dirty = []
     for name in names:
-        mine = [d for d in done if JOBS[d[0]][0] == name]
-        for n, d in enumerate(mine):
-            index[JOBS[d[0]][1]] = n
-        rects[name], height = write_sheet(name, mine, SHEET_W if name in ("static", "shadows") else 1024)
+        mine = [i for i, job in enumerate(JOBS) if job[0] == name]
+        for n, i in enumerate(mine):
+            index[JOBS[i][1]] = n
+        digest = hashlib.sha1((code + json.dumps([[job_file(i).name, metas[i]["deps"]] for i in mine])).encode()).hexdigest()
+        state_file = CACHE / "sheets" / f"{name}.json"
+        try:
+            state = json.loads(state_file.read_text())
+        except (OSError, ValueError):
+            state = None
+        if not full and state and state["digest"] == digest and state.get("stamp") == stamp(sheet_outputs(name)):
+            rects[name], heights[name] = state["rects"], state["height"]
+        else:
+            dirty.append((name, mine))
+            state_file.unlink(missing_ok=True)
+        states[name] = (state_file, digest)
+    t = timed("check", t)
+
+    # Lay out the sheets that changed, then encode all their levels, the ground and the vehicle packs across the pool.
+    tasks = []
+    for name, mine in dirty:
+        done = [fresh[i] if i in fresh else load_job(i, metas[i]) for i in mine]
+        sheet, ups, rects[name], heights[name] = layout(done, SHEET_W if name in ("static", "shadows") else 1024)
+        SHEETS[name] = (sheet, ups)
+        tasks += [("level", name, level) for level in range(LEVELS)]
+        if name.startswith("vehicle_"):
+            cells = [None] * 16
+            for i, (_, _, cell, _) in zip(mine, done):
+                key = JOBS[i][1]
+                cells[key[2] if key[0] == "vehicle" else 8 + key[2] // 2 * 2 + (0 if key[3] == "up" else 1)] = cell
+            PACK_CELLS[name.removeprefix("vehicle_")] = cells
+            tasks.append(("pack", name.removeprefix("vehicle_"), 0))
+    del fresh
+    t = timed("layout", t)
+    ground_state = CACHE / "sheets" / "ground.json"
+    ground_files = [OUT_PNG / f"ground_{level}.webp" for level in range(LEVELS)]
+    try:
+        gs = json.loads(ground_state.read_text())
+        ground_ok = gs["digest"] == code and gs["stamp"] == stamp([OUT_PNG / f"ground_{level}.webp" for level in range(LEVELS)])
+    except (OSError, ValueError):
+        ground_ok = False
+    if full or not ground_ok:
+        ground_state.unlink(missing_ok=True)
+        TEX = textures.sheet().convert("RGB")
+        tasks += [("ground", "ground", level) for level in range(LEVELS)]
+        t = timed("ground texture", t)
+        ground_dirty = True
+    else:
+        ground_dirty = False
+    # Biggest first, so the slow ones start early.
+    weight = {"static": 0, "ground": 1, "pack": 1, "shadows": 2, "signals": 3}
+    tasks.sort(key=lambda k: (weight.get(k[1].split("_")[0] if k[0] == "level" else k[0], 4), k[1], k[2]))
+    cpu = {}
+    if tasks:
+        with ctx.Pool(min(workers, len(tasks))) as pool:
+            for group, secs in pool.imap_unordered(run_task, tasks, chunksize=1):
+                cpu[group] = cpu.get(group, 0) + secs
+    t = timed("encode", t)
+    for name, _ in dirty:
+        state_file, digest = states[name]
+        state_file.parent.mkdir(parents=True, exist_ok=True)
+        state_file.write_text(json.dumps({"stamp": stamp(sheet_outputs(name)), "digest": digest, "rects": rects[name], "height": heights[name]}))
+    if ground_dirty:
+        ground_state.write_text(json.dumps({"digest": code, "stamp": stamp(ground_files)}))
+    for name in names:
         if not name.startswith("vehicle_"):
-            print(f"{name}: {len(mine)} sprites, {height} high at level 0")
+            print(f"{name}: {len(rects[name]) // 6} sprites, {heights[name]} high at level 0")
     biggest = max(len(rects[n]) for n in names if n.startswith("vehicle_")) // 6
     print(f"{len([n for n in names if n.startswith('vehicle_')])} vehicle sheets, {biggest} sprites each")
-
-    tex = textures.sheet().convert("RGB")
-    for level in range(LEVELS):
-        f = 1 << level
-        save_sheet(tex.resize((tex.width // f, tex.height // f), Image.BOX), OUT_PNG / f"ground_{level}.png")
 
     walls = [index.get(("walls", g, s), -1) for g in range(16) for s in range(16)]
     tracks = [index.get(("track", p, s), -1) for p in range(6) for s in range(16)]
@@ -395,8 +597,9 @@ def main():
             vehicle_rects += r[n * 6:n * 6 + 6]
     vehicle_keys = ", ".join(f'"{key}"' for key, _, _ in vehicles.ROSTER)
     kinds = list(textures.KINDS)
+    t = time.time()
     kind_consts = "\n".join(f"    const val {k.upper()} = {i}" for i, k in enumerate(kinds))
-    OUT_KT.write_text(f"""package com.rm.interchange.map
+    atlas = (f"""package com.rm.interchange.map
 
 // Written by tools/gen_tiles.py. Don't edit by hand.
 
@@ -538,7 +741,26 @@ object Atlas {{
     val DEPOT_OVER = intArrayOf({", ".join(str(index[("depot_over", e)]) for e in range(4))})
 }}
 """)
-    write_packs(done)
+    if not OUT_KT.exists() or OUT_KT.read_text() != atlas:
+        OUT_KT.write_text(atlas)
+    t = timed("Atlas.kt", t)
+    write_packs()
+    t = timed("packs", t)
+
+    # Files from older layouts and sprites no longer drawn.
+    keep = {f for name in names for f in sheet_outputs(name)} | set(ground_files)
+    for pattern in ("atlas_*.png", "static_*.png", "shadows_*.png", "moving_*.png", "signals_*.png", "vehicle_*.png", "ground_*.png",
+                    "static_*.webp", "static_snow_*.bin", "shadows_*.webp", "signals_*.webp", "vehicle_*.webp", "ground_*.webp"):
+        for old in OUT_PNG.glob(pattern):
+            if old not in keep:
+                old.unlink()
+    live = {job_file(i).name for i in range(len(JOBS))}
+    for old in (CACHE / "jobs").glob("*"):
+        if old.stem not in live:
+            old.unlink()
+    timed("cleanup", t)
+    print("Seconds: " + ", ".join(f"{k} {v:.1f}" for k, v in TIMES.items()))
+    print("Encoding seconds summed over workers: " + ", ".join(f"{k} {v:.1f}" for k, v in sorted(cpu.items())))
 
 
 def write_json(path, data):
@@ -572,43 +794,36 @@ def recolour(img, turn):
 TEMPLATE = [("prairie", "ten_wheeler", 0.45), ("prairie_tender", "ten_wheeler_tender", 0.45), ("ore_car", "hopper", 0.08), ("van", "caboose", 0.6)]
 
 
-def write_packs(done):
-    """Each vehicle's sixteen cells as a pack sprite sheet, then the base and template packs."""
-    cells = {}
-    for i, _, _, cell, _ in done:
-        sheet, key = JOBS[i][0], JOBS[i][1]
-        if cell is None:
-            continue
-        name = sheet.removeprefix("vehicle_")
-        n = key[2] if key[0] == "vehicle" else 8 + key[2] // 2 * 2 + (0 if key[3] == "up" else 1)
-        cells.setdefault(name, [None] * 16)[n] = cell
+def sheet_of(name, turn=0.0):
+    """A vehicle's sixteen cells as a pack sprite sheet, its hue turned if turn."""
+    out = Image.new("RGBA", (CELL * 4, CELL * 4))
+    for n, cell in enumerate(PACK_CELLS[name]):
+        out.paste(recolour(cell, turn) if turn else cell, (n % 4 * CELL, n // 4 * CELL))
+    return out
 
-    def sheet_of(name, turn=0.0):
-        out = Image.new("RGBA", (CELL * 4, CELL * 4))
-        for n, cell in enumerate(cells[name]):
-            out.paste(recolour(cell, turn) if turn else cell, (n % 4 * CELL, n // 4 * CELL))
-        return out
 
-    sprites = BUILD_PACKS / "base/sprites"
-    sprites.mkdir(parents=True, exist_ok=True)
-    base_sheets = {}
-    for key, _, _ in vehicles.ROSTER:
-        base_sheets[key] = sprites / f"{key}.png"
-        sheet_of(key).save(base_sheets[key], optimize=True)
+def write_pack_sheets(key):
+    """A vehicle's base pack sheet, and any template ones recoloured from it."""
+    (BUILD_PACKS / "base/sprites").mkdir(parents=True, exist_ok=True)
+    sheet_of(key).save(BUILD_PACKS / "base/sprites" / f"{key}.png", optimize=True)
+    for name, source, turn in TEMPLATE:
+        if source == key:
+            (PACKS / "template/sprites").mkdir(parents=True, exist_ok=True)
+            sheet_of(source, turn).save(PACKS / "template/sprites" / f"{name}.png", optimize=True)
+
+
+def write_packs():
+    """The base and template packs, zipped every run as their manifests and vehicles are edited by hand."""
+    base_sheets = {key: BUILD_PACKS / "base/sprites" / f"{key}.png" for key, _, _ in vehicles.ROSTER}
     # The base pack's lengths come from the drawings.
     lengths = {key: length for key, length, _ in vehicles.ROSTER}
     data = json.loads((PACKS / "base/vehicles.json").read_text())
     for v in data["vehicles"]:
         v["length"] = lengths[v.get("sprite", v["id"])]
     write_json(PACKS / "base/vehicles.json", data)
-    zip_pack(PACKS / "base", base_sheets, BUILD_PACKS / "base.ichpack")
-
     template = PACKS / "template"
-    (template / "sprites").mkdir(parents=True, exist_ok=True)
-    template_sheets = {}
-    for name, source, turn in TEMPLATE:
-        template_sheets[name] = template / "sprites" / f"{name}.png"
-        sheet_of(source, turn).save(template_sheets[name], optimize=True)
+    template_sheets = {name: template / "sprites" / f"{name}.png" for name, _, _ in TEMPLATE}
+    zip_pack(PACKS / "base", base_sheets, BUILD_PACKS / "base.ichpack")
     zip_pack(template, template_sheets, BUILD_PACKS / "template.ichpack")
     print(f"Packs: {len(base_sheets)} base sheets, {len(template_sheets)} template sheets, in {BUILD_PACKS}")
 

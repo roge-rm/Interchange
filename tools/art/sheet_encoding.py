@@ -2,15 +2,15 @@
 
 from io import BytesIO
 
+import numpy as np
 from PIL import Image
 
 
 def pack_snow(img):
     """Four two-bit snow values per byte, the first pixel in the low bits."""
-    snow = img.getchannel("B").point(lambda v: v & 3).tobytes()
-    snow += bytes(-len(snow) % 4)
-    return bytes(snow[i] | snow[i + 1] << 2 | snow[i + 2] << 4 | snow[i + 3] << 6
-                 for i in range(0, len(snow), 4))
+    snow = np.asarray(img.getchannel("B"), dtype=np.uint8).reshape(-1) & 3
+    snow = np.concatenate([snow, np.zeros(-len(snow) % 4, dtype=np.uint8)]).reshape(-1, 4)
+    return (snow[:, 0] | snow[:, 1] << 2 | snow[:, 2] << 4 | snow[:, 3] << 6).astype(np.uint8).tobytes()
 
 
 def save_sheet(img, path, *, original_lossless=None):
