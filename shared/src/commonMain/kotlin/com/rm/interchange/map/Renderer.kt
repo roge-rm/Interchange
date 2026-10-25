@@ -98,13 +98,15 @@ internal class Renderer(private val world: World, private val sheets: Sheets, pr
 
     private var lookDay = -1
     private var look = Climate.SUMMER
+    private var year = 0
 
     /** How the land looks at this time of year; every chunk bakes again when it turns. */
     private fun look(): Int {
         val d = world.day
         if (d != lookDay) {
             lookDay = d
-            look = Climate.look(world.settings.region, Calendar.year(world.startYear, d), Calendar.dayOfYear(world.startYear, d))
+            year = Calendar.year(world.startYear, d)
+            look = Climate.look(world.settings.region, year, Calendar.dayOfYear(world.startYear, d))
         }
         return look
     }
@@ -358,7 +360,14 @@ internal class Renderer(private val world: World, private val sheets: Sheets, pr
     }
 
     /** How many times the world under a chunk has changed, from the world's own blocks. */
-    private fun versionOf(view: View, level: Int, cx: Int, cy: Int): Int = (sumOf(world.chunkVersions, view, level, cx, cy) * 8 + overlays) * 8 + look()
+    private fun versionOf(view: View, level: Int, cx: Int, cy: Int): Int =
+        ((sumOf(world.chunkVersions, view, level, cx, cy) * 8 + overlays) * 8 + look()) * ChunkBaker.PART_ERA_COUNT + ChunkBaker.partEras(year())
+
+    /** The game's year now, worked out with [look] once a day. */
+    private fun year(): Int {
+        look()
+        return year
+    }
 
     /** How many times the weather anywhere has changed. */
     private fun weatherVersions(): Long = world.weatherVersions.fold(0L) { sum, v -> sum + v }
@@ -395,7 +404,8 @@ internal class Renderer(private val world: World, private val sheets: Sheets, pr
         scope.launch {
             val o = overlays
             val l = look()
-            val (image, top) = withContext(if (ahead) background else bakers) { bakeChunk(bakeView, key, sheet, o, l, weather) }
+            val yr = year()
+            val (image, top) = withContext(if (ahead) background else bakers) { bakeChunk(bakeView, key, sheet, o, l, yr, weather) }
             baking -= key
             behind -= key
             val entry = Entry(image, top, version, weather.id, clock.elapsedNow().inWholeMilliseconds, frame, fades = key !in cache && !hold)
@@ -419,9 +429,9 @@ internal class Renderer(private val world: World, private val sheets: Sheets, pr
     }
 
     /** Bakes chunk [key]: its picture with the clear rows above whatever's highest on it left off, and how many rows those were; no picture if it's all clear. */
-    private fun bakeChunk(view: View, key: Key, sheet: LevelSheets, overlays: Int, look: Int, weather: WeatherCopy): Pair<ImageBitmap?, Int> {
+    private fun bakeChunk(view: View, key: Key, sheet: LevelSheets, overlays: Int, look: Int, year: Int, weather: WeatherCopy): Pair<ImageBitmap?, Int> {
         val buffer = takeBuffer(CHUNK_PIXELS * CHUNK_ROWS)
-        val baker = ChunkBaker(world, view, key.level, sheet, CHUNK_PIXELS, CHUNK_ROWS, overlays, look, buffer, weather)
+        val baker = ChunkBaker(world, view, key.level, sheet, CHUNK_PIXELS, CHUNK_ROWS, overlays, look, buffer, weather, year)
         baker.originX = -key.cx * CHUNK_PIXELS.toFloat()
         baker.originY = -key.cy * CHUNK_ROWS.toFloat()
         // Every tile that reaches in, back to front: ground first, then every shadow over it, then what stands up, so

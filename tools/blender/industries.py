@@ -8,9 +8,14 @@ one place across their tiles.
 import math
 import random
 
+from mathutils import Matrix
+
+import cars
 import harbour
+import horses
 import houses
 import rig
+import roadcars
 import scenery
 from houses import STOREY, gable, glass, hip, paved, slab, windows
 from parts import material
@@ -78,7 +83,336 @@ def cow(m, x, y, turn, coat):
         m.box(lx - 0.004, lx + 0.004, ly - 0.004, ly + 0.004, 0, 0.36, body)
 
 
+
+def moved(m, build, x, y, turn=0.0, z=0.0):
+    """Builds something drawn about the tile's middle facing +y, a vehicle or a team, then moves it to x, y and z steps up,
+    turned by turn radians."""
+    n0 = len(m.objects)
+    build(m)
+    mat = Matrix.Translation((x, y, z * rig.RISE)) @ Matrix.Rotation(turn, 4, "Z")
+    for o in m.objects[n0:]:
+        o.matrix_basis = mat @ o.matrix_basis
+
+
+
+def battens(m, face, at, d, a0, a1, z0, top, mat, gap=0.022):
+    """Battens up a board wall at x or y = at, facing d, a0 to a1 along it, from z0 up to top, a height or a function of
+    where along the wall."""
+    n = max(1, round((a1 - a0) / gap))
+    for k in range(1, n):
+        a = a0 + (a1 - a0) * k / n
+        z1 = top(a) if callable(top) else top
+        if z1 > z0 + 0.05:
+            houses.on_wall(m, face, at, d, a - 0.0018, a + 0.0018, 0, 0.0035, z0, z1, mat)
+
+
+
+def boards(m, x0, x1, y0, y1, z0, z1, mat, gap=0.022):
+    """Board and batten round all four walls of a box."""
+    for face, at, d, a0, a1 in (("y", y1, 1, x0, x1), ("y", y0, -1, x0, x1), ("x", x1, 1, y0, y1), ("x", x0, -1, y0, y1)):
+        battens(m, face, at, d, a0, a1, z0, z1, mat, gap)
+
+
+
+def fieldstone(m, x0, x1, y0, y1, z0, z1, seed=1, walls=None):
+    """A fieldstone wall round a box: grey mortar with stones of a few colours laid in rough courses over it. walls limits
+    it to some of the four walls, as (face, at, d, a0, a1)."""
+    m.box(x0, x1, y0, y1, z0, z1, material("mortar", "#8a8478", rough=1.0))
+    rng = random.Random(seed)
+    mats = [material(f"fieldstone {c}", c, rough=0.95) for c in ("#a29a8c", "#7c7870", "#b4a68e", "#8c7c6a", "#6c6a66", "#c2baa8")]
+    walls = walls or (("y", y1, 1, x0, x1), ("y", y0, -1, x0, x1), ("x", x1, 1, y0, y1), ("x", x0, -1, y0, y1))
+    for face, at, d, a0, a1 in walls:
+        z = z0 + 0.015
+        while z < z1 - 0.07:
+            h = min(rng.uniform(0.12, 0.19), z1 - 0.015 - z)
+            a = a0 + rng.uniform(0.0, 0.012)
+            while a < a1 - 0.01:
+                w = min(rng.uniform(0.016, 0.034), a1 - a)
+                p, q = sorted((at + d * 0.0005, at + d * 0.0045))
+                zz = rng.uniform(-0.015, 0.015)
+                if face == "y":
+                    m.box(a + 0.002, a + w - 0.002, p, q, z + 0.014 + zz, z + h - 0.014 + zz, rng.choice(mats), 0.0015)
+                else:
+                    m.box(p, q, a + 0.002, a + w - 0.002, z + 0.014 + zz, z + h - 0.014 + zz, rng.choice(mats), 0.0015)
+                a += w
+            z += h
+
+
+
+def cupola(m, x, y, z, w, h, wall, roof, trim):
+    """A square ventilator cupola standing on a ridge at z: louvred sides, a pyramid roof and a finial."""
+    a = w / 2
+    m.box(x - a, x + a, y - a, y + a, z - 0.35, z + h, wall)
+    slat = material("louvre slats", "#d8d2c4", rough=0.8)
+    for face, at, d, c in (("y", y + a, 1, x), ("y", y - a, -1, x), ("x", x + a, 1, y), ("x", x - a, -1, y)):
+        houses.louvres(m, face, at, d, c, z + 0.06, z + h - 0.07, w * 0.56, trim, slat)
+    houses.corner_boards(m, x - a, x + a, y - a, y + a, z - 0.35, z + h, trim, w=0.005)
+    hip(m, x - a, x + a, y - a, y + a, z + h, z + h + 0.38, roof, over=0.012, thick=0.04)
+    houses.finial(m, x, y, z + h + 0.36, 0.32, material("finial", "#5a5a58", metal=0.7, rough=0.4))
+
+
+
+def hay_hood(m, x, y, z, out, w, rise, roof, wall, d=-1):
+    """The hood over a hay door at a gable peak, out from the wall at x = x towards d: a little gabled roof over the
+    end of the hay track."""
+    xo = x + d * out
+    for s in (-1, 1):
+        slab(m, [(x, y, z + rise), (xo, y, z + rise), (xo, y + s * w, z), (x, y + s * w, z)], 0.04, roof)
+    for xx in (xo + d * 0.002,):
+        m.wedge([(xx - 0.003, y - w * 0.9, z + 0.02), (xx - 0.003, y + w * 0.9, z + 0.02), (xx - 0.003, y, z + rise)],
+                [(xx + 0.003, y - w * 0.9, z + 0.02), (xx + 0.003, y + w * 0.9, z + 0.02), (xx + 0.003, y, z + rise)], wall)
+    # The hay track's end sticking out under it, with the trolley's pulley.
+    iron = material("hay track", "#3a3836", metal=0.6, rough=0.5)
+    m.box(min(x, xo), max(x, xo), y - 0.004, y + 0.004, z - 0.04, z + 0.02, iron)
+    m.upright(xo - d * 0.015, y, z - 0.25, z - 0.04, 0.004, 0.004, iron, segments=8)
+
+
+
+def aermotor(m, x, y, top, r=0.072):
+    """A steel farm windmill of the Aermotor kind: a four-legged galvanized tower, a wheel of 18 curved sails on rings
+    facing +y, the gearbox on top and a tail vane behind, the pump rod down the middle."""
+    steel = material("galvanized", "#a8aaa6", metal=0.7, rough=0.35)
+    dark = material("windmill head", "#5a5c5a", metal=0.6, rough=0.4)
+    b, t = 0.05, 0.012
+    corners = [(-1, -1), (1, -1), (1, 1), (-1, 1)]
+
+    def half(z):
+        return b + (t - b) * z / top
+    for sx, sy in corners:
+        m.rod((x + sx * b, y + sy * b, 0), (x + sx * t, y + sy * t, top), 0.0028, steel, segments=6)
+        m.box(x + sx * b - 0.008, x + sx * b + 0.008, y + sy * b - 0.008, y + sy * b + 0.008, 0, 0.06, material("footing", "#9a968c", rough=1.0))
+    levels = [0.12, 1.0, 1.8, 2.5, 3.1, top - 0.05]
+    for za, zb in zip(levels, levels[1:]):
+        ha, hb = half(za), half(zb)
+        for k in range(4):
+            (sx, sy), (tx, ty) = corners[k], corners[(k + 1) % 4]
+            m.rod((x + sx * hb, y + sy * hb, zb), (x + tx * hb, y + ty * hb, zb), 0.0016, steel, segments=5)
+            m.rod((x + sx * ha, y + sy * ha, za), (x + tx * hb, y + ty * hb, zb), 0.001, steel, segments=4)
+            m.rod((x + tx * ha, y + ty * ha, za), (x + sx * hb, y + sy * hb, zb), 0.001, steel, segments=4)
+    # A small platform under the head, and the pump rod down the middle to the pump.
+    m.box(x - 0.03, x + 0.03, y - 0.03, y + 0.03, top - 0.55, top - 0.5, steel)
+    m.rod((x, y, 0.3), (x, y, top), 0.0012, dark, segments=4)
+    m.upright(x, y, 0, 0.3, 0.008, 0.006, dark, segments=8)
+    m.rod((x, y, 0.28), (x + 0.012, y + 0.01, 0.4), 0.0025, dark)
+    # The head: a gearbox on a turntable, the wheel out front on its shaft.
+    zc = top + 0.42
+    m.upright(x, y, top, top + 0.12, 0.014, 0.012, dark, segments=12)
+    m.box(x - 0.011, x + 0.011, y - 0.03, y + 0.022, top + 0.1, top + 0.55, dark, 0.004)
+    yw = y + 0.045
+    m.tube(y, yw + 0.008, x, zc, 0.006, dark, segments=10)
+    s = UNSQUASH / rig.RISE
+
+    def at(a, rr, dy=0.0):
+        return (x + rr * math.cos(a), yw + dy, zc + rr * math.sin(a) * s)
+    n = 36
+    for rr in (r, r * 0.62, r * 0.3):
+        for k in range(n):
+            m.rod(at(2 * math.pi * k / n, rr), at(2 * math.pi * (k + 1) / n, rr), 0.0014, steel, segments=4)
+    sail = material("windmill sails", "#c0c2be", metal=0.6, rough=0.35)
+    blades = 18
+    for k in range(blades):
+        a = 2 * math.pi * k / blades
+        w = math.pi / blades * 0.78
+        # Each sail is pitched about its own length, so one edge stands forward and the other back.
+        quad = [at(a - w, r * 0.3, -0.004), at(a + w * 0.6, r * 0.3, 0.004), at(a + w, r * 0.99, 0.009), at(a - w, r * 0.99, -0.009)]
+        m.wedge(quad, [(p[0], p[1] + 0.0015, p[2]) for p in quad], sail)
+        m.rod(at(a, r * 0.08, -0.003), at(a, r * 0.3), 0.0012, steel, segments=4)
+    # The tail: a boom back from the head with its braces and a flat vane on the end.
+    ty0, ty1 = y - 0.06, y - 0.16
+    m.rod((x, y - 0.025, zc + 0.03), (x, ty0, zc + 0.08), 0.0025, dark)
+    m.rod((x, y - 0.02, zc - 0.12), (x, ty0, zc + 0.05), 0.0015, dark)
+    vane = [(x, ty0, zc - 0.05), (x, ty1, zc - 0.22), (x, ty1, zc + 0.42), (x, ty0, zc + 0.2)]
+    m.wedge([(p[0] - 0.0012, p[1], p[2]) for p in vane], [(p[0] + 0.0012, p[1], p[2]) for p in vane], sail)
+
+
+
+def stock_tank(m, x, y, r):
+    """A round galvanized stock tank with a rolled rim, full of water."""
+    steel = material("stock tank", "#9a9c98", metal=0.7, rough=0.4)
+    m.upright(x, y, 0, 0.24, r, r, steel, segments=28)
+    for z in (0.08, 0.16):
+        m.upright(x, y, z, z + 0.02, r * 1.02, r * 1.02, steel, segments=28)
+    m.upright(x, y, 0.24, 0.25, r * 0.97, r * 0.97, material("stock tank water", "#4a6a78", metal=0.1, rough=0.15), segments=28)
+    n = 28
+    for k in range(n):
+        a, b = 2 * math.pi * k / n, 2 * math.pi * (k + 1) / n
+        m.rod((x + r * math.cos(a), y + r * math.sin(a), 0.26), (x + r * math.cos(b), y + r * math.sin(b), 0.26), 0.004, steel, segments=6)
+
+
+
+def silo_bank(m, xs, ys, r, top, mat, band=None):
+    """Concrete silos touching in a bank, xs by ys, with the diamond interstice bins filling between each four, faint
+    pour lines round them and a rim at the top."""
+    for x in xs:
+        for y in ys:
+            m.upright(x, y, 0, top, r, r, mat, segments=32)
+            m.upright(x, y, top - 0.06, top + 0.02, r * 1.015, r * 1.015, mat, segments=32)
+            if band is not None:
+                z = 1.0
+                while z < top - 0.5:
+                    m.upright(x, y, z, z + 0.025, r * 1.004, r * 1.004, band, segments=32)
+                    z += 1.0
+    for xa, xb in zip(xs, xs[1:]):
+        for ya, yb in zip(ys, ys[1:]):
+            cx, cy = (xa + xb) / 2, (ya + yb) / 2
+            hx, hy = (xb - xa) / 2, (yb - ya) / 2
+            pts = [(cx + hx, cy, 0), (cx, cy + hy, 0), (cx - hx, cy, 0), (cx, cy - hy, 0)]
+            m.wedge(pts, [(x, y, top - 0.02) for x, y, _ in pts], mat)
+
+
+
+def gallery(m, a, b, w, h, wall, roof, glass, along_y=True):
+    """An enclosed conveyor gallery from a to b, each (x, y, z of its floor), w wide and h steps tall, with a strip of
+    windows down each side and a shallow roof."""
+    (ax, ay, az), (bx, by, bz) = a, b
+
+    def side(s, z0, z1, o):
+        if along_y:
+            return [(ax + s * w / 2 + o, ay, az + z0), (bx + s * w / 2 + o, by, bz + z0), (bx + s * w / 2 + o, by, bz + z1), (ax + s * w / 2 + o, ay, az + z1)]
+        return [(ax, ay + s * w / 2 + o, az + z0), (bx, by + s * w / 2 + o, bz + z0), (bx, by + s * w / 2 + o, bz + z1), (ax, ay + s * w / 2 + o, az + z1)]
+    inner = side(-1, 0, h, 0)
+    outer = side(1, 0, h, 0)
+    m.wedge(inner, outer, wall)
+    for s in (-1, 1):
+        m.wedge(side(s, h * 0.45, h * 0.75, s * 0.001), side(s, h * 0.45, h * 0.75, s * 0.003), glass)
+    m.wedge(side(-1, h, h + 0.05, -0.006), side(1, h, h + 0.05, 0.006), roof)
+
+
+
+def dray(m, sacks=8):
+    """A flour dray: a low flat bed with stake sides piled with sacks, the driver up on the seat and a team of two."""
+    bed = material("dray bed", "#3e5a6a", rough=0.6)
+    wood = material("dray wheels", "#a2342a", rough=0.6)
+    dark = material("undercarriage", "#222224", rough=0.7)
+    sack = material("flour sacks", "#e8e0cc", rough=1.0)
+    b0, b1, half, floor = -0.18, 0.04, 0.062, 0.34
+    m.box(-half, half, b0, b1, floor - 0.06, floor, bed, 0.003)
+    for s in (-1, 1):
+        m.box(s * half - 0.004, s * half + 0.004, b0, b1, floor, floor + 0.12, bed)
+    m.box(-half, half, b0, b0 + 0.008, floor, floor + 0.12, bed)
+    m.box(-half, half, b1 - 0.008, b1, floor, floor + 0.3, bed)
+    rng = random.Random(5)
+    for k in range(sacks):
+        col, row = k % 2, k // 2
+        y = b0 + 0.03 + row * 0.042
+        z = floor + (0.0 if k < 6 else 0.13)
+        m.box(-0.05 + col * 0.05 + rng.uniform(-0.004, 0.004), -0.004 + col * 0.05, y - 0.018, y + 0.018, z, z + 0.13, sack, 0.01)
+    for y, r in ((b0 + 0.045, 0.05), (b1 - 0.03, 0.04)):
+        horses.axle(m, y, r, half + 0.008, floor - 0.06, dark)
+        for s in (-1, 1):
+            horses.wheel(m, s * (half + 0.008), y, r, wood, spokes=12)
+    m.box(-0.04, 0.04, b1 - 0.02, b1 + 0.005, floor + 0.3, floor + 0.36, dark)
+    horses.driver(m, b1 - 0.005, floor + 0.36)
+    horses.pole(m, b1, b1 + 0.03, 0.4, dark)
+    horses.team(m, b1 + 0.03)
+
+
+
+def ramp(m, x0, x1, ya, yb, za, zb):
+    """A covered cattle ramp from ya (its foot, za high) to yb (zb high), x0 to x1 across: a plank floor on posts, slatted
+    board sides and a shed roof over it."""
+    wood = material("ramp boards", "#8a7258", rough=0.9)
+    post = material("ramp posts", "#5a4636", rough=0.9)
+    roof = material("ramp roof", "#5e5a56", metal=0.3, rough=0.6)
+    h = 0.75
+
+    def z(y):
+        return za + (zb - za) * (y - ya) / (yb - ya)
+    m.wedge([(x0, ya, za - 0.06), (x1, ya, za - 0.06), (x1, yb, zb - 0.06), (x0, yb, zb - 0.06)], [(x0, ya, za), (x1, ya, za), (x1, yb, zb), (x0, yb, zb)], wood)
+    n = 6
+    for k in range(n + 1):
+        y = ya + (yb - ya) * k / n
+        for x in (x0, x1):
+            m.box(x - 0.006, x + 0.006, y - 0.006, y + 0.006, 0, z(y) + h, post)
+    for x in (x0, x1):
+        for f in (0.15, 0.4, 0.65):
+            m.wedge([(x - 0.003, ya, za + h * f), (x - 0.003, yb, zb + h * f), (x - 0.003, yb, zb + h * f + 0.12), (x - 0.003, ya, za + h * f + 0.12)],
+                    [(x + 0.003, ya, za + h * f), (x + 0.003, yb, zb + h * f), (x + 0.003, yb, zb + h * f + 0.12), (x + 0.003, ya, za + h * f + 0.12)], wood)
+    slab(m, [(x0 - 0.015, ya, za + h + 0.02), (x1 + 0.015, ya, za + h + 0.12), (x1 + 0.015, yb, zb + h + 0.12), (x0 - 0.015, yb, zb + h + 0.02)], 0.04, roof)
+    # A gate at the foot where the cattle come in off the pens.
+    houses.rails(m, (x1, ya), (x1 + 0.06, ya), post)
+
+
+
+def water_tank(m, x, y, z0, r):
+    """A wooden water tank of staves and hoops with a cone roof, up on four steel legs with a ladder."""
+    steel = material("tank legs", "#3a3c3e", metal=0.5, rough=0.5)
+    staves = material("tank staves", "#7a5e44", rough=0.9)
+    zt = z0 + 0.95
+    for sx in (-1, 1):
+        for sy in (-1, 1):
+            m.rod((x + sx * r * 0.95, y + sy * r * 0.95, z0), (x + sx * r * 0.7, y + sy * r * 0.7, zt), 0.004, steel, segments=6)
+    for za, zb in ((z0 + 0.05, z0 + 0.5), (z0 + 0.5, zt)):
+        for (ax, ay), (bx, by) in (((-1, -1), (1, -1)), ((1, -1), (1, 1)), ((1, 1), (-1, 1)), ((-1, 1), (-1, -1))):
+            fa, fb = (0.95 - 0.25 * (za - z0) / 0.95) * r, (0.95 - 0.25 * (zb - z0) / 0.95) * r
+            m.rod((x + ax * fa, y + ay * fa, za), (x + bx * fb, y + by * fb, zb), 0.0015, steel, segments=4)
+    m.box(x - r * 0.9, x + r * 0.9, y - r * 0.9, y + r * 0.9, zt - 0.04, zt, steel)
+    m.upright(x, y, zt, zt + 0.75, r, r * 0.97, staves, segments=24)
+    for k in range(5):
+        zz = zt + 0.06 + k * 0.15
+        m.upright(x, y, zz, zz + 0.02, r * 1.012, r * 1.012, steel, segments=24)
+    m.lathe(x, y, zt + 0.75, [(r * 1.04, 0), (r * 0.5, 0.18), (0.0, 0.26)], material("tank roof", "#4e4a46", rough=0.8), segments=24)
+    harbour.ladder(m, x - r - 0.004, y, z0, zt + 0.75, face_x=True, grab=0.1)
+
+
+
+def packing_wing(m):
+    """The packing house's lower wings: a three storey brick wing, the smokehouse with its tall stack, and the reefer dock
+    under a canopy with a refrigerator car on the siding beside it."""
+    paved(m, -0.5, 0.5, -0.5, 0.5, "#8a867e")
+    brick = material("plant brick", "#8a5240", rough=0.9)
+    trim = material("plant trim", "#d0c6b2", rough=0.8)
+    frame = material("plant window frames", "#3a3c3e", metal=0.3, rough=0.6)
+    glass = houses.glass()
+    x0, x1, y0, y1 = -0.44, 0.2, -0.5, 0.04
+    top = 3 * STOREY + 0.2
+    m.box(x0, x1, y0, y1, 0, top, brick, 0.004)
+    houses.foundation(m, x0, x1, y0, y1, 0.3, trim, out=0.005)
+    for face, at, d, a0, a1, n in (("y", y1, 1, x0, x1, 5), ("x", x0, -1, y0, y1, 4), ("x", x1, 1, y0, y1, 4)):
+        for s in range(3):
+            z = 0.2 + s * STOREY
+            if s:
+                houses.on_wall(m, face, at, d, a0, a1, 0, 0.01, z - 0.03, z + 0.03, trim)
+            for k in range(n):
+                if face == "y" and s == 0:
+                    continue
+                houses.pane(m, face, at, d, a0 + (k + 0.5) * (a1 - a0) / n, z + 0.3, z + 0.95, 0.07, glass, frame, trim, bars=2)
+    houses.flat_top(m, x0, x1, y0, y1, top, trim, parapet=0.25)
+    # Doors onto the reefer dock along the front.
+    for k in range(4):
+        c = x0 + 0.08 + k * 0.16
+        harbour.rollup_door(m, c - 0.045, c + 0.045, y1, 0.45, 1.25, face=1, colour="#6a6e70")
+    # The smokehouse: a narrow tall block at the yard end with its brick stack.
+    sx0, sx1, sy0, sy1 = 0.2, 0.44, -0.5, -0.16
+    m.box(sx0, sx1, sy0, sy1, 0, top + 0.9, brick, 0.004)
+    houses.flat_top(m, sx0, sx1, sy0, sy1, top + 0.9, trim, parapet=0.15)
+    for k in range(3):
+        houses.on_wall(m, "x", sx1, 1, sy0 + 0.06 + k * 0.1, sy0 + 0.09 + k * 0.1, 0, 0.012, 0.5, top + 0.6, material("smokehouse vents", "#3a2a24", rough=0.9))
+    stack(m, 0.32, -0.32, top + 0.9, 7.6, 0.04, brick, material("stack band", "#2e2624", rough=0.9))
+    # The reefer dock and its canopy, and the siding with a refrigerator car spotted at it.
+    dz = 0.45
+    m.box(-0.44, 0.44, y1, 0.17, 0, dz, material("dock concrete", "#a8a296", rough=0.9), 0.003)
+    m.box(-0.44, 0.44, 0.17, 0.18, 0.05, dz - 0.02, material("dock timbers", "#5a4a3a", rough=0.9))
+    slab(m, [(-0.45, y1, 1.6), (0.45, y1, 1.6), (0.45, 0.2, 1.42), (-0.45, 0.2, 1.42)], 0.05, material("canopy roof", "#5a5e62", metal=0.4, rough=0.5))
+    post = material("canopy posts", "#3a3c3e", metal=0.4, rough=0.6)
+    for x in (-0.4, -0.08, 0.24, 0.42):
+        m.box(x - 0.006, x + 0.006, 0.155, 0.167, dz, 1.45, post)
+    ty = 0.34
+    tie = material("tie", "#4e3626", rough=0.9)
+    rail = material("rail", "#6a6662", metal=0.9, rough=0.45)
+    x = -0.45
+    while x < 0.5:
+        m.box(x - 0.022, x + 0.022, ty - 0.15, min(0.5, ty + 0.16), 0.0, 0.04, tie)
+        x += 0.11
+    for s in (-1, 1):
+        m.box(-0.5, 0.5, ty + s * 0.095 - 0.006, ty + s * 0.095 + 0.006, 0.04, 0.1, rail)
+    moved(m, lambda mm: cars.reefer(mm, 9 / 16), 0.0, ty, -math.pi / 2, z=0.1)
+
+
 # ---- forestry ---------------------------------------------------------------------------------
+
+# Pieces are drawn at 0.75 of their height (BUILDING_RISE); round things stood on edge are stretched up by this to come out round.
+UNSQUASH = 1 / 0.75
 
 LOG = ("logs", "#8a6a48")
 WEATHERED = ("weathered planks", "#8a7a64")
@@ -188,30 +522,94 @@ def lumber_stack(m):
 # ---- grain and flour ------------------------------------------------------------------------------
 
 def barn(m):
+    """An Ontario bank barn: a gambrel roof over board and batten walls on a fieldstone lower storey, the bank ramp up to
+    the threshing floor doors, stable doors under the hay hood at the end, a lean-to and two ventilators on the ridge."""
     ground(m, "#5e6a3a", "barnyard")
     red = material("barn red", "#8e2e22", rough=0.85)
+    batten = material("barn battens", "#7a261c", rough=0.85)
     trim = material("barn trim", "#e8e2d4", rough=0.7)
     roof = material("barn roof", "#4a4e52", metal=0.3, rough=0.6)
+    door = material("barn doors", "#7a2a20", rough=0.85)
+    dark = material("barn dark", "#2a2220", rough=0.9)
     x0, x1, y0, y1 = -0.34, 0.34, -0.26, 0.24
-    m.box(x0, x1, y0, y1, 0, 2.0, red, 0.004)
-    # A gambrel roof: steep lower slopes, shallow upper ones.
-    for ya, ym, yc in ((y0 - 0.03, y0 + 0.07, (y0 + y1) / 2), (y1 + 0.03, y1 - 0.07, (y0 + y1) / 2)):
-        slab(m, [(x0 - 0.02, ya, 2.0), (x1 + 0.02, ya, 2.0), (x1 + 0.02, ym, 3.3), (x0 - 0.02, ym, 3.3)], 0.08, roof)
-        slab(m, [(x0 - 0.02, ym, 3.3), (x1 + 0.02, ym, 3.3), (x1 + 0.02, yc, 3.9), (x0 - 0.02, yc, 3.9)], 0.08, roof)
+    yc = (y0 + y1) / 2
+    floor, eave, knee, ridge = 0.95, 2.0, 3.3, 3.9
+    fieldstone(m, x0 - 0.008, x1 + 0.008, y0 - 0.008, y1 + 0.008, 0, floor, seed=3)
+    m.box(x0, x1, y0, y1, floor, eave, red, 0.003)
+
+    def gambrel(v):
+        """The gable end's top edge at v across."""
+        t = abs(v - yc) / (yc - y0)
+        k = 0.07 / (yc - y0)
+        return ridge - (ridge - knee) * t / (1 - k) if t < 1 - k else eave + (knee - eave) * (1 - t) / k
+    for ya, ym in ((y0 - 0.03, y0 + 0.07), (y1 + 0.03, y1 - 0.07)):
+        slab(m, [(x0 - 0.02, ya, eave), (x1 + 0.02, ya, eave), (x1 + 0.02, ym, knee), (x0 - 0.02, ym, knee)], 0.08, roof)
+        slab(m, [(x0 - 0.02, ym, knee), (x1 + 0.02, ym, knee), (x1 + 0.02, yc, ridge), (x0 - 0.02, yc, ridge)], 0.08, roof)
+        m.box(x0 - 0.02, x1 + 0.02, ya - 0.004, ya + 0.004, eave - 0.06, eave + 0.09, trim)
+    m.box(x0 - 0.02, x1 + 0.02, yc - 0.008, yc + 0.008, ridge + 0.06, ridge + 0.11, roof)
     for x in (x0, x1):
-        yc = (y0 + y1) / 2
-        m.wedge([(x - 0.003, y0, 2.0), (x - 0.003, y1, 2.0), (x - 0.003, y1 - 0.07, 3.3), (x - 0.003, yc, 3.9), (x - 0.003, y0 + 0.07, 3.3)],
-                [(x + 0.003, y0, 2.0), (x + 0.003, y1, 2.0), (x + 0.003, y1 - 0.07, 3.3), (x + 0.003, yc, 3.9), (x + 0.003, y0 + 0.07, 3.3)], red)
-    # Big doors with their white cross braces, and the hay door above.
-    m.box(-0.12, 0.12, y1, y1 + 0.006, 0, 1.6, material("barn doors", "#7a2a20", rough=0.85))
-    for a, b in (((-0.12, 0.0), (0.0, 1.6)), ((0.0, 0.12), (1.6, 0.0))):
-        m.rod((a[0], y1 + 0.008, b[0]), (a[1], y1 + 0.008, b[1]), 0.006, trim)
-    m.box(-0.06, 0.06, y1, y1 + 0.006, 2.3, 2.9, trim)
-    m.box(-0.13, 0.13, y1, y1 + 0.007, 1.6, 1.66, trim)
-    # Round hay bales by the side.
+        m.wedge([(x - 0.003, y0, eave), (x - 0.003, y1, eave), (x - 0.003, y1 - 0.07, knee), (x - 0.003, yc, ridge), (x - 0.003, y0 + 0.07, knee)],
+                [(x + 0.003, y0, eave), (x + 0.003, y1, eave), (x + 0.003, y1 - 0.07, knee), (x + 0.003, yc, ridge), (x + 0.003, y0 + 0.07, knee)], red)
+    for face, at, d, a0, a1 in (("y", y1, 1, x0, x1), ("y", y0, -1, x0, x1)):
+        battens(m, face, at, d, a0, a1, floor, eave - 0.02, batten)
+    for at, d in ((x0, -1), (x1, 1)):
+        battens(m, "x", at, d, y0, y1, floor, lambda v: gambrel(v) - 0.03, batten)
+    houses.corner_boards(m, x0, x1, y0, y1, floor, eave, trim)
+    # The bank: an earth ramp up to the threshing floor doors, held in by stone wing walls.
+    turf = material("bank turf", "#6a7446", rough=1.0)
+    bank = [(y1, 0.0), (y1 + 0.23, 0.0), (y1 + 0.23, 0.03), (y1, floor)]
+    m.wedge([(-0.15, y, z) for y, z in bank], [(0.15, y, z) for y, z in bank], turf)
+    stone = material("fieldstone #8c7c6a", "#8c7c6a", rough=0.95)
+    for x in (-0.175, 0.15):
+        wing = [(y1, 0.0), (y1 + 0.24, 0.0), (y1 + 0.24, 0.12), (y1, floor + 0.1)]
+        m.wedge([(x, y, z) for y, z in wing], [(x + 0.025, y, z) for y, z in wing], material("ramp walls", "#7e7870", rough=1.0))
+    # Rolling doors on the threshing floor, white trimmed and braced, on a track under the eave.
+    for a, b in ((-0.13, 0.0), (0.0, 0.13)):
+        m.box(a + 0.002, b - 0.002, y1, y1 + 0.007, floor, floor + 0.92, door)
+        for p, q in (((a, floor), (b, floor + 0.92)), ((b, floor), (a, floor + 0.92))):
+            m.rod((p[0] + (0.006 if p[0] < q[0] else -0.006), y1 + 0.009, p[1] + 0.04), (q[0] + (-0.006 if p[0] < q[0] else 0.006), y1 + 0.009, q[1] - 0.04), 0.004, trim)
+        for zz in (floor, floor + 0.88):
+            houses.on_wall(m, "y", y1, 1, a + 0.002, b - 0.002, 0.007, 0.011, zz, zz + 0.04, trim)
+        for s in (a + 0.002, b - 0.014):
+            houses.on_wall(m, "y", y1, 1, s, s + 0.012, 0.007, 0.011, floor, floor + 0.92, trim)
+    houses.on_wall(m, "y", y1, 1, -0.28, 0.28, 0, 0.012, floor + 0.95, floor + 0.99, material("door track", "#3a3836", metal=0.6, rough=0.5))
+    glass = houses.glass()
+    # Small windows lighting the stables in the stone, either side of the bank, and down the other side.
+    for c in (-0.27, -0.21, 0.21, 0.27):
+        houses.pane(m, "y", y1 + 0.008, 1, c, 0.35, 0.68, 0.034, glass, trim, stone, sash=True)
+    for c in (-0.24, -0.08, 0.08, 0.24):
+        houses.pane(m, "y", y0 - 0.008, -1, c, 0.35, 0.68, 0.034, glass, trim, stone, sash=True)
+    # The end under the hay hood: stable doors in the stone, the hay door up in the gable and the hood at the peak.
+    for c in (-0.12, 0.11):
+        houses.on_wall(m, "x", x0 - 0.008, -1, c - 0.035, c + 0.035, 0, 0.004, 0, 0.82, trim)
+        houses.on_wall(m, "x", x0 - 0.008, -1, c - 0.03, c + 0.03, 0.002, 0.007, 0, 0.4, door)
+        houses.on_wall(m, "x", x0 - 0.008, -1, c - 0.03, c + 0.03, 0.002, 0.007, 0.42, 0.78, door)
+    houses.pane(m, "x", x0 - 0.008, -1, 0.0, 0.38, 0.68, 0.034, glass, trim, stone)
+    houses.on_wall(m, "x", x0, -1, yc - 0.055, yc + 0.055, 0, 0.006, 2.45, 3.25, trim)
+    houses.on_wall(m, "x", x0, -1, yc - 0.045, yc + 0.045, 0.004, 0.009, 2.5, 3.2, door)
+    m.rod((x0 - 0.01, yc - 0.04, 2.55), (x0 - 0.01, yc + 0.04, 3.15), 0.003, trim)
+    m.rod((x0 - 0.01, yc + 0.04, 2.55), (x0 - 0.01, yc - 0.04, 3.15), 0.003, trim)
+    houses.pane(m, "x", x1, 1, yc, 2.4, 2.9, 0.04, glass, trim, trim)
+    hay_hood(m, x0 - 0.02, yc, 3.55, 0.07, 0.065, 0.45, roof, red)
+    for x in (-0.16, 0.16):
+        cupola(m, x, yc, ridge + 0.02, 0.07, 0.38, red, roof, trim)
+        m.rod((x, yc, ridge + 0.85), (x, yc, ridge + 1.15), 0.0015, material("lightning rod", "#4a4a48", metal=0.8, rough=0.3))
+    # The lean-to off the far end: a straw shed open to the yard, board walls, its roof sloping off the gable.
+    lx = 0.47
+    m.box(x1, lx, y0 + 0.01, y0 + 0.02, 0, 1.45, red)
+    m.box(lx - 0.01, lx, y0 + 0.01, y1 - 0.02, 0, 0.95, red)
+    battens(m, "x", lx, 1, y0 + 0.01, y1 - 0.02, 0, 0.95, batten)
+    slab(m, [(x1 + 0.008, y0 - 0.01, 1.55), (lx + 0.02, y0 - 0.01, 0.95), (lx + 0.02, y1 + 0.005, 0.95), (x1 + 0.008, y1 + 0.005, 1.55)], 0.06, roof)
+    post = material("lean-to posts", "#6a5440", rough=0.9)
+    for y in (y0 + 0.17, y0 + 0.34, y1 - 0.02):
+        m.box(lx - 0.01, lx, y - 0.006, y + 0.006, 0, 0.95, post)
     hay = material("hay bales", "#c8a858", rough=1.0)
     for k in range(3):
-        m.tube_x(0.36, 0.44, -0.3 + k * 0.08, 0.17, 0.035, hay, segments=16)
+        m.box(x1 + 0.02, x1 + 0.1, y0 + 0.05 + k * 0.1, y0 + 0.14 + k * 0.1, 0, 0.32, hay, 0.008)
+        m.box(x1 + 0.02, x1 + 0.1, y0 + 0.06 + k * 0.1, y0 + 0.13 + k * 0.1, 0.32, 0.62, hay, 0.008)
+    m.box(x1 + 0.1, x1 + 0.12, y0 + 0.05, y0 + 0.14, 0, 0.3, hay, 0.006)
+    # A manure pile and a stone boat by the stable doors.
+    heap(m, -0.43, 0.3, 0.05, 0.25, "#4a3a2a", 4, "manure")
 
 
 def silo(m):
@@ -251,43 +649,149 @@ def wheat_field(m, look=0):
 
 
 def mill_building(m):
+    """A brick flour mill five storeys high under a slate gable roof: segmental arched windows with stone heads, string
+    courses, the company's name painted high on the long walls, hoist doors up the gable end under a hoist beam."""
     ground(m, "#8a847a", "mill yard paving")
     brick = material("mill brick", "#8e4a36", rough=0.9)
-    trim = material("mill stone", "#c8bca8", rough=0.8)
-    x0, x1, y0, y1 = -0.34, 0.34, -0.4, 0.4
-    top = 5 * STOREY + 0.2
+    stone = material("mill stone", "#c8bca8", rough=0.8)
+    frame = material("mill window frames", "#e4dccb", rough=0.6)
+    wood = material("hoist doors", "#4a3020", rough=0.8)
+    glass = houses.glass()
+    x0, x1, y0, y1 = -0.34, 0.34, -0.44, 0.44
+    base, top, ridge = 0.3, 5 * STOREY + 0.2, 5 * STOREY + 1.3
     m.box(x0, x1, y0, y1, 0, top, brick, 0.004)
-    windows(m, x0, x1, y0, y1, 0.1, 5, 4, 5, glass(), trim)
-    gable(m, x0, x1, y0, y1, top, top + 1.1, material("mill slate", "#4e5866", rough=0.6), brick, along_x=False, over=0.02)
-    # A sign along the roof's edge, and a hoist door up the front.
-    m.box(x0 + 0.04, x1 - 0.04, y1 + 0.004, y1 + 0.012, top - 0.6, top - 0.15, material("mill sign", "#e8e2d0", rough=0.6))
-    m.box(-0.05, 0.05, y1, y1 + 0.006, 1.4, top - 0.8, material("hoist doors", "#4a3020", rough=0.8))
+    houses.foundation(m, x0, x1, y0, y1, base, stone, out=0.006)
+    gable(m, x0, x1, y0, y1, top, ridge, material("mill slate", "#4e5866", rough=0.6), brick, along_x=False, over=0.02, trim=stone, fascia=0.06)
+    walls = (("y", y1, 1, x0, x1, 4), ("y", y0, -1, x0, x1, 4), ("x", x1, 1, y0, y1, 6), ("x", x0, -1, y0, y1, 6))
+    for s in range(5):
+        z = 0.2 + s * STOREY
+        if s:
+            # A stone string course at each floor.
+            for face, at, d, a0, a1, _ in walls:
+                houses.on_wall(m, face, at, d, a0, a1, 0, 0.006, z - 0.04, z + 0.03, stone)
+        for face, at, d, a0, a1, n in walls:
+            for k in range(n):
+                c = a0 + (k + 0.5) * (a1 - a0) / n
+                if face == "x" and s == 4:
+                    continue
+                if face == "y" and d == 1 and s == 0 and k == 3:
+                    continue
+                houses.arched_pane(m, face, at, d, c, z + 0.3, z + 0.86, 0.05, glass, frame, stone, rise=0.09, keystone=False)
+    # The name painted across the top floor of each long wall, on a faded ground.
+    paint = material("painted sign ground", "#5a3428", rough=0.95)
+    letters = material("painted letters", "#ece2c8", rough=0.9)
+    for at, d in ((x1, 1), (x0, -1)):
+        houses.on_wall(m, "x", at, d, y0 + 0.04, y1 - 0.04, 0, 0.0015, 4 * STOREY + 0.3, top - 0.12, paint)
+        houses.sign_text(m, "UNION FLOUR MILLS", "x", at, d, 0.0, 4 * STOREY + 0.72, 0.062, letters, o=0.002)
+    # Hoist doors up the middle of the gable end, a freight door below, and the hoist beam over them at the peak.
+    for s in range(1, 5):
+        z = 0.2 + s * STOREY
+        houses.on_wall(m, "y", y1, 1, -0.04, 0.04, 0, 0.006, z + 0.05, z + 0.95, stone)
+        houses.on_wall(m, "y", y1, 1, -0.033, 0.033, 0.004, 0.009, z + 0.08, z + 0.92, wood)
+        m.rod((-0.03, y1 + 0.011, z + 0.12), (0.03, y1 + 0.011, z + 0.88), 0.0025, frame)
+    houses.on_wall(m, "y", y1, 1, 0.19, 0.29, 0, 0.006, 0, 1.05, stone)
+    houses.on_wall(m, "y", y1, 1, 0.198, 0.282, 0.004, 0.009, 0.0, 1.0, wood)
+    houses.door(m, -0.2, y1, wood, stone, w=0.045, h=0.85)
+    beam = material("hoist beam", "#3e2c1e", rough=0.85)
+    zb = top + 0.62
+    m.box(-0.008, 0.008, y1 - 0.01, y1 + 0.09, zb, zb + 0.07, beam)
+    for s in (-1, 1):
+        slab(m, [(0.0, y1, zb + 0.4), (0.0, y1 + 0.1, zb + 0.4), (s * 0.04, y1 + 0.1, zb + 0.14), (s * 0.04, y1, zb + 0.14)], 0.035, material("mill slate", "#4e5866", rough=0.6))
+    iron = material("hoist tackle", "#2e2c2a", metal=0.6, rough=0.5)
+    m.upright(0.0, y1 + 0.075, zb - 0.12, zb, 0.007, 0.007, iron, segments=8)
+    m.rod((0.0, y1 + 0.075, zb - 0.12), (0.0, y1 + 0.075, 3.2), 0.0012, iron, segments=4)
+    m.box(-0.008, 0.008, y1 + 0.067, y1 + 0.083, 3.05, 3.2, iron)
+    houses.chimney(m, 0.0, -0.3, ridge - 0.4, ridge + 0.5, brick)
 
 
 def mill_silos(m):
+    """The mill's grain storage: a bank of six concrete silos with the interstice bins between, the headhouse over them
+    with its windows, a conveyor gallery along the top and a gallery bridge across to the mill's gable end."""
     ground(m, "#8a847a", "mill yard paving")
     concrete = material("silo concrete", "#c4beb2", rough=0.9)
-    for x in (-0.24, 0.0, 0.24):
-        for y in (-0.14, 0.14):
-            m.upright(x, y, 0, 6.5, 0.12, 0.12, concrete, segments=24)
-    # The headhouse across their tops, with the leg going up.
-    m.box(-0.38, 0.38, -0.08, 0.08, 6.5, 7.6, concrete, 0.004)
-    m.box(-0.03, 0.03, 0.26, 0.32, 0, 7.4, material("elevator leg", "#8a8680", metal=0.3, rough=0.6))
+    pour = material("silo pour lines", "#b2ac9f", rough=0.95)
+    frame = material("headhouse frames", "#5a5650", metal=0.3, rough=0.6)
+    glass = houses.glass()
+    xs, ys, r, top = (-0.24, 0.0, 0.24), (0.02, 0.26), 0.12, 6.5
+    silo_bank(m, xs, ys, r, top, concrete, pour)
+    # The gallery along the tops feeding each bin, and the headhouse over the near row with the leg inside it.
+    gallery(m, (-0.3, 0.14, top), (0.3, 0.14, top), 0.08, 0.42, concrete, frame, glass, along_y=False)
+    hx0, hx1, hy0, hy1, hz = -0.13, 0.13, -0.07, 0.16, top + 1.9
+    m.box(hx0, hx1, hy0, hy1, top - 0.4, hz, concrete, 0.003)
+    for s in range(2):
+        z = top + 0.25 + s * 0.85
+        for face, at, d, a0, a1, n in (("y", hy1, 1, hx0, hx1, 3), ("y", hy0, -1, hx0, hx1, 3), ("x", hx1, 1, hy0, hy1, 2), ("x", hx0, -1, hy0, hy1, 2)):
+            for k in range(n):
+                houses.pane(m, face, at, d, a0 + (k + 0.5) * (a1 - a0) / n, z, z + 0.5, 0.05, glass, frame, concrete, sash=True, bars=1)
+    houses.flat_top(m, hx0, hx1, hy0, hy1, hz, concrete, parapet=0.18)
+    m.box(-0.05, 0.05, 0.0, 0.1, hz, hz + 0.55, concrete, 0.003)
+    houses.pane(m, "x", -0.05, -1, 0.05, hz + 0.12, hz + 0.42, 0.04, glass, frame, concrete, sash=False)
+    # The gallery bridge across to the mill, held up on a steel bent.
+    steel = material("gallery steel", "#5a5650", metal=0.4, rough=0.6)
+    gz = top + 0.05
+    gallery(m, (0.18, -0.58, gz), (0.18, hy0, gz), 0.08, 0.4, material("gallery cladding", "#a8a294", metal=0.2, rough=0.7), frame, glass)
+    for x in (0.145, 0.215):
+        m.rod((x, -0.32, 0.0), (x, -0.32, gz), 0.005, steel, segments=6)
+    for z0, z1 in ((0.2, 2.2), (2.2, 4.2), (4.2, gz)):
+        m.rod((0.145, -0.32, z0), (0.215, -0.32, z1), 0.0025, steel, segments=5)
+        m.rod((0.215, -0.32, z0), (0.145, -0.32, z1), 0.0025, steel, segments=5)
+    # A steel stair up the side of the bank to the top.
+    harbour.ladder(m, -0.36, 0.14, 0.0, top, face_x=True, grab=0.3)
+    # The receiving shed at the foot, where cars and wagons tip their grain.
+    shed = material("receiving shed", "#8e4a36", rough=0.9)
+    m.box(-0.2, 0.2, 0.38, 0.47, 0, 1.0, shed, 0.003)
+    gable(m, -0.2, 0.2, 0.38, 0.47, 1.0, 1.25, material("mill slate", "#4e5866", rough=0.6), shed, along_x=True, over=0.01, thick=0.04)
+    harbour.rollup_door(m, -0.1, 0.1, 0.47, 0.0, 0.8, face=1, colour="#6a5a4a")
 
 
-def mill_yard(m):
+def mill_yard(m, team=False):
+    """The mill's loading dock under its canopy along the mill's end, a rail siding along it to a bumper, and a flour dray
+    with its team (before 1925) or a stake truck (from 1925) backed up to the dock."""
     ground(m, "#8a847a", "mill yard paving")
-    # A loading dock with sacks, and a delivery wagon.
-    dock = material("loading dock", "#9a9488", rough=0.9)
-    m.box(-0.45, 0.1, -0.45, -0.2, 0, 0.45, dock, 0.004)
-    sack = material("flour sacks", "#e8e0cc", rough=1.0)
-    for k in range(6):
-        m.box(-0.4 + k * 0.08, -0.34 + k * 0.08, -0.4, -0.3, 0.45, 0.62, sack, 0.01)
-    wagon = material("delivery wagon", "#3e5a6a", rough=0.7)
-    m.box(0.1, 0.38, 0.1, 0.3, 0.3, 1.0, wagon, 0.006)
-    for x in (0.13, 0.35):
-        for y in (0.11, 0.29):
-            m.tube_x(x - 0.012, x + 0.012, y, 0.13, 0.055, material("wagon wheel", "#3a3028", rough=0.8), segments=12)
+    dock = material("loading dock", "#8e4a36", rough=0.9)
+    edge = material("dock timbers", "#5a4a3a", rough=0.9)
+    x0, x1, dy0, dy1, dz = -0.46, 0.46, -0.5, -0.33, 0.45
+    m.box(x0, x1, dy0, dy1, 0, dz, dock, 0.003)
+    harbour.planks(m, x0, x1, dy0, dy1, dz - 0.03, dz, along_x=True, width=0.03, seed=7)
+    m.box(x0, x1, dy1, dy1 + 0.01, 0.05, dz - 0.02, edge)
+    houses.steps(m, x0 + 0.05, dy1, 0.06, dz, material("dock steps", "#9a948a", rough=0.9), n=3)
+    # The canopy over the dock on posts along its edge, braced back to them.
+    roof = material("canopy roof", "#5a5e62", metal=0.4, rough=0.5)
+    post = material("canopy posts", "#4a3a2c", rough=0.85)
+    slab(m, [(x0 - 0.02, -0.56, 1.7), (x1 + 0.02, -0.56, 1.7), (x1 + 0.02, -0.29, 1.45), (x0 - 0.02, -0.29, 1.45)], 0.05, roof)
+    m.box(x0 - 0.02, x1 + 0.02, -0.295, -0.287, 1.36, 1.5, material("canopy fascia", "#d8d0bc", rough=0.7))
+    for x in (-0.42, -0.14, 0.14, 0.42):
+        m.box(x - 0.007, x + 0.007, -0.347, -0.333, dz, 1.47, post)
+        m.rod((x, -0.34, 1.2), (x, -0.4, 1.56), 0.003, post, segments=5)
+    # Flour sacks on pallets, a hand truck and a few barrels on the dock.
+    for k, x in enumerate((-0.36, -0.24, 0.02)):
+        harbour.pallet(m, x, -0.42, dz, size=0.08, load="sacks")
+    iron = material("hand truck", "#3a3a3c", metal=0.5, rough=0.5)
+    m.rod((-0.08, -0.38, dz), (-0.09, -0.4, dz + 0.45), 0.003, iron, segments=5)
+    m.rod((-0.06, -0.38, dz), (-0.07, -0.4, dz + 0.45), 0.003, iron, segments=5)
+    for x in (0.25, 0.3):
+        harbour.drum(m, x, -0.45, dz, colour="#7a5a3a", r=0.018, h=0.3, name="flour barrel")
+    # The siding along the dock, ending at a timber bumper.
+    tie = material("tie", "#4e3626", rough=0.9)
+    rail = material("rail", "#6a6662", metal=0.9, rough=0.45)
+    ty, xb = -0.15, 0.06
+    x = -0.48
+    while x < xb - 0.02:
+        m.box(x - 0.022, x + 0.022, ty - 0.16, ty + 0.16, 0.0, 0.07, tie)
+        x += 0.11
+    m.box(-0.5, xb + 0.02, ty - 0.14, ty + 0.14, 0.0, 0.035, material("ballast", "#7a766e", rough=1.0))
+    for s in (-1, 1):
+        m.box(-0.5, xb, ty + s * 0.095 - 0.006, ty + s * 0.095 + 0.006, 0.07, 0.16, rail)
+    red = material("bumper red", "#a83226", rough=0.7)
+    for s in (-1, 1):
+        m.box(xb, xb + 0.03, ty + s * 0.095 - 0.012, ty + s * 0.095 + 0.012, 0, 0.42, edge)
+        m.rod((xb + 0.03, ty + s * 0.095, 0.05), (xb + 0.1, ty + s * 0.095, 0.0), 0.008, edge, segments=6)
+    m.box(xb - 0.004, xb + 0.03, ty - 0.13, ty + 0.13, 0.26, 0.4, red)
+    m.box(xb - 0.006, xb - 0.004, ty - 0.05, ty + 0.05, 0.28, 0.38, material("bumper white", "#ece6d8", rough=0.7))
+    if team:
+        moved(m, dray, 0.3, -0.33 + 0.18)
+    else:
+        moved(m, lambda mm: roadcars.truck(mm, 6 / 16, "stake", "early"), 0.3, -0.33 + 0.19)
 
 
 # ---- coal, iron and steel ------------------------------------------------------------------------
@@ -571,22 +1075,59 @@ def flare(m):
 # ---- ranching and meat packing ------------------------------------------------------------------
 
 def ranch_barn(m):
+    """A prairie ranch barn in weathered board and batten: a loft door under a hay hood, a big sliding door, an open
+    lean-to of hay, and an Aermotor windmill over a round stock tank."""
     ground(m, "#6a5a40", "ranch yard")
-    wood = material("ranch barn", "#8a5a3a", rough=0.9)
-    x0, x1, y0, y1 = -0.3, 0.3, -0.3, 0.16
-    m.box(x0, x1, y0, y1, 0, 1.8, wood, 0.004)
-    gable(m, x0, x1, y0, y1, 1.8, 2.9, material("ranch roof", "#5e5a56", metal=0.3, rough=0.6), wood, along_x=True, over=0.05)
-    # A lean-to off one side, hay under it, and a windmill pumping the trough.
-    slab(m, [(x1, y0, 1.6), (x1 + 0.16, y0, 1.1), (x1 + 0.16, y1, 1.1), (x1, y1, 1.6)], 0.05, material("lean-to roof", "#5e5a56", metal=0.3, rough=0.6))
+    wood = material("ranch barn", "#8a5236", rough=0.9)
+    batten = material("ranch battens", "#74442c", rough=0.9)
+    trim = material("ranch trim", "#d8d0bc", rough=0.8)
+    roof = material("ranch roof", "#5e5a56", metal=0.3, rough=0.6)
+    door = material("ranch doors", "#6a4028", rough=0.9)
+    x0, x1, y0, y1 = -0.2, 0.3, -0.3, 0.12
+    yc = (y0 + y1) / 2
+    eave, ridge = 1.8, 2.9
+    m.box(x0, x1, y0, y1, 0.0, eave, wood, 0.004)
+    m.box(x0 - 0.005, x1 + 0.005, y0 - 0.005, y1 + 0.005, 0, 0.12, material("sill stones", "#8a8478", rough=1.0))
+    gable(m, x0, x1, y0, y1, eave, ridge, roof, wood, along_x=True, over=0.04, trim=trim, fascia=0.06)
+    boards(m, x0, x1, y0, y1, 0.12, eave - 0.02, batten)
+    for at, d in ((x0, -1), (x1, 1)):
+        battens(m, "x", at, d, y0, y1, eave, lambda v: eave + (ridge - eave) * (1 - abs(v - yc) / (yc - y0)) - 0.05, batten)
+    houses.corner_boards(m, x0, x1, y0, y1, 0, eave, trim)
+    # The big sliding door on its track, and a man door beside it.
+    houses.on_wall(m, "y", y1, 1, 0.0, 0.17, 0, 0.008, 0, 1.25, door)
+    for p, q in (((0.0, 0.0), (0.17, 1.25)), ((0.17, 0.0), (0.0, 1.25))):
+        m.rod((p[0] + (0.008 if p[0] < q[0] else -0.008), y1 + 0.01, p[1] + 0.05), (q[0] + (-0.008 if p[0] < q[0] else 0.008), y1 + 0.01, q[1] - 0.05), 0.004, trim)
+    for zz in (0.0, 1.2):
+        houses.on_wall(m, "y", y1, 1, 0.0, 0.17, 0.006, 0.011, zz, zz + 0.05, trim)
+    houses.on_wall(m, "y", y1, 1, -0.06, 0.29, 0, 0.014, 1.27, 1.32, material("door track", "#3a3836", metal=0.6, rough=0.5))
+    houses.door(m, -0.1, y1, door, trim, w=0.045, h=0.9)
+    glass = houses.glass()
+    for c in (0.23,):
+        houses.pane(m, "y", y1, 1, c, 0.6, 1.05, 0.04, glass, trim, trim)
+    for c in (-0.12, 0.05, 0.2):
+        houses.pane(m, "y", y0, -1, c, 0.6, 1.05, 0.04, glass, trim, trim)
+    # The loft door up in the gable over the lean-to, under its hay hood.
+    houses.on_wall(m, "x", x0, -1, yc - 0.05, yc + 0.05, 0, 0.008, 1.85, 2.55, trim)
+    houses.on_wall(m, "x", x0, -1, yc - 0.04, yc + 0.04, 0.005, 0.011, 1.9, 2.5, door)
+    m.rod((x0 - 0.012, yc - 0.035, 1.95), (x0 - 0.012, yc + 0.035, 2.45), 0.003, trim)
+    hay_hood(m, x0 - 0.04, yc, 2.6, 0.06, 0.055, 0.36, roof, wood)
+    # The lean-to: open to the yard on posts, its roof off the gable end, hay stacked under it.
+    lx = -0.44
+    slab(m, [(x0, y0 - 0.02, 1.62), (lx - 0.02, y0 - 0.02, 1.0), (lx - 0.02, y1 + 0.03, 1.0), (x0, y1 + 0.03, 1.62)], 0.06, roof)
+    m.box(lx, x0, y0, y0 + 0.012, 0, 1.0, wood)
+    m.box(lx, lx + 0.012, y0, y0 + 0.14, 0, 1.0, wood)
+    battens(m, "y", y0, -1, lx, x0, 0, 1.0, batten)
+    post = material("lean-to posts", "#5a4434", rough=0.9)
+    for y in (y0 + 0.14, y1 + 0.02):
+        m.box(lx, lx + 0.012, y - 0.006, y + 0.006, 0, 1.02, post)
+    m.box(x0 - 0.12, x0 - 0.12 + 0.012, y1 + 0.014, y1 + 0.026, 0, 1.1, post)
     hay = material("hay", "#c8a858", rough=1.0)
-    m.box(x1 + 0.02, x1 + 0.15, y0 + 0.04, y1 - 0.04, 0, 0.7, hay, 0.02)
-    m.box(-0.08, 0.08, y1, y1 + 0.006, 0, 1.3, material("ranch doors", "#6a4028", rough=0.9))
-    mill = material("windmill", "#9a9a96", metal=0.6, rough=0.4)
-    for a in range(4):
-        ang = a * math.pi / 2 + math.pi / 4
-        m.rod((-0.36 + 0.06 * math.cos(ang), 0.36 + 0.06 * math.sin(ang), 0), (-0.36, 0.36, 4.0), 0.005, mill)
-    m.tube_x(-0.37, -0.35, 0.36, 4.1, 0.12, mill, segments=16, ring_inner=0.03)
-    m.box(-0.3, -0.14, 0.4, 0.46, 0, 0.18, material("trough", "#6a6a66", metal=0.4, rough=0.5))
+    for k in range(3):
+        m.box(lx + 0.02, x0 - 0.01, y0 + 0.02 + k * 0.11, y0 + 0.12 + k * 0.11, 0, 0.3 + 0.28 * (k < 2), hay, 0.01)
+    m.box(lx + 0.03, x0 - 0.02, y0 + 0.03, y0 + 0.22, 0.58, 0.86, hay, 0.01)
+    aermotor(m, -0.33, 0.36, 3.8)
+    stock_tank(m, -0.19, 0.38, 0.07)
+    m.rod((-0.33, 0.36, 0.3), (-0.23, 0.38, 0.32), 0.004, material("pump pipe", "#5a5a58", metal=0.6, rough=0.4))
 
 
 def corral(m, look=0):
@@ -601,16 +1142,45 @@ def corral(m, look=0):
 
 
 def packing_plant(m):
+    """A packing house of the Canada Packers kind: a five storey brick main block with big many-paned windows, its name
+    across the top, a wooden water tank on legs on the roof, and the covered cattle ramp up its side from the stockyard."""
     paved(m, -0.5, 0.5, -0.5, 0.5, "#8a867e")
     brick = material("plant brick", "#8a5240", rough=0.9)
     trim = material("plant trim", "#d0c6b2", rough=0.8)
-    x0, x1, y0, y1 = -0.44, 0.44, -0.44, 0.38
-    top = 4 * STOREY + 0.2
+    frame = material("plant window frames", "#3a3c3e", metal=0.3, rough=0.6)
+    glass = houses.glass()
+    x0, x1, y0, y1 = -0.44, 0.2, -0.44, 0.5
+    top = 5 * STOREY + 0.2
     m.box(x0, x1, y0, y1, 0, top, brick, 0.004)
-    windows(m, x0, x1, y0, y1, 0.2, 4, 5, 5, glass(), trim)
-    houses.flat_top(m, x0, x1, y0, y1, top, trim)
-    m.box(-0.12, 0.12, -0.1, 0.1, top, top + 1.0, brick, 0.004)
-    stack(m, 0.3, -0.3, top, top + 3.0, 0.045, brick, material("stack band", "#2e2624", rough=0.9))
+    houses.foundation(m, x0, x1, y0, y1, 0.3, trim, out=0.005)
+    # Brick piers between the bays, the windows between them, and a stone band at each floor.
+    walls = (("y", y0, -1, x0, x1, 4), ("x", x1, 1, y0, y1, 6), ("x", x0, -1, y0, y1, 6))
+    for face, at, d, a0, a1, n in walls:
+        for k in range(n + 1):
+            a = a0 + k * (a1 - a0) / n
+            houses.on_wall(m, face, at, d, a - 0.012, a + 0.012, 0, 0.008, 0.3, top - 0.05, brick)
+        for s in range(5):
+            z = 0.2 + s * STOREY
+            if s:
+                houses.on_wall(m, face, at, d, a0, a1, 0, 0.01, z - 0.03, z + 0.03, trim)
+            for k in range(n):
+                if face == "x" and d == 1 and s < 2 and k < 2:
+                    continue
+                houses.pane(m, face, at, d, a0 + (k + 0.5) * (a1 - a0) / n, z + 0.3, z + 0.95, 0.075, glass, frame, trim, sash=True, bars=2)
+    houses.flat_top(m, x0, x1, y0, y1, top, trim, parapet=0.3)
+    letters = material("plant letters", "#ece4cc", rough=0.8)
+    houses.sign_text(m, "PRAIRIE PACKERS", "x", x0, -1, 0.04, top - 0.25, 0.058, letters, o=0.012)
+    houses.on_wall(m, "x", x0, -1, y0 + 0.03, y1 - 0.03, 0, 0.01, top - 0.42, top - 0.08, material("sign band", "#4a2e24", rough=0.9))
+    # A penthouse over the stairs and the wooden water tank on its steel legs.
+    m.box(-0.38, -0.22, -0.36, -0.2, top, top + 0.9, brick, 0.003)
+    houses.flat_top(m, -0.38, -0.22, -0.36, -0.2, top + 0.9, trim, parapet=0.12)
+    water_tank(m, -0.1, 0.22, top, 0.07)
+    # The cattle ramp: a covered timber chute climbing from the stockyard to the killing floor on the third storey.
+    ramp(m, 0.28, 0.38, 0.46, -0.3, 0.15, 2 * STOREY + 0.3)
+    m.box(x1, 0.44, -0.44, -0.24, 0, 2 * STOREY + 1.1, brick, 0.003)
+    houses.flat_top(m, x1, 0.44, -0.44, -0.24, 2 * STOREY + 1.1, trim, parapet=0.15)
+    houses.pane(m, "x", 0.44, 1, -0.34, 1.0, 1.5, 0.06, glass, frame, trim, bars=2)
+    houses.pane(m, "y", -0.44, -1, 0.32, 2.0, 2.5, 0.06, glass, frame, trim, bars=2)
 
 
 def stockyard(m, look=0):
@@ -673,30 +1243,201 @@ def printing_works(m):
 # ---- grain elevators and ports ------------------------------------------------------------------
 
 def elevator(m):
-    """The Prairie sentinel: a tall wooden country elevator, its cupola on top, its name on the side."""
+    """The Prairie sentinel: a tall wooden country elevator in vertical siding with its name in big letters, the leg's
+    cupola on top with its windows, the driveway shed out the side where trucks tip their grain, the office by it, the
+    loading spout over the track and the conveyor across to the annex."""
     ground(m, "#7a6a50", "elevator yard")
     red = material("elevator red", "#8e2e22", rough=0.85)
+    seam = material("elevator siding", "#7a261c", rough=0.85)
     trim = material("elevator trim", "#e8e2d4", rough=0.7)
     roof = material("elevator roof", "#5a5650", metal=0.3, rough=0.6)
+    glass = houses.glass()
     x0, x1, y0, y1 = -0.2, 0.2, -0.24, 0.24
     m.box(x0, x1, y0, y1, 0, 7.0, red, 0.004)
-    m.wedge([(x0, y0, 7.0), (x1, y0, 7.0), (x1, y1, 7.0), (x0, y1, 7.0)], [(x0 + 0.08, y0 + 0.08, 7.8), (x1 - 0.08, y0 + 0.08, 7.8), (x1 - 0.08, y1 - 0.08, 7.8), (x0 + 0.08, y1 - 0.08, 7.8)], roof)
-    m.box(-0.1, 0.1, -0.1, 0.1, 7.8, 9.0, red, 0.003)
-    gable(m, -0.1, 0.1, -0.1, 0.1, 9.0, 9.5, roof, red, along_x=True, over=0.02, thick=0.05)
-    for x in (x0, x1):
-        m.box(x - 0.004, x + 0.004, y0 + 0.02, y1 - 0.02, 5.6, 6.6, trim)
-    # The driveway shed out the side where wagons tip their grain.
-    m.box(x1, 0.44, -0.12, 0.12, 0, 1.6, red, 0.003)
-    gable(m, x1, 0.44, -0.12, 0.12, 1.6, 2.1, roof, red, along_x=False, over=0.02, thick=0.05)
+    houses.foundation(m, x0, x1, y0, y1, 0.22, material("elevator footing", "#a8a296", rough=0.9), out=0.006)
+    boards(m, x0, x1, y0, y1, 0.22, 6.98, seam, gap=0.02)
+    houses.corner_boards(m, x0, x1, y0, y1, 0.22, 7.0, trim)
+    for face, at, d, a0, a1 in (("y", y1, 1, x0, x1), ("y", y0, -1, x0, x1), ("x", x1, 1, y0, y1), ("x", x0, -1, y0, y1)):
+        houses.on_wall(m, face, at, d, a0, a1, 0, 0.006, 6.9, 7.0, trim)
+    m.wedge([(x0 - 0.01, y0 - 0.01, 7.0), (x1 + 0.01, y0 - 0.01, 7.0), (x1 + 0.01, y1 + 0.01, 7.0), (x0 - 0.01, y1 + 0.01, 7.0)],
+            [(x0 + 0.08, y0 + 0.08, 7.8), (x1 - 0.08, y0 + 0.08, 7.8), (x1 - 0.08, y1 - 0.08, 7.8), (x0 + 0.08, y1 - 0.08, 7.8)], roof)
+    # The name in big letters high on both long walls, the town's number on the ends.
+    letters = material("elevator letters", "#f0ece0", rough=0.6)
+    for at, d in ((x0, -1), (x1, 1)):
+        houses.sign_text(m, "WHEAT", "x", at, d, 0.0, 6.25, 0.1, letters, o=0.006)
+        houses.sign_text(m, "POOL", "x", at, d, 0.0, 5.55, 0.1, letters, o=0.006)
+    for at, d in ((y1, 1), (y0, -1)):
+        houses.sign_text(m, "No. 2", "y", at, d, 0.0, 5.6, 0.06, letters, o=0.006)
+    # The cupola over the head of the leg: windows all round, a gabled roof with a vent, a railing round its foot.
+    cx0, cx1, cy0, cy1 = -0.1, 0.1, -0.12, 0.12
+    m.box(cx0, cx1, cy0, cy1, 7.6, 9.0, red, 0.003)
+    boards(m, cx0, cx1, cy0, cy1, 7.8, 8.98, seam, gap=0.02)
+    houses.corner_boards(m, cx0, cx1, cy0, cy1, 7.8, 9.0, trim)
+    for face, at, d, a0, a1, n in (("x", cx0, -1, cy0, cy1, 2), ("x", cx1, 1, cy0, cy1, 2), ("y", cy0, -1, cx0, cx1, 1), ("y", cy1, 1, cx0, cx1, 1)):
+        for k in range(n):
+            houses.pane(m, face, at, d, a0 + (k + 0.5) * (a1 - a0) / n, 8.3, 8.75, 0.035, glass, trim, trim)
+    gable(m, cx0, cx1, cy0, cy1, 9.0, 9.55, roof, red, along_x=False, over=0.02, thick=0.05, trim=trim, fascia=0.05)
+    houses.louvres(m, "y", cy1, 1, 0.0, 9.1, 9.35, 0.04, trim, trim)
+    rail = material("cupola rail", "#d8d2c4", rough=0.7)
+    for (ax, ay), (bx, by) in (((cx0 - 0.03, cy0 - 0.03), (cx1 + 0.03, cy0 - 0.03)), ((cx1 + 0.03, cy0 - 0.03), (cx1 + 0.03, cy1 + 0.03)),
+                               ((cx1 + 0.03, cy1 + 0.03), (cx0 - 0.03, cy1 + 0.03)), ((cx0 - 0.03, cy1 + 0.03), (cx0 - 0.03, cy0 - 0.03))):
+        m.rod((ax, ay, 8.05), (bx, by, 8.05), 0.0018, rail, segments=4)
+        m.rod((ax, ay, 7.75), (ax, ay, 8.05), 0.0018, rail, segments=4)
+    m.rod((0.0, cy1 - 0.02, 9.6), (0.0, cy1 - 0.02, 9.95), 0.0015, material("lightning rod", "#4a4a48", metal=0.8, rough=0.3))
+    harbour.ladder(m, x0 - 0.002, y0 + 0.05, 0.22, 7.0, face_x=True, grab=0.2)
+    # The driveway shed out the side, doors open at both ends for trucks to drive through and tip.
+    dx0, dy0, dy1 = -0.46, -0.13, 0.13
+    m.box(dx0, x0, dy0, dy1, 0, 1.6, red, 0.003)
+    gable(m, dx0, x0, dy0, dy1, 1.6, 2.15, roof, red, along_x=False, over=0.02, thick=0.05, trim=trim, fascia=0.05)
+    for face, at, d, a0, a1 in (("x", dx0, -1, dy0, dy1),):
+        battens(m, face, at, d, a0, a1, 0.05, 1.58, seam, gap=0.02)
+    dark = material("driveway dark", "#1e1a18", rough=0.95)
+    for at, d in ((dy1, 1), (dy0, -1)):
+        houses.on_wall(m, "y", at, d, dx0 + 0.035, x0 - 0.035, 0, 0.003, 0, 1.25, dark)
+        houses.on_wall(m, "y", at, d, dx0 + 0.025, x0 - 0.025, 0, 0.008, 1.25, 1.32, trim)
+        for a in (dx0 + 0.025, x0 - 0.035):
+            houses.on_wall(m, "y", at, d, a, a + 0.01, 0, 0.008, 0, 1.32, trim)
+        battens(m, "y", at, d, dx0, x0, 1.32, lambda a: 1.6 + 0.55 * (1 - abs(a - (dx0 + x0) / 2) / ((x0 - dx0) / 2)) - 0.06, seam, gap=0.02)
+    # The office with its stovepipe, and the spout over the track on the far side.
+    ox0, ox1, oy0, oy1 = -0.44, -0.3, -0.42, -0.28
+    m.box(ox0, ox1, oy0, oy1, 0, 0.9, red, 0.003)
+    gable(m, ox0, ox1, oy0, oy1, 0.9, 1.25, roof, red, along_x=True, over=0.015, thick=0.04, trim=trim, fascia=0.04)
+    houses.door(m, -0.4, oy1, material("office door", "#5a2a20", rough=0.8), trim, w=0.035, h=0.7)
+    houses.pane(m, "x", ox0, -1, -0.35, 0.35, 0.65, 0.04, glass, trim, trim)
+    m.upright(-0.33, -0.31, 1.0, 1.55, 0.006, 0.006, material("stovepipe", "#2a2a2a", metal=0.6, rough=0.5), segments=8)
+    spout = material("spout", "#5a5650", metal=0.4, rough=0.5)
+    m.rod((x1, 0.0, 6.0), (0.42, 0.0, 2.6), 0.012, spout, segments=10)
+    m.rod((0.42, 0.0, 2.6), (0.43, 0.0, 2.1), 0.012, spout, segments=10)
+    # The conveyor gallery off the end across to the annex.
+    gallery(m, (0.0, y1, 6.35), (0.0, 0.5, 5.95), 0.07, 0.36, red, roof, glass)
 
 
 def elevator_annex(m):
+    """A crib annex beside the elevator: a long gabled bin house in the same siding, the conveyor housing along its
+    ridge fed by the gallery from the elevator, and its own loading spout."""
     ground(m, "#7a6a50", "elevator yard")
     red = material("elevator red", "#8e2e22", rough=0.85)
+    seam = material("elevator siding", "#7a261c", rough=0.85)
+    trim = material("elevator trim", "#e8e2d4", rough=0.7)
     roof = material("elevator roof", "#5a5650", metal=0.3, rough=0.6)
-    m.box(-0.18, 0.18, -0.34, 0.34, 0, 5.0, red, 0.004)
-    gable(m, -0.18, 0.18, -0.34, 0.34, 5.0, 5.7, roof, red, along_x=False, over=0.02)
-    m.rod((-0.18, -0.2, 4.6), (-0.6, -0.2, 6.2), 0.02, material("spout", "#5a5650", metal=0.4, rough=0.5))
+    glass = houses.glass()
+    x0, x1, y0, y1, eave, ridge = -0.18, 0.18, -0.34, 0.34, 5.0, 5.7
+    m.box(x0, x1, y0, y1, 0, eave, red, 0.004)
+    houses.foundation(m, x0, x1, y0, y1, 0.22, material("elevator footing", "#a8a296", rough=0.9), out=0.006)
+    boards(m, x0, x1, y0, y1, 0.22, eave - 0.02, seam, gap=0.02)
+    for at, d in ((y0, -1), (y1, 1)):
+        battens(m, "y", at, d, x0, x1, eave, lambda a: eave + (ridge - eave) * (1 - abs(a) / x1) - 0.05, seam, gap=0.02)
+    houses.corner_boards(m, x0, x1, y0, y1, 0.22, eave, trim)
+    gable(m, x0, x1, y0, y1, eave, ridge, roof, red, along_x=False, over=0.02, trim=trim, fascia=0.06)
+    # Crib walls bulge a little at each bin: tie rods show as rows of plates down the long walls.
+    plate = material("tie plates", "#3a3634", metal=0.5, rough=0.5)
+    for at, d in ((x0, -1), (x1, 1)):
+        for k in range(1, 6):
+            y = y0 + k * (y1 - y0) / 6
+            for z in (1.2, 2.4, 3.6):
+                houses.on_wall(m, "x", at, d, y - 0.006, y + 0.006, 0, 0.007, z, z + 0.08, plate)
+    # The conveyor housing along the ridge, met by the elevator's gallery at the near end.
+    gallery(m, (0.0, y0 - 0.03, ridge - 0.25), (0.0, y1 - 0.03, ridge - 0.25), 0.07, 0.4, red, roof, glass)
+    gallery(m, (0.0, -0.5, 5.95), (0.0, y0 - 0.03, ridge - 0.25), 0.07, 0.36, red, roof, glass)
+    letters = material("elevator letters", "#f0ece0", rough=0.6)
+    for at, d in ((x0, -1), (x1, 1)):
+        houses.sign_text(m, "WHEAT POOL", "x", at, d, 0.0, 4.4, 0.06, letters, o=0.006)
+    spout = material("spout", "#5a5650", metal=0.4, rough=0.5)
+    m.rod((x1, 0.1, 4.4), (0.4, 0.1, 2.4), 0.011, spout, segments=10)
+    m.rod((0.4, 0.1, 2.4), (0.41, 0.1, 1.95), 0.011, spout, segments=10)
+    harbour.ladder(m, x0 - 0.002, y1 - 0.05, 0.22, eave, face_x=True, grab=0.2)
+
+
+
+def concrete_terminal(m):
+    """A concrete inland grain terminal of the 1990s: a tall slipform workhouse with the company's name and band near its
+    top, a bank of silos beside it with the gallery along their tops, the truck dump shed and a load-out spout."""
+    ground(m, "#8a8478", "terminal yard")
+    concrete = material("terminal concrete", "#cdc8bc", rough=0.9)
+    pour = material("terminal pour lines", "#bab4a8", rough=0.95)
+    band = material("terminal band", "#2a6a4a", rough=0.6)
+    clad = material("terminal cladding", "#e2e0da", metal=0.3, rough=0.5)
+    frame = material("terminal frames", "#4a4e52", metal=0.4, rough=0.5)
+    glass = houses.glass()
+    xs, ys, r, top = (-0.09, 0.09), (0.0, 0.18, 0.36), 0.09, 8.4
+    silo_bank(m, xs, ys, r, top, concrete, pour)
+    gallery(m, (0.0, -0.1, top), (0.0, 0.5, top), 0.08, 0.38, clad, frame, glass)
+    wx0, wx1, wy0, wy1, wz = -0.15, 0.15, -0.42, -0.09, 10.6
+    m.box(wx0, wx1, wy0, wy1, 0, wz, concrete, 0.003)
+    z = 1.0
+    while z < wz - 0.5:
+        for face, at, d, a0, a1 in (("x", wx0, -1, wy0, wy1), ("x", wx1, 1, wy0, wy1), ("y", wy0, -1, wx0, wx1)):
+            houses.on_wall(m, face, at, d, a0, a1, 0, 0.002, z, z + 0.025, pour)
+        z += 1.0
+    for face, at, d, a0, a1 in (("x", wx0, -1, wy0, wy1), ("x", wx1, 1, wy0, wy1), ("y", wy0, -1, wx0, wx1), ("y", wy1, 1, wx0, wx1)):
+        houses.on_wall(m, face, at, d, a0, a1, 0, 0.004, wz - 1.25, wz - 0.95, band)
+    # The penthouse over the head of the legs, clad in metal, with a strip of windows.
+    m.box(-0.12, 0.12, -0.39, -0.14, wz, wz + 1.0, clad, 0.003)
+    harbour.ribs_y(m, -0.12, -0.39, -0.14, wz, wz + 1.0, frame, gap=0.025, face=-1)
+    houses.flat_top(m, -0.12, 0.12, -0.39, -0.14, wz + 1.0, clad, parapet=0.1)
+    m.box(-0.122, -0.118, -0.38, -0.15, wz + 0.45, wz + 0.7, glass)
+    houses.flat_top(m, wx0, wx1, wy0, wy1, wz, concrete, parapet=0.15)
+    letters = material("terminal letters", "#2a6a4a", rough=0.6)
+    houses.sign_text(m, "PRAIRIE", "x", wx0, -1, (wy0 + wy1) / 2, wz - 1.85, 0.05, letters, o=0.003)
+    houses.sign_text(m, "GRAIN", "x", wx0, -1, (wy0 + wy1) / 2, wz - 2.4, 0.05, letters, o=0.003)
+    for z in (2.0, 4.0, 6.0, 8.0):
+        houses.pane(m, "y", wy0, -1, 0.06, z, z + 0.35, 0.03, glass, frame, concrete, sash=False)
+    # The truck dump shed off the workhouse, roll-up doors at both ends.
+    sx0, sx1, sy0, sy1 = -0.46, wx0, -0.4, -0.12
+    m.box(sx0, sx1, sy0, sy1, 0, 1.7, clad, 0.003)
+    harbour.ribs_y(m, sx0, sy0, sy1, 0, 1.7, frame, gap=0.025, face=-1)
+    gable(m, sx0, sx1, sy0, sy1, 1.7, 1.95, material("shed roof", "#5a5e62", metal=0.4, rough=0.5), clad, along_x=True, over=0.015, thick=0.04)
+    for at, d in ((sy1, 1), (sy0, -1)):
+        harbour.rollup_door(m, sx0 + 0.05, sx1 - 0.05, at, 0.0, 1.3, face=d, colour="#d8d4cc")
+    # The load-out spout over the track on the far side.
+    spout = material("spout", "#5a5650", metal=0.4, rough=0.5)
+    m.rod((wx1, -0.25, 7.0), (0.42, -0.25, 3.0), 0.013, spout, segments=10)
+    m.rod((0.42, -0.25, 3.0), (0.43, -0.25, 2.4), 0.013, spout, segments=10)
+    harbour.ladder(m, wx1 + 0.002, -0.4, 0.0, wz, face_x=True, grab=0.2)
+
+
+
+def terminal_annex(m):
+    """The terminal's annex: four corrugated steel bins with cone roofs and fans, the gallery coming off the silos on a
+    truss and dropping to them, and the scale house by the truck scale."""
+    ground(m, "#8a8478", "terminal yard")
+    steel = material("bin steel", "#c8cac6", metal=0.6, rough=0.35)
+    ring = material("bin corrugations", "#a8aaa6", metal=0.6, rough=0.4)
+    frame = material("terminal frames", "#4a4e52", metal=0.4, rough=0.5)
+    clad = material("terminal cladding", "#e2e0da", metal=0.3, rough=0.5)
+    glass = houses.glass()
+    r, h = 0.115, 4.6
+    for x, y in ((-0.13, -0.08), (0.13, -0.08), (-0.13, 0.2), (0.13, 0.2)):
+        m.upright(x, y, 0, h, r, r, steel, segments=32)
+        z = 0.12
+        while z < h - 0.05:
+            m.upright(x, y, z, z + 0.025, r * 1.008, r * 1.008, ring, segments=32)
+            z += 0.14
+        m.lathe(x, y, h, [(r * 1.02, 0), (r * 0.7, 0.4), (0.14 * r, 0.75), (0.0, 0.78)], steel, segments=32)
+        m.upright(x, y, h + 0.74, h + 0.9, 0.012, 0.012, frame, segments=10)
+        # An aeration fan on the side of each bin.
+        a = math.atan2(y - 0.06, x)
+        fx, fy = x + (r + 0.012) * math.cos(a), y + (r + 0.012) * math.sin(a)
+        m.box(fx - 0.014, fx + 0.014, fy - 0.014, fy + 0.014, 0.0, 0.35, frame, 0.004)
+    # The gallery: on from the terminal's silos at their top, down a truss to a walkway over the bins.
+    gz0, gz1 = 8.4, h + 0.9
+    gallery(m, (0.0, -0.5, gz0), (0.0, 0.06, gz1), 0.07, 0.36, clad, frame, glass)
+    for y, zt in ((-0.25, gz0 + (gz1 - gz0) * 0.25 / 0.56),):
+        for x in (-0.03, 0.03):
+            m.rod((x, y, 0.0), (x, y, zt), 0.005, frame, segments=6)
+        for z0, z1 in ((0.2, zt * 0.33), (zt * 0.33, zt * 0.66), (zt * 0.66, zt)):
+            m.rod((-0.03, y, z0), (0.03, y, z1), 0.0025, frame, segments=5)
+            m.rod((0.03, y, z0), (-0.03, y, z1), 0.0025, frame, segments=5)
+    m.box(-0.2, 0.2, 0.04, 0.08, gz1, gz1 + 0.04, frame)
+    for y in (0.04, 0.08):
+        m.rod((-0.2, y, gz1 + 0.25), (0.2, y, gz1 + 0.25), 0.0015, frame, segments=4)
+    for x, y in ((-0.13, -0.08), (0.13, -0.08), (-0.13, 0.2), (0.13, 0.2)):
+        m.rod((x * 0.4, 0.06, gz1), (x, y, h + 0.8), 0.006, frame, segments=6)
+    # The truck scale and its scale house.
+    m.box(-0.42, -0.3, -0.45, 0.4, 0.0, 0.04, material("scale deck", "#7a7670", metal=0.3, rough=0.6))
+    m.box(-0.28, -0.18, 0.34, 0.46, 0, 0.85, clad, 0.003)
+    houses.flat_top(m, -0.28, -0.18, 0.34, 0.46, 0.85, frame, parapet=0.08)
+    houses.pane(m, "x", -0.28, -1, 0.4, 0.35, 0.65, 0.06, glass, frame, frame, sash=False)
 
 
 def _wharf_deck(m, x0=-0.8, x1=0.5, y0=-0.5, y1=0.5, top=0.25, seed=1):
@@ -1023,7 +1764,7 @@ PARTS = {
     "bunkhouse": bunkhouse, "log_pile": log_pile, "camp_shed": camp_shed,
     "sawmill": sawmill, "log_deck": log_deck, "burner": burner, "lumber_stack": lumber_stack,
     "barn": barn, "silo": silo, "wheat_field": wheat_field,
-    "mill_building": mill_building, "mill_silos": mill_silos, "mill_yard": mill_yard,
+    "mill_building": mill_building, "mill_silos": mill_silos, "mill_yard": mill_yard, "mill_yard_team": lambda m: mill_yard(m, team=True),
     "headframe": headframe, "tipple": tipple, "coal_heap": coal_heap, "mine_shed": mine_shed,
     "open_pit": open_pit, "ore_crusher": ore_crusher, "ore_heap": ore_heap,
     "blast_furnace": blast_furnace, "stacks": stacks, "steel_shed": steel_shed, "slag_heap": slag_heap, "steel_yard": steel_yard,
@@ -1031,9 +1772,9 @@ PARTS = {
     "pumpjack": pumpjack, "oil_tank": oil_tank,
     "refinery_columns": refinery_columns, "refinery_tanks": refinery_tanks, "flare": flare,
     "ranch_barn": ranch_barn, "corral": corral,
-    "packing_plant": packing_plant, "stockyard": stockyard,
+    "packing_plant": packing_plant, "packing_wing": packing_wing, "stockyard": stockyard,
     "digester": digester, "paper_machine": paper_machine, "chip_pile": chip_pile, "printing_works": printing_works,
-    "elevator": elevator, "elevator_annex": elevator_annex,
+    "elevator": elevator, "elevator_annex": elevator_annex, "concrete_terminal": concrete_terminal, "terminal_annex": terminal_annex,
     "wharf": wharf, "crane": crane, "terminal_elevator": terminal_elevator, "warehouse": warehouse,
     "fish_wharf": fish_wharf, "fish_shed": fish_shed, "boat_shed": boat_shed, "cannery": cannery,
     "potash_mill": potash_mill, "tailings": tailings, "rock_dump": rock_dump, "nickel_heap": nickel_heap,

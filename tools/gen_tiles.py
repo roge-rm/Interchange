@@ -218,6 +218,8 @@ for ind in json.loads((ROOT / "packs/base/industries.json").read_text())["indust
         for key in row.split():
             if key not in PARTS:
                 PARTS.append(key)
+# Other looks of a piece by era, which the map picks by year (ChunkBaker.PART_ERAS).
+PARTS += ["mill_yard_team"]
 for k, key in enumerate(PARTS):
     for e, edge in enumerate(EDGES):
         JOBS.append(("static", ("part", k, e), lambda key=key, edge=edge: scenery(f"part_{key}_{edge}.png", base.cell), None))

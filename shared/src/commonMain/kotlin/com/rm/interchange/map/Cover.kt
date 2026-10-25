@@ -3,6 +3,7 @@ package com.rm.interchange.map
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.DrawScope
+import com.rm.interchange.sim.Calendar
 import com.rm.interchange.sim.World
 import kotlin.math.floor
 
@@ -16,7 +17,7 @@ import kotlin.math.floor
 internal class Cover(private val world: World, private val view: View, private val level: Int, private val sheets: LevelSheets) {
     private val hw = Renderer.LEVELS[level]
     private val shrink = 1 shl level
-    private val picker = ChunkBaker(world, view, level, sheets, 1, 1, shown = EMPTY_WEATHER)
+    private val picker = ChunkBaker(world, view, level, sheets, 1, 1, shown = EMPTY_WEATHER, year = Calendar.year(world.startYear, world.day))
 
     /** Each view tile's building as [ChunkBaker.building] gives it, worked out the first time a frame asks. */
     private val buildings = HashMap<Int, Long>()

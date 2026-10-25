@@ -74,6 +74,8 @@ internal class ChunkBaker(
     private val pixels: IntArray = IntArray(width * height),
     /** The snow, ice and mud to show. */
     private val shown: WeatherCopy,
+    /** The game's year, for industry pieces drawn another way before a year ([PART_ERAS]). */
+    private val year: Int = Int.MAX_VALUE,
 ) {
     private val hw = Renderer.LEVELS[level]
     private val hh = hw / 2
@@ -1186,7 +1188,10 @@ internal class ChunkBaker(
 
     /** An industry piece's place in [Atlas.PART_KEYS], or -1 for one the game has no drawing of. */
     private val partArts = HashMap<String, Int>()
-    private fun partArt(key: String) = partArts.getOrPut(key) { Atlas.PART_KEYS.indexOf(key) }
+    private fun partArt(key: String) = partArts.getOrPut(key) {
+        val before = PART_ERAS.firstOrNull { it.first == key && year < it.second }
+        Atlas.PART_KEYS.indexOf(before?.third ?: key)
+    }
 
     private fun viewEdge(edge: Int): Int = when (view.turn) {
         0 -> edge
@@ -1261,6 +1266,15 @@ internal class ChunkBaker(
 
         /** The world edge an industry's pieces face, by how its layout is turned. */
         private val INDUSTRY_FACING = intArrayOf(Track.XP, Track.YP, Track.XM, Track.YM)
+
+        /** Industry pieces drawn another way before a year: the piece, the year its own drawing starts, and the drawing before it. */
+        private val PART_ERAS = listOf(Triple("mill_yard", 1925, "mill_yard_team"))
+
+        /** Which of [PART_ERAS]' years have come by [year], as bits, so chunks bake again as each one comes. */
+        fun partEras(year: Int): Int = PART_ERAS.foldIndexed(0) { i, bits, e -> if (year >= e.second) bits or (1 shl i) else bits }
+
+        /** How many values [partEras] can take. */
+        val PART_ERA_COUNT = 1 shl PART_ERAS.size
 
         /** Overlays, as bits. */
         const val GRID = 1

@@ -118,7 +118,7 @@
       "from": 1870,
       "until": 2100,
       "regions": { "prairies": 3, "mixed": 3, "maritimes": 1, "rockies": 1, "north": 0, "shield": 1 },
-      "layout": ["packing_plant packing_plant", "stockyard stockyard"],
+      "layout": ["packing_plant packing_wing", "stockyard stockyard"],
       "accepts": ["livestock"],
       "produces": { "food": 0 }
     },
@@ -146,7 +146,7 @@
       "id": "grain_elevator",
       "name": { "en": "Grain Elevator", "fr": "Silo-élévateur" },
       "from": 1881,
-      "until": 2100,
+      "until": 1990,
       "regions": { "prairies": 6, "mixed": 2, "maritimes": 0, "shield": 0, "rockies": 0, "north": 0 },
       "layout": ["elevator elevator_annex"],
       "accepts": ["grain"],
@@ -233,6 +233,16 @@
       "regions": { "north": 5, "prairies": 3, "mixed": 0, "maritimes": 0, "shield": 0, "rockies": 0 },
       "layout": ["sand_pit sand_pit upgrader", "sand_pit sand_pit upgrader", "tailings_pond tailings_pond refinery_tanks"],
       "produces": { "oil": 160 }
+    },
+    {
+      "id": "grain_terminal",
+      "name": { "en": "Inland Grain Terminal", "fr": "Terminal céréalier intérieur" },
+      "from": 1990,
+      "until": 2100,
+      "regions": { "prairies": 6, "mixed": 2, "maritimes": 0, "shield": 0, "rockies": 0, "north": 0 },
+      "layout": ["concrete_terminal terminal_annex"],
+      "accepts": ["grain"],
+      "produces": { "grain": 0 }
     }
   ]
 }
