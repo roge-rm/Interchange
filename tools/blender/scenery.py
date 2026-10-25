@@ -170,15 +170,16 @@ def station(m, along_u):
         e0, e1 = sorted((side * 0.23, side * 0.255))
         b(e0, e1, -0.5, 0.5, 0.42, 0.44, edge)
     # A canopy on cast iron posts over the far platform (the -x side), with benches and a lamp.
+    # Underside at 2.1, 1.58 drawn at BUILDING_RISE, just over the tallest coach and caboose (1.56).
     for y in (-0.33, 0.0, 0.33):
-        b(-0.4, -0.385, y - 0.008, y + 0.008, 0.42, 2.7, iron)
-    b(-0.5, -0.2, -0.48, 0.48, 2.7, 2.78, timber, 0.003)
-    b(-0.52, -0.18, -0.49, 0.49, 2.78, 2.95, roof, 0.006)
+        b(-0.4, -0.385, y - 0.008, y + 0.008, 0.42, 2.1, iron)
+    b(-0.5, -0.2, -0.48, 0.48, 2.1, 2.16, timber, 0.003)
+    b(-0.52, -0.18, -0.49, 0.49, 2.16, 2.32, roof, 0.006)
     for y in (-0.18, 0.18):
         b(-0.47, -0.43, y - 0.06, y + 0.06, 0.42, 0.62, timber, 0.003)
         b(-0.48, -0.475, y - 0.06, y + 0.06, 0.62, 0.85, timber)
-    b(0.42, 0.432, 0.38, 0.392, 0.42, 2.2, iron)
-    b(0.405, 0.447, 0.365, 0.407, 2.2, 2.4, material("lamp glass", "#f4e8b0", rough=0.2), 0.002)
+    b(0.42, 0.432, 0.38, 0.392, 0.42, 1.7, iron)
+    b(0.405, 0.447, 0.365, 0.407, 1.7, 1.85, material("lamp glass", "#f4e8b0", rough=0.2), 0.002)
 
 
 def depot(m, edge):
