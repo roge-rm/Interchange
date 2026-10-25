@@ -224,6 +224,8 @@ class Roster(
                     if (at == null || specs[at].def.kind != VehicleKind.TENDER) { problems += "${s.key}: tender $t isn't a tender in these packs"; -1 } else at
                 } ?: -1
                 val sprite = s.sprite!!
+                if (d.plow == "oneway" && d.kind != VehicleKind.ROAD) problems += "${s.key}: only road vehicles have one-way plows"
+                if (d.plow != null && d.kind != VehicleKind.WAGON && d.kind != VehicleKind.ROAD) problems += "${s.key}: only wagons and road vehicles are plows"
                 Engine(
                     id = i, key = s.key, kind = d.kind!!, names = d.names!!, plurals = d.plurals ?: emptyMap(), types = d.types ?: emptyMap(),
                     from = d.from!!, until = d.until!!, speed = d.speed ?: 0, power = d.power ?: 0, weight = d.weight!!,

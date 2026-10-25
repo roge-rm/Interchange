@@ -142,6 +142,12 @@ class PackTest {
         )))
         val q = assertFailsWith<BadPack> { Roster.build(listOf(Packs.BASE, wrong)) }.problems
         assertEquals(listOf("x:b replaces base:nothing, which isn't there", "x:a: tender base:hopper isn't a tender in these packs"), q)
+        // A replacement gets the kind of what it replaces, so a one-way plow on a wagon is caught when the roster is built.
+        val plow = Packs.unzip(zip(mapOf(
+            "manifest.json" to manifest,
+            "vehicles.json" to """{ "vehicles": [ { "id": "c", "replaces": "base:caboose", "plow": "oneway" } ] }""",
+        )))
+        assertEquals(listOf("base:caboose: only road vehicles have one-way plows"), assertFailsWith<BadPack> { Roster.build(listOf(Packs.BASE, plow)) }.problems)
         assertEquals(listOf("prairie needs base before it"), assertFailsWith<BadPack> { Roster.build(listOf(thirdParty())) }.problems.take(1))
     }
 
