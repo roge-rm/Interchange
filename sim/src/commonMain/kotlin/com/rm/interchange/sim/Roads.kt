@@ -147,6 +147,7 @@ internal fun World.buildRoad(company: Company, c: Command.Road) {
         }
         if (isWater(x, y) && !iceRoadFits(i)) continue
         if (house[i].toInt() != 0 || industryOf[i].toInt() != 0 || stationTiles.containsKey(i) || depotTiles.containsKey(i) || deck.containsKey(i) || spanHeads.containsKey(i)) continue
+        if (othersBuilding(company.id, i)) continue
         val joined = (has and 15) or bits
         if (!roadJoinsLevel(x, y, joined)) continue
         val t = track[i].toInt()
@@ -163,6 +164,7 @@ internal fun World.buildRoad(company: Company, c: Command.Road) {
         if (company.money < cost) return
         spend(company, Books.CONSTRUCTION, cost)
         fellTrees(company, i)
+        clearOwnBuilding(company.id, i)
         road[i] = (joined or (if (surface >= Surface.PAVED) PAVED else 0)).toByte()
         roadKind[i] = (roadKindOf(surface, oneWayOf(roadKind[i].toInt())) or (roadKind[i].toInt() and TRAM)).toByte()
         if (has == 0) roadOwner[i] = company.id.toByte()
@@ -237,6 +239,7 @@ internal fun World.buildGarage(company: Company, c: Command.Garage) {
     if (!inside(c.x, c.y) || !isFlat(c.x, c.y) || isWater(c.x, c.y) || c.edge !in 0..3) return
     val i = index(c.x, c.y)
     if (track[i].toInt() != 0 || road[i].toInt() != 0 || stationTiles.containsKey(i) || depotTiles.containsKey(i) || house[i].toInt() != 0 || industryOf[i].toInt() != 0) return
+    if (othersBuilding(company.id, i)) return
     val nx = c.x + Track.dx(c.edge)
     val ny = c.y + Track.dy(c.edge)
     if (!inside(nx, ny)) return
@@ -246,6 +249,7 @@ internal fun World.buildGarage(company: Company, c: Command.Garage) {
     if (road[n].toInt() == 0 || !roadFits(nx, ny, joined) || track[n].toInt() != 0 || roadStops.containsKey(n) || depotTiles.containsKey(n)) return
     if (company.money < price(Prices.DEPOT) + treeCost(i)) return
     spend(company, Books.CONSTRUCTION, price(Prices.DEPOT) + fellTrees(company, i))
+    clearOwnBuilding(company.id, i)
     val d = Depot(depots.size, company.id, i, c.edge, Depots.ROAD)
     depots += d
     depotTiles[i] = d.id
@@ -344,7 +348,7 @@ internal fun World.saltDepot(company: Company, c: Command.SaltDepot) {
         touched(c.x, c.y)
         return
     }
-    if (!isFlat(c.x, c.y) || isWater(c.x, c.y) || track[i].toInt() != 0 || road[i].toInt() != 0 || house[i].toInt() != 0 || industryOf[i].toInt() != 0 || depotTiles.containsKey(i)) return
+    if (!isFlat(c.x, c.y) || isWater(c.x, c.y) || track[i].toInt() != 0 || road[i].toInt() != 0 || house[i].toInt() != 0 || industryOf[i].toInt() != 0 || depotTiles.containsKey(i) || stationBuildings.containsKey(i)) return
     val byRoad = intArrayOf(Track.XM, Track.XP, Track.YM, Track.YP).any { e ->
         val nx = c.x + Track.dx(e)
         val ny = c.y + Track.dy(e)

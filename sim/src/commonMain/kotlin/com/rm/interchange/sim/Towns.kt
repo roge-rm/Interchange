@@ -313,7 +313,7 @@ private fun onLot(t: Town, x: Int, y: Int) = (x - t.x).mod(t.grid) != 0 && (y - 
 /** Free for a town to build on: dry, unowned, with nothing on it. */
 private fun World.freeLand(x: Int, y: Int): Boolean {
     val i = index(x, y)
-    return !isWater(x, y) && owner[i].toInt() == -1 && track[i].toInt() == 0 && !townBuilt(i)
+    return !isWater(x, y) && owner[i].toInt() == -1 && track[i].toInt() == 0 && !townBuilt(i) && !stationBuildings.containsKey(i)
 }
 
 /** A road from ([x], [y]) across [edge] onto the free tile there, if both ends take it. */

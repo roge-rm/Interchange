@@ -171,6 +171,8 @@ class World(settings: NewGame, val roster: Roster = Roster.BASE, generate: Boole
     /** Platform tiles to their station, depot tiles to their depot. */
     val stationTiles = HashMap<Int, Int>()
     val depotTiles = HashMap<Int, Int>()
+    /** Station building tiles to their station, from each [Station.building]; rebuilt on load. */
+    val stationBuildings = HashMap<Int, Int>()
 
     /** Signals by [pieceKey], packed by [Signals.pack]. */
     val signals = HashMap<Int, Int>()
@@ -492,6 +494,7 @@ class World(settings: NewGame, val roster: Roster = Roster.BASE, generate: Boole
         for (k in signals.keys.sorted()) mix(k.toLong() * 31 + signals.getValue(k))
         for (k in stationTiles.keys.sorted()) mix(k.toLong() * 31 + stationTiles.getValue(k))
         for (k in depotTiles.keys.sorted()) mix(k.toLong() * 31 + depotTiles.getValue(k))
+        for (s in stations) if (s != null) { mix(s.building.toLong()); mix(s.buildingYear.toLong()); mix(s.buildingFacing.toLong()) }
         for (k in reserved.keys.sorted()) mix(k.toLong() * 31 + reserved.getValue(k))
         for (k in closed.keys.sorted()) mix(k.toLong() * 31 + closed.getValue(k))
         for (k in kinks.keys.sorted()) mix(k.toLong() * 31 + kinks.getValue(k))

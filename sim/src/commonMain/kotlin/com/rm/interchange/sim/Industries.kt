@@ -224,7 +224,7 @@ internal fun World.industryFits(kind: IndustryKind, x: Int, y: Int, w: Int, h: I
     var suits = 0
     for (ty in y until y + h) for (tx in x until x + w) {
         val i = index(tx, ty)
-        if (isWater(tx, ty) || steep(tx, ty) || track[i].toInt() != 0 || townBuilt(i) || industryOf[i].toInt() != 0 || owner[i].toInt() != -1 || deck.containsKey(i)) return false
+        if (isWater(tx, ty) || steep(tx, ty) || track[i].toInt() != 0 || townBuilt(i) || industryOf[i].toInt() != 0 || owner[i].toInt() != -1 || deck.containsKey(i) || stationBuildings.containsKey(i)) return false
         // Off the beach, unless it's meant to be by the water.
         if (!kind.water && minOf(minOf(heightAt(tx, ty), heightAt(tx + 1, ty)), minOf(heightAt(tx + 1, ty + 1), heightAt(tx, ty + 1))) == 0) return false
         if (kind.ground.isEmpty() || Ground.NAMES[ground[i].toInt()].lowercase() in kind.ground) suits++

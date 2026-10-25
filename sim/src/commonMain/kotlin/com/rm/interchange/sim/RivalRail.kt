@@ -44,7 +44,7 @@ private fun World.railFree(i: Int): Boolean {
     val y = i / width
     return !isWater(x, y) && track[i].toInt() == 0 && road[i].toInt() == 0 && house[i].toInt() == 0 && industryOf[i].toInt() == 0 &&
         !stationTiles.containsKey(i) && !depotTiles.containsKey(i) && !roadStops.containsKey(i) && !spanHeads.containsKey(i) &&
-        !deck.containsKey(i) && !canals.contains(i) && !airportTiles.containsKey(i) && !saltDepots.contains(i)
+        !deck.containsKey(i) && !canals.contains(i) && !airportTiles.containsKey(i) && !saltDepots.contains(i) && !stationBuildings.containsKey(i)
 }
 
 /** Whether tile [i] holds a town building [c] may pull down for its line, with nothing else there. */

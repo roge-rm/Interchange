@@ -485,7 +485,8 @@ internal fun World.snowWorks(company: Company, c: Command.SnowWorks) {
         weather.snow[i] = 0
     } else {
         if (fences.remove(i)) { fenceCoverCache = null; touched(c.x, c.y); return }
-        if (track[i].toInt() != 0 || isWater(c.x, c.y) || house[i].toInt() != 0 || industryOf[i].toInt() != 0 || road[i].toInt() != 0) return
+        if (track[i].toInt() != 0 || isWater(c.x, c.y) || house[i].toInt() != 0 || industryOf[i].toInt() != 0 || road[i].toInt() != 0 ||
+            owner[i].toInt() != -1 || stationBuildings.containsKey(i)) return
         if (company.money < price(FENCE_COST)) return
         spend(company, Books.CONSTRUCTION, price(FENCE_COST))
         fences += i

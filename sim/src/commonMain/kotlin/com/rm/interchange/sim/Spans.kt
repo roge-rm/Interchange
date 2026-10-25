@@ -96,7 +96,8 @@ private fun World.headFree(company: Company, x: Int, y: Int, axis: Int): Boolean
     val i = index(x, y)
     val t = track[i].toInt()
     if (t != 0 && (t != axis || owner[i].toInt() != company.id)) return false
-    return !stationTiles.containsKey(i) && !depotTiles.containsKey(i) && !townBuilt(i) && industryOf[i].toInt() == 0 && !spanHeads.containsKey(i) && !deck.containsKey(i)
+    return !stationTiles.containsKey(i) && !depotTiles.containsKey(i) && !townBuilt(i) && industryOf[i].toInt() == 0 && !spanHeads.containsKey(i) && !deck.containsKey(i) &&
+        !othersBuilding(company.id, i)
 }
 
 /** What building [c] would cost, or -1 if it can't be built. */
@@ -132,7 +133,8 @@ private fun World.bridgeSurvey(company: Company, c: Command.Bridge): Long {
         // Over the land, nowhere above the deck, and nothing in the way.
         if (maxOf(maxOf(heightAt(x, y), heightAt(x + 1, y)), maxOf(heightAt(x + 1, y + 1), heightAt(x, y + 1))) > h) return -Refusal.HILL.toLong()
         lowest = minOf(lowest, minOf(minOf(heightAt(x, y), heightAt(x + 1, y)), minOf(heightAt(x + 1, y + 1), heightAt(x, y + 1))))
-        if (deck.containsKey(i) || spanHeads.containsKey(i) || stationTiles.containsKey(i) || depotTiles.containsKey(i) || house[i].toInt() != 0 || industryOf[i].toInt() != 0) return -Refusal.IN_THE_WAY.toLong()
+        if (deck.containsKey(i) || spanHeads.containsKey(i) || stationTiles.containsKey(i) || depotTiles.containsKey(i) || house[i].toInt() != 0 || industryOf[i].toInt() != 0 ||
+            stationBuildings.containsKey(i)) return -Refusal.IN_THE_WAY.toLong()
         cost += price(Spans.COST[c.style])
     }
     if (lowest >= h) return -Refusal.NOTHING_TO_SPAN.toLong()
@@ -216,6 +218,7 @@ private fun World.open(company: Company, s: Span) {
     for ((x, y) in listOf(s.x0 to s.y0, s.x1 to s.y1)) {
         val i = index(x, y)
         fellTrees(company, i)
+        clearOwnBuilding(company.id, i)
         track[i] = s.axis.toByte()
         owner[i] = company.id.toByte()
         spanHeads[i] = s.id

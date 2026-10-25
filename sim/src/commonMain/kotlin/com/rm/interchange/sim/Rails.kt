@@ -131,7 +131,8 @@ fun World.planRail(c: Command.Rail): BooleanArray? {
         val has = trackOf(i)
         // Town roads and buildings stay put; level crossings come with roads of the player's own.
         // Across a road only on a level crossing.
-        val special = stationTiles.containsKey(i) || depotTiles.containsKey(i) || (townBuilt(i) && !(road[i].toInt() != 0 && crossable(i, piece))) || spanHeads.containsKey(i)
+        val special = stationTiles.containsKey(i) || depotTiles.containsKey(i) || (townBuilt(i) && !(road[i].toInt() != 0 && crossable(i, piece))) || spanHeads.containsKey(i) ||
+            othersBuilding(c.company, i)
         val ok = !special && if (c.remove) {
             has and piece != 0 && owner[i].toInt() == c.company
         } else {
@@ -152,6 +153,7 @@ internal fun World.buildRail(company: Company, c: Command.Rail) {
         val has = track[i].toInt()
         // Platforms and depots are left for the Clear tool.
         if (stationTiles.containsKey(i) || depotTiles.containsKey(i) || (townBuilt(i) && !(road[i].toInt() != 0 && crossable(i, piece) && !c.remove)) || spanHeads.containsKey(i)) continue
+        if (othersBuilding(company.id, i)) continue
         if (c.remove) {
             if (has and piece == 0 || owner[i].toInt() != company.id || trainOnTile(i)) continue
             if (company.money < price(Prices.TRACK_REMOVE)) return
@@ -167,6 +169,7 @@ internal fun World.buildRail(company: Company, c: Command.Rail) {
             if (company.money < cost) return
             spend(company, Books.CONSTRUCTION, cost)
             fellTrees(company, i)
+            clearOwnBuilding(company.id, i)
             track[i] = (has or piece).toByte()
             owner[i] = company.id.toByte()
             condition[i] = -1

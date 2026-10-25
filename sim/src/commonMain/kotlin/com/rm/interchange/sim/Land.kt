@@ -137,7 +137,7 @@ internal fun World.terraform(company: Company, cx: Int, cy: Int, up: Boolean) {
     for (c in changed.keys) {
         val x = c % (width + 1)
         val y = c / (width + 1)
-        for (ty in y - 1..y) for (tx in x - 1..x) if (inside(tx, ty) && (track[index(tx, ty)].toInt() != 0 || townBuilt(index(tx, ty)))) return
+        for (ty in y - 1..y) for (tx in x - 1..x) if (inside(tx, ty) && (track[index(tx, ty)].toInt() != 0 || townBuilt(index(tx, ty)) || stationBuildings.containsKey(index(tx, ty)))) return
     }
     spend(company, Books.CONSTRUCTION, cost)
     for ((c, h) in changed) {

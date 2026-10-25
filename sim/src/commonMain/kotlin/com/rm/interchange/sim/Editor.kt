@@ -73,7 +73,7 @@ internal fun World.area(x0: Int, y0: Int, x1: Int, y1: Int): IntArray? {
 /** Whether anything stands on tile [i] that the land can't move under: track, roads, buildings, industries, anything a company owns. */
 private fun World.built(i: Int): Boolean =
     track[i].toInt() != 0 || townBuilt(i) || owner[i].toInt() != -1 || roadOwner[i].toInt() != -1 ||
-        deck.containsKey(i) || spanHeads.containsKey(i) || i in canals
+        deck.containsKey(i) || spanHeads.containsKey(i) || i in canals || stationBuildings.containsKey(i)
 
 /** The tiles a ship's on, out of its shipyard, and those round them, as a ship can be partway onto the next. */
 private fun World.shipsNear(): Set<Int> {

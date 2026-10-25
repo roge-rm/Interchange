@@ -8,8 +8,9 @@ package com.rm.interchange.sim
  * everyone else's. Industries stay put.
  */
 
-/** Whether [company] has something on tile [i]: what it built there, or its road stop, garage or buoy. A buoy keeps its owner on the station. */
+/** Whether [company] has something on tile [i]: what it built there, or its road stop, garage, buoy or station building. A buoy keeps its owner on the station. */
 fun World.owns(company: Int, i: Int): Boolean = owner[i].toInt() == company ||
+    stationBuildingAt(i)?.owner == company ||
     roadStops[i]?.let { stations.getOrNull(it)?.owner == company } == true ||
     depotTiles[i]?.let { depots.getOrNull(it)?.owner == company } == true ||
     buoys[i]?.let { stations.getOrNull(it)?.owner == company } == true
@@ -159,6 +160,8 @@ private fun World.saleOf(company: Int, i: Int, spansGone: MutableSet<Int>, airpo
     airportTiles[i]?.let { if (it in airportsGone) return Sale(cleared = true) }
     if (!owns(company, i) || trainOnTile(i)) return Sale()
     depotAt(i)?.let { d -> if (trains.any { it != null && it.depot == d.id && it.inDepot }) return Sale() }
+    // The owner's station building comes down for nothing and leaves any track alone.
+    if (stationBuildings.containsKey(i)) return Sale(cleared = true)
     if (roadStops.containsKey(i)) {
         if (roadVehicleOn(i)) return Sale()
         return Sale(back = scrapBack(Prices.ROAD_STOP), cleared = true, stopGone = true)

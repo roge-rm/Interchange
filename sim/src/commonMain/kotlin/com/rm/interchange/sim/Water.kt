@@ -188,7 +188,8 @@ private fun World.clearLand(i: Int): Boolean {
     val y = i / width
     return !isWater(x, y) && track[i].toInt() == 0 && road[i].toInt() == 0 && house[i].toInt() == 0 && industryOf[i].toInt() == 0 &&
         !stationTiles.containsKey(i) && !depotTiles.containsKey(i) && !canals.contains(i) && !locks.containsKey(i) && !docks.containsKey(i) &&
-        !airportTiles.containsKey(i) && !saltDepots.contains(i) && !deck.containsKey(i) && !spanHeads.containsKey(i)
+        !airportTiles.containsKey(i) && !saltDepots.contains(i) && !deck.containsKey(i) && !spanHeads.containsKey(i) &&
+        !stationBuildings.containsKey(i)
 }
 
 /** Digs a canal along [c]'s line on flat land, or fills in the company's own. */

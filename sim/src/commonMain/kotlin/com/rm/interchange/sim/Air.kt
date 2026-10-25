@@ -244,7 +244,8 @@ private fun World.buildable(i: Int): Boolean {
     val y = i / width
     return !isWater(x, y) && track[i].toInt() == 0 && road[i].toInt() == 0 && house[i].toInt() == 0 && industryOf[i].toInt() == 0 &&
         !stationTiles.containsKey(i) && !depotTiles.containsKey(i) && !canals.contains(i) && !locks.containsKey(i) && !docks.containsKey(i) &&
-        !airportTiles.containsKey(i) && !saltDepots.contains(i) && !deck.containsKey(i) && !spanHeads.containsKey(i)
+        !airportTiles.containsKey(i) && !saltDepots.contains(i) && !deck.containsKey(i) && !spanHeads.containsKey(i) &&
+        !stationBuildings.containsKey(i)
 }
 
 /** Whether an aircraft is at [a] or based there, so the airport stays. */

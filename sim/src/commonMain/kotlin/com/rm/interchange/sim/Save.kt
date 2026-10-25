@@ -16,7 +16,7 @@ package com.rm.interchange.sim
  */
 object Save {
     private val MAGIC = "ICHG".encodeToByteArray()
-    const val VERSION = 46
+    const val VERSION = 47
 
     /** A vehicle's [built] day as saved by [version]: work days from 36, calendar days before. */
     private fun World.builtOut(built: Int, version: Int) = if (version >= 36) built else built / settings.dayLength
@@ -62,6 +62,7 @@ object Save {
                 if (s == null) continue
                 w.int(s.owner); w.string(s.name); w.int(s.signX); w.int(s.signY); w.bool(s.waypoint); w.ints(s.tiles.toIntArray()); w.ints(s.stops.toIntArray())
                 w.ints(s.docks.toIntArray()); w.ints(s.aero.toIntArray())
+                if (version >= 47) { w.int(s.building); w.int(s.buildingYear); w.int(s.buildingFacing) }
                 writeCargo(w, s.cargo)
                 w.ints(s.rating); w.uvar(s.lastCall.size.toLong()); for (v in s.lastCall) w.long(v); w.ints(s.lastSpeed)
             }
@@ -317,6 +318,11 @@ object Save {
                 for (tile in r.ints()) { s.tiles += tile; stationTiles[tile] = id }
                 if (version >= 16) for (tile in r.ints()) { s.stops += tile; roadStops[tile] = id }
                 if (version >= 17) { s.docks += r.ints().toList(); s.aero += r.ints().toList() }
+                // Station buildings from version 47; older stations get one when next extended.
+                if (version >= 47) {
+                    s.building = r.int(); s.buildingYear = r.int(); s.buildingFacing = r.int() and 3
+                    if (s.building !in 0 until width * height) { s.building = -1; s.buildingYear = 0; s.buildingFacing = 0 } else stationBuildings[s.building] = id
+                }
                 when {
                     version >= 5 -> readCargo(r, s.cargo, version)
                     // Before journeys, what waited could go anywhere.

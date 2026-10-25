@@ -27,6 +27,10 @@ class Station(val id: Int, var owner: Int, var name: String, val signX: Int, val
     val rating = IntArray(Cargo.COUNT) { START_RATING }
     val lastCall = LongArray(Cargo.COUNT) { -1 }
     val lastSpeed = IntArray(Cargo.COUNT)
+    /** Its station building's tile, or -1; the year it went up, for its style; the edge of its tile that faces the platform. */
+    var building = -1
+    var buildingYear = 0
+    var buildingFacing = 0
 }
 
 /** Every tile the station has, for its catchment. */
@@ -121,7 +125,7 @@ internal fun World.buildStation(company: Company, c: Command.Station) {
     for (y in ys) for (x in xs) {
         if (!inside(x, y) || isWater(x, y)) return
         val i = index(x, y)
-        if (stationTiles.containsKey(i) || depotTiles.containsKey(i) || townBuilt(i)) return
+        if (stationTiles.containsKey(i) || depotTiles.containsKey(i) || townBuilt(i) || othersBuilding(company.id, i)) return
         val t = trackAt(x, y)
         if (t != 0 && (t != c.axis || owner[i].toInt() != company.id)) return
         if (signals.containsKey(pieceKey(i, c.axis))) return
@@ -148,6 +152,7 @@ internal fun World.buildStation(company: Company, c: Command.Station) {
     spend(company, Books.CONSTRUCTION, cost)
     for (i in tiles) {
         fellTrees(company, i)
+        clearOwnBuilding(company.id, i)
         // Any track already there must run the same way, checked above, so the platform's track joins it.
         track[i] = c.axis.toByte()
         owner[i] = company.id.toByte()
@@ -155,7 +160,112 @@ internal fun World.buildStation(company: Company, c: Command.Station) {
         s.tiles += i
         touched(i % width, i / width)
     }
+    placeStationBuilding(s, c.axis)
     networkChanged()
+}
+
+/** The station whose building stands on tile [i], or null. */
+fun World.stationBuildingAt(i: Int): Station? = stationBuildings[i]?.let { stations.getOrNull(it) }
+
+/** Whether another company's station building stands on tile [i], which keeps [company] off it. */
+internal fun World.othersBuilding(company: Int, i: Int): Boolean = stationBuildingAt(i)?.let { it.owner != company } == true
+
+/** Takes [company]'s own station building off tile [i], if one stands there, so its track or road can go on. */
+internal fun World.clearOwnBuilding(company: Int, i: Int) {
+    stationBuildingAt(i)?.takeIf { it.owner == company }?.let { dropStationBuilding(it) }
+}
+
+/** Takes station [s]'s building down, if it has one. */
+internal fun World.dropStationBuilding(s: Station) {
+    val i = s.building
+    if (i < 0) return
+    stationBuildings.remove(i)
+    s.building = -1
+    s.buildingYear = 0
+    s.buildingFacing = 0
+    touched(i % width, i / width)
+}
+
+/** Whether station [s]'s building, if it has one, still faces a platform of its own. */
+private fun World.facesPlatform(s: Station): Boolean {
+    val b = s.building
+    if (b < 0) return true
+    val x = b % width + Track.dx(s.buildingFacing)
+    val y = b / width + Track.dy(s.buildingFacing)
+    return inside(x, y) && stationTiles[index(x, y)] == s.id
+}
+
+/** The style of a station building put up in [year]: 0 wooden depot, 1 standard plan, 2 brick and stone, 3 modern flat roof, 4 glass. */
+fun stationEra(year: Int): Int = when {
+    year < 1885 -> 0
+    year < 1915 -> 1
+    year < 1955 -> 2
+    year < 1990 -> 3
+    else -> 4
+}
+
+/**
+ * Puts up station [s]'s building, if it has none, on a free tile just outside
+ * its platforms' bounding box: the middle along [axis] first, then a step
+ * either way, minus first, and so on. At each step the side with fewer track
+ * tiles within 2 tiles goes first, the minus side on a tie. Free, from the
+ * world's state alone; no fitting tile leaves it without one.
+ */
+internal fun World.placeStationBuilding(s: Station, axis: Int) {
+    if (s.waypoint || s.building >= 0 || s.tiles.isEmpty()) return
+    var x0 = width; var y0 = height; var x1 = -1; var y1 = -1
+    for (t in s.tiles) {
+        val x = t % width
+        val y = t / width
+        x0 = minOf(x0, x); y0 = minOf(y0, y); x1 = maxOf(x1, x); y1 = maxOf(y1, y)
+    }
+    val alongX = axis == Track.X
+    val lo = if (alongX) x0 else y0
+    val hi = if (alongX) x1 else y1
+    val mid = (lo + hi) / 2
+    for (k in 0..2 * (hi - lo)) {
+        val a = if (k % 2 == 1) mid - (k + 1) / 2 else mid + k / 2
+        if (a !in lo..hi) continue
+        // The tile outside the box on the minus side and on the plus side, each with the platform tile it backs onto and the edge facing it.
+        val minus = if (alongX) intArrayOf(a, y0 - 1, a, y0, Track.YP) else intArrayOf(x0 - 1, a, x0, a, Track.XP)
+        val plus = if (alongX) intArrayOf(a, y1 + 1, a, y1, Track.YM) else intArrayOf(x1 + 1, a, x1, a, Track.XM)
+        val sides = if (trackNear(s, plus[0], plus[1]) < trackNear(s, minus[0], minus[1])) listOf(plus, minus) else listOf(minus, plus)
+        for (c in sides) {
+            if (!buildingFits(s, c[0], c[1], c[2], c[3])) continue
+            val i = index(c[0], c[1])
+            clearTrees(i)
+            s.building = i
+            s.buildingYear = Calendar.year(startYear, day)
+            s.buildingFacing = c[4]
+            stationBuildings[i] = s.id
+            touched(c[0], c[1])
+            return
+        }
+    }
+}
+
+/** Tiles with track within 2 tiles of ([x], [y]), leaving out [s]'s own platforms. */
+private fun World.trackNear(s: Station, x: Int, y: Int): Int {
+    var n = 0
+    for (ty in y - 2..y + 2) for (tx in x - 2..x + 2) {
+        if (!inside(tx, ty)) continue
+        val i = index(tx, ty)
+        if (track[i].toInt() != 0 && stationTiles[i] != s.id) n++
+    }
+    return n
+}
+
+/** Whether tile ([x], [y]) could take [s]'s building, backing onto its platform at ([px], [py]): dry, flat, level with the platform's top and empty. */
+private fun World.buildingFits(s: Station, x: Int, y: Int, px: Int, py: Int): Boolean {
+    if (!inside(x, y) || !inside(px, py) || stationTiles[index(px, py)] != s.id) return false
+    if (isWater(x, y) || !isFlat(x, y)) return false
+    val top = maxOf(maxOf(heightAt(px, py), heightAt(px + 1, py)), maxOf(heightAt(px + 1, py + 1), heightAt(px, py + 1)))
+    if (heightAt(x, y) != top) return false
+    val i = index(x, y)
+    return track[i].toInt() == 0 && owner[i].toInt() == -1 && roadOwner[i].toInt() == -1 && !townBuilt(i) &&
+        !stationTiles.containsKey(i) && !depotTiles.containsKey(i) && !roadStops.containsKey(i) && !docks.containsKey(i) &&
+        !airportTiles.containsKey(i) && !canals.contains(i) && !locks.containsKey(i) && !saltDepots.contains(i) &&
+        !spanHeads.containsKey(i) && !deck.containsKey(i) && !stationBuildings.containsKey(i) && !fences.contains(i)
 }
 
 /**
@@ -191,7 +301,14 @@ private fun World.turnWholeStation(company: Company, c: Command.Station, xs: Int
         touched(i % width, i / width)
         changed = true
     }
-    if (changed) networkChanged()
+    if (changed) {
+        // The building stood beside the old axis, so it goes up again beside the new one.
+        if (s.building >= 0) {
+            dropStationBuilding(s)
+            placeStationBuilding(s, c.axis)
+        }
+        networkChanged()
+    }
     return true
 }
 
@@ -202,11 +319,12 @@ private fun World.turnWholeStation(company: Company, c: Command.Station, xs: Int
 internal fun World.buildDepot(company: Company, c: Command.Depot) {
     if (!inside(c.x, c.y) || !isFlat(c.x, c.y) || isWater(c.x, c.y) || c.edge !in 0..3) return
     val i = index(c.x, c.y)
-    if (trackAt(c.x, c.y) != 0 || stationTiles.containsKey(i) || depotTiles.containsKey(i) || townBuilt(i)) return
+    if (trackAt(c.x, c.y) != 0 || stationTiles.containsKey(i) || depotTiles.containsKey(i) || townBuilt(i) || othersBuilding(company.id, i)) return
     val piece = Track.straight(c.edge)
     if (!piecesFit(c.x, c.y, piece)) return
     if (company.money < price(Prices.DEPOT) + treeCost(i)) return
     spend(company, Books.CONSTRUCTION, price(Prices.DEPOT) + fellTrees(company, i))
+    clearOwnBuilding(company.id, i)
     val d = Depot(depots.size, company.id, i, c.edge)
     depots += d
     depotTiles[i] = d.id
@@ -338,6 +456,11 @@ internal fun World.clearTile(company: Company, c: Command.Clear) {
     if (!inside(c.x, c.y)) return
     val i = index(c.x, c.y)
     if (!owns(company.id, i) || trainOnTile(i)) return
+    // A station building comes down by itself, for nothing.
+    stationBuildingAt(i)?.let { s ->
+        if (s.owner == company.id) dropStationBuilding(s)
+        return
+    }
     depotAt(i)?.let { d -> if (trains.any { it != null && it.depot == d.id && it.inDepot }) return }
     // A road stop comes off its road; a garage goes, with its bit of road.
     roadStops[i]?.let { id ->
@@ -377,6 +500,10 @@ internal fun World.clearTile(company: Company, c: Command.Clear) {
     stationTiles.remove(i)?.let { id ->
         val s = stations[id]!!
         s.tiles.remove(i)
+        if (s.tiles.isEmpty()) dropStationBuilding(s) else if (!facesPlatform(s)) {
+            dropStationBuilding(s)
+            placeStationBuilding(s, track[s.tiles.first()].toInt())
+        }
         if (s.empty) dropStation(id)
     }
     depotTiles.remove(i)?.let { id -> depots[id]?.let { d -> depots[id] = null; depotGone(d) } }
@@ -425,6 +552,7 @@ const val MAX_STATION = 16
 
 /** Takes station [id] off the map and out of every order. */
 internal fun World.dropStation(id: Int) {
+    stations[id]?.let { dropStationBuilding(it) }
     stations[id] = null
     for (t in carriers()) t.orders.removeAll { Order.station(it) == id }
 }

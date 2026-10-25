@@ -110,7 +110,7 @@ fun World.statueSpot(t: Town): Int {
         if (!inside(x, y) || !isFlat(x, y) || isWater(x, y)) continue
         val i = index(x, y)
         if (townBuilt(i) || track[i].toInt() != 0 || owner[i].toInt() != -1 || stationTiles.containsKey(i) || depotTiles.containsKey(i) ||
-            canals.contains(i) || airportTiles.containsKey(i) || saltDepots.contains(i) || spanHeads.containsKey(i) || deck.containsKey(i)) continue
+            canals.contains(i) || airportTiles.containsKey(i) || saltDepots.contains(i) || spanHeads.containsKey(i) || deck.containsKey(i) || stationBuildings.containsKey(i)) continue
         if ((0 until 4).none { e -> inside(x + Track.dx(e), y + Track.dy(e)) && road[index(x + Track.dx(e), y + Track.dy(e))].toInt() != 0 }) continue
         val d = chebyshev(x, y, t.x, t.y)
         if (d < bestD) { best = i; bestD = d }

@@ -263,6 +263,8 @@ class DepartureGapTest {
             val f = standing(kind)
             f.vehicle.departed = 321L
             f.other.departed = 654L
+            // Saves before version 47 have no station buildings.
+            for (s in f.world.stations) if (s != null) f.world.dropStationBuilding(s)
             for (version in listOf(42, Save.VERSION)) {
                 val back = Save.read(Save.write(f.world, version = version))
                 assertEquals(f.world.checksum(), back.checksum())

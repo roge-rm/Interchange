@@ -192,6 +192,8 @@ class TrainFormationTest {
     fun savingAndCopyingPreserveEveryCarAndRefitAndOldSavesStillLoad() {
         val w = line()
         val legacy = w.trains[0]!!.formation
+        // Saves before version 47 have no station buildings.
+        for (s in w.stations) if (s != null) w.dropStationBuilding(s)
         val old = Save.read(Save.write(w, version = 45))
         assertEquals(legacy, old.trains[0]!!.formation)
         assertEquals(w.checksum(), old.checksum())

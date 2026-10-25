@@ -1192,7 +1192,7 @@ private fun World.stepCost(i: Int, e: Int): Int? {
     val x = i % width
     val y = i / width
     if (isWater(x, y) || house[i].toInt() != 0 || industryOf[i].toInt() != 0 || stationTiles.containsKey(i) || depotTiles.containsKey(i)) return null
-    if (spanHeads.containsKey(i) || deck.containsKey(i) || canals.contains(i) || airportTiles.containsKey(i) || saltDepots.contains(i)) return null
+    if (spanHeads.containsKey(i) || deck.containsKey(i) || canals.contains(i) || airportTiles.containsKey(i) || saltDepots.contains(i) || stationBuildings.containsKey(i)) return null
     val flat = isFlat(x, y)
     val existing = roadEdges(i)
     if (track[i].toInt() != 0) return if (existing != 0 && alongRoad(i, e)) MOVE_ROAD else null
