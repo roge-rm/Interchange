@@ -6,6 +6,8 @@ running from -0.5 to 0.5 each way. A storey is STOREY steps, about three
 metres; a lot is about 25 metres across. The kinds are those in
 packs/base/houses.json, by id.
 """
+import math
+
 import parts
 import scenery
 from parts import material
@@ -281,6 +283,166 @@ def face_pane(m, p, q, z0, z1, glass, frame, out, t0=0.18, t1=0.82):
 
     strip(t0 - 0.06, t1 + 0.06, z0 - 0.05, z1 + 0.05, 0.0, 1.0, frame)
     strip(t0, t1, z0, z1, 1.0, 1.6, glass)
+
+
+def wall_at(face, at, d, a, o, z):
+    """A point on the wall at x or y = at (face "x" or "y"), facing d: a along the wall, o out from it, z up."""
+    return (a, at + d * o, z) if face == "y" else (at + d * o, a, z)
+
+
+def on_face(m, face, at, d, outline, o0, o1, mat):
+    """A plate in the shape of outline, (along, z) points going round, on the wall at x or y = at, o0 to o1 out from it."""
+    m.wedge([wall_at(face, at, d, a, o0, z) for a, z in outline], [wall_at(face, at, d, a, o1, z) for a, z in outline], mat)
+
+
+def across(m, face, at, d, a, w, profile, mat):
+    """A piece standing out from the wall at x or y = at, w wide about a, its side shape profile in (out, z) points."""
+    m.wedge([wall_at(face, at, d, a - w / 2, o, z) for o, z in profile], [wall_at(face, at, d, a + w / 2, o, z) for o, z in profile], mat)
+
+
+def arc(a0, a1, z, rise, n=6):
+    """Points along a shallow arch from a0 to a1 springing at z, rise steps high at its crown."""
+    return [(a0 + (a1 - a0) * k / n, z + rise * (1 - (2 * k / n - 1) ** 2)) for k in range(n + 1)]
+
+
+def arch_band(m, face, at, d, inner, outer, o0, o1, mat):
+    """A curved band between two arcs of the same number of points, piece by piece so each piece is flat."""
+    for (p, q), (r, s) in zip(zip(inner, inner[1:]), zip(outer, outer[1:])):
+        on_face(m, face, at, d, [p, q, s, r], o0, o1, mat)
+
+
+def arched_pane(m, face, at, d, c, z0, z1, w, glass, frame, head, rise=0.1, sash=True, keystone=True):
+    """A window with a segmental arched top in the wall at x or y = at, centred at c, its arch springing at z1: a frame
+    round it, a stone head of the same curve over it with a keystone at the crown, and a stone sill."""
+    a0, a1, b = c - w / 2, c + w / 2, 0.007
+    on_face(m, face, at, d, [(a0, z0), (a1, z0)] + arc(a1, a0, z1, rise), -0.002, 0.003, glass)
+    for s0, s1 in ((a0 - b, a0), (a1, a1 + b)):
+        on_wall(m, face, at, d, s0, s1, 0, 0.007, z0 - b, z1, frame)
+    on_wall(m, face, at, d, a0, a1, 0, 0.007, z0 - b, z0, frame)
+    rim = [(a, z + 0.07) for a, z in arc(a0 - b, a1 + b, z1, rise)]
+    arch_band(m, face, at, d, arc(a0, a1, z1, rise), rim, 0, 0.007, frame)
+    if sash:
+        zm = (z0 + z1) / 2
+        on_wall(m, face, at, d, a0, a1, 0, 0.005, zm - 0.012, zm + 0.012, frame)
+    if head is None:
+        return
+    ha = 0.012
+    arch_band(m, face, at, d, rim, [(a, z + 0.16) for a, z in arc(a0 - b - ha, a1 + b + ha, z1, rise)], 0, 0.011, head)
+    if keystone:
+        on_wall(m, face, at, d, c - 0.007, c + 0.007, 0, 0.015, z1 + rise + 0.04, z1 + rise + 0.3, head)
+    on_wall(m, face, at, d, a0 - b - 0.008, a1 + b + 0.008, 0, 0.014, z0 - b - 0.05, z0 - b, head)
+
+
+def pointed_pane(m, face, at, d, c, z0, z1, point, w, glass, frame, trim, bars=0):
+    """A pointed Gothic window in the wall at x or y = at, its middle at c, from z0 to z1 with its point at point, bars
+    upright mullions in it, and a sill of trim."""
+    a = w / 2 + 0.008
+    on_face(m, face, at, d, [(c - a, z0 - 0.008), (c + a, z0 - 0.008), (c + a, z1), (c, point + 0.03), (c - a, z1)], 0, 0.006, frame)
+    a = w / 2
+    on_face(m, face, at, d, [(c - a, z0), (c + a, z0), (c + a, z1), (c, point), (c - a, z1)], -0.002, 0.009, glass)
+    for k in range(bars):
+        x = c - a + (k + 1) * w / (bars + 1)
+        on_wall(m, face, at, d, x - 0.003, x + 0.003, 0, 0.012, z0, z1 + (point - z1) * (1 - abs(x - c) / a) - 0.02, frame)
+    if bars:
+        on_wall(m, face, at, d, c - a, c + a, 0, 0.011, z1 - 0.02, z1 + 0.02, frame)
+    on_wall(m, face, at, d, c - a - 0.016, c + a + 0.016, 0, 0.014, z0 - 0.05, z0 - 0.008, trim)
+
+
+def louvres(m, face, at, d, c, z0, z1, w, frame, slat, point=None):
+    """A belfry or vent opening in the wall at x or y = at: slats across a dark back in a frame, pointed if point is given."""
+    a = w / 2
+    top = [(c, point)] if point is not None else []
+    on_face(m, face, at, d, [(c - a - 0.008, z0 - 0.02), (c + a + 0.008, z0 - 0.02), (c + a + 0.008, z1)] +
+            ([(c, point + 0.04)] if point is not None else [(c + a + 0.008, z1 + 0.03), (c - a - 0.008, z1 + 0.03)]) + [(c - a - 0.008, z1)],
+            0, 0.004, frame)
+    on_face(m, face, at, d, [(c - a, z0), (c + a, z0), (c + a, z1)] + top + [(c - a, z1)], 0, 0.006, material("louvre gaps", "#1e1e20", rough=0.95))
+    z = z0 + 0.03
+    while z < z1 - 0.02:
+        on_wall(m, face, at, d, c - a, c + a, 0, 0.009, z, z + 0.035, slat)
+        z += 0.075
+
+
+def buttress(m, face, at, d, a, w, out, z1, mat):
+    """A stepped buttress against the wall at x or y = at, w wide about a and out deep at its foot, with a sloping
+    weathering at each step, up to z1."""
+    h = z1 * 0.5
+    across(m, face, at, d, a, w, [(0, 0), (out, 0), (out, h), (out * 0.55, h + 0.12), (out * 0.55, z1 - 0.2), (0, z1)], mat)
+
+
+def spire(m, x, y, z0, z1, r, mat, sides=8):
+    """A spire of sides faces from z0 to its point at z1, r tiles from its middle to each face at its foot."""
+    R = r / math.cos(math.pi / sides)
+    ring = [(R * math.cos(math.pi / sides * (2 * k + 1)), R * math.sin(math.pi / sides * (2 * k + 1))) for k in range(sides)]
+    m.wedge([(x + px, y + py, z0) for px, py in ring], [(x + px * 0.03, y + py * 0.03, z1) for px, py in ring], mat)
+
+
+def finial(m, x, y, z, h, mat):
+    """A finial on a spire's point: a short rod h steps high with a ball on it."""
+    m.upright(x, y, z, z + h, 0.0025, 0.002, mat, segments=8)
+    m.lathe(x, y, z + h * 0.55, [(0.0, 0.0), (0.007, 0.06), (0.009, 0.15), (0.007, 0.24), (0.0, 0.3)], mat, segments=12)
+
+
+def bracket_cornice(m, x0, x1, y0, y1, z, mat, frieze, out=0.035, gap=0.067, back=False):
+    """A pressed metal cornice round the top of a box at z, along the front, the sides and the back if back: a frieze
+    under a projecting crown held up on brackets."""
+    walls = [("y", y1, 1, x0, x1), ("x", x1, 1, y0, y1), ("x", x0, -1, y0, y1)] + ([("y", y0, -1, x0, x1)] if back else [])
+    for face, at, d, a0, a1 in walls:
+        # The crown along the front runs past the corners; the sides' crowns stop at its back.
+        e0, e1 = (a0 - out, a1 + out) if face == "y" else (a0, a1)
+        on_wall(m, face, at, d, a0, a1, 0, 0.008, z - 0.32, z - 0.08, frieze)
+        on_wall(m, face, at, d, e0, e1, 0, out, z - 0.08, z + 0.06, mat)
+        on_wall(m, face, at, d, e0 - (0.006 if face == "y" else 0), e1 + (0.006 if face == "y" else 0), 0, out + 0.006, z + 0.06, z + 0.11, mat)
+        on_wall(m, face, at, d, e0, e1, 0, out - 0.012, z - 0.12, z - 0.08, mat)
+        n = max(1, round((a1 - a0) / gap))
+        for k in range(n + 1):
+            a = a0 + 0.012 + k * (a1 - a0 - 0.024) / n
+            across(m, face, at, d, a, 0.008, [(0, z - 0.38), (0.012, z - 0.38), (out - 0.004, z - 0.12), (0, z - 0.12)], mat)
+
+
+def sign_text(m, body, face, at, d, c, z, size, mat, o=0.0):
+    """Lettering on the wall at x or y = at, facing d, centred at c along it and z steps up, o out from the wall."""
+    obj = m.text(body, 0, 0, z, size, mat, 1)
+    x, y, _ = wall_at(face, at, d, c, o + 0.001, z)
+    obj.location.x, obj.location.y = x, y
+    obj.rotation_euler[2] = math.radians({("y", 1): 180, ("y", -1): 0, ("x", 1): 90, ("x", -1): -90}[(face, d)])
+
+
+def curtain(m, x0, x1, y0, y1, z0, storeys, glass, mullion, gap=0.04, vision=(0.35, 1.2), fin=0.012):
+    """A curtain wall round a box from z0 up, storey by storey: vision glass between the spandrels (the box itself) set
+    just proud, and upright mullions every gap standing out as fins, the corners taken by the front and back ones."""
+    top = z0 + storeys * STOREY
+    walls = (("y", y1, 1, x0, x1), ("y", y0, -1, x0, x1), ("x", x1, 1, y0, y1), ("x", x0, -1, y0, y1))
+    for s in range(storeys):
+        za, zb = z0 + s * STOREY + vision[0], z0 + s * STOREY + vision[1]
+        for face, at, d, a0, a1 in walls:
+            on_wall(m, face, at, d, a0 + 0.004, a1 - 0.004, -0.002, 0.004, za, zb, glass)
+    for face, at, d, a0, a1 in walls:
+        n = max(1, round((a1 - a0) / gap))
+        for k in range(n + 1):
+            if face == "x" and k in (0, n):
+                continue
+            a = min(max(a0 + k * (a1 - a0) / n, a0 + 0.003), a1 - 0.003)
+            on_wall(m, face, at, d, a - 0.003, a + 0.003, 0, fin, z0, top, mullion)
+
+
+def parking(m, x0, x1, y0, y1, stalls, cars, along_y=False):
+    """A surface parking lot: asphalt, painted stall lines across it every stalls tiles and cars, each (place, colour), nosed
+    in towards x1 (or y1 if along_y) in the stall at that place along it."""
+    m.box(x0, x1, y0, y1, 0, 0.025, material("parking asphalt", "#4e4e50", rough=0.95))
+    paint = material("parking lines", "#e8e4d4", rough=0.8)
+    a0, a1 = (y0, y1) if not along_y else (x0, x1)
+    t = a0 + 0.01
+    while t < a1 - 0.005:
+        if along_y:
+            m.box(t - 0.002, t + 0.002, y1 - 0.24, y1 - 0.02, 0.025, 0.03, paint)
+        else:
+            m.box(x1 - 0.24, x1 - 0.02, t - 0.002, t + 0.002, 0.025, 0.03, paint)
+        t += stalls
+    for at, colour in cars:
+        if along_y:
+            car(m, at, y1 - 0.13, colour, along_y=True)
+        else:
+            car(m, x1 - 0.13, at, colour, along_y=False)
 
 
 def lamp_post(m, x, y, h=0.62):
@@ -629,36 +791,233 @@ def general_store(m):
 
 
 def church(m):
+    """The white board church, 1836 to 1870: clapboard on a stone foundation with eave returns, buttresses between tall
+    pointed windows, a tower at the front with a louvred belfry and a cornice under its spire, steps up to the door and a
+    small vestry at the back."""
     wood = material("white church", "#eeeae2", rough=0.7)
+    lap = material("church lap", "#d4d0c6", rough=0.8)
+    trim = material("church trim", "#f6f2ea", rough=0.6)
     roof = material("church roof", "#4a4e56", rough=0.7)
+    stone = material("church foundation", "#8a847a", rough=0.95)
     glass_c = material("stained glass", "#3a4a6a", rough=0.2)
     x0, x1, y0, y1 = -0.13, 0.13, -0.3, 0.12
-    m.box(x0, x1, y0, y1, 0, 2.6, wood, 0.003)
-    gable(m, x0, x1, y0, y1, 2.6, 4.1, roof, wood, along_x=False)
-    # Tall pointed windows down the sides.
+    base, eave = 0.15, 2.6
+    foundation(m, x0, x1, y0, y1, base, stone)
+    m.box(x0, x1, y0, y1, 0, eave, wood, 0.003)
+    lap_siding(m, x0, x1, y0, y1, base + 0.05, eave - 0.05, lap)
+    corner_boards(m, x0, x1, y0, y1, base, eave, trim, w=0.012)
+    gable(m, x0, x1, y0, y1, eave, 4.1, roof, wood, along_x=False, over=0.03, trim=trim, returns=True)
+    # Tall pointed windows down the sides with board buttresses between them.
     for k in range(4):
         y = y0 + 0.06 + k * 0.095
         for x, d in ((x0, -1), (x1, 1)):
-            m.box(x + d * 0.004 - 0.003, x + d * 0.004 + 0.003, y - 0.022, y + 0.022, 0.6, 2.0, glass_c)
-            m.wedge([(x + d * 0.004 - 0.003, y - 0.022, 2.0), (x + d * 0.004 - 0.003, y + 0.022, 2.0), (x + d * 0.004 - 0.003, y, 2.2)],
-                    [(x + d * 0.004 + 0.003, y - 0.022, 2.0), (x + d * 0.004 + 0.003, y + 0.022, 2.0), (x + d * 0.004 + 0.003, y, 2.2)], glass_c)
-    # The tower at the front, its belfry and its spire.
+            pointed_pane(m, "x", x, d, y, 0.6, 1.95, 2.2, 0.044, glass_c, trim, trim)
+    for k in range(5):
+        y = y0 + 0.012 + k * 0.095
+        for x, d in ((x0, -1), (x1, 1)):
+            buttress(m, "x", x, d, y, 0.014, 0.02, 2.2, trim)
+    for x in (-0.095, 0.095):
+        pointed_pane(m, "y", y1, 1, x, 0.6, 1.95, 2.2, 0.04, glass_c, trim, trim)
+    # The tower: clapboard to a cornice, the belfry with louvred openings, a second cornice and the spire.
     tx0, tx1, ty0, ty1 = -0.06, 0.06, y1 - 0.02, y1 + 0.1
-    m.box(tx0, tx1, ty0, ty1, 0, 4.6, wood, 0.003)
-    m.box(tx0 - 0.008, tx1 + 0.008, ty0 - 0.008, ty1 + 0.008, 4.6, 4.75, roof)
-    for x in (tx0, tx1):
-        m.box(x - 0.004, x + 0.004, (ty0 + ty1) / 2 - 0.025, (ty0 + ty1) / 2 + 0.025, 3.7, 4.4, material("belfry louvres", "#2a2a2a", rough=0.9))
-    m.wedge([(tx0, ty0, 4.75), (tx1, ty0, 4.75), (tx1, ty1, 4.75), (tx0, ty1, 4.75)],
-            [(-0.002, (ty0 + ty1) / 2 - 0.002, 7.6), (0.002, (ty0 + ty1) / 2 - 0.002, 7.6), (0.002, (ty0 + ty1) / 2 + 0.002, 7.6), (-0.002, (ty0 + ty1) / 2 + 0.002, 7.6)], roof)
-    door(m, 0.0, ty1, material("church doors", "#5a3a26", rough=0.6), wood, w=0.05, h=1.1)
-    path(m, 0.0, ty1, 0.5, 0.06)
+    tc = (ty0 + ty1) / 2
+    m.box(tx0, tx1, ty0, ty1, 0, 3.7, wood, 0.003)
+    foundation(m, tx0, tx1, ty0, ty1, base, stone)
+    lap_siding(m, tx0, tx1, ty0, ty1, base + 0.05, 3.6, lap)
+    corner_boards(m, tx0, tx1, ty0, ty1, base, 3.7, trim, w=0.012)
+    m.box(tx0 - 0.012, tx1 + 0.012, ty0 - 0.012, ty1 + 0.012, 3.7, 3.82, trim)
+    bx0, bx1, by0, by1 = tx0 + 0.006, tx1 - 0.006, ty0 + 0.006, ty1 - 0.006
+    m.box(bx0, bx1, by0, by1, 3.82, 4.62, wood, 0.002)
+    corner_boards(m, bx0, bx1, by0, by1, 3.82, 4.62, trim, w=0.012)
+    for face, at, d, c in (("y", by1, 1, 0.0), ("y", by0, -1, 0.0), ("x", bx1, 1, tc), ("x", bx0, -1, tc)):
+        louvres(m, face, at, d, c, 3.95, 4.3, 0.05, trim, trim, point=4.5)
+    m.box(bx0 - 0.014, bx1 + 0.014, by0 - 0.014, by1 + 0.014, 4.62, 4.72, trim)
+    m.box(bx0 - 0.02, bx1 + 0.02, by0 - 0.02, by1 + 0.02, 4.72, 4.8, trim)
+    for x in (bx0 - 0.01, bx1 + 0.01):
+        for y in (by0 - 0.01, by1 + 0.01):
+            spire(m, x, y, 4.8, 5.25, 0.008, trim, sides=4)
+    spire(m, 0.0, tc, 4.8, 7.45, 0.048, roof)
+    finial(m, 0.0, tc, 7.4, 0.3, material("gilt finial", "#c8a84a", metal=0.7, rough=0.35))
+    pointed_pane(m, "y", ty1, 1, 0.0, 2.1, 2.9, 3.15, 0.04, glass_c, trim, trim)
+    door(m, 0.0, ty1, material("church doors", "#5a3a26", rough=0.6), trim, w=0.055, h=1.0, z0=base)
+    m.box(-0.002, 0.002, ty1 + 0.009, ty1 + 0.011, base, base + 1.0, material("door split", "#3a2618", rough=0.7))
+    m.wedge([(-0.04, ty1, 1.22), (0.04, ty1, 1.22), (0.0, ty1, 1.42)], [(-0.04, ty1 + 0.012, 1.22), (0.04, ty1 + 0.012, 1.22), (0.0, ty1 + 0.012, 1.42)], trim)
+    steps(m, 0.0, ty1, 0.1, base, stone, n=3)
+    # The vestry behind, a storey under its own gable, with a door on the side.
+    vx0, vx1, vy0, vy1 = -0.07, 0.07, -0.4, y0
+    foundation(m, vx0, vx1, vy0, vy1, base, stone)
+    m.box(vx0, vx1, vy0, vy1, 0, 1.45, wood, 0.003)
+    lap_siding(m, vx0, vx1, vy0, vy1, base + 0.05, 1.4, lap)
+    corner_boards(m, vx0, vx1, vy0, vy1, base, 1.45, trim, w=0.01)
+    gable(m, vx0, vx1, vy0, vy1 + 0.02, 1.45, 2.25, roof, wood, along_x=False, over=0.025, thick=0.06, trim=trim, ends=(True, False))
+    pointed_pane(m, "y", vy0, -1, 0.0, 0.5, 1.1, 1.25, 0.04, glass_c, trim, trim)
+    m.box(vx1, vx1 + 0.009, -0.37, -0.33, base, base + 0.9, material("vestry door", "#5a3a26", rough=0.6))
+    m.box(vx1, vx1 + 0.03, -0.375, -0.325, 0, base, stone, 0.002)
+    chimney(m, 0.0, -0.37, 1.8, 2.6, material("chimney brick", "#8a4a36", rough=0.9), 0.022)
+    path(m, 0.0, ty1 + 0.08, 0.5, 0.06)
     # A white fence along the front, and the churchyard behind with its stones and an old elm.
     picket(m, (-EDGE, EDGE), (EDGE, EDGE), material("white pickets", "#eeeae0", rough=0.7), gap=0.0)
-    stone = material("grave stone", "#9a968e", rough=0.9)
+    grave = material("grave stone", "#9a968e", rough=0.9)
     for gx in (-0.36, -0.28, 0.24, 0.32, 0.4):
         for gy in (-0.4, -0.3, -0.2):
-            m.box(gx - 0.012, gx + 0.012, gy - 0.004, gy + 0.004, 0, 0.32, stone, 0.002)
+            m.box(gx - 0.012, gx + 0.012, gy - 0.004, gy + 0.004, 0, 0.32, grave, 0.002)
     yard_tree(m, -0.34, 0.2, 1.2, seed=4, kind="elm")
+
+
+def stone_church(m):
+    """The Gothic Revival parish church, 1870 to 1960, as in every Ontario and Quebec town: grey limestone with dressed
+    trim, a steep tin roof, buttresses between lancet windows, a big traceried window over a gabled porch, a corner tower
+    with a louvred belfry, pinnacles and a tin spire, and a chancel with a polygonal apse at the back."""
+    rubble = material("limestone", "#a39c8e", rough=0.95)
+    dressed = material("dressed stone", "#cdc5b2", rough=0.85)
+    tin = material("tin roof", "#a8aeb4", metal=0.55, rough=0.4)
+    glass_c = material("stained glass", "#3a4a6a", rough=0.2)
+    frame = material("tracery", "#d8d0bc", rough=0.8)
+    x0, x1, y0, y1 = -0.13, 0.09, -0.28, 0.14
+    eave = 2.3
+    m.box(x0, x1, y0, y1, 0, eave, rubble, 0.003)
+    foundation(m, x0, x1, y0, y1, 0.2, dressed, out=0.006)
+    gable(m, x0, x1, y0, y1, eave, 4.3, tin, rubble, along_x=False, over=0.02, trim=dressed, fascia=0.06)
+    # Lancets between stepped buttresses down both sides.
+    for k in range(4):
+        y = y0 + 0.055 + k * 0.1
+        for x, d in ((x0, -1), (x1, 1)):
+            pointed_pane(m, "x", x, d, y, 0.55, 1.75, 2.05, 0.038, glass_c, frame, dressed)
+    for k in range(5):
+        y = y0 + 0.006 + k * 0.1
+        for x, d in ((x0, -1), (x1, 1)):
+            buttress(m, "x", x, d, min(max(y, y0 + 0.008), y1 - 0.008), 0.016, 0.03, 2.1, dressed)
+    # The front: a big window with tracery in the gable over a gabled porch, and a stone pinnacle on the apex.
+    xc = (x0 + x1) / 2
+    pointed_pane(m, "y", y1, 1, xc, 1.55, 2.75, 3.4, 0.09, glass_c, frame, dressed, bars=2)
+    m.box(xc - 0.004, xc + 0.004, y1 - 0.004, y1 + 0.004, 4.3, 4.5, dressed)
+    spire(m, xc, y1, 4.5, 4.85, 0.008, dressed, sides=4)
+    px0, px1, py1 = xc - 0.05, xc + 0.05, y1 + 0.06
+    m.box(px0, px1, y1 - 0.01, py1, 0, 1.15, rubble, 0.003)
+    gable(m, px0, px1, y1 - 0.01, py1, 1.15, 1.6, tin, rubble, along_x=False, over=0.01, thick=0.05, trim=dressed, fascia=0.05, ends=(False, True))
+    on_face(m, "y", py1, 1, [(xc - 0.032, 0.0), (xc + 0.032, 0.0), (xc + 0.032, 0.75), (xc, 1.0), (xc - 0.032, 0.75)], 0, 0.006, dressed)
+    on_face(m, "y", py1, 1, [(xc - 0.024, 0.02), (xc + 0.024, 0.02), (xc + 0.024, 0.72), (xc, 0.92), (xc - 0.024, 0.72)], 0, 0.009,
+            material("church doors", "#5a3a26", rough=0.6))
+    steps(m, xc, py1, 0.09, 0.12, dressed, n=2)
+    for x, d in ((px0, -1), (px1, 1)):
+        pointed_pane(m, "x", x, d, (y1 + py1) / 2, 0.45, 0.8, 0.92, 0.022, glass_c, frame, dressed)
+    # The corner tower: buttressed at its corners, a louvred belfry, a parapet with pinnacles and a tin spire.
+    tx0, tx1, ty0, ty1 = 0.08, 0.22, 0.04, 0.18
+    tcx, tcy = (tx0 + tx1) / 2, (ty0 + ty1) / 2
+    m.box(tx0, tx1, ty0, ty1, 0, 4.7, rubble, 0.003)
+    foundation(m, tx0, tx1, ty0, ty1, 0.2, dressed, out=0.006)
+    for face, at, d, a0, a1 in (("y", ty1, 1, tx0, tx1), ("x", tx1, 1, ty0, ty1)):
+        for a in (a0 + 0.01, a1 - 0.01):
+            buttress(m, face, at, d, a, 0.018, 0.028, 3.4, dressed)
+    for z in (2.3, 3.55):
+        m.box(tx0 - 0.006, tx1 + 0.006, ty0 - 0.006, ty1 + 0.006, z, z + 0.06, dressed)
+    pointed_pane(m, "y", ty1, 1, tcx, 1.0, 1.9, 2.1, 0.03, glass_c, frame, dressed)
+    pointed_pane(m, "x", tx1, 1, tcy, 1.0, 1.9, 2.1, 0.03, glass_c, frame, dressed)
+    for face, at, d, c in (("y", ty1, 1, tcx), ("y", ty0, -1, tcx), ("x", tx1, 1, tcy), ("x", tx0, -1, tcy)):
+        louvres(m, face, at, d, c, 3.75, 4.25, 0.05, dressed, frame, point=4.5)
+    m.box(tx0 - 0.01, tx1 + 0.01, ty0 - 0.01, ty1 + 0.01, 4.7, 4.82, dressed)
+    for x in (tx0 - 0.002, tx1 + 0.002):
+        for y in (ty0 - 0.002, ty1 + 0.002):
+            m.box(x - 0.01, x + 0.01, y - 0.01, y + 0.01, 4.82, 5.0, dressed)
+            spire(m, x, y, 5.0, 5.55, 0.01, dressed, sides=4)
+    spire(m, tcx, tcy, 4.82, 7.4, 0.06, tin)
+    finial(m, tcx, tcy, 7.35, 0.3, material("gilt finial", "#c8a84a", metal=0.7, rough=0.35))
+    # The chancel and its apse: lower and narrower, a hip of tin over the half octagon.
+    cx0, cx1, cy0 = -0.09, 0.05, y0 - 0.05
+    m.box(cx0, cx1, cy0, y0 + 0.01, 0, 1.9, rubble, 0.003)
+    gable(m, cx0, cx1, cy0, y0 + 0.01, 1.9, 3.1, tin, rubble, along_x=False, over=0.015, thick=0.06, trim=dressed, fascia=0.05, ends=(False, False))
+    r = (cx1 - cx0) / 2
+    apse = [(xc + r * math.cos(math.radians(a)), cy0 + r * math.sin(math.radians(a))) for a in (0, -45, -90, -135, -180)]
+    m.wedge([(x, y, 0) for x, y in apse], [(x, y, 1.9) for x, y in apse], rubble)
+    eaves = [(xc + (r + 0.015) * math.cos(math.radians(a)), cy0 + (r + 0.015) * math.sin(math.radians(a))) for a in (0, -45, -90, -135, -180)]
+    for p, q in zip(eaves, eaves[1:]):
+        slab(m, [(p[0], p[1], 1.9), (q[0], q[1], 1.9), (xc, cy0, 3.1)], 0.06, tin)
+    for a in (-45, -90, -135):
+        face_pane(m, (xc + r * math.cos(math.radians(a - 22.5)), cy0 + r * math.sin(math.radians(a - 22.5))),
+                  (xc + r * math.cos(math.radians(a + 22.5)), cy0 + r * math.sin(math.radians(a + 22.5))), 0.6, 1.5, glass_c, frame, 0.004, 0.3, 0.7)
+    # A low stone wall with iron railings along the front, a few old stones and maples.
+    iron = material("iron railings", "#2a2a2a", metal=0.5, rough=0.5)
+    for a, b in ((-EDGE, -0.05), (0.05, EDGE)):
+        m.box(a, b, EDGE - 0.012, EDGE + 0.012, 0, 0.18, dressed, 0.002)
+        picket(m, (a, EDGE), (b, EDGE), iron, height=0.42)
+    path(m, xc, py1 + 0.04, 0.5, 0.07)
+    grave = material("grave stone", "#9a968e", rough=0.9)
+    for gx in (-0.4, -0.32, 0.26, 0.34, 0.42):
+        for gy in (-0.42, -0.32):
+            m.box(gx - 0.014, gx + 0.014, gy - 0.005, gy + 0.005, 0, 0.36, grave, 0.002)
+    yard_tree(m, -0.34, 0.24, 1.15, seed=15)
+    yard_tree(m, 0.36, -0.12, 1.0, seed=16)
+
+
+def modern_church(m):
+    """A 1960s church, 1960 to 2100: a steep A-frame with a glass front, low brick walls, a
+    flat-roofed brick hall beside it, a free-standing bell frame by the road and a parking lot."""
+    brick = material("modern church brick", "#a87a5a", rough=0.9)
+    roof = material("a-frame roof", "#4a4440", rough=0.85)
+    wood = material("a-frame wood", "#8a5e3a", rough=0.7)
+    concrete = material("church concrete", "#b8b2a6", rough=0.9)
+    metal = material("window frames", "#3a3a3c", metal=0.5, rough=0.4)
+    x0, x1, y0, y1 = -0.15, 0.13, -0.26, 0.12
+    xc = (x0 + x1) / 2
+    eave, ridge = 0.4, 4.0
+    m.box(x0, x1, y0, y1, 0, eave, brick, 0.003)
+    gable(m, x0, x1, y0, y1, eave, ridge, roof, wood, along_x=False, over=0.03, thick=0.07, trim=wood, fascia=0.06, ends=(False, True))
+    # The glass front: glass just proud of the thin gable end, upright mullions and two transoms.
+    half = (x1 - x0) / 2
+
+    def h(x):
+        return eave + (ridge - eave) * (1 - abs(x - xc) / half)
+
+    gy = y1 + 0.004
+    m.box(x0, x1, y1 - 0.004, y1 + 0.003, 0, eave, wood)
+    pts = [(x0 + 0.01, 0.02), (x1 - 0.01, 0.02), (x1 - 0.01, h(x1 - 0.01) - 0.06), (xc, ridge - 0.12), (x0 + 0.01, h(x0 + 0.01) - 0.06)]
+    on_face(m, "y", gy, 1, pts, 0, 0.004, gable_glass())
+    for k in range(1, 8):
+        x = x0 + k * (x1 - x0) / 8
+        on_wall(m, "y", gy, 1, x - 0.003, x + 0.003, 0.004, 0.009, 0.02, h(x) - 0.06, metal)
+    # Each transom stops where it meets the roof slopes.
+    on_wall(m, "y", gy, 1, xc - 0.115, xc + 0.115, 0.004, 0.009, 0.85, 0.9, metal)
+    on_wall(m, "y", gy, 1, xc - 0.06, xc + 0.06, 0.004, 0.009, 2.2, 2.25, metal)
+    on_wall(m, "y", gy, 1, xc - 0.04, xc + 0.04, 0.009, 0.013, 0.02, 0.8, material("church doors", "#6a4428", rough=0.6))
+    m.box(x0 - 0.01, x1 + 0.01, y1, y1 + 0.08, 0, 0.04, concrete)
+    m.box(x0, x1, y0 - 0.004, y0 + 0.004, 0, eave, brick)
+    # Long dormer lights low in the roof down each side.
+    for x, d in ((x0, -1), (x1, 1)):
+        for k in range(3):
+            y = y0 + 0.07 + k * 0.12
+            on_wall(m, "x", x, d, y - 0.03, y + 0.03, 0.002, 0.006, 0.12, 0.34, gable_glass())
+    # The hall: one storey of brick under a flat roof with a deep fascia, joined to the church by a glass link.
+    hx0, hx1, hy0, hy1 = x1 + 0.04, 0.42, -0.3, 0.02
+    m.box(x1, hx0, -0.1, 0.0, 0, 1.0, gable_glass(), 0.002)
+    m.box(x1 - 0.005, hx0 + 0.005, -0.11, 0.01, 1.0, 1.08, concrete)
+    m.box(hx0, hx1, hy0, hy1, 0, 1.2, brick, 0.003)
+    m.box(hx0 - 0.02, hx1 + 0.02, hy0 - 0.02, hy1 + 0.02, 1.2, 1.34, concrete)
+    for face, at, d, a0, a1 in (("y", hy1, 1, hx0, hx1), ("y", hy0, -1, hx0, hx1), ("x", hx1, 1, hy0, hy1)):
+        on_wall(m, face, at, d, a0 + 0.03, a1 - 0.03, -0.002, 0.004, 0.55, 0.95, glass())
+        n = max(1, round((a1 - a0 - 0.06) / 0.04))
+        for k in range(n + 1):
+            a = a0 + 0.03 + k * (a1 - a0 - 0.06) / n
+            on_wall(m, face, at, d, a - 0.003, a + 0.003, 0, 0.007, 0.55, 0.95, metal)
+    on_wall(m, "y", hy1, 1, hx0 + 0.02, hx0 + 0.07, 0, 0.008, 0, 0.9, material("hall door", "#2a4a5a", rough=0.5))
+    # The bell frame: two concrete piers with the bell hung between them.
+    bx, by = 0.3, 0.22
+    for x in (bx - 0.04, bx + 0.04):
+        m.box(x - 0.01, x + 0.01, by - 0.025, by + 0.025, 0, 3.2, concrete, 0.003)
+    m.box(bx - 0.05, bx + 0.05, by - 0.028, by + 0.028, 3.2, 3.32, concrete, 0.003)
+    m.box(bx - 0.05, bx + 0.05, by - 0.02, by + 0.02, 1.2, 1.28, concrete)
+    bronze = material("bell bronze", "#8a6a3a", metal=0.75, rough=0.35)
+    m.lathe(bx, by, 2.4, [(0.028, 0.0), (0.024, 0.08), (0.018, 0.3), (0.016, 0.55), (0.0, 0.6)], bronze, segments=16)
+    m.box(bx - 0.002, bx + 0.002, by - 0.002, by + 0.002, 3.0, 3.2, bronze)
+    m.box(bx - 0.06, bx + 0.06, by - 0.04, by + 0.04, 0, 0.04, concrete)
+    # A sign board on the lawn, the walk, shrubs and the parking lot behind.
+    m.box(-0.38, -0.22, 0.39, 0.41, 0.0, 0.55, brick, 0.002)
+    m.box(-0.365, -0.235, 0.41, 0.414, 0.15, 0.48, material("sign white", "#ece8de", rough=0.7))
+    path(m, xc, y1 + 0.08, 0.5, 0.07)
+    parking(m, -0.47, -0.21, -0.47, -0.02, 0.1, ((-0.42, "#8a8a90"), (-0.22, "#3a5a7a"), (-0.12, "#c8c0a8")))
+    shrub = scenery.leafy("church shrubs", "#3e6a2a", "#6a9a3e")
+    for k, x in enumerate((x0 + 0.03, x1 - 0.03, 0.22, 0.38)):
+        scenery.blob(m, x, 0.15 if k < 2 else 0.06, 0.15, 0.03, shrub, 50 + k, squash=0.8)
+    yard_tree(m, 0.34, -0.4, 0.9, seed=17)
 
 
 def brick_row(m):
@@ -720,25 +1079,105 @@ def brick_row(m):
 
 
 def brick_block(m, look=0):
+    """The Main Street block, 1880 to 1975: three shops behind recessed doors with sign boards over them, a door at the
+    end to the flats upstairs, segmental arched windows with stone heads and a pressed metal cornice on brackets with a
+    name and date stone over it."""
     brick = material("block brick", ["#a0583e", "#c8a878"][look % 2], rough=0.9)
-    trim = material("block trim", "#d6ccb8", rough=0.8)
+    stone = material("block trim", "#d6ccb8", rough=0.8)
+    metal = material("pressed metal cornice", "#d8d0bc", metal=0.2, rough=0.6)
+    frieze = material("cornice frieze", "#b8ae98", metal=0.2, rough=0.6)
+    sash = material("block sashes", "#ece6d6", rough=0.6)
+    dark = material("sign letters", "#2a2622", rough=0.7)
+    paints = ["#3e4a3a", "#5a2a26", "#2a3a4e"]
     x0, x1, y0, y1 = -0.4, 0.4, -0.32, 0.26
-    m.box(x0, x1, y0, y1, 0, 3 * STOREY + 0.3, brick, 0.003)
-    flat_top(m, x0, x1, y0, y1, 3 * STOREY + 0.3, trim, parapet=0.45)
-    m.box(x0 - 0.012, x1 + 0.012, y1 - 0.01, y1 + 0.02, 3 * STOREY + 0.55, 3 * STOREY + 0.75, trim)
-    # Shop fronts all along the ground floor, under striped awnings.
-    awnings = ["#7a2a2a", "#2a4a6a", "#3e5a2a", "#8a6a2a"]
-    for k in range(4):
-        cx = x0 + (k + 0.5) * (x1 - x0) / 4
-        m.box(cx - 0.075, cx + 0.075, y1, y1 + 0.008, 0.25, 1.35, glass())
-        m.box(cx - 0.08, cx + 0.08, y1, y1 + 0.012, 1.35, 1.45, trim)
-        slab(m, [(cx - 0.09, y1, 1.6), (cx + 0.09, y1, 1.6), (cx + 0.09, y1 + 0.08, 1.3), (cx - 0.09, y1 + 0.08, 1.3)], 0.04, material("awning " + str(k), awnings[k], rough=0.8))
-    windows(m, x0, x1, y0, y1, STOREY + 0.1, 2, 6, 4, glass(), trim)
-    windows(m, x0, x1, y0, y1, 0.1, 1, 0, 4, glass(), trim)
-    m.box(x0, x1, y1, 0.5, 0, 0.03, material("sidewalk", "#aaa498", rough=0.9))
+    top, shop, rec = 3 * STOREY + 0.3, 1.5, 0.03
+    m.box(x0, x1, y0, y1 - rec, 0, shop, brick, 0.003)
+    m.box(x0, x1, y0, y1, shop, top, brick, 0.003)
+    flat_top(m, x0, x1, y0, y1, top, stone, parapet=0.45)
+    bracket_cornice(m, x0, x1, y0, y1, top + 0.4, metal, frieze)
+    # A stone band over the shops round the sides and back, and a sill course under the upper windows.
+    for face, at, d, a0, a1 in (("x", x1, 1, y0, y1), ("x", x0, -1, y0, y1), ("y", y0, -1, x0, x1)):
+        on_wall(m, face, at, d, a0, a1, 0, 0.006, shop - 0.04, shop + 0.06, stone)
+    m.box(x0 - 0.004, x1 + 0.004, y1, y1 + 0.009, 1.84, 1.9, stone)
+    # The name and date stone in a raised parapet with a low pediment over the middle of the front.
+    m.box(-0.11, 0.11, y1 - 0.012, y1, top + 0.45, top + 0.78, brick)
+    m.wedge([(-0.12, y1 - 0.016, top + 0.78), (0.12, y1 - 0.016, top + 0.78), (0.0, y1 - 0.016, top + 0.92)],
+            [(-0.12, y1 + 0.006, top + 0.78), (0.12, y1 + 0.006, top + 0.78), (0.0, y1 + 0.006, top + 0.92)], stone)
+    m.box(-0.075, 0.075, y1, y1 + 0.008, top + 0.5, top + 0.74, stone)
+    sign_text(m, "1898", "y", y1, 1, 0.0, top + 0.62, 0.02, dark, o=0.008)
+    # The door to the flats at the end of the front, with its transom and a lamp over it.
+    bay = -0.33
+    m.box(x0, bay, y1 - rec, y1, 0, shop, brick, 0.002)
+    door(m, (x0 + bay) / 2, y1, material("flats door", "#3a2a22", rough=0.6), stone, w=0.04, h=0.95, z0=0.03, transom=glass())
+    m.box((x0 + bay) / 2 - 0.006, (x0 + bay) / 2 + 0.006, y1, y1 + 0.02, 1.32, 1.4, material("door lamp", "#f0e0a0", rough=0.3))
+    # Three shops between brick piers: a panelled bulkhead, display windows each side of a door set back in a recess with
+    # glass returns, a transom light over it all and a sign board above.
+    piers = [bay + k * (x1 - bay) / 3 for k in range(4)]
+    for px in piers:
+        m.box(max(x0, px - 0.008), min(x1, px + 0.008), y1 - rec, y1 + 0.004, 0, shop, brick, 0.002)
+        m.box(max(x0, px - 0.01), min(x1, px + 0.01), y1 - rec, y1 + 0.007, 0, 0.12, stone)
+    tile = material("door tiles", "#b8b0a0", rough=0.7)
+    for k in range(3):
+        a, b = piers[k] + 0.008, piers[k + 1] - 0.008
+        c, dw = (a + b) / 2, 0.024
+        paint = material("shop paint " + str(k), paints[k], rough=0.6)
+        for s0, s1 in ((a, c - dw), (c + dw, b)):
+            m.box(s0, s1, y1 - 0.014, y1 - 0.002, 0, 0.28, paint)
+            m.box(s0 + 0.008, s1 - 0.008, y1 - 0.002, y1 + 0.001, 0.06, 0.22, paint)
+            m.box(s0, s1, y1 - 0.011, y1 - 0.006, 0.28, 1.2, glass())
+            for e in (s0, s1):
+                m.box(e - 0.003, e + 0.003, y1 - 0.013, y1 - 0.002, 0.28, 1.2, paint)
+            m.box(s0, s1, y1 - 0.015, y1 - 0.002, 0.26, 0.3, paint)
+        for e in (c - dw, c + dw):
+            m.box(e - 0.002, e + 0.002, y1 - rec, y1 - 0.011, 0.28, 1.2, glass())
+            m.box(e - 0.003, e + 0.003, y1 - rec, y1 - 0.002, 0, 0.28, paint)
+        m.box(c - dw, c + dw, y1 - rec, y1, 0, 0.035, tile)
+        door(m, c, y1 - rec, material("shop door " + str(k), "#2a2420", rough=0.6), paint, w=0.034, h=0.9, z0=0.035, transom=None)
+        m.box(c - 0.011, c + 0.011, y1 - rec + 0.009, y1 - rec + 0.011, 0.45, 0.85, glass())
+        m.box(a, b, y1 - 0.016, y1 - 0.002, 1.18, 1.24, paint)
+        m.box(a, b, y1 - 0.011, y1 - 0.006, 1.24, 1.42, glass())
+        for j in range(1, 5):
+            x = a + j * (b - a) / 5
+            m.box(x - 0.002, x + 0.002, y1 - 0.013, y1 - 0.002, 1.24, 1.42, paint)
+        m.box(a, b, y1 - 0.016, y1 - 0.002, 1.42, shop, paint)
+        m.box(a - 0.004, b + 0.004, y1, y1 + 0.008, 1.54, 1.8, paint)
+        m.box(a + 0.01, b - 0.01, y1 + 0.008, y1 + 0.011, 1.58, 1.76, material("sign board", "#e8dcc0", rough=0.7))
+        sign_text(m, ["BAKERY", "HARDWARE", "DRUGS"][k], "y", y1, 1, c, 1.67, 0.018, paint, o=0.011)
+        if k != 1:
+            # A striped canvas awning rolled out over the window.
+            stripes = [material("awning " + str(k), ["#7a2a2a", "#2a4a6a", "#3e5a2a"][k], rough=0.8), material("awning white", "#e8e2d4", rough=0.8)]
+            n = 8
+            for j in range(n):
+                xa, xb = a + j * (b - a) / n, a + (j + 1) * (b - a) / n
+                slab(m, [(xa, y1, 1.48), (xb, y1, 1.48), (xb, y1 + 0.08, 1.2), (xa, y1 + 0.08, 1.2)], 0.035, stripes[j % 2])
+                m.box(xa, xb, y1 + 0.076, y1 + 0.082, 1.08, 1.2, stripes[j % 2])
+    # Arched windows on the two floors of flats, all round.
+    for z0 in (1.98, 3.2):
+        for k in range(6):
+            x = x0 + (k + 0.5) * (x1 - x0) / 6
+            arched_pane(m, "y", y1, 1, x, z0, z0 + 0.55, 0.055, glass(), sash, stone)
+            arched_pane(m, "y", y0, -1, x, z0, z0 + 0.55, 0.055, glass(), sash, stone)
+        for k in range(4):
+            arched_pane(m, "x", x1, 1, y0 + (k + 0.5) * (y1 - y0) / 4, z0, z0 + 0.55, 0.055, glass(), sash, stone)
+    # The end wall over the flats door is blank but for a faded painted sign.
+    on_wall(m, "x", x0, -1, -0.2, 0.16, 0, 0.002, 2.0, 3.6, material("painted sign", "#c8b88a", rough=0.95, grime=0.8))
+    painted = material("painted letters", "#6a2a22", rough=0.95, grime=0.8)
+    sign_text(m, "DRY GOODS", "x", x0, -1, -0.02, 3.05, 0.055, painted, o=0.002)
+    sign_text(m, "FLOUR & FEED", "x", x0, -1, -0.02, 2.45, 0.036, painted, o=0.002)
+    # Back doors to the shops off the lane, chimneys and a roof hatch.
+    for k in range(3):
+        c = (piers[k] + piers[k + 1]) / 2
+        on_wall(m, "y", y0, -1, c - 0.03, c + 0.03, 0, 0.006, 0, 1.08, stone)
+        on_wall(m, "y", y0, -1, c - 0.022, c + 0.022, 0, 0.009, 0.0, 1.0, material("back door", "#4a3a2e", rough=0.8))
+        pane(m, "y", y0, -1, c + 0.08, 0.5, 1.0, 0.045, glass(), sash, stone)
+    for x in (-0.3, 0.0, 0.3):
+        chimney(m, x, y0 + 0.06, top, top + 0.75, brick, 0.03)
+    m.box(0.12, 0.2, -0.1, -0.02, top, top + 0.3, material("roof hatch", "#6a6660", rough=0.8), 0.003)
+    m.box(x0, x1, y1 - rec, 0.5, 0, 0.03, material("sidewalk", "#aaa498", rough=0.9))
     # A paved back lane behind the shops.
     paved(m, -0.5, 0.5, -0.5, -0.32)
     m.box(-0.45, -0.38, -0.47, -0.4, 0, 0.35, material("bins", "#3e4a3e", rough=0.8), 0.004)
+    m.box(0.3, 0.42, -0.47, -0.38, 0, 0.12, material("pallets", "#8a7458", rough=0.9), 0.003)
 
 
 def bungalow(m, look=0):
@@ -896,27 +1335,118 @@ def ranch_bungalow(m, look=0):
 
 
 def walkup(m):
+    """A Winnipeg or Toronto walk-up, 1910 to 2000: four storeys of brick on a stone base, an entrance bay with a stone
+    surround and the building's name over the door, canted bay windows each side, a corbelled brick cornice, stacked
+    wooden sunporches at the back and a fire escape down one side."""
     brick = material("walkup brick", "#8a5a46", rough=0.9)
+    dark = material("walkup corbels", "#7a4e3c", rough=0.9)
     trim = material("walkup trim", "#c8c0b0", rough=0.8)
+    sash = material("walkup sashes", "#e6e0d0", rough=0.6)
     iron = material("fire escape", "#2a2a2a", metal=0.5, rough=0.5)
     x0, x1, y0, y1 = -0.34, 0.34, -0.28, 0.22
-    top = 4 * STOREY + 0.2
+    top, base = 4 * STOREY + 0.2, 0.3
     m.box(x0, x1, y0, y1, 0, top, brick, 0.003)
+    foundation(m, x0, x1, y0, y1, base, trim, out=0.006)
     flat_top(m, x0, x1, y0, y1, top, trim)
-    windows(m, x0, x1, y0, y1, 0.1, 4, 5, 4, glass(), trim, skip_door=True)
-    door(m, 0.0, y1, material("walkup door", "#3a2a22", rough=0.6), trim, w=0.07, h=1.0)
-    slab(m, [(-0.07, y1, 1.15), (0.07, y1, 1.15), (0.07, y1 + 0.06, 1.15), (-0.07, y1 + 0.06, 1.15)], 0.06, trim)
-    # A fire escape down one side: landings and a ladder.
+    # The corbelled cornice: courses stepping out, a row of corbels, and a last course under the coping.
+    for z, out in ((top - 0.42, 0.005), (top - 0.36, 0.01)):
+        m.box(x0 - out, x1 + out, y0 - out, y1 + out, z, z + 0.06, brick)
+    for face, at, d, a0, a1 in (("y", y1, 1, x0, x1), ("y", y0, -1, x0, x1), ("x", x1, 1, y0, y1), ("x", x0, -1, y0, y1)):
+        n = int((a1 - a0) / 0.028)
+        for k in range(n):
+            a = a0 + (k + 0.5) * (a1 - a0) / n
+            on_wall(m, face, at, d, a - 0.006, a + 0.006, 0, 0.016, top - 0.3, top - 0.16, dark)
+    m.box(x0 - 0.018, x1 + 0.018, y0 - 0.018, y1 + 0.018, top - 0.16, top - 0.06, brick)
+    # The entrance bay, standing out from the front and up past the cornice, its name panel over the door.
+    ex, ey = 0.075, y1 + 0.025
+    m.box(-ex, ex, y1, ey, 0, top + 0.45, brick, 0.002)
+    m.box(-ex - 0.006, ex + 0.006, y1, ey + 0.006, 0, base, trim)
+    m.box(-ex - 0.008, ex + 0.008, y1, ey + 0.008, top + 0.45, top + 0.53, trim)
+    m.box(-ex - 0.004, ex + 0.004, y1, ey + 0.004, top - 0.16, top - 0.06, trim)
+    for x in (-0.054, 0.042):
+        m.box(x, x + 0.012, ey, ey + 0.012, 0.2, 1.45, trim)
+    m.box(-0.068, 0.068, ey, ey + 0.016, 1.45, 1.6, trim)
+    m.box(-0.052, 0.052, ey, ey + 0.01, 1.62, 1.84, trim)
+    sign_text(m, "THE ROSLYN", "y", ey, 1, 0.0, 1.73, 0.014, material("name letters", "#3a3430", rough=0.8), o=0.01)
+    m.wedge([(-0.06, ey, 1.84), (0.06, ey, 1.84), (0.0, ey, 1.96)], [(-0.06, ey + 0.014, 1.84), (0.06, ey + 0.014, 1.84), (0.0, ey + 0.014, 1.96)], trim)
+    door(m, 0.0, ey, material("walkup door", "#3a2a22", rough=0.6), sash, w=0.06, h=0.95, z0=0.2, transom=glass())
+    steps(m, 0.0, ey, 0.12, 0.2, trim, n=3)
+    # The stair windows, at the landings between floors.
+    for s in range(1, 4):
+        z = s * STOREY + 0.62
+        pane(m, "y", ey, 1, 0.0, z, z + 0.5, 0.05, glass(), sash, trim)
+    # Canted bay windows each side of the entrance, from the stone base up to the cornice.
+    for cx in (-0.22, 0.22):
+        bx0, bx1, bd = cx - 0.065, cx + 0.065, 0.04
+        bay = [(bx1, y1), (bx0, y1), (bx0 + 0.022, y1 + bd), (bx1 - 0.022, y1 + bd)]
+        m.wedge([(x, y, 0) for x, y in bay], [(x, y, top - 0.45) for x, y in bay], brick)
+        low = [(bx1 + 0.005, y1), (bx0 - 0.005, y1), (bx0 + 0.02, y1 + bd + 0.006), (bx1 - 0.02, y1 + bd + 0.006)]
+        m.wedge([(x, y, 0) for x, y in low], [(x, y, base) for x, y in low], trim)
+        cap = [(bx1 + 0.008, y1), (bx0 - 0.008, y1), (bx0 + 0.019, y1 + bd + 0.01), (bx1 - 0.019, y1 + bd + 0.01)]
+        m.wedge([(x, y, top - 0.45) for x, y in cap], [(x, y, top - 0.38) for x, y in cap], trim)
+        for s in range(4):
+            z0 = s * STOREY + 0.1 + 0.38
+            z1 = z0 + 0.6
+            face_pane(m, (bx1 - 0.022, y1 + bd), (bx0 + 0.022, y1 + bd), z0, z1, glass(), sash, 0.005, 0.12, 0.88)
+            face_pane(m, (bx0 + 0.022, y1 + bd), (bx0, y1), z0, z1, glass(), sash, 0.005, 0.2, 0.8)
+            face_pane(m, (bx1, y1), (bx1 - 0.022, y1 + bd), z0, z1, glass(), sash, 0.005, 0.2, 0.8)
+            if s:
+                band = [(bx1 + 0.003, y1), (bx0 - 0.003, y1), (bx0 + 0.021, y1 + bd + 0.004), (bx1 - 0.021, y1 + bd + 0.004)]
+                m.wedge([(x, y, z0 - 0.12) for x, y in band], [(x, y, z0 - 0.06) for x, y in band], trim)
+        # The windows between the bay and the entrance.
+        for s in range(4):
+            z = s * STOREY + 0.1 + 0.38
+            pane(m, "y", y1, 1, cx * 0.52, z, z + 0.6, 0.045, glass(), sash, trim)
+    # Windows down the sides and across the back.
+    for s in range(4):
+        z = s * STOREY + 0.1 + 0.38
+        for k in range(4):
+            y = y0 + (k + 0.5) * (y1 - y0) / 4
+            for x, d in ((x1, 1), (x0, -1)):
+                pane(m, "x", x, d, y, z, z + 0.6, WINDOW_W, glass(), sash, trim)
+        for x in (-0.27, 0.0, 0.27):
+            pane(m, "y", y0, -1, x, z, z + 0.6, WINDOW_W, glass(), sash, trim)
+    # Stacked wooden sunporches at the back, a glazed porch on each floor on posts over the yard.
+    boards = material("sunporch boards", "#e8e2d2", rough=0.75)
+    green = material("sunporch trim", "#3e5a3a", rough=0.6)
+    for cx in (-0.17, 0.17):
+        px0, px1, py0 = cx - 0.075, cx + 0.075, y0 - 0.075
+        for x in (px0 + 0.006, px1 - 0.006):
+            m.box(x - 0.006, x + 0.006, py0, py0 + 0.012, 0, 0.3, boards)
+        m.box(px0, px1, py0, y0, 0.3, 4 * STOREY + 0.15, boards, 0.002)
+        for s in range(4):
+            z = 0.3 + s * STOREY
+            m.box(px0 - 0.004, px1 + 0.004, py0 - 0.004, y0, z, z + 0.06, green)
+            for face, at, d, a0, a1 in (("y", py0, -1, px0, px1), ("x", px0, -1, py0, y0), ("x", px1, 1, py0, y0)):
+                on_wall(m, face, at, d, a0 + 0.01, a1 - 0.01, -0.002, 0.003, z + 0.45, z + 1.05, glass())
+                n = max(1, round((a1 - a0) / 0.03))
+                for k in range(n + 1):
+                    a = a0 + 0.01 + k * (a1 - a0 - 0.02) / n
+                    on_wall(m, face, at, d, a - 0.003, a + 0.003, 0, 0.006, z + 0.45, z + 1.05, green)
+                on_wall(m, face, at, d, a0 + 0.01, a1 - 0.01, 0, 0.006, z + 1.05, z + 1.1, green)
+        slab(m, [(px0 - 0.01, y0, 4 * STOREY + 0.3), (px1 + 0.01, y0, 4 * STOREY + 0.3), (px1 + 0.01, py0 - 0.012, 4 * STOREY + 0.15),
+                 (px0 - 0.01, py0 - 0.012, 4 * STOREY + 0.15)], 0.05, material("sunporch roof", "#4e4844", rough=0.85))
+        on_wall(m, "y", py0, -1, cx - 0.02, cx + 0.02, 0, 0.008, 0.3, 1.2, green)
+        steps(m, cx, py0, 0.05, 0.3, boards, n=3, d=-1)
+    # A fire escape down one side: landings with railings, stairs between them and a drop ladder.
     for s in range(1, 4):
         z = s * STOREY + 0.1
         m.box(x1, x1 + 0.05, -0.12, 0.06, z, z + 0.04, iron)
         m.box(x1 + 0.045, x1 + 0.05, -0.12, 0.06, z + 0.04, z + 0.45, iron)
-    m.rod((x1 + 0.03, -0.1, 1.35), (x1 + 0.03, 0.04, 4 * STOREY + 0.15), 0.004, iron)
-    path(m, 0.0, y1, 0.5, 0.08)
+        for y in (-0.12, 0.06):
+            m.box(x1, x1 + 0.05, y - 0.002, y + 0.002, z + 0.04, z + 0.45, iron)
+        if s < 3:
+            m.rod((x1 + 0.025, -0.1, z + 0.04), (x1 + 0.025, 0.04, z + STOREY), 0.004, iron)
+    m.rod((x1 + 0.03, 0.04, 0.6), (x1 + 0.03, 0.04, STOREY + 0.1), 0.003, iron)
+    m.rod((x1 + 0.02, 0.04, 0.6), (x1 + 0.02, 0.04, STOREY + 0.1), 0.003, iron)
+    chimney(m, -0.2, -0.05, top, top + 0.8, brick, 0.035)
+    m.box(0.08, 0.18, -0.12, -0.02, top, top + 0.55, brick, 0.003)
+    m.box(0.074, 0.186, -0.126, -0.014, top + 0.55, top + 0.6, trim)
+    path(m, 0.0, ey + 0.06, 0.5, 0.08)
     # A paved forecourt, chain-link round the back where the bins are, and trees along the side.
     paved(m, -0.12, 0.12, 0.22, 0.5)
     fence_round(m, "chain", side_front=-0.28)
-    m.box(-0.42, -0.34, -0.46, -0.38, 0, 0.35, material("bins", "#3e4a3e", rough=0.8), 0.004)
+    m.box(-0.46, -0.38, -0.46, -0.38, 0, 0.35, material("bins", "#3e4a3e", rough=0.8), 0.004)
     yard_tree(m, -0.42, 0.36, 0.8, seed=6, kind="elm")
     yard_tree(m, 0.42, 0.36, 0.8, seed=7, kind="elm")
 
@@ -971,55 +1501,324 @@ def split_level(m, look=0):
 
 
 def office_block(m):
+    """The International style office block, 1950 to 1990: a curtain wall of glass and light spandrels between
+    aluminium mullions, raised on columns over a glass lobby set back under it, a canopy over the doors and a louvred
+    mechanical penthouse on the roof."""
     concrete = material("office concrete", "#b4b0a8", rough=0.85)
-    curtain = material("curtain glass", "#3e5a6e", metal=0.3, rough=0.1, grime=0.15)
+    spandrel = material("office spandrels", "#8e9ca2", metal=0.2, rough=0.5)
+    curtain_g = material("curtain glass", "#3e5a6e", metal=0.3, rough=0.1, grime=0.15)
+    alu = material("aluminium mullions", "#c4c8cc", metal=0.7, rough=0.35)
+    lobby = material("lobby glass", "#2c3a48", rough=0.15)
     x0, x1, y0, y1 = -0.32, 0.32, -0.3, 0.28
-    storeys = 8
-    top = storeys * STOREY
-    m.box(x0, x1, y0, y1, 0, top, concrete, 0.003)
-    # Bands of glass between concrete spandrels, floor by floor, all round.
-    for s in range(storeys):
-        z = s * STOREY + 0.35
-        for xa, xb, ya, yb in ((x0 + 0.02, x1 - 0.02, y1, y1 + 0.006), (x0 + 0.02, x1 - 0.02, y0 - 0.006, y0), (x1, x1 + 0.006, y0 + 0.02, y1 - 0.02), (x0 - 0.006, x0, y0 + 0.02, y1 - 0.02)):
-            m.box(xa, xb, ya, yb, z, z + 0.75, curtain)
-    for k in range(9):
-        x = x0 + 0.02 + k * (x1 - x0 - 0.04) / 8
-        m.box(x - 0.006, x + 0.006, y1, y1 + 0.012, 0.3, top, concrete)
-    flat_top(m, x0, x1, y0, y1, top, concrete, parapet=0.2)
-    m.box(-0.12, 0.1, -0.15, 0.08, top, top + 1.0, concrete, 0.003)
-    m.box(x0, x1, y1, 0.5, 0, 0.03, material("plaza", "#9a968e", rough=0.9))
-    m.box(-0.1, 0.1, y1, y1 + 0.1, 1.0, 1.08, concrete)
-    # Planters with trees on the plaza.
+    storeys, lob = 7, STOREY
+    top = lob + storeys * STOREY
+    # The lobby, glass all round, set back under the tower between its columns.
+    lx0, lx1, ly0, ly1 = x0 + 0.06, x1 - 0.06, y0 + 0.06, y1 - 0.06
+    m.box(lx0, lx1, ly0, ly1, 0, lob, lobby)
+    for face, at, d, a0, a1 in (("y", ly1, 1, lx0, lx1), ("y", ly0, -1, lx0, lx1), ("x", lx1, 1, ly0, ly1), ("x", lx0, -1, ly0, ly1)):
+        n = round((a1 - a0) / 0.05)
+        for k in range(n + 1):
+            a = a0 + k * (a1 - a0) / n
+            on_wall(m, face, at, d, a - 0.003, a + 0.003, 0, 0.005, 0, lob, alu)
+        on_wall(m, face, at, d, a0, a1, 0, 0.005, 0.95, 1.0, alu)
+    for x in (-0.03, 0.03):
+        on_wall(m, "y", ly1, 1, x - 0.024, x + 0.024, 0, 0.007, 0.03, 0.9, material("lobby doors", "#1e2a34", rough=0.2))
+    cols = [x0 + 0.03 + k * (x1 - x0 - 0.06) / 4 for k in range(5)]
+    rows = [y0 + 0.03 + k * (y1 - y0 - 0.06) / 3 for k in range(4)]
+    for x in cols:
+        for y in rows:
+            if x in (cols[0], cols[-1]) or y in (rows[0], rows[-1]):
+                m.box(x - 0.012, x + 0.012, y - 0.012, y + 0.012, 0, lob, concrete, 0.002)
+    m.box(x0, x1, y0, y1, lob - 0.1, lob, concrete)
+    # The tower over it: spandrels, vision glass and mullion fins floor after floor.
+    m.box(x0, x1, y0, y1, lob, top, spandrel, 0.002)
+    curtain(m, x0, x1, y0, y1, lob, storeys, curtain_g, alu, gap=0.04, vision=(0.4, 1.15))
+    flat_top(m, x0, x1, y0, y1, top, alu, parapet=0.2)
+    # The mechanical penthouse, louvred all round.
+    px0, px1, py0, py1 = -0.15, 0.12, -0.16, 0.1
+    m.box(px0, px1, py0, py1, top, top + 0.95, concrete, 0.003)
+    for face, at, d, a0, a1 in (("y", py1, 1, px0, px1), ("y", py0, -1, px0, px1), ("x", px1, 1, py0, py1), ("x", px0, -1, py0, py1)):
+        louvres(m, face, at, d, (a0 + a1) / 2, top + 0.2, top + 0.8, a1 - a0 - 0.04, concrete, alu)
+    m.box(px0 - 0.008, px1 + 0.008, py0 - 0.008, py1 + 0.008, top + 0.95, top + 1.02, concrete)
+    m.box(0.16, 0.26, 0.08, 0.2, top, top + 0.35, alu, 0.003)
+    # The canopy over the doors, cantilevered out over the plaza.
+    m.box(-0.12, 0.12, ly1, y1 + 0.1, 0.98, 1.04, concrete)
+    m.box(-0.122, 0.122, y1 + 0.096, y1 + 0.104, 0.9, 1.06, alu)
+    m.box(x0, x1, y0, 0.5, 0, 0.03, material("plaza", "#9a968e", rough=0.9))
+    # Planters with trees and a flagpole on the plaza.
     for x in (-0.38, 0.38):
         m.box(x - 0.05, x + 0.05, 0.35, 0.45, 0, 0.3, material("planter", "#8a867e", rough=0.9), 0.004)
         yard_tree(m, x, 0.4, 0.7, seed=9, kind="elm")
+    m.upright(0.22, 0.42, 0, 3.2, 0.004, 0.003, alu, segments=8)
+    red = material("flag red", "#c8282a", rough=0.8)
+    for a, b, mat in ((0.424, 0.444, red), (0.444, 0.476, material("flag white", "#f0ece4", rough=0.8)), (0.476, 0.496, red)):
+        m.box(0.222, 0.226, a, b, 2.75, 3.15, mat)
+    m.box(0.221, 0.227, 0.453, 0.467, 2.88, 3.02, red)
+
+
+def stone_office(m):
+    """A 1920s office tower, 1910 to 1950: a three-storey base of rusticated limestone with an arched entrance, a shaft
+    of buff terra cotta with piers running up between the windows, setbacks near the top each with a cornice, and a
+    copper hip roof."""
+    lime = material("office limestone", "#cfc6b2", rough=0.85)
+    groove = material("rustication", "#a8a090", rough=0.9)
+    terra = material("terra cotta", "#d2bc94", rough=0.8)
+    spandrel = material("office spandrel", "#6a5e50", rough=0.7)
+    copper = material("copper roof", "#5e8a72", metal=0.4, rough=0.5)
+    sash = material("bronze sashes", "#4a3e30", metal=0.4, rough=0.5)
+    bronze = material("bronze doors", "#5a4428", metal=0.6, rough=0.4)
+    x0, x1, y0, y1 = -0.32, 0.32, -0.3, 0.28
+    bt = 3 * STOREY
+    m.box(x0, x1, y0, y1, 0, bt, lime, 0.003)
+    z = 0.2
+    while z < 1.55:
+        m.box(x0 - 0.002, x1 + 0.002, y0 - 0.002, y1 + 0.002, z, z + 0.025, groove)
+        z += 0.2
+    m.box(x0 - 0.008, x1 + 0.008, y0 - 0.008, y1 + 0.008, 1.6, 1.68, lime)
+    m.box(x0 - 0.02, x1 + 0.02, y0 - 0.02, y1 + 0.02, bt - 0.1, bt + 0.06, lime)
+    m.box(x0 - 0.012, x1 + 0.012, y0 - 0.012, y1 + 0.012, bt - 0.2, bt - 0.1, lime)
+    # Tall arched windows on the ground floor, the entrance arch in the middle of the front, and plain windows over them.
+    for k in range(6):
+        x = x0 + (k + 0.5) * (x1 - x0) / 6
+        if abs(x) > 0.1:
+            arched_pane(m, "y", y1, 1, x, 0.3, 1.2, 0.06, glass(), sash, lime, rise=0.12)
+        arched_pane(m, "y", y0, -1, x, 0.3, 1.2, 0.06, glass(), sash, lime, rise=0.12)
+        for s in (1, 2):
+            pane(m, "y", y1, 1, x, s * STOREY + 0.4, s * STOREY + 1.0, 0.055, glass(), sash, lime)
+            pane(m, "y", y0, -1, x, s * STOREY + 0.4, s * STOREY + 1.0, 0.055, glass(), sash, lime)
+    for k in range(5):
+        y = y0 + (k + 0.5) * (y1 - y0) / 5
+        for xx, d in ((x1, 1), (x0, -1)):
+            arched_pane(m, "x", xx, d, y, 0.3, 1.2, 0.06, glass(), sash, lime, rise=0.12)
+            for s in (1, 2):
+                pane(m, "x", xx, d, y, s * STOREY + 0.4, s * STOREY + 1.0, 0.055, glass(), sash, lime)
+    ea, ez = 0.055, 1.05
+    on_face(m, "y", y1, 1, [(-ea, 0.0), (ea, 0.0)] + arc(ea, -ea, ez, 0.35, n=8), -0.002, 0.004, material("entrance shade", "#2a2622", rough=0.9))
+    on_face(m, "y", y1, 1, [(-0.04, 0.03), (0.04, 0.03), (0.04, 0.95), (-0.04, 0.95)], 0.004, 0.008, bronze)
+    on_face(m, "y", y1, 1, [(-0.04, 1.0)] + [(a, z - 0.04) for a, z in arc(-0.04, 0.04, ez, 0.3, n=8)][1:-1] + [(0.04, 1.0)], 0.004, 0.007, glass())
+    arch_band(m, "y", y1, 1, arc(-ea, ea, ez, 0.35, n=8), [(a, z + 0.18) for a, z in arc(-ea - 0.02, ea + 0.02, ez, 0.35, n=8)], 0, 0.014, lime)
+    on_wall(m, "y", y1, 1, -0.008, 0.008, 0, 0.02, ez + 0.3, ez + 0.62, lime)
+    for x in (-ea - 0.012, ea + 0.012):
+        on_wall(m, "y", y1, 1, x - 0.012, x + 0.012, 0, 0.012, 0, ez, lime)
+    steps(m, 0.0, y1, 0.13, 0.1, lime, n=2)
+
+    def shaft(sx0, sx1, sy0, sy1, z0, z1, bays_x, bays_y):
+        """A block of the shaft: terra cotta with piers up between the bays, glass and dark spandrels between them."""
+        m.box(sx0, sx1, sy0, sy1, z0, z1, terra, 0.003)
+        n = round((z1 - z0) / STOREY)
+        for face, at, d, a0, a1, bays in (("y", sy1, 1, sx0, sx1, bays_x), ("y", sy0, -1, sx0, sx1, bays_x),
+                                          ("x", sx1, 1, sy0, sy1, bays_y), ("x", sx0, -1, sy0, sy1, bays_y)):
+            w = (a1 - a0) / bays
+            for k in range(bays):
+                a = a0 + (k + 0.5) * w
+                on_wall(m, face, at, d, a - w * 0.32, a + w * 0.32, -0.002, 0.002, z0 + 0.1, z1 - 0.15, spandrel)
+                for s in range(n):
+                    z = z0 + s * STOREY + 0.3
+                    on_wall(m, face, at, d, a - w * 0.28, a + w * 0.28, 0, 0.004, z, z + 0.72, glass())
+                    on_wall(m, face, at, d, a - 0.002, a + 0.002, 0, 0.006, z, z + 0.72, sash)
+            for k in range(bays + 1):
+                a = min(max(a0 + k * w, a0 + 0.008), a1 - 0.008)
+                if face == "x" and k in (0, bays):
+                    continue
+                on_wall(m, face, at, d, a - 0.008, a + 0.008, 0, 0.01, z0, z1 - 0.05, terra)
+        m.box(sx0 - 0.014, sx1 + 0.014, sy0 - 0.014, sy1 + 0.014, z1 - 0.08, z1 + 0.04, lime)
+        m.box(sx0 - 0.02, sx1 + 0.02, sy0 - 0.02, sy1 + 0.02, z1 + 0.04, z1 + 0.1, lime)
+
+    z1 = bt + 4 * STOREY
+    shaft(x0 + 0.02, x1 - 0.02, y0 + 0.02, y1 - 0.02, bt + 0.06, z1, 7, 6)
+    z2 = z1 + STOREY + 0.1
+    shaft(x0 + 0.08, x1 - 0.08, y0 + 0.08, y1 - 0.08, z1 + 0.1, z2, 5, 4)
+    z3 = z2 + STOREY - 0.3
+    shaft(x0 + 0.15, x1 - 0.15, y0 + 0.15, y1 - 0.15, z2 + 0.1, z3, 3, 3)
+    # Urns on the corners of each setback, and the copper hip roof with a flagpole.
+    for inset, z in ((0.035, z1 + 0.1), (0.095, z2 + 0.1)):
+        for x in (x0 + inset, x1 - inset):
+            for y in (y0 + inset, y1 - inset):
+                m.lathe(x, y, z, [(0.012, 0.0), (0.008, 0.06), (0.014, 0.18), (0.006, 0.3), (0.0, 0.34)], lime, segments=10)
+    hip(m, x0 + 0.15, x1 - 0.15, y0 + 0.15, y1 - 0.15, z3 + 0.1, z3 + 0.75, copper, over=0.01, thick=0.05)
+    m.upright(0.0, (y0 + y1) / 2, z3 + 0.6, z3 + 1.25, 0.004, 0.003, sash, segments=8)
+    m.box(-0.5, 0.5, y1, 0.5, 0, 0.03, material("sidewalk", "#aaa498", rough=0.9))
+    for x in (-0.38, 0.38):
+        lamp_post(m, x, 0.42, h=0.9)
+
+
+def clipped(x0, x1, y0, y1, c):
+    """A rectangle with its corners clipped c across, as eight (x, y) points going round."""
+    return [(x0 + c, y0), (x1 - c, y0), (x1, y0 + c), (x1, y1 - c), (x1 - c, y1), (x0 + c, y1), (x0, y1 - c), (x0, y0 + c)]
+
+
+def glass_office(m):
+    """A tinted glass office tower, 1990 to 2100: a granite podium with a glass entrance hall under a steel and glass
+    canopy, and the tower over it in green glass with clipped corners, light bands at each floor and a sloping glass crown."""
+    granite = material("granite", "#6e6864", rough=0.6)
+    tint = material("tinted glass", "#3a6a68", metal=0.45, rough=0.08, grime=0.1)
+    crown_g = material("crown glass", "#3e6462", metal=0.3, rough=0.35, grime=0.1)
+    band = material("floor bands", "#c0c8c6", metal=0.6, rough=0.35)
+    steel = material("canopy steel", "#8a9094", metal=0.7, rough=0.35)
+    x0, x1, y0, y1 = -0.32, 0.32, -0.3, 0.28
+    pod = 2 * STOREY
+    m.box(x0, x1, y0, y1, 0, pod, granite, 0.003)
+    for face, at, d, a0, a1 in (("y", y1, 1, x0, x1), ("y", y0, -1, x0, x1), ("x", x1, 1, y0, y1), ("x", x0, -1, y0, y1)):
+        n = round((a1 - a0) / 0.1)
+        for k in range(n):
+            a = a0 + (k + 0.5) * (a1 - a0) / n
+            on_wall(m, face, at, d, a - 0.038, a + 0.038, -0.002, 0.004, 0.08, 1.15, glass())
+            on_wall(m, face, at, d, a - 0.038, a + 0.038, -0.002, 0.004, 1.4, 2.25, tint)
+    m.box(x0 - 0.008, x1 + 0.008, y0 - 0.008, y1 + 0.008, pod, pod + 0.1, granite)
+    # The entrance hall: a glass box standing out from the podium under its canopy.
+    m.box(-0.1, 0.1, y1, y1 + 0.05, 0, 1.6, crown_g, 0.002)
+    for k in range(5):
+        x = -0.1 + k * 0.05
+        m.box(x - 0.003, x + 0.003, y1 + 0.05, y1 + 0.055, 0, 1.6, steel)
+    slab(m, [(-0.14, y1, 1.75), (0.14, y1, 1.75), (0.14, y1 + 0.13, 1.7), (-0.14, y1 + 0.13, 1.7)], 0.04, material("canopy glass", "#9ab8bc", metal=0.2, rough=0.1))
+    for x in (-0.13, 0.13):
+        m.rod((x, y1 + 0.12, 1.74), (x, y1, 2.35), 0.003, steel)
+    # The tower: green glass with clipped corners and a band at each floor, up to a crown sloping down to the front.
+    tx0, tx1, ty0, ty1, c = -0.26, 0.24, -0.24, 0.22, 0.06
+    storeys = 6
+    tz = pod + 0.1 + storeys * STOREY
+    ring = clipped(tx0, tx1, ty0, ty1, c)
+    m.wedge([(x, y, pod + 0.1) for x, y in ring], [(x, y, tz) for x, y in ring], tint)
+    big = clipped(tx0 - 0.004, tx1 + 0.004, ty0 - 0.004, ty1 + 0.004, c)
+    for s in range(storeys + 1):
+        z = pod + 0.1 + s * STOREY
+        m.wedge([(x, y, z - 0.03) for x, y in big], [(x, y, z + 0.03) for x, y in big], band)
+    for face, at, d, a0, a1 in (("y", ty1, 1, tx0 + c, tx1 - c), ("y", ty0, -1, tx0 + c, tx1 - c), ("x", tx1, 1, ty0 + c, ty1 - c), ("x", tx0, -1, ty0 + c, ty1 - c)):
+        n = round((a1 - a0) / 0.06)
+        for k in range(n + 1):
+            a = a0 + k * (a1 - a0) / n
+            on_wall(m, face, at, d, a - 0.002, a + 0.002, 0, 0.006, pod + 0.1, tz, band)
+    crown = [(x, y, tz + 0.35 + 0.75 * (ty1 - y) / (ty1 - ty0)) for x, y in ring]
+    m.wedge([(x, y, tz) for x, y in ring], crown, crown_g)
+    m.wedge([(x, y, z) for x, y, z in crown], [(x, y, z + 0.06) for x, y, z in crown], material("crown roof", "#4e5658", metal=0.3, rough=0.6))
+    m.upright(-0.02, ty0 + 0.1, tz + 1.0, tz + 1.6, 0.006, 0.003, steel, segments=8)
+    # Paving, trees in planters and benches on the plaza.
+    m.box(x0, x1, y1, 0.5, 0, 0.03, material("plaza", "#a8a49c", rough=0.9))
+    for x in (-0.38, 0.38):
+        m.box(x - 0.05, x + 0.05, 0.35, 0.45, 0, 0.25, granite, 0.004)
+        yard_tree(m, x, 0.4, 0.7, seed=18, kind="elm")
+    for x in (-0.22, 0.22):
+        m.box(x - 0.05, x + 0.05, 0.42, 0.44, 0.15, 0.2, material("bench wood", "#8a6a4a", rough=0.8))
 
 
 def apartment_tower(m):
+    """The 1960s slab apartment tower, 1960 to 2000: concrete, its balconies stacked up the front and back behind solid
+    concrete fronts, a glass lobby under a canopy, an elevator penthouse on the roof and a surface parking lot beside it."""
     concrete = material("tower concrete", "#c8c2b4", rough=0.85)
-    rail = material("balcony rail", "#5a6064", metal=0.4, rough=0.5)
+    panel = material("balcony fronts", "#dcd6c8", rough=0.8)
+    alu = material("lobby frames", "#9a9ea2", metal=0.6, rough=0.4)
     x0, x1, y0, y1 = -0.2, 0.2, -0.22, 0.2
     storeys = 9
     top = storeys * STOREY + 0.2
     m.box(x0, x1, y0, y1, 0, top, concrete, 0.003)
-    windows(m, x0, x1, y0, y1, 0.1, storeys, 4, 4, glass(), concrete)
-    # Balconies stacked up the front and back.
+    windows(m, x0, x1, y0, y1, 0.1, storeys, 4, 4, glass(), concrete, skip=((0, 1), (0, 2)))
+    # Balconies up the front and back: a slab, a solid front and ends, and a glass door behind.
     for s in range(1, storeys):
         z = s * STOREY + 0.05
         for y, d in ((y1, 1), (y0, -1)):
             for cx in (-0.1, 0.1):
-                m.box(cx - 0.07, cx + 0.07, min(y, y + d * 0.06), max(y, y + d * 0.06), z, z + 0.06, concrete)
-                m.box(cx - 0.07, cx + 0.07, y + d * 0.06 - 0.003, y + d * 0.06 + 0.003, z + 0.06, z + 0.42, rail)
+                yo = y + d * 0.06
+                m.box(cx - 0.07, cx + 0.07, min(y, yo), max(y, yo), z, z + 0.06, concrete)
+                m.box(cx - 0.07, cx + 0.07, min(yo, yo - d * 0.008), max(yo, yo - d * 0.008), z + 0.06, z + 0.42, panel)
+                for x in (cx - 0.07, cx + 0.066):
+                    m.box(x, x + 0.004, min(y, yo), max(y, yo), z + 0.06, z + 0.42, panel)
+                on_wall(m, "y", y, d, cx - 0.02, cx + 0.02, -0.002, 0.004, z + 0.06, z + 0.95, glass())
     flat_top(m, x0, x1, y0, y1, top, concrete, parapet=0.2)
-    m.box(-0.06, 0.06, -0.05, 0.08, top, top + 0.8, concrete, 0.003)
-    door(m, 0.0, y1, material("lobby glass", "#2c3a48", rough=0.15), concrete, w=0.1, h=1.0)
+    # The elevator penthouse, taller than the machine room beside it, louvred at the top.
+    m.box(-0.06, 0.06, -0.05, 0.08, top, top + 1.1, concrete, 0.003)
+    for face, at, d in (("y", 0.08, 1), ("y", -0.05, -1)):
+        louvres(m, face, at, d, 0.0, top + 0.6, top + 0.95, 0.07, concrete, alu)
+    m.box(0.06, 0.13, -0.05, 0.05, top, top + 0.55, concrete, 0.003)
+    # The lobby: glass across the middle of the ground floor under a flat canopy on two posts.
+    on_wall(m, "y", y1, 1, -0.1, 0.1, -0.002, 0.005, 0.05, 1.05, material("lobby glass", "#2c3a48", rough=0.15))
+    for k in range(6):
+        x = -0.1 + k * 0.04
+        on_wall(m, "y", y1, 1, x - 0.003, x + 0.003, 0, 0.008, 0.05, 1.05, alu)
+    on_wall(m, "y", y1, 1, -0.1, 0.1, 0, 0.008, 0.85, 0.89, alu)
+    m.box(-0.13, 0.13, y1, y1 + 0.14, 1.12, 1.2, concrete)
+    m.box(-0.132, 0.132, y1 + 0.136, y1 + 0.144, 1.08, 1.22, alu)
+    for x in (-0.12, 0.12):
+        m.box(x - 0.005, x + 0.005, y1 + 0.125, y1 + 0.135, 0, 1.12, alu)
     m.box(-0.12, 0.12, y1, 0.5, 0, 0.03, material("tower walk", "#a8a49a", rough=0.9))
-    for x in (-0.36, 0.36):
-        m.box(x - 0.08, x + 0.08, -0.35, 0.35, 0, 0.03, material("lawn", "#4e7a3a", rough=1.0))
-    # Trees on the lawns.
+    # The parking lot down one side with its drive out to the road, a lawn on the other side with trees.
+    parking(m, 0.23, 0.48, -0.46, 0.3, 0.1, ((-0.4, "#7a2a2a"), (-0.2, "#3a5a7a"), (-0.1, "#c8c0a8"), (0.1, "#4a6a4a"), (0.2, "#8a8a90")))
+    m.box(0.3, 0.44, 0.3, 0.5, 0, 0.025, material("parking asphalt", "#4e4e50", rough=0.95))
+    m.box(-0.44, -0.28, -0.35, 0.35, 0, 0.03, material("lawn", "#4e7a3a", rough=1.0))
     yard_tree(m, -0.36, 0.3, 0.9, seed=10)
-    yard_tree(m, 0.38, -0.3, 0.9, seed=11)
     yard_tree(m, -0.38, -0.32, 0.8, seed=12, kind="elm")
+
+
+def glass_condo(m):
+    """A glass condo tower, 2000 to 2100: floor-to-ceiling glass between white slab edges, glass balconies wrapping its
+    corners, a two-storey podium of shops with a lobby canopy and a green roof terrace, and a glass screen round the
+    mechanical floor at the top."""
+    stone = material("podium stone", "#5e5a58", rough=0.7)
+    tint = material("condo glass", "#4a7a8a", metal=0.45, rough=0.08, grime=0.1)
+    white = material("slab edges", "#ecebe6", rough=0.6)
+    rail = material("glass balustrade", "#a8ccd4", metal=0.15, rough=0.05, grime=0.0)
+    steel = material("condo steel", "#3a3c3e", metal=0.6, rough=0.4)
+    x0, x1, y0, y1 = -0.3, 0.3, -0.3, 0.26
+    pod = 2 * STOREY
+    m.box(x0, x1, y0, y1, 0, pod, stone, 0.003)
+    for face, at, d, a0, a1 in (("y", y1, 1, x0, x1), ("x", x1, 1, y0, y1), ("x", x0, -1, y0, y1), ("y", y0, -1, x0, x1)):
+        n = round((a1 - a0) / 0.12)
+        for k in range(n):
+            a = a0 + (k + 0.5) * (a1 - a0) / n
+            on_wall(m, face, at, d, a - 0.05, a + 0.05, -0.002, 0.004, 0.06, 1.05, glass() if face == "y" and d == 1 else tint)
+            on_wall(m, face, at, d, a - 0.05, a + 0.05, -0.002, 0.004, 1.4, 2.25, tint)
+        on_wall(m, face, at, d, a0, a1, 0, 0.01, 1.12, 1.3, steel)
+    for k, c in enumerate(("#c84a3a", "#e8c84a", "#3a6a8a", "#4a8a4a")):
+        x = x0 + 0.075 + k * 0.15
+        if abs(x) > 0.05:
+            m.box(x - 0.04, x + 0.04, y1, y1 + 0.004, 1.15, 1.27, material("shop sign " + c, c, rough=0.6))
+    m.box(-0.1, 0.1, y1, y1 + 0.12, 1.32, 1.37, rail)
+    m.box(x0 - 0.006, x1 + 0.006, y0 - 0.006, y1 + 0.006, pod, pod + 0.08, white)
+    # The green roof on the podium round the tower's foot, with planters and shrubs.
+    m.box(x0 + 0.01, x1 - 0.01, y0 + 0.01, y1 - 0.01, pod + 0.08, pod + 0.12, material("green roof", "#5a7a3e", rough=1.0))
+    shrub = scenery.leafy("terrace shrubs", "#3e6a2a", "#6a9a3e")
+    for k, (x, y) in enumerate(((-0.26, 0.22), (0.26, 0.22), (-0.26, -0.26), (0.26, -0.26))):
+        scenery.blob(m, x, y, pod + 0.2, 0.025, shrub, 60 + k, squash=0.8)
+    for y in (y1 - 0.012, y0 + 0.012):
+        m.box(x0 + 0.01, x1 - 0.01, y - 0.002, y + 0.002, pod + 0.08, pod + 0.4, rail)
+    # The tower: glass floor to ceiling between white slab edges, glass balconies round all four corners.
+    tx0, tx1, ty0, ty1 = -0.17, 0.17, -0.19, 0.16
+    storeys = 7
+    tz = pod + 0.1 + storeys * STOREY
+    m.box(tx0, tx1, ty0, ty1, pod + 0.1, tz, tint, 0.002)
+    for face, at, d, a0, a1 in (("y", ty1, 1, tx0, tx1), ("y", ty0, -1, tx0, tx1), ("x", tx1, 1, ty0, ty1), ("x", tx0, -1, ty0, ty1)):
+        n = round((a1 - a0) / 0.05)
+        for k in range(1, n):
+            a = a0 + k * (a1 - a0) / n
+            on_wall(m, face, at, d, a - 0.002, a + 0.002, 0, 0.005, pod + 0.1, tz, steel)
+    for s in range(storeys + 1):
+        z = pod + 0.1 + s * STOREY
+        m.box(tx0 - 0.006, tx1 + 0.006, ty0 - 0.006, ty1 + 0.006, z - 0.06, z + 0.02, white)
+        if 0 < s < storeys:
+            for cx, sx in ((tx0, -1), (tx1, 1)):
+                for cy, sy in ((ty0, -1), (ty1, 1)):
+                    # An L of slab round the corner, 0.05 out, with glass along its outer edges.
+                    ox, oy = cx + sx * 0.05, cy + sy * 0.05
+                    ax, bx = sorted((cx - sx * 0.12, ox))
+                    ay, by = sorted((cy - sy * 0.12, oy))
+                    m.box(ax, bx, min(cy, oy), max(cy, oy), z - 0.06, z, white)
+                    m.box(min(cx, ox), max(cx, ox), *sorted((cy - sy * 0.12, cy)), z - 0.06, z, white)
+                    m.box(ax, bx, oy - 0.002, oy + 0.002, z, z + 0.4, rail)
+                    m.box(ox - 0.002, ox + 0.002, ay, by, z, z + 0.4, rail)
+    # The mechanical floor at the top, screened by glass fins.
+    m.box(tx0, tx1, ty0, ty1, tz, tz + 0.04, material("tar roof", "#3a3a3c", rough=0.95))
+    m.box(tx0 + 0.04, tx1 - 0.04, ty0 + 0.04, ty1 - 0.04, tz, tz + 0.7, material("mechanical floor", "#a8aaa8", rough=0.7), 0.003)
+    for face, at, d, a0, a1 in (("y", ty1, 1, tx0, tx1), ("y", ty0, -1, tx0, tx1), ("x", tx1, 1, ty0, ty1), ("x", tx0, -1, ty0, ty1)):
+        n = round((a1 - a0) / 0.03)
+        for k in range(n + 1):
+            a = min(max(a0 + k * (a1 - a0) / n, a0 + 0.003), a1 - 0.003)
+            on_wall(m, face, at, d, a - 0.003, a + 0.003, -0.012, 0.0, tz, tz + 0.85, rail)
+    # The street: a wide sidewalk with trees in grates and the garage ramp down at the side.
+    m.box(-0.5, 0.5, y1, 0.5, 0, 0.03, material("sidewalk", "#b0aca2", rough=0.9))
+    for x in (-0.38, 0.38):
+        m.box(x - 0.03, x + 0.03, 0.37, 0.43, 0.03, 0.035, steel)
+        yard_tree(m, x, 0.4, 0.7, seed=19, kind="elm")
+    m.box(x1 + 0.02, 0.46, -0.1, 0.5, 0, 0.025, material("ramp asphalt", "#4e4e50", rough=0.95))
+    m.box(x1, x1 + 0.004, -0.08, 0.04, 0, 0.6, material("garage door", "#2a2a2c", metal=0.4, rough=0.5))
 
 
 def statue(m):
@@ -1071,6 +1870,11 @@ BUILDERS = {
     "statue": statue,
     "wartime_house": wartime_house,
     "ranch_bungalow": ranch_bungalow,
+    "stone_church": stone_church,
+    "modern_church": modern_church,
+    "stone_office": stone_office,
+    "glass_office": glass_office,
+    "glass_condo": glass_condo,
 }
 
 # Which way each view edge is, as a heading in eighths for place(): the front faces +y, the game's +u.

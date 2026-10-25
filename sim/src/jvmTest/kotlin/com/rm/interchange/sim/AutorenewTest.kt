@@ -276,7 +276,7 @@ class AutorenewTest {
 
     @Test
     fun aRivalsTwoTrainLineHasItsTrainsRenewedOneAtATime() {
-        val w = World(NewGame(160, 160, 5, 1930, Region.MIXED, towns = 3, industries = 0, rivals = 1))
+        val w = World(NewGame(160, 160, 1, 1930, Region.MIXED, towns = 3, industries = 0, rivals = 1))
         val r = w.rivals[0]
         val c = w.companies[r.company]
         c.money = 10_000_000

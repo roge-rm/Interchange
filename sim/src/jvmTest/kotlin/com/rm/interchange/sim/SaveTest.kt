@@ -291,7 +291,7 @@ class SaveTest {
      */
     @Test
     fun aCopyTakenAnyTimeInAFullGameCarriesOnTheSame() {
-        val a = World(NewGame(160, 160, 12, 1930, Region.MIXED, towns = 10, industries = 6, rivals = 2, rivalLevel = RivalLevel.HARD, goals = GoalSet.MIXED))
+        val a = World(NewGame(160, 160, 6, 1930, Region.MIXED, towns = 10, industries = 6, rivals = 2, rivalLevel = RivalLevel.HARD, goals = GoalSet.MIXED))
         a.companies[0].money = 100_000_000
         busesRoundTowns(a)
         trainAndShip(a)

@@ -44,7 +44,7 @@
       "id": "church",
       "name": { "en": "Church", "fr": "Église" },
       "from": 1836,
-      "until": 2100,
+      "until": 1870,
       "residents": 0,
       "jobs": 3,
       "zones": ["suburbs", "inner"],
@@ -107,7 +107,7 @@
       "id": "office_block",
       "name": { "en": "Office block", "fr": "Immeuble de bureaux" },
       "from": 1950,
-      "until": 2100,
+      "until": 1990,
       "residents": 0,
       "jobs": 90,
       "zones": ["centre"],
@@ -118,7 +118,7 @@
       "id": "apartment_tower",
       "name": { "en": "Apartment tower", "fr": "Tour d'habitation" },
       "from": 1960,
-      "until": 2100,
+      "until": 2000,
       "residents": 140,
       "jobs": 4,
       "zones": ["inner", "centre"],
@@ -153,6 +153,59 @@
       "jobs": 0,
       "zones": ["outskirts", "suburbs"],
       "weight": 8
+    },
+    {
+      "id": "stone_church",
+      "name": { "en": "Stone church", "fr": "Église de pierre" },
+      "from": 1870,
+      "until": 1960,
+      "residents": 0,
+      "jobs": 3,
+      "zones": ["suburbs", "inner"],
+      "weight": 1
+    },
+    {
+      "id": "modern_church",
+      "name": { "en": "Modern church", "fr": "Église moderne" },
+      "from": 1960,
+      "until": 2100,
+      "residents": 0,
+      "jobs": 3,
+      "zones": ["suburbs", "inner"],
+      "weight": 1
+    },
+    {
+      "id": "stone_office",
+      "name": { "en": "Stone office tower", "fr": "Tour de bureaux en pierre" },
+      "from": 1910,
+      "until": 1950,
+      "residents": 0,
+      "jobs": 90,
+      "zones": ["centre"],
+      "min_population": 3000,
+      "weight": 4
+    },
+    {
+      "id": "glass_office",
+      "name": { "en": "Glass office tower", "fr": "Tour de bureaux vitrée" },
+      "from": 1990,
+      "until": 2100,
+      "residents": 0,
+      "jobs": 90,
+      "zones": ["centre"],
+      "min_population": 3000,
+      "weight": 4
+    },
+    {
+      "id": "glass_condo",
+      "name": { "en": "Condo tower", "fr": "Tour de condos" },
+      "from": 2000,
+      "until": 2100,
+      "residents": 140,
+      "jobs": 4,
+      "zones": ["inner", "centre"],
+      "min_population": 4000,
+      "weight": 4
     }
   ]
 }

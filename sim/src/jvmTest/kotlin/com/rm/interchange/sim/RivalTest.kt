@@ -36,7 +36,7 @@ class RivalTest {
     @Test
     fun rivalsRunRailways() {
         // Hard rivals try rail first, before buses take the available town pairs.
-        val w = World(NewGame(160, 160, 5, 1930, Region.MIXED, towns = 3, industries = 4, rivals = 2, rivalLevel = RivalLevel.HARD))
+        val w = World(NewGame(160, 160, 1, 1930, Region.MIXED, towns = 3, industries = 4, rivals = 2, rivalLevel = RivalLevel.HARD))
         // Past a railway's first year, while its stations' ratings and traffic build.
         w.days(365 * 7)
         val rail = w.rivals.flatMap { r -> r.routes.filter { it.rail }.map { r.company to it } }
@@ -151,7 +151,7 @@ class RivalTest {
 
     @Test
     fun aPassingLoopRunsASecondTrain() {
-        val w = World(NewGame(160, 160, 5, 1930, Region.MIXED, towns = 3, industries = 0, rivals = 1))
+        val w = World(NewGame(160, 160, 1, 1930, Region.MIXED, towns = 3, industries = 0, rivals = 1))
         val r = w.rivals[0]
         val c = w.companies[r.company]
         c.money = 10_000_000
