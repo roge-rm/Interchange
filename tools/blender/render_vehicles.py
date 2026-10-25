@@ -79,7 +79,7 @@ MODELS = {
     "gf6c": (15, lambda m: diesel.gf6c(m, L(15))),
     "f40": (13, lambda m: diesel.hood(m, L(13), "via_blue", body="cowl", nose="short", dynamic=True)),
     "dash9": (16, lambda m: diesel.hood(m, L(16), "cn_red", axles=3, wide=True, dynamic=True, maker="ge", short=0.1, hood_top=1.72, flare=True)),
-    "sd70": (16, lambda m: diesel.hood(m, L(16), "red", axles=3, wide=True, dynamic=True, short=0.1, hood_top=1.72, flare=True)),
+    "sd70": (16, lambda m: diesel.hood(m, L(16), "red", axles=3, wide=True, dynamic=True, maker="ge", short=0.1, hood_top=1.72, flare=True, evo=True)),
     "charger": (14, lambda m: diesel.charger(m, L(14))),
     "coach_streamline": (14, lambda m: cars.coach_streamline(m, L(14))),
     "well_car": (14, lambda m: cars.well_car(m, L(14))),
@@ -128,6 +128,11 @@ MODELS = {
     "clrv": (11, lambda m: roadcars.streetcar(m, L(11), "clrv")),
     "flexity": (16, lambda m: roadcars.streetcar(m, L(16), "flexity")),
     "rotary_plow": (12, lambda m: cars.rotary_plow(m, L(12))),
+    "coach_early": (6, lambda m: cars.coach_early(m, L(6))),
+    "bulkhead_flat": (12, lambda m: cars.bulkhead_flat(m, L(12))),
+    "tank_domeless": (12, lambda m: cars.tank_domeless(m, L(12))),
+    "boxcar_50": (12, lambda m: cars.boxcar_50(m, L(12))),
+    "reefer_mech": (12, lambda m: cars.reefer_mech(m, L(12))),
 }
 SHIPS = ships.ship_builders()
 AIRCRAFT = aircraft.aircraft_builders()

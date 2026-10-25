@@ -58,29 +58,43 @@ def _shade(hexcol, f):
     return "#" + "".join(f"{int(int(hexcol[i:i + 2], 16) * f):02x}" for i in (1, 3, 5))
 
 
-def truck(m, y, c, axles=2):
-    """A diesel truck of two or three axles at y along the engine: wheels, a cast side frame, springs."""
+def truck(m, y, c, axles=2, ge=False):
+    """A diesel truck of two or three axles at y along the engine: wheels, a cast side frame, springs. ge draws GE's
+    Hi-Ad truck: a deep side frame that dips between the axles, with a nest of coil springs over each journal."""
     r = 0.036
     zc = r / rig.RISE
     gap = 0.075
     ys = [y + (i - (axles - 1) / 2) * gap for i in range(axles)]
+    journal = material("journal", "#5a5c60", metal=0.4, rough=0.5)
     for side in (-1, 1):
         for yy in ys:
             m.wheel(yy, side, r, (c["steel"], material("wheel dark", "#222224", rough=0.6), c["steel"]), spokes=0)
         span = (axles - 1) * gap / 2 + 0.05
-        m.box(side * 0.112, side * 0.126, y - span, y + span, zc * 0.55, zc * 2.0, c["dark"], bevel=0.003)
+        if not ge:
+            m.box(side * 0.112, side * 0.126, y - span, y + span, zc * 0.55, zc * 2.0, c["dark"], bevel=0.003)
+            for yy in ys:
+                m.box(side * 0.126, side * 0.13, yy - 0.012, yy + 0.012, zc * 0.7, zc * 1.4, journal)
+            continue
+        # The top member the full length, then a web under it between each pair of axles, down to below the hubs.
+        m.box(side * 0.112, side * 0.126, y - span, y + span, zc * 1.5, zc * 2.05, c["dark"], bevel=0.003)
+        for ya, yb in zip(ys, ys[1:]):
+            mid = (ya + yb) / 2
+            m.wedge([(side * 0.112, mid - 0.02, zc * 0.55), (side * 0.126, mid - 0.02, zc * 0.55), (side * 0.126, mid + 0.02, zc * 0.55), (side * 0.112, mid + 0.02, zc * 0.55)],
+                    [(side * 0.112, ya + 0.01, zc * 1.5), (side * 0.126, ya + 0.01, zc * 1.5), (side * 0.126, yb - 0.01, zc * 1.5), (side * 0.112, yb - 0.01, zc * 1.5)], c["dark"])
         for yy in ys:
-            m.box(side * 0.126, side * 0.13, yy - 0.012, yy + 0.012, zc * 0.7, zc * 1.4, material("journal", "#5a5c60", metal=0.4, rough=0.5))
+            m.box(side * 0.124, side * 0.132, yy - 0.013, yy + 0.013, zc * 0.75, zc * 1.35, journal)
+            for dy in (-0.007, 0.007):
+                m.upright(side * 0.129, yy + dy, zc * 1.35, zc * 1.75, 0.005, 0.005, material("truck spring", "#7a7c7e", metal=0.6, rough=0.4), segments=8)
 
 
-def frame(m, L, c, axles, deck=0.62):
-    """The underframe, fuel tank and trucks, with the walkway at [deck] steps."""
+def frame(m, L, c, axles, deck=0.62, ge=False):
+    """The underframe, fuel tank and trucks, with the walkway at [deck] steps. ge puts on GE's Hi-Ad trucks."""
     a0, a1 = -L / 2 + 0.01, L / 2 - 0.01
     m.box(-0.12, 0.12, a0, a1, deck - 0.1, deck, c["dark"], bevel=0.002)
     m.box(-0.1, 0.1, -L * 0.18, L * 0.18, 0.35, deck - 0.1, c["dark"], bevel=0.01)
     inset = 0.11 if axles == 2 else 0.14
     for y in (a0 + inset, a1 - inset):
-        truck(m, y, c, axles)
+        truck(m, y, c, axles, ge=ge)
 
 
 def letters(m, L, c, z, at=0.0, size=0.04, x=0.1216):
@@ -218,7 +232,7 @@ HOOD_PAINT = {
 
 
 def hood(m, L, scheme, axles=2, wide=False, dynamic=False, body="hood", nose="short", maker="emd", short=0.12, hood_top=1.62,
-         flare=False):
+         flare=False, evo=False):
     """A road switcher: a long hood behind the cab, a short hood in front, walkways and handrails along both sides.
 
     maker: "alco" (a tall hood with squarer ends, one big stack, radiator shutters at the back), "emd" (a hood well below
@@ -226,13 +240,15 @@ def hood(m, L, scheme, axles=2, wide=False, dynamic=False, body="hood", nose="sh
     the cab). short is the short hood's length in tiles, hood_top the long hood's top in steps. wide puts on a full-width
     safety cab and nose: GE's with its nose corners angled back, EMD's squared off with the headlights high. flare widens
     the radiator section at the back: GE's wings near the top, or EMD's sides sloping out. dynamic adds the dynamic
-    brake: a blister mid-hood, or on a safety cab unit the raised housing just behind the cab.
+    brake: a blister mid-hood, or on a safety cab unit the raised housing just behind the cab. evo, with maker "ge",
+    draws GE's Evolution body of 2005 on: a longer, taller radiator section with bigger wings, the hood stepping up to
+    it, a longer dynamic brake housing behind the cab and Hi-Ad trucks.
     body="cowl" covers it all in a full-width body with no walkways, see cowl()."""
     if body == "cowl":
         return cowl(m, L, scheme, axles, nose, dynamic)
     c = livery(scheme)
     deck = 0.62
-    frame(m, L, c, axles, deck)
+    frame(m, L, c, axles, deck, ge=evo)
     a0, a1 = -L / 2 + 0.03, L / 2 - 0.03
     cab1 = a1 - short
     cab0 = cab1 - (0.1 if wide else 0.095)
@@ -249,7 +265,20 @@ def hood(m, L, scheme, axles=2, wide=False, dynamic=False, body="hood", nose="sh
                 (a0, deck, 0.004, "paint", end_w), (a0, ht, end_r, "paint", end_w), (a0 + 0.01, ht, 0, "paint", (1 + end_w) / 2),
                 (a0 + 0.03, ht, 0, "paint"), (cab0 + 0.005, ht, 0, "paint")], hh, mats, crown=0.05)
     rad = 0.24 if axles == 3 else 0.16
-    if flare:
+    if evo:
+        # The Evolution's radiators: about a third of the hood, standing over it, the wings nearly the walkway's
+        # width with the cores in their sloped undersides, and a slope from the hood up to them at the front.
+        rad = 0.3
+        lo, out, knee, top = ht - 0.4, 0.118, ht - 0.04, ht + 0.07
+        ring = [(-out, top), (-out, knee), (-hh, lo), (hh, lo), (out, knee), (out, top)]
+        front = [(-hh * 0.98, ht - 0.01), (-hh * 0.98, ht - 0.04), (-hh * 0.98, lo), (hh * 0.98, lo), (hh * 0.98, ht - 0.04), (hh * 0.98, ht - 0.01)]
+        m.loft([(a0 - 0.004, ring), (a0 + rad - 0.06, ring), (a0 + rad, front)], dict(mats, louvre=c["grille"]),
+               part=lambda k: "louvre" if k in (1, 3) else "paint")
+        # A lip along the top edge of each wing.
+        for side in (-1, 1):
+            m.box(side * out - 0.002, side * out + 0.002, a0 - 0.004, a0 + rad - 0.06, top - 0.012, top + 0.004, c["roof"])
+        fan_top = top
+    elif flare:
         # The radiators at the back, wider than the hood: GE's wings stand out near the top, their undersides the
         # radiator cores; EMD's sides slope out up to a wider roof.
         lo, out, knee, top = (ht - 0.34, 0.113, ht - 0.15, ht + 0.02) if maker == "ge" else (ht - 0.5, 0.1, ht - 0.04, ht + 0.03)
@@ -296,7 +325,7 @@ def hood(m, L, scheme, axles=2, wide=False, dynamic=False, body="hood", nose="sh
         sy = (a0 + cab0) / 2 + 0.04
         m.box(-0.022, 0.022, sy - 0.03, sy + 0.03, ht - 0.02, ht + 0.07, c["dark"], bevel=0.005)
     elif maker == "ge":
-        roof_fans(m, a0 + 0.02, a0 + rad - 0.05, fan_top, c, n=2, w=0.085)
+        roof_fans(m, a0 + 0.02, a0 + rad - 0.07 if evo else a0 + rad - 0.05, fan_top, c, n=2, w=0.095 if evo else 0.085)
     else:
         n = 3 if axles == 3 else 2
         roof_fans(m, a0 + 0.02, a0 + rad - 0.01, fan_top, c, n=n, w=0.075 if flare else 0.07)
@@ -314,8 +343,8 @@ def hood(m, L, scheme, axles=2, wide=False, dynamic=False, body="hood", nose="sh
             louvres(m, side * (hh + 0.0072), y0 + 0.02, y1 - 0.02, ht - 0.02, ht + 0.07, c)
     housing = wide and (dynamic or maker == "ge")
     if housing:
-        y0, y1 = cab0 - (0.12 if maker == "ge" else 0.15), cab0 + 0.005
-        rise = 0.07 if maker == "ge" else 0.04
+        y0, y1 = cab0 - (0.16 if evo else 0.12 if maker == "ge" else 0.15), cab0 + 0.005
+        rise = 0.1 if evo else 0.07 if maker == "ge" else 0.04
         m.shell([(y0, ht - 0.03, 0, "paint"), (y1, ht - 0.03, 0, "paint"), (y1, ht + rise, 0.01, "paint"),
                  (y0 + 0.015, ht + rise, 0.015, "paint")], hh + 0.008, mats, crown=0.03)
         for side in (-1, 1):

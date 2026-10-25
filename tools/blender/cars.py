@@ -668,3 +668,239 @@ def well_car(m, L):
     _container(m, a0 + 0.04, a1 - 0.04, 1.32, 2.2, material("container blue", "#2a4a7a", rough=0.6), material("container blue dark", "#1a2e4e", rough=0.7))
     for side in (-1, 1):
         m.text("I.R. LINE", side * 0.1022, 0, 1.76, 0.04, material("white letters", "#e8e4dc", rough=0.6), side)
+
+
+def coach_early(m, L):
+    """A four-wheel coach of the 1830s and 1840s, like the Champlain and St. Lawrence's: a short carriage body of three
+    compartments with its sides curving in below the waist, a door and drop window in each, a low arched roof with a
+    luggage rail, on a wooden frame with spoked wheels and leaf springs."""
+    c = common()
+    body = material("early coach yellow", "#c89a34", rough=0.45, clearcoat=0.4)
+    trim = material("early coach black", "#1e1a16", rough=0.5)
+    frame_wood = material("early frame", "#3a2a1e", rough=0.7)
+    a0, a1 = -L / 2 + 0.02, L / 2 - 0.02
+    deck, waist, top = 0.66, 0.96, 1.36
+    wheels = (a0 + 0.06, a1 - 0.06)
+    # The frame, its sole bars out at the sides, and buffer beams at the ends.
+    m.box(-0.112, 0.112, -L / 2 + 0.01, L / 2 - 0.01, 0.48, 0.6, frame_wood, bevel=0.002)
+    for side in (-1, 1):
+        for y in wheels:
+            m.wheel(y, side, 0.034, (c["steel"], material("wheel dark", "#222224", rough=0.6), c["steel"]), spokes=10)
+            m.box(side * 0.114 - 0.007, side * 0.114 + 0.007, y - 0.028, y + 0.028, 0.14, 0.5, c["iron"], bevel=0.002)
+            m.box(side * 0.124 - 0.006, side * 0.124 + 0.006, y - 0.013, y + 0.013, 0.14, 0.28, material("journal", "#5a5c60", metal=0.4, rough=0.5))
+            # A leaf spring over the axle box, its ends hung from the sole bar.
+            m.box(side * 0.124 - 0.005, side * 0.124 + 0.005, y - 0.045, y + 0.045, 0.32, 0.38, c["iron"], bevel=0.002)
+            m.box(side * 0.124 - 0.005, side * 0.124 + 0.005, y - 0.025, y + 0.025, 0.28, 0.32, c["iron"])
+    # The body: upright above the waist, curving in below it to a narrower bottom, lofted so the ends round off.
+    def ring(k):
+        pts = [(-0.098 * k, deck), (0.098 * k, deck), (0.112 * k, deck + 0.08), (0.118 * k, deck + 0.18), (0.12 * k, waist),
+               (0.12 * k, top), (-0.12 * k, top), (-0.12 * k, waist), (-0.118 * k, deck + 0.18), (-0.112 * k, deck + 0.08)]
+        return pts
+    m.loft([(a0, ring(0.94)), (a0 + 0.008, ring(1.0)), (a1 - 0.008, ring(1.0)), (a1, ring(0.94))], {"body": body}, sharp=30)
+    _arch(m, [(a0 - 0.01, top, 0.126, 0.04), (a1 + 0.01, top, 0.126, 0.04)], c["roof"], edge=0.02)
+    # A luggage rail round the roof, on short posts.
+    rz = top + 0.13
+    for x in (-0.1, 0.1):
+        m.rod((x, a0 + 0.02, rz), (x, a1 - 0.02, rz), 0.0022, c["iron"])
+        for k in range(5):
+            y = a0 + 0.02 + (a1 - a0 - 0.04) * k / 4
+            m.rod((x, y, top + 0.05), (x, y, rz), 0.0018, c["iron"])
+    for y in (a0 + 0.02, a1 - 0.02):
+        m.rod((-0.1, y, rz), (0.1, y, rz), 0.0022, c["iron"])
+    # Three compartments a side: a door with a drop window in the middle of each, a small quarter window either side,
+    # black mouldings at the waist and along the bottom and between them.
+    n = 3
+    span = (a1 - a0) / n
+    for side in (-1, 1):
+        x = side * 0.1206
+        m.box(x - 0.0012, x + 0.0012, a0 + 0.006, a1 - 0.006, waist - 0.02, waist + 0.01, trim)
+        m.box(x - 0.0012, x + 0.0012, a0 + 0.006, a1 - 0.006, top - 0.03, top, trim)
+        for i in range(n + 1):
+            y = a0 + span * i
+            if 0 < i < n:
+                m.box(x - 0.0014, x + 0.0014, y - 0.004, y + 0.004, deck + 0.15, top, trim)
+        for i in range(n):
+            yc = a0 + span * (i + 0.5)
+            m.box(x - 0.0008, x + 0.0008, yc - 0.02, yc + 0.02, waist + 0.04, top - 0.06, c["glass"])
+            for dy in (-1, 1):
+                m.box(x - 0.0008, x + 0.0008, yc + dy * 0.05 - 0.015, yc + dy * 0.05 + 0.015, waist + 0.05, top - 0.07, c["glass"])
+            # The door's outline and handle.
+            for yy in (yc - 0.03, yc + 0.03):
+                m.box(x - 0.0012, x + 0.0012, yy - 0.0015, yy + 0.0015, deck + 0.15, top - 0.04, trim)
+            m.box(x - 0.002, x + 0.002, yc + 0.022, yc + 0.027, waist - 0.06, waist - 0.04, c["letters"])
+        # Footboards along the side to step up to the doors.
+        m.box(side * 0.125 - 0.008, side * 0.125 + 0.008, a0 + 0.03, a1 - 0.03, 0.5, 0.53, frame_wood)
+    m.text("FIRST CLASS", 0.1218, 0, deck + 0.11, 0.016, c["letters"], 1)
+    m.text("FIRST CLASS", -0.1218, 0, deck + 0.11, 0.016, c["letters"], -1)
+
+
+def _lumber(m, y0, y1, z0, z1, half, mat, strap, n=4):
+    """Wrapped bundles of lumber along a deck, stacked two high, with straps over them."""
+    span = (y1 - y0) / n
+    zm = (z0 + z1) / 2
+    for i in range(n):
+        ya, yb = y0 + span * i + 0.004, y0 + span * (i + 1) - 0.004
+        for za, zb in ((z0, zm - 0.01), (zm, z1)):
+            m.box(-half, half, ya, yb, za, zb, mat, bevel=0.003)
+        for y in (ya + span * 0.25, yb - span * 0.25):
+            m.box(-half - 0.002, half + 0.002, y - 0.003, y + 0.003, z0, z1 + 0.01, strap)
+
+
+def bulkhead_flat(m, L):
+    """A steel bulkhead flatcar of the 1950s on: a deep fish-belly side sill under a steel deck, tall braced
+    bulkheads at both ends and wrapped lumber between them."""
+    c = common()
+    steel = material("flatcar steel", "#3e3a36", rough=0.65)
+    dark = material("flatcar steel dark", "#2a2826", rough=0.7)
+    a0, a1 = -L / 2 + 0.012, L / 2 - 0.012
+    deck = 0.68
+    for y in (-L / 2 + 0.08, L / 2 - 0.08):
+        truck(m, y, c)
+    # The side sills, deepest between the trucks.
+    for side in (-1, 1):
+        x0, x1 = side * 0.112, side * 0.122
+        _plate(m, [(a0, deck), (a1, deck), (a1, deck - 0.1), (a1 - 0.14, deck - 0.1), (a1 - 0.2, deck - 0.26),
+                   (a0 + 0.2, deck - 0.26), (a0 + 0.14, deck - 0.1), (a0, deck - 0.1)], min(x0, x1), max(x0, x1), steel)
+        for k in range(1, 12):
+            y = a0 + (a1 - a0) * k / 12
+            m.box(side * 0.1225 - 0.0015, side * 0.1225 + 0.0015, y - 0.0025, y + 0.0025, deck - 0.1, deck, dark)
+        m.text(LETTERS, side * 0.1232, -0.1, deck - 0.12, 0.024, material("white letters", "#e8e4dc", rough=0.6), side)
+    m.box(-0.12, 0.12, a0, a1, deck - 0.04, deck, material("deck wood", "#6a5236", rough=0.8))
+    m.box(-0.06, 0.06, a0 + 0.02, a1 - 0.02, 0.42, deck - 0.04, dark)
+    # The bulkheads: a plate across with posts and a diagonal brace behind it.
+    bt = 1.62
+    for end in (a0, a1):
+        inward = 1 if end == a0 else -1
+        y0, y1 = sorted((end, end + inward * 0.012))
+        m.box(-0.12, 0.12, y0, y1, deck, bt, steel, bevel=0.002)
+        for x in (-0.115, -0.04, 0.04, 0.115):
+            ya, yb = sorted((end - inward * 0.004, end + inward * 0.002))
+            m.box(x - 0.006, x + 0.006, ya, yb, deck, bt + 0.01, dark)
+        for z in (deck + 0.3, deck + 0.62, bt - 0.04):
+            ya, yb = sorted((end - inward * 0.005, end))
+            m.box(-0.12, 0.12, ya, yb, z - 0.015, z + 0.015, dark)
+    _lumber(m, a0 + 0.016, a1 - 0.016, deck, 1.5, 0.108, material("lumber wrap", "#c4b48a", rough=0.75),
+            material("lumber strap", "#4a4a4c", metal=0.5, rough=0.5))
+
+
+def tank_domeless(m, L):
+    """A long domeless tank car of the 1960s on: a slender tank with no frame under it, its heads dished, stub
+    sills over the trucks, a small valve housing on a railed platform at the top, and a ladder up each side."""
+    c = common()
+    body = material("tank black", "#262628", rough=0.35, clearcoat=0.4)
+    a0, a1 = -L / 2 + 0.012, L / 2 - 0.012
+    zc, r = 1.1, 0.108
+    rz = r / rig.RISE
+
+    def circ(k, n=32):
+        return [(r * k * math.cos(2 * math.pi * i / n), zc + rz * k * math.sin(2 * math.pi * i / n)) for i in range(n)]
+    m.loft([(a0 + 0.004, circ(0.55)), (a0 + 0.012, circ(0.86)), (a0 + 0.026, circ(1.0)),
+            (a1 - 0.026, circ(1.0)), (a1 - 0.012, circ(0.86)), (a1 - 0.004, circ(0.55))], {"body": body}, sharp=50, round=True)
+    for y in (-L / 2 + 0.085, L / 2 - 0.085):
+        truck(m, y, c)
+    # Stub sills from the couplers back over the trucks, a saddle where each meets the tank.
+    for end in (a0, a1):
+        inward = 1 if end == a0 else -1
+        ya, yb = sorted((end - inward * 0.01, end + inward * 0.13))
+        m.box(-0.03, 0.03, ya, yb, 0.44, 0.62, c["iron"])
+        ya, yb = sorted((end + inward * 0.06, end + inward * 0.11))
+        m.box(-0.07, 0.07, ya, yb, 0.56, 0.7, c["iron"], bevel=0.003)
+        ya, yb = sorted((end, end + inward * 0.03))
+        m.box(-0.1, 0.1, ya, yb, 0.52, 0.6, c["iron"])
+    # The valve housing on its railed platform at the top.
+    mid, rr = m._circle(zc, r)
+    crown = m.fixed(mid + rr / rig.RISE)
+    m.box(-0.045, 0.045, -0.05, 0.05, crown - 0.03, crown + 0.012, material("tank walk", "#4a4a4c", metal=0.4, rough=0.6))
+    m.upright(0, 0, crown, crown + 0.1, 0.024, 0.024, body, segments=16)
+    m.upright(0, 0, crown + 0.1, crown + 0.13, 0.03, 0.03, body, segments=16)
+    for x in (-0.045, 0.045):
+        for y in (-0.05, 0.05):
+            m.rod((x, y, crown + 0.01), (x, y, crown + 0.2), 0.0018, c["iron"])
+        m.rod((x, -0.05, crown + 0.2), (x, 0.05, crown + 0.2), 0.0018, c["iron"])
+    for side in (-1, 1):
+        # A ladder up the tank's side to the platform.
+        for dy in (-0.008, 0.008):
+            m.rod((side * 0.113, dy, 0.62), (side * 0.06, dy, crown - 0.02), 0.0016, c["iron"])
+        m.text("OIL", side * 0.11, -0.13, zc, 0.03, material("white letters", "#e8e4dc", rough=0.6), side)
+        m.text(LETTERS, side * 0.11, 0.13, zc, 0.024, material("white letters", "#e8e4dc", rough=0.6), side)
+
+
+def boxcar_50(m, L):
+    """A 50 ft steel boxcar of the 1960s on: taller than the 40 ft car, outside posts, a wide plug door and a sliding
+    door beside it, improved Dreadnaught ends and no roofwalk, the ladders cut short."""
+    c = common()
+    body = material("boxcar red", "#7a2a20", rough=0.65)
+    dark = material("boxcar red dark", "#521c16", rough=0.7)
+    a0, a1 = -L / 2 + 0.012, L / 2 - 0.012
+    top = 1.6
+    _base(m, L, a0, a1, c)
+    m.box(-0.12, 0.12, a0, a1, 0.62, top, body, bevel=0.003)
+    _freight_roof(m, a0, a1, top, dark, walk=False)
+    doors = ((-0.1, 0.0), (0.0, 0.09))
+    for side in (-1, 1):
+        x = side * 0.1208
+        for d0, d1 in doors:
+            m.box(x - 0.0015, x + 0.0015, d0 + 0.004, d1 - 0.004, 0.64, top - 0.04, dark)
+            for k in range(1, 4):
+                z = 0.64 + (top - 0.68) * k / 4
+                m.box(x - 0.0022, x + 0.0022, d0 + 0.008, d1 - 0.008, z - 0.006, z + 0.006, body)
+        m.rod((side * 0.1222, -0.1, top - 0.03), (side * 0.1222, 0.09, top - 0.03), 0.003, c["iron"])
+        m.rod((side * 0.1222, -0.1, 0.66), (side * 0.1222, 0.09, 0.66), 0.003, c["iron"])
+        for k in range(1, 12):
+            y = a0 + (a1 - a0) * k / 12
+            if y < -0.105 or y > 0.095:
+                m.box(side * 0.1206 - 0.0015, side * 0.1206 + 0.0015, y - 0.003, y + 0.003, 0.64, top - 0.02, dark)
+        m.text(LETTERS, side * 0.1222, (a0 - 0.1) / 2, 1.3, 0.034, material("white letters", "#e8e4dc", rough=0.6), side)
+        m.text("50 FT", side * 0.1222, (a1 + 0.09) / 2, 0.85, 0.018, material("white letters", "#e8e4dc", rough=0.6), side)
+    # Improved Dreadnaught ends: fewer, deeper ribs.
+    for y in (a0, a1):
+        d = -0.003 if y == a0 else 0.003
+        for k in range(1, 5):
+            z = 0.62 + (top - 0.62) * k / 5
+            m.box(-0.115, 0.115, min(y, y + d), max(y, y + d), z - 0.03, z + 0.03, dark, bevel=0.0015)
+    # Short ladders, as cars built without a roofwalk had, and the brake wheel.
+    for side, y in ((1, a1 - 0.012), (-1, a0 + 0.012)):
+        for dy in (-0.007, 0.007):
+            m.rod((side * 0.123, y + dy, 0.66), (side * 0.123, y + dy, 1.2), 0.0015, c["iron"])
+        for k in range(1, 5):
+            z = 0.66 + 0.54 * k / 5
+            m.rod((side * 0.123, y - 0.007, z), (side * 0.123, y + 0.007, z), 0.0012, c["iron"])
+    m.rod((0, a1 + 0.004, 1.1), (0, a1 + 0.004, 1.3), 0.002, c["iron"])
+    m.tube(a1 + 0.004, a1 + 0.008, 0, 1.3, 0.016, c["iron"], segments=12)
+
+
+def reefer_mech(m, L):
+    """A steel mechanical refrigerator car of the 1960s to 1990s: smooth white insulated sides, a wide plug door,
+    the diesel refrigeration unit behind a louvred grille at one end and its fuel tank under the frame, no ice
+    hatches or roofwalk."""
+    c = common()
+    body = material("reefer white", "#e2e0d8", rough=0.5)
+    band = material("reefer red", "#a8302a", rough=0.5)
+    dark = material("reefer grey", "#6a6864", rough=0.6)
+    a0, a1 = -L / 2 + 0.012, L / 2 - 0.012
+    top = 1.6
+    _base(m, L, a0, a1, c)
+    m.box(-0.12, 0.12, a0, a1, 0.62, top, body, bevel=0.004)
+    _freight_roof(m, a0, a1, top, dark, walk=False)
+    unit = (a1 - 0.075, a1 - 0.01)
+    for side in (-1, 1):
+        x = side * 0.1208
+        # The plug door, a little proud, with its bars.
+        m.box(x - 0.0015, x + 0.0015, -0.064, 0.044, 0.64, top - 0.04, dark)
+        m.box(x - 0.003, x + 0.003, -0.06, 0.04, 0.66, top - 0.06, body, bevel=0.001)
+        for y in (-0.045, 0.025):
+            m.rod((side * 0.1245, y, 0.7), (side * 0.1245, y, top - 0.1), 0.002, dark)
+        m.rod((side * 0.1235, -0.06, top - 0.07), (side * 0.1235, 0.04, top - 0.07), 0.0025, c["iron"])
+        m.box(x - 0.0012, x + 0.0012, a0 + 0.01, a1 - 0.01, 0.66, 0.72, band)
+        m.box(x - 0.0012, x + 0.0012, a0 + 0.01, a1 - 0.01, top - 0.08, top - 0.04, band)
+        # The refrigeration unit's grille at the B end.
+        louvre_mat = material("reefer grille", "#3a3a3c", metal=0.3, rough=0.6)
+        m.box(x - 0.0012, x + 0.0012, unit[0], unit[1], 0.74, 1.26, louvre_mat)
+        for k in range(8):
+            z = 0.76 + (1.24 - 0.76) * (k + 0.5) / 8
+            m.box(x - 0.0018, x + 0.0018, unit[0] + 0.003, unit[1] - 0.003, z - 0.008, z + 0.008, dark)
+        m.text(LETTERS, side * 0.1222, (a0 - 0.06) / 2, 1.25, 0.034, band, side)
+        m.text("MECHANICAL REEFER", side * 0.1222, (a0 - 0.06) / 2, 0.92, 0.014, dark, side)
+        # The fuel tank under the frame near the unit.
+        m.box(min(side * 0.03, side * 0.095), max(side * 0.03, side * 0.095), unit[0] - 0.09, unit[0] - 0.01, 0.3, 0.46, c["iron"], bevel=0.006)
+    _ladders(m, a0, a1, top, c["iron"])

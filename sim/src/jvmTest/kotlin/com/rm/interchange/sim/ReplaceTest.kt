@@ -80,7 +80,7 @@ class ReplaceTest {
         val old = base.engines.first { it.key == key }
         val next = if (kind == Command.CopyVehicle.TRAIN) base.engines.first { it.key == "base:american" }
             else base.engines.first { it.kind == old.kind && it.id != old.id }
-        val wagon = base.engines.first { if (plow) it.plow != Plows.NONE else it.key == "base:boxcar_steel" }
+        val wagon = base.engines.first { if (plow) it.plow != Plows.NONE else it.key == "base:boxcar_50" }
         val models = base.engines.toMutableList()
         models[old.id] = changed(old, cost = 40_000)
         models[next.id] = changed(next, cost, from, until, enabled, cargoes, capacity, if (electric) Traction.ELECTRIC else Traction.DIESEL, runway)

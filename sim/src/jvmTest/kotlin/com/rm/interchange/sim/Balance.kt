@@ -344,7 +344,7 @@ class Balance {
         val r = Roster.BASE
         fun e(key: String) = r.engines.first { it.key == "base:$key" }
         val lines = listOf(
-            Triple(1836, "dorchester", "coach_wood") to Triple(4, 30, Cargo.PASSENGERS),
+            Triple(1836, "dorchester", "coach_early") to Triple(4, 30, Cargo.PASSENGERS),
             Triple(1860, "american", "coach_wood") to Triple(4, 30, Cargo.PASSENGERS),
             Triple(1860, "american", "boxcar_wood") to Triple(10, 40, Cargo.GRAIN),
         )

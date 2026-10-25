@@ -325,7 +325,7 @@ class CampaignTest {
 
     @Test
     fun aPortageTrainCarriesPassengers() {
-        val w = assertNotNull(townLine("portage", 0, 1, "base:dorchester", "base:coach_wood", 2))
+        val w = assertNotNull(townLine("portage", 0, 1, "base:dorchester", "base:coach_early", 2))
         val connect = w.goals.first { it.kind == Goal.CONNECT }
         toDecember(w)
         println("portage passengers: towns ${w.towns.map { it.population }} carried ${connect.count[0]} of ${connect.amount}, profit ${profit(w)}, money ${w.companies[0].money}, books ${w.companies[0].thisYear.toList()}")
