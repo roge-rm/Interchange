@@ -422,8 +422,8 @@ private fun DrawScope.drawBoard(kind: Int, x: Float, y: Float, hw: Float) {
 }
 
 private val flicker = kotlin.time.TimeSource.Monotonic.markNow()
-/** How high the contact wire hangs over the rails, in steps. */
-private const val WIRE_HEIGHT = 2.6f
+/** How high the contact wire hangs over the rails, in steps: on top of a raised pantograph (2.26-2.27). */
+private const val WIRE_HEIGHT = 2.28f
 
 /** Calls [block] with every tile that could show on screen, from the screen's corners on the map at sea level and the highest land. */
 private inline fun DrawScope.forTilesOnScreen(world: World, view: View, block: (Int, Int) -> Unit) {
