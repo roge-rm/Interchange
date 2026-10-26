@@ -120,7 +120,10 @@ def tree(m, kind, look, season="summer"):
     if kind in ("spruce", "fir"):
         conifer(m, rng, size, kind, look)
     elif kind == "pine":
-        jack_pine(m, rng, size, look)
+        if look == 4:
+            white_pine(m, rng, size)
+        else:
+            jack_pine(m, rng, size, look)
     else:
         broadleaf(m, rng, size, kind, look, season)
 
@@ -140,7 +143,7 @@ def conifer(m, rng, size, kind, look):
         mats = greens("spruce needles", "#1c3622", "#3c6040")
     core = material(f"{kind} core", "#0f1c12", rough=1.0)
     bark = material("spruce bark", "#4a3a2e", rough=0.9)
-    base = (0.1 if black else 0.122 if not fir else 0.12) * size
+    base = (0.11 if black else 0.135 if not fir else 0.13) * size
 
     def reach(t):
         if black:
@@ -183,6 +186,7 @@ def conifer(m, rng, size, kind, look):
     # The leader: a short spire on top.
     tip = mats[-1]
     m.upright(0, 0, top * 0.88, top * 1.04, 0.013 * size, 0.0015, tip, segments=8)
+    understorey(m, rng, size, seed + 100)
 
 
 def trunk_path(rng, size, top, lean):
@@ -206,53 +210,129 @@ def along(pts, z):
 
 
 def jack_pine(m, rng, size, look):
-    """A jack pine: a slightly crooked trunk, bare below in a stand, under a broad ragged crown of needle clumps at the
-    ends of upturned branches, with sky between them. Young ones are bushy nearly to the ground."""
+    """A jack pine as on open Shield rock: a short crooked trunk, branches from low down, some of them dead and grey,
+    and a scrubby, lopsided crown of flat needle clumps with a flattish top."""
     top = 3.4 * size
     mats = greens("jack pine needles", "#26401f", "#5c7a3a")
     bark = material("pine bark", "#5a4636", rough=0.9)
-    lean = (rng.uniform(-0.03, 0.03) * size, rng.uniform(-0.03, 0.03) * size)
-    pts = trunk_path(rng, size, top * 0.96, lean)
-    widths = (0.019, 0.015, 0.011, 0.007, 0.003)
+    dead = material("pine dead branches", "#7a7068", rough=0.9)
+    lean = (rng.uniform(-0.04, 0.04) * size, rng.uniform(-0.04, 0.04) * size)
+    pts = trunk_path(rng, size, top * 0.92, lean)
+    widths = (0.02, 0.016, 0.012, 0.008, 0.004)
     for k, (a, b) in enumerate(zip(pts, pts[1:])):
         limb(m, a, b, widths[k] * size, widths[k + 1] * size, bark)
-    low = (0.14, 0.24, 0.32, 0.36, 0.38)[look]
-    wide = 0.14 * size
-    n = 16 + look * 2
+    low = (0.06, 0.1, 0.14, 0.18)[look]
+    # The side the wind has pushed it to, where its branches reach furthest.
+    sweep = rng.uniform(0, 2 * math.pi)
+    wide = 0.17 * size
+    n = 13 + look * 2
     seed = look * 500 + 20000
+    for k in range(rng.randrange(4, 7)):
+        # Dead branches, mostly low down, bare and grey.
+        h = top * rng.uniform(low * 0.6, 0.55)
+        tx, ty = along(pts, h)
+        ang = rng.uniform(0, 2 * math.pi)
+        r = wide * rng.uniform(0.3, 0.6)
+        m.rod((tx, ty, h), (tx + r * math.cos(ang), ty + r * math.sin(ang), h + rng.uniform(-0.15, 0.25)), 0.003 * size, dead, segments=4)
     for k in range(n):
         s = (k + rng.uniform(0, 0.8)) / n
-        t = low + (0.94 - low) * s
+        t = low + (0.9 - low) * s
         h = top * t
         tx, ty = along(pts, h)
         ang = k * 2.4 + rng.uniform(-0.6, 0.6)
-        reach = wide * (0.45 + 0.55 * math.sin(math.pi * min(1.0, s * 1.15))) * (1 - 0.3 * s) * rng.uniform(0.65, 1.1)
+        # Wide through the middle and still fairly wide at the top, so the crown is flat-topped, longer downwind.
+        reach = wide * (0.55 + 0.45 * math.sin(math.pi * min(1.0, 0.25 + s))) * (0.75 + 0.6 * math.cos(ang - sweep)) * rng.uniform(0.6, 1.05)
         ca, sa = math.cos(ang), math.sin(ang)
         ex, ey = tx + reach * ca, ty + reach * sa
-        ez = h + reach * 0.55 / rig.RISE
-        m.rod((tx, ty, h), (ex, ey, ez), 0.005 * size, bark, segments=5)
-        # A clump of round needle tufts at the branch end, and one part way along the longer ones.
-        r = (0.026 + 0.014 * (1 - s)) * size * rng.uniform(0.85, 1.15) + 0.008
-        for j in range(4):
+        ez = h + reach * (0.4 if s < 0.7 else 0.1) / rig.RISE
+        limb(m, (tx, ty, h), (ex, ey, ez), 0.006 * size, 0.003 * size, bark, segments=5)
+        # A flat clump of needle tufts at the branch end, and one part way along the longer branches.
+        r = (0.032 + 0.012 * (1 - s)) * size * rng.uniform(0.8, 1.2) + 0.008
+        for j in range(5):
             seed += 1
             a2 = rng.uniform(0, 2 * math.pi)
-            off = r * rng.uniform(0.2, 0.6)
-            tuft(m, ex + off * math.cos(a2), ey + off * math.sin(a2), ez + rng.uniform(-0.4, 0.6) * r / rig.RISE,
-                 r * rng.uniform(0.75, 1.0), r * rng.uniform(0.7, 0.95), r * rng.uniform(0.45, 0.6),
+            off = r * rng.uniform(0.2, 0.7)
+            tuft(m, ex + off * math.cos(a2), ey + off * math.sin(a2), ez + rng.uniform(-0.3, 0.4) * r / rig.RISE,
+                 r * rng.uniform(0.8, 1.05), r * rng.uniform(0.7, 0.95), r * rng.uniform(0.38, 0.5),
                  mats[rng.randrange(len(mats))], seed, a2)
-        if reach > 0.06 * size:
+        if reach > 0.05 * size:
             seed += 1
-            f = rng.uniform(0.45, 0.6)
-            tuft(m, tx + reach * f * ca, ty + reach * f * sa, h + (ez - h) * f + 0.15, r * 0.8, r * 0.65, r * 0.45,
+            f = rng.uniform(0.4, 0.6)
+            tuft(m, tx + reach * f * ca, ty + reach * f * sa, h + (ez - h) * f + 0.1, r * 0.85, r * 0.7, r * 0.42,
                  mats[rng.randrange(len(mats))], seed, ang)
-    tx, ty = pts[-1][0], pts[-1][1]
-    tuft(m, tx, ty, top * 0.97, 0.026 * size, 0.024 * size, 0.022 * size, mats[-1], seed + 1)
+    understorey(m, rng, size, seed + 100, 0.6)
+
+
+def white_pine(m, rng, size):
+    """An old eastern white pine, the windswept Shield pine: a stout leaning trunk, long level branch arms swept to one
+    side, each carrying a broad flat plate of soft needles, the plates in tiers with sky between them, a flat top."""
+    top = 3.4 * size
+    mats = greens("white pine needles", "#22402a", "#507450")
+    bark = material("white pine bark", "#4a3e36", rough=0.9)
+    dead = material("pine dead branches", "#7a7068", rough=0.9)
+    # Swept towards the screen's right, so the lean of the tiers shows.
+    sweep = 2.36 + rng.uniform(-0.25, 0.25)
+    lx, ly = 0.03 * size * math.cos(sweep), 0.03 * size * math.sin(sweep)
+    limb(m, (0, 0, 0), (lx * 0.5, ly * 0.5, top * 0.5), 0.024 * size, 0.017 * size, bark, segments=9)
+    limb(m, (lx * 0.5, ly * 0.5, top * 0.5), (lx, ly, top * 0.9), 0.017 * size, 0.006 * size, bark, segments=8)
+    for k in range(4):
+        h = top * rng.uniform(0.15, 0.3)
+        ang = rng.uniform(0, 2 * math.pi)
+        r = 0.05 * size * rng.uniform(0.6, 1.0)
+        m.rod((0, 0, h), (r * math.cos(ang), r * math.sin(ang), h - 0.1), 0.003 * size, dead, segments=4)
+    seed = 26000
+    tiers = (0.26, 0.41, 0.56, 0.7, 0.83)
+    for i, t in enumerate(tiers):
+        s = i / (len(tiers) - 1)
+        for k in range(3):
+            h = top * (t + rng.uniform(-0.02, 0.02))
+            back = k == 2 and i % 2 == 0
+            ang = sweep + math.pi + rng.uniform(-0.5, 0.5) if back else sweep + rng.uniform(-0.6, 0.6)
+            reach = 0.3 * size * (1 - 0.35 * s) * (rng.uniform(0.35, 0.5) if back else rng.uniform(0.75, 1.05))
+            if k == 2 and not back:
+                reach *= 0.6
+            ca, sa = math.cos(ang), math.sin(ang)
+            ox, oy = along([(0, 0, 0), (lx * 0.5, ly * 0.5, top * 0.5), (lx, ly, top * 0.9)], h)
+            ez = h + rng.uniform(0.0, 0.12)
+            limb(m, (ox, oy, h - 0.12), (ox + reach * ca, oy + reach * sa, ez), 0.011 * size, 0.004 * size, bark, segments=6)
+            # The plate: flat tufts over the outer two thirds of the arm, wider than the arm, thick enough to read.
+            for j in range(10):
+                seed += 1
+                f = rng.uniform(0.3, 1.05)
+                side = rng.uniform(-1, 1) * reach * 0.22 * f
+                r = rng.uniform(0.026, 0.036) * size
+                tuft(m, ox + reach * f * ca - side * sa, oy + reach * f * sa + side * ca, ez + rng.uniform(0.0, 0.1),
+                     r * 1.5, r, r * 0.42, mats[rng.randrange(len(mats))], seed, ang + rng.uniform(-0.3, 0.3))
+    for j in range(5):
+        seed += 1
+        a2 = sweep + rng.uniform(-1.2, 1.2)
+        d = 0.04 * size * rng.uniform(0.2, 1.0)
+        tuft(m, lx + d * math.cos(a2), ly + d * math.sin(a2), top * 0.93 + rng.uniform(0, 0.12),
+             0.034 * size, 0.028 * size, 0.014 * size, mats[rng.randrange(len(mats))], seed, a2)
+    understorey(m, rng, size, seed + 100, 0.6)
+
+
+def understorey(m, rng, size, seed, amount=1.0):
+    """A few patches of low shrubs and seedlings near a tree's foot, so the forest floor between trees reads as growth."""
+    mats = greens("understorey", "#1e3216", "#3c5628")
+    k0 = rng.uniform(0, 2 * math.pi)
+    for k in range(max(1, round(3 * amount))):
+        ang = k0 + 2 * math.pi * k / 3 + rng.uniform(-0.6, 0.6)
+        d = rng.uniform(0.07, 0.16) * (0.7 + 0.3 * size)
+        px, py = d * math.cos(ang), d * math.sin(ang)
+        for j in range(rng.randrange(3, 6)):
+            seed += 1
+            a2 = rng.uniform(0, 2 * math.pi)
+            r = rng.uniform(0.026, 0.042) * (0.7 + 0.3 * size)
+            off = rng.uniform(0, 0.035)
+            tuft(m, px + off * math.cos(a2), py + off * math.sin(a2), r * 0.35 / rig.RISE, r, r * rng.uniform(0.75, 1.0),
+                 r * rng.uniform(0.6, 0.85), mats[rng.randrange(len(mats))], seed, a2)
 
 
 def broadleaf(m, rng, size, kind, look, season):
     """A maple, birch or aspen: limbs up into a crown of many overlapping leaf clumps round a dark middle, or the bare
     limbs and twigs in winter. Maples have a short trunk under a big round crown, birches two or three white stems
-    leaning apart under an open oval crown, aspens a slim pale trunk under a narrow crown on its upper half."""
+    leaning apart under an open oval crown, aspens a clump of slim pale stems under one long crown."""
     colours = {
         "summer": {"maple": ("#2a5420", "#4e8634"), "birch": ("#3a6428", "#6c9842"), "aspen": ("#42702a", "#7ca44a")},
         "autumn": {"maple": ("#a02a14", "#e8782a"), "birch": ("#a88420", "#e4c446"), "aspen": ("#b89418", "#f0d050")},
@@ -275,19 +355,25 @@ def broadleaf(m, rng, size, kind, look, season):
     else:
         top = 3.0 * size
         bark = material("aspen bark", "#c6c8b2", rough=0.8)
-        stems = [(0.0, 0.0)]
-        crown = (0.66, 0.33, 0.12 * size)
-        count = 50
+        # Aspens grow in clones: most looks are a few slim stems together.
+        n = (3, 2, 3, 1, 2)[look]
+        a0 = rng.uniform(0, 2 * math.pi)
+        stems = [(0.05 * size * math.cos(a0 + 2 * math.pi * k / n), 0.05 * size * math.sin(a0 + 2 * math.pi * k / n)) for k in range(n)] if n > 1 else [(0.0, 0.0)]
+        crown = (0.6, 0.4, 0.13 * size)
+        count = 60
     hc, cz, ax = crown
     hc *= top
     cz *= top
     marks = material(f"{kind} marks", "#2a2622", rough=0.9)
     seed = look * 300 + {"maple": 30000, "birch": 32000, "aspen": 34000}[kind]
+    if kind != "maple" and mats is not None:
+        # Maples stand on streets too, so only birches and aspens get undergrowth, in leaf like them.
+        understorey(m, rng, size, seed + 200, 0.6)
     # Stems from the ground into the crown, each bending out a little to its own part of it.
     tops = []
     for sx, sy in stems:
         ex, ey, ez = sx * 1.6, sy * 1.6, hc + cz * 0.2
-        r0 = (0.026 if kind == "maple" else 0.014 if kind == "aspen" else 0.012 / max(1, len(stems)) ** 0.3) * size
+        r0 = (0.026 if kind == "maple" else 0.013 / max(1, len(stems)) ** 0.3) * size
         limb(m, (sx * 0.3, sy * 0.3, 0), (sx, sy, top * 0.4), r0, r0 * 0.8, bark, segments=8)
         limb(m, (sx, sy, top * 0.4), (ex, ey, ez), r0 * 0.8, r0 * 0.3, bark, segments=8)
         tops.append((ex, ey))
@@ -315,19 +401,30 @@ def broadleaf(m, rng, size, kind, look, season):
     spread = max(abs(p[0] - cx) + abs(p[1] - cy) for p in tops)
     if mats is None:
         # Bare: twigs off each limb out to where the leaves would be, and a faint haze of the finest twigs.
-        twigs = haze(f"{kind} twigs", {"maple": "#6a5c54", "birch": "#5e504a", "aspen": "#8a8a7a"}[kind])
+        # The haze is a thin shell over the crown's outside, so the limbs show through it.
+        twigs = haze(f"{kind} twigs", {"maple": "#8c7e72", "birch": "#6e5a52", "aspen": "#9a9888"}[kind], 0.12)
         for lx, ly, lz, ang in limbs:
-            for j in range(3):
-                a2 = ang + rng.uniform(-1.0, 1.0)
-                rr = ax * rng.uniform(0.3, 0.5)
-                m.rod((lx, ly, lz), (lx + rr * math.cos(a2), ly + rr * math.sin(a2), lz + rng.uniform(0.1, 0.5)), 0.004 * size, bark, segments=5)
-        for k in range(12):
-            u = rng.uniform(-1, 1)
+            for j in range(4):
+                a2 = ang + rng.uniform(-1.1, 1.1)
+                rr = ax * rng.uniform(0.3, 0.55)
+                bx, by, bz = lx + rr * math.cos(a2), ly + rr * math.sin(a2), lz + rng.uniform(0.1, 0.5)
+                m.rod((lx, ly, lz), (bx, by, bz), 0.0035 * size, bark, segments=5)
+                for i in range(2):
+                    a3 = a2 + rng.uniform(-0.9, 0.9)
+                    rr2 = rr * rng.uniform(0.35, 0.55)
+                    m.rod((bx, by, bz), (bx + rr2 * math.cos(a3), by + rr2 * math.sin(a3), bz + rng.uniform(0.05, 0.3)), 0.002 * size, bark, segments=4)
+        for k in range(20):
+            while True:
+                u = rng.uniform(-1, 1)
+                if u > -0.4:
+                    break
             a2 = rng.uniform(0, 2 * math.pi)
             w = math.sqrt(1 - u * u)
             seed += 1
-            r = ax * 0.55
-            blob(m, cx + ax * 0.6 * w * math.cos(a2), cy + ax * 0.6 * w * math.sin(a2), hc + cz * 0.6 * u, r, twigs, seed, squash=0.9)
+            r = ax * 0.36
+            f = 0.8
+            blob(m, cx + (ax + spread * 0.5) * f * w * math.cos(a2), cy + (ax + spread * 0.5) * f * w * math.sin(a2),
+                 hc + cz * f * u, r, twigs, seed, squash=0.8)
         return
     # A dark middle so the gaps between clumps look deep instead of see-through.
     dark = leafy(f"{kind} inner {season}", shade(colours[0], 0.7), shade(colours[0], 0.85))
@@ -350,7 +447,7 @@ def broadleaf(m, rng, size, kind, look, season):
         tuft(m, x, y, z, rk, rk * rng.uniform(0.85, 1.0), rk * 0.8, mats[rng.randrange(len(mats))], seed, a2)
 
 
-def haze(name, colour):
+def haze(name, colour, alpha=0.22):
     """A see-through material for the fine twigs of a bare crown, seen from afar as a haze."""
     key = ("haze", name)
     if key in parts._materials:
@@ -360,7 +457,7 @@ def haze(name, colour):
     p = m.node_tree.nodes["Principled BSDF"]
     p.inputs["Base Color"].default_value = parts.hexcol(colour)
     p.inputs["Roughness"].default_value = 0.9
-    p.inputs["Alpha"].default_value = 0.22
+    p.inputs["Alpha"].default_value = alpha
     m.blend_method = "BLEND"
     parts._materials[key] = m
     return m
