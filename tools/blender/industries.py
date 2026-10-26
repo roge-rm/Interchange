@@ -1767,44 +1767,329 @@ def ore_heap(m):
     heap(m, 0.3, 0.3, 0.14, 0.7, "#6a3426", 62, "iron ore")
 
 
+def pipe_ring(m, x, y, z, R, r, mat, n=20):
+    """A pipe bent round in a ring R tiles round about x, y at z steps, r tiles thick."""
+    pts = [(x + R * math.cos(2 * math.pi * k / n), y + R * math.sin(2 * math.pi * k / n), z) for k in range(n + 1)]
+    for a, b in zip(pts, pts[1:]):
+        m.rod(a, b, r, mat, segments=8)
+
+
+def ring_deck(m, x, y, z, r, w, deck, rail, a0=0.0, a1=2 * math.pi, h=0.22):
+    """A walkway round a column of radius r from angle a0 to a1: a grating w tiles wide at z steps and a handrail h over it."""
+    n = max(3, int((a1 - a0) / (math.pi / 8)))
+    for k in range(n):
+        p, q = a0 + (a1 - a0) * k / n, a0 + (a1 - a0) * (k + 1) / n
+        pts = [(x + rr * math.cos(a), y + rr * math.sin(a), z) for rr, a in ((r, p), (r + w, p), (r + w, q), (r, q))]
+        slab(m, pts, 0.035, deck)
+        m.rod((x + (r + w) * math.cos(p), y + (r + w) * math.sin(p), z + h), (x + (r + w) * math.cos(q), y + (r + w) * math.sin(q), z + h),
+              0.0018, rail, segments=4)
+        m.rod((x + (r + w) * math.cos(p), y + (r + w) * math.sin(p), z), (x + (r + w) * math.cos(p), y + (r + w) * math.sin(p), z + h),
+              0.0016, rail, segments=4)
+    m.rod((x + (r + w) * math.cos(a1), y + (r + w) * math.sin(a1), z), (x + (r + w) * math.cos(a1), y + (r + w) * math.sin(a1), z + h),
+          0.0016, rail, segments=4)
+
+
+def column_ladder(m, x, y, r, a, z0, z1, mat, cage=True):
+    """A caged ladder up the side of a round column of radius r at angle a, from z0 to z1 steps."""
+    c, s = math.cos(a), math.sin(a)
+    px, py = -s, c
+    o = r + 0.008
+    for side in (-1, 1):
+        m.rod((x + c * o + px * side * 0.008, y + s * o + py * side * 0.008, z0),
+              (x + c * o + px * side * 0.008, y + s * o + py * side * 0.008, z1), 0.0016, mat, segments=4)
+    if cage:
+        z = z0 + 0.5
+        while z < z1:
+            pts = [(x + c * (o + 0.006 + 0.012 * math.sin(t)) + px * 0.014 * math.cos(t), y + s * (o + 0.006 + 0.012 * math.sin(t)) + py * 0.014 * math.cos(t), z)
+                   for t in (0, math.pi / 2, math.pi)]
+            for p, q in zip(pts, pts[1:]):
+                m.rod(p, q, 0.0012, mat, segments=4)
+            z += 0.35
+        for t in (math.pi / 2,):
+            m.rod((x + c * (o + 0.018), y + s * (o + 0.018), z0 + 0.5), (x + c * (o + 0.018), y + s * (o + 0.018), z1), 0.0012, mat, segments=4)
+
+
+def spiral_stair(m, x, y, r, h, a0, turn, tread, rail, n=None):
+    """A stair winding up the outside of a round tank of radius r from the ground to h steps, starting at angle a0 and
+    going turn radians round."""
+    n = n or max(8, int(abs(turn) * r / 0.018))
+    w = 0.022
+    pts = []
+    for k in range(n):
+        a, b = a0 + turn * k / n, a0 + turn * (k + 1) / n
+        z = h * (k + 1) / n
+        q = [(x + rr * math.cos(t), y + rr * math.sin(t), z - 0.04) for rr, t in ((r, a), (r + w, a), (r + w, b), (r, b))]
+        slab(m, q, 0.035, tread)
+        pts.append((x + (r + w) * math.cos(b), y + (r + w) * math.sin(b), z + 0.2))
+    for p, q in zip(pts, pts[1:]):
+        m.rod(p, q, 0.0016, rail, segments=4)
+    for p in pts[::3]:
+        m.rod(p, (p[0], p[1], p[2] - 0.2), 0.0014, rail, segments=4)
+
+
+def roof_vent(m, x, y, z, mat, r=0.022):
+    """A round roof ventilator: a short neck and a flared cap with a gap under it."""
+    m.upright(x, y, z - 0.08, z + 0.12, r * 0.8, r * 0.8, mat, segments=12)
+    m.lathe(x, y, z + 0.14, [(r * 1.4, 0), (r * 1.3, 0.06), (r * 0.6, 0.12), (0.0, 0.14)], mat, segments=12)
+    m.upright(x, y, z + 0.1, z + 0.14, r * 0.5, r * 0.5, material("vent gap", "#1e1e20", rough=0.95), segments=12)
+
+
+STEEL_CLAD = ("steel works cladding", "#6a6460")
+STEEL_RIB = ("steel works ribs", "#57524e")
+
+
 def blast_furnace(m):
+    """A blast furnace as at Hamilton or the Soo: the furnace rising out of its cast house, the bustle pipe ring round it
+    with the tuyere stocks, three hot blast stoves with domed tops along the back, the skip hoist incline up from the
+    stockhouse to the top, and the downcomer from the top down to the dust catcher."""
     ground(m, "#4a4644", "mill yard")
-    shell = material("furnace shell", "#5a4e48", metal=0.4, rough=0.6)
-    stove = material("hot stove", "#6a5e56", metal=0.3, rough=0.7)
-    # The furnace, its downcomer and three hot blast stoves.
-    m.lathe(0.0, 0.1, 0, [(0.16, 0), (0.18, 1.5), (0.15, 4.5), (0.11, 6.5), (0.11, 7.0)], shell, segments=28)
-    m.upright(0.0, 0.1, 7.0, 8.6, 0.05, 0.05, shell)
-    m.rod((0.0, 0.1, 8.4), (-0.3, -0.25, 6.0), 0.03, shell)
-    for x in (-0.3, -0.05, 0.2):
-        m.upright(x, -0.3, 0, 5.5, 0.09, 0.09, stove, segments=24)
-        m.lathe(x, -0.3, 5.5, [(0.09, 0), (0.07, 0.25), (0.0, 0.4)], stove, segments=24)
-    m.box(-0.45, 0.45, 0.3, 0.48, 0, 1.4, material("cast house", "#6a5446", rough=0.8), 0.004)
+    shell = material("furnace shell", "#5a4a42", metal=0.4, rough=0.6)
+    stove = material("hot stove", "#8a8682", metal=0.4, rough=0.55)
+    pipe = material("blast pipe", "#6a5e56", metal=0.4, rough=0.6)
+    steel = material("furnace steelwork", "#3a3634", metal=0.5, rough=0.5)
+    rail = material("furnace handrail", "#c8a030", metal=0.3, rough=0.5)
+    deck = material("furnace grating", "#4a4644", metal=0.4, rough=0.6)
+    wall = material(*STEEL_CLAD, metal=0.4, rough=0.6)
+    rib = material(*STEEL_RIB, metal=0.4, rough=0.6)
+    roof = material("cast house roof", "#3e3c3a", metal=0.4, rough=0.6)
+    fx, fy = 0.06, -0.04
+    # The furnace: hearth, bosh, the stack tapering up to the throat, and the top cone.
+    m.lathe(fx, fy, 0, [(0.15, 0), (0.15, 1.2), (0.185, 2.0), (0.175, 2.9), (0.13, 5.6), (0.1, 6.2), (0.1, 6.4)], shell, segments=28)
+    for z in (3.4, 4.4, 5.3):
+        r = 0.175 - (0.175 - 0.13) * (z - 2.9) / 2.7
+        m.upright(fx, fy, z, z + 0.08, r + 0.008, r + 0.008, steel, segments=28)
+    ring_deck(m, fx, fy, 4.0, 0.16, 0.035, deck, rail, a0=math.pi * 0.2, a1=math.pi * 1.6)
+    # The charging platform and top cone, the uptakes and bleeders.
+    m.upright(fx, fy, 6.4, 6.48, 0.17, 0.17, deck, segments=24)
+    pipe_ring(m, fx, fy, 6.7, 0.17, 0.0018, rail, n=20)
+    m.lathe(fx, fy, 6.48, [(0.11, 0), (0.11, 0.3), (0.07, 0.7), (0.05, 1.1)], shell, segments=20)
+    for k in range(4):
+        a = math.pi / 4 + k * math.pi / 2
+        c, s = math.cos(a), math.sin(a)
+        m.rod((fx + 0.08 * c, fy + 0.08 * s, 6.5), (fx + 0.07 * c, fy + 0.07 * s, 7.8), 0.02, pipe, segments=10)
+        m.rod((fx + 0.07 * c, fy + 0.07 * s, 7.8), (fx + 0.02 * c, fy + 0.02 * s, 8.15), 0.02, pipe, segments=10)
+        m.upright(fx + 0.07 * c, fy + 0.07 * s, 7.8, 8.45, 0.009, 0.009, pipe, segments=8)
+        m.upright(fx + 0.07 * c, fy + 0.07 * s, 8.45, 8.55, 0.016, 0.012, steel, segments=8)
+    m.lathe(fx, fy, 8.0, [(0.035, 0), (0.035, 0.25), (0.0, 0.3)], pipe, segments=12)
+    # The dust catcher on its legs, the downcomer to it from the top.
+    dx, dy = 0.34, 0.16
+    for k in range(4):
+        a = math.pi / 4 + k * math.pi / 2
+        m.box(dx + 0.06 * math.cos(a) - 0.006, dx + 0.06 * math.cos(a) + 0.006, dy + 0.06 * math.sin(a) - 0.006,
+              dy + 0.06 * math.sin(a) + 0.006, 0, 2.0, steel)
+    m.lathe(dx, dy, 1.4, [(0.02, 0), (0.08, 0.8), (0.085, 0.85), (0.085, 3.1), (0.05, 3.5), (0.03, 3.7)], pipe, segments=20)
+    m.upright(dx, dy, 1.0, 1.4, 0.02, 0.02, pipe, segments=10)
+    m.rod((fx, fy, 8.2), (dx, dy, 5.1), 0.024, pipe, segments=12)
+    # Three stoves along the back with domed tops, a stack and the hot blast main to the bustle pipe.
+    sy = -0.36
+    for x in (-0.3, -0.07, 0.16):
+        m.upright(x, sy, 0, 5.0, 0.085, 0.085, stove, segments=24)
+        m.lathe(x, sy, 5.0, [(0.085 * math.cos(t), 0.42 * math.sin(t)) for t in (0, 0.4, 0.8, 1.15, 1.45, math.pi / 2)], stove, segments=24)
+        for z in (1.0, 2.5, 4.0):
+            m.upright(x, sy, z, z + 0.05, 0.09, 0.09, steel, segments=24)
+        m.rod((x, sy + 0.08, 1.4), (x, -0.27, 1.4), 0.016, pipe)
+        m.upright(x, sy + 0.08, 1.25, 1.55, 0.022, 0.022, steel, segments=10)
+        ring_deck(m, x, sy, 5.0, 0.085, 0.025, deck, rail, a0=0.3, a1=math.pi - 0.3)
+    m.rod((-0.36, -0.27, 1.4), (0.2, -0.27, 1.4), 0.022, pipe, segments=12)
+    m.rod((fx, -0.27, 1.4), (fx, -0.27, 2.3), 0.022, pipe, segments=12)
+    stack(m, 0.36, -0.42, 0, 6.0, 0.035, stove, steel)
+    # The bustle pipe round the furnace above the cast house, the tuyere stocks dropping in to it.
+    pipe_ring(m, fx, fy, 2.3, 0.26, 0.02, pipe, n=24)
+    for k in range(10):
+        a = 2 * math.pi * k / 10
+        c, s = math.cos(a), math.sin(a)
+        m.rod((fx + 0.26 * c, fy + 0.26 * s, 2.25), (fx + 0.23 * c, fy + 0.23 * s, 1.75), 0.006, pipe, segments=6)
+        m.rod((fx + 0.23 * c, fy + 0.23 * s, 1.75), (fx + 0.15 * c, fy + 0.15 * s, 1.6), 0.006, pipe, segments=6)
+    # The cast house round the front of the hearth: clad, with a monitor, the tap hole glowing through its open end.
+    x0, x1, y0, y1, eave, ridge = -0.46, -0.06, -0.22, 0.3, 1.25, 1.8
+    clad_box(m, x0, x1, y0, y1, 0, eave, wall, rib)
+    gable(m, x0, x1, y0, y1, eave, ridge, roof, wall, along_x=True, over=0.02, thick=0.05)
+    m.box(-0.42, -0.1, 0.04 - 0.04, 0.04 + 0.04, ridge - 0.12, ridge + 0.12, wall)
+    gable(m, -0.42, -0.1, 0.0, 0.08, ridge + 0.12, ridge + 0.2, roof, wall, along_x=True, over=0.01, thick=0.03)
+    hot = lit("cast house glow", "#ff7a2a", 4.0)
+    houses.on_wall(m, "x", x0, -1, -0.06, 0.16, 0, 0.004, 0, 0.95, hot)
+    houses.on_wall(m, "x", x0, -1, -0.075, 0.175, 0, 0.012, 0.95, 1.03, roof)
+    houses.on_wall(m, "y", y1, 1, -0.4, -0.2, 0, 0.004, 0, 0.8, material("cast house door", "#2e2a28", metal=0.3, rough=0.7))
+    # The stockhouse and ore bins along the +y edge, and the skip incline from its pit to the top.
+    bx0, bx1, by0, by1 = -0.04, 0.46, 0.36, 0.49
+    clad_box(m, bx0, bx1, by0, by1, 0, 0.9, wall, rib)
+    for k in range(4):
+        x = bx0 + 0.07 + k * 0.12
+        m.wedge([(x - 0.05, by0 + 0.01, 0.9), (x + 0.05, by0 + 0.01, 0.9), (x + 0.05, by1 - 0.01, 0.9), (x - 0.05, by1 - 0.01, 0.9)],
+                [(x - 0.055, by0, 1.5), (x + 0.055, by0, 1.5), (x + 0.055, by1, 1.5), (x - 0.055, by1, 1.5)], rib)
+    m.box(bx0, bx1, by0 - 0.005, by1 + 0.005, 1.5, 1.56, steel)
+    harbour.lattice(m, (fx + 0.04, 0.42, 0.6), (fx + 0.01, fy + 0.11, 6.75), 0.07, 0.06, steel, n=12, r=0.004)
+    for f in (0.35, 0.7):
+        z = 0.6 + (6.75 - 0.6) * f
+        y = 0.42 + (fy + 0.11 - 0.42) * f
+        for s in (-1, 1):
+            m.box(fx + 0.04 + s * 0.04 - 0.005, fx + 0.04 + s * 0.04 + 0.005, y - 0.005, y + 0.005, 0, z - 0.1, steel)
+        m.rod((fx + 0.0, y, 0.2), (fx + 0.08, y, z - 0.2), 0.002, steel, segments=4)
+    skip = material("skip car", "#8a4a2a", metal=0.3, rough=0.6)
+    for f in (0.25, 0.8):
+        z = 0.6 + (6.75 - 0.6) * f
+        y = 0.42 + (fy + 0.11 - 0.42) * f
+        m.box(fx + 0.02, fx + 0.06, y - 0.025, y + 0.025, z + 0.1, z + 0.35, skip, 0.003)
+    m.box(fx - 0.03, fx + 0.1, fy + 0.06, fy + 0.16, 6.5, 7.0, wall)
+    # The hoist house at the foot of the incline.
+    m.box(-0.2, -0.05, 0.34, 0.48, 0, 0.75, material("hoist house brick", "#7a4434", rough=0.9), 0.003)
+    gable(m, -0.2, -0.05, 0.34, 0.48, 0.75, 1.0, roof, material("hoist house brick", "#7a4434", rough=0.9), along_x=False, over=0.01, thick=0.04)
 
 
-def stacks(m):
+def shop_walls(m, x0, x1, y0, y1, eave, wall, rib, glazing, band=(0.66, 0.82), bay=0.11, trim=None):
+    """A tall clad mill building's walls: ribbed cladding, columns standing out every bay, and a band of glazing high up."""
+    clad_box(m, x0, x1, y0, y1, 0, eave, wall, rib)
+    trim = trim or rib
+    z0, z1 = eave * band[0], eave * band[1]
+    for face, at, d, a0, a1 in (("y", y0, -1, x0, x1), ("y", y1, 1, x0, x1), ("x", x0, -1, y0, y1), ("x", x1, 1, y0, y1)):
+        houses.on_wall(m, face, at, d, a0 + 0.01, a1 - 0.01, 0, 0.007, z0, z1, glazing)
+        n = max(1, round((a1 - a0) / bay))
+        for k in range(n + 1):
+            a = a0 + (a1 - a0) * k / n
+            houses.on_wall(m, face, at, d, a - 0.008, a + 0.008, 0, 0.012, 0, eave, trim)
+
+
+def open_hearth(m):
+    """The open hearth shop, to the mid 1960s: a tall clad shop with a monitor along its ridge, the charging side lean-to
+    along -x and a row of brick stacks rising out of it, one to each furnace, the ladle doors glowing at the +y end."""
     ground(m, "#4a4644", "mill yard")
+    wall = material("open hearth cladding", "#5e5650", metal=0.4, rough=0.65)
+    rib = material("open hearth ribs", "#4a4440", metal=0.4, rough=0.65)
+    roof = material("open hearth roof", "#3a3836", metal=0.4, rough=0.6)
     brick = material("stack brick", "#7a4434", rough=0.9)
     band = material("stack band", "#2e2624", rough=0.9)
-    for x, y, h in ((-0.2, -0.15, 9.0), (0.05, 0.05, 10.0), (0.28, 0.25, 8.5)):
-        stack(m, x, y, 0, h, 0.06, brick, band)
-    m.box(-0.42, 0.42, -0.42, 0.42, 0, 0.8, material("flue base", "#5a4a42", rough=0.85), 0.004)
+    g = glass()
+    x0, x1, y0, y1, eave, ridge = -0.26, 0.44, -0.5, 0.48, 4.0, 4.7
+    shop_walls(m, x0, x1, y0, y1, eave, wall, rib, g)
+    gable(m, x0, x1, y0, y1, eave, ridge, roof, wall, along_x=False, over=0.02, thick=0.06)
+    xc = (x0 + x1) / 2
+    m.box(xc - 0.08, xc + 0.08, y0 + 0.04, y1 - 0.04, ridge - 0.25, ridge + 0.25, wall)
+    slat = material("monitor louvres", "#7a7672", metal=0.3, rough=0.6)
+    for k in range(8):
+        c = y0 + 0.1 + k * 0.115
+        for x, d in ((xc - 0.08, -1), (xc + 0.08, 1)):
+            houses.louvres(m, "x", x, d, c, ridge - 0.18, ridge + 0.18, 0.08, rib, slat)
+    gable(m, xc - 0.08, xc + 0.08, y0 + 0.04, y1 - 0.04, ridge + 0.25, ridge + 0.38, roof, wall, along_x=False, over=0.015, thick=0.04)
+    # The charging side lean-to along -x and the stacks up out of its roof.
+    lx0, lz0, lz1 = -0.46, 2.4, 3.1
+    clad_box(m, lx0, x0, y0, y1, 0, lz0, wall, rib)
+    slab(m, [(lx0 - 0.02, y0, lz0), (x0, y0, lz1), (x0, y1, lz1), (lx0 - 0.02, y1, lz0)], 0.06, roof)
+    for k in range(6):
+        c = y0 + 0.08 + k * 0.165
+        houses.on_wall(m, "x", lx0, -1, c - 0.04, c + 0.04, 0, 0.004, 0, 1.1, material("charging door", "#2e2a28", metal=0.3, rough=0.7))
+    for k, h in enumerate((9.2, 10.0, 9.4, 9.8, 9.0)):
+        y = y0 + 0.14 + k * 0.18
+        x = (lx0 + x0) / 2
+        stack(m, x, y, 0, h, 0.042, brick, band)
+        m.upright(x, y, h - 1.6, h - 1.5, 0.05, 0.05, band, segments=16)
+        m.upright(x, y, h - 0.05, h + 0.02, 0.05, 0.048, band, segments=16)
+    # The ladle doors at the +y end, glowing.
+    hot = lit("open hearth glow", "#ff7a2a", 4.5)
+    for c in (-0.06, 0.24):
+        houses.on_wall(m, "y", y1, 1, c - 0.08, c + 0.08, 0, 0.004, 0, 1.9, hot)
+        houses.on_wall(m, "y", y1, 1, c - 0.095, c + 0.095, 0, 0.014, 1.9, 2.0, rib)
+        houses.on_wall(m, "y", y1, 1, c - 0.08, c + 0.08, 0.004, 0.008, 1.3, 1.9, material("door leaf", "#3a3634", metal=0.4, rough=0.6))
+
+
+def bof_shop(m):
+    """The basic oxygen shop, from the mid 1960s: a long clad shop with the tall converter aisle rising out of its middle,
+    two steel off-gas stacks up from its roof with the hood ducts to them, a lower charging aisle and an oxygen tank."""
+    ground(m, "#4a4644", "mill yard")
+    wall = material("BOF cladding", "#6a7480", metal=0.4, rough=0.55)
+    rib = material("BOF ribs", "#56606a", metal=0.4, rough=0.55)
+    roof = material("BOF roof", "#3e4246", metal=0.4, rough=0.6)
+    steel = material("BOF stack", "#8a8884", metal=0.5, rough=0.5)
+    dark = material("BOF steelwork", "#3a3634", metal=0.5, rough=0.5)
+    rail = material("stack handrail", "#c8a030", metal=0.3, rough=0.5)
+    g = glass()
+    # The main shop and the lower charging aisle along -x.
+    x0, x1, y0, y1, eave = -0.3, 0.44, -0.5, 0.48, 4.0
+    shop_walls(m, x0, x1, y0, y1, eave, wall, rib, g)
+    gable(m, x0, x1, y0, y1, eave, eave + 0.35, roof, wall, along_x=False, over=0.02, thick=0.06)
+    lx0, lz = -0.46, 2.8
+    shop_walls(m, lx0, x0, y0, y1, lz, wall, rib, g, band=(0.6, 0.82))
+    houses.flat_top(m, lx0, x0, y0, y1, lz, roof, parapet=0.1)
+    for c in (-0.3, 0.1):
+        harbour.rollup_door(m, c - 0.08, c + 0.08, y1, 0, 1.6, face=1, colour="#4a5058")
+    # The converter aisle rising out of the middle.
+    tx0, tx1, ty0, ty1, top = -0.12, 0.3, -0.3, 0.22, 7.0
+    shop_walls(m, tx0, tx1, ty0, ty1, top, wall, rib, g, band=(0.84, 0.92), bay=0.105)
+    houses.flat_top(m, tx0, tx1, ty0, ty1, top, roof, parapet=0.1)
+    # The hoods' off-gas ducts out of the aisle's -x face and up to the stacks on its roof.
+    for k, (y, h) in enumerate(((-0.17, 10.0), (0.08, 9.6))):
+        sx = 0.14
+        m.upright(sx, y, top, h, 0.05, 0.045, steel, segments=20)
+        m.upright(sx, y, top, top + 0.15, 0.065, 0.065, dark, segments=20)
+        m.upright(sx, y, h - 0.4, h - 0.32, 0.055, 0.055, dark, segments=20)
+        ring_deck(m, sx, y, h - 1.4, 0.05, 0.02, dark, rail, a0=math.pi * 0.5, a1=math.pi * 1.5)
+        column_ladder(m, sx, y, 0.048, math.pi, top, h - 1.4, rail, cage=False)
+        m.rod((tx0, y, 5.6), (tx0 - 0.06, y, 5.9), 0.035, steel, segments=12)
+        m.rod((tx0 - 0.06, y, 5.9), (tx0 - 0.06, y, 7.6), 0.035, steel, segments=12)
+        m.rod((tx0 - 0.06, y, 7.6), (sx - 0.05, y, 8.1), 0.035, steel, segments=12)
+        m.box(tx0 - 0.07, tx0, y - 0.04, y + 0.04, 5.3, 6.0, dark)
+    # The oxygen tank by the shop.
+    m.lathe(0.38, 0.4, 4.0, [(0.0, 0), (0.035, 0.08), (0.035, 1.3), (0.0, 1.4)], material("oxygen tank", "#d8d4cc", metal=0.3, rough=0.5), segments=16)
+    m.box(0.36, 0.4, 0.38, 0.42, 4.0, 4.1, dark)
 
 
 def steel_shed(m):
+    """The rolling mill: a long clad shed with louvred monitor and rows of roof ventilators, a big door in its +y end and
+    the crane runway running out of it on columns, an overhead crane over the slabs on it."""
     ground(m, "#4a4644", "mill yard")
-    siding = material("shed siding", "#6e6a64", metal=0.4, rough=0.6)
+    wall = material(*STEEL_CLAD, metal=0.4, rough=0.6)
+    rib = material(*STEEL_RIB, metal=0.4, rough=0.6)
     roof = material("shed roof", "#4a4846", metal=0.4, rough=0.6)
-    x0, x1, y0, y1 = -0.44, 0.44, -0.5, 0.5
-    m.box(x0, x1, y0, y1, 0, 3.4, siding, 0.004)
-    for k in range(1, 12):
-        x = x0 + (x1 - x0) * k / 12
-        for y in (y0, y1):
-            m.box(x - 0.003, x + 0.003, y - 0.004, y + 0.004, 0, 3.4, material("shed ribs", "#56524c", metal=0.4, rough=0.6))
-    gable(m, x0, x1, y0, y1, 3.4, 4.2, roof, siding, along_x=True, over=0.0)
-    # The monitor along the ridge, glazed to let the heat out.
-    m.box(-0.44, 0.44, -0.08, 0.08, 4.0, 4.6, siding)
-    m.box(-0.44, 0.44, -0.085, 0.085, 4.15, 4.45, glass())
-    slab(m, [(-0.46, -0.12, 4.6), (0.46, -0.12, 4.6), (0.46, 0.12, 4.6), (-0.46, 0.12, 4.6)], 0.05, roof)
+    steel = material("runway steel", "#3a3634", metal=0.5, rough=0.5)
+    crane = material("overhead crane", "#c8a030", metal=0.4, rough=0.5)
+    g = glass()
+    x0, x1, y0, y1, eave, ridge = -0.42, 0.42, -0.5, 0.14, 3.4, 4.1
+    shop_walls(m, x0, x1, y0, y1, eave, wall, rib, g, band=(0.62, 0.8))
+    gable(m, x0, x1, y0, y1, eave, ridge, roof, wall, along_x=False, over=0.02, thick=0.06)
+    # The monitor along the ridge, louvred to let the heat out.
+    m.box(-0.07, 0.07, y0 + 0.03, y1 - 0.03, ridge - 0.2, ridge + 0.32, wall)
+    slat = material("monitor louvres", "#7a7672", metal=0.3, rough=0.6)
+    for k in range(5):
+        c = y0 + 0.09 + k * 0.115
+        for x, d in ((-0.07, -1), (0.07, 1)):
+            houses.louvres(m, "x", x, d, c, ridge - 0.12, ridge + 0.24, 0.085, rib, slat)
+    gable(m, -0.07, 0.07, y0 + 0.03, y1 - 0.03, ridge + 0.32, ridge + 0.42, roof, wall, along_x=False, over=0.015, thick=0.04)
+    # Two rows of ventilators down each slope.
+    vent = material("roof ventilators", "#6e6a66", metal=0.4, rough=0.5)
+    for x in (-0.27, -0.16, 0.16, 0.27):
+        z = eave + (ridge - eave) * (1 - abs(x) / 0.42)
+        for k in range(5):
+            roof_vent(m, x, y0 + 0.07 + k * 0.125, z + 0.03, vent)
+    # The big door in the +y end, part open with a glow inside, and the end's ribs over it.
+    dx0, dx1, dz = -0.2, 0.2, 2.6
+    houses.on_wall(m, "y", y1, 1, dx0, dx1, 0, 0.005, 0, dz, material("mill dark", "#1a1816", rough=1.0))
+    houses.on_wall(m, "y", y1, 1, -0.12, 0.12, 0.005, 0.007, 0, 0.6, lit("mill glow", "#ff8a3a", 2.5))
+    houses.on_wall(m, "y", y1, 1, 0.05, 0.31, 0.012, 0.02, 0, dz, material("door leaf", "#4a4440", metal=0.4, rough=0.6))
+    houses.on_wall(m, "y", y1, 1, dx0 - 0.02, dx1 + 0.13, 0.012, 0.03, dz, dz + 0.1, steel)
+    # The crane runway out of the end on its columns, and the crane on it.
+    rx = 0.36
+    for x in (-rx, rx):
+        for y in (0.3, 0.47):
+            m.box(x - 0.012, x + 0.012, y - 0.012, y + 0.012, 0, 2.75, steel)
+            m.rod((x, y, 2.2), (x, y - 0.06, 2.72), 0.003, steel, segments=4)
+        m.box(x - 0.015, x + 0.015, y1, 0.5, 2.75, 2.95, steel)
+        m.box(x - 0.006, x + 0.006, y1, 0.5, 2.95, 2.99, material("crane rail", "#6a6662", metal=0.9, rough=0.4))
+    m.rod((-rx, 0.3, 0.3), (-rx, 0.47, 2.5), 0.003, steel, segments=4)
+    m.rod((rx, 0.3, 0.3), (rx, 0.47, 2.5), 0.003, steel, segments=4)
+    cy = 0.36
+    for s in (-1, 1):
+        m.box(-rx - 0.02, rx + 0.02, cy + s * 0.03 - 0.008, cy + s * 0.03 + 0.008, 3.0, 3.35, crane)
+    for x in (-rx, rx):
+        m.box(x - 0.022, x + 0.022, cy - 0.06, cy + 0.06, 2.95, 3.2, crane, 0.003)
+    m.box(-0.08, 0.04, cy - 0.045, cy + 0.045, 3.35, 3.6, crane, 0.003)
+    m.box(-0.07, -0.02, cy + 0.045, cy + 0.07, 3.0, 3.3, material("crane cab", "#3a3a3c", metal=0.3, rough=0.5))
+    for s in (-1, 1):
+        m.rod((-0.02 + s * 0.012, cy, 3.35), (-0.02 + s * 0.012, cy, 1.7), 0.0015, steel, segments=4)
+    m.box(-0.04, 0.0, cy - 0.015, cy + 0.015, 1.55, 1.72, steel)
+    slab_steel = material("steel slabs", "#5a5652", metal=0.6, rough=0.5)
+    for k in range(3):
+        m.box(-0.28, 0.12, 0.2 + k * 0.0, 0.3, k * 0.12, k * 0.12 + 0.1, slab_steel)
+    for x in (0.2, 0.28):
+        m.tube_x(x - 0.035, x + 0.035, 0.42, 0.28, 0.055, material("rolled steel", "#6a6c70", metal=0.8, rough=0.35), segments=20, ring_inner=0.02)
 
 
 def slag_pot(m, x, y, z, tip=0.0, glow=None):
@@ -1881,18 +2166,44 @@ def steel_yard(m):
 # ---- the factory --------------------------------------------------------------------------------
 
 def factory_shed(m):
+    """A brick factory with pilasters and a sawtooth roof, the steep faces glazed toward +y with mullions down them, brick
+    end walls stepped to the teeth, and a couple of roof fans."""
     paved(m, -0.5, 0.5, -0.5, 0.5, "#8a867e")
     brick = material("factory brick", "#8e4a38", rough=0.9)
-    x0, x1, y0, y1 = -0.46, 0.46, -0.46, 0.46
-    m.box(x0, x1, y0, y1, 0, 2.6, brick, 0.004)
-    windows(m, x0, x1, y0, y1, 0.3, 1, 6, 6, glass(), material("factory trim", "#c8bca8", rough=0.8), w=0.08, h=1.4)
-    # A sawtooth roof: north lights of glass facing one way, slopes the other.
+    trim = material("factory trim", "#c8bca8", rough=0.8)
+    x0, x1, y0, y1, eave, peak = -0.46, 0.46, -0.46, 0.46, 2.6, 3.4
+    m.box(x0, x1, y0, y1, 0, eave, brick, 0.004)
+    windows(m, x0, x1, y0, y1, 0.3, 1, 6, 6, glass(), trim, w=0.08, h=1.4)
+    for face, at, d, a0, a1 in (("y", y0, -1, x0, x1), ("y", y1, 1, x0, x1), ("x", x0, -1, y0, y1), ("x", x1, 1, y0, y1)):
+        for k in range(7):
+            a = a0 + (a1 - a0) * k / 6
+            houses.on_wall(m, face, at, d, a - 0.012, a + 0.012, 0, 0.01, 0, eave, brick)
+        houses.on_wall(m, face, at, d, a0, a1, 0, 0.012, eave - 0.1, eave, trim)
+    # The teeth: a roof slope rising toward +y to a steep glazed face, brick ends stepped to them.
     roof = material("sawtooth roof", "#4e4a46", rough=0.7)
-    for k in range(4):
-        ya = y0 + k * (y1 - y0) / 4
-        yb = ya + (y1 - y0) / 4
-        m.wedge([(x0, ya, 2.6), (x1, ya, 2.6), (x1, yb, 2.6), (x0, yb, 2.6)], [(x0, ya, 3.4), (x1, ya, 3.4), (x1, ya + 0.01, 3.4), (x0, ya + 0.01, 3.4)], roof)
-        m.box(x0, x1, ya - 0.003, ya + 0.003, 2.6, 3.35, glass())
+    pane = material("north light glass", "#5a7088", rough=0.1, grime=0.15)
+    bar = material("north light bars", "#2e3236", metal=0.4, rough=0.5)
+    n, g = 4, 0.04
+    for k in range(n):
+        ya = y0 + k * (y1 - y0) / n
+        yb = ya + (y1 - y0) / n
+        yt = yb - g
+        m.wedge([(x0, ya, eave), (x0, yt, peak), (x0, yb, eave)], [(x1, ya, eave), (x1, yt, peak), (x1, yb, eave)], roof)
+        m.wedge([(x0 + 0.01, yt + 0.002, peak - 0.03), (x1 - 0.01, yt + 0.002, peak - 0.03), (x1 - 0.01, yb + 0.002, eave + 0.04), (x0 + 0.01, yb + 0.002, eave + 0.04)],
+                [(x0 + 0.01, yt + 0.006, peak - 0.03), (x1 - 0.01, yt + 0.006, peak - 0.03), (x1 - 0.01, yb + 0.006, eave + 0.04), (x0 + 0.01, yb + 0.006, eave + 0.04)], pane)
+        x = x0 + 0.01
+        while x <= x1 - 0.005:
+            m.rod((x, yt + 0.007, peak - 0.02), (x, yb + 0.007, eave + 0.03), 0.0025, bar, segments=4)
+            x += 0.065
+        m.rod((x0 + 0.01, yt + 0.007, peak - 0.03), (x1 - 0.01, yt + 0.007, peak - 0.03), 0.004, bar, segments=4)
+        m.rod((x0 + 0.01, yb + 0.006, eave + 0.05), (x1 - 0.01, yb + 0.006, eave + 0.05), 0.004, bar, segments=4)
+        for xe, o in ((x0, -0.006), (x1, 0.006)):
+            m.wedge([(xe, ya, eave), (xe, yt, peak + 0.04), (xe, yb, eave)], [(xe + o, ya, eave), (xe + o, yt, peak + 0.04), (xe + o, yb, eave)], brick)
+    fan = material("roof fan", "#8a8884", metal=0.5, rough=0.4)
+    for x, k in ((-0.2, 1), (0.25, 2)):
+        ya = y0 + k * (y1 - y0) / n
+        y = ya + 0.06
+        exhaust_fan(m, x, y, eave + (peak - eave) * 0.06 / ((y1 - y0) / n - g), eave + 0.45, fan)
 
 
 def factory_chimney(m):
@@ -1922,14 +2233,58 @@ def loading_dock(m):
 
 
 def factory_yard(m):
+    """The factory's shipping yard: a chain link fence round the outer edges with its gate open on +y and a tractor and
+    van trailer coming in through it, pallets of cartons stacked two high, drums, crates and empty pallets, and a light
+    standard with floodlights."""
     paved(m, -0.5, 0.5, -0.5, 0.5, "#8a867e")
-    crate = material("crates", "#a8885a", rough=0.85)
-    for k in range(5):
-        x = -0.35 + k * 0.17
-        for j in range(2):
-            m.box(x - 0.06, x + 0.06, -0.3 + j * 0.15 - 0.06, -0.3 + j * 0.15 + 0.06, 0, 0.45 + 0.1 * (k % 2), crate, 0.004)
-    houses.board(m, (-0.48, 0.45), (0.48, 0.45), material("yard fence", "#7a6a54", rough=0.9))
-    houses.yard_tree(m, 0.3, 0.2, 0.8, seed=81, kind="elm")
+    post = material("fence posts", "#7a7c7e", metal=0.6, rough=0.4)
+    mesh = material("chain link", "#9a9c9e", metal=0.6, rough=0.5)
+    gx0, gx1 = -0.08, 0.2
+    # The fence along +y with the gate gap, and along +x.
+    for a, b in (((-0.48, 0.47), (gx0, 0.47)), ((gx1, 0.47), (0.47, 0.47)), ((0.47, 0.47), (0.47, -0.48))):
+        n = max(1, int(math.hypot(b[0] - a[0], b[1] - a[1]) / 0.1))
+        for k in range(n + 1):
+            x, y = a[0] + (b[0] - a[0]) * k / n, a[1] + (b[1] - a[1]) * k / n
+            m.upright(x, y, 0, 0.72, 0.004, 0.004, post, segments=6)
+        m.rod((a[0], a[1], 0.7), (b[0], b[1], 0.7), 0.0025, post, segments=4)
+        beam(m, (a[0], a[1], 0.0), (b[0], b[1], 0.0), 0.002, 0.02, 0.68, mesh)
+    # The gate leaves swung in.
+    for hx, s in ((gx0, 1), (gx1, -1)):
+        m.upright(hx, 0.47, 0, 0.8, 0.007, 0.007, post, segments=8)
+        end = (hx + s * 0.1, 0.47 - 0.1)
+        m.rod((hx, 0.47, 0.68), (end[0], end[1], 0.68), 0.003, post, segments=4)
+        m.rod((hx, 0.47, 0.06), (end[0], end[1], 0.06), 0.003, post, segments=4)
+        m.rod((end[0], end[1], 0.06), (end[0], end[1], 0.68), 0.003, post, segments=4)
+        beam(m, (hx, 0.47, 0.0), (end[0], end[1], 0.0), 0.002, 0.06, 0.68, mesh)
+    # A tractor and van trailer in at the gate.
+    moved(m, lambda mm: roadcars.tractor(mm, 11 / 16, "van", "sleeper", "#2a4a7a", era=1970), 0.06, 0.08)
+    # Pallets of cartons, two high, in rows on the -x side.
+    for i, x in enumerate((-0.4, -0.29)):
+        for j, y in enumerate((-0.4, -0.29, -0.18, -0.07, 0.04)):
+            harbour.pallet(m, x, y, 0.02, size=0.095, load="cartons")
+            if (i + j) % 3:
+                harbour.pallet(m, x, y, 0.29, size=0.095, load="cartons")
+    # Empty pallets stacked up, drums and crates.
+    wood = material("pallet", "#a08460", rough=0.9)
+    for x, y, h in ((-0.4, 0.22, 10), (-0.29, 0.24, 7)):
+        for k in range(h):
+            m.box(x - 0.048, x + 0.048, y - 0.048, y + 0.048, 0.02 + k * 0.05, 0.02 + k * 0.05 + 0.035, wood)
+    for k, (x, y) in enumerate(((0.3, -0.42), (0.34, -0.42), (0.38, -0.42), (0.42, -0.42), (0.32, -0.38), (0.36, -0.38), (0.4, -0.38),
+                                (0.3, -0.33), (0.34, -0.33))):
+        harbour.drum(m, x, y, 0.02, colour=("#2a4a7a", "#2a2a2c", "#a83226")[k % 3], r=0.017, h=0.36)
+    harbour.crate(m, 0.26, 0.4, -0.22, -0.12, 0.02, 0.4)
+    harbour.crate(m, 0.3, 0.4, -0.08, 0.02, 0.02, 0.3, colour="#9a7a4e")
+    harbour.crate(m, 0.31, 0.39, -0.07, 0.01, 0.3, 0.52)
+    # The light standard by the gate, two floodlights on its cross arm.
+    pole = material("light standard", "#7a7c7e", metal=0.6, rough=0.4)
+    lx, ly = 0.38, 0.36
+    m.upright(lx, ly, 0, 2.4, 0.009, 0.006, pole, segments=10)
+    m.box(lx - 0.012, lx + 0.012, ly - 0.012, ly + 0.012, 0, 0.12, material("light base", "#9a948a", rough=0.9))
+    m.rod((lx - 0.06, ly + 0.0, 2.35), (lx + 0.06, ly, 2.35), 0.004, pole, segments=6)
+    lamp_glass = material("flood glass", "#f4ecc8", rough=0.2)
+    for s in (-1, 1):
+        m.box(lx + s * 0.05 - 0.017, lx + s * 0.05 + 0.017, ly - 0.03, ly + 0.0, 2.25, 2.4, pole, 0.003)
+        m.box(lx + s * 0.05 - 0.014, lx + s * 0.05 + 0.014, ly - 0.033, ly - 0.029, 2.27, 2.38, lamp_glass)
 
 
 # ---- oil ------------------------------------------------------------------------------------------
@@ -1962,26 +2317,164 @@ def oil_tank(m):
         m.box(xa, xb, ya, yb, 0, 0.25, berm, 0.01)
 
 
+REFINERY_RAIL = ("refinery handrail", "#c8a030")
+
+
+def pipe_rack(m, x, y0, y1, w, tiers, pipes, steel, bay=0.16):
+    """A pipe rack along y at x from y0 to y1, w tiles wide: steel bents every bay with a beam for each tier, and pipes
+    along each tier, pipes a list of (tier, offset across, radius, material)."""
+    n = max(1, round((y1 - y0) / bay))
+    for k in range(n + 1):
+        y = y0 + (y1 - y0) * k / n
+        for s in (-1, 1):
+            m.box(x + s * w / 2 - 0.006, x + s * w / 2 + 0.006, y - 0.006, y + 0.006, 0, tiers[-1] + 0.06, steel)
+        for z in tiers:
+            m.box(x - w / 2 - 0.008, x + w / 2 + 0.008, y - 0.006, y + 0.006, z - 0.06, z, steel)
+        if k < n:
+            yn = y0 + (y1 - y0) * (k + 1) / n
+            m.rod((x - w / 2, y, tiers[0] - 0.05), (x - w / 2, yn, tiers[-1] - 0.05), 0.0018, steel, segments=4)
+    for t, o, r, mat in pipes:
+        z = tiers[t] + r / rig.RISE
+        m.tube(y0, y1, x + o, z, r, mat, segments=10)
+
+
+def column(m, x, y, r, h, shell, steel, deck, rail, ladder_a=0.0, decks=None):
+    """A distillation column: a skirt on a footing, its shell with seams, a domed head with a davit, walkways round it
+    with handrails, a caged ladder up the side and the overhead line down to the rack."""
+    m.upright(x, y, 0, 0.12, r + 0.02, r + 0.02, material("column footing", "#9a948a", rough=0.9), segments=20)
+    m.upright(x, y, 0.12, 0.9, r * 1.03, r * 1.03, steel, segments=20)
+    m.upright(x, y, 0.9, h, r, r, shell, segments=20)
+    m.lathe(x, y, h, [(r, 0), (r * 0.85, r / rig.RISE * 0.4), (r * 0.45, r / rig.RISE * 0.75), (0.0, r / rig.RISE * 0.85)], shell, segments=20)
+    for z in range(2, int(h), 2):
+        m.upright(x, y, z, z + 0.04, r + 0.004, r + 0.004, steel, segments=20)
+    decks = decks or [z for z in (h - 0.1, h * 0.66, h * 0.33)]
+    for k, z in enumerate(decks):
+        a0 = ladder_a - math.pi * (0.55 if k == 0 else 0.45)
+        a1 = ladder_a + math.pi * (0.55 if k == 0 else 0.45)
+        ring_deck(m, x, y, z, r, 0.026, deck, rail, a0=a0, a1=a1)
+    column_ladder(m, x, y, r + 0.026, ladder_a, 0.0, decks[0], rail)
+    top = h + r / rig.RISE * 0.85
+    m.rod((x, y, top), (x, y, top + 0.35), 0.003, steel, segments=4)
+    m.rod((x, y, top + 0.35), (x + 0.04, y, top + 0.3), 0.003, steel, segments=4)
+
+
 def refinery_columns(m):
+    """The process units as at Sarnia or Edmonton: four distillation columns with walkways and caged ladders, either side
+    of a pipe rack running along y, the overhead lines down to it, and a fired heater box with its short stacks."""
     ground(m, "#6a6660", "refinery concrete")
-    steel = material("column steel", "#b8b6b0", metal=0.6, rough=0.4)
+    shell = material("column steel", "#b8b6b0", metal=0.6, rough=0.4)
+    steel = material("refinery steelwork", "#5a5650", metal=0.5, rough=0.5)
+    deck = material("refinery grating", "#4a4844", metal=0.4, rough=0.6)
+    rail = material(*REFINERY_RAIL, metal=0.3, rough=0.5)
     pipe = material("refinery pipe", "#7a7a76", metal=0.6, rough=0.4)
-    for x, y, r, h in ((-0.2, -0.15, 0.07, 7.5), (0.05, -0.2, 0.05, 6.0), (0.24, 0.0, 0.08, 8.2), (-0.12, 0.22, 0.05, 5.0)):
-        m.upright(x, y, 0, h, r, r, steel, segments=20)
-        for z in range(1, int(h), 2):
-            m.upright(x, y, z, z + 0.08, r + 0.03, r + 0.03, pipe, segments=20)
-        m.lathe(x, y, h, [(r, 0), (r * 0.6, 0.12), (0.0, 0.18)], steel, segments=20)
-    for a, b in (((-0.2, -0.15), (0.24, 0.0)), ((0.05, -0.2), (-0.12, 0.22)), ((0.24, 0.0), (0.4, 0.4))):
-        m.rod((a[0], a[1], 2.2), (b[0], b[1], 2.2), 0.015, pipe)
-    m.box(-0.45, 0.45, 0.32, 0.4, 0, 2.4, pipe)
+    lagged = material("lagged pipe", "#c8c8c4", metal=0.7, rough=0.35)
+    rust = material("rust pipe", "#7a4e36", metal=0.4, rough=0.6)
+    yellow = material("gas pipe", "#c8a828", metal=0.3, rough=0.5)
+    rx = 0.04
+    tiers = [1.4, 2.0]
+    pipe_rack(m, rx, -0.5, 0.5, 0.13, tiers, [(0, -0.045, 0.012, pipe), (0, -0.015, 0.016, lagged), (0, 0.02, 0.01, rust), (0, 0.045, 0.012, pipe),
+                                               (1, -0.04, 0.014, lagged), (1, -0.005, 0.01, yellow), (1, 0.03, 0.018, pipe)], steel)
+    cols = [(-0.24, -0.22, 0.075, 8.2, 0.0), (-0.26, 0.2, 0.055, 6.0, 0.0), (0.3, -0.3, 0.06, 7.5, math.pi), (0.32, -0.02, 0.048, 5.0, math.pi)]
+    for x, y, r, h, a in cols:
+        column(m, x, y, r, h, shell, steel, deck, rail, ladder_a=a + (0.6 if a == 0 else -0.6))
+        top = h + r / rig.RISE * 0.85
+        side = 1 if x < rx else -1
+        ex = x + side * r * 0.4
+        m.rod((x, y, top - 0.1), (ex + side * 0.05, y, top + 0.1), 0.012, pipe, segments=8)
+        m.rod((ex + side * 0.05, y, top + 0.1), (ex + side * 0.07, y, tiers[1] + 0.2), 0.012, pipe, segments=8)
+        m.rod((ex + side * 0.07, y, tiers[1] + 0.2), (rx - side * 0.05, y, tiers[1] + 0.05), 0.012, pipe, segments=8)
+        m.rod((x + side * r, y, 1.1), (rx - side * 0.065, y, tiers[0] + 0.05), 0.01, rust, segments=8)
+    # The fired heater: a brick lined box on legs, the convection section on top and two short stacks.
+    hx0, hx1, hy0, hy1 = 0.18, 0.46, 0.18, 0.46
+    heat = material("heater casing", "#8a8a86", metal=0.4, rough=0.55)
+    for x in (hx0 + 0.02, hx1 - 0.02):
+        for y in (hy0 + 0.02, hy1 - 0.02):
+            m.box(x - 0.01, x + 0.01, y - 0.01, y + 0.01, 0, 0.5, steel)
+    clad_box(m, hx0, hx1, hy0, hy1, 0.5, 2.4, heat, steel, gap=0.05)
+    m.box(hx0 + 0.04, hx1 - 0.04, hy0 + 0.05, hy1 - 0.05, 2.4, 3.1, heat)
+    m.box(hx0 + 0.035, hx1 - 0.035, hy0 + 0.045, hy1 - 0.045, 2.38, 2.48, steel)
+    burner = lit("burner glow", "#ff8a3a", 2.0)
+    for k in range(4):
+        x = hx0 + 0.05 + k * 0.06
+        m.upright(x, hy0 + 0.07, 0.3, 0.5, 0.01, 0.01, steel, segments=8)
+        m.box(x - 0.01, x + 0.01, hy0 - 0.004, hy0, 0.9, 1.0, burner)
+    for x in (hx0 + 0.09, hx1 - 0.09):
+        y = (hy0 + hy1) / 2
+        m.upright(x, y, 3.1, 4.6, 0.03, 0.026, heat, segments=14)
+        m.upright(x, y, 4.5, 4.6, 0.032, 0.032, steel, segments=14)
+    for a, b in (((hx0, hy0), (hx1, hy0)), ((hx1, hy0), (hx1, hy1)), ((hx1, hy1), (hx0, hy1)), ((hx0, hy1), (hx0, hy0))):
+        m.rod((a[0], a[1], 2.62), (b[0], b[1], 2.62), 0.0018, rail, segments=4)
+        m.rod((a[0], a[1], 2.4), (a[0], a[1], 2.62), 0.0016, rail, segments=4)
+    for a, b in (((hx0, hy0 + 0.1), (rx + 0.07, hy0 + 0.1)), ((hx0, hy1 - 0.1), (rx + 0.07, hy1 - 0.1))):
+        m.rod((a[0], a[1], 1.6), (b[0], b[1], tiers[0] + 0.05), 0.012, lagged, segments=8)
+    column_ladder(m, hx0, hy0 + 0.2, 0.0, math.pi, 0.0, 2.4, rail)
+
+
+def floating_roof_tank(m, x, y, r, h, shell, roof, rail, stair_a=0.0):
+    """An open topped tank with a floating roof: the deck down inside the shell, the rim and wind girder round the top,
+    the rolling ladder down onto the roof and a spiral stair up the side."""
+    m.upright(x, y, 0, h - 0.3, r, r, shell, segments=36)
+    m.upright(x, y, h - 0.3, h - 0.17, r - 0.007, r - 0.007, roof, segments=36)
+    m.lathe(x, y, h - 0.3, [(r, 0), (r, 0.3), (r - 0.006, 0.3), (r - 0.006, 0)], shell, segments=36)
+    pipe_ring(m, x, y, h - 0.12, r + 0.006, 0.007, material("wind girder", "#9a9690", metal=0.4, rough=0.5), n=36)
+    m.upright(x, y, h - 0.17, h - 0.14, r * 0.25, r * 0.25, material("roof drain sump", "#5a5854", metal=0.4, rough=0.6), segments=12)
+    a = stair_a + 1.9
+    c, s = math.cos(a), math.sin(a)
+    m.rod((x + c * r, y + s * r, h + 0.2), (x + c * r * 0.2, y + s * r * 0.2, h - 0.16), 0.003, rail, segments=4)
+    m.rod((x + c * r - s * 0.012, y + s * r + c * 0.012, h + 0.2), (x + c * r * 0.2 - s * 0.012, y + s * r * 0.2 + c * 0.012, h - 0.16), 0.003, rail, segments=4)
+    m.box(x + c * r - 0.015, x + c * r + 0.015, y + s * r - 0.015, y + s * r + 0.015, h, h + 0.04, rail)
+    spiral_stair(m, x, y, r, h, stair_a, 1.9, material("stair treads", "#5a5854", metal=0.4, rough=0.6), rail)
+    pipe_ring(m, x, y, h + 0.2, r - 0.004, 0.0015, rail, n=28)
+
+
+def berm(m, x0, x1, y0, y1, h, mat, foot=0.06, top=0.02):
+    """An earth berm round x0..x1 by y0..y1: a bank h steps high, foot tiles across at the bottom, top across on top."""
+    for a, b in (((x0, y0), (x1, y0)), ((x1, y0), (x1, y1)), ((x1, y1), (x0, y1)), ((x0, y1), (x0, y0))):
+        dx, dy = b[0] - a[0], b[1] - a[1]
+        n = math.hypot(dx, dy)
+        nx, ny = dy / n, -dx / n
+        ext = foot / 2
+        ax, ay = a[0] - dx / n * ext, a[1] - dy / n * ext
+        bx, by = b[0] + dx / n * ext, b[1] + dy / n * ext
+        bot = [(ax - nx * foot / 2, ay - ny * foot / 2, 0), (bx - nx * foot / 2, by - ny * foot / 2, 0),
+               (bx + nx * foot / 2, by + ny * foot / 2, 0), (ax + nx * foot / 2, ay + ny * foot / 2, 0)]
+        tp = [(ax - nx * top / 2, ay - ny * top / 2, h), (bx - nx * top / 2, by - ny * top / 2, h),
+              (bx + nx * top / 2, by + ny * top / 2, h), (ax + nx * top / 2, ay + ny * top / 2, h)]
+        m.wedge(bot, tp, mat)
 
 
 def refinery_tanks(m):
+    """The tank farm: two floating roof tanks and a cone roof tank, each with a spiral stair, inside an earth berm, with a
+    pipe stair over it and the tank lines out through it toward the units at -y."""
     ground(m, "#6a6660", "refinery concrete")
     white = material("tank white", "#d8d4cc", metal=0.3, rough=0.5)
-    tank(m, -0.2, -0.2, 0.22, 1.8, white, material("tank roof", "#9a9690", metal=0.4, rough=0.5))
-    tank(m, 0.22, 0.2, 0.2, 1.6, white, material("tank roof", "#9a9690", metal=0.4, rough=0.5))
-    m.lathe(0.25, -0.25, 0, [(0.13, 0), (0.13, 0.4), (0.12, 0.8), (0.09, 1.1), (0.0, 1.25)], white, segments=24)
+    roof = material("floating roof", "#a8a6a0", metal=0.4, rough=0.55)
+    cone = material("tank roof", "#9a9690", metal=0.4, rough=0.5)
+    rail = material(*REFINERY_RAIL, metal=0.3, rough=0.5)
+    pipe = material("refinery pipe", "#7a7a76", metal=0.6, rough=0.4)
+    m.box(-0.44, 0.44, -0.44, 0.44, 0.0, 0.03, material("tank field gravel", "#7a7466", rough=1.0))
+    berm(m, -0.45, 0.45, -0.45, 0.45, 0.28, material("berm grass", "#6a7448", rough=1.0))
+    floating_roof_tank(m, -0.17, -0.17, 0.22, 1.8, white, roof, rail, stair_a=math.pi * 0.85)
+    floating_roof_tank(m, 0.2, 0.2, 0.19, 1.6, white, roof, rail, stair_a=math.pi * 1.3)
+    tx, ty, tr, th = 0.25, -0.24, 0.12, 1.3
+    m.upright(tx, ty, 0, th, tr, tr, white, segments=28)
+    m.lathe(tx, ty, th, [(tr + 0.004, 0), (tr * 0.5, 0.18), (0.0, 0.25)], cone, segments=28)
+    spiral_stair(m, tx, ty, tr, th, math.pi * 0.6, 1.6, material("stair treads", "#5a5854", metal=0.4, rough=0.6), rail)
+    pipe_ring(m, tx, ty, th + 0.12, tr * 0.8, 0.0015, rail, n=20)
+    # The tank lines out to -y through the berm, on sleepers.
+    for x in (-0.06, 0.0, 0.06):
+        m.tube(-0.5, -0.3, x, 0.12, 0.012, pipe, segments=10)
+    m.rod((-0.06, -0.3, 0.12), (-0.17 + 0.16, -0.17 - 0.15, 0.12), 0.012, pipe, segments=8)
+    m.rod((0.06, -0.3, 0.12), (tx - 0.1, ty - 0.07, 0.12), 0.012, pipe, segments=8)
+    m.rod((0.0, -0.3, 0.12), (0.06, 0.04, 0.12), 0.012, pipe, segments=8)
+    m.rod((0.06, 0.04, 0.12), (0.2 - 0.12, 0.2 - 0.15, 0.12), 0.012, pipe, segments=8)
+    for y in (-0.48, -0.36):
+        m.box(-0.09, 0.09, y - 0.01, y + 0.01, 0.0, 0.1, material("pipe sleeper", "#9a948a", rough=0.9))
+    # A stair over the berm on -x.
+    st = material("stair treads", "#5a5854", metal=0.4, rough=0.6)
+    for k in range(5):
+        x = -0.5 + 0.012 + k * 0.016
+        m.box(x - 0.008, x + 0.008, 0.08, 0.12, 0.0, 0.08 + k * 0.05, st)
 
 
 def flare(m):
@@ -3289,7 +3782,7 @@ PARTS = {
     "mill_building": mill_building, "mill_silos": mill_silos, "mill_yard": mill_yard, "mill_yard_team": lambda m: mill_yard(m, team=True),
     "headframe": headframe, "headframe_wood": lambda m: headframe(m, 0), "headframe_steel": lambda m: headframe(m, 1), "tipple": tipple, "coal_heap": coal_heap, "mine_shed": mine_shed,
     "open_pit": open_pit, "open_pit_far": lambda m: open_pit(m, far=True), "ore_crusher": ore_crusher, "ore_heap": ore_heap,
-    "blast_furnace": blast_furnace, "stacks": stacks, "steel_shed": steel_shed, "slag_heap": slag_heap, "steel_yard": steel_yard,
+    "blast_furnace": blast_furnace, "stacks": bof_shop, "stacks_open_hearth": open_hearth, "steel_shed": steel_shed, "slag_heap": slag_heap, "steel_yard": steel_yard,
     "factory_shed": factory_shed, "factory_chimney": factory_chimney, "loading_dock": loading_dock, "factory_yard": factory_yard,
     "pumpjack": pumpjack, "oil_tank": oil_tank,
     "refinery_columns": refinery_columns, "refinery_tanks": refinery_tanks, "flare": flare,
