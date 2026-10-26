@@ -227,7 +227,9 @@ for ind in json.loads((ROOT / "packs/base/industries.json").read_text())["indust
             if key not in PARTS:
                 PARTS.append(key)
 # Other looks of a piece by era, which the map picks by year (ChunkBaker.PART_ERAS).
-PARTS += ["mill_yard_team", "headframe_wood", "headframe_steel", "stacks_open_hearth", "factory_yard_box", "factory_yard_tractor", "superstack_brick"]
+PARTS += ["mill_yard_team", "headframe_wood", "headframe_steel", "stacks_open_hearth", "factory_yard_box", "factory_yard_tractor", "superstack_brick",
+          "open_pit_steam", "open_pit_far_rail", "open_pit_far_euclid", "sand_pit_far_early", "sand_pit_corner_early",
+          "sand_pit_bucketwheel", "sand_pit_far_bucketwheel", "sand_pit_corner_dragline"]
 for k, key in enumerate(PARTS):
     for e, edge in enumerate(EDGES):
         JOBS.append(("static", ("part", k, e), lambda key=key, edge=edge: scenery(f"part_{key}_{edge}.png", base.cell), None))
@@ -239,10 +241,19 @@ for st, style in enumerate(SPAN_STYLES):
     for a in (0, 1):
         JOBS.append(("signals", ("span_deck", st, a), lambda style=style, a=a: scenery(f"span_deck_{style}_{a}.png", base.cell), None))
         JOBS.append(("signals", ("span_pier", st, a), lambda style=style, a=a: scenery(f"span_pier_{style}_{a}.png", base.cell), None))
+        JOBS.append(("signals", ("span_pier_top", st, a), lambda style=style, a=a: scenery(f"span_pier_top_{style}_{a}.png", base.cell), None))
+for a in (0, 1):
+    JOBS.append(("signals", ("span_pier_foot", a), lambda a=a: scenery(f"span_pier_foot_concrete_{a}.png", base.cell), None))
+# The truss's other tiles, after the middle of a span (span_deck_truss): over a pier, a pier at the start or end, a one tile girder.
+TRUSS_KINDS = ["mid", "pier", "start", "end", "girder"]
+for t, kind in enumerate(TRUSS_KINDS[1:], 1):
+    for a in (0, 1):
+        JOBS.append(("signals", ("truss", t, a), lambda kind=kind, a=a: scenery(f"span_truss_{kind}_{a}.png", base.cell), None))
 for e, edge in enumerate(EDGES):
     JOBS.append(("signals", ("portal", e), lambda edge=edge: scenery(f"span_portal_{edge}.png", base.cell), None))
 for a in (0, 1):
-    JOBS.append(("signals", ("shed", a), lambda a=a: scenery(f"span_shed_{a}.png", base.cell), None))
+    JOBS.append(("signals", ("shed", 0, a), lambda a=a: scenery(f"span_shed_{a}.png", base.cell), None))
+    JOBS.append(("signals", ("shed", 1, a), lambda a=a: scenery(f"span_shed_concrete_{a}.png", base.cell), None))
 # The engine house again, drawn over trains on its tile so they show going in through the doors.
 for era in range(DEPOT_ERAS):
     for e, edge in enumerate(EDGES):
@@ -745,8 +756,17 @@ object Atlas {{
     val SPAN_DECK = intArrayOf({", ".join(str(index[("span_deck", st, a)]) for st in range(len(SPAN_STYLES)) for a in (0, 1))})
     val SPAN_PIER = intArrayOf({", ".join(str(index[("span_pier", st, a)]) for st in range(len(SPAN_STYLES)) for a in (0, 1))})
     val PORTAL = intArrayOf({", ".join(str(index[("portal", e)]) for e in range(4))})
-    /** A snow shed over track along view u (0) or v (1), its solid wall on the side away from the camera. On the signals sheet. */
-    val SHED = intArrayOf({index[("shed", 0)]}, {index[("shed", 1)]})
+    /** A pier's top step with the cap the deck sits on, at style * 2 + along. On the signals sheet. */
+    val SPAN_PIER_TOP = intArrayOf({", ".join(str(index[("span_pier_top", st, a)]) for st in range(len(SPAN_STYLES)) for a in (0, 1))})
+    /** A pier's step on the ground, at style * 2 + along: a footing with the shaft tapering in for concrete, the plain step for the others. On the signals sheet. */
+    val SPAN_PIER_FOOT = intArrayOf({", ".join(str(index[("span_pier_foot", a)] if st == 2 else index[("span_pier", st, a)]) for st in range(len(SPAN_STYLES)) for a in (0, 1))})
+    /** A through truss tile at kind * 2 + along: 0 the middle of a span, 1 over a pier, 2 a pier with a girder out to the abutment on its
+     * -u or -v half, 3 on its +u or +v half, 4 a one tile girder bridge. On the signals sheet. */
+    val TRUSS_DECK = intArrayOf({", ".join(str(index[("span_deck", 1, a)] if t == 0 else index[("truss", t, a)]) for t in range(len(TRUSS_KINDS)) for a in (0, 1))})
+    /** A snow shed over track at era * 2 + along view u (0) or v (1), its solid wall on the side away from the camera: timber, then
+     * concrete from [SHED_CONCRETE_FROM]. On the signals sheet. */
+    val SHED = intArrayOf({", ".join(str(index[("shed", e, a)]) for e in (0, 1) for a in (0, 1))})
+    const val SHED_CONCRETE_FROM = 1955
 
     /** The engine house, at its era * 4 + the view edge its doors face, drawn over trains on its tile. On the signals sheet. */
     val DEPOT_OVER = intArrayOf({", ".join(str(index[("depot_over", k, e)]) for k in range(DEPOT_ERAS) for e in range(4))})

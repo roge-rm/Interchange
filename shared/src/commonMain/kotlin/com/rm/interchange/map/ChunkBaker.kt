@@ -436,7 +436,7 @@ internal class ChunkBaker(
         world.depotTiles[tile]?.let { id ->
             val d = world.depots.getOrNull(id) ?: return@let
             val e = viewEdge(d.edge)
-            sprite((if (shadow) Atlas.DEPOT_SHADOW else Atlas.DEPOT)[depotEra(year) * 4 + e], vx, vy, base, shadow)
+            sprite((if (shadow) Atlas.DEPOT_SHADOW else Atlas.DEPOT)[depotEra(d.built.takeIf { it > 0 } ?: year) * 4 + e], vx, vy, base, shadow)
             return
         }
         if (world.isPlatform(tile)) {
@@ -1276,17 +1276,28 @@ internal class ChunkBaker(
             Triple("mill_yard", 1925, "mill_yard_team"),
             Triple("headframe", 1920, "headframe_wood"),
             Triple("headframe", 1960, "headframe_steel"),
+            // Open pits loaded rail cars behind steam shovels until trucks took over in the 1930s, Euclid rear dumps to the 1960s.
+            Triple("open_pit", 1935, "open_pit_steam"),
+            Triple("open_pit_far", 1935, "open_pit_far_rail"),
+            Triple("open_pit_far", 1965, "open_pit_far_euclid"),
             // Oxygen converters overtook open hearths in Canada about 1970: Dofasco first in 1954, the last open hearths gone by the late 1970s.
             Triple("stacks", 1970, "stacks_open_hearth"),
             Triple("factory_yard", 1950, "factory_yard_box"),
             Triple("factory_yard", 1985, "factory_yard_tractor"),
             Triple("superstack", 1972, "superstack_brick"),
+            // Oil sands mines dug by bucketwheel and dragline onto conveyors until trucks and shovels took over about 1993;
+            // the Cat 797 came in 1998, smaller rear dumps before it.
+            Triple("sand_pit", 1993, "sand_pit_bucketwheel"),
+            Triple("sand_pit_far", 1993, "sand_pit_far_bucketwheel"),
+            Triple("sand_pit_far", 1998, "sand_pit_far_early"),
+            Triple("sand_pit_corner", 1993, "sand_pit_corner_dragline"),
+            Triple("sand_pit_corner", 1998, "sand_pit_corner_early"),
         )
 
         /** The years engine houses and platform canopies change their look ([depotEra], [canopyEra]). */
         private val SCENERY_YEARS = intArrayOf(1900, 1915, 1960, 1970)
 
-        /** An engine house's look by the game's year: 0 wooden to 1900, 1 brick to 1960, 2 a steel diesel shop. */
+        /** An engine house's look by the year it was built (the game's year for one from an older save): 0 wooden to 1900, 1 brick to 1960, 2 a steel diesel shop. */
         fun depotEra(year: Int): Int = when {
             year < 1900 -> 0
             year < 1960 -> 1
@@ -1300,15 +1311,14 @@ internal class ChunkBaker(
             else -> 2
         }
 
-        /** Which of [PART_ERAS]' and [SCENERY_YEARS]' years have come by [year], as bits, so chunks bake again as each one comes. */
-        fun partEras(year: Int): Int {
-            var bits = PART_ERAS.foldIndexed(0) { i, b, e -> if (year >= e.second) b or (1 shl i) else b }
-            SCENERY_YEARS.forEachIndexed { i, y -> if (year >= y) bits = bits or (1 shl (PART_ERAS.size + i)) }
-            return bits
-        }
+        /** Every year in [PART_ERAS] and [SCENERY_YEARS], once each, in order. */
+        private val ERA_YEARS = (PART_ERAS.map { it.second } + SCENERY_YEARS.toList()).distinct().sorted()
+
+        /** How many of [PART_ERAS]' and [SCENERY_YEARS]' years have come by [year], so chunks bake again as each one comes. */
+        fun partEras(year: Int): Int = ERA_YEARS.count { year >= it }
 
         /** How many values [partEras] can take. */
-        val PART_ERA_COUNT = 1 shl (PART_ERAS.size + SCENERY_YEARS.size)
+        val PART_ERA_COUNT = ERA_YEARS.size + 1
 
         /** Overlays, as bits. */
         const val GRID = 1

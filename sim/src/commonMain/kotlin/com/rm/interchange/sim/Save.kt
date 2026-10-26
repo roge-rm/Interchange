@@ -16,7 +16,7 @@ package com.rm.interchange.sim
  */
 object Save {
     private val MAGIC = "ICHG".encodeToByteArray()
-    const val VERSION = 47
+    const val VERSION = 48
 
     /** A vehicle's [built] day as saved by [version]: work days from 36, calendar days before. */
     private fun World.builtOut(built: Int, version: Int) = if (version >= 36) built else built / settings.dayLength
@@ -71,6 +71,7 @@ object Save {
                 w.bool(d != null)
                 if (d == null) continue
                 w.int(d.owner); w.int(d.tile); w.int(d.edge); w.int(d.kind)
+                if (version >= 48) w.int(d.built)
             }
             val keys = signals.keys.sorted()
             w.uvar(keys.size.toLong())
@@ -125,6 +126,7 @@ object Save {
                 for (k in ks) { w.int(k); w.int(m.getValue(k)) }
             }
             w.ints(fences.sorted().toIntArray()); w.ints(sheds.sorted().toIntArray())
+            if (version >= 48) w.ints(sheds.sorted().map { shedYears[it] ?: 0 }.toIntArray())
             w.bytes(roadKind); w.bytes(roadOwner); w.ints(saltDepots.sorted().toIntArray())
             w.uvar(roadVehicles.size.toLong())
             for (v in roadVehicles) {
@@ -344,6 +346,7 @@ object Save {
                     version >= 16 -> if (r.bool()) Depots.ROAD else Depots.RAIL
                     else -> Depots.RAIL
                 })
+                if (version >= 48) d.built = r.int()
                 depotTiles[d.tile] = id
                 depots += d
             }
@@ -452,7 +455,12 @@ object Save {
                 fill(condition, r.bytes()); fill(fire, r.bytes())
                 for (m in listOf(kinks, closed)) repeat(r.uvar().toInt().also { if (it > 10_000_000) throw BadData("too many closures") }) { m[r.int()] = r.int() }
             }
-            if (version >= 15) { fences += r.ints().toList(); sheds += r.ints().toList() }
+            if (version >= 15) {
+                fences += r.ints().toList()
+                val shedList = r.ints()
+                sheds += shedList.toList()
+                if (version >= 48) r.ints().forEachIndexed { k, y -> if (y > 0 && k < shedList.size) shedYears[shedList[k]] = y }
+            }
             if (version >= 16) {
                 fill(roadKind, r.bytes()); fill(roadOwner, r.bytes()); saltDepots += r.ints().toList()
                 repeat(r.uvar().toInt().also { if (it > 1_000_000) throw BadData("too many road vehicles") }) { id ->

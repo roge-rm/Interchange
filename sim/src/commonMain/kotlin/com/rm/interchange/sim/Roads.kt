@@ -250,7 +250,7 @@ internal fun World.buildGarage(company: Company, c: Command.Garage) {
     if (company.money < price(Prices.DEPOT) + treeCost(i)) return
     spend(company, Books.CONSTRUCTION, price(Prices.DEPOT) + fellTrees(company, i))
     clearOwnBuilding(company.id, i)
-    val d = Depot(depots.size, company.id, i, c.edge, Depots.ROAD)
+    val d = Depot(depots.size, company.id, i, c.edge, Depots.ROAD).also { it.built = Calendar.year(startYear, day) }
     depots += d
     depotTiles[i] = d.id
     road[n] = (road[n].toInt() or roadBit(Track.opposite(c.edge))).toByte()

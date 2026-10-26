@@ -803,7 +803,7 @@ def _engine_house_brick(m, houses, industries):
 
 def _diesel_shop(m, houses, industries):
     # A steel-clad shop on a block base, a low roof with exhaust fans and skylights, a roll-up door half way up under
-    # its roll, yellow bollards, a block office on the +x side, and a fuel tank on saddles on the -x side.
+    # its roll, yellow bollards, a block office on the +x side, and a fuel tank at the front corner.
     clad = material("shop cladding", "#a9adae", rough=0.6, metal=0.2)
     rib = material("shop ribs", "#929899", rough=0.6, metal=0.2)
     block = material("shop block", "#b8b0a0", rough=0.9)
@@ -847,17 +847,23 @@ def _diesel_shop(m, houses, industries):
     for y in (-0.32, -0.18, -0.04):
         _end_pane(m, x1, 1, y, 0.6, 1.15, 0.08, glass, blue)
     m.box(x1, x1 + 0.006, 0.06, 0.12, 0, 1.0, blue)
-    # The fuel tank on saddles, its fill line and a sand bin on legs.
+    # The fuel tank standing out at the front corner, where three of the four views see it, on a block pad with a
+    # ladder, its line to a fuelling crane by the door, and a sand bin on legs.
     tank = material("fuel tank", "#d4d0c4", metal=0.3, rough=0.5)
-    m.tube(-0.45, 0.05, -0.44, 0.48, 0.045, tank, segments=20)
-    for y in (-0.36, -0.04):
-        m.box(-0.48, -0.4, y - 0.015, y + 0.015, 0, 0.36, block)
-    m.rod((-0.44, 0.05, 0.48), (-0.44, 0.2, 0.48), 0.006, blue)
-    m.rod((-0.44, 0.2, 0.48), (-0.44, 0.2, 0.0), 0.006, blue)
-    for x in (-0.32, -0.24):
-        for y in (0.4, 0.47):
+    tx, ty, tr, th = -0.44, 0.43, 0.05, 1.5
+    m.box(tx - 0.058, tx + 0.058, ty - 0.058, ty + 0.058, 0, 0.08, block)
+    m.upright(tx, ty, 0.08, th, tr, tr, tank, segments=20)
+    m.lathe(tx, ty, th, [(tr, 0), (tr * 0.6, 0.08), (0.0, 0.1)], tank, segments=20)
+    m.upright(tx, ty, 0.5, 0.56, tr + 0.003, tr + 0.003, blue, segments=20)
+    m.rod((tx + tr, ty - 0.012, 0.08), (tx + tr, ty - 0.012, th + 0.12), 0.003, blue)
+    m.rod((tx + tr, ty + 0.012, 0.08), (tx + tr, ty + 0.012, th + 0.12), 0.003, blue)
+    m.rod((tx + tr, ty, 0.3), (-0.3, ty, 0.3), 0.006, blue)
+    m.upright(-0.3, 0.47, 0, 1.1, 0.006, 0.006, blue, segments=8)
+    m.rod((-0.3, 0.47, 1.05), (-0.22, 0.47, 1.0), 0.005, blue)
+    for x in (0.34, 0.4):
+        for y in (0.4, 0.46):
             m.rod((x, y, 0), (x, y, 1.2), 0.004, blue)
-    m.lathe(-0.28, 0.435, 1.0, [(0.0, 0), (0.012, 0.0), (0.05, 0.25), (0.05, 0.75), (0.0, 0.8)], tank, segments=12)
+    m.lathe(0.37, 0.43, 1.0, [(0.0, 0), (0.012, 0.0), (0.045, 0.25), (0.045, 0.75), (0.0, 0.8)], tank, segments=12)
 
 
 # ---- station buildings ---------------------------------------------------------------------
@@ -1610,25 +1616,25 @@ def garage(m):
     sky = material("skylights", "#c8d8d4", rough=0.3)
     yellow = material("bollards", "#e0b020", rough=0.5)
     glass = houses.glass()
-    # The bay hall: block walls to 2.1, a red band, the bowstring roof rising to 2.6 across it, glazed down its crown.
+    # The bay hall: block walls to 2.1, a red band, the bowstring roof rising to 2.42 across it, glazed down its crown.
     x0, x1, y0, y1 = -0.44, 0.22, -0.44, 0.34
     eave = 2.1
     m.box(x0, x1, y0, y1, 0, eave, block, 0.003)
     m.box(x0 - 0.006, x1 + 0.006, y0 - 0.006, y1 + 0.006, 1.98, eave + 0.04, trim)
-    arch = _arch(x0 - 0.02, x1 + 0.02, eave + 0.04, 2.62)
+    arch = _arch(x0 - 0.02, x1 + 0.02, eave + 0.04, 2.42)
     m.loft([(y0 - 0.02, [(x, z) for x, z in arch] + [(x, z - 0.05) for x, z in reversed(arch)]),
             (y1 + 0.02, [(x, z) for x, z in arch] + [(x, z - 0.05) for x, z in reversed(arch)])], {"roof": roof})
     # The arched end walls under it, and the bowstring trusses showing as ribs on the roof.
     for y in (y0, y1):
-        inner = _arch(x0, x1, eave + 0.04, 2.57)
+        inner = _arch(x0, x1, eave + 0.04, 2.37)
         m.loft([(y - 0.004, inner), (y + 0.004, inner)], {"wall": block})
     for k in range(5):
         y = y0 + 0.04 + k * (y1 - y0 - 0.08) / 4
-        rib = _arch(x0 - 0.024, x1 + 0.024, eave + 0.05, 2.635)
+        rib = _arch(x0 - 0.024, x1 + 0.024, eave + 0.05, 2.435)
         m.loft([(y - 0.006, rib + [(x, z - 0.03) for x, z in reversed(rib)]), (y + 0.006, rib + [(x, z - 0.03) for x, z in reversed(rib)])], {"rib": trim})
     xc = (x0 + x1) / 2
     for y in (y0 + 0.08, y0 + 0.34, y0 + 0.6):
-        m.box(xc - 0.06, xc + 0.06, y, y + 0.16, 2.6, 2.65, sky, 0.004)
+        m.box(xc - 0.06, xc + 0.06, y, y + 0.16, 2.4, 2.45, sky, 0.004)
     # Clerestory windows high along the -x side and a row of small windows along the back.
     houses.on_wall(m, "x", x0, -1, y0 + 0.05, y1 - 0.05, 0, 0.007, 1.55, 1.85, glass)
     for k in range(6):
@@ -1677,4 +1683,4 @@ def garage(m):
     # The boiler house chimney at the back corner, roof vents along the hall.
     houses.chimney(m, 0.38, -0.36, 2.42, 3.0, brick, 0.022)
     for y in (-0.3, 0.1):
-        industries.roof_vent(m, x0 + 0.12, y, 2.45, roof, r=0.02)
+        industries.roof_vent(m, x0 + 0.12, y, 2.32, roof, r=0.02)

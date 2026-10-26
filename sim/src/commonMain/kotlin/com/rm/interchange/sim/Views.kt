@@ -264,7 +264,7 @@ class StationView(
 class GoingView(val dest: Int, val via: Int, val counts: IntArray)
 
 /** A depot as the screen shows it, to draw over the trains going in and out of it. */
-class DepotView(val tile: Int, val edge: Int, val id: Int = -1, val wired: Boolean = false)
+class DepotView(val tile: Int, val edge: Int, val id: Int = -1, val wired: Boolean = false, val built: Int = 0)
 
 /** A signal as the screen shows it: where, which way and whether it shows red. */
 class SignalView(val tile: Int, val piece: Int, val facing: Int, val red: Boolean, val kind: Int = Signals.TWO_WAY)
@@ -327,6 +327,8 @@ class WorldView(
     /** Level crossings with a train near, their lights flashing, by tile. */
     val crossings: IntArray = IntArray(0),
     val groups: List<List<List<VehicleGroup>>> = emptyList(),
+    /** The year each of [sheds] went up, 0 for one from an older save. */
+    val shedYears: IntArray = IntArray(0),
 )
 
 /**
@@ -443,7 +445,7 @@ fun World.view(company: Int = 0, withReserved: Boolean = false): WorldView {
         SignalView(tile, piece, Signals.facing(s), signalRed(tile, piece, s), Signals.kind(s))
     }
     // Only engine houses are drawn over what goes in and out of them.
-    val depotViews = depots.filterNotNull().filter { it.kind == Depots.RAIL }.map { DepotView(it.tile, it.edge, it.id, depotWired(it)) }
+    val depotViews = depots.filterNotNull().filter { it.kind == Depots.RAIL }.map { DepotView(it.tile, it.edge, it.id, depotWired(it), it.built) }
     // Towns change seldom, so their list is only made again when one has.
     if (townsChanged) {
         townViews = towns.map { TownView(it.id, it.name, it.x, it.y, it.population, it.houses) }
@@ -507,6 +509,7 @@ fun World.view(company: Int = 0, withReserved: Boolean = false): WorldView {
         if (withReserved) reservedView() else IntArray(0),
         litCrossings(),
         companies.map { c -> c.groups.map { it.toList() } },
+        sheds.map { shedYears[it] ?: 0 }.toIntArray(),
     )
 }
 

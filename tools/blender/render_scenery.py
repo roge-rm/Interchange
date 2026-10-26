@@ -17,7 +17,9 @@ before it draws what stands on it. Then <name>_up.png, how much each pixel faces
 the sky, from black (sideways or down) to white (flat on top), for laying snow.
 
 span_deck_<style>_<0 along u, 1 along v>.png and span_pier_... are a tile of
-bridge and a step of what holds it up; span_portal_<edge>.png a tunnel mouth.
+bridge and a step of what holds it up, span_pier_top_... the top step with its cap,
+span_truss_<kind>_<a>.png the other truss tiles (spans.TRUSS_KINDS); span_portal_<edge>.png
+a tunnel mouth; span_shed_<a>.png and span_shed_concrete_<a>.png snow sheds.
 
 Maples, birches and aspens come again for the seasons, as
 tree_<kind>_<look>_autumn.png and tree_<kind>_<look>_bare.png.
@@ -189,10 +191,17 @@ def main():
         for a in (0, 1):
             shot(out, f"span_deck_{style}_{a}.png", lambda m, style=style, a=a: spans.deck(m, style, a == 0), shadow=False)
             shot(out, f"span_pier_{style}_{a}.png", lambda m, style=style, a=a: spans.pier(m, style, a == 0), shadow=False)
+            shot(out, f"span_pier_top_{style}_{a}.png", lambda m, style=style, a=a: spans.pier(m, style, a == 0, top=True), shadow=False)
+    for a in (0, 1):
+        shot(out, f"span_pier_foot_concrete_{a}.png", lambda m, a=a: spans.pier(m, "concrete", a == 0, foot=True), shadow=False)
+    for kind in spans.TRUSS_KINDS[1:]:
+        for a in (0, 1):
+            shot(out, f"span_truss_{kind}_{a}.png", lambda m, kind=kind, a=a: spans.deck(m, "truss", a == 0, kind), shadow=False)
     for edge in EDGES:
         shot(out, f"span_portal_{edge}.png", lambda m, edge=edge: spans.portal(m, edge), shadow=False, rise=PORTAL_RISE)
     for a in (0, 1):
         shot(out, f"span_shed_{a}.png", lambda m, a=a: spans.shed(m, a == 0), shadow=False)
+        shot(out, f"span_shed_concrete_{a}.png", lambda m, a=a: spans.shed(m, a == 0, "concrete"), shadow=False)
     for red in (0, 1):
         shot(out, f"signal_{red}.png", lambda m, red=red: scenery.signal(m, red == 1), shadow=False, rise=SIGNAL_RISE)
         shot(out, f"signal_light_{red}.png", lambda m, red=red: scenery.colour_light(m, red == 1), shadow=False, rise=SIGNAL_RISE)

@@ -282,7 +282,7 @@ internal fun World.buildShipyard(company: Company, c: Command.Shipyard) {
     val facing = waterSide(c.x, c.y)
     if (facing < 0 || company.money < price(SHIPYARD_COST) + treeCost(i)) return
     spend(company, Books.CONSTRUCTION, price(SHIPYARD_COST) + fellTrees(company, i))
-    val d = Depot(depots.size, company.id, i, facing, Depots.SHIPYARD)
+    val d = Depot(depots.size, company.id, i, facing, Depots.SHIPYARD).also { it.built = Calendar.year(startYear, day) }
     depots += d
     depotTiles[i] = d.id
     owner[i] = company.id.toByte()

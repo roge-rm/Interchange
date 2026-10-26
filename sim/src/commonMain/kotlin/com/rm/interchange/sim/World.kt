@@ -157,6 +157,8 @@ class World(settings: NewGame, val roster: Roster = Roster.BASE, generate: Boole
     /** Snow fences on open land, and snow sheds over track, by tile. */
     val fences = HashSet<Int>()
     val sheds = HashSet<Int>()
+    /** The year each snow shed went up, by tile; a shed from a save before these were kept has none and is drawn by the game's year. */
+    val shedYears = HashMap<Int, Int>()
     internal var fenceCoverCache: BooleanArray? = null
     val closed = HashMap<Int, Int>()
 
@@ -505,7 +507,7 @@ class World(settings: NewGame, val roster: Roster = Roster.BASE, generate: Boole
         for (v in ships) if (v != null) { mix(v.depot.toLong()); mix(v.noDepotUntil) }
         for (v in aircraft) if (v != null) { mix(v.depot.toLong()); mix(v.wreckedFor.toLong()) }
         for (v in roadVehicles) if (v != null) { mix(v.id.toLong()); mix(v.at.toLong()); mix(v.along.toLong()); mix(v.speed.toLong()); for (c in v.cargo) for (p in c) mix(p.count.toLong()) }
-        for (k in sheds.sorted()) mix(-k.toLong())
+        for (k in sheds.sorted()) mix(-k.toLong() * 4099 - (shedYears[k] ?: 0))
         for (k in canals.sorted()) mix(k.toLong() * 3)
         for (k in locks.keys.sorted()) mix(k.toLong() * 5 + locks.getValue(k))
         for (k in docks.keys.sorted()) mix(k.toLong() * 11 + docks.getValue(k))

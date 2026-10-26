@@ -41,6 +41,8 @@ val Station.empty get() = tiles.isEmpty() && stops.isEmpty() && docks.isEmpty() 
 
 /** A depot, open at [edge] of its tile: an engine house, a garage, a shipyard or a hangar, by [Depots] kind. */
 class Depot(val id: Int, var owner: Int, val tile: Int, val edge: Int, val kind: Int = Depots.RAIL) {
+    /** The year it was built, 0 for one from a save before these were kept, drawn by the game's year. */
+    var built = 0
     val road get() = kind == Depots.ROAD
 }
 
@@ -332,7 +334,7 @@ internal fun World.buildDepot(company: Company, c: Command.Depot) {
     if (company.money < price(Prices.DEPOT) + treeCost(i)) return
     spend(company, Books.CONSTRUCTION, price(Prices.DEPOT) + fellTrees(company, i))
     clearOwnBuilding(company.id, i)
-    val d = Depot(depots.size, company.id, i, c.edge)
+    val d = Depot(depots.size, company.id, i, c.edge).also { it.built = Calendar.year(startYear, day) }
     depots += d
     depotTiles[i] = d.id
     track[i] = piece.toByte()
@@ -517,6 +519,7 @@ internal fun World.clearTile(company: Company, c: Command.Clear) {
     track[i] = 0
     wires[i] = 0
     sheds.remove(i)
+    shedYears.remove(i)
     owner[i] = -1
     touched(c.x, c.y)
     networkChanged()

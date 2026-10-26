@@ -1165,9 +1165,11 @@ class Benches:
     clean oval, with a road spiralling over the benches: from angle a0, turning by turns, from e0 at h0 steps to e1 at h1.
     face is how far in e each bench's face runs, small for a cut face and larger for loose rock at its angle of rest."""
 
-    def __init__(self, cx, cy, rx, ry, steps, seed, road=None, rough=0.012, face=0.012):
+    def __init__(self, cx, cy, rx, ry, steps, seed, road=None, rough=0.012, face=0.012, edge=0.0):
         self.cx, self.cy, self.rx, self.ry, self.steps, self.seed, self.road, self.rough = cx, cy, rx, ry, steps, seed, road, rough
         self.face = face
+        # How far in e past the road's side the ground blends down or up to the benches, so its sides aren't cliffs.
+        self.edge = edge
 
     def at(self, x, y):
         dx, dy = (x - self.cx) / self.rx, (y - self.cy) / self.ry
@@ -1190,12 +1192,44 @@ class Benches:
                     return h0 + (h1 - h0) * f
         return None
 
+    def near_road(self, e, a):
+        """Near the road's sides or ends, its height there and how far into the blend to the benches, 0 to 1; else None."""
+        a0, turns, e0, e1, h0, h1, w = self.road
+        span = abs(turns * math.tau)
+        best = None
+        for k in range(-1, int(abs(turns)) + 2):
+            t = (a - a0) * (1 if turns > 0 else -1) + k * math.tau
+            over = max(0.0, t - span, -t) * e
+            f = min(1.0, max(0.0, t / span))
+            d = abs(e - (e0 + (e1 - e0) * f))
+            g = max((d - w) / self.edge, over / self.edge, 0.0)
+            if g < 1 and (best is None or g < best[1]):
+                best = (h0 + (h1 - h0) * f, g)
+        return best
+
     def height(self, x, y):
         e, a = self.at(x, y)
         r = self.on_road(e, a)
         if r is not None:
             return r
-        return benched(e, self.steps, self.face) + self.rough * bumps(x, y, self.seed) * min(1.0, max(0.0, (1.0 - e) / 0.1))
+        h = benched(e, self.steps, self.face) + self.rough * bumps(x, y, self.seed) * min(1.0, max(0.0, (1.0 - e) / 0.1))
+        if self.edge and self.road is not None:
+            near = self.near_road(e, a)
+            if near is not None:
+                f = near[1]
+                f = f * f * (3 - 2 * f)
+                h = near[0] + (h - near[0]) * f
+        return h
+
+    def on_face(self, x, y, pad=0.0):
+        """Whether x, y is on one of the bench faces, by how far out it is rather than how steep, so the faces come out
+        as clean bands on terrain()'s grid; and the height of the bench below it. pad widens the band, by about half a
+        grid square in e, so a square the face only crosses a corner of still counts."""
+        e, _ = self.at(x, y)
+        for (t, h0), (_, h1) in zip(self.steps, self.steps[1:]):
+            if abs(e - t) < self.face * 0.5 + pad:
+                return True, min(h0, h1)
+        return False, None
 
     def pick(self, faces):
         """A pick() for terrain(): 3 on the road, the bench faces 1 or 2 by where round they are, 0 on the benches."""
@@ -1507,10 +1541,79 @@ def tipple(m):
     heap(m, 0.43, -0.4, 0.06, 0.35, "#1a1a1c", 51, "coal spill")
 
 
+def _loader(m, x, y, z, turn=0.0, paint="#d8a428"):
+    """A wheeled front end loader at x, y, z steps up, turned by turn radians: four big tires, the engine at the back,
+    the cab over the middle and the bucket on its arms out front, down near the ground."""
+    def build(mm):
+        body = material("loader " + paint, paint, metal=0.3, rough=0.5)
+        dark = material("loader dark", "#2e2e30", metal=0.4, rough=0.6)
+        tire = material("big tire", "#1a1a1a", rough=0.9)
+        r = 0.018
+        for yy in (-0.03, 0.03):
+            for sx in (-1, 1):
+                mm.tube_x(sx * 0.026 - 0.008, sx * 0.026 + 0.008, yy, r / rig.RISE, r, tire, segments=12)
+        mm.box(-0.018, 0.018, -0.06, 0.045, 0.14, 0.3, body, 0.003)
+        mm.box(-0.016, 0.016, -0.06, -0.02, 0.3, 0.38, body, 0.003)
+        mm.box(-0.017, 0.017, -0.012, 0.022, 0.3, 0.52, body, 0.003)
+        mm.box(-0.015, 0.015, 0.0, 0.024, 0.36, 0.5, glass())
+        for sx in (-1, 1):
+            mm.rod((sx * 0.014, 0.03, 0.3), (sx * 0.014, 0.075, 0.12), 0.003, body, segments=4)
+        mm.wedge([(-0.032, 0.065, 0.02), (0.032, 0.065, 0.02), (0.032, 0.095, 0.02), (-0.032, 0.095, 0.02)],
+                 [(-0.032, 0.065, 0.2), (0.032, 0.065, 0.2), (0.032, 0.072, 0.2), (-0.032, 0.072, 0.2)], dark)
+    moved(m, build, x, y, turn, z=z)
+
+
+def _light_pole(m, x, y, h=2.6):
+    """A yard light: a wooden pole with two floodlights on a cross arm."""
+    pole = material("light pole", "#5a4a3a", rough=0.9)
+    m.upright(x, y, 0, h, 0.006, 0.005, pole, segments=8)
+    m.box(x - 0.03, x + 0.03, y - 0.003, y + 0.003, h - 0.12, h - 0.08, pole)
+    for s in (-1, 1):
+        m.box(x + s * 0.024 - 0.008, x + s * 0.024 + 0.008, y - 0.01, y + 0.006, h - 0.2, h - 0.1, material("floodlight", "#e8e4d4", rough=0.4))
+
+
 def coal_heap(m):
+    """The coal yard: the big pile under a conveyor climbing on timber bents to its head pulley, a slotted concrete
+    lowering tower under the head so the coal doesn't break falling, a dozer working the pile, and a loader at the small
+    pile."""
     ground(m, "#2e2c2a", "coal yard")
     heap(m, -0.12, -0.08, 0.34, 1.8, "#161618", 52, "coal")
     heap(m, 0.24, 0.26, 0.18, 0.9, "#1c1c1e", 53, "coal")
+    wood = material("tipple timber", "#5a4a3a", rough=0.9)
+    roof = material("tipple roof", "#3a3a3a", metal=0.3, rough=0.6)
+    head = (-0.1, -0.08, 2.6)
+    conveyor(m, (0.48, -0.44, 0.35), head, 0.06, wood, material("conveyor belt", "#2e2a26", rough=0.8), legs=0,
+             hood=roof, load=material("coal on belt", "#161618", rough=1.0))
+    for f in (0.2, 0.42):
+        x, y, z = (0.48 + (head[0] - 0.48) * f, -0.44 + (head[1] + 0.44) * f, 0.35 + (head[2] - 0.35) * f)
+        bent(m, x, y, z - 0.06, 0.09, wood, along_y=False)
+    m.box(head[0] - 0.04, head[0] + 0.04, head[1] - 0.04, head[1] + 0.04, head[2] - 0.05, head[2] + 0.28, material("head house", "#4a4038", rough=0.9))
+    gable(m, head[0] - 0.045, head[0] + 0.045, head[1] - 0.045, head[1] + 0.045, head[2] + 0.28, head[2] + 0.36, roof, roof, along_x=True, over=0.006, thick=0.02)
+    concrete = material("lowering tower", "#8a867e", rough=0.95)
+    m.upright(head[0], head[1], 0, head[2] - 0.05, 0.026, 0.024, concrete, segments=14)
+    for z in (0.6, 1.0, 1.4, 1.8, 2.2):
+        m.box(head[0] + 0.018, head[0] + 0.03, head[1] - 0.006, head[1] + 0.006, z, z + 0.16, material("coal", "#161618", rough=0.95))
+    _dozer(m, -0.3, 0.1, 0.55, turn=2.4)
+    _loader(m, 0.06, 0.36, 0.02, turn=-2.2)
+    _light_pole(m, 0.44, 0.1)
+
+
+def _stacker(m, pivot, head, w, steel, belt, load):
+    """A radial stacker: a boom conveyor from its pivot at pivot (x, y, z of the bed) up to head, on a wheeled bogie near
+    its middle, with the head pulley and its hood at the end."""
+    conveyor(m, pivot, head, w, steel, belt, legs=0, load=load)
+    m.upright(pivot[0], pivot[1], 0, pivot[2] - 0.04, 0.03, 0.03, steel, segments=12)
+    f = 0.55
+    bx, by, bz = (pivot[i] + (head[i] - pivot[i]) * f for i in range(3))
+    for s in (-1, 1):
+        dx, dy = head[1] - pivot[1], -(head[0] - pivot[0])
+        n = math.hypot(dx, dy) or 1.0
+        ox, oy = dx / n * w * 0.6 * s, dy / n * w * 0.6 * s
+        m.rod((bx + ox, by + oy, 0.1), (bx + ox * 0.5, by + oy * 0.5, bz - 0.06), 0.005, steel, segments=6)
+        m.upright(bx + ox, by + oy, 0, 0.1, 0.014, 0.014, material("stacker tire", "#1a1a1a", rough=0.9), segments=10)
+    m.rod((pivot[0], pivot[1], pivot[2] + 0.5), (head[0], head[1], head[2] + 0.2), 0.0025, steel, segments=4)
+    m.rod((pivot[0], pivot[1], pivot[2] - 0.04), (pivot[0], pivot[1], pivot[2] + 0.5), 0.006, steel, segments=6)
+    m.tube_x(head[0] - w / 2, head[0] + w / 2, head[1], head[2], 0.012, steel, segments=10)
 
 
 def mine_shed(m):
@@ -1578,9 +1681,10 @@ def mine_shed(m):
         m.box(x - 0.004, x + 0.004, y1 + 0.035, y1 + 0.055, 0, 0.22, bench)
 
 
-def haul_truck(m, paint="#d8a428"):
-    """A rear dump haul truck facing +y: big tires, duals at the back, a dump body sloping up to a canopy over the cab,
-    the cab on the left of the deck and the engine and grille out front."""
+def haul_truck(m, paint="#d8a428", load=("ore load", "#7a3a2a")):
+    """A rear dump haul truck facing +y, the 1960s to 90s kind: big tires, duals at the back, a dump body sloping up to
+    a canopy over the cab, the cab on the left of the deck and the engine and grille out front. load is its load's
+    material name and colour."""
     body = material("haul truck " + paint, paint, metal=0.3, rough=0.5)
     dark = material("truck frame", "#2e2e30", metal=0.4, rough=0.6)
     tire = material("big tire", "#1a1a1a", rough=0.9)
@@ -1599,7 +1703,7 @@ def haul_truck(m, paint="#d8a428"):
     for y in (-0.08, -0.02, 0.03):
         for s in (-1, 1):
             m.box(s * 0.078 - 0.003, s * 0.078 + 0.003, y - 0.005, y + 0.005, 0.55, 0.95, body)
-    m.box(-0.07, 0.07, -0.125, 0.05, 0.86, 0.9, material("ore load", "#7a3a2a", rough=1.0))
+    m.box(-0.07, 0.07, -0.125, 0.05, 0.86, 0.9, material(load[0], load[1], rough=1.0))
     m.box(-0.034, 0.034, 0.06, 0.145, 0.32, 0.66, body, 0.004)
     m.box(-0.026, 0.026, 0.145, 0.15, 0.36, 0.6, dark)
     m.box(-0.075, 0.075, 0.07, 0.145, 0.6, 0.63, dark)
@@ -1656,9 +1760,219 @@ def shovel(m, paint="#c8a028"):
     m.rod((0.0, point[1] + 0.015, point[2] - 0.05), (0.0, dip[1] + 0.005, 0.7), 0.002, rope, segments=4)
 
 
+def euclid_truck(m, paint="#d89a28"):
+    """A Euclid style rear dump of the 1930s to 60s facing +y: a narrow hood and grille out front, the cab behind it,
+    two axles with duals at the back and a dump body with a short canopy over the cab's back."""
+    body = material("euclid " + paint, paint, metal=0.3, rough=0.5)
+    dark = material("truck frame", "#2e2e30", metal=0.4, rough=0.6)
+    tire = material("big tire", "#1a1a1a", rough=0.9)
+    g = glass()
+    r = 0.027
+    zc = r / rig.RISE
+    for y, xs in ((0.1, (0.05,)), (-0.08, (0.04, 0.06))):
+        for x in xs:
+            for s in (-1, 1):
+                m.tube_x(s * x - 0.009, s * x + 0.009, y, zc, r, tire, segments=16)
+                m.tube_x(s * x - 0.01, s * x + 0.01, y, zc, r * 0.45, dark, segments=10)
+    m.box(-0.028, 0.028, -0.15, 0.16, 0.16, 0.3, dark)
+    for s in (-1, 1):
+        m.box(s * 0.05 - 0.016, s * 0.05 + 0.016, 0.06, 0.135, 0.36, 0.4, body, 0.003)
+    # The hood narrow out front, a step out to the cab behind it.
+    m.shell([(0.02, 0.3, 0.0, "paint", 0.5), (0.16, 0.3, 0.004, "grille", 0.5), (0.162, 0.58, 0.012, "paint", 0.5),
+             (0.05, 0.6, 0.0, "paint", 0.5), (0.05, 0.6, 0.0, "glass", 0.9), (0.04, 0.84, 0.012, "paint", 0.9),
+             (0.0, 0.85, 0.008, "paint", 0.9), (0.0, 0.3, 0.0, "paint", 0.9), (0.02, 0.3, 0.0, "paint", 0.9)],
+            0.05, {"paint": body, "grille": dark, "glass": g}, crown=0.02)
+    m.box(-0.04, 0.04, 0.162, 0.17, 0.2, 0.28, dark)
+    # The dump body, its side outline run across, ribbed, and its load.
+    side = [(-0.165, 0.46), (-0.01, 0.38), (-0.01, 0.82), (0.03, 0.9), (0.03, 0.94), (-0.02, 0.94), (-0.165, 0.76)]
+    m.wedge([(-0.064, y, z) for y, z in side], [(0.064, y, z) for y, z in side], body)
+    for y in (-0.13, -0.08, -0.04):
+        for s in (-1, 1):
+            m.box(s * 0.064 - 0.003, s * 0.064 + 0.003, y - 0.004, y + 0.004, 0.44, 0.84, body)
+    m.box(-0.058, 0.058, -0.155, -0.02, 0.78, 0.82, material("ore load", "#7a3a2a", rough=1.0))
+    m.rod((0.04, 0.0, 0.85), (0.04, 0.0, 1.0), 0.003, dark, segments=6)
+
+
+def steam_shovel(m, paint="#2e2a28"):
+    """A steam shovel of before the 1930s facing +y: crawlers, the board house with its round roof and the boiler's
+    stack out of the back of it, the A-frame, a short boom and the dipper on its stick."""
+    body = material("steam shovel " + paint, paint, metal=0.2, rough=0.7)
+    red = material("steam shovel red", "#7a2a22", metal=0.2, rough=0.7)
+    dark = material("shovel crawler", "#2e2e30", metal=0.4, rough=0.6)
+    steel = material("shovel steel", "#4a4a48", metal=0.5, rough=0.5)
+    rope = material("hoist rope", "#2a2a2a", metal=0.6, rough=0.5)
+    for s in (-1, 1):
+        m.box(s * 0.05 - 0.016, s * 0.05 + 0.016, -0.07, 0.07, 0.0, 0.18, dark, 0.01)
+    m.box(-0.04, 0.04, -0.06, 0.06, 0.18, 0.28, steel)
+    # The house, its roof curved across, windows down the sides and the stack through the back.
+    x0, x1, y0, y1 = -0.06, 0.06, -0.12, 0.05
+    m.box(x0, x1, y0, y1, 0.28, 0.72, red, 0.003)
+    arch = [(x0 - 0.008 + (x1 - x0 + 0.016) * k / 8, 0.72 + 0.12 * math.sin(math.pi * k / 8)) for k in range(9)]
+    m.loft([(y0 - 0.008, arch + [(x, z - 0.03) for x, z in reversed(arch)]), (y1 + 0.008, arch + [(x, z - 0.03) for x, z in reversed(arch)])],
+           {"roof": body})
+    for y in (-0.08, -0.03, 0.02):
+        for xx, d in ((x0, -1), (x1, 1)):
+            houses.on_wall(m, "x", xx, d, y - 0.014, y + 0.014, 0, 0.004, 0.45, 0.62, material("shovel window", "#1e2226", rough=0.3))
+    m.upright(0.0, -0.09, 0.8, 1.35, 0.016, 0.016, body, segments=12)
+    m.upright(0.0, -0.09, 1.3, 1.36, 0.02, 0.02, body, segments=12)
+    # The A-frame and the boom, the dipper stick racked through its middle, the dipper and its rope.
+    apex = (0.0, 0.02, 1.25)
+    for s in (-1, 1):
+        m.rod((s * 0.05, -0.02, 0.75), apex, 0.005, body, segments=4)
+        m.rod((s * 0.05, y1, 0.72), apex, 0.005, body, segments=4)
+    foot, point = (0.0, y1 + 0.01, 0.4), (0.0, 0.22, 1.5)
+    for s in (-1, 1):
+        m.rod((s * 0.012, foot[1], foot[2]), (s * 0.007, point[1], point[2]), 0.006, body, segments=4)
+    m.rod(apex, (0.0, point[1] - 0.01, point[2] + 0.03), 0.0018, rope, segments=4)
+    m.tube_x(-0.01, 0.01, point[1], point[2], 0.015, steel, segments=10)
+    mid = (0.0, foot[1] + (point[1] - foot[1]) * 0.45, foot[2] + (point[2] - foot[2]) * 0.45)
+    dip = (0.0, 0.21, 0.38)
+    m.rod((0.0, mid[1] - 0.025, mid[2] + 0.18), dip, 0.006, steel, segments=6)
+    m.wedge([(-0.024, dip[1] - 0.025, 0.16), (0.024, dip[1] - 0.025, 0.16), (0.024, dip[1] + 0.03, 0.22), (-0.024, dip[1] + 0.03, 0.22)],
+            [(-0.026, dip[1] - 0.03, 0.56), (0.026, dip[1] - 0.03, 0.56), (0.026, dip[1] + 0.034, 0.56), (-0.026, dip[1] + 0.034, 0.56)], dark)
+    m.rod((0.0, point[1] + 0.012, point[2] - 0.04), (0.0, dip[1] + 0.004, 0.58), 0.002, rope, segments=4)
+
+
+def _pit_loco(m):
+    """A narrow gauge saddle tank engine facing +y, its wheels on rails whose tops are 0.06 steps up: frame, boiler with
+    the saddle tank over it, stack, dome and the cab at the back."""
+    black = material("dinky black", "#24221f", metal=0.3, rough=0.6)
+    wheel = material("dinky wheel", "#2a2826", metal=0.5, rough=0.6)
+    for y in (-0.02, 0.02):
+        m.tube_x(-0.03, 0.03, y, 0.06 + 0.014 / rig.RISE, 0.014, wheel, segments=12)
+    m.box(-0.03, 0.03, -0.05, 0.05, 0.12, 0.2, black)
+    m.tube(-0.02, 0.05, 0.0, 0.32, 0.024, black, segments=14)
+    m.tube(-0.01, 0.035, 0.0, 0.36, 0.03, black, segments=14)
+    m.upright(0.0, 0.042, 0.42, 0.6, 0.008, 0.012, black, segments=10)
+    m.upright(0.0, 0.005, 0.44, 0.5, 0.01, 0.009, material("dinky brass", "#b8903a", metal=0.7, rough=0.4), segments=10)
+    m.box(-0.034, 0.034, -0.05, -0.018, 0.2, 0.62, black, 0.002)
+    m.box(-0.038, 0.038, -0.056, -0.012, 0.62, 0.65, black)
+    m.box(-0.036, 0.036, -0.045, -0.025, 0.42, 0.56, material("cab opening", "#121212", rough=0.5))
+
+
+def _dump_car(m, k=0, tip=False):
+    """A side dump ore car facing +y on the same rails: a V body on a frame and two axles, tipped to -x if tip."""
+    black = material("dinky black", "#24221f", metal=0.3, rough=0.6)
+    red = material("dump car red", "#6e2e24", metal=0.2, rough=0.8)
+    wheel = material("dinky wheel", "#2a2826", metal=0.5, rough=0.6)
+    ore = material("ore load", "#7a3a2a", rough=1.0)
+    for y in (-0.022, 0.022):
+        m.tube_x(-0.03, 0.03, y, 0.06 + 0.012 / rig.RISE, 0.012, wheel, segments=10)
+    m.box(-0.03, 0.03, -0.036, 0.036, 0.12, 0.18, black)
+    if tip:
+        prof = [(-0.06, 0.3), (-0.012, 0.18), (0.024, 0.44)]
+        m.wedge([(x, -0.036, z) for x, z in prof], [(x, 0.036, z) for x, z in prof], red)
+        return
+    prof = [(-0.04, 0.42), (0.0, 0.2), (0.04, 0.42)]
+    m.wedge([(x, -0.036, z) for x, z in prof], [(x, 0.036, z) for x, z in prof], red)
+    m.box(-0.036, 0.036, -0.032, 0.032, 0.36, 0.42, ore)
+    scenery.blob(m, 0.0, 0.0, 0.4, 0.024, ore, 500 + k, squash=0.6)
+
+
+def road_at(b, f):
+    """Benches b's road middle at f along it, 0 at its start to 1 at its end: x, y, its height, its heading toward the
+    end in radians (as moved() turns) and how steeply it climbs that way."""
+    a0, turns, e0, e1, h0, h1, _ = b.road
+
+    def at(t):
+        a = a0 + turns * math.tau * t
+        e = e0 + (e1 - e0) * t
+        dx, dy = (e * b.rx * math.cos(a), e * b.ry * math.sin(a))
+        # at() divides by the wobble, so scale out by it to land on the road.
+        ee, _ = b.at(b.cx + dx, b.cy + dy)
+        k = e / ee
+        return b.cx + dx * k, b.cy + dy * k, h0 + (h1 - h0) * t
+    x, y, h = at(f)
+    xn, yn, hn = at(f + 0.01)
+    run = math.hypot(xn - x, yn - y)
+    return x, y, h, math.atan2(-(xn - x), yn - y), math.atan2((hn - h) * rig.RISE, run)
+
+
+def track_path(m, pts, oy=0.0):
+    """Narrow gauge track on its ballast along pts, a list of (x, y, z in steps) in the first tile's terms, drawing only
+    the bits on this tile (y offset by oy): ballast, ties every 0.04 and the two rails, their tops 0.06 over the line."""
+    tie = material("tie", "#4e3626", rough=0.9)
+    rail = material("rail", "#6a6662", metal=0.9, rough=0.45)
+    ballast = material("pit ballast", "#8a7e70", rough=1.0)
+    since = 0.0
+    for p, q in zip(pts, pts[1:]):
+        mx, my = (p[0] + q[0]) / 2, (p[1] + q[1]) / 2 - oy
+        seg = math.hypot(q[0] - p[0], q[1] - p[1])
+        if abs(mx) > 0.5 or abs(my) > 0.5 or seg < 1e-6:
+            since += seg
+            continue
+        a, b = (p[0], p[1] - oy, p[2]), (q[0], q[1] - oy, q[2])
+        beam(m, a, b, 0.075, -0.04, 0.02, ballast)
+        for s in (-1, 1):
+            beam(m, a, b, 0.006, 0.03, 0.06, rail, o=s * 0.025)
+        nx, ny = -(q[1] - p[1]) / seg, (q[0] - p[0]) / seg
+        while since < seg:
+            f = since / seg
+            c = (a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f, a[2] + (b[2] - a[2]) * f)
+            beam(m, (c[0] - nx * 0.04, c[1] - ny * 0.04, c[2]), (c[0] + nx * 0.04, c[1] + ny * 0.04, c[2]), 0.014, 0.0, 0.03, tie)
+            since += 0.04
+        since -= seg
+
+
+def pit_rails():
+    """The pit railway's line, (x, y, z) every so often: out along a dump trestle past the rim, then down the haul road
+    to its foot on the floor."""
+    x0, y0, h0, turn, _ = road_at(PIT, 0.0)
+    dx, dy = math.sin(turn), -math.cos(turn)
+    pts = [(x0 + dx * d, y0 + dy * d, h0) for d in (0.16, 0.08)]
+    n = 160
+    for k in range(n + 1):
+        x, y, h, _, _ = road_at(PIT, k / n)
+        pts.append((x, y, h))
+    return pts
+
+
+def place_on(m, pts, s, build, oy=0.0):
+    """Builds something facing +y with build and sets it on the line pts at s tiles from its end, facing the end."""
+    run = 0.0
+    for p, q in zip(reversed(pts[:-1]), reversed(pts[1:])):
+        seg = math.hypot(q[0] - p[0], q[1] - p[1])
+        if run + seg >= s:
+            f = (s - run) / seg
+            x, y, z = (q[i] + (p[i] - q[i]) * f for i in range(3))
+            turn = math.atan2(-(q[0] - p[0]), q[1] - p[1])
+            pitch = math.atan2((q[2] - p[2]) * rig.RISE, seg)
+            moved(m, build, x, y - oy, turn, z=z, pitch=pitch)
+            return
+        run += seg
+
+
+def pit_railway(m, far):
+    """Before 1935: the pit railway, its track down the haul road, the saddle tank engine and two cars of ore at its foot
+    by the steam shovel, and at the top a timber ore bin past the rim with a car tipped into it."""
+    oy = 1.0 if far else 0.0
+    pts = pit_rails()
+    track_path(m, pts, oy)
+    if far:
+        return
+    # The train waits at the foot, the engine nearest the end; each piece on the line where it stands.
+    place_on(m, pts, 0.06, _pit_loco)
+    for k in range(2):
+        place_on(m, pts, 0.155 + k * 0.085, lambda mm, k=k: _dump_car(mm, k))
+    # At the top the line runs out past the rim to a timber ore bin, a car tipped into it.
+    wood = material("trestle timber", "#5a4a3a", rough=0.9)
+    plank = material("bin planks", "#6a5844", rough=0.9)
+    x0, y0, h0, turn, _ = road_at(PIT, 0.0)
+    ox, oy_ = math.sin(turn), -math.cos(turn)
+    lx, ly = -oy_, ox
+    cx, cy = x0 + ox * 0.13 + lx * 0.085, y0 + oy_ * 0.13 + ly * 0.085
+    m.box(cx - 0.05, cx + 0.05, cy - 0.05, cy + 0.05, h0, h0 + 0.42, plank, 0.003)
+    for sx in (-1, 1):
+        for sy in (-1, 1):
+            m.box(cx + sx * 0.05 - 0.006, cx + sx * 0.05 + 0.006, cy + sy * 0.05 - 0.006, cy + sy * 0.05 + 0.006, h0, h0 + 0.48, wood)
+    m.box(cx - 0.044, cx + 0.044, cy - 0.044, cy + 0.044, h0 + 0.42, h0 + 0.43, material("ore load", "#7a3a2a", rough=1.0))
+    place_on(m, list(reversed(pts[:4])), 0.03, lambda mm: _dump_car(mm, 9, tip=True))
+
+
 # The open pit's benches, its middle on the shared edge of its two tiles (y = 0.5 in the first tile's terms).
 PIT = Benches(0.0, 0.5, 0.42, 0.9, [(0.32, 0.02), (0.5, 0.36), (0.67, 0.7), (0.84, 1.04), (9.0, 1.38)], seed=2.0,
-              road=(-math.pi / 2 - 0.5, 1.3, 1.0, 0.26, 1.38, 0.02, 0.07), rough=0.014, face=0.03)
+              road=(-math.pi / 2 - 0.5, 1.3, 1.0, 0.26, 1.38, 0.02, 0.07), rough=0.014, face=0.04, edge=0.04)
+PIT_GRID = 200
 
 
 def pit_edge(x, y):
@@ -1668,7 +1982,14 @@ def pit_edge(x, y):
 
 def pit_pick(x, y, slope):
     """The open pit's faces as PIT.pick() has them, but its spoil berm all dirt."""
-    return 0 if pit_edge(x, y) < 0.08 else PIT.pick(5.0)(x, y, slope)
+    if pit_edge(x, y) < 0.08:
+        return 0
+    e, a = PIT.at(x, y)
+    if PIT.on_road(e, a) is not None:
+        return 3
+    if PIT.on_face(x, y, 0.7 / (PIT_GRID * PIT.rx))[0] or (slope > 5.0 and PIT.near_road(e, a) is not None):
+        return 2 if math.sin(2 * a + PIT.seed * 1.3) + 0.4 * math.sin(7 * a) > -0.4 else 1
+    return 0
 
 
 def pit_height(x, y):
@@ -1678,16 +1999,23 @@ def pit_height(x, y):
     return min(h, 0.1 + 1.28 * max(0.0, d) / 0.07) if d < 0.07 else h
 
 
-def open_pit(m, far=False):
+def open_pit(m, far=False, era=2):
     """An open pit iron mine across two tiles, this one and far, its +y neighbour: irregular benches of red ore and grey
-    rock down to the floor, the haul road spiralling down them, a shovel at the face and a haul truck."""
+    rock down to the floor, the haul road spiralling down them, a shovel at the face and what hauls from it. era 0 is
+    before 1935, a steam shovel loading side dump cars behind a little saddle tank engine, 1 to 1965 an electric shovel
+    and a Euclid rear dump, 2 after that a bigger haul truck."""
     mats = [material("pit bench", "#94765a", rough=1.0), material("pit rock face", "#7a7068", rough=1.0),
             material("pit ore face", "#b0442a", rough=1.0), material("haul road", "#c4b49c", rough=1.0)]
-    terrain(m, pit_height, mats, pit_pick, oy=1.0 if far else 0.0, wall=0)
-    if not far:
+    terrain(m, pit_height, mats, pit_pick, n=PIT_GRID, oy=1.0 if far else 0.0, wall=0)
+    if era == 0:
+        # The steam shovel on the floor's far end, clear of the railway coming down the road.
+        pit_railway(m, far)
+        if far:
+            moved(m, steam_shovel, 0.04, -0.36, -math.pi / 2, z=0.02)
+    elif not far:
         moved(m, shovel, 0.01, 0.34, math.pi, z=0.02)
     else:
-        moved(m, haul_truck, 0.02, -0.28, 0.5, z=0.02)
+        moved(m, euclid_truck if era == 1 else haul_truck, 0.02, -0.28, 0.5, z=0.02)
         m.box(-0.07, 0.04, -0.2, -0.12, 0.02, 0.035, material("pit water", "#3a4a52", rough=0.15))
 
 
@@ -1762,9 +2090,18 @@ def ore_crusher(m):
 
 
 def ore_heap(m):
+    """The crushed ore stockpile: a radial stacker swung over the pile from its pivot by the tile's corner, the kidney
+    shaped windrow it leaves as it swings, a dozer on top and a loader at the toe."""
     ground(m, "#5a4a42", "ore yard")
-    heap(m, 0.0, -0.05, 0.36, 2.0, "#7a3a2a", 61, "iron ore")
-    heap(m, 0.3, 0.3, 0.14, 0.7, "#6a3426", 62, "iron ore")
+    heap(m, -0.04, -0.06, 0.32, 1.7, "#7a3a2a", 61, "iron ore")
+    for k, (a, r, h) in enumerate(((-2.0, 0.17, 0.9), (-2.5, 0.15, 0.75), (-2.95, 0.13, 0.6))):
+        heap(m, 0.38 + 0.56 * math.cos(a), 0.4 + 0.56 * math.sin(a), r, h, "#6a3426", 64 + k, "iron ore")
+    steel = material("stacker steel", "#c8a028", metal=0.3, rough=0.5)
+    _stacker(m, (0.38, 0.4, 0.5), (-0.02, -0.04, 2.2), 0.05, steel, material("conveyor belt", "#2e2a26", rough=0.8),
+             material("ore on belt", "#6a3426", rough=1.0))
+    _dozer(m, -0.16, -0.24, 0.7, turn=0.9)
+    _loader(m, 0.3, -0.34, 0.02, turn=0.5)
+    _light_pole(m, 0.44, -0.44)
 
 
 def pipe_ring(m, x, y, z, R, r, mat, n=20):
@@ -2007,7 +2344,7 @@ def bof_shop(m):
     x0, x1, y0, y1, eave = -0.3, 0.44, -0.5, 0.48, 4.0
     shop_walls(m, x0, x1, y0, y1, eave, wall, rib, g)
     gable(m, x0, x1, y0, y1, eave, eave + 0.35, roof, wall, along_x=False, over=0.02, thick=0.06)
-    lx0, ly1, lz = -0.46, 0.04, 2.8
+    lx0, ly1, lz = -0.46, -0.2, 2.8
     shop_walls(m, lx0, x0, y0, ly1, lz, wall, rib, g, band=(0.6, 0.82))
     houses.flat_top(m, lx0, x0, y0, ly1, lz, roof, parapet=0.1)
     for c in (-0.16, 0.2):
@@ -2033,11 +2370,12 @@ def bof_shop(m):
     white = material("oxygen tank", "#d8d4cc", metal=0.3, rough=0.5)
     pipe = material("oxygen line", "#3a6a8a", metal=0.5, rough=0.45)
     m.box(-0.5, x0, ly1 + 0.01, 0.5, 0, 0.06, material("tank pad", "#8a867e", rough=0.9))
-    ox, oy, orr, oh = -0.4, 0.15, 0.075, 4.8
+    # The tank stands where the converter aisle can't hide it, tall enough to show over the shop from the far side.
+    ox, oy, orr, oh = -0.4, -0.1, 0.075, 5.6
     m.upright(ox, oy, 0.06, 0.3, orr + 0.006, orr + 0.006, dark, segments=24)
     m.upright(ox, oy, 0.3, oh, orr, orr, white, segments=24)
     m.lathe(ox, oy, oh, [(orr, 0), (orr * 0.8, 0.12), (orr * 0.4, 0.2), (0.0, 0.22)], white, segments=24)
-    for z in (1.5, 3.0):
+    for z in (1.5, 3.0, 4.5):
         pipe_ring(m, ox, oy, z, orr + 0.003, 0.003, rib, n=24)
     column_ladder(m, ox, oy, orr, math.pi, 0.06, oh + 0.1, rail)
     pipe_ring(m, ox, oy, oh + 0.3, orr * 0.6, 0.0015, rail, n=12)
@@ -3588,8 +3926,38 @@ def rock_dump(m):
 
 
 def nickel_heap(m):
+    """The ore stockpile: a dozer pushing the pile to the reclaim tunnel at its foot, the conveyor out of it climbing to
+    a steel loadout bin over a siding, and a hopper car under the bin."""
     ground(m, "#4a4644", "mine rock")
-    heap(m, -0.05, 0.0, 0.36, 1.7, "#5a6050", 96, "nickel ore")
+    heap(m, -0.1, -0.16, 0.3, 1.6, "#5a6050", 96, "nickel ore")
+    heap(m, 0.24, -0.28, 0.14, 0.6, "#525848", 98, "nickel ore")
+    concrete = material("pocket concrete", "#9a958c", rough=0.95)
+    steel = material("bin steel", "#6a6662", metal=0.4, rough=0.6)
+    trim = material("mill steel", "#4a4c4e", metal=0.5, rough=0.5)
+    # The reclaim tunnel's portal at the pile's foot.
+    m.box(-0.42, -0.28, 0.08, 0.16, 0, 0.42, concrete)
+    m.box(-0.39, -0.31, 0.16, 0.161, 0.02, 0.3, material("pocket dark", "#1e1c1a", rough=1.0))
+    ty = 0.34
+    siding(m, -0.5, 0.5, ty)
+    a, b = (-0.35, 0.16, 0.3), (0.16, ty, 2.45)
+    conveyor(m, a, b, 0.05, trim, material("conveyor belt", "#2e2a26", rough=0.8), legs=0.14,
+             hood=material("crusher roof", "#4a4a48", metal=0.4, rough=0.6), load=material("ore on belt", "#5a6050", rough=1.0))
+    # The loadout bin on four legs over the track, its hopper and chute.
+    bx0, bx1, by0, by1, b0, b1 = 0.14, 0.38, ty - 0.1, ty + 0.1, 1.7, 2.5
+    m.box(bx0, bx1, by0, by1, b0, b1, steel, 0.003)
+    m.box(bx0 - 0.006, bx1 + 0.006, by0 - 0.006, by1 + 0.006, b1, b1 + 0.05, trim)
+    for x in (bx0 + 0.006, bx1 - 0.006):
+        for y in (by0 + 0.006, by1 - 0.006):
+            m.box(x - 0.006, x + 0.006, y - 0.006, y + 0.006, 0, b0, trim)
+    cx = (bx0 + bx1) / 2
+    m.wedge([(cx - 0.02, ty - 0.02, 1.3), (cx + 0.02, ty - 0.02, 1.3), (cx + 0.02, ty + 0.02, 1.3), (cx - 0.02, ty + 0.02, 1.3)],
+            [(bx0, by0, b0), (bx1, by0, b0), (bx1, by1, b0), (bx0, by1, b0)], steel)
+    for xx in (bx0 + 0.006, bx1 - 0.006):
+        m.rod((xx, by0, 0.2), (xx, by0, b0 - 0.1), 0.0025, trim, segments=4)
+    m.rod((bx0 + 0.006, by0, 0.2), (bx1 - 0.006, by0, b0 - 0.1), 0.0025, trim, segments=4)
+    moved(m, lambda mm: cars.hopper(mm, 9 / 16), cx, ty, -math.pi / 2, z=0.12)
+    _dozer(m, -0.2, -0.02, 0.45, turn=0.8)
+    _light_pole(m, -0.44, 0.44)
 
 
 def smelter_flue(m, y0, brick, trim):
@@ -3678,12 +4046,15 @@ def roaster(m):
     r = 0.024
     yo = -0.1
     zr = eave + (ridge - eave) * (1 - abs(yo - yc) / ((y1 - y0) / 2))
+    # They rise well clear of the monitor so they show over the roof from the far side too.
+    top = 5.1
     for x in (-0.2, -0.1, 0.0):
-        m.upright(x, yo, zr - 0.1, 4.3, r, r, duct, segments=12)
+        m.upright(x, yo, zr - 0.1, top, r, r, duct, segments=12)
         m.upright(x, yo, zr - 0.02, zr + 0.06, r * 1.4, r * 1.4, trim, segments=12)
-        m.lathe(x, yo, 4.25, [(r * 1.15, 0), (r * 1.15, 0.12), (0, 0.13)], duct, segments=12)
+        m.lathe(x, yo, top - 0.05, [(r * 1.15, 0), (r * 1.15, 0.12), (0, 0.13)], duct, segments=12)
+        m.upright(x, yo, top - 0.5, top - 0.44, r * 1.3, r * 1.3, trim, segments=12)
         xf = max(fx0 + 0.04, min(fx1 - 0.04, x))
-        m.rod((x, yo, 4.3), (xf, -0.42, 0.9), r, duct, segments=12)
+        m.rod((x, yo, top), (xf, -0.42, 0.9), r, duct, segments=12)
         m.upright(xf, -0.42, 0.85, 1.05, r * 1.3, r * 1.3, trim, segments=12)
     # The concentrate bins on their legs at the end, the bucket elevator up to them and the feed into the house.
     steel = material("bin steel", "#6a6662", metal=0.4, rough=0.6)
@@ -3753,21 +4124,24 @@ def smelter_shed(m):
         houses.on_wall(m, "x", x1, 1, c - 0.085, c + 0.085, 0, 0.004, 0, 1.75, leaf)
         houses.on_wall(m, "x", x1, 1, c - 0.1, c + 0.1, 0, 0.014, 1.75, 1.85, trim)
     # The fume ducts up out of the roof and sloping down to the header on its bents.
+    # They rise well clear of the monitor so they show over the roof from the far side too.
     r = 0.028
-    hy, hz = -0.45, 2.2
+    hy, hz = -0.45, 2.5
     yo = -0.2
+    top = 4.5
     zr = eave + (ridge - eave) * (1 - abs(yo - yc) / ((y1 - y0) / 2))
     for x in (-0.28, 0.0, 0.28):
-        m.upright(x, yo, zr - 0.1, 3.7, r, r, duct, segments=12)
+        m.upright(x, yo, zr - 0.1, top, r, r, duct, segments=12)
         m.upright(x, yo, zr - 0.02, zr + 0.06, r * 1.4, r * 1.4, trim, segments=12)
-        m.lathe(x, yo, 3.65, [(r * 1.15, 0), (r * 1.15, 0.12), (0, 0.13)], duct, segments=12)
-        m.rod((x, yo, 3.7), (x + 0.05, hy, hz + 0.1), r, duct, segments=12)
+        m.upright(x, yo, top - 0.5, top - 0.44, r * 1.3, r * 1.3, trim, segments=12)
+        m.lathe(x, yo, top - 0.05, [(r * 1.15, 0), (r * 1.15, 0.12), (0, 0.13)], duct, segments=12)
+        m.rod((x, yo, top), (x + 0.05, hy, hz + 0.1), r, duct, segments=12)
     m.tube_x(-0.36, 0.5, hy, hz, 0.038, duct, segments=16)
     for x in (-0.3, 0.06, 0.4):
         m.box(x - 0.006, x + 0.006, hy - 0.04, hy - 0.028, 0, hz, trim)
         m.box(x - 0.006, x + 0.006, hy + 0.028, hy + 0.04, 0, hz, trim)
         m.box(x - 0.006, x + 0.006, hy - 0.04, hy + 0.04, hz - 0.2, hz - 0.16, trim)
-    m.lathe(-0.38, hy, 0.0, [(0.05, 0), (0.05, 1.8), (0.03, 2.1), (0.0, 2.15)], duct, segments=16)
+    m.lathe(-0.38, hy, 0.0, [(0.05, 0), (0.05, hz - 0.4), (0.03, hz - 0.1), (0.0, hz - 0.05)], duct, segments=16)
 
 
 def dam(m):
@@ -3784,62 +4158,62 @@ def dam(m):
     water = material("spillway water", "#c8dce4", rough=0.15)
     foam = material("foam", "#e8f0f4", rough=0.4)
     m.wedge([(-1.1, -0.5, -0.4), (-0.4, -0.5, -0.4), (-0.4, 0.5, -0.4), (-1.1, 0.5, -0.4)],
-            [(-0.7, -0.5, 2.6), (-0.5, -0.5, 2.6), (-0.5, 0.5, 2.6), (-0.7, 0.5, 2.6)], concrete)
-    m.box(-0.74, -0.46, -0.5, 0.5, 2.6, 2.72, concrete)
+            [(-0.7, -0.5, 2.2), (-0.5, -0.5, 2.2), (-0.5, 0.5, 2.2), (-0.7, 0.5, 2.2)], concrete)
+    m.box(-0.74, -0.46, -0.5, 0.5, 2.2, 2.32, concrete)
     # The piers every 0.2 along, rounded on the upstream (+x) end.
     piers = (-0.4, -0.2, 0.0, 0.2, 0.4)
     for y in piers:
-        m.box(-0.76, -0.47, y - 0.024, y + 0.024, 2.72, 3.36, concrete)
-        m.upright(-0.47, y, 2.72, 3.36, 0.024, 0.024, concrete, segments=12)
+        m.box(-0.76, -0.47, y - 0.024, y + 0.024, 2.32, 2.96, concrete)
+        m.upright(-0.47, y, 2.32, 2.96, 0.024, 0.024, concrete, segments=12)
     # The gates: closed ones down on the crest, ribbed, the open one hung up in its slots.
     bays = [(-0.5, -0.424), (-0.376, -0.224), (-0.176, -0.024), (0.024, 0.176), (0.224, 0.376), (0.424, 0.5)]
     for k, (a, b) in enumerate(bays):
         up = k == 3
-        z0 = 2.98 if up else 2.72
+        z0 = 2.58 if up else 2.32
         m.box(-0.6, -0.58, a, b, z0, z0 + 0.42, steel)
         for z in (z0 + 0.1, z0 + 0.22, z0 + 0.34):
             m.box(-0.612, -0.6, a, b, z, z + 0.03, steel)
         if not up:
-            m.box(-0.74, -0.6, a, b, 2.72, 2.74, stain)
+            m.box(-0.74, -0.6, a, b, 2.32, 2.34, stain)
     # Water through the open gate, down the face between training walls and foaming at the foot.
     a, b = bays[3]
     m.wedge([(-1.12, a + 0.004, -0.38), (-1.09, a + 0.004, -0.38), (-1.09, b - 0.004, -0.38), (-1.12, b - 0.004, -0.38)],
-            [(-0.72, a + 0.004, 2.74), (-0.58, a + 0.004, 2.76), (-0.58, b - 0.004, 2.76), (-0.72, b - 0.004, 2.74)], water)
+            [(-0.72, a + 0.004, 2.34), (-0.58, a + 0.004, 2.36), (-0.58, b - 0.004, 2.36), (-0.72, b - 0.004, 2.34)], water)
     for y in piers[2:4]:
         m.wedge([(-1.11, y - 0.02, -0.4), (-1.08, y - 0.02, -0.4), (-1.08, y + 0.02, -0.4), (-1.11, y + 0.02, -0.4)],
-                [(-0.73, y - 0.02, 2.72), (-0.7, y - 0.02, 2.72), (-0.7, y + 0.02, 2.72), (-0.73, y + 0.02, 2.72)], concrete)
+                [(-0.73, y - 0.02, 2.32), (-0.7, y - 0.02, 2.32), (-0.7, y + 0.02, 2.32), (-0.73, y + 0.02, 2.32)], concrete)
     for k in range(9):
         y = a + 0.01 + k * (b - a - 0.02) / 8
         scenery.blob(m, -1.14 + 0.03 * math.sin(k * 2.1), y, -0.34, 0.035 + 0.01 * math.sin(k * 1.7), foam, 300 + k, squash=0.5)
     m.box(-1.1, -0.86, a - 0.06, b + 0.06, -0.4, -0.32, foam)
     # The service deck on the piers, the crane rails along it and a handrail each side.
-    m.box(-0.62, -0.47, -0.5, 0.5, 3.36, 3.44, concrete)
-    m.box(-0.76, -0.68, -0.5, 0.5, 3.36, 3.44, concrete)
+    m.box(-0.62, -0.47, -0.5, 0.5, 2.96, 3.04, concrete)
+    m.box(-0.76, -0.68, -0.5, 0.5, 2.96, 3.04, concrete)
     for x in (-0.745, -0.48):
-        m.box(x - 0.005, x + 0.005, -0.5, 0.5, 3.44, 3.48, dark)
+        m.box(x - 0.005, x + 0.005, -0.5, 0.5, 3.04, 3.08, dark)
     for x in (-0.765, -0.465):
-        m.box(x - 0.002, x + 0.002, -0.5, 0.5, 3.62, 3.64, rail)
+        m.box(x - 0.002, x + 0.002, -0.5, 0.5, 3.22, 3.24, rail)
         for k in range(10):
             y = -0.45 + k * 0.1
-            m.box(x - 0.002, x + 0.002, y - 0.002, y + 0.002, 3.44, 3.64, rail)
-    # The gantry crane over the open gate: two braced leg frames on the rails, the girders, its machinery house and the
-    # lifting beam hung on its ropes.
+            m.box(x - 0.002, x + 0.002, y - 0.002, y + 0.002, 3.04, 3.24, rail)
+    # The gantry crane over the open gate, kept low (top 3.6): two braced leg frames on the rails, the girders, its
+    # machinery house and the lifting beam hung on its ropes.
     cy = (a + b) / 2
     for y in (cy - 0.06, cy + 0.06):
         for x in (-0.745, -0.48):
-            m.box(x - 0.012, x + 0.012, y - 0.03, y + 0.03, 3.48, 3.56, dark)
-            m.box(x - 0.008, x + 0.008, y - 0.008, y + 0.008, 3.56, 4.1, paint)
-        m.rod((-0.745, y, 3.6), (-0.48, y, 4.0), 0.004, paint, segments=4)
-        m.rod((-0.48, y, 3.6), (-0.745, y, 4.0), 0.004, paint, segments=4)
-        m.box(-0.765, -0.46, y - 0.012, y + 0.012, 4.06, 4.16, paint)
+            m.box(x - 0.012, x + 0.012, y - 0.03, y + 0.03, 3.08, 3.16, dark)
+            m.box(x - 0.008, x + 0.008, y - 0.008, y + 0.008, 3.16, 3.4, paint)
+        m.rod((-0.745, y, 3.18), (-0.48, y, 3.36), 0.004, paint, segments=4)
+        m.rod((-0.48, y, 3.18), (-0.745, y, 3.36), 0.004, paint, segments=4)
+        m.box(-0.765, -0.46, y - 0.012, y + 0.012, 3.38, 3.45, paint)
     for x in (-0.745, -0.48):
-        m.rod((x, cy - 0.06, 3.62), (x, cy + 0.06, 3.62), 0.004, paint, segments=4)
-        m.rod((x, cy - 0.06, 3.62), (x, cy + 0.06, 4.05), 0.003, paint, segments=4)
-    m.box(-0.68, -0.54, cy - 0.075, cy + 0.075, 4.16, 4.36, paint, 0.003)
-    gable(m, -0.68, -0.54, cy - 0.075, cy + 0.075, 4.36, 4.42, dark, paint, along_x=False, over=0.006, thick=0.02)
+        m.rod((x, cy - 0.06, 3.22), (x, cy + 0.06, 3.22), 0.004, paint, segments=4)
+        m.rod((x, cy - 0.06, 3.22), (x, cy + 0.06, 3.38), 0.003, paint, segments=4)
+    m.box(-0.68, -0.54, cy - 0.075, cy + 0.075, 3.45, 3.55, paint, 0.003)
+    gable(m, -0.68, -0.54, cy - 0.075, cy + 0.075, 3.55, 3.6, dark, paint, along_x=False, over=0.006, thick=0.02)
     for s in (-1, 1):
-        m.rod((-0.59, cy + s * 0.05, 4.06), (-0.59, cy + s * 0.05, 3.5), 0.0016, dark, segments=4)
-    m.box(-0.605, -0.575, cy - 0.065, cy + 0.065, 3.46, 3.5, paint)
+        m.rod((-0.59, cy + s * 0.05, 3.38), (-0.59, cy + s * 0.05, 3.1), 0.0016, dark, segments=4)
+    m.box(-0.605, -0.575, cy - 0.065, cy + 0.065, 3.06, 3.1, paint)
 
 
 def powerhouse(m):
@@ -3855,7 +4229,7 @@ def powerhouse(m):
     house = material("gate house", "#a8a49a", rough=0.8)
     slate = material("powerhouse roof", "#4e5866", rough=0.6)
     g = glass()
-    x0, x1, y0, y1 = -0.46, -0.08, -0.38, 0.38
+    x0, x1, y0, y1 = -0.46, -0.12, -0.38, 0.38
     m.box(x0, x1, y0, y1, 0, 0.5, stone)
     m.box(x0, x1, y0, y1, 0.5, 3.4, brick, 0.004)
     gable(m, x0, x1, y0, y1, 3.4, 4.2, slate, brick, along_x=False)
@@ -3871,14 +4245,22 @@ def powerhouse(m):
         houses.pane(m, "y", y0, -1, x, 1.0, 2.9, 0.08, g, stone, stone, sash=False, bars=1)
     # The intake on the forebay wall with its gate houses and trash rack, and the penstocks down to the hall on their
     # saddles, stiffener rings round them and an anchor block at the foot of each.
-    ix0, ix1 = 0.3, 0.48
-    iz = 2.4
-    m.wedge([(ix0 - 0.04, -0.42, 0), (ix1, -0.42, 0), (ix1, 0.42, 0), (ix0 - 0.04, 0.42, 0)],
-            [(ix0, -0.42, iz), (ix1, -0.42, iz), (ix1, 0.42, iz), (ix0, 0.42, iz)], concrete)
+    ix0, ix1 = 0.34, 0.48
+    iz = 2.0
+    # A low forebay wall with an intake block for each penstock standing out of it and a deck across their tops, open
+    # between so the penstocks show from the intake side.
+    m.wedge([(ix0 - 0.04, -0.42, 0), (ix1 - 0.02, -0.42, 0), (ix1 - 0.02, 0.42, 0), (ix0 - 0.04, 0.42, 0)],
+            [(ix0, -0.42, 0.7), (ix1 - 0.02, -0.42, 0.7), (ix1 - 0.02, 0.42, 0.7), (ix0, 0.42, 0.7)], concrete)
+    for y in (-0.24, 0.0, 0.24):
+        m.wedge([(ix0 - 0.04, y - 0.07, 0), (ix1, y - 0.07, 0), (ix1, y + 0.07, 0), (ix0 - 0.04, y + 0.07, 0)],
+                [(ix0, y - 0.07, iz), (ix1, y - 0.07, iz), (ix1, y + 0.07, iz), (ix0, y + 0.07, iz)], concrete)
+    m.box(ix1 - 0.05, ix1, -0.42, 0.42, iz - 0.08, iz, concrete)
+    for x in (ix1 - 0.048, ix1 - 0.002):
+        m.box(x - 0.002, x + 0.002, -0.42, 0.42, iz + 0.16, iz + 0.18, material("dam handrail", "#d8d4c8", metal=0.3, rough=0.5))
     for y in (-0.24, 0.0, 0.24):
         m.box(ix0 + 0.03, ix1 - 0.03, y - 0.05, y + 0.05, iz, iz + 0.5, house)
         gable(m, ix0 + 0.03, ix1 - 0.03, y - 0.05, y + 0.05, iz + 0.5, iz + 0.62, slate, house, along_x=True, over=0.008, thick=0.02)
-        top, bot = (ix0 - 0.02, y, iz - 0.6), (x1 + 0.03, y, 0.75)
+        top, bot = (ix0 - 0.02, y, iz - 0.35), (x1 + 0.03, y, 0.75)
         m.rod(top, bot, 0.036, penstock, segments=16)
         for f in (0.15, 0.4, 0.65, 0.9):
             p = tuple(top[i] + (bot[i] - top[i]) * f for i in range(3))
@@ -3890,11 +4272,11 @@ def powerhouse(m):
         m.box(x1, x1 + 0.08, y - 0.06, y + 0.06, 0, 1.05, concrete)
     rack = material("trash rack", "#5a5c5e", metal=0.5, rough=0.6)
     for y in (-0.24, 0.0, 0.24):
-        m.box(ix1, ix1 + 0.004, y - 0.08, y + 0.08, 0.9, 1.9, material("intake opening", "#2a3034", rough=0.4))
+        m.box(ix1, ix1 + 0.004, y - 0.065, y + 0.065, 0.6, 1.5, material("intake opening", "#2a3034", rough=0.4))
         for k in range(7):
-            yy = y - 0.075 + k * 0.025
-            m.box(ix1 + 0.004, ix1 + 0.008, yy - 0.002, yy + 0.002, 0.9, 1.9, rack)
-        m.box(ix1 + 0.004, ix1 + 0.008, y - 0.08, y + 0.08, 1.85, 1.9, rack)
+            yy = y - 0.06 + k * 0.02
+            m.box(ix1 + 0.004, ix1 + 0.008, yy - 0.002, yy + 0.002, 0.6, 1.5, rack)
+        m.box(ix1 + 0.004, ix1 + 0.008, y - 0.065, y + 0.065, 1.45, 1.5, rack)
     # Transformers on the -y side and the lattice towers taking the lines away.
     tank = material("transformer", "#7a8478", metal=0.4, rough=0.6)
     for x in (-0.36, -0.2, -0.04):
@@ -4064,7 +4446,7 @@ def heavy_hauler(m, paint="#d8a428", load=1.0):
 # The oil sand pit's benches across its four tiles, its middle on their shared corner (0.5, 0.5 in the first tile's
 # terms); the haul road spirals from the floor up through the +x, +y tile to the rim.
 SAND = Benches(0.5, 0.5, 0.88, 0.88, [(0.55, 0.02), (0.72, 0.55), (0.86, 1.0), (9.0, 1.4)], seed=7.0,
-               road=(0.62 * math.pi, -0.62, 0.5, 0.85, 0.02, 1.4, 0.12), rough=0.012, face=0.05)
+               road=(0.62 * math.pi, -0.62, 0.5, 0.85, 0.02, 1.4, 0.12), rough=0.012, face=0.05, edge=0.05)
 # Where each of the pit's pieces sits from the first, x and y.
 SAND_TILES = {"sand_pit": (0, 0), "sand_pit_far": (0, 1), "sand_pit_side": (1, 0), "sand_pit_corner": (1, 1)}
 
@@ -4090,8 +4472,13 @@ def sand_pick(x, y, slope):
     if SAND.on_road(e, a) is not None:
         return 3
     h = SAND.height(x, y)
-    if slope > 5.0:
-        return 2 if h > 1.02 else 1
+    face, below = SAND.on_face(x, y, 0.7 / (180 * SAND.rx))
+    if face:
+        # The top face is brown overburden over the black oil sand.
+        return 2 if below >= 1.0 and h > 1.2 else 1
+    if slope > 5.0 and SAND.near_road(e, a) is not None:
+        # The bank down from the road's side to the bench.
+        return 2 if h > 1.2 else 1
     return 5 if h < 0.1 else 0
 
 
@@ -4114,22 +4501,167 @@ def sand_road(f):
     return x, y, h, math.atan2(-(xn - x), yn - y), math.atan2((hn - h) * rig.RISE, run)
 
 
-def sand_pit(m, key="sand_pit"):
+def bucketwheel(m):
+    """A bucketwheel excavator facing +y, as Suncor dug with from 1967 and Syncrude reclaimed its windrows with: crawlers
+    under a turntable, the machinery house with its mast, the long boom forward down to the wheel of buckets at the face
+    and its belt back along it, the counterweight boom behind, cables from the mast to both, and the discharge boom out
+    to the -x side."""
+    body = material("bucketwheel paint", "#d8cfa8", metal=0.3, rough=0.55)
+    dark = material("bucketwheel crawler", "#2e2e30", metal=0.4, rough=0.6)
+    steel = material("bucketwheel steel", "#5a5a56", metal=0.5, rough=0.5)
+    rope = material("boom stay", "#2a2a2a", metal=0.6, rough=0.5)
+    belt = material("conveyor belt", "#2e2a26", rough=0.8)
+    sand = material("oil sand on belt", "#1e1a17", rough=1.0)
+    g = glass()
+    for sx in (-1, 1):
+        m.box(sx * 0.07 - 0.024, sx * 0.07 + 0.024, -0.1, 0.1, 0.0, 0.2, dark, 0.012)
+    m.upright(0.0, 0.0, 0.2, 0.3, 0.07, 0.07, steel, segments=20)
+    m.box(-0.065, 0.065, -0.1, 0.06, 0.3, 0.72, body, 0.004)
+    gable(m, -0.065, 0.065, -0.1, 0.06, 0.72, 0.8, body, body, along_x=False, over=0.004, thick=0.03)
+    m.box(-0.065, -0.025, 0.06, 0.1, 0.5, 0.78, body, 0.003)
+    m.box(-0.063, -0.027, 0.1, 0.103, 0.58, 0.74, g)
+    # The mast, an A-frame over the house.
+    top = (0.0, -0.02, 2.0)
+    for sx in (-1, 1):
+        for y in (-0.08, 0.04):
+            m.rod((sx * 0.05, y, 0.8), top, 0.006, body, segments=4)
+    # The main boom, a box girder down to the wheel, and the belt on it.
+    foot, tip = (0.0, 0.06, 0.75), (0.0, 0.3, 0.6)
+    for sx in (-1, 1):
+        m.rod((sx * 0.018, foot[1], foot[2] + 0.1), (sx * 0.012, tip[1], tip[2] + 0.08), 0.007, body, segments=4)
+        m.rod((sx * 0.018, foot[1], foot[2] - 0.05), (sx * 0.012, tip[1], tip[2] - 0.06), 0.007, body, segments=4)
+    for f in (0.2, 0.4, 0.6, 0.8):
+        p = tuple(foot[i] + (tip[i] - foot[i]) * f for i in range(3))
+        m.rod((-0.016, p[1], p[2] - 0.05), (0.016, p[1], p[2] + 0.09), 0.003, body, segments=4)
+    conveyor(m, (0.0, tip[1] - 0.02, tip[2] + 0.02), (0.0, foot[1], foot[2] + 0.04), 0.022, steel, belt, legs=0, load=sand)
+    # The wheel of buckets, turning about x on the boom's +x side.
+    r = 0.07
+    wc = (0.026, tip[1] + 0.02, r / rig.RISE + 0.1)
+    m.tube_x(wc[0] - 0.012, wc[0] + 0.012, wc[1], wc[2], r, steel, segments=24)
+    m.tube_x(wc[0] - 0.016, wc[0] + 0.016, wc[1], wc[2], 0.012, dark, segments=12)
+    for k in range(12):
+        an = k * math.tau / 12
+        by, bz = wc[1] + math.cos(an) * r, wc[2] + math.sin(an) * r / rig.RISE
+        m.box(wc[0] - 0.016, wc[0] + 0.016, by - 0.012, by + 0.012, bz - 0.05, bz + 0.05, dark)
+    # The counterweight boom behind, its block, and the stays from the mast.
+    back = (0.0, -0.18, 1.0)
+    for sx in (-1, 1):
+        m.rod((sx * 0.03, -0.06, 0.78), (sx * 0.02, back[1], back[2]), 0.006, body, segments=4)
+    m.box(-0.045, 0.045, back[1] - 0.04, back[1] + 0.03, back[2] - 0.2, back[2] + 0.08, material("counterweight", "#6a6a64", metal=0.3, rough=0.7), 0.004)
+    for sx in (-1, 1):
+        m.rod((sx * 0.004, top[1], top[2]), (sx * 0.012, tip[1] - 0.02, tip[2] + 0.1), 0.0018, rope, segments=4)
+        m.rod((sx * 0.004, top[1], top[2]), (sx * 0.02, back[1], back[2] + 0.08), 0.0018, rope, segments=4)
+    # The discharge boom out to the -x side over the bench conveyor.
+    d0, d1 = (-0.06, -0.02, 0.75), (-0.16, -0.02, 0.55)
+    conveyor(m, d0, d1, 0.02, steel, belt, legs=0, load=sand)
+    m.rod((0.0, top[1], top[2] - 0.3), (d1[0], d1[1], d1[2] + 0.12), 0.0016, rope, segments=4)
+
+
+def dragline(m):
+    """A walking dragline facing +y, as Syncrude dug with from 1978: the tub it sits on and the walking shoes either
+    side, the house with its A-frame, the long lattice boom and the bucket hanging off its point on the hoist ropes,
+    dragged back on its drag ropes."""
+    body = material("dragline paint", "#c8a028", metal=0.3, rough=0.55)
+    house = material("dragline house", "#d8d4c8", metal=0.2, rough=0.6)
+    dark = material("dragline dark", "#2e2e30", metal=0.4, rough=0.6)
+    rope = material("hoist rope", "#2a2a2a", metal=0.6, rough=0.5)
+    g = glass()
+    m.upright(0.0, 0.0, 0.0, 0.12, 0.1, 0.1, dark, segments=24)
+    for sx in (-1, 1):
+        m.box(sx * 0.11 - 0.025, sx * 0.11 + 0.025, -0.08, 0.08, 0.0, 0.1, dark, 0.006)
+    m.box(-0.08, 0.08, -0.14, 0.08, 0.12, 0.62, house, 0.004)
+    gable(m, -0.08, 0.08, -0.14, 0.08, 0.62, 0.7, house, house, along_x=False, over=0.004, thick=0.03)
+    m.box(-0.08, -0.03, 0.08, 0.12, 0.36, 0.62, house, 0.003)
+    m.box(-0.078, -0.032, 0.12, 0.123, 0.44, 0.58, g)
+    apex = (0.0, -0.02, 1.4)
+    for sx in (-1, 1):
+        m.rod((sx * 0.06, -0.12, 0.7), apex, 0.006, body, segments=4)
+        m.rod((sx * 0.06, 0.06, 0.7), apex, 0.006, body, segments=4)
+    foot, point = (0.0, 0.1, 0.35), (0.0, 0.5, 2.0)
+    for sx in (-1, 1):
+        m.rod((sx * 0.025, foot[1], foot[2]), (sx * 0.006, point[1], point[2]), 0.004, body, segments=4)
+        m.rod((sx * 0.025, foot[1], foot[2] + 0.12), (sx * 0.006, point[1], point[2] + 0.03), 0.003, body, segments=4)
+    for k in range(1, 8):
+        f = k / 8
+        p = tuple(foot[i] + (point[i] - foot[i]) * f for i in range(3))
+        w = 0.025 * (1 - f) + 0.006 * f
+        m.rod((-w, p[1], p[2]), (w, p[1], p[2] + 0.12 * (1 - f)), 0.0018, body, segments=4)
+    for sx in (-1, 1):
+        m.rod((sx * 0.004, apex[1], apex[2]), (sx * 0.006, point[1] - 0.01, point[2] + 0.03), 0.0016, rope, segments=4)
+    m.tube_x(-0.01, 0.01, point[1], point[2], 0.012, dark, segments=10)
+    # The bucket down on the ropes, and the drag ropes back to the house.
+    bk = (0.0, 0.44, 0.35)
+    m.rod((0.0, point[1] + 0.008, point[2] - 0.03), (bk[0], bk[1], bk[2] + 0.1), 0.0018, rope, segments=4)
+    m.wedge([(-0.03, bk[1] - 0.03, bk[2] - 0.12), (0.03, bk[1] - 0.03, bk[2] - 0.12), (0.03, bk[1] + 0.035, bk[2] - 0.06), (-0.03, bk[1] + 0.035, bk[2] - 0.06)],
+            [(-0.032, bk[1] - 0.035, bk[2] + 0.08), (0.032, bk[1] - 0.035, bk[2] + 0.08), (0.032, bk[1] + 0.04, bk[2] + 0.08), (-0.032, bk[1] + 0.04, bk[2] + 0.08)], dark)
+    for sx in (-1, 1):
+        m.rod((sx * 0.02, bk[1] - 0.03, bk[2]), (sx * 0.02, 0.12, 0.3), 0.0016, rope, segments=4)
+
+
+def sand_conveyor_line():
+    """The bench conveyor of before 1993, (x, y, z) in the first tile's terms: on the floor under the bucketwheel's
+    discharge, then climbing the pit's +y side, steep enough to clear the benches, to a transfer house on the rim."""
+    x, y0, y1, y2, z0 = 0.42, 0.2, 0.72, 1.34, 0.18
+    k = 0.0
+    for i in range(1, 41):
+        y = y1 + (y2 - y1) * i / 40
+        k = max(k, (sand_height(x, y) + 0.16 - z0) / (y - y1))
+    return [(x, y0, z0), (x, y1, z0), (x, y2, z0 + k * (y2 - y1))]
+
+
+def sand_pit(m, key="sand_pit", era=2):
     """An oil sands mine across four tiles, this one key in it: benches cut down through brown overburden into black oil
-    sand to a wet floor, the haul road spiralling up them, an electric shovel at the face, a 797 hauler waiting by it
-    and another climbing loaded, and a dozer on the floor."""
+    sand to a wet floor, the haul road spiralling up them, and a dozer on the floor. era 2 from 1998 has an electric
+    shovel at the face, a 797 hauler waiting by it and another climbing loaded; era 1 the same with the smaller rear
+    dumps of before the 797; era 0 before 1993 has no trucks, as the mines then dug by bucketwheel onto conveyors: the
+    bucketwheel at the face, the bench conveyor up the side to the rim, and a dragline up on the rim casting a windrow."""
+    def hauler(mm, load=1.0):
+        if era == 1:
+            haul_truck(mm, load=("oil sand load", "#1e1a17"))
+        else:
+            heavy_hauler(mm, load=load)
     ox, oy = SAND_TILES[key]
     mats = [material("oil sand bench", "#5a5048", rough=1.0), material("oil sand face", "#1e1b18", rough=1.0),
             material("overburden face", "#8a7458", rough=1.0), material("sand haul road", "#7a7066", rough=1.0),
             material("overburden spoil", "#6e5e48", rough=1.0), material("pit floor", "#3a332e", rough=0.7)]
     terrain(m, sand_height, mats, sand_pick, n=180, ox=ox, oy=oy, wall=4)
-    if key == "sand_pit":
+    if era == 0 and key in ("sand_pit", "sand_pit_far"):
+        steel = material("conveyor steel", "#5a5a56", metal=0.5, rough=0.5)
+        belt = material("conveyor belt", "#2e2a26", rough=0.8)
+        line = sand_conveyor_line()
+        for a, b in zip(line, line[1:]):
+            # Each tile draws its own length of the line.
+            lo, hi = max(a[1], oy - 0.5), min(b[1], oy + 0.5)
+            if hi <= lo:
+                continue
+            f0, f1 = (lo - a[1]) / (b[1] - a[1]), (hi - a[1]) / (b[1] - a[1])
+            za, zb = a[2] + (b[2] - a[2]) * f0, a[2] + (b[2] - a[2]) * f1
+            conveyor(m, (a[0] - ox, lo - oy, za), (a[0] - ox, hi - oy, zb), 0.05, steel, belt, legs=0.12,
+                     hood=material("conveyor hood", "#8a8a84", metal=0.4, rough=0.5), load=material("oil sand on belt", "#1e1a17", rough=1.0))
+        if key == "sand_pit":
+            moved(m, bucketwheel, 0.26, 0.3, math.pi, z=0.02)
+        else:
+            x, y, z = line[-1]
+            y -= oy
+            m.box(x - 0.06, x + 0.06, y - 0.02, y + 0.1, 0.0, z + 0.45, material("transfer house", "#9a9890", metal=0.3, rough=0.6), 0.004)
+            gable(m, x - 0.065, x + 0.065, y - 0.025, y + 0.105, z + 0.45, z + 0.55, material("conveyor hood", "#8a8a84", metal=0.4, rough=0.5),
+                  material("transfer house", "#9a9890", metal=0.3, rough=0.6), along_x=False, over=0.006, thick=0.02)
+            # The surge bin beside it that the plant draws from.
+            m.upright(x - 0.16, y + 0.05, 0.0, z + 0.3, 0.06, 0.06, material("surge bin", "#7a7670", metal=0.4, rough=0.6), segments=20)
+            m.lathe(x - 0.16, y + 0.05, z + 0.3, [(0.06, 0), (0.03, 0.12), (0.0, 0.14)], material("surge bin", "#7a7670", metal=0.4, rough=0.6), segments=20)
+            m.rod((x - 0.06, y + 0.04, z + 0.35), (x - 0.1, y + 0.05, z + 0.42), 0.012, material("conveyor hood", "#8a8a84", metal=0.4, rough=0.5), segments=8)
+    elif era == 0 and key == "sand_pit_corner":
+        # The dragline up on the rim, its boom out over the pit, the windrow it has cast along the rim behind.
+        moved(m, dragline, 0.18, 0.18, 0.75 * math.pi, z=1.4)
+        for k, (x, y) in enumerate(((0.36, -0.02), (0.38, 0.16), (0.3, 0.34), (0.12, 0.4))):
+            moved(m, lambda mm, k=k: heap(mm, 0, 0, 0.09, 0.42, "#1e1a17", 420 + k, "oil sand"), x, y, z=1.4)
+    elif key == "sand_pit":
         moved(m, lambda mm: shovel(mm, "#d6d0c2"), 0.3, 0.3, 0.75 * math.pi, z=0.02, scale=1.25)
     elif key == "sand_pit_far":
-        moved(m, lambda mm: heavy_hauler(mm, load=0.3), 0.3, -0.3, 0.0, z=0.02)
+        moved(m, lambda mm: hauler(mm, load=0.3), 0.3, -0.3, 0.0, z=0.02)
     elif key == "sand_pit_corner":
         x, y, h, turn, pitch = sand_road(0.3)
-        moved(m, heavy_hauler, x - ox, y - oy, turn, z=h + 0.02, pitch=pitch)
+        moved(m, hauler, x - ox, y - oy, turn, z=h + 0.02, pitch=pitch)
     else:
         _dozer(m, -0.22, 0.26, 0.02, turn=2.2)
         puddle = material("pit water", "#3a4a52", rough=0.15)
@@ -4313,6 +4845,8 @@ PARTS = {
     "mill_building": mill_building, "mill_silos": mill_silos, "mill_yard": mill_yard, "mill_yard_team": lambda m: mill_yard(m, team=True),
     "headframe": headframe, "headframe_wood": lambda m: headframe(m, 0), "headframe_steel": lambda m: headframe(m, 1), "tipple": tipple, "coal_heap": coal_heap, "mine_shed": mine_shed,
     "open_pit": open_pit, "open_pit_far": lambda m: open_pit(m, far=True), "ore_crusher": ore_crusher, "ore_heap": ore_heap,
+    "open_pit_steam": lambda m: open_pit(m, era=0), "open_pit_far_rail": lambda m: open_pit(m, far=True, era=0),
+    "open_pit_far_euclid": lambda m: open_pit(m, far=True, era=1),
     "blast_furnace": blast_furnace, "stacks": bof_shop, "stacks_open_hearth": open_hearth, "steel_shed": steel_shed, "slag_heap": slag_heap, "steel_yard": steel_yard,
     "factory_shed": factory_shed, "factory_chimney": factory_chimney, "loading_dock": loading_dock, "factory_yard": factory_yard,
     "factory_yard_box": lambda m: factory_yard(m, 1940), "factory_yard_tractor": lambda m: factory_yard(m, 1970),
@@ -4331,6 +4865,11 @@ PARTS = {
     "sand_pit_corner": lambda m: sand_pit(m, "sand_pit_corner"), "upgrader": upgrader,
     "tailings_pond": tailings_pond, "tailings_pond_far": lambda m: tailings_pond(m, far=True),
     "green_chain": green_chain, "paper_wet_end": paper_wet_end, "paper_dry_end": paper_dry_end, "press_hall": press_hall,
+    "sand_pit_far_early": lambda m: sand_pit(m, "sand_pit_far", era=1),
+    "sand_pit_corner_early": lambda m: sand_pit(m, "sand_pit_corner", era=1),
+    "sand_pit_bucketwheel": lambda m: sand_pit(m, "sand_pit", era=0),
+    "sand_pit_far_bucketwheel": lambda m: sand_pit(m, "sand_pit_far", era=0),
+    "sand_pit_corner_dragline": lambda m: sand_pit(m, "sand_pit_corner", era=0),
 }
 
 

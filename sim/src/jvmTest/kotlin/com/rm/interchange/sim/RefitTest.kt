@@ -112,7 +112,7 @@ class RefitTest {
         assertEquals(f.cargoes[1], choice(f.vehicle()))
         assertTrue(f.vehicle().capacity(f.cargoes[1]) > 0)
         if (kind == Command.CopyVehicle.TRAIN) assertNotEquals(before, w.checksum()) else assertEquals(before, w.checksum())
-        assertEquals(47, Save.VERSION)
+        assertEquals(48, Save.VERSION)
         val saved = Save.read(Save.write(w))
         assertEquals(f.cargoes[1], choice(f.vehicle(w = saved)))
         assertEquals(f.vehicle().capacity(f.cargoes[1]), f.vehicle(w = saved).capacity(f.cargoes[1]))

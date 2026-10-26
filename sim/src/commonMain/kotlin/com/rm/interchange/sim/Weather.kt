@@ -478,10 +478,11 @@ internal fun World.snowWorks(company: Company, c: Command.SnowWorks) {
     if (c.shed) {
         val t = track[i].toInt()
         if (owner[i].toInt() != company.id || (t != Track.X && t != Track.Y) || stationTiles.containsKey(i) || depotTiles.containsKey(i) || spanHeads.containsKey(i)) return
-        if (sheds.remove(i)) { touched(c.x, c.y); return }
+        if (sheds.remove(i)) { shedYears.remove(i); touched(c.x, c.y); return }
         if (company.money < price(SHED_COST)) return
         spend(company, Books.CONSTRUCTION, price(SHED_COST))
         sheds += i
+        shedYears[i] = Calendar.year(startYear, day)
         weather.snow[i] = 0
     } else {
         if (fences.remove(i)) { fenceCoverCache = null; touched(c.x, c.y); return }

@@ -224,7 +224,7 @@ internal fun World.buildAirport(company: Company, c: Command.Airport) {
     spend(company, Books.CONSTRUCTION, price(Airports.COST[kind]))
     for (t in tiles) fellTrees(company, t)
     val s = station ?: Station(stations.size, company.id, stationName(c.x, c.y), c.x, c.y).also { stations += it }
-    val d = Depot(depots.size, company.id, tiles[0], 0, Depots.HANGAR)
+    val d = Depot(depots.size, company.id, tiles[0], 0, Depots.HANGAR).also { it.built = Calendar.year(startYear, day) }
     depots += d
     depotTiles[d.tile] = d.id
     val a = Airport(airports.size, company.id, s.id, kind, c.x, c.y, axis, d.id)

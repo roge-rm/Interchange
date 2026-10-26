@@ -62,15 +62,36 @@ internal fun DrawScope.drawMoving(world: World, view: View, sheets: Sheets, movi
         }
         val along = if (painter.viewEdge(if (dx != 0) Track.XP else Track.YP) <= Track.XP) 0 else 1
         val len = maxOf(kotlin.math.abs(s.x1 - s.x0), kotlin.math.abs(s.y1 - s.y0)) - 1
+        val truss = s.style == Spans.TRUSS
+        // Whether the bridge's start is on the -u or -v half of its tiles' drawings.
+        val startLow = painter.viewEdge(edgeOf(-dx, -dy)).let { it == Track.XM || it == Track.YM }
         for (k in 1..len) {
             val x = s.x0 + dx * k
             val y = s.y0 + dy * k
             val ground = minOf(minOf(world.heightAt(x, y), world.heightAt(x + 1, y)), minOf(world.heightAt(x + 1, y + 1), world.heightAt(x, y + 1)))
-            // A trestle stands on bents every tile; trusses and girders on piers every other.
-            if (s.style == Spans.TRESTLE || k % 2 == 1) for (z in ground until s.height) {
-                tileItem(items, view, x, y, z.toFloat(), DECK_DEPTH - 0.01f, Atlas.SPAN_PIER[s.style * 2 + along])
+            // A trestle stands on bents every tile; trusses and girders on piers every other, a truss on its last tile too
+            // so each span ends on a pier. The top step carries the cap, the one on the ground the footing.
+            val pier = s.style == Spans.TRESTLE || k % 2 == 1 || (truss && k == len)
+            if (pier) for (z in ground until s.height) {
+                val steps = when (z) {
+                    s.height - 1 -> Atlas.SPAN_PIER_TOP
+                    ground -> Atlas.SPAN_PIER_FOOT
+                    else -> Atlas.SPAN_PIER
+                }
+                tileItem(items, view, x, y, z.toFloat(), DECK_DEPTH - 0.01f, steps[s.style * 2 + along])
             }
-            tileItem(items, view, x, y, s.height.toFloat(), DECK_DEPTH, Atlas.SPAN_DECK[s.style * 2 + along])
+            val sprite = if (!truss) Atlas.SPAN_DECK[s.style * 2 + along] else {
+                // Truss spans run between piers, with a plate girder from the end piers out to the abutments.
+                val kind = when {
+                    !pier -> 0
+                    k == 1 && k == len -> 4
+                    k == 1 -> if (startLow) 2 else 3
+                    k == len -> if (startLow) 3 else 2
+                    else -> 1
+                }
+                Atlas.TRUSS_DECK[kind * 2 + along]
+            }
+            tileItem(items, view, x, y, s.height.toFloat(), DECK_DEPTH, sprite)
         }
     }
     // Fires, and boards by worn or closed track, close enough in to make out.
@@ -113,12 +134,16 @@ internal fun DrawScope.drawMoving(world: World, view: View, sheets: Sheets, movi
         }
     }
     // Snow sheds over their track like engine houses, and snow fences, a run of slats parallel to the track nearby.
-    for (tile in moving.now.sheds) {
+    val year = Calendar.year(world.startYear, world.day)
+    for ((n, tile) in moving.now.sheds.withIndex()) {
         val x = tile % world.width
         val y = tile / world.width
         val along = if (painter.viewEdge(if (world.track[tile].toInt() == Track.X) Track.XP else Track.YP) <= Track.XP) 0 else 1
         val base = minOf(minOf(world.heightAt(x, y), world.heightAt(x + 1, y)), minOf(world.heightAt(x + 1, y + 1), world.heightAt(x, y + 1)))
-        tileItem(items, view, x, y, base.toFloat(), DEPOT_DEPTH, Atlas.SHED[along])
+        // Each shed keeps the look of the year it went up; one from an older save follows the game's year.
+        val built = moving.now.shedYears.getOrElse(n) { 0 }.takeIf { it > 0 } ?: year
+        val era = if (built >= Atlas.SHED_CONCRETE_FROM) 1 else 0
+        tileItem(items, view, x, y, base.toFloat(), DEPOT_DEPTH, Atlas.SHED[era * 2 + along])
     }
     if (view.halfWidth >= 8f) for (tile in moving.now.fences) {
         val x = tile % world.width
@@ -142,7 +167,7 @@ internal fun DrawScope.drawMoving(world: World, view: View, sheets: Sheets, movi
         val sy = view.screenY(vx - 0.5f, vy - 0.5f, base, size.height) + view.halfHeight
         val margin = view.halfWidth * 3
         if (sx < -margin || sx > size.width + margin || sy < -margin || sy > size.height + margin * 2) continue
-        items += floatArrayOf(vx + vy + DEPOT_DEPTH, sx, sy, Atlas.DEPOT_OVER[ChunkBaker.depotEra(Calendar.year(world.startYear, world.day)) * 4 + painter.viewEdge(d.edge)].toFloat(), -1f)
+        items += floatArrayOf(vx + vy + DEPOT_DEPTH, sx, sy, Atlas.DEPOT_OVER[ChunkBaker.depotEra(d.built.takeIf { it > 0 } ?: year) * 4 + painter.viewEdge(d.edge)].toFloat(), -1f)
     }
     val v = moving.now.vehicles
     val before = moving.before?.vehicles
