@@ -485,18 +485,23 @@ def chimney(m, x, y, z0, z1, mat, w=0.035):
     m.box(x - w - 0.005, x + w + 0.005, y - w - 0.005, y + w + 0.005, z1, z1 + 0.08, mat)
 
 
-def flat_top(m, x0, x1, y0, y1, z, cap, parapet=0.25):
-    """A flat roof with a low parapet and a coping round its edge."""
+def flat_top(m, x0, x1, y0, y1, z, cap, parapet=0.25, open_y=()):
+    """A flat roof with a low parapet and a coping round its edge. open_y leaves out the parapet along y0 or y1 (-1 or
+    1 in it), where the roof runs on into a neighbour's."""
     m.box(x0, x1, y0, y1, z, z + 0.06, material("tar roof", "#3a3a3c", rough=0.95))
     # The sides along x run the full length and the ends fit between them, so no two pieces overlap at a corner
     # (overlaps render as dark specks).
     t, o = 0.012, 0.006
-    for xa, xb, ya, yb in ((x0, x1, y0, y0 + t), (x0, x1, y1 - t, y1)):
+    for d, xa, xb, ya, yb in ((-1, x0, x1, y0, y0 + t), (1, x0, x1, y1 - t, y1)):
+        if d in open_y:
+            continue
         m.box(xa, xb, ya, yb, z, z + parapet - 0.06, cap)
         m.box(xa - o, xb + o, ya - o, yb + o, z + parapet - 0.06, z + parapet, cap)
+    ya, yb = y0 + (0 if -1 in open_y else t), y1 - (0 if 1 in open_y else t)
+    oa, ob = (0 if -1 in open_y else o), (0 if 1 in open_y else o)
     for xa, xb in ((x0, x0 + t), (x1 - t, x1)):
-        m.box(xa, xb, y0 + t, y1 - t, z, z + parapet - 0.06, cap)
-        m.box(xa - o, xb + o, y0 + t + o, y1 - t - o, z + parapet - 0.06, z + parapet, cap)
+        m.box(xa, xb, ya, yb, z, z + parapet - 0.06, cap)
+        m.box(xa - o, xb + o, ya + oa, yb - ob, z + parapet - 0.06, z + parapet, cap)
 
 
 # ---- the lot round a building: fences, gardens, trees, sheds and drives ---------------------
