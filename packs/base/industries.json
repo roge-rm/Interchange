@@ -18,7 +18,7 @@
       "from": 1836,
       "until": 2100,
       "regions": { "shield": 4, "rockies": 3, "maritimes": 3, "mixed": 3, "north": 1, "prairies": 1 },
-      "layout": ["sawmill log_deck burner", "sawmill lumber_stack lumber_stack"],
+      "layout": ["sawmill log_deck burner", "green_chain lumber_stack lumber_stack"],
       "accepts": ["timber"],
       "produces": { "lumber": 0 }
     },
@@ -128,7 +128,7 @@
       "from": 1866,
       "until": 2100,
       "regions": { "shield": 4, "maritimes": 3, "rockies": 2, "mixed": 2, "north": 1, "prairies": 0 },
-      "layout": ["digester paper_machine chip_pile", "paper_machine paper_machine log_pile"],
+      "layout": ["log_pile chip_pile digester", "paper_dry_end paper_machine paper_wet_end"],
       "accepts": ["timber"],
       "produces": { "paper": 0 }
     },
@@ -138,7 +138,7 @@
       "from": 1850,
       "until": 2100,
       "regions": { "mixed": 4, "maritimes": 2, "shield": 2, "prairies": 2, "rockies": 1, "north": 0 },
-      "layout": ["printing_works printing_works"],
+      "layout": ["printing_works press_hall"],
       "accepts": ["paper"],
       "produces": { "goods": 0 }
     },
