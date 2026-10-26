@@ -123,7 +123,7 @@ object Reject {
  */
 object Wire {
     /** The version of the protocol and the sim together; players and servers must match. */
-    const val PROTOCOL = 50
+    const val PROTOCOL = 51
 
     private const val HELLO = 1
     private const val REQUEST = 2

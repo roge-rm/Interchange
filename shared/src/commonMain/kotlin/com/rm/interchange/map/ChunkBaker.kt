@@ -1272,7 +1272,10 @@ internal class ChunkBaker(
             Triple("mill_yard", 1925, "mill_yard_team"),
             Triple("headframe", 1920, "headframe_wood"),
             Triple("headframe", 1960, "headframe_steel"),
-            Triple("stacks", 1965, "stacks_open_hearth"),
+            // Oxygen converters overtook open hearths in Canada about 1970: Dofasco first in 1954, the last open hearths gone by the late 1970s.
+            Triple("stacks", 1970, "stacks_open_hearth"),
+            Triple("factory_yard", 1950, "factory_yard_box"),
+            Triple("factory_yard", 1985, "factory_yard_tractor"),
         )
 
         /** Which of [PART_ERAS]' years have come by [year], as bits, so chunks bake again as each one comes. */

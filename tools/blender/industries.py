@@ -1950,7 +1950,7 @@ def shop_walls(m, x0, x1, y0, y1, eave, wall, rib, glazing, band=(0.66, 0.82), b
 
 
 def open_hearth(m):
-    """The open hearth shop, to the mid 1960s: a tall clad shop with a monitor along its ridge, the charging side lean-to
+    """The open hearth shop, to about 1970: a tall clad shop with a monitor along its ridge, the charging side lean-to
     along -x and a row of brick stacks rising out of it, one to each furnace, the ladle doors glowing at the +y end."""
     ground(m, "#4a4644", "mill yard")
     wall = material("open hearth cladding", "#5e5650", metal=0.4, rough=0.65)
@@ -1992,8 +1992,9 @@ def open_hearth(m):
 
 
 def bof_shop(m):
-    """The basic oxygen shop, from the mid 1960s: a long clad shop with the tall converter aisle rising out of its middle,
-    two steel off-gas stacks up from its roof with the hood ducts to them, a lower charging aisle and an oxygen tank."""
+    """The basic oxygen shop, from about 1970: a long clad shop with the tall converter aisle rising out of its middle,
+    two steel off-gas stacks up from its roof with the hood ducts to them, a lower charging aisle and, beyond its end, a
+    tall liquid oxygen tank and an oxygen sphere piped into the shop."""
     ground(m, "#4a4644", "mill yard")
     wall = material("BOF cladding", "#6a7480", metal=0.4, rough=0.55)
     rib = material("BOF ribs", "#56606a", metal=0.4, rough=0.55)
@@ -2006,10 +2007,10 @@ def bof_shop(m):
     x0, x1, y0, y1, eave = -0.3, 0.44, -0.5, 0.48, 4.0
     shop_walls(m, x0, x1, y0, y1, eave, wall, rib, g)
     gable(m, x0, x1, y0, y1, eave, eave + 0.35, roof, wall, along_x=False, over=0.02, thick=0.06)
-    lx0, lz = -0.46, 2.8
-    shop_walls(m, lx0, x0, y0, y1, lz, wall, rib, g, band=(0.6, 0.82))
-    houses.flat_top(m, lx0, x0, y0, y1, lz, roof, parapet=0.1)
-    for c in (-0.3, 0.1):
+    lx0, ly1, lz = -0.46, 0.04, 2.8
+    shop_walls(m, lx0, x0, y0, ly1, lz, wall, rib, g, band=(0.6, 0.82))
+    houses.flat_top(m, lx0, x0, y0, ly1, lz, roof, parapet=0.1)
+    for c in (-0.16, 0.2):
         harbour.rollup_door(m, c - 0.08, c + 0.08, y1, 0, 1.6, face=1, colour="#4a5058")
     # The converter aisle rising out of the middle.
     tx0, tx1, ty0, ty1, top = -0.12, 0.3, -0.3, 0.22, 7.0
@@ -2027,9 +2028,29 @@ def bof_shop(m):
         m.rod((tx0 - 0.06, y, 5.9), (tx0 - 0.06, y, 7.6), 0.035, steel, segments=12)
         m.rod((tx0 - 0.06, y, 7.6), (sx - 0.05, y, 8.1), 0.035, steel, segments=12)
         m.box(tx0 - 0.07, tx0, y - 0.04, y + 0.04, 5.3, 6.0, dark)
-    # The oxygen tank by the shop.
-    m.lathe(0.38, 0.4, 4.0, [(0.0, 0), (0.035, 0.08), (0.035, 1.3), (0.0, 1.4)], material("oxygen tank", "#d8d4cc", metal=0.3, rough=0.5), segments=16)
-    m.box(0.36, 0.4, 0.38, 0.42, 4.0, 4.1, dark)
+    # The oxygen plant past the charging aisle's end: a tall insulated liquid oxygen tank and a sphere of the gas on legs,
+    # on a pad, both piped into the shop's side.
+    white = material("oxygen tank", "#d8d4cc", metal=0.3, rough=0.5)
+    pipe = material("oxygen line", "#3a6a8a", metal=0.5, rough=0.45)
+    m.box(-0.5, x0, ly1 + 0.01, 0.5, 0, 0.06, material("tank pad", "#8a867e", rough=0.9))
+    ox, oy, orr, oh = -0.4, 0.15, 0.075, 4.8
+    m.upright(ox, oy, 0.06, 0.3, orr + 0.006, orr + 0.006, dark, segments=24)
+    m.upright(ox, oy, 0.3, oh, orr, orr, white, segments=24)
+    m.lathe(ox, oy, oh, [(orr, 0), (orr * 0.8, 0.12), (orr * 0.4, 0.2), (0.0, 0.22)], white, segments=24)
+    for z in (1.5, 3.0):
+        pipe_ring(m, ox, oy, z, orr + 0.003, 0.003, rib, n=24)
+    column_ladder(m, ox, oy, orr, math.pi, 0.06, oh + 0.1, rail)
+    pipe_ring(m, ox, oy, oh + 0.3, orr * 0.6, 0.0015, rail, n=12)
+    sx, sy, sr, sz = -0.4, 0.37, 0.095, 0.9
+    rise = sr / rig.RISE
+    m.lathe(sx, sy, sz, [(sr * math.sin(math.pi * k / 16), rise * (1 - math.cos(math.pi * k / 16))) for k in range(17)], white, segments=28)
+    for k in range(4):
+        a = math.pi / 4 + k * math.pi / 2
+        px, py = sx + sr * 0.95 * math.cos(a), sy + sr * 0.95 * math.sin(a)
+        m.upright(px, py, 0.06, sz + rise, 0.006, 0.006, dark, segments=8)
+    for a, b in (((sx, sy, sz + 0.1), (sx, sy, 0.2)), ((sx, sy, 0.2), (ox, oy + orr, 0.2)),
+                 ((ox + orr, oy, 1.1), (x0, oy, 1.1)), ((sx + sr * 0.6, sy, sz + rise), (x0, sy, sz + rise))):
+        m.rod(a, b, 0.008, pipe, segments=8)
 
 
 def steel_shed(m):
@@ -2232,9 +2253,9 @@ def loading_dock(m):
         m.box(x - 0.05, x + 0.05, y - 0.05, y + 0.05, 0, 0.42, crate, 0.004)
 
 
-def factory_yard(m):
-    """The factory's shipping yard: a chain link fence round the outer edges with its gate open on +y and a tractor and
-    van trailer coming in through it, pallets of cartons stacked two high, drums, crates and empty pallets, and a light
+def factory_yard(m, era=2000):
+    """The factory's shipping yard: a chain link fence round the outer edges with its gate open on +y and a truck of its
+    era in at it (a 1940s box truck before 1950, a long nose tractor and van trailer to 1985, an aero tractor after), pallets of cartons stacked two high, drums, crates and empty pallets, and a light
     standard with floodlights."""
     paved(m, -0.5, 0.5, -0.5, 0.5, "#8a867e")
     post = material("fence posts", "#7a7c7e", metal=0.6, rough=0.4)
@@ -2256,8 +2277,13 @@ def factory_yard(m):
         m.rod((hx, 0.47, 0.06), (end[0], end[1], 0.06), 0.003, post, segments=4)
         m.rod((end[0], end[1], 0.06), (end[0], end[1], 0.68), 0.003, post, segments=4)
         beam(m, (hx, 0.47, 0.0), (end[0], end[1], 0.0), 0.002, 0.06, 0.68, mesh)
-    # A tractor and van trailer in at the gate.
-    moved(m, lambda mm: roadcars.tractor(mm, 11 / 16, "van", "sleeper", "#2a4a7a", era=1970), 0.06, 0.08)
+    # The truck in at the gate.
+    if era < 1950:
+        moved(m, lambda mm: roadcars.truck(mm, 7 / 16, "box", "round", era=1940), 0.06, 0.22)
+    elif era < 1985:
+        moved(m, lambda mm: roadcars.tractor(mm, 11 / 16, "van", "sleeper", "#2a4a7a", era=1970), 0.06, 0.08)
+    else:
+        moved(m, lambda mm: roadcars.tractor(mm, 12 / 16, "van", "aero", "#c83a2a", era=2008), 0.06, 0.05)
     # Pallets of cartons, two high, in rows on the -x side.
     for i, x in enumerate((-0.4, -0.29)):
         for j, y in enumerate((-0.4, -0.29, -0.18, -0.07, 0.04)):
@@ -2410,20 +2436,20 @@ def refinery_columns(m):
     column_ladder(m, hx0, hy0 + 0.2, 0.0, math.pi, 0.0, 2.4, rail)
 
 
-def floating_roof_tank(m, x, y, r, h, shell, roof, rail, stair_a=0.0):
+def floating_roof_tank(m, x, y, r, h, shell, roof, rail, stair_a=0.0, turn=1.9):
     """An open topped tank with a floating roof: the deck down inside the shell, the rim and wind girder round the top,
-    the rolling ladder down onto the roof and a spiral stair up the side."""
+    the rolling ladder down onto the roof and a spiral stair up the side, going turn radians round."""
     m.upright(x, y, 0, h - 0.3, r, r, shell, segments=36)
     m.upright(x, y, h - 0.3, h - 0.17, r - 0.007, r - 0.007, roof, segments=36)
     m.lathe(x, y, h - 0.3, [(r, 0), (r, 0.3), (r - 0.006, 0.3), (r - 0.006, 0)], shell, segments=36)
     pipe_ring(m, x, y, h - 0.12, r + 0.006, 0.007, material("wind girder", "#9a9690", metal=0.4, rough=0.5), n=36)
     m.upright(x, y, h - 0.17, h - 0.14, r * 0.25, r * 0.25, material("roof drain sump", "#5a5854", metal=0.4, rough=0.6), segments=12)
-    a = stair_a + 1.9
+    a = stair_a + turn
     c, s = math.cos(a), math.sin(a)
     m.rod((x + c * r, y + s * r, h + 0.2), (x + c * r * 0.2, y + s * r * 0.2, h - 0.16), 0.003, rail, segments=4)
     m.rod((x + c * r - s * 0.012, y + s * r + c * 0.012, h + 0.2), (x + c * r * 0.2 - s * 0.012, y + s * r * 0.2 + c * 0.012, h - 0.16), 0.003, rail, segments=4)
     m.box(x + c * r - 0.015, x + c * r + 0.015, y + s * r - 0.015, y + s * r + 0.015, h, h + 0.04, rail)
-    spiral_stair(m, x, y, r, h, stair_a, 1.9, material("stair treads", "#5a5854", metal=0.4, rough=0.6), rail)
+    spiral_stair(m, x, y, r, h, stair_a, turn, material("stair treads", "#5a5854", metal=0.4, rough=0.6), rail)
     pipe_ring(m, x, y, h + 0.2, r - 0.004, 0.0015, rail, n=28)
 
 
@@ -2454,12 +2480,13 @@ def refinery_tanks(m):
     pipe = material("refinery pipe", "#7a7a76", metal=0.6, rough=0.4)
     m.box(-0.44, 0.44, -0.44, 0.44, 0.0, 0.03, material("tank field gravel", "#7a7466", rough=1.0))
     berm(m, -0.45, 0.45, -0.45, 0.45, 0.28, material("berm grass", "#6a7448", rough=1.0))
-    floating_roof_tank(m, -0.17, -0.17, 0.22, 1.8, white, roof, rail, stair_a=math.pi * 0.85)
-    floating_roof_tank(m, 0.2, 0.2, 0.19, 1.6, white, roof, rail, stair_a=math.pi * 1.3)
-    tx, ty, tr, th = 0.25, -0.24, 0.12, 1.3
+    # Tanks about 12 to 15 m tall; the stairs wind further round to keep their pitch.
+    floating_roof_tank(m, -0.17, -0.17, 0.22, 3.5, white, roof, rail, stair_a=math.pi * 0.85, turn=3.4)
+    floating_roof_tank(m, 0.2, 0.2, 0.19, 3.2, white, roof, rail, stair_a=math.pi * 1.3, turn=3.4)
+    tx, ty, tr, th = 0.25, -0.24, 0.12, 2.8
     m.upright(tx, ty, 0, th, tr, tr, white, segments=28)
     m.lathe(tx, ty, th, [(tr + 0.004, 0), (tr * 0.5, 0.18), (0.0, 0.25)], cone, segments=28)
-    spiral_stair(m, tx, ty, tr, th, math.pi * 0.6, 1.6, material("stair treads", "#5a5854", metal=0.4, rough=0.6), rail)
+    spiral_stair(m, tx, ty, tr, th, math.pi * 0.6, 3.4, material("stair treads", "#5a5854", metal=0.4, rough=0.6), rail)
     pipe_ring(m, tx, ty, th + 0.12, tr * 0.8, 0.0015, rail, n=20)
     # The tank lines out to -y through the berm, on sleepers.
     for x in (-0.06, 0.0, 0.06):
@@ -3784,6 +3811,7 @@ PARTS = {
     "open_pit": open_pit, "open_pit_far": lambda m: open_pit(m, far=True), "ore_crusher": ore_crusher, "ore_heap": ore_heap,
     "blast_furnace": blast_furnace, "stacks": bof_shop, "stacks_open_hearth": open_hearth, "steel_shed": steel_shed, "slag_heap": slag_heap, "steel_yard": steel_yard,
     "factory_shed": factory_shed, "factory_chimney": factory_chimney, "loading_dock": loading_dock, "factory_yard": factory_yard,
+    "factory_yard_box": lambda m: factory_yard(m, 1940), "factory_yard_tractor": lambda m: factory_yard(m, 1970),
     "pumpjack": pumpjack, "oil_tank": oil_tank,
     "refinery_columns": refinery_columns, "refinery_tanks": refinery_tanks, "flare": flare,
     "ranch_barn": ranch_barn, "corral": corral,

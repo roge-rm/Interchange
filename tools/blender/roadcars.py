@@ -567,7 +567,7 @@ def _cab(m, y0, y1, c, paint, style, era=1970, stacks="back"):
 
 
 # Each kind's paint, the load's colour, and its body's colour where that differs.
-PAINTS = {"mail": "#b8322a", "stake": "#6a4a2a", "flatbed": "#2a5a8a", "dump": "#d8a020", "tank": "#d8d8d4", "log": "#3a5a2a",
+PAINTS = {"mail": "#b8322a", "box": "#2a5a3a", "stake": "#6a4a2a", "flatbed": "#2a5a8a", "dump": "#d8a020", "tank": "#d8d8d4", "log": "#3a5a2a",
           "cattle": "#8a2a22", "plow": "#e07a20", "boom": "#e8e6e0"}
 
 
@@ -637,6 +637,16 @@ def truck(m, L, kind, cab="round", gen=1, plow="wedge", lifts=0, era=1970):
         m.shell([(b0, 0.38, 0.006, "paint"), (b1, 0.38, 0.006, "paint"), (b1, top, 0.02, "paint"), (b0, top, 0.02, "paint")],
                 0.078, {"paint": paint}, crown=0.04)
         m.text(LETTERS, 0.0792, (b0 + b1) / 2, (0.38 + top) / 2, 0.022, material("mail letters", "#f0f0e8", rough=0.5), 1)
+    elif kind == "box":
+        # A delivery van body standing over the cab's roof, its back doors with hinges and a bar each.
+        hi = top + 0.16
+        m.shell([(b0, 0.38, 0.006, "paint"), (b1, 0.38, 0.006, "paint"), (b1, hi, 0.02, "paint"), (b0, hi, 0.02, "paint")],
+                0.08, {"paint": paint}, crown=0.03)
+        m.box(-0.082, 0.082, b0 + 0.02, b1, 0.36, 0.39, c["dark"])
+        for side in (-1, 1):
+            m.box(side * 0.039 - 0.0015, side * 0.039 + 0.0015, b0 - 0.002, b0, 0.4, hi - 0.03, c["dark"])
+            m.box(side * 0.02 - 0.002, side * 0.02 + 0.002, b0 - 0.004, b0, 0.42, hi - 0.05, c["chrome"])
+        m.box(-0.0008, 0.0008, b0 - 0.002, b0, 0.4, hi - 0.03, c["dark"])
     elif kind == "stake":
         m.box(-0.078, 0.078, b0, b1, 0.38, 0.44, wood)
         m.box(-0.062, 0.062, b0 + 0.02, b1 - 0.02, 0.44, 0.66, material("crates", "#a88a5a", rough=0.8), bevel=0.01)
