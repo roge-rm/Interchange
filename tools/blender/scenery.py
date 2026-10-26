@@ -85,14 +85,34 @@ def tree(m, kind, look, season="summer"):
             lumpy(m, cone, r0 * 0.35, 0.05, look * 10 + k)
         return
     if kind == "pine":
-        green = leafy("pine needles", "#2e4a26", "#56763c")
+        # A lodgepole or jack pine: a tall straight trunk, bare but for a few dead stubs, and a narrow ragged crown of
+        # needle tufts on short upturned branches over its top third.
+        green = leafy("pine needles", "#22402a", "#58784a")
         trunk = material("pine bark", "#8a5a3a", rough=0.9)
+        grey = material("pine stubs", "#6a5a4c", rough=0.9)
         top = 3.4 * size
-        m.upright(0, 0, 0, top * 0.8, 0.02, 0.014, trunk, segments=8)
-        for k in range(9):
-            a = rng.uniform(-0.1, 0.1)
-            s = rng.uniform(-0.1, 0.1)
-            blob(m, a, s, top * rng.uniform(0.55, 0.95), rng.uniform(0.09, 0.13) * size, green, look * 10 + k, squash=0.55)
+        m.upright(0, 0, 0, top * 0.94, 0.02, 0.006, trunk, segments=8)
+        for k in range(5):
+            h = top * rng.uniform(0.25, 0.55)
+            a = rng.uniform(0, 2 * math.pi)
+            r = rng.uniform(0.025, 0.045) * size
+            m.rod((0, 0, h), (r * math.cos(a), r * math.sin(a), h + rng.uniform(-0.05, 0.05)), 0.003, grey, segments=4)
+        n = 15
+        for k in range(n):
+            t = k / (n - 1)
+            h = top * (0.58 + 0.38 * t + rng.uniform(-0.02, 0.02))
+            a = k * 2.4 + rng.uniform(-0.5, 0.5)
+            # Branches longest low in the crown, each ending in a clump of small flat tufts with gaps between.
+            reach = (0.08 * (1 - t) + 0.02) * size * rng.uniform(0.7, 1.25)
+            x, y = reach * math.cos(a), reach * math.sin(a)
+            lift = rng.uniform(0.08, 0.2)
+            m.rod((0, 0, h - 0.1), (x, y, h + lift), 0.004, trunk, segments=5)
+            r = (0.03 * (1 - t) + 0.022) * size
+            for j in range(3 if t < 0.8 else 2):
+                f = 1.0 - j * 0.3
+                blob(m, x * f + rng.uniform(-0.012, 0.012), y * f + rng.uniform(-0.012, 0.012), h + lift * f + rng.uniform(-0.06, 0.08),
+                     r * rng.uniform(0.75, 1.1), green, look * 40 + k * 3 + j, squash=0.5)
+        blob(m, 0, 0, top * 0.97, 0.022 * size, green, look * 40 + 99, squash=0.9)
         return
     colours = {
         "summer": {"maple": ("#2c5a22", "#4e8a36"), "birch": ("#4e7a30", "#86b04e"), "aspen": ("#5a8a34", "#9ac05a")},
@@ -149,91 +169,399 @@ def haze(name, colour):
 
 # ---- platforms, the engine house and signals ---------------------------------------------
 
-def station(m, along_u, canopy=True):
+class _Turned:
+    """The model with x and y swapped, so a piece laid out along y can be drawn along x."""
+
+    def __init__(self, m):
+        self.m = m
+
+    def box(self, x0, x1, y0, y1, z0, z1, mat, bevel=0.0):
+        return self.m.box(y0, y1, x0, x1, z0, z1, mat, bevel)
+
+    def upright(self, x, y, *a, **k):
+        return self.m.upright(y, x, *a, **k)
+
+    def rod(self, a, b, *r, **k):
+        return self.m.rod((a[1], a[0], a[2]), (b[1], b[0], b[2]), *r, **k)
+
+    def wedge(self, bottom, top, mat):
+        return self.m.wedge([(y, x, z) for x, y, z in bottom], [(y, x, z) for x, y, z in top], mat)
+
+    def lathe(self, x, y, *a, **k):
+        return self.m.lathe(y, x, *a, **k)
+
+
+# Platform canopies by era, from the year the station went up: wooden to 1915, the steel butterfly to 1970, then a
+# modern shelter. The canopy's underside stays at 2.1, just over the tallest coach and caboose.
+CANOPY_ERAS = 3
+
+
+def station(m, along_u, canopy=True, era=1):
     """A platform tile with its track running along y (the game's u) or along x. The track itself comes from the track
     sprite. With no canopy, for the tile in front of a station building, the far platform keeps its benches."""
     concrete = material("platform", "#c9c3b5", rough=0.85)
     edge = material("platform edge", "#e2d8a0", rough=0.7)
     timber = material("timber", "#7a4e2e", rough=0.7)
-    roof = material("canopy roof", "#6e3a2a", rough=0.6)
     iron = material("cast iron", "#2e3234", metal=0.6, rough=0.45)
-
-    def b(x0, x1, y0, y1, z0, z1, mat, bevel=0.0):
-        # Laid out with the track along y; turned when it runs along x.
-        if along_u:
-            m.box(x0, x1, y0, y1, z0, z1, mat, bevel)
-        else:
-            m.box(y0, y1, x0, x1, z0, z1, mat, bevel)
+    t = m if along_u else _Turned(m)
 
     for side in (-1, 1):
         x0, x1 = sorted((side * 0.23, side * 0.5))
-        b(x0, x1, -0.5, 0.5, 0, 0.42, concrete, 0.004)
+        t.box(x0, x1, -0.5, 0.5, 0, 0.42, concrete, 0.004)
         e0, e1 = sorted((side * 0.23, side * 0.255))
-        b(e0, e1, -0.5, 0.5, 0.42, 0.44, edge)
-    # A canopy on cast iron posts over the far platform (the -x side), with benches and a lamp.
-    # Underside at 2.1, 1.58 drawn at BUILDING_RISE, just over the tallest coach and caboose (1.56).
+        t.box(e0, e1, -0.5, 0.5, 0.42, 0.44, edge)
+    # A canopy over the far platform (the -x side), with benches and a lamp.
     if canopy:
-        for y in (-0.33, 0.0, 0.33):
-            b(-0.4, -0.385, y - 0.008, y + 0.008, 0.42, 2.1, iron)
-        b(-0.5, -0.2, -0.48, 0.48, 2.1, 2.16, timber, 0.003)
-        b(-0.52, -0.18, -0.49, 0.49, 2.16, 2.32, roof, 0.006)
-    for y in (-0.18, 0.18):
-        b(-0.47, -0.43, y - 0.06, y + 0.06, 0.42, 0.62, timber, 0.003)
-        b(-0.48, -0.475, y - 0.06, y + 0.06, 0.62, 0.85, timber)
-    b(0.42, 0.432, 0.38, 0.392, 0.42, 1.7, iron)
-    b(0.405, 0.447, 0.365, 0.407, 1.7, 1.85, material("lamp glass", "#f4e8b0", rough=0.2), 0.002)
+        [_canopy_wood, _canopy_butterfly, _canopy_modern][era](t)
+    if not canopy or era < 2:
+        for y in (-0.18, 0.18):
+            t.box(-0.47, -0.43, y - 0.06, y + 0.06, 0.42, 0.62, timber, 0.003)
+            t.box(-0.48, -0.475, y - 0.06, y + 0.06, 0.62, 0.85, timber)
+    if not canopy or era == 0:
+        t.box(0.42, 0.432, 0.38, 0.392, 0.42, 1.7, iron)
+        t.box(0.405, 0.447, 0.365, 0.407, 1.7, 1.85, material("lamp glass", "#f4e8b0", rough=0.2), 0.002)
+    elif era == 1:
+        # An electric globe on a fluted iron post.
+        t.upright(0.426, 0.386, 0.42, 0.5, 0.012, 0.009, iron, segments=10)
+        t.upright(0.426, 0.386, 0.5, 1.68, 0.006, 0.005, iron, segments=8)
+        t.lathe(0.426, 0.386, 1.66, [(0.012, 0), (0.02, 0.08), (0.016, 0.18), (0.0, 0.2)], material("lamp globe", "#f4ecd0", rough=0.2), segments=12)
+    else:
+        # A tall pole with a lamp head reaching out over the platform.
+        pole = material("lamp pole", "#8a8e90", metal=0.6, rough=0.4)
+        t.upright(0.44, 0.386, 0.42, 1.8, 0.006, 0.004, pole, segments=8)
+        t.rod((0.44, 0.386, 1.78), (0.39, 0.386, 1.84), 0.003, pole)
+        t.box(0.36, 0.4, 0.376, 0.396, 1.8, 1.85, pole, 0.003)
+        t.box(0.364, 0.396, 0.379, 0.393, 1.795, 1.802, material("lamp lens", "#fff4d8", rough=0.2))
 
 
-def depot(m, edge):
-    """A brick engine house over the track, its doors at view edge XM, XP, YM or YP."""
+def _valance(t, x, y0, y1, z, mat, d=0.004, deep=0.1, gap=0.016):
+    """A board valance along the canopy's edge at x, boards hanging down from z, long and short in turn as cut points."""
+    t.box(x - d, x + d, y0, y1, z - 0.03, z, mat)
+    n = round((y1 - y0) / gap)
+    for k in range(n):
+        y = y0 + (k + 0.5) * (y1 - y0) / n
+        t.box(x - d, x + d, y - gap * 0.36, y + gap * 0.36, z - (deep if k % 2 == 0 else deep * 0.55), z - 0.03, mat)
+
+
+def _canopy_wood(t):
+    """An umbrella shed of timber: square posts down the middle with knee braces to the plates, a shingled gable roof
+    and a cut valance round its eaves."""
+    post = material("canopy posts", "#6a3424", rough=0.75)
+    trim = material("canopy trim", "#d6c69c", rough=0.7)
+    roof = material("canopy shingles", "#5a4a3c", rough=0.9)
+    import houses
+    xc = -0.35
+    for y in (-0.33, 0.0, 0.33):
+        t.box(xc - 0.011, xc + 0.011, y - 0.011, y + 0.011, 0.42, 2.06, post, 0.003)
+        t.box(xc - 0.016, xc + 0.016, y - 0.016, y + 0.016, 0.42, 0.5, post)
+        # Knee braces up to the cross beam and along to the ridge plate.
+        for d in (-1, 1):
+            t.rod((xc + d * 0.01, y, 1.72), (xc + d * 0.1, y, 2.05), 0.005, post)
+            t.rod((xc, y + d * 0.01, 1.78), (xc, y + d * 0.08, 2.03), 0.005, post)
+        t.box(-0.5, -0.2, y - 0.008, y + 0.008, 2.03, 2.1, post)
+    t.box(xc - 0.012, xc + 0.012, -0.5, 0.5, 2.03, 2.1, post)
+    for x in (-0.49, -0.21):
+        t.box(x - 0.008, x + 0.008, -0.5, 0.5, 2.06, 2.12, post)
+    # The roof: two slopes from eaves at 2.14 to the ridge at 2.32, open at the tile's ends to run on along the platform.
+    for xa in (-0.53, -0.17):
+        houses.slab(t, [(xa, -0.5, 2.12), (xa, 0.5, 2.12), (xc, 0.5, 2.28), (xc, -0.5, 2.28)], 0.04, roof)
+        # Shingle courses showing as lines up the slope.
+        for f in (0.2, 0.4, 0.6, 0.8):
+            x, z = xa + (xc - xa) * f, 2.16 + 0.16 * f
+            t.box(x - 0.004, x + 0.004, -0.5, 0.5, z - 0.004, z + 0.01, material("shingle course", "#45382e", rough=0.9))
+    t.box(xc - 0.008, xc + 0.008, -0.5, 0.5, 2.28, 2.34, trim)
+    for x in (-0.53, -0.17):
+        _valance(t, x, -0.5, 0.5, 2.15, trim)
+
+
+def _canopy_butterfly(t):
+    """A steel butterfly canopy: a row of columns down the middle, cantilevered arms rising to each edge, a roof falling
+    to a gutter in the middle with its downpipes down the columns, a fascia round the edges and hanging lamps."""
+    steel = material("canopy steel", "#33463c", metal=0.4, rough=0.5)
+    deck = material("canopy deck", "#4e5254", metal=0.3, rough=0.6)
+    fascia = material("canopy fascia", "#d8ccaa", rough=0.6)
+    xc = -0.35
+    for y in (-0.33, 0.0, 0.33):
+        # An H column: a web and two flanges, with a cast base.
+        t.box(xc - 0.004, xc + 0.004, y - 0.01, y + 0.01, 0.42, 2.12, steel)
+        for d in (-1, 1):
+            t.box(xc - 0.012, xc + 0.012, y + d * 0.01 - 0.0025, y + d * 0.01 + 0.0025, 0.42, 2.12, steel)
+            # The arm out to each edge, deepest at the column, and the strut under it.
+            t.wedge([(xc, y - 0.004, 1.98), (xc + d * 0.18, y - 0.004, 2.22), (xc + d * 0.18, y + 0.004, 2.22), (xc, y + 0.004, 1.98)],
+                    [(xc, y - 0.004, 2.12), (xc + d * 0.18, y - 0.004, 2.28), (xc + d * 0.18, y + 0.004, 2.28), (xc, y + 0.004, 2.12)], steel)
+        t.box(xc - 0.02, xc + 0.02, y - 0.02, y + 0.02, 0.42, 0.52, steel, 0.003)
+        t.upright(xc + 0.016, y + 0.016, 0.52, 2.1, 0.005, 0.005, deck, segments=6)
+        # A lamp hanging from the gutter between the columns.
+        if y < 0.3:
+            yl = y + 0.165
+            t.box(xc - 0.002, xc + 0.002, yl - 0.002, yl + 0.002, 1.88, 2.1, steel)
+            t.lathe(xc, yl, 1.72, [(0.006, 0), (0.024, 0.06), (0.026, 0.12), (0.01, 0.17)], material("lamp shade", "#e8e4cc", rough=0.4), segments=12)
+    # Purlins along, the deck on them, the gutter and the fascia.
+    for d in (-1, 1):
+        for f in (0.33, 0.66, 0.97):
+            x = xc + d * 0.18 * f
+            t.box(x - 0.005, x + 0.005, -0.5, 0.5, 2.06 + 0.16 * f, 2.12 + 0.16 * f, steel)
+        t.wedge([(xc, -0.5, 2.12), (xc + d * 0.19, -0.5, 2.28), (xc + d * 0.19, 0.5, 2.28), (xc, 0.5, 2.12)],
+                [(xc, -0.5, 2.15), (xc + d * 0.19, -0.5, 2.31), (xc + d * 0.19, 0.5, 2.31), (xc, 0.5, 2.15)], deck)
+        # Standing seams across the deck.
+        for k in range(8):
+            y = -0.5 + (k + 0.5) / 8
+            t.wedge([(xc, y - 0.003, 2.15), (xc + d * 0.19, y - 0.003, 2.31), (xc + d * 0.19, y + 0.003, 2.31), (xc, y + 0.003, 2.15)],
+                    [(xc, y - 0.003, 2.165), (xc + d * 0.19, y - 0.003, 2.325), (xc + d * 0.19, y + 0.003, 2.325), (xc, y + 0.003, 2.165)], steel)
+        x = xc + d * 0.19
+        t.box(x - 0.005, x + 0.005, -0.5, 0.5, 2.2, 2.33, fascia)
+    t.box(xc - 0.016, xc + 0.016, -0.5, 0.5, 2.06, 2.14, deck)
+
+
+def _canopy_modern(t):
+    """A modern shelter: a light curved canopy on round columns, lights under it, and a glass shelter with a bench and
+    heater for the cold."""
+    steel = material("shelter steel", "#d4d8da", metal=0.5, rough=0.35)
+    roof = material("shelter roof", "#9aa2a6", metal=0.5, rough=0.4)
+    glass = material("shelter glass", "#a8c4d0", rough=0.1)
+    frame = material("shelter frame", "#4a5258", metal=0.5, rough=0.4)
+    light = material("canopy light", "#fff4d8", rough=0.2)
+    xc = -0.35
+    for y in (-0.25, 0.25):
+        t.upright(xc, y, 0.42, 2.12, 0.009, 0.009, steel, segments=12)
+        t.upright(xc, y, 0.42, 0.46, 0.016, 0.016, steel, segments=12)
+        # Forked arms up to the canopy's spine.
+        for d in (-1, 1):
+            t.rod((xc, y, 1.95), (xc + d * 0.12, y, 2.2), 0.005, steel)
+    # The canopy: a shallow arch across, from 2.16 at the edges to 2.32 over the columns, laid as strips.
+    n = 8
+    pts = []
+    for k in range(n + 1):
+        f = -1 + 2 * k / n
+        pts.append((xc + f * 0.18, 2.16 + 0.16 * (1 - f * f)))
+    for (xa, za), (xb, zb) in zip(pts, pts[1:]):
+        t.wedge([(xa, -0.5, za - 0.04), (xb, -0.5, zb - 0.04), (xb, 0.5, zb - 0.04), (xa, 0.5, za - 0.04)],
+                [(xa, -0.5, za), (xb, -0.5, zb), (xb, 0.5, zb), (xa, 0.5, za)], roof)
+    for d in (-1, 1):
+        x = xc + d * 0.18
+        t.box(x - 0.005, x + 0.005, -0.5, 0.5, 2.1, 2.18, steel)
+        t.box(xc + d * 0.08 - 0.008, xc + d * 0.08 + 0.008, -0.45, 0.45, 2.15, 2.17, light)
+    t.box(xc - 0.012, xc + 0.012, -0.5, 0.5, 2.18, 2.26, steel)
+    # The glass shelter: an aluminium frame, panes all round but a doorway to the platform edge, and a flat roof.
+    x0, x1, y0, y1 = -0.48, -0.3, -0.14, 0.14
+    top = 1.5
+    t.box(x0, x1, y0, y1, 0.42, 0.45, frame)
+    for x in (x0, x1):
+        t.box(x - 0.003, x + 0.003, y0, y1, 0.45, top, glass)
+    for y in (y0, y1):
+        t.box(x0, x1, y - 0.003, y + 0.003, 0.45, top, glass)
+    for x, y in ((x0, y0), (x0, y1), (x1, y0), (x1, y1), (x1, -0.04), (x1, 0.04), (x0, 0.0)):
+        t.box(x - 0.005, x + 0.005, y - 0.005, y + 0.005, 0.45, top, frame)
+    # The doorway: no glass between the two posts on the platform side.
+    t.box(x1 - 0.004, x1 + 0.004, -0.036, 0.036, 0.45, 1.3, material("doorway", "#1a1714", rough=1.0))
+    t.box(x0 - 0.01, x1 + 0.01, y0 - 0.01, y1 + 0.01, top, top + 0.06, frame, 0.003)
+    t.box(-0.47, -0.43, -0.12, 0.12, 0.62, 0.66, material("bench steel", "#5a6266", metal=0.5, rough=0.5))
+    t.box(-0.475, -0.47, -0.12, 0.12, 0.66, 0.85, material("bench steel", "#5a6266", metal=0.5, rough=0.5))
+    t.box(-0.47, -0.45, -0.1, 0.1, top - 0.12, top - 0.06, material("heater", "#e07a3a", rough=0.4))
+    # A route sign and a trash bin at the shelter's end.
+    t.box(-0.42, -0.34, 0.2, 0.206, 1.2, 1.4, material("station sign", "#2a5a9a", rough=0.5))
+    t.box(-0.39, -0.37, 0.2, 0.206, 0.42, 1.2, frame)
+    t.upright(-0.45, 0.22, 0.42, 0.75, 0.018, 0.018, material("trash bin", "#3a6a4a", rough=0.6), segments=12)
+
+
+# The engine house by era, from the game's year: wooden to 1900, brick to 1960, then a steel diesel shop. Each is drawn
+# with its doors facing +y, turned to its edge by place(), and runs from the back of the tile to 0.36, the track down
+# its middle. Walls to 2.3 and the doorway to 2.2 clear every engine; pantographs come down inside.
+DEPOT_ERAS = 3
+DX = 0.38
+DY0, DY1 = -0.5, 0.36
+
+
+def depot(m, era):
+    """An engine house over the track, its doors facing +y: 0 board and batten with a monitor and wooden smoke jacks,
+    1 brick with arched windows, a clerestory and iron smoke jacks, 2 a steel-clad diesel shop with a roll-up door."""
+    import houses
+    import industries
+    [_engine_house_wood, _engine_house_brick, _diesel_shop][era](m, houses, industries)
+
+
+def _swing_doors(m, wood, brace, y, gap=0.2):
+    """Two board doors swung right back against the front wall either side of the doorway, Z-braced."""
+    for d in (-1, 1):
+        a, b = sorted((d * (gap + 0.006), d * (DX - 0.008)))
+        m.box(a, b, y + 0.004, y + 0.014, 0.06, 2.14, wood)
+        for z in (0.2, 1.1, 1.98):
+            m.box(a, b, y + 0.014, y + 0.02, z, z + 0.06, brace)
+        for z0, z1 in ((0.26, 1.1), (1.16, 1.98)):
+            m.rod((a + 0.01, y + 0.017, z0), (b - 0.01, y + 0.017, z1 - 0.02), 0.004, brace)
+        # Strap hinges on the door post.
+        hx = d * (gap + 0.01)
+        for z in (0.4, 1.8):
+            m.box(min(hx, hx + d * 0.05), max(hx, hx + d * 0.05), y + 0.014, y + 0.02, z, z + 0.04, material("door iron", "#2a2c2e", metal=0.5))
+
+
+def _monitor(m, z0, top, wall, slats, roof, w=0.11, inset=0.08, trim=None):
+    """A monitor along the ridge: low side walls of louvres or windows and its own small gable roof over them."""
+    import houses
+    y0, y1 = DY0 + inset, DY1 - inset
+    m.box(-w, w, y0, y1, z0, top, wall)
+    for d in (-1, 1):
+        n = round((y1 - y0) / 0.05)
+        for k in range(n):
+            y = y0 + (k + 0.5) * (y1 - y0) / n
+            a, b = sorted((d * w, d * (w + 0.006)))
+            m.box(a, b, y - 0.018, y + 0.018, z0 + 0.04, top - 0.04, slats)
+    houses.gable(m, -w, w, y0, y1, top, top + 0.16, roof, wall, along_x=False, over=0.025, thick=0.04, trim=trim, fascia=0.03)
+
+
+def _engine_house_wood(m, houses, industries):
+    # About 20 m long and 19 m wide, board and batten in red oxide on a fieldstone footing, cedar shingles, and a
+    # louvred monitor along the ridge carrying the smoke out, with square smoke jacks of sheet iron over the stalls.
+    wall = material("engine house boards", "#7e3f2c", rough=0.85)
+    batten = material("engine house battens", "#683222", rough=0.85)
+    trim = material("engine house trim", "#d8c8a0", rough=0.7)
+    roof = material("cedar shingles", "#5c4a3a", rough=0.9)
+    stone = material("fieldstone", "#8a8278", rough=0.95)
+    dark = material("doorway", "#1a1714", rough=1.0)
+    jack = material("smoke jack", "#2e2c2a", metal=0.4, rough=0.7)
+    glass = houses.glass()
+    eave = 2.3
+    m.box(-DX - 0.006, DX + 0.006, DY0, DY1 + 0.006, 0, 0.14, stone, 0.003)
+    m.box(-DX, DX, DY0, DY1, 0.14, eave, wall, 0.003)
+    industries.boards(m, -DX, DX, DY0, DY1, 0.14, eave, batten, gap=0.024)
+    houses.gable(m, -DX, DX, DY0, DY1, eave, 3.42, roof, wall, along_x=False, over=0.035, thick=0.06, trim=trim, fascia=0.05)
+    _monitor(m, 3.05, 3.55, wall, material("louvres", "#3a2a22", rough=0.9), roof, trim=trim)
+    for y in (-0.3, 0.12):
+        m.box(-0.026, 0.026, y - 0.026, y + 0.026, 3.5, 3.92, jack)
+        m.lathe(0, y, 3.9, [(0.05, 0), (0.0, 0.1)], jack, segments=4)
+    # Small-paned windows down each side, corner boards.
+    for d in (-1, 1):
+        for k in range(4):
+            y = DY0 + 0.12 + k * 0.2
+            _end_pane(m, d * DX, d, y, 1.0, 1.7, 0.06, glass, trim)
+        for y in (DY0, DY1):
+            m.box(d * DX - 0.008, d * DX + 0.008, y - 0.008, y + 0.008, 0.14, eave, trim)
+    # The doorway with its posts and header, and the doors swung open.
+    m.box(-0.2, 0.2, DY1 - 0.003, DY1 + 0.003, 0.0, 2.2, dark)
+    for d in (-1, 1):
+        a, b = sorted((d * 0.2, d * 0.225))
+        m.box(a, b, DY1 - 0.004, DY1 + 0.008, 0, 2.2, trim)
+    m.box(-0.225, 0.225, DY1 - 0.004, DY1 + 0.008, 2.2, 2.28, trim)
+    _swing_doors(m, material("engine house doors", "#6e3424", rough=0.85), trim, DY1)
+    # Cordwood for the engines stacked along the side.
+    logs = material("cordwood", "#8a6a48", rough=0.9)
+    y = -0.44
+    while y < 0.2:
+        industries.log_stack(m, DX + 0.03, DX + 0.1, y, 0.013, 3, logs)
+        y += 0.03
+
+
+def _engine_house_brick(m, houses, industries):
+    # Red brick on a stone base course, pilasters between round-headed windows, a slate roof with a glazed clerestory
+    # and round iron smoke jacks over the stall, a brick arch over the doors, and a lean-to machine shop with its stack.
     brick = material("brick", "#9a5a3c", rough=0.85)
     trim = material("brick trim", "#7a4430", rough=0.85)
+    stone = material("base course", "#a8a090", rough=0.9)
     slate = material("slate", "#4e5866", rough=0.6)
-    glass = material("glass", "#2a3644", rough=0.15)
     dark = material("doorway", "#1a1714", rough=1.0)
-    along_u = edge in ("XM", "XP")
-    doors_far = edge in ("XP", "YP")
+    jack = material("smoke jack", "#2e2c2a", metal=0.4, rough=0.7)
+    sash = material("window sash", "#d8c8a0", rough=0.7)
+    glass = houses.glass()
+    eave = 2.3
+    m.box(-DX, DX, DY0, DY1, 0, eave, brick, 0.004)
+    m.box(-DX - 0.006, DX + 0.006, DY0 - 0.006, DY1 + 0.006, 0, 0.3, stone)
+    m.box(-DX - 0.01, DX + 0.01, DY0 - 0.01, DY1 + 0.01, 2.2, 2.32, trim)
+    houses.gable(m, -DX, DX, DY0, DY1, 2.32, 3.4, slate, brick, along_x=False, over=0.04, thick=0.06, trim=trim, fascia=0.05)
+    _monitor(m, 3.05, 3.55, trim, glass, slate, trim=trim)
+    for y in (-0.3, 0.12):
+        m.upright(0, y, 3.5, 3.92, 0.024, 0.024, jack, segments=12)
+        m.lathe(0, y, 3.88, [(0.026, 0), (0.05, 0.03), (0.012, 0.1), (0.0, 0.11)], jack, segments=12)
+    # Pilasters and arched windows down each side, a window in the back gable.
+    for d in (-1, 1):
+        x = d * DX
+        for k in range(5):
+            y = DY0 + k * (DY1 - DY0) / 4
+            houses.on_wall(m, "x", x, d, y - 0.016, y + 0.016, 0, 0.012, 0.3, 2.2, trim)
+        for k in range(4):
+            y = DY0 + (k + 0.5) * (DY1 - DY0) / 4
+            _end_pane(m, x, d, y, 0.85, 1.75, 0.08, glass, sash)
+            m.tube_x(min(x, x + d * 0.006), max(x, x + d * 0.006), y, 1.75, 0.052, trim, segments=16)
+            m.tube_x(min(x, x + d * 0.009), max(x, x + d * 0.009), y, 1.75, 0.04, glass, segments=16)
+            houses.on_wall(m, "x", x, d, y - 0.05, y + 0.05, 0, 0.012, 0.8, 0.85, stone)
+    # The doorway under a brick arch, and the doors swung open.
+    m.box(-0.2, 0.2, DY1 - 0.003, DY1 + 0.003, 0.0, 2.2, dark)
+    for d in (-1, 1):
+        a, b = sorted((d * 0.2, d * 0.235))
+        m.box(a, b, DY1 - 0.004, DY1 + 0.01, 0.3, 2.2, trim)
+    m.box(-0.24, 0.24, DY1 - 0.004, DY1 + 0.01, 2.2, 2.32, trim)
+    m.box(-0.025, 0.025, DY1 - 0.004, DY1 + 0.014, 2.16, 2.34, stone)
+    _swing_doors(m, material("engine house doors red", "#5a2a1e", rough=0.85), sash, DY1, gap=0.205)
+    # A lean-to machine shop on the -x side with its own stack.
+    x0, x1, y0, y1 = -0.49, -DX, -0.46, -0.08
+    m.box(x0, x1, y0, y1, 0, 1.3, brick, 0.003)
+    houses.slab(m, [(x0 - 0.02, y0 - 0.02, 1.3), (x0 - 0.02, y1 + 0.02, 1.3), (x1, y1 + 0.02, 1.62), (x1, y0 - 0.02, 1.62)], 0.05, slate)
+    for y in (-0.38, -0.16):
+        _end_pane(m, x0, -1, y, 0.45, 1.05, 0.07, glass, sash)
+    houses.chimney(m, -0.44, -0.12, 1.3, 2.6, brick, 0.018)
+    # Oil drums and a sand box by the doors.
+    drum = material("oil drums", "#3a4a3a", rough=0.6)
+    for k, (x, y) in enumerate(((0.3, 0.42), (0.34, 0.45), (0.3, 0.47))):
+        m.upright(x, y, 0, 0.36, 0.016, 0.016, drum, segments=12)
+    m.box(-0.36, -0.26, 0.4, 0.47, 0, 0.3, material("sand box", "#6a5a44", rough=0.85), 0.003)
 
-    def b(x0, x1, y0, y1, z0, z1, mat, bevel=0.0):
-        if along_u:
-            m.box(x0, x1, y0, y1, z0, z1, mat, bevel)
-        else:
-            m.box(y0, y1, x0, x1, z0, z1, mat, bevel)
 
-    # The house runs along y from y0 to y1, its doors at y1 when they face +y.
-    y0, y1 = (-0.5, 0.36) if doors_far else (-0.36, 0.5)
-    b(-0.38, 0.38, y0, y1, 0, 2.3, brick, 0.004)
-    b(-0.39, 0.39, y0 - 0.01, y1 + 0.01, 2.3, 2.42, trim)
-    # A pitched slate roof with a smoke vent along the ridge.
-    ridge = 3.7
-    for side in (-1, 1):
-        pts_b = [(side * 0.42, y0 - 0.02, 2.42), (side * 0.42, y1 + 0.02, 2.42)]
-        pts_t = [(0, y0 - 0.02, ridge), (0, y1 + 0.02, ridge)]
-        if along_u:
-            m.wedge([pts_b[0], pts_b[1], (side * 0.41, y1 + 0.02, 2.46), (side * 0.41, y0 - 0.02, 2.46)],
-                    [pts_t[0], pts_t[1], (0, y1 + 0.02, ridge + 0.04), (0, y0 - 0.02, ridge + 0.04)], slate)
-        else:
-            m.wedge([(y0 - 0.02, side * 0.42, 2.42), (y1 + 0.02, side * 0.42, 2.42), (y1 + 0.02, side * 0.41, 2.46), (y0 - 0.02, side * 0.41, 2.46)],
-                    [(y0 - 0.02, 0, ridge), (y1 + 0.02, 0, ridge), (y1 + 0.02, 0, ridge + 0.04), (y0 - 0.02, 0, ridge + 0.04)], slate)
-    b(-0.06, 0.06, y0 + 0.15, y1 - 0.15, ridge, ridge + 0.35, trim, 0.003)
-    # Gable ends filled in brick.
-    for yy in (y0, y1):
-        if along_u:
-            m.wedge([(-0.38, yy - 0.004, 2.42), (0.38, yy - 0.004, 2.42), (0, yy - 0.004, ridge)], [(-0.38, yy + 0.004, 2.42), (0.38, yy + 0.004, 2.42), (0, yy + 0.004, ridge)], brick)
-        else:
-            m.wedge([(yy - 0.004, -0.38, 2.42), (yy - 0.004, 0.38, 2.42), (yy - 0.004, 0, ridge)], [(yy + 0.004, -0.38, 2.42), (yy + 0.004, 0.38, 2.42), (yy + 0.004, 0, ridge)], brick)
-    # Arched windows down the long sides, and the doorway.
-    for side in (-1, 1):
+def _diesel_shop(m, houses, industries):
+    # A steel-clad shop on a block base, a low roof with exhaust fans and skylights, a roll-up door half way up under
+    # its roll, yellow bollards, a block office on the +x side, and a fuel tank on saddles on the -x side.
+    clad = material("shop cladding", "#a9adae", rough=0.6, metal=0.2)
+    rib = material("shop ribs", "#929899", rough=0.6, metal=0.2)
+    block = material("shop block", "#b8b0a0", rough=0.9)
+    roof = material("shop roof", "#6a7072", metal=0.4, rough=0.5)
+    blue = material("shop trim", "#2a4a6e", rough=0.5)
+    dark = material("doorway", "#1a1714", rough=1.0)
+    slats = material("roll-up door", "#c4c8c8", metal=0.4, rough=0.45)
+    yellow = material("bollards", "#e0b020", rough=0.5)
+    sky = material("skylights", "#c8d8d4", rough=0.3)
+    glass = houses.glass()
+    eave = 2.3
+    m.box(-DX, DX, DY0, DY1, 0, 0.5, block, 0.003)
+    industries.clad_box(m, -DX, DX, DY0, DY1, 0.5, eave, clad, rib, gap=0.03)
+    m.box(-DX - 0.008, DX + 0.008, DY0 - 0.008, DY1 + 0.008, 2.18, 2.3, blue)
+    houses.gable(m, -DX, DX, DY0, DY1, 2.3, 2.85, roof, clad, along_x=False, over=0.02, thick=0.05)
+    for d in (-1, 1):
         for k in range(3):
-            y = y0 + 0.14 + k * (y1 - y0 - 0.28) / 2
-            b(side * 0.381 - 0.002, side * 0.381 + 0.002, y - 0.05, y + 0.05, 0.9, 1.8, glass)
-            b(side * 0.382 - 0.002, side * 0.382 + 0.002, y - 0.06, y + 0.06, 1.8, 1.9, trim)
-    dy = y1 if doors_far else y0
-    # The door clears every engine's roof, framed in trim up to the eaves band.
-    b(-0.2, 0.2, dy - 0.003, dy + 0.003, 0, 2.2, dark)
-    b(-0.23, 0.23, dy - 0.006, dy + 0.006, 2.2, 2.3, trim)
-    for side in (-1, 1):
-        b(min(side * 0.2, side * 0.23), max(side * 0.2, side * 0.23), dy - 0.006, dy + 0.006, 0, 2.2, trim)
+            y = DY0 + 0.15 + k * 0.28
+            houses.slab(m, [(d * 0.08, y - 0.06, 2.8), (d * 0.08, y + 0.06, 2.8), (d * 0.24, y + 0.06, 2.58), (d * 0.24, y - 0.06, 2.58)], 0.03, sky)
+    for y in (-0.36, -0.08, 0.2):
+        industries.roof_vent(m, 0, y, 2.9, rib, r=0.028)
+    # A band of windows high on each side.
+    for d in (-1, 1):
+        houses.on_wall(m, "x", d * DX, d, DY0 + 0.06, DY1 - 0.06, 0, 0.008, 1.6, 1.9, glass)
+    # The roll-up door, raised most of the way, its roll in a hood above, steel jambs and bollards.
+    m.box(-0.2, 0.2, DY1 - 0.003, DY1 + 0.003, 0.0, 2.2, dark)
+    m.box(-0.2, 0.2, DY1 + 0.003, DY1 + 0.01, 1.7, 2.18, slats)
+    for k in range(7):
+        z = 1.72 + k * 0.066
+        m.box(-0.2, 0.2, DY1 + 0.01, DY1 + 0.013, z, z + 0.012, rib)
+    m.box(-0.23, 0.23, DY1, DY1 + 0.04, 2.18, 2.3, blue, 0.004)
+    for d in (-1, 1):
+        a, b = sorted((d * 0.2, d * 0.225))
+        m.box(a, b, DY1 - 0.004, DY1 + 0.01, 0, 2.2, blue)
+        m.upright(d * 0.25, DY1 + 0.04, 0, 0.42, 0.012, 0.012, yellow, segments=10)
+        m.box(d * 0.26 - 0.015, d * 0.26 + 0.015, DY1 + 0.008, DY1 + 0.016, 1.9, 1.96, material("wall lamp", "#fff4d8", rough=0.3))
+    # The office and locker room in block on the +x side, flat roofed, windows and a door.
+    x0, x1, y0, y1 = DX, 0.49, -0.42, 0.18
+    m.box(x0, x1, y0, y1, 0, 1.5, block, 0.003)
+    m.box(x0, x1 + 0.01, y0 - 0.01, y1 + 0.01, 1.5, 1.6, blue)
+    for y in (-0.32, -0.18, -0.04):
+        _end_pane(m, x1, 1, y, 0.6, 1.15, 0.08, glass, blue)
+    m.box(x1, x1 + 0.006, 0.06, 0.12, 0, 1.0, blue)
+    # The fuel tank on saddles, its fill line and a sand bin on legs.
+    tank = material("fuel tank", "#d4d0c4", metal=0.3, rough=0.5)
+    m.tube(-0.45, 0.05, -0.44, 0.48, 0.045, tank, segments=20)
+    for y in (-0.36, -0.04):
+        m.box(-0.48, -0.4, y - 0.015, y + 0.015, 0, 0.36, block)
+    m.rod((-0.44, 0.05, 0.48), (-0.44, 0.2, 0.48), 0.006, blue)
+    m.rod((-0.44, 0.2, 0.48), (-0.44, 0.2, 0.0), 0.006, blue)
+    for x in (-0.32, -0.24):
+        for y in (0.4, 0.47):
+            m.rod((x, y, 0), (x, y, 1.2), 0.004, blue)
+    m.lathe(-0.28, 0.435, 1.0, [(0.0, 0), (0.012, 0.0), (0.05, 0.25), (0.05, 0.75), (0.0, 0.8)], tank, segments=12)
 
 
 # ---- station buildings ---------------------------------------------------------------------
@@ -964,27 +1292,93 @@ def road_stop(m, along_u):
         b(x - 0.004, x + 0.004, sy - 0.03, sy + 0.03, 1.3, 1.55, sign)
 
 
-def garage(m, edge):
-    """A garage for buses and trucks: a long block-built shed with a big door at view edge [edge]."""
+def _arch(x0, x1, eave, top, n=10):
+    """Points across a bowstring arch from x0 to x1, eave at the ends and top in the middle."""
+    xc, hw = (x0 + x1) / 2, (x1 - x0) / 2
+    return [(xc + hw * f, eave + (top - eave) * (1 - f * f)) for f in (-1 + 2 * k / n for k in range(n + 1))]
+
+
+def garage(m):
+    """A transit garage for buses and trucks, its doors facing +y, turned to its edge by place(): a bowstring roofed
+    bay hall in block with a red band, two roll-up doors (the middle one open), a brick office and dispatch end with
+    a flat roof, and a fuel island in front of it. Doors to 1.95 clear tractors' stacks and streetcar poles."""
+    import houses
+    import industries
     block = material("garage block", "#b0a898", rough=0.85)
     roof = material("garage roof", "#4e5458", metal=0.4, rough=0.5)
     door = material("garage door", "#5a6e7e", metal=0.4, rough=0.45)
     trim = material("garage trim", "#7a2a22", rough=0.6)
-    along_u = edge in ("XM", "XP")
-    far = edge in ("XP", "YP")
-
-    def b(x0, x1, y0, y1, z0, z1, mat, bevel=0.0):
-        if along_u:
-            m.box(x0, x1, y0, y1, z0, z1, mat, bevel)
+    brick = material("garage brick", "#9a5a3c", rough=0.85)
+    stone = material("garage stone", "#c8c0ac", rough=0.85)
+    dark = material("doorway", "#1a1714", rough=1.0)
+    sky = material("skylights", "#c8d8d4", rough=0.3)
+    yellow = material("bollards", "#e0b020", rough=0.5)
+    glass = houses.glass()
+    # The bay hall: block walls to 2.1, a red band, the bowstring roof rising to 2.6 across it, glazed down its crown.
+    x0, x1, y0, y1 = -0.44, 0.22, -0.44, 0.34
+    eave = 2.1
+    m.box(x0, x1, y0, y1, 0, eave, block, 0.003)
+    m.box(x0 - 0.006, x1 + 0.006, y0 - 0.006, y1 + 0.006, 1.98, eave + 0.04, trim)
+    arch = _arch(x0 - 0.02, x1 + 0.02, eave + 0.04, 2.62)
+    m.loft([(y0 - 0.02, [(x, z) for x, z in arch] + [(x, z - 0.05) for x, z in reversed(arch)]),
+            (y1 + 0.02, [(x, z) for x, z in arch] + [(x, z - 0.05) for x, z in reversed(arch)])], {"roof": roof})
+    # The arched end walls under it, and the bowstring trusses showing as ribs on the roof.
+    for y in (y0, y1):
+        inner = _arch(x0, x1, eave + 0.04, 2.57)
+        m.loft([(y - 0.004, inner), (y + 0.004, inner)], {"wall": block})
+    for k in range(5):
+        y = y0 + 0.04 + k * (y1 - y0 - 0.08) / 4
+        rib = _arch(x0 - 0.024, x1 + 0.024, eave + 0.05, 2.635)
+        m.loft([(y - 0.006, rib + [(x, z - 0.03) for x, z in reversed(rib)]), (y + 0.006, rib + [(x, z - 0.03) for x, z in reversed(rib)])], {"rib": trim})
+    xc = (x0 + x1) / 2
+    for y in (y0 + 0.08, y0 + 0.34, y0 + 0.6):
+        m.box(xc - 0.06, xc + 0.06, y, y + 0.16, 2.6, 2.65, sky, 0.004)
+    # Clerestory windows high along the -x side and a row of small windows along the back.
+    houses.on_wall(m, "x", x0, -1, y0 + 0.05, y1 - 0.05, 0, 0.007, 1.55, 1.85, glass)
+    for k in range(6):
+        y = y0 + 0.05 + k * (y1 - y0 - 0.1) / 5
+        houses.on_wall(m, "x", x0, -1, y - 0.005, y + 0.005, 0, 0.011, 1.55, 1.85, block)
+    # Two doors in front: the open one in the middle over the drive, a shut one beside it, block piers and bollards.
+    for a, b, shut in ((-0.15, 0.15, False), (-0.4, -0.2, True)):
+        if shut:
+            m.box(a, b, y1, y1 + 0.006, 0, 1.95, door)
+            for k in range(1, 9):
+                z = k * 1.95 / 9
+                m.box(a, b, y1 + 0.006, y1 + 0.009, z - 0.008, z + 0.008, roof)
+            m.box(a + 0.03, b - 0.03, y1 + 0.006, y1 + 0.009, 1.0, 1.2, glass)
         else:
-            m.box(y0, y1, x0, x1, z0, z1, mat, bevel)
-
-    b(-0.4, 0.4, -0.42, 0.42, 0.0, 2.3, block, 0.004)
-    b(-0.42, 0.42, -0.44, 0.44, 2.3, 2.45, roof, 0.004)
-    b(-0.41, 0.41, -0.43, 0.43, 2.1, 2.3, trim)
-    y = 0.42 if far else -0.42
-    # The door clears tractors' stacks and streetcar poles, under the red band.
-    b(-0.25, 0.25, y - 0.006, y + 0.006, 0.0, 1.95, door)
-    for k in range(1, 8):
-        z = k * 1.95 / 8
-        b(-0.25, 0.25, y - 0.008, y + 0.008, z - 0.01, z + 0.01, roof)
+            m.box(a, b, y1 - 0.003, y1 + 0.003, 0, 1.95, dark)
+            m.box(a, b, y1 + 0.003, y1 + 0.009, 1.68, 1.95, door)
+        m.box(a - 0.012, b + 0.012, y1, y1 + 0.03, 1.95, 2.04, roof, 0.003)
+        for x in (a - 0.03, b + 0.03):
+            m.upright(x, y1 + 0.03, 0, 0.42, 0.011, 0.011, yellow, segments=10)
+    # The office and dispatch end: two storeys of brick, stone sills and a coping, a flat roof, and a sign.
+    ox0, ox1, oy0, oy1 = x1, 0.44, -0.4, 0.34
+    m.box(ox0, ox1, oy0, oy1, 0, 2.3, brick, 0.003)
+    m.box(ox0 - 0.004, ox1 + 0.008, oy0 - 0.008, oy1 + 0.008, 2.3, 2.38, stone)
+    m.box(ox0 + 0.01, ox1 - 0.01, oy0 + 0.01, oy1 - 0.01, 2.38, 2.42, roof)
+    m.box(ox0 - 0.004, ox1 + 0.006, oy0 - 0.006, oy1 + 0.006, 0, 0.2, stone)
+    for z0, z1 in ((0.45, 0.95), (1.4, 1.9)):
+        for y in (-0.3, -0.16, -0.02, 0.12):
+            _end_pane(m, ox1, 1, y, z0, z1, 0.07, glass, stone)
+        for x in (0.28, 0.38):
+            _pane(m, x, oy1, 1, z0, z1, 0.06, glass, stone)
+    # The dispatch office's door with a canopy over it, and the sign board up on the front.
+    houses.on_wall(m, "y", oy1, 1, 0.3, 0.36, 0, 0.008, 0.2, 1.0, material("office door", "#2a4a6e", rough=0.5))
+    m.box(0.27, 0.39, oy1, oy1 + 0.05, 1.05, 1.1, roof, 0.003)
+    houses.on_wall(m, "y", oy1, 1, 0.24, 0.42, 0, 0.01, 2.0, 2.24, material("garage sign", "#ece2c8", rough=0.6))
+    # A fuel island beside the drive: a curbed island, two pumps and a light canopy on two posts.
+    fx, fy = 0.33, 0.43
+    m.box(fx - 0.09, fx + 0.09, fy - 0.025, fy + 0.025, 0, 0.08, stone, 0.004)
+    for x in (fx - 0.04, fx + 0.04):
+        m.box(x - 0.016, x + 0.016, fy - 0.012, fy + 0.012, 0.08, 0.6, material("fuel pump", "#c8302a", rough=0.5), 0.004)
+        m.box(x - 0.012, x + 0.012, fy + 0.012, fy + 0.014, 0.4, 0.52, glass)
+    steel = material("fuel canopy", "#d4d8da", metal=0.4, rough=0.4)
+    for x in (fx - 0.08, fx + 0.08):
+        m.box(x - 0.006, x + 0.006, fy - 0.006, fy + 0.006, 0.08, 1.75, steel)
+    m.box(fx - 0.11, fx + 0.11, fy - 0.06, fy + 0.06, 1.75, 1.85, steel, 0.004)
+    m.box(fx - 0.112, fx + 0.112, fy - 0.062, fy + 0.062, 1.78, 1.83, trim)
+    # The boiler house chimney at the back corner, roof vents along the hall.
+    houses.chimney(m, 0.38, -0.36, 2.42, 3.0, brick, 0.022)
+    for y in (-0.3, 0.1):
+        industries.roof_vent(m, x0 + 0.12, y, 2.45, roof, r=0.02)

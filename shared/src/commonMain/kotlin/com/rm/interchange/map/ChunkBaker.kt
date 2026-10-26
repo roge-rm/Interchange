@@ -19,6 +19,7 @@ import com.rm.interchange.sim.part
 import com.rm.interchange.sim.houseOf
 import com.rm.interchange.sim.townBuilt
 import com.rm.interchange.sim.stationBuildingAt
+import com.rm.interchange.sim.stationAt
 import com.rm.interchange.sim.stationEra
 import kotlin.math.abs
 import com.rm.interchange.sim.hasFoundation
@@ -435,14 +436,17 @@ internal class ChunkBaker(
         world.depotTiles[tile]?.let { id ->
             val d = world.depots.getOrNull(id) ?: return@let
             val e = viewEdge(d.edge)
-            sprite(if (shadow) Atlas.DEPOT_SHADOW[e] else Atlas.DEPOT[e], vx, vy, base, shadow)
+            sprite((if (shadow) Atlas.DEPOT_SHADOW else Atlas.DEPOT)[depotEra(year) * 4 + e], vx, vy, base, shadow)
             return
         }
         if (world.isPlatform(tile)) {
             val st = world.surfaceHeight(wx, wy, pieces, worldCorner(wx, wy, vx, vy))
             val a = viewPieceIndex(Track.index(pieces))
             val bare = buildingBehind(vx, vy, a)
-            val cell = if (bare) (if (shadow) Atlas.STATION_BARE_SHADOW else Atlas.STATION_BARE)[a] else (if (shadow) Atlas.STATION_SHADOW else Atlas.STATION)[a]
+            // The canopy goes by the year its station's building went up, or the game's year for a station without one.
+            val built = world.stationAt(tile)?.takeIf { it.building >= 0 && it.buildingYear > 0 }?.buildingYear ?: year
+            val cell = if (bare) (if (shadow) Atlas.STATION_BARE_SHADOW else Atlas.STATION_BARE)[a]
+            else (if (shadow) Atlas.STATION_SHADOW else Atlas.STATION)[canopyEra(built) * 2 + a]
             sprite(cell, vx, vy, st, shadow)
         }
     }
@@ -1279,11 +1283,32 @@ internal class ChunkBaker(
             Triple("superstack", 1972, "superstack_brick"),
         )
 
-        /** Which of [PART_ERAS]' years have come by [year], as bits, so chunks bake again as each one comes. */
-        fun partEras(year: Int): Int = PART_ERAS.foldIndexed(0) { i, bits, e -> if (year >= e.second) bits or (1 shl i) else bits }
+        /** The years engine houses and platform canopies change their look ([depotEra], [canopyEra]). */
+        private val SCENERY_YEARS = intArrayOf(1900, 1915, 1960, 1970)
+
+        /** An engine house's look by the game's year: 0 wooden to 1900, 1 brick to 1960, 2 a steel diesel shop. */
+        fun depotEra(year: Int): Int = when {
+            year < 1900 -> 0
+            year < 1960 -> 1
+            else -> 2
+        }
+
+        /** A platform canopy's look by the year its station went up: 0 wooden to 1915, 1 the steel butterfly to 1970, 2 a modern shelter. */
+        fun canopyEra(year: Int): Int = when {
+            year < 1915 -> 0
+            year < 1970 -> 1
+            else -> 2
+        }
+
+        /** Which of [PART_ERAS]' and [SCENERY_YEARS]' years have come by [year], as bits, so chunks bake again as each one comes. */
+        fun partEras(year: Int): Int {
+            var bits = PART_ERAS.foldIndexed(0) { i, b, e -> if (year >= e.second) b or (1 shl i) else b }
+            SCENERY_YEARS.forEachIndexed { i, y -> if (year >= y) bits = bits or (1 shl (PART_ERAS.size + i)) }
+            return bits
+        }
 
         /** How many values [partEras] can take. */
-        val PART_ERA_COUNT = 1 shl PART_ERAS.size
+        val PART_ERA_COUNT = 1 shl (PART_ERAS.size + SCENERY_YEARS.size)
 
         /** Overlays, as bits. */
         const val GRID = 1

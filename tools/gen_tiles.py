@@ -138,10 +138,15 @@ for mask in range(1, 64):
         JOBS.append(("static", ("railset", mask), lambda mask=mask: scenery(f"railset_{mask}.png", base.cell), None))
         UP[("railset", mask)] = f"railset_{mask}.png"
 # Platforms and the engine house over their track, each with its shadow apart so the game can lay shadows first.
+# Platform canopies by era (ChunkBaker.canopyEra): wooden, steel butterfly, modern.
+CANOPY_ERAS = 3
+for era in range(CANOPY_ERAS):
+    for a in (0, 1):
+        name = f"station_{era}_{a}.png"
+        JOBS.append(("static", ("station", era, a), lambda a=a, name=name: over(track.track("X" if a == 0 else "Y", 0), scenery(name, lambda: track.station(a == 0))), None))
+        JOBS.append(("shadows", ("station_shadow", era, a), lambda name=name: scenery(name.replace(".png", "_shadow.png"), base.cell), None))
+        UP[("station", era, a)] = name
 for a in (0, 1):
-    JOBS.append(("static", ("station", a), lambda a=a: over(track.track("X" if a == 0 else "Y", 0), scenery(f"station_{a}.png", lambda: track.station(a == 0))), None))
-    JOBS.append(("shadows", ("station_shadow", a), lambda a=a: scenery(f"station_{a}_shadow.png", base.cell), None))
-    UP[("station", a)] = f"station_{a}.png"
     JOBS.append(("static", ("station_bare", a), lambda a=a: over(track.track("X" if a == 0 else "Y", 0), scenery(f"station_bare_{a}.png", lambda: track.station(a == 0))), None))
     JOBS.append(("shadows", ("station_bare_shadow", a), lambda a=a: scenery(f"station_bare_{a}_shadow.png", base.cell), None))
     UP[("station_bare", a)] = f"station_bare_{a}.png"
@@ -167,10 +172,13 @@ for a in (0, 1):
     JOBS.append(("static", ("road_stop", a), lambda a=a: scenery(f"road_stop_{a}.png", base.cell), None))
     JOBS.append(("shadows", ("road_stop_shadow", a), lambda a=a: scenery(f"road_stop_{a}_shadow.png", base.cell), None))
     UP[("road_stop", a)] = f"road_stop_{a}.png"
-for e, edge in enumerate(EDGES):
-    JOBS.append(("static", ("depot", e), lambda edge=edge: scenery(f"depot_{edge}.png", lambda: track.depot(edge)), None))
-    JOBS.append(("shadows", ("depot_shadow", e), lambda edge=edge: scenery(f"depot_{edge}_shadow.png", base.cell), None))
-    UP[("depot", e)] = f"depot_{edge}.png"
+# Engine houses by era (ChunkBaker.depotEra): wooden, brick, diesel shop.
+DEPOT_ERAS = 3
+for era in range(DEPOT_ERAS):
+    for e, edge in enumerate(EDGES):
+        JOBS.append(("static", ("depot", era, e), lambda era=era, edge=edge: scenery(f"depot_{era}_{edge}.png", lambda: track.depot(edge)), None))
+        JOBS.append(("shadows", ("depot_shadow", era, e), lambda era=era, edge=edge: scenery(f"depot_{era}_{edge}_shadow.png", base.cell), None))
+        UP[("depot", era, e)] = f"depot_{era}_{edge}.png"
 for t, kind in enumerate(ground.TREES):
     for look in range(ground.TREE_LOOKS):
         JOBS.append(("static", ("tree", t, look), lambda kind=kind, look=look: scenery(f"tree_{kind}_{look}.png", lambda: ground.tree(kind, look)), None))
@@ -236,8 +244,9 @@ for e, edge in enumerate(EDGES):
 for a in (0, 1):
     JOBS.append(("signals", ("shed", a), lambda a=a: scenery(f"span_shed_{a}.png", base.cell), None))
 # The engine house again, drawn over trains on its tile so they show going in through the doors.
-for e, edge in enumerate(EDGES):
-    JOBS.append(("signals", ("depot_over", e), lambda edge=edge: scenery(f"depot_{edge}.png", lambda: track.depot(edge)), None))
+for era in range(DEPOT_ERAS):
+    for e, edge in enumerate(EDGES):
+        JOBS.append(("signals", ("depot_over", era, e), lambda era=era, edge=edge: scenery(f"depot_{era}_{edge}.png", lambda: track.depot(edge)), None))
 
 
 def rendered_slope(key, h, way, build):
@@ -676,16 +685,16 @@ object Atlas {{
         {arr(railsets)},
     )
 
-    /** A platform with its track, along view u (0) or v (1), and its shadow, on the shadows sheet. On the static sheet. */
-    val STATION = intArrayOf({index[("station", 0)]}, {index[("station", 1)]})
-    val STATION_SHADOW = intArrayOf({index[("station_shadow", 0)]}, {index[("station_shadow", 1)]})
+    /** A platform with its track, at canopy era * 2 + along view u (0) or v (1), and its shadow, on the shadows sheet. On the static sheet. */
+    val STATION = intArrayOf({arr([index[("station", k, a)] for k in range(CANOPY_ERAS) for a in (0, 1)])})
+    val STATION_SHADOW = intArrayOf({arr([index[("station_shadow", k, a)] for k in range(CANOPY_ERAS) for a in (0, 1)])})
     /** A platform with no canopy, for the one in front of a station building, and its shadow. */
     val STATION_BARE = intArrayOf({index[("station_bare", 0)]}, {index[("station_bare", 1)]})
     val STATION_BARE_SHADOW = intArrayOf({index[("station_bare_shadow", 0)]}, {index[("station_bare_shadow", 1)]})
 
-    /** A depot with its doors at view edge XM, XP, YM or YP, and its shadow, on the shadows sheet. On the static sheet. */
-    val DEPOT = intArrayOf({", ".join(str(index[("depot", e)]) for e in range(4))})
-    val DEPOT_SHADOW = intArrayOf({", ".join(str(index[("depot_shadow", e)]) for e in range(4))})
+    /** A depot, at its era * 4 + the view edge its doors face, XM, XP, YM or YP, and its shadow, on the shadows sheet. On the static sheet. */
+    val DEPOT = intArrayOf({arr([index[("depot", k, e)] for k in range(DEPOT_ERAS) for e in range(4)])})
+    val DEPOT_SHADOW = intArrayOf({arr([index[("depot_shadow", k, e)] for k in range(DEPOT_ERAS) for e in range(4)])})
 
     /** A garage with its door at view edge XM, XP, YM or YP, and a road stop along view u (0) or v (1), with their shadows. On the static sheet. */
     val GARAGE = intArrayOf({", ".join(str(index[("garage", e)]) for e in range(4))})
@@ -739,8 +748,8 @@ object Atlas {{
     /** A snow shed over track along view u (0) or v (1), its solid wall on the side away from the camera. On the signals sheet. */
     val SHED = intArrayOf({index[("shed", 0)]}, {index[("shed", 1)]})
 
-    /** The engine house with its doors at view edge XM, XP, YM or YP, drawn over trains on its tile. On the signals sheet. */
-    val DEPOT_OVER = intArrayOf({", ".join(str(index[("depot_over", e)]) for e in range(4))})
+    /** The engine house, at its era * 4 + the view edge its doors face, drawn over trains on its tile. On the signals sheet. */
+    val DEPOT_OVER = intArrayOf({", ".join(str(index[("depot_over", k, e)]) for k in range(DEPOT_ERAS) for e in range(4))})
 }}
 """)
     if not OUT_KT.exists() or OUT_KT.read_text() != atlas:

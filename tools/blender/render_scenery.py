@@ -4,8 +4,8 @@
 
 ONLY, if given, renders just the files whose names start with it.
 
-Files: tree_<kind>_<look>.png, station_<0 along u, 1 along v>.png and
-station_bare_<a>.png (no canopy), depot_<edge>.png, signal_<0 clear, 1 stop>.png, house_<kind>_<edge>.png (a town
+Files: tree_<kind>_<look>.png, station_<era>_<0 along u, 1 along v>.png and
+station_bare_<a>.png (no canopy), depot_<era>_<edge>.png, signal_<0 clear, 1 stop>.png, house_<kind>_<edge>.png (a town
 building facing that view edge), part_<piece>_<edge>.png (a piece of an
 industry), station_house_<era>_<edge>.png (a station building facing its
 platform at that edge), each a whole cell at twice the sharpest level.
@@ -154,11 +154,13 @@ def main():
             for look in range(len(scenery.TREE_SIZES)):
                 shot(out, f"tree_{kind}_{look}_{season}.png", lambda m, kind=kind, look=look, season=season: scenery.tree(m, kind, look, season))
     for a in (0, 1):
-        shot(out, f"station_{a}.png", lambda m, a=a: scenery.station(m, a == 0), rise=BUILDING_RISE)
+        for era in range(scenery.CANOPY_ERAS):
+            shot(out, f"station_{era}_{a}.png", lambda m, a=a, era=era: scenery.station(m, a == 0, era=era), rise=BUILDING_RISE)
         shot(out, f"station_bare_{a}.png", lambda m, a=a: scenery.station(m, a == 0, canopy=False), rise=BUILDING_RISE)
     for edge in EDGES:
-        shot(out, f"depot_{edge}.png", lambda m, edge=edge: scenery.depot(m, edge), rise=BUILDING_RISE)
-        shot(out, f"garage_{edge}.png", lambda m, edge=edge: scenery.garage(m, edge), rise=BUILDING_RISE)
+        for era in range(scenery.DEPOT_ERAS):
+            shot(out, f"depot_{era}_{edge}.png", lambda m, era=era: scenery.depot(m, era), heading=houses.FACING[edge], rise=BUILDING_RISE)
+        shot(out, f"garage_{edge}.png", scenery.garage, heading=houses.FACING[edge], rise=BUILDING_RISE)
     for a in (0, 1):
         shot(out, f"road_stop_{a}.png", lambda m, a=a: scenery.road_stop(m, a == 0), rise=BUILDING_RISE)
     shot(out, "salt_dome.png", roadcars.salt_dome, rise=BUILDING_RISE)

@@ -141,7 +141,7 @@ internal fun DrawScope.drawMoving(world: World, view: View, sheets: Sheets, movi
         val sy = view.screenY(vx - 0.5f, vy - 0.5f, base, size.height) + view.halfHeight
         val margin = view.halfWidth * 3
         if (sx < -margin || sx > size.width + margin || sy < -margin || sy > size.height + margin * 2) continue
-        items += floatArrayOf(vx + vy + DEPOT_DEPTH, sx, sy, Atlas.DEPOT_OVER[painter.viewEdge(d.edge)].toFloat(), -1f)
+        items += floatArrayOf(vx + vy + DEPOT_DEPTH, sx, sy, Atlas.DEPOT_OVER[ChunkBaker.depotEra(moving.now.weather?.year ?: 0) * 4 + painter.viewEdge(d.edge)].toFloat(), -1f)
     }
     val v = moving.now.vehicles
     val before = moving.before?.vehicles
