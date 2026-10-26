@@ -170,17 +170,37 @@ def shipyard(m):
     m.wedge([(-0.012, ys[0] - 0.05, keel_z), (0.012, ys[0] - 0.05, keel_z), (0.012, ys[-1] + 0.05, top), (-0.012, ys[-1] + 0.05, top)],
             [(-0.012, ys[0] - 0.05, keel_z + 0.04), (0.012, ys[0] - 0.05, keel_z + 0.04), (0.012, ys[-1] + 0.05, top + 0.04), (-0.012, ys[-1] + 0.05, top + 0.04)], steel)
     # The ship's frames, U shaped, fuller amidships, with a cradle of shores under the bilges.
+    sections = []
     for k, y in enumerate(ys[1:-1]):
         z = deck(y) + 0.24
         f = 1.0 - abs(k - 2.5) / 6
         half = 0.13 * f + 0.05
         pts = [(0.0, z), (half * 0.6, z + 0.02), (half * 0.95, z + 0.18), (half, z + 0.45 * f + 0.15)]
+        sections.append((y, pts))
         for s in (-1, 1):
             for a, b in zip(pts, pts[1:]):
                 m.rod((s * a[0], y, a[1]), (s * b[0], y, b[1]), 0.005, steel, segments=6)
             m.rod((s * (half * 0.75), y, deck(y)), (s * half * 0.8, y, z + 0.08), 0.005, oak, segments=6)
     for s in (-1, 1):
         m.rod((s * 0.14, ys[1], deck(ys[1]) + 0.24 + 0.35), (s * 0.14, ys[-2], deck(ys[-2]) + 0.24 + 0.35), 0.004, steel, segments=6)
+    # Shell plating in red primer over the after frames, the bottom and bilge strakes on two frames further forward,
+    # the rest of the frames still bare. Each plate runs between two frames, just outside them.
+    primer = material("hull primer", "#9a4430", metal=0.3, rough=0.6)
+    lap = material("hull plate seams", "#7a3426", metal=0.3, rough=0.6)
+
+    def out(p, s, y, o):
+        return (s * (p[0] + o), y, p[1] - o * 0.5)
+    for k, ((ya, pa), (yb, pb)) in enumerate(zip(sections, sections[1:])):
+        strakes = len(pa) - 1 if k < 3 else (2 if k == 3 else 0)
+        for s in (-1, 1):
+            for j in range(strakes):
+                quad = [out(pa[j], s, ya, 0.004), out(pb[j], s, yb, 0.004), out(pb[j + 1], s, yb, 0.004), out(pa[j + 1], s, ya, 0.004)]
+                m.wedge(quad, [out(pa[j], s, ya, 0.008), out(pb[j], s, yb, 0.008), out(pb[j + 1], s, yb, 0.008), out(pa[j + 1], s, ya, 0.008)],
+                        primer)
+            if strakes >= 2:
+                m.rod(out(pa[1], s, ya, 0.009), out(pb[1], s, yb, 0.009), 0.002, lap, segments=4)
+            if strakes > 2:
+                m.rod(out(pa[2], s, ya, 0.009), out(pb[2], s, yb, 0.009), 0.002, lap, segments=4)
 
     # The hall: ribbed side walls, a clerestory of glass, a low gable roof, the back walled in.
     glass = houses.glass()
