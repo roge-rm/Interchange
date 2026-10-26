@@ -46,7 +46,7 @@ internal class Renderer(private val world: World, private val sheets: Sheets, pr
     }
 
     /** A baked chunk: its picture, the world's version and the [WeatherCopy] it shows, and when it was baked and last drawn. */
-    private class Entry(val image: ImageBitmap?, val top: Int, val version: Int, val weather: Int, val baked: Long, var used: Long, val fades: Boolean = false) {
+    private class Entry(val image: ImageBitmap?, val top: Int, val version: Long, val weather: Int, val baked: Long, var used: Long, val fades: Boolean = false) {
         val bytes get() = if (image == null) 0L else image.width.toLong() * image.height * 4
     }
 
@@ -360,8 +360,8 @@ internal class Renderer(private val world: World, private val sheets: Sheets, pr
     }
 
     /** How many times the world under a chunk has changed, from the world's own blocks. */
-    private fun versionOf(view: View, level: Int, cx: Int, cy: Int): Int =
-        ((sumOf(world.chunkVersions, view, level, cx, cy) * 8 + overlays) * 8 + look()) * ChunkBaker.PART_ERA_COUNT + ChunkBaker.partEras(year())
+    private fun versionOf(view: View, level: Int, cx: Int, cy: Int): Long =
+        ((sumOf(world.chunkVersions, view, level, cx, cy) * 8L + overlays) * 8 + look()) * ChunkBaker.PART_ERA_COUNT + ChunkBaker.partEras(year())
 
     /** The game's year now, worked out with [look] once a day. */
     private fun year(): Int {

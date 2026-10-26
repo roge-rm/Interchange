@@ -184,6 +184,12 @@ internal fun World.dropStationBuilding(s: Station) {
     s.buildingYear = 0
     s.buildingFacing = 0
     touched(i % width, i / width)
+    touchStation(s)
+}
+
+/** Marks every platform tile of [s] changed, so its canopies bake again with the building's year. */
+private fun World.touchStation(s: Station) {
+    for (t in s.tiles) touched(t % width, t / width)
 }
 
 /** Whether station [s]'s building, if it has one, still faces a platform of its own. */
@@ -239,6 +245,7 @@ internal fun World.placeStationBuilding(s: Station, axis: Int) {
             s.buildingFacing = c[4]
             stationBuildings[i] = s.id
             touched(c[0], c[1])
+            touchStation(s)
             return
         }
     }
