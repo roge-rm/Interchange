@@ -221,7 +221,7 @@
       "until": 2100,
       "regions": { "shield": 4, "rockies": 2, "mixed": 2, "north": 1, "maritimes": 0, "prairies": 0 },
       "water": true,
-      "layout": ["dam powerhouse dam", "potline potline potline"],
+      "layout": ["dam powerhouse dam", "potline potline_scrubber potline"],
       "accepts": ["bauxite"],
       "produces": { "aluminium": 0 }
     },
@@ -231,7 +231,7 @@
       "from": 1967,
       "until": 2100,
       "regions": { "north": 5, "prairies": 3, "mixed": 0, "maritimes": 0, "shield": 0, "rockies": 0 },
-      "layout": ["sand_pit sand_pit upgrader", "sand_pit sand_pit upgrader", "tailings_pond tailings_pond refinery_tanks"],
+      "layout": ["sand_pit sand_pit_far upgrader", "sand_pit_side sand_pit_corner upgrader", "tailings_pond tailings_pond_far refinery_tanks"],
       "produces": { "oil": 160 }
     },
     {

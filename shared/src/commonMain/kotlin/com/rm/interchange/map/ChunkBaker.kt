@@ -1276,6 +1276,7 @@ internal class ChunkBaker(
             Triple("stacks", 1970, "stacks_open_hearth"),
             Triple("factory_yard", 1950, "factory_yard_box"),
             Triple("factory_yard", 1985, "factory_yard_tractor"),
+            Triple("superstack", 1972, "superstack_brick"),
         )
 
         /** Which of [PART_ERAS]' years have come by [year], as bits, so chunks bake again as each one comes. */
