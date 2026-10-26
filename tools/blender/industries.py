@@ -4196,23 +4196,23 @@ def dam(m):
         for k in range(10):
             y = -0.45 + k * 0.1
             m.box(x - 0.002, x + 0.002, y - 0.002, y + 0.002, 3.04, 3.24, rail)
-    # The gantry crane over the open gate, kept low (top 3.6): two braced leg frames on the rails, the girders, its
-    # machinery house and the lifting beam hung on its ropes.
+    # The gantry crane over the open gate, kept low (top 3.4): two braced leg frames on the rails, the girders over the
+    # handrails, its machinery house and the lifting beam hung on its ropes above the raised gate (top 3.0).
     cy = (a + b) / 2
     for y in (cy - 0.06, cy + 0.06):
         for x in (-0.745, -0.48):
-            m.box(x - 0.012, x + 0.012, y - 0.03, y + 0.03, 3.08, 3.16, dark)
-            m.box(x - 0.008, x + 0.008, y - 0.008, y + 0.008, 3.16, 3.4, paint)
-        m.rod((-0.745, y, 3.18), (-0.48, y, 3.36), 0.004, paint, segments=4)
-        m.rod((-0.48, y, 3.18), (-0.745, y, 3.36), 0.004, paint, segments=4)
-        m.box(-0.765, -0.46, y - 0.012, y + 0.012, 3.38, 3.45, paint)
+            m.box(x - 0.012, x + 0.012, y - 0.03, y + 0.03, 3.08, 3.13, dark)
+            m.box(x - 0.008, x + 0.008, y - 0.008, y + 0.008, 3.13, 3.26, paint)
+        m.rod((-0.745, y, 3.14), (-0.48, y, 3.24), 0.004, paint, segments=4)
+        m.rod((-0.48, y, 3.14), (-0.745, y, 3.24), 0.004, paint, segments=4)
+        m.box(-0.765, -0.46, y - 0.012, y + 0.012, 3.255, 3.3, paint)
     for x in (-0.745, -0.48):
-        m.rod((x, cy - 0.06, 3.22), (x, cy + 0.06, 3.22), 0.004, paint, segments=4)
-        m.rod((x, cy - 0.06, 3.22), (x, cy + 0.06, 3.38), 0.003, paint, segments=4)
-    m.box(-0.68, -0.54, cy - 0.075, cy + 0.075, 3.45, 3.55, paint, 0.003)
-    gable(m, -0.68, -0.54, cy - 0.075, cy + 0.075, 3.55, 3.6, dark, paint, along_x=False, over=0.006, thick=0.02)
+        m.rod((x, cy - 0.06, 3.16), (x, cy + 0.06, 3.16), 0.004, paint, segments=4)
+        m.rod((x, cy - 0.06, 3.16), (x, cy + 0.06, 3.25), 0.003, paint, segments=4)
+    m.box(-0.68, -0.54, cy - 0.075, cy + 0.075, 3.3, 3.365, paint, 0.003)
+    gable(m, -0.68, -0.54, cy - 0.075, cy + 0.075, 3.365, 3.4, dark, paint, along_x=False, over=0.006, thick=0.02)
     for s in (-1, 1):
-        m.rod((-0.59, cy + s * 0.05, 3.38), (-0.59, cy + s * 0.05, 3.1), 0.0016, dark, segments=4)
+        m.rod((-0.59, cy + s * 0.05, 3.255), (-0.59, cy + s * 0.05, 3.1), 0.0016, dark, segments=4)
     m.box(-0.605, -0.575, cy - 0.065, cy + 0.065, 3.06, 3.1, paint)
 
 

@@ -355,20 +355,37 @@ def _concrete_plan(hw, hd, n=6):
     return pts
 
 
-def _concrete_pier(m, along_u, top, foot=False):
+# Concrete piers batter out all the way down: a step [d] below the cap tapers from _shaft(d) at its foot to _shaft(d - 1)
+# at its head, so steps meet whatever the pier's height. Below TAPER_STEPS the shaft runs straight, as level TAPER_STEPS + 1.
+TAPER_STEPS = 5
+
+
+def _shaft(d):
+    """The concrete shaft's half width and half depth d steps below the cap."""
+    d = min(d, TAPER_STEPS)
+    return 0.11 + 0.012 * d, 0.075 + 0.008 * d
+
+
+def _concrete_pier(m, along_u, top, foot=False, level=1):
     concrete = material("bridge concrete", "#a8a49c", rough=0.85)
     lift = material("pier lift line", "#8e8a82", rough=0.9)
-    if foot:
-        # The step on the ground: a spread footing, and the shaft tapering in from it to the straight shaft above.
-        _upright(m, along_u, _concrete_plan(0.21, 0.15), 0.0, 0.1, concrete)
-        bot = [_swap(along_u, (x, y, 0.1)) for x, y in _concrete_plan(0.16, 0.11)]
-        tp = [_swap(along_u, (x, y, 1.0)) for x, y in _concrete_plan(0.11, 0.075)]
-        m.wedge(bot, tp, concrete)
-        _upright(m, along_u, _concrete_plan(0.142, 0.099, 6), 0.4, 0.42, lift)
-        return
     if not top:
-        _upright(m, along_u, _concrete_plan(0.11, 0.075), 0.0, 1.0, concrete)
-        _upright(m, along_u, _concrete_plan(0.112, 0.077), 0.49, 0.51, lift)
+        (bw, bd), (tw, td) = _shaft(level), _shaft(level - 1)
+        z0 = 0.0
+        if foot:
+            # The step on the ground stands on a spread footing.
+            _upright(m, along_u, _concrete_plan(bw + 0.05, bd + 0.035), 0.0, 0.1, concrete)
+            z0 = 0.1
+            bw, bd = bw + (tw - bw) * 0.1, bd + (td - bd) * 0.1
+        if bw == tw:
+            _upright(m, along_u, _concrete_plan(bw, bd), z0, 1.0, concrete)
+        else:
+            bot = [_swap(along_u, (x, y, z0)) for x, y in _concrete_plan(bw, bd)]
+            tp = [_swap(along_u, (x, y, 1.0)) for x, y in _concrete_plan(tw, td)]
+            m.wedge(bot, tp, concrete)
+        mw, md = (bw + tw) / 2, (bd + td) / 2
+        zl = (z0 + 1.0) / 2
+        _upright(m, along_u, _concrete_plan(mw + 0.002, md + 0.002), zl - 0.01, zl + 0.01, lift)
         return
     _upright(m, along_u, _concrete_plan(0.11, 0.075), 0.0, 0.04, concrete)
     # The hammerhead: flaring out from the shaft to the deck slab's edges, below the girder's soffit at 0.3.
@@ -379,14 +396,15 @@ def _concrete_pier(m, along_u, top, foot=False):
         b(x0, x1, -0.085, 0.085, 0.26, 0.3, lift)
 
 
-def pier(m, style, along_u, top=False, foot=False):
-    """A step of pier; top the step under the deck with its cap, foot the step on the ground (concrete only)."""
+def pier(m, style, along_u, top=False, foot=False, level=1):
+    """A step of pier; top the step under the deck with its cap, foot the step on the ground and level how many steps
+    below the cap it is (concrete only)."""
     if style == "trestle":
         _trestle_bent(m, along_u, top)
     elif style == "truss":
         _masonry_pier(m, along_u, top)
     else:
-        _concrete_pier(m, along_u, top, foot)
+        _concrete_pier(m, along_u, top, foot, level)
 
 
 # ---- Portal --------------------------------------------------------------------------------------------------

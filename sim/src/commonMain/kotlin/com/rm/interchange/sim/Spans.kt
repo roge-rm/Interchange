@@ -259,6 +259,8 @@ internal fun World.removeSpan(s: Span): Boolean {
             track[i] = 0
             wires[i] = 0
             owner[i] = -1
+            sheds.remove(i)
+            shedYears.remove(i)
             for (p in Track.PIECES) signals.remove(pieceKey(i, p))
         } else deck.remove(i)
         touched(i % width, i / width)

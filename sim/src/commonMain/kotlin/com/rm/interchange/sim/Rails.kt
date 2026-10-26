@@ -161,7 +161,12 @@ internal fun World.buildRail(company: Company, c: Command.Rail) {
             track[i] = (has and piece.inv()).toByte()
             wires[i] = (wires[i].toInt() and piece.inv()).toByte()
             signals.remove(pieceKey(i, piece))
-            if (track[i].toInt() == 0) owner[i] = -1
+            if (track[i].toInt() == 0) {
+                owner[i] = -1
+                // A snow shed stands over track; with none left it goes too.
+                sheds.remove(i)
+                shedYears.remove(i)
+            }
         } else {
             if (has and piece != 0 || (has != 0 && owner[i].toInt() != company.id)) continue
             if (!piecesFit(x, y, has or piece)) continue

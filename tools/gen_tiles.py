@@ -240,10 +240,15 @@ SPAN_STYLES = ["trestle", "truss", "concrete"]
 for st, style in enumerate(SPAN_STYLES):
     for a in (0, 1):
         JOBS.append(("signals", ("span_deck", st, a), lambda style=style, a=a: scenery(f"span_deck_{style}_{a}.png", base.cell), None))
-        JOBS.append(("signals", ("span_pier", st, a), lambda style=style, a=a: scenery(f"span_pier_{style}_{a}.png", base.cell), None))
+        if style != "concrete":
+            JOBS.append(("signals", ("span_pier", st, a), lambda style=style, a=a: scenery(f"span_pier_{style}_{a}.png", base.cell), None))
         JOBS.append(("signals", ("span_pier_top", st, a), lambda style=style, a=a: scenery(f"span_pier_top_{style}_{a}.png", base.cell), None))
-for a in (0, 1):
-    JOBS.append(("signals", ("span_pier_foot", a), lambda a=a: scenery(f"span_pier_foot_concrete_{a}.png", base.cell), None))
+# Concrete pier steps by how far below the cap they are, tapering out, up to spans.TAPER_STEPS and then straight.
+PIER_TAPER_LEVELS = 6
+for d in range(1, PIER_TAPER_LEVELS + 1):
+    for a in (0, 1):
+        JOBS.append(("signals", ("pier_taper", d, a), lambda a=a, d=d: scenery(f"span_pier_taper_{d}_{a}.png", base.cell), None))
+        JOBS.append(("signals", ("pier_foot_taper", d, a), lambda a=a, d=d: scenery(f"span_pier_foot_taper_{d}_{a}.png", base.cell), None))
 # The truss's other tiles, after the middle of a span (span_deck_truss): over a pier, a pier at the start or end, a one tile girder.
 TRUSS_KINDS = ["mid", "pier", "start", "end", "girder"]
 for t, kind in enumerate(TRUSS_KINDS[1:], 1):
@@ -754,12 +759,17 @@ object Atlas {{
 
     /** A tile of bridge and a step of what holds it up, at style * 2 + 0 along view u or 1 along v; a tunnel mouth opening to view edge XM, XP, YM or YP. On the signals sheet. */
     val SPAN_DECK = intArrayOf({", ".join(str(index[("span_deck", st, a)]) for st in range(len(SPAN_STYLES)) for a in (0, 1))})
-    val SPAN_PIER = intArrayOf({", ".join(str(index[("span_pier", st, a)]) for st in range(len(SPAN_STYLES)) for a in (0, 1))})
+    val SPAN_PIER = intArrayOf({", ".join(str(index[("span_pier", st, a)] if st != 2 else index[("pier_taper", 1, a)]) for st in range(len(SPAN_STYLES)) for a in (0, 1))})
     val PORTAL = intArrayOf({", ".join(str(index[("portal", e)]) for e in range(4))})
     /** A pier's top step with the cap the deck sits on, at style * 2 + along. On the signals sheet. */
     val SPAN_PIER_TOP = intArrayOf({", ".join(str(index[("span_pier_top", st, a)]) for st in range(len(SPAN_STYLES)) for a in (0, 1))})
-    /** A pier's step on the ground, at style * 2 + along: a footing with the shaft tapering in for concrete, the plain step for the others. On the signals sheet. */
-    val SPAN_PIER_FOOT = intArrayOf({", ".join(str(index[("span_pier_foot", a)] if st == 2 else index[("span_pier", st, a)]) for st in range(len(SPAN_STYLES)) for a in (0, 1))})
+    /** A pier's step on the ground, at style * 2 + along: a footing for concrete, the plain step for the others. On the signals sheet. */
+    val SPAN_PIER_FOOT = intArrayOf({", ".join(str(index[("pier_foot_taper", 1, a)] if st == 2 else index[("span_pier", st, a)]) for st in range(len(SPAN_STYLES)) for a in (0, 1))})
+    /** A concrete pier's step [level] steps below the cap, at (level - 1) * 2 + along, wider the lower it is; on its footing in
+     * [CONCRETE_PIER_FOOT]. Levels past [CONCRETE_PIER_LEVELS] use the last, which runs straight. On the signals sheet. */
+    val CONCRETE_PIER = intArrayOf({", ".join(str(index[("pier_taper", d, a)]) for d in range(1, PIER_TAPER_LEVELS + 1) for a in (0, 1))})
+    val CONCRETE_PIER_FOOT = intArrayOf({", ".join(str(index[("pier_foot_taper", d, a)]) for d in range(1, PIER_TAPER_LEVELS + 1) for a in (0, 1))})
+    const val CONCRETE_PIER_LEVELS = {PIER_TAPER_LEVELS}
     /** A through truss tile at kind * 2 + along: 0 the middle of a span, 1 over a pier, 2 a pier with a girder out to the abutment on its
      * -u or -v half, 3 on its +u or +v half, 4 a one tile girder bridge. On the signals sheet. */
     val TRUSS_DECK = intArrayOf({", ".join(str(index[("span_deck", 1, a)] if t == 0 else index[("truss", t, a)]) for t in range(len(TRUSS_KINDS)) for a in (0, 1))})

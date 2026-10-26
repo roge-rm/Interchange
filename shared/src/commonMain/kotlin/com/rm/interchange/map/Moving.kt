@@ -70,15 +70,16 @@ internal fun DrawScope.drawMoving(world: World, view: View, sheets: Sheets, movi
             val y = s.y0 + dy * k
             val ground = minOf(minOf(world.heightAt(x, y), world.heightAt(x + 1, y)), minOf(world.heightAt(x + 1, y + 1), world.heightAt(x, y + 1)))
             // A trestle stands on bents every tile; trusses and girders on piers every other, a truss on its last tile too
-            // so each span ends on a pier. The top step carries the cap, the one on the ground the footing.
+            // so each span ends on a pier. The top step carries the cap, the one on the ground the footing. Concrete steps
+            // widen by how far below the cap they are, so the shaft tapers all the way up.
             val pier = s.style == Spans.TRESTLE || k % 2 == 1 || (truss && k == len)
             if (pier) for (z in ground until s.height) {
-                val steps = when (z) {
-                    s.height - 1 -> Atlas.SPAN_PIER_TOP
-                    ground -> Atlas.SPAN_PIER_FOOT
-                    else -> Atlas.SPAN_PIER
-                }
-                tileItem(items, view, x, y, z.toFloat(), DECK_DEPTH - 0.01f, steps[s.style * 2 + along])
+                val sprite = if (z == s.height - 1) Atlas.SPAN_PIER_TOP[s.style * 2 + along]
+                else if (s.style == Spans.CONCRETE) {
+                    val level = minOf(s.height - 1 - z, Atlas.CONCRETE_PIER_LEVELS)
+                    (if (z == ground) Atlas.CONCRETE_PIER_FOOT else Atlas.CONCRETE_PIER)[(level - 1) * 2 + along]
+                } else (if (z == ground) Atlas.SPAN_PIER_FOOT else Atlas.SPAN_PIER)[s.style * 2 + along]
+                tileItem(items, view, x, y, z.toFloat(), DECK_DEPTH - 0.01f, sprite)
             }
             val sprite = if (!truss) Atlas.SPAN_DECK[s.style * 2 + along] else {
                 // Truss spans run between piers, with a plate girder from the end piers out to the abutments.

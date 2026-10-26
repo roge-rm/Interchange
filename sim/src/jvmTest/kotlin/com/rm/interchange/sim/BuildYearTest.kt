@@ -65,4 +65,16 @@ class BuildYearTest {
         b.shedYears[b.index(10, 10)] = 1960
         assertNotEquals(a.checksum(), b.checksum())
     }
+
+    @Test
+    fun liftingTheTrackTakesItsShedDown() {
+        val w = line()
+        val shed = w.index(10, 10)
+        assertTrue(shed in w.sheds)
+        w.apply(Command.Rail(0, 9, 10, 11, 10, Track.X, remove = true))
+        assertEquals(0, w.track[shed].toInt())
+        assertTrue(shed !in w.sheds)
+        assertTrue(shed !in w.shedYears)
+        assertTrue(w.view().sheds.isEmpty())
+    }
 }

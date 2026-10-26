@@ -18,6 +18,7 @@ the sky, from black (sideways or down) to white (flat on top), for laying snow.
 
 span_deck_<style>_<0 along u, 1 along v>.png and span_pier_... are a tile of
 bridge and a step of what holds it up, span_pier_top_... the top step with its cap,
+span_pier_taper_<level>_<a>.png and span_pier_foot_taper_<level>_<a>.png concrete steps level steps below the cap,
 span_truss_<kind>_<a>.png the other truss tiles (spans.TRUSS_KINDS); span_portal_<edge>.png
 a tunnel mouth; span_shed_<a>.png and span_shed_concrete_<a>.png snow sheds.
 
@@ -190,10 +191,14 @@ def main():
     for style in spans.STYLES:
         for a in (0, 1):
             shot(out, f"span_deck_{style}_{a}.png", lambda m, style=style, a=a: spans.deck(m, style, a == 0), shadow=False)
-            shot(out, f"span_pier_{style}_{a}.png", lambda m, style=style, a=a: spans.pier(m, style, a == 0), shadow=False)
+            if style != "concrete":
+                shot(out, f"span_pier_{style}_{a}.png", lambda m, style=style, a=a: spans.pier(m, style, a == 0), shadow=False)
             shot(out, f"span_pier_top_{style}_{a}.png", lambda m, style=style, a=a: spans.pier(m, style, a == 0, top=True), shadow=False)
-    for a in (0, 1):
-        shot(out, f"span_pier_foot_concrete_{a}.png", lambda m, a=a: spans.pier(m, "concrete", a == 0, foot=True), shadow=False)
+    # Concrete piers a step at each level below the cap, tapering, and the same on their footing.
+    for d in range(1, spans.TAPER_STEPS + 2):
+        for a in (0, 1):
+            shot(out, f"span_pier_taper_{d}_{a}.png", lambda m, a=a, d=d: spans.pier(m, "concrete", a == 0, level=d), shadow=False)
+            shot(out, f"span_pier_foot_taper_{d}_{a}.png", lambda m, a=a, d=d: spans.pier(m, "concrete", a == 0, foot=True, level=d), shadow=False)
     for kind in spans.TRUSS_KINDS[1:]:
         for a in (0, 1):
             shot(out, f"span_truss_{kind}_{a}.png", lambda m, kind=kind, a=a: spans.deck(m, "truss", a == 0, kind), shadow=False)
