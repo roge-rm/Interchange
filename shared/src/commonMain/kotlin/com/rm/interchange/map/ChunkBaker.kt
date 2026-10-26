@@ -362,11 +362,10 @@ internal class ChunkBaker(
             val e = viewEdge(world.dockFacing[tile] ?: 0)
             return art(if (shadow) Atlas.DOCK_SHADOW[e] else Atlas.DOCK[e], base)
         }
-        world.locks[tile]?.let { axis ->
-            // Drawn rising to its higher end.
-            val high = if (axis == Track.X) (if (world.heightAt(wx + 1, wy) > world.heightAt(wx, wy)) Track.XP else Track.XM)
-            else (if (world.heightAt(wx, wy + 1) > world.heightAt(wx, wy)) Track.YP else Track.YM)
-            val e = lockEra(year) * 4 + viewEdge(high)
+        world.locks[tile]?.let {
+            // Drawn rising to its higher end, gates and house by its place in a flight of locks.
+            val high = lockHigh(wx, wy)
+            val e = (lockEra(year) * 4 + lockPlace(wx, wy, high)) * 4 + viewEdge(high)
             return art(if (shadow) Atlas.LOCK_SHADOW[e] else Atlas.LOCK[e], base)
         }
         if (world.canals.contains(tile)) return NO_ART
@@ -776,35 +775,63 @@ internal class ChunkBaker(
         }
     }
 
+    /** The edge the lock on world tile ([wx], [wy]) rises to. */
+    private fun lockHigh(wx: Int, wy: Int): Int =
+        if (world.locks[world.index(wx, wy)] == Track.X) (if (world.heightAt(wx + 1, wy) > world.heightAt(wx, wy)) Track.XP else Track.XM)
+        else (if (world.heightAt(wx, wy + 1) > world.heightAt(wx, wy)) Track.YP else Track.YM)
+
+    /**
+     * Where the lock on world tile ([wx], [wy]), rising to [high], sits in a flight of locks, a lock tile next to it
+     * along its length rising the same way: 0 on its own, 1 the low end, 2 in the middle, 3 the high end.
+     */
+    private fun lockPlace(wx: Int, wy: Int, high: Int): Int {
+        fun flight(edge: Int): Boolean {
+            val x = wx + Track.dx(edge)
+            val y = wy + Track.dy(edge)
+            return x in 0 until world.width && y in 0 until world.height && world.locks.containsKey(world.index(x, y)) && lockHigh(x, y) == high
+        }
+        val below = flight(Track.opposite(high))
+        val above = flight(high)
+        return when {
+            below && above -> 2
+            above -> 1
+            below -> 3
+            else -> 0
+        }
+    }
+
     /** The building on airport [a]'s tile ([wx], [wy]) and its shadow, facing the runway, or -1. */
     private fun airportArt(a: Airport, wx: Int, wy: Int, shadow: Boolean): Int {
         val lx = if (a.axis == Track.X) wx - a.x else wy - a.y
         val ly = if (a.axis == Track.X) wy - a.y else wx - a.x
         val e = viewEdge(if (a.axis == Track.X) Track.YM else Track.XM)
-        fun pick(art: IntArray, shade: IntArray) = if (shadow) shade[e] else art[e]
-        // Terminals look like the year the airport went up, by its hangar's build year.
-        val era = terminalEra(world.depots.getOrNull(a.depot)?.built?.takeIf { it > 0 } ?: year)
-        fun terminal(art: IntArray, shade: IntArray) = if (shadow) shade[era * 4 + e] else art[era * 4 + e]
+        // Hangars, terminals and towers look like the year the airport went up, by its hangar's build year.
+        val built = world.depots.getOrNull(a.depot)?.built?.takeIf { it > 0 } ?: year
+        val era = terminalEra(built)
+        fun pick(art: IntArray, shade: IntArray, era: Int) = if (shadow) shade[era * 4 + e] else art[era * 4 + e]
+        // The 1940s terminals of two and three tiles have the control cab on one of them, era 3.
+        fun terminal(art: IntArray, shade: IntArray, cab: Boolean = false) = pick(art, shade, if (cab && era == 0) 3 else era)
+        val tower = if (shadow) Atlas.TOWER_SHADOW[towerEra(built)] else Atlas.TOWER[towerEra(built)]
         val back = Airports.WIDTH[a.kind] - 1
         return when (a.kind) {
             Airports.SEAPLANE -> viewEdge(a.axis).let { if (shadow) Atlas.SEAPLANE_SHADOW[it] else Atlas.SEAPLANE[it] }
             Airports.STRIP -> if (lx == Airports.LENGTH[a.kind] - 1) (if (shadow) Atlas.STRIP_HUT_SHADOW else Atlas.STRIP_HUT) else -1
             Airports.REGIONAL -> if (ly != back) -1 else when (lx) {
-                0 -> pick(Atlas.HANGAR_SMALL, Atlas.HANGAR_SMALL_SHADOW)
+                0 -> pick(Atlas.HANGAR_SMALL, Atlas.HANGAR_SMALL_SHADOW, smallHangarEra(built))
                 2 -> terminal(Atlas.TERMINAL_SMALL, Atlas.TERMINAL_SMALL_SHADOW)
-                4 -> if (shadow) Atlas.TOWER_SHADOW else Atlas.TOWER
+                4 -> tower
                 else -> -1
             }
             Airports.CITY -> if (ly != back) -1 else when (lx) {
-                0 -> pick(Atlas.HANGAR, Atlas.HANGAR_SHADOW)
-                2, 3 -> terminal(Atlas.TERMINAL_MID, Atlas.TERMINAL_MID_SHADOW)
-                5 -> if (shadow) Atlas.TOWER_SHADOW else Atlas.TOWER
+                0 -> pick(Atlas.HANGAR, Atlas.HANGAR_SHADOW, hangarEra(built))
+                2, 3 -> terminal(Atlas.TERMINAL_MID, Atlas.TERMINAL_MID_SHADOW, lx == 2)
+                5 -> tower
                 else -> -1
             }
             Airports.INTERNATIONAL -> if (ly != back) -1 else when (lx) {
-                0, 1 -> pick(Atlas.HANGAR, Atlas.HANGAR_SHADOW)
-                3, 4, 5 -> terminal(Atlas.TERMINAL_BIG, Atlas.TERMINAL_BIG_SHADOW)
-                7 -> if (shadow) Atlas.TOWER_SHADOW else Atlas.TOWER
+                0, 1 -> pick(Atlas.HANGAR, Atlas.HANGAR_SHADOW, hangarEra(built))
+                3, 4, 5 -> terminal(Atlas.TERMINAL_BIG, Atlas.TERMINAL_BIG_SHADOW, lx == 4)
+                7 -> tower
                 else -> -1
             }
             else -> -1
@@ -1128,17 +1155,19 @@ internal class ChunkBaker(
             val jy = ((d shr 8) and 255) / 255f
             // Kept off the tile's edges so they don't crowd onto the track next door.
             val (ux, uy) = if (deep) {
-                // Close canopy: a loose three by two grid.
-                0.14f + (k % 3 + jx) * 0.24f to 0.14f + (k / 3 % 2 + jy) * 0.36f
+                // Close canopy: a loose three by two grid, each tree in the middle part of its cell so gaps stay small.
+                0.14f + (k % 3 + 0.15f + jx * 0.7f) * 0.24f to 0.14f + (k / 3 % 2 + 0.15f + jy * 0.7f) * 0.36f
             } else {
                 (cx + (jx - 0.5f) * 0.5f).coerceIn(0.12f, 0.88f) to (cy + (jy - 0.5f) * 0.5f).coerceIn(0.12f, 0.88f)
             }
             val tx = wx + ux
             val ty = wy + uy
-            val look = ((d shr 16) and 255) % Atlas.TREE_LOOKS + age
             val mixed = ((d shr 24) and 3) == 0 && around > 0
             val own = if (mixed) wooded[((d shr 26) and 7) % around] else kind
-            spots += floatArrayOf(view.toViewX(tx, ty) + view.toViewY(tx, ty), tx, ty, look.coerceIn(0, Atlas.TREE_LOOKS - 1).toFloat(), own.toFloat())
+            var look = (((d shr 16) and 255) % Atlas.TREE_LOOKS + age).coerceIn(0, Atlas.TREE_LOOKS - 1)
+            // A pine's oldest look is the big white pine; only one in four of those, so it stands out among jack pines.
+            if (own == Trees.PINE && look == Atlas.TREE_LOOKS - 1 && (d ushr 30) != 0) look--
+            spots += floatArrayOf(view.toViewX(tx, ty) + view.toViewY(tx, ty), tx, ty, look.toFloat(), own.toFloat())
         }
         spots.sortBy { it[0] }
         val cells = treeCells(shadow)
@@ -1297,8 +1326,8 @@ internal class ChunkBaker(
             Triple("sand_pit_corner", 1998, "sand_pit_corner_early"),
         )
 
-        /** The years engine houses, platform canopies, locks and terminals change their look ([depotEra], [canopyEra], [lockEra], [terminalEra]). */
-        private val SCENERY_YEARS = intArrayOf(1900, 1915, 1930, 1958, 1960, 1970, 1985)
+        /** The years engine houses, platform canopies, locks and airport buildings change their look ([depotEra], [canopyEra], [lockEra], [terminalEra], [smallHangarEra], [hangarEra], [towerEra]). */
+        private val SCENERY_YEARS = intArrayOf(1900, 1915, 1930, 1950, 1958, 1960, 1970, 1985)
 
         /** An engine house's look by the year it was built (the game's year for one from an older save): 0 wooden to 1900, 1 brick to 1960, 2 a steel diesel shop. */
         fun depotEra(year: Int): Int = when {
@@ -1323,6 +1352,15 @@ internal class ChunkBaker(
             year < 1985 -> 1
             else -> 2
         }
+
+        /** A small hangar's look by the year its airport went up: 0 a wooden flying club hangar to 1950, 1 a Butler steel arch hangar. */
+        fun smallHangarEra(year: Int): Int = if (year < 1950) 0 else 1
+
+        /** A big hangar's look by the year its airport went up: 0 a wartime RCAF hangar to 1970, 1 a clad steel hangar. */
+        fun hangarEra(year: Int): Int = if (year < 1970) 0 else 1
+
+        /** A control tower's look by the year its airport went up: 0 a wooden tower on a timber frame to 1960, 1 a Transport Canada concrete tower. */
+        fun towerEra(year: Int): Int = if (year < 1960) 0 else 1
 
         /** Every year in [PART_ERAS] and [SCENERY_YEARS], once each, in order. */
         private val ERA_YEARS = (PART_ERAS.map { it.second } + SCENERY_YEARS.toList()).distinct().sorted()

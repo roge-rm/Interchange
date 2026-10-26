@@ -160,14 +160,16 @@ JOBS.append(("static", ("salt_dome",), lambda: scenery("salt_dome.png", base.cel
 JOBS.append(("shadows", ("salt_dome_shadow",), lambda: scenery("salt_dome_shadow.png", base.cell), None))
 UP[("salt_dome",)] = "salt_dome.png"
 # Docks, shipyards, locks and seaplane bases by the view edge they face; hangars and terminals by the edge their front faces.
-WATERSIDE = ["dock", "shipyard", "seaplane", "hangar_small", "hangar"]
+WATERSIDE = ["dock", "shipyard", "seaplane"]
 for name in WATERSIDE:
     for e, edge in enumerate(EDGES):
         JOBS.append(("static", (name, e), lambda name=name, edge=edge: scenery(f"{name}_{edge}.png", base.cell), None))
         JOBS.append(("shadows", (name + "_shadow", e), lambda name=name, edge=edge: scenery(f"{name}_{edge}_shadow.png", base.cell), None))
         UP[(name, e)] = f"{name}_{edge}.png"
-# Locks (ChunkBaker.lockEra) and terminals (ChunkBaker.terminalEra) by era as well, <name>_<era>_<edge>.
-WATERSIDE_ERAS = {"lock": 2, "terminal_small": 3, "terminal_mid": 3, "terminal_big": 3}
+# Locks, hangars and terminals by era as well, <name>_<era>_<edge>: locks at ChunkBaker.lockEra * 4 + lockPlace, hangars
+# by hangarEra, terminals by terminalEra with 3 the first era again with the control cab on its roof.
+WATERSIDE_ERAS = {"lock": 8, "hangar_small": 2, "hangar": 2, "terminal_small": 3, "terminal_mid": 4, "terminal_big": 4}
+TOWER_ERAS = 2
 for name, eras in WATERSIDE_ERAS.items():
     for era in range(eras):
         for e, edge in enumerate(EDGES):
@@ -175,7 +177,11 @@ for name, eras in WATERSIDE_ERAS.items():
             JOBS.append(("shadows", (name + "_shadow", era, e),
                          lambda name=name, era=era, edge=edge: scenery(f"{name}_{era}_{edge}_shadow.png", base.cell), None))
             UP[(name, era, e)] = f"{name}_{era}_{edge}.png"
-for name in ("tower", "strip_hut"):
+for era in range(TOWER_ERAS):
+    JOBS.append(("static", ("tower", era), lambda era=era: scenery(f"tower_{era}.png", base.cell), None))
+    JOBS.append(("shadows", ("tower_shadow", era), lambda era=era: scenery(f"tower_{era}_shadow.png", base.cell), None))
+    UP[("tower", era)] = f"tower_{era}.png"
+for name in ("strip_hut",):
     JOBS.append(("static", (name,), lambda name=name: scenery(f"{name}.png", base.cell), None))
     JOBS.append(("shadows", (name + "_shadow",), lambda name=name: scenery(f"{name}_shadow.png", base.cell), None))
     UP[(name,)] = f"{name}.png"
@@ -293,17 +299,21 @@ for m, (key, length, build) in enumerate(vehicles.ROSTER):
 
 def waterside_consts(index):
     """Atlas lines for the docks, locks and airport buildings: each by view edge, and its shadow."""
-    out = ["    /** Docks, shipyards, seaplane bases and hangars, by the view edge they face, and their shadows. On the static sheet. */"]
+    out = ["    /** Docks, shipyards and seaplane bases, by the view edge they face, and their shadows. On the static sheet. */"]
     for name in WATERSIDE:
         const = name.upper()
         out.append(f"    val {const} = intArrayOf({', '.join(str(index[(name, e)]) for e in range(4))})")
         out.append(f"    val {const}_SHADOW = intArrayOf({', '.join(str(index[(name + '_shadow', e)]) for e in range(4))})")
-    out.append("    /** Locks (by the edge they rise to) and terminals, at era * 4 + the view edge they face, and their shadows. On the static sheet. */")
+    out.append("    /** Locks (by the edge they rise to), hangars and terminals, at era * 4 + the view edge they face, and their shadows."
+               " A lock's era is its look * 4 + its place in the flight. On the static sheet. */")
     for name, eras in WATERSIDE_ERAS.items():
         const = name.upper()
         out.append(f"    val {const} = intArrayOf({', '.join(str(index[(name, k, e)]) for k in range(eras) for e in range(4))})")
         out.append(f"    val {const}_SHADOW = intArrayOf({', '.join(str(index[(name + '_shadow', k, e)]) for k in range(eras) for e in range(4))})")
-    for name in ("tower", "strip_hut"):
+    out.append("    /** Control towers by era, and their shadows. */")
+    out.append(f"    val TOWER = intArrayOf({', '.join(str(index[('tower', k)]) for k in range(TOWER_ERAS))})")
+    out.append(f"    val TOWER_SHADOW = intArrayOf({', '.join(str(index[('tower_shadow', k)]) for k in range(TOWER_ERAS))})")
+    for name in ("strip_hut",):
         out.append(f"    const val {name.upper()} = {index[(name,)]}")
         out.append(f"    const val {name.upper()}_SHADOW = {index[(name + '_shadow',)]}")
     return "\n".join(out)

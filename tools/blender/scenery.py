@@ -152,9 +152,11 @@ def conifer(m, rng, size, kind, look):
             if 0.72 < t < 0.88:
                 r = max(r, base * 0.42)
             return r
+        # The lowest whorls reach out further, so neighbouring trees' skirts meet over the ground.
+        flare = 1 + 0.25 * max(0.0, 1 - t / 0.3)
         if fir:
-            return base * (1 - t) ** 1.12
-        return base * (1 - t) ** 0.92
+            return base * (1 - t) ** 1.12 * flare
+        return base * (1 - t) ** 0.92 * flare
 
     m.upright(0, 0, 0, top * 0.5, 0.016 * size, 0.008 * size, bark, segments=8)
     m.upright(0, 0, top * 0.03, top * 0.9, base * 0.5, 0.004, core, segments=10)
@@ -186,7 +188,7 @@ def conifer(m, rng, size, kind, look):
     # The leader: a short spire on top.
     tip = mats[-1]
     m.upright(0, 0, top * 0.88, top * 1.04, 0.013 * size, 0.0015, tip, segments=8)
-    understorey(m, rng, size, seed + 100)
+    understorey(m, rng, size, seed + 100, 1.7, reach=1.4)
 
 
 def trunk_path(rng, size, top, lean):
@@ -312,21 +314,35 @@ def white_pine(m, rng, size):
     understorey(m, rng, size, seed + 100, 0.6)
 
 
-def understorey(m, rng, size, seed, amount=1.0):
-    """A few patches of low shrubs and seedlings near a tree's foot, so the forest floor between trees reads as growth."""
-    mats = greens("understorey", "#1e3216", "#3c5628")
+# Understorey shrubs: blueberry and Labrador tea, ferns, and alder or young maple, each lighter than the forest floor.
+UNDERSTOREY = (("#3c5a22", "#6e8e38"), ("#4a6e24", "#86aa40"), ("#365a2c", "#62884a"))
+
+
+def understorey(m, rng, size, seed, amount=1.0, reach=1.0):
+    """Patches of low shrubs round a tree's foot, out to reach times the usual distance, so the forest floor between
+    trees reads as growth: each patch one kind of shrub, a few clumps with a lighter, lit clump on top."""
+    # Its own dice, so the tree drawn after it comes out the same whatever the shrubs take.
+    rng = random.Random(seed)
+    palettes = [greens(f"understorey {k}", a, b) for k, (a, b) in enumerate(UNDERSTOREY)]
+    lit = greens("understorey lit", "#6a8a36", "#a4c25c")
+    n = max(1, round(3 * amount))
     k0 = rng.uniform(0, 2 * math.pi)
-    for k in range(max(1, round(3 * amount))):
-        ang = k0 + 2 * math.pi * k / 3 + rng.uniform(-0.6, 0.6)
-        d = rng.uniform(0.07, 0.16) * (0.7 + 0.3 * size)
+    for k in range(n):
+        ang = k0 + 2 * math.pi * k / n + rng.uniform(-0.5, 0.5)
+        d = rng.uniform(0.07, 0.16) * reach * (0.7 + 0.3 * size)
         px, py = d * math.cos(ang), d * math.sin(ang)
+        mats = palettes[rng.randrange(len(palettes))]
         for j in range(rng.randrange(3, 6)):
             seed += 1
             a2 = rng.uniform(0, 2 * math.pi)
-            r = rng.uniform(0.026, 0.042) * (0.7 + 0.3 * size)
-            off = rng.uniform(0, 0.035)
-            tuft(m, px + off * math.cos(a2), py + off * math.sin(a2), r * 0.35 / rig.RISE, r, r * rng.uniform(0.75, 1.0),
-                 r * rng.uniform(0.6, 0.85), mats[rng.randrange(len(mats))], seed, a2)
+            r = rng.uniform(0.026, 0.044) * (0.7 + 0.3 * size)
+            off = rng.uniform(0, 0.04)
+            x, y = px + off * math.cos(a2), py + off * math.sin(a2)
+            c = r * rng.uniform(0.6, 0.85)
+            tuft(m, x, y, r * 0.35 / rig.RISE, r, r * rng.uniform(0.75, 1.0), c, mats[rng.randrange(len(mats))], seed, a2)
+            if rng.random() < 0.6:
+                tuft(m, x + r * 0.15, y - r * 0.1, (r * 0.35 + c * 0.75) / rig.RISE, r * 0.55, r * 0.5, c * 0.4,
+                     lit[rng.randrange(len(lit))], seed + 9000, a2)
 
 
 def broadleaf(m, rng, size, kind, look, season):

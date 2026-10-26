@@ -8,7 +8,8 @@ Files: tree_<kind>_<look>.png, station_<era>_<0 along u, 1 along v>.png and
 station_bare_<a>.png (no canopy), depot_<era>_<edge>.png, signal_<0 clear, 1 stop>.png, house_<kind>_<edge>.png (a town
 building facing that view edge), part_<piece>_<edge>.png (a piece of an
 industry), station_house_<era>_<edge>.png (a station building facing its
-platform at that edge), lock_<era>_<edge>.png and terminal_<size>_<era>_<edge>.png, each a whole cell at twice the sharpest level.
+platform at that edge), lock_<era * 4 + place>_<edge>.png, hangar_<era>_<edge>.png, tower_<era>.png and
+terminal_<size>_<era>_<edge>.png (era 3 the first era with the cab on its roof), each a whole cell at twice the sharpest level.
 A file already there is left alone.
 
 Everything but signals comes twice: the thing itself with no shadow, and
@@ -171,15 +172,23 @@ def main():
         shot(out, f"dock_{edge}.png", waterside.dock, heading=waterside.WATER_HEADING[edge], rise=BUILDING_RISE)
         shot(out, f"shipyard_{edge}.png", waterside.shipyard, heading=waterside.WATER_HEADING[edge], rise=BUILDING_RISE)
         for era in range(waterside.LOCK_ERAS):
-            shot(out, f"lock_{era}_{edge}.png", lambda m, era=era: waterside.lock(m, era), heading=houses.FACING[edge])
+            for place in range(waterside.LOCK_PLACES):
+                v = era * waterside.LOCK_PLACES + place
+                shot(out, f"lock_{v}_{edge}.png", lambda m, era=era, place=place: waterside.lock(m, era, place), heading=houses.FACING[edge])
         shot(out, f"seaplane_{edge}.png", waterside.seaplane_dock, heading=waterside.WATER_HEADING[edge], rise=PLANE_RISE)
-        shot(out, f"hangar_small_{edge}.png", lambda m: waterside.hangar(m, False), heading=houses.FACING[edge], rise=BUILDING_RISE)
-        shot(out, f"hangar_{edge}.png", lambda m: waterside.hangar(m, True), heading=houses.FACING[edge], rise=BUILDING_RISE)
+        for era in range(waterside.HANGAR_ERAS):
+            shot(out, f"hangar_small_{era}_{edge}.png", lambda m, era=era: waterside.hangar(m, False, era), heading=houses.FACING[edge], rise=BUILDING_RISE)
+            shot(out, f"hangar_{era}_{edge}.png", lambda m, era=era: waterside.hangar(m, True, era), heading=houses.FACING[edge], rise=BUILDING_RISE)
         for size in ("small", "mid", "big"):
             for era in range(waterside.TERMINAL_ERAS):
                 shot(out, f"terminal_{size}_{era}_{edge}.png", lambda m, size=size, era=era: waterside.terminal(m, size, era),
                      heading=houses.FACING[edge], rise=BUILDING_RISE)
-    shot(out, "tower.png", waterside.tower, rise=BUILDING_RISE)
+            if size != "small":
+                # The 1940s one again with the control cab on its roof, for one tile of the row.
+                shot(out, f"terminal_{size}_{waterside.TERMINAL_ERAS}_{edge}.png", lambda m, size=size: waterside.terminal(m, size, 0, cab=True),
+                     heading=houses.FACING[edge], rise=BUILDING_RISE)
+    for era in range(waterside.TOWER_ERAS):
+        shot(out, f"tower_{era}.png", lambda m, era=era: waterside.tower(m, era), rise=BUILDING_RISE)
     shot(out, "strip_hut.png", waterside.strip_hut, rise=PLANE_RISE)
     for kind in houses.BUILDERS:
         for edge in EDGES:
