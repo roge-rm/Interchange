@@ -3713,26 +3713,131 @@ def crane(m):
 
 
 def terminal_elevator(m):
-    """A port's terminal elevator: rows of tall concrete bins and the headhouse over them."""
+    """A port's terminal elevator, as at Thunder Bay: three rows of slip formed concrete bins with the interstice bins
+    filled between them and a gallery along their tops, the tall workhouse at the land end with bands of windows and
+    a head house, and the shipping gallery out over the wharf on a steel tower with two loading spouts."""
     ground(m, "#8a847a", "port concrete")
     concrete = material("terminal concrete", "#cfc9bd", rough=0.9)
-    for x in (-0.3, -0.1, 0.1, 0.3):
-        for y in (-0.2, 0.0, 0.2):
-            m.upright(x, y, 0, 6.0, 0.1, 0.1, concrete, segments=20)
-    m.box(-0.42, 0.42, -0.1, 0.1, 6.0, 7.6, concrete, 0.004)
-    m.box(-0.15, 0.15, -0.06, 0.06, 7.6, 8.4, concrete, 0.004)
-    m.rod((-0.42, 0.0, 6.8), (-0.9, 0.0, 3.0), 0.025, material("ship loader", "#7a7a76", metal=0.5, rough=0.5))
+    shade = material("terminal concrete joints", "#b4aea2", rough=0.9)
+    glass_ = glass()
+    steel = material("spout steel", "#7a7a76", metal=0.5, rough=0.5)
+    clad = material("gallery cladding", "#a8aaa6", metal=0.4, rough=0.55)
+    rib = material("gallery ribs", "#8e908c", metal=0.4, rough=0.55)
+    r = 0.098
+    xs, ys = (-0.4, -0.2, 0.0), (-0.33, -0.11, 0.11, 0.33)
+    for x in xs:
+        for y in ys:
+            m.upright(x, y, 0.02, 6.0, r, r, concrete, segments=24)
+            for z in (1.5, 3.0, 4.5):
+                m.upright(x, y, z, z + 0.02, r + 0.002, r + 0.002, shade, segments=24)
+    m.box(xs[0], xs[-1], ys[0], ys[-1], 0.02, 6.0, concrete)
+    m.box(xs[0] - r, xs[-1] + r, ys[0] - 0.02, ys[-1] + 0.02, 5.9, 6.05, concrete)
+    # The bin gallery along the tops, clad, with a strip of windows.
+    m.box(-0.27, -0.13, -0.45, 0.45, 6.05, 6.5, clad)
+    harbour.ribs(m, -0.27, -0.13, -0.45, 6.05, 6.5, rib, gap=0.025, face=-1)
+    for x, d in ((-0.27, -1), (-0.13, 1)):
+        harbour.ribs_y(m, x, -0.44, 0.44, 6.05, 6.5, rib, gap=0.03, face=d)
+        m.box(*sorted((x, x + d * 0.008)), -0.42, 0.42, 6.28, 6.38, glass_)
+    houses.gable(m, -0.28, -0.12, -0.46, 0.46, 6.5, 6.6, material("gallery roof", "#5a5c5a", metal=0.4, rough=0.6), clad,
+                 along_x=False, over=0.01, thick=0.03)
+    # The workhouse at the land end: taller than the bins, bands of windows up it, the head house on top.
+    wx0, wx1, wy0, wy1 = 0.12, 0.46, -0.3, 0.3
+    m.box(wx0, wx1, wy0, wy1, 0.02, 7.6, concrete)
+    # Narrow windows up the stair and the legs, a band of them along the distributing floor at the top.
+    for k in range(8):
+        z = 1.0 + k * 0.76
+        for y, d in ((wy0, -1), (wy1, 1)):
+            for x in (0.2, 0.38):
+                m.box(x - 0.011, x + 0.011, *sorted((y, y + d * 0.005)), z, z + 0.42, glass_)
+        m.box(wx1, wx1 + 0.005, -0.011, 0.011, z, z + 0.42, glass_)
+        m.box(wx0 - 0.004, wx1 + 0.004, wy0 - 0.004, wy1 + 0.004, z - 0.2, z - 0.18, shade)
+    for y, d in ((wy0, -1), (wy1, 1)):
+        for k in range(6):
+            x = wx0 + 0.04 + k * (wx1 - wx0 - 0.08) / 5
+            m.box(x - 0.02, x + 0.02, *sorted((y, y + d * 0.005)), 7.12, 7.42, glass_)
+    for k in range(7):
+        y = wy0 + 0.04 + k * (wy1 - wy0 - 0.08) / 6
+        m.box(wx1, wx1 + 0.005, y - 0.02, y + 0.02, 7.12, 7.42, glass_)
+    for x, y in ((wx0, wy0), (wx1, wy0), (wx0, wy1), (wx1, wy1)):
+        m.box(x - 0.012, x + 0.012, y - 0.012, y + 0.012, 0.02, 7.62, concrete)
+    m.box(wx0 - 0.01, wx1 + 0.01, wy0 - 0.01, wy1 + 0.01, 7.6, 7.66, shade)
+    m.box(0.2, 0.42, -0.14, 0.14, 7.66, 8.4, clad)
+    harbour.ribs(m, 0.2, 0.42, -0.14, 7.66, 8.4, rib, gap=0.025, face=-1)
+    harbour.ribs(m, 0.2, 0.42, 0.14, 7.66, 8.4, rib, gap=0.025, face=1)
+    m.box(0.19, 0.43, -0.15, 0.15, 8.4, 8.44, material("gallery roof", "#5a5c5a", metal=0.4, rough=0.6))
+    m.box(0.12, 0.2, -0.1, 0.1, 0.02, 0.9, concrete)
+    harbour.rollup_door(m, 0.2, 0.36, wy1, 0.02, 0.85, face=1)
+    # The shipping gallery out over the wharf on a steel tower, and two spouts swung down toward a ship's hatches.
+    m.box(-0.9, -0.27, -0.05, 0.05, 6.15, 6.45, clad)
+    harbour.ribs(m, -0.9, -0.27, -0.05, 6.15, 6.45, rib, gap=0.03, face=-1)
+    harbour.ribs(m, -0.9, -0.27, 0.05, 6.15, 6.45, rib, gap=0.03, face=1)
+    m.box(-0.91, -0.27, -0.06, 0.06, 6.45, 6.49, material("gallery roof", "#5a5c5a", metal=0.4, rough=0.6))
+    tower_ = material("gallery tower", "#6a6c6a", metal=0.5, rough=0.5)
+    for x in (-0.66, -0.58):
+        for y in (-0.05, 0.05):
+            m.rod((x, y, 0.0), (x, y, 6.15), 0.006, tower_)
+    for k in range(6):
+        z0, z1 = k * 1.0, (k + 1) * 1.0
+        m.rod((-0.66, -0.05, z0), (-0.58, -0.05, z1), 0.003, tower_, segments=5)
+        m.rod((-0.66, 0.05, z1), (-0.58, 0.05, z0), 0.003, tower_, segments=5)
+    for y in (-0.03, 0.03):
+        m.rod((-0.86, y, 6.15), (-0.92, y * 2, 3.2), 0.009, steel)
+        m.upright(-0.92, y * 2, 3.05, 3.2, 0.014, 0.011, steel, segments=10)
+    m.rod((-0.86, 0.0, 6.2), (-0.86, 0.0, 6.0), 0.012, steel)
 
 
 def warehouse(m):
+    """A brick port warehouse: pilasters and arched windows down its sides, sliding freight doors to the wharf, a
+    loading platform with a canopy on brackets along the back, ventilators on the ridge, cargo on the platform."""
     ground(m, "#8a847a", "port concrete")
-    wall = material("warehouse siding", "#8a6a50", rough=0.85)
-    x0, x1, y0, y1 = -0.42, 0.42, -0.4, 0.38
-    m.box(x0, x1, y0, y1, 0, 2.2, wall, 0.004)
-    gable(m, x0, x1, y0, y1, 2.2, 3.0, material("warehouse roof", "#5a5650", metal=0.3, rough=0.6), wall, along_x=True, over=0.02)
+    brick = material("warehouse brick", "#9a5a42", rough=0.85)
+    stone = material("warehouse stone", "#cfc6b2", rough=0.85)
+    roof = material("warehouse roof", "#4e4c48", metal=0.3, rough=0.6)
+    door = material("warehouse doors", "#4a5a52", rough=0.65)
+    trim = material("warehouse trim", "#2e3a34", rough=0.6)
+    glass_ = glass()
+    x0, x1, y0, y1, eave = -0.42, 0.3, -0.4, 0.38, 2.2
+    m.box(x0, x1, y0, y1, 0.0, eave, brick)
+    m.box(x0 - 0.005, x1 + 0.005, y0 - 0.005, y1 + 0.005, 0.0, 0.12, stone)
+    gable(m, x0, x1, y0, y1, eave, 3.0, roof, brick, along_x=False, over=0.025, thick=0.06)
+    # Pilasters and a corbelled band, arched windows between, on both gable ends (y0 and y1), a round vent in each gable.
+    for y, d in ((y0, -1), (y1, 1)):
+        for k in range(6):
+            x = x0 + 0.01 + k * (x1 - x0 - 0.02) / 5
+            m.box(x - 0.014, x + 0.014, *sorted((y, y + d * 0.014)), 0.0, eave, brick)
+        m.box(x0, x1, *sorted((y, y + d * 0.02)), eave - 0.12, eave - 0.04, brick)
+        for k in range(5):
+            c = x0 + 0.01 + (k + 0.5) * (x1 - x0 - 0.02) / 5
+            houses.arched_pane(m, "y", y, d, c, 0.55, 0.95, 0.06, glass_, trim, stone, rise=0.06, keystone=False)
+            houses.arched_pane(m, "y", y, d, c, 1.4, 1.8, 0.06, glass_, trim, stone, rise=0.06, keystone=False)
+        m.tube(*sorted((y, y + d * 0.008)), (x0 + x1) / 2, 2.55, 0.05, stone, segments=20)
+        m.tube(*sorted((y, y + d * 0.012)), (x0 + x1) / 2, 2.55, 0.036, material("gable louvre", "#3a3a3a", rough=0.7), segments=20)
+    # Freight doors to the wharf end (-x) on the gable, and on the platform side, the platform and canopy (+x).
+    for k, c in enumerate((-0.2, 0.18)):
+        m.box(x0 - 0.008, x0 - 0.002, c - 0.1, c + 0.1, 0.0, 1.25, door)
+        for j in range(3):
+            yy = c - 0.1 + (j + 0.5) * 0.2 / 3
+            m.rod((x0 - 0.009, yy - 0.025, 0.05), (x0 - 0.009, yy + 0.025, 1.2), 0.002, trim, segments=4)
+        m.box(x0 - 0.012, x0 - 0.002, c - 0.12, c + 0.12, 1.25, 1.31, trim)
+    m.box(x0 - 0.016, x0 - 0.004, -0.38, 0.38, 1.33, 1.36, trim)
+    houses.sign_text(m, "HARBOUR STORES", "x", x0, -1, 0.0, 1.9, 0.07, material("painted letters", "#ece6d4", rough=0.7))
+    # The loading platform along the back.
+    harbour.planks(m, x1, 0.48, y0 + 0.02, y1 - 0.02, 0.3, 0.35, along_x=True, width=0.03, seed=7)
+    m.box(x1, 0.475, y0 + 0.02, y1 - 0.02, 0.0, 0.3, material("platform face", "#5a4a3a", rough=0.9))
+    for c in (-0.24, 0.0, 0.24):
+        m.box(x1 + 0.002, x1 + 0.008, c - 0.08, c + 0.08, 0.35, 1.35, door)
+        m.box(x1 + 0.004, x1 + 0.01, c - 0.09, c + 0.09, 1.35, 1.4, trim)
+    canopy = [(x1, y0, 1.72), (0.5, y0, 1.6), (0.5, y1, 1.6), (x1, y1, 1.72)]
+    slab(m, canopy, 0.05, roof)
+    for y in (y0 + 0.06, 0.0, y1 - 0.06):
+        m.rod((x1 + 0.01, y, 1.3), (0.43, y, 1.64), 0.005, trim, segments=6)
+    for y in (-0.28, 0.1):
+        harbour.pallet(m, 0.4, y, 0.35, size=0.1, load="cartons")
+    harbour.crate(m, 0.36, 0.45, 0.18, 0.28, 0.35, 0.62, "#a8885a")
     for k in range(3):
-        x = x0 + 0.14 + k * 0.28
-        m.box(x - 0.08, x + 0.08, y1 - 0.002, y1 + 0.005, 0, 1.6, material("warehouse doors", "#4a5a62", metal=0.3, rough=0.6))
+        harbour.drum(m, 0.36 + k * 0.04, -0.12, 0.35, colour="#2a4a7a", r=0.016, h=0.3)
+    for y in (-0.25, 0.0, 0.25):
+        roof_vent(m, (x0 + x1) / 2, y, 3.0, roof, r=0.025)
 
 
 def fish_wharf(m):
@@ -3784,34 +3889,189 @@ def fish_wharf(m):
 
 
 def fish_shed(m):
+    """A Maritime fish store: weathered shingles with red trim, double doors and a loft door with its hoist beam in the
+    gable toward the wharf, buoys hung on the side, a lean-to bait shed, traps, totes, a net heap and drums."""
     ground(m, "#6a6660", "harbour gravel")
-    wood = material("fish shed shingles", "#9a8a72", rough=0.9)
-    m.box(-0.3, 0.3, -0.2, 0.2, 0, 1.5, wood, 0.004)
-    gable(m, -0.3, 0.3, -0.2, 0.2, 1.5, 2.3, material("fish shed roof", "#4a4642", rough=0.85), wood, along_x=True)
-    windows(m, -0.3, 0.3, -0.2, 0.2, 0.1, 1, 2, 1, glass(), material("shed trim", "#c84a3a", rough=0.7))
+    wood = material("fish shed shingles", "#9a9080", rough=0.9)
+    course = material("shingle courses", "#7e7466", rough=0.9)
+    trim = material("shed trim", "#c84a3a", rough=0.7)
+    roof = material("fish shed roof", "#4a4642", rough=0.85)
+    glass_ = glass()
+    x0, x1, y0, y1, eave = -0.32, 0.2, -0.24, 0.22, 1.5
+    m.box(x0, x1, y0, y1, 0.0, eave, wood)
+    for k in range(1, 19):
+        z = k * 0.08
+        m.box(x0 - 0.003, x1 + 0.003, y0 - 0.003, y1 + 0.003, z, z + 0.01, course)
+    gable(m, x0, x1, y0, y1, eave, 2.3, roof, wood, along_x=True, over=0.025, thick=0.06)
+    for x, y in ((x0, y0), (x1, y0), (x0, y1), (x1, y1)):
+        m.box(x - 0.009, x + 0.009, y - 0.009, y + 0.009, 0.0, eave, trim)
+    # The wharf end (-x): double doors, one swung open, the loft door over them and a hoist beam with its block.
+    dark = material("shed inside", "#1e1a16", rough=1.0)
+    m.box(x0 - 0.004, x0, -0.1, 0.1, 0.0, 1.1, dark)
+    m.box(x0 - 0.008, x0 - 0.002, 0.0, 0.1, 0.0, 1.1, trim)
+    m.wedge([(x0 - 0.002, -0.1, 0.0), (x0 - 0.008, -0.1, 0.0), (x0 - 0.1 - 0.006, -0.1 - 0.035, 0.0), (x0 - 0.1, -0.1 - 0.035, 0.0)],
+            [(x0 - 0.002, -0.1, 1.1), (x0 - 0.008, -0.1, 1.1), (x0 - 0.1 - 0.006, -0.1 - 0.035, 1.1), (x0 - 0.1, -0.1 - 0.035, 1.1)], trim)
+    m.box(x0 - 0.012, x0 - 0.002, -0.115, 0.115, 1.1, 1.15, trim)
+    m.box(x0 - 0.008, x0 - 0.002, -0.06, 0.06, 1.62, 1.98, material("loft door", "#7a3a2e", rough=0.7))
+    m.box(x0 - 0.012, x0 - 0.002, -0.07, 0.07, 1.98, 2.02, trim)
+    m.box(x0 - 0.16, x0 + 0.05, -0.012, 0.012, 2.12, 2.17, material("hoist beam", "#5a4632", rough=0.9))
+    m.rod((x0 - 0.14, 0.0, 2.12), (x0 - 0.14, 0.0, 1.5), 0.0018, material("hoist rope", "#c8b890", rough=0.9), segments=4)
+    m.box(x0 - 0.15, x0 - 0.13, -0.008, 0.008, 1.45, 1.52, material("hoist block", "#3a3a3c", metal=0.4, rough=0.5))
+    # The side (+y): a door, windows and a row of buoys hung on the wall.
+    m.box(0.06, 0.13, y1 + 0.002, y1 + 0.008, 0.0, 0.82, material("shed door", "#3e6a8a", rough=0.6))
+    m.box(0.055, 0.135, y1 + 0.004, y1 + 0.01, 0.82, 0.86, trim)
+    for c in (-0.22, -0.06):
+        houses.pane(m, "y", y1, 1, c, 0.6, 0.95, 0.07, glass_, trim, trim, bars=1)
+    for k in range(7):
+        harbour.buoy(m, -0.27 + k * 0.045, y1 + 0.016, 1.12, colour=("#e84a2a", "#f0c020", "#2a8a4a", "#ecebe6")[k % 4], r=0.012)
+    houses.pane(m, "y", y0, -1, -0.1, 0.6, 0.95, 0.07, glass_, trim, trim, bars=1)
+    # The bait shed lean-to on the land end, its stovepipe.
+    bx0, bx1, by0, by1 = x1, 0.4, -0.2, 0.12
+    m.wedge([(bx0, by0, 0.0), (bx1, by0, 0.0), (bx1, by1, 0.0), (bx0, by1, 0.0)],
+            [(bx0, by0, 1.05), (bx1, by0, 0.82), (bx1, by1, 0.82), (bx0, by1, 1.05)], wood)
+    slab(m, [(bx0, by0 - 0.02, 1.06), (bx1 + 0.02, by0 - 0.02, 0.8), (bx1 + 0.02, by1 + 0.02, 0.8), (bx0, by1 + 0.02, 1.06)], 0.04, roof)
+    m.box(bx1, bx1 + 0.006, -0.08, 0.0, 0.0, 0.72, material("bait shed door", "#3e6a8a", rough=0.6))
+    pipe = material("stovepipe", "#4a4a4c", metal=0.6, rough=0.4)
+    m.upright(0.33, 0.06, 0.8, 1.35, 0.008, 0.008, pipe, segments=8)
+    m.lathe(0.33, 0.06, 1.35, [(0.0, 0), (0.02, 0.04), (0.0, 0.07)], pipe, segments=10)
+    # Gear round about: traps stacked, a net heap, totes and drums.
+    harbour.trap_stack(m, -0.36, -0.44, 0.02, rows=2, cols=5, layers=2, seed=8)
+    harbour.trap_stack(m, 0.12, -0.44, 0.02, rows=2, cols=3, layers=3, seed=9)
+    net = material("fishing net", "#2a6a5a", rough=1.0)
+    m.lathe(0.32, 0.32, 0.02, [(0.08, 0), (0.08, 0.04), (0.06, 0.1), (0.025, 0.14), (0.0, 0.145)], net, segments=16, oval=0.7)
     for k in range(4):
-        m.box(0.34, 0.44, -0.3 + k * 0.08, -0.24 + k * 0.08, 0, 0.3, material("fish crates", "#3e6a8a", rough=0.8), 0.003)
+        m.box(-0.44, -0.36, 0.3, 0.37, 0.02 + k * 0.07, 0.02 + (k + 1) * 0.07 - 0.005, material("fish totes", "#3a7aaa", rough=0.6), 0.003)
+    for k in range(3):
+        harbour.drum(m, 0.36, 0.18 + k * 0.045, 0.02, colour="#b8322a", r=0.018, h=0.32)
 
 
 def boat_shed(m):
+    """A red boat shed with white trim: board and batten walls, big doors at the water end (-x) opening onto a marine
+    railway down to the shore, windows down its side, a cupola, and a dory on sawhorses with lumber stacked by it."""
     ground(m, "#6a6660", "harbour gravel")
-    wood = material("boat shed boards", "#c84a3a", rough=0.85)
-    m.box(-0.34, 0.34, -0.34, 0.2, 0, 1.6, wood, 0.004)
-    gable(m, -0.34, 0.34, -0.34, 0.2, 1.6, 2.5, material("boat shed roof", "#4a4642", rough=0.85), wood, along_x=False)
-    m.box(-0.14, 0.14, 0.2, 0.206, 0, 1.3, material("boat shed doors", "#e8e2d4", rough=0.7))
-    # A dory up on blocks.
-    m.wedge([(0.2, 0.28, 0.1), (0.36, 0.28, 0.1), (0.36, 0.42, 0.1), (0.2, 0.42, 0.1)], [(0.18, 0.26, 0.32), (0.38, 0.26, 0.32), (0.38, 0.46, 0.32), (0.18, 0.46, 0.32)], material("dory", "#e8c84a", rough=0.6))
+    wood = material("boat shed boards", "#b8402e", rough=0.85)
+    batten = material("boat shed battens", "#9a3424", rough=0.85)
+    white = material("boat shed trim", "#ecebe4", rough=0.6)
+    roof = material("boat shed roof", "#3e3c3a", rough=0.85)
+    glass_ = glass()
+    x0, x1, y0, y1, eave = -0.36, 0.32, -0.3, 0.2, 1.6
+    m.box(x0, x1, y0, y1, 0.0, eave, wood)
+    harbour.ribs(m, x0, x1, y0, 0.0, eave, batten, gap=0.03, face=-1)
+    harbour.ribs(m, x0, x1, y1, 0.0, eave, batten, gap=0.03, face=1)
+    harbour.ribs_y(m, x1, y0, y1, 0.0, eave, batten, gap=0.03, face=1)
+    gable(m, x0, x1, y0, y1, eave, 2.5, roof, wood, along_x=True, over=0.03, thick=0.06, trim=white)
+    for x, y in ((x0, y0), (x1, y0), (x0, y1), (x1, y1)):
+        m.box(x - 0.009, x + 0.009, y - 0.009, y + 0.009, 0.0, eave, white)
+    # Big doors at the water end, both folded back, the dark shed and a boat's bow inside.
+    dark = material("shed inside", "#1e1a16", rough=1.0)
+    m.box(x0 - 0.004, x0 + 0.02, -0.17, 0.07, 0.0, 1.35, dark)
+    for s, yh in ((-1, -0.17), (1, 0.07)):
+        yo = yh + s * 0.11
+        m.wedge([(x0 - 0.002, yh, 0.0), (x0 - 0.009, yh, 0.0), (x0 - 0.06, yo, 0.0), (x0 - 0.053, yo, 0.0)],
+                [(x0 - 0.002, yh, 1.33), (x0 - 0.009, yh, 1.33), (x0 - 0.06, yo, 1.33), (x0 - 0.053, yo, 1.33)], white)
+    m.box(x0 - 0.012, x0 - 0.002, -0.19, 0.09, 1.35, 1.42, white)
+    m.box(x0 - 0.01, x0 - 0.002, -0.07, -0.03, 1.7, 1.98, white)
+    hull = material("boat in the shed", "#e8e2d8", rough=0.5)
+    m.wedge([(x0 + 0.03, -0.05, 0.25), (x0 + 0.03, -0.05, 0.25), (x0 + 0.2, -0.12, 0.25), (x0 + 0.2, 0.02, 0.25)],
+            [(x0 + 0.0, -0.05, 0.75), (x0 + 0.0, -0.05, 0.75), (x0 + 0.2, -0.14, 0.7), (x0 + 0.2, 0.04, 0.7)], hull)
+    # The marine railway from the doors down to the shore: ties, two rails and a cradle.
+    tie = material("railway ties", "#4a3a2c", rough=0.95)
+    rail = material("railway rails", "#5a5a5c", metal=0.6, rough=0.45)
+    for k in range(6):
+        x = x0 - 0.02 - k * 0.025
+        m.box(x - 0.007, x + 0.007, -0.11, 0.01, 0.0, 0.03, tie)
+    for y in (-0.08, -0.02):
+        m.box(-0.5, x0 + 0.1, y - 0.004, y + 0.004, 0.03, 0.05, rail)
+    m.box(x0 + 0.03, x0 + 0.14, -0.1, 0.0, 0.05, 0.2, material("cradle", "#5a4632", rough=0.9))
+    # Windows down the side and on the land end, a door, the cupola on the ridge.
+    for c in (-0.24, -0.06, 0.12):
+        houses.pane(m, "y", y1, 1, c, 0.65, 1.05, 0.08, glass_, white, white, bars=1)
+        houses.pane(m, "y", y0, -1, c, 0.65, 1.05, 0.08, glass_, white, white, bars=1)
+    m.box(x1 + 0.002, x1 + 0.008, -0.04, 0.04, 0.0, 0.85, white)
+    houses.pane(m, "x", x1, 1, 0.0, 1.7, 2.0, 0.07, glass_, white, white)
+    m.box(-0.04, 0.04, -0.09, -0.01, 2.34, 2.6, white)
+    houses.gable(m, -0.04, 0.04, -0.09, -0.01, 2.6, 2.7, roof, white, along_x=False, over=0.012, thick=0.025)
+    for x in (-0.04, 0.04):
+        m.box(x - 0.002, x + 0.002, -0.08, -0.02, 2.4, 2.55, batten)
+    # The dory on sawhorses by the side, and a pile of lumber.
+    horse = material("sawhorses", "#a08460", rough=0.9)
+    for y in (-0.42, -0.34):
+        for s in (-1, 1):
+            m.rod((0.08 + s * 0.04, y, 0.0), (0.08, y, 0.22), 0.004, horse, segments=5)
+            m.rod((0.32 + s * 0.04, y, 0.0), (0.32, y, 0.22), 0.004, horse, segments=5)
+        m.rod((0.06, y, 0.22), (0.34, y, 0.22), 0.005, horse, segments=5)
+    dory = material("dory", "#e8c84a", rough=0.6)
+    sections = []
+    for k in range(7):
+        t = k / 6
+        x = 0.04 + t * 0.32
+        hw = 0.012 + 0.05 * math.sin(math.pi * t)
+        bw = 0.006 + 0.022 * math.sin(math.pi * t)
+        sheer = 0.42 + 0.1 * (2 * t - 1) ** 2
+        sections.append((x, [(-bw, 0.24), (bw, 0.24), (hw, sheer), (-hw, sheer)]))
+    for (xa, ra), (xb, rb) in zip(sections, sections[1:]):
+        m.wedge([(xa, -0.38 + px, pz) for px, pz in ra], [(xb, -0.38 + px, pz) for px, pz in rb], dory)
+    for k in range(4):
+        m.box(0.36, 0.48, -0.1, 0.1, k * 0.04, k * 0.04 + 0.035, material(f"lumber {k}", ("#c8a878", "#b89868")[k % 2], rough=0.9))
 
 
 def cannery(m):
-    paved(m, -0.5, 0.5, -0.5, 0.5, "#8a867e")
-    wood = material("cannery siding", "#e6e0d2", rough=0.8)
-    x0, x1, y0, y1 = -0.44, 0.44, -0.38, 0.3
-    m.box(x0, x1, y0, y1, 0, 2.4, wood, 0.004)
-    gable(m, x0, x1, y0, y1, 2.4, 3.3, material("cannery roof", "#8a3a2a", rough=0.8), wood, along_x=True, over=0.03)
-    windows(m, x0, x1, y0, y1, 0.3, 1, 6, 4, glass(), material("cannery trim", "#3e5a6a", rough=0.7))
-    m.box(x0 + 0.05, x1 - 0.05, y1 + 0.004, y1 + 0.012, 1.7, 2.2, material("cannery sign", "#3e5a6a", rough=0.6))
-    stack(m, 0.36, -0.3, 2.4, 5.0, 0.035, material("cannery stack", "#5a5a5a", metal=0.4, rough=0.5))
+    """A British Columbia cannery: a long white board and batten hall with a red roof and a net loft under it, raised
+    on piles with a plank walk along the water side, a lower canning line wing, a brick boiler house with its stack,
+    a ventilator on the ridge and the company's name along the wall."""
+    white = material("cannery siding", "#e6e0d2", rough=0.8)
+    batten = material("cannery battens", "#cec8b8", rough=0.8)
+    red = material("cannery roof", "#8a3a2a", rough=0.8)
+    trim = material("cannery trim", "#3e5a6a", rough=0.7)
+    glass_ = glass()
+    ground(m, "#6e6a62", "cannery gravel")
+    deck = 0.3
+    x0, x1, y0, y1, eave = -0.44, 0.22, -0.36, 0.22, 2.4
+    # Piles under the floor and the plank walk round the water side.
+    harbour.piles(m, [x0 - 0.04, x0 + 0.12, 0.0, 0.14], [-0.38, -0.12, 0.12, 0.3], 0.0, deck - 0.03, r=0.014, across_x=True)
+    harbour.planks(m, x0 - 0.06, x1, y0 - 0.04, 0.34, deck - 0.04, deck, along_x=False, width=0.03, seed=5)
+    m.box(x0, x1, y0, y1, deck, eave, white)
+    harbour.ribs(m, x0, x1, y0, deck, eave, batten, gap=0.035, face=-1)
+    harbour.ribs(m, x0, x1, y1, deck, eave, batten, gap=0.035, face=1)
+    harbour.ribs_y(m, x0, y0, y1, deck, eave, batten, gap=0.035, face=-1)
+    gable(m, x0, x1, y0, y1, eave, 3.3, red, white, along_x=True, over=0.03, thick=0.07)
+    # Two rows of windows, the lower the cannery floor, the upper the net loft.
+    for y, d in ((y0, -1), (y1, 1)):
+        for k in range(6):
+            c = x0 + 0.06 + k * 0.11
+            houses.pane(m, "y", y, d, c, 0.75, 1.2, 0.06, glass_, trim, trim)
+            houses.pane(m, "y", y, d, c, 1.75, 2.1, 0.05, glass_, trim, trim, sash=False)
+    houses.pane(m, "x", x0, -1, -0.07, 2.55, 2.85, 0.07, glass_, trim, trim)
+    m.box(x0 - 0.008, x0 - 0.002, 0.02, 0.16, deck, deck + 0.75, material("cannery doors", "#3e5a6a", rough=0.6))
+    m.box(x0 - 0.008, x0 - 0.002, -0.3, -0.16, deck, deck + 0.75, material("cannery doors", "#3e5a6a", rough=0.6))
+    # The ventilator on the ridge.
+    m.box(-0.18, -0.04, -0.04, 0.04, 3.2, 3.5, white)
+    gable(m, -0.18, -0.04, -0.04, 0.04, 3.5, 3.62, red, white, along_x=True, over=0.012, thick=0.03)
+    for x in (-0.16, -0.13, -0.1, -0.07):
+        for y in (-0.042, 0.042):
+            m.box(x - 0.008, x + 0.008, y - 0.002, y + 0.002, 3.26, 3.45, trim)
+    # The canning line wing along the land side, lower, with its own windows and a loading door.
+    wy0, wy1 = y1, 0.46
+    m.box(x0 + 0.06, x1, wy0, wy1, deck, 1.45, white)
+    harbour.ribs(m, x0 + 0.06, x1, wy1, deck, 1.45, batten, gap=0.035, face=1)
+    slab(m, [(x0 + 0.04, wy0, 1.75), (x1 + 0.02, wy0, 1.75), (x1 + 0.02, wy1 + 0.03, 1.42), (x0 + 0.04, wy1 + 0.03, 1.42)], 0.05, red)
+    for k in range(4):
+        c = x0 + 0.13 + k * 0.13
+        houses.pane(m, "y", wy1, 1, c, 0.7, 1.1, 0.07, glass_, trim, trim)
+    m.box(x0 + 0.08, x1 - 0.06, y0 - 0.012, y0 - 0.004, 1.32, 1.58, white)
+    houses.sign_text(m, "CANNING CO", "y", y0 - 0.012, -1, (x0 + x1) / 2 + 0.01, 1.45, 0.055, trim)
+    # The boiler house and its stack at the land end.
+    brick = material("boiler house brick", "#8a4a36", rough=0.85)
+    bx0, bx1, by0, by1 = 0.25, 0.46, -0.42, -0.14
+    m.box(bx0, bx1, by0, by1, 0.0, 1.4, brick)
+    gable(m, bx0, bx1, by0, by1, 1.4, 1.75, red, brick, along_x=False, over=0.02, thick=0.05)
+    m.box(bx1 + 0.002, bx1 + 0.008, -0.33, -0.23, 0.0, 0.8, material("boiler house door", "#3a3a3c", metal=0.3, rough=0.6))
+    stack(m, 0.36, -0.3, 1.5, 5.0, 0.035, material("cannery stack", "#5a5a5a", metal=0.4, rough=0.5),
+          band=material("stack band", "#3a3a3a", metal=0.4, rough=0.5))
+    for z in (2.6, 3.8):
+        for a in (0.5, 2.6, 4.4):
+            m.rod((0.36, -0.3, z), (0.36 + 0.14 * math.cos(a), -0.3 + 0.14 * math.sin(a), 0.0), 0.0012,
+                  material("guy wire", "#2a2a2a", metal=0.5, rough=0.5), segments=3)
 
 
 # ---- potash, nickel and aluminium ----------------------------------------------------------------

@@ -8,7 +8,7 @@ Files: tree_<kind>_<look>.png, station_<era>_<0 along u, 1 along v>.png and
 station_bare_<a>.png (no canopy), depot_<era>_<edge>.png, signal_<0 clear, 1 stop>.png, house_<kind>_<edge>.png (a town
 building facing that view edge), part_<piece>_<edge>.png (a piece of an
 industry), station_house_<era>_<edge>.png (a station building facing its
-platform at that edge), each a whole cell at twice the sharpest level.
+platform at that edge), lock_<era>_<edge>.png and terminal_<size>_<era>_<edge>.png, each a whole cell at twice the sharpest level.
 A file already there is left alone.
 
 Everything but signals comes twice: the thing itself with no shadow, and
@@ -170,12 +170,15 @@ def main():
     for edge in EDGES:
         shot(out, f"dock_{edge}.png", waterside.dock, heading=waterside.WATER_HEADING[edge], rise=BUILDING_RISE)
         shot(out, f"shipyard_{edge}.png", waterside.shipyard, heading=waterside.WATER_HEADING[edge], rise=BUILDING_RISE)
-        shot(out, f"lock_{edge}.png", lambda m, edge=edge: waterside.lock(m, edge))
+        for era in range(waterside.LOCK_ERAS):
+            shot(out, f"lock_{era}_{edge}.png", lambda m, era=era: waterside.lock(m, era), heading=houses.FACING[edge])
         shot(out, f"seaplane_{edge}.png", waterside.seaplane_dock, heading=waterside.WATER_HEADING[edge], rise=PLANE_RISE)
-        shot(out, f"hangar_small_{edge}.png", lambda m, edge=edge: waterside.hangar(m, edge, False), rise=BUILDING_RISE)
-        shot(out, f"hangar_{edge}.png", lambda m, edge=edge: waterside.hangar(m, edge, True), rise=BUILDING_RISE)
+        shot(out, f"hangar_small_{edge}.png", lambda m: waterside.hangar(m, False), heading=houses.FACING[edge], rise=BUILDING_RISE)
+        shot(out, f"hangar_{edge}.png", lambda m: waterside.hangar(m, True), heading=houses.FACING[edge], rise=BUILDING_RISE)
         for size in ("small", "mid", "big"):
-            shot(out, f"terminal_{size}_{edge}.png", lambda m, edge=edge, size=size: waterside.terminal(m, edge, size), rise=BUILDING_RISE)
+            for era in range(waterside.TERMINAL_ERAS):
+                shot(out, f"terminal_{size}_{era}_{edge}.png", lambda m, size=size, era=era: waterside.terminal(m, size, era),
+                     heading=houses.FACING[edge], rise=BUILDING_RISE)
     shot(out, "tower.png", waterside.tower, rise=BUILDING_RISE)
     shot(out, "strip_hut.png", waterside.strip_hut, rise=PLANE_RISE)
     for kind in houses.BUILDERS:

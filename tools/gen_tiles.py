@@ -74,6 +74,8 @@ DEPS = []
 LEVELS = 6
 GRID = 1 << (LEVELS - 1)
 SHEET_W = 2048
+# The static sheet is wider, to stay under WebP's 16383 pixel height at the sharpest level; the game reads its width.
+STATIC_W = 4096
 
 SLOPES = list(range(15))
 SURFACES = [15, 3, 6, 12, 9]
@@ -158,12 +160,21 @@ JOBS.append(("static", ("salt_dome",), lambda: scenery("salt_dome.png", base.cel
 JOBS.append(("shadows", ("salt_dome_shadow",), lambda: scenery("salt_dome_shadow.png", base.cell), None))
 UP[("salt_dome",)] = "salt_dome.png"
 # Docks, shipyards, locks and seaplane bases by the view edge they face; hangars and terminals by the edge their front faces.
-WATERSIDE = ["dock", "shipyard", "lock", "seaplane", "hangar_small", "hangar", "terminal_small", "terminal_mid", "terminal_big"]
+WATERSIDE = ["dock", "shipyard", "seaplane", "hangar_small", "hangar"]
 for name in WATERSIDE:
     for e, edge in enumerate(EDGES):
         JOBS.append(("static", (name, e), lambda name=name, edge=edge: scenery(f"{name}_{edge}.png", base.cell), None))
         JOBS.append(("shadows", (name + "_shadow", e), lambda name=name, edge=edge: scenery(f"{name}_{edge}_shadow.png", base.cell), None))
         UP[(name, e)] = f"{name}_{edge}.png"
+# Locks (ChunkBaker.lockEra) and terminals (ChunkBaker.terminalEra) by era as well, <name>_<era>_<edge>.
+WATERSIDE_ERAS = {"lock": 2, "terminal_small": 3, "terminal_mid": 3, "terminal_big": 3}
+for name, eras in WATERSIDE_ERAS.items():
+    for era in range(eras):
+        for e, edge in enumerate(EDGES):
+            JOBS.append(("static", (name, era, e), lambda name=name, era=era, edge=edge: scenery(f"{name}_{era}_{edge}.png", base.cell), None))
+            JOBS.append(("shadows", (name + "_shadow", era, e),
+                         lambda name=name, era=era, edge=edge: scenery(f"{name}_{era}_{edge}_shadow.png", base.cell), None))
+            UP[(name, era, e)] = f"{name}_{era}_{edge}.png"
 for name in ("tower", "strip_hut"):
     JOBS.append(("static", (name,), lambda name=name: scenery(f"{name}.png", base.cell), None))
     JOBS.append(("shadows", (name + "_shadow",), lambda name=name: scenery(f"{name}_shadow.png", base.cell), None))
@@ -282,11 +293,16 @@ for m, (key, length, build) in enumerate(vehicles.ROSTER):
 
 def waterside_consts(index):
     """Atlas lines for the docks, locks and airport buildings: each by view edge, and its shadow."""
-    out = ["    /** Docks, shipyards, locks (by the edge they rise to), seaplane bases, hangars and terminals, by the view edge they face, and their shadows. On the static sheet. */"]
+    out = ["    /** Docks, shipyards, seaplane bases and hangars, by the view edge they face, and their shadows. On the static sheet. */"]
     for name in WATERSIDE:
         const = name.upper()
         out.append(f"    val {const} = intArrayOf({', '.join(str(index[(name, e)]) for e in range(4))})")
         out.append(f"    val {const}_SHADOW = intArrayOf({', '.join(str(index[(name + '_shadow', e)]) for e in range(4))})")
+    out.append("    /** Locks (by the edge they rise to) and terminals, at era * 4 + the view edge they face, and their shadows. On the static sheet. */")
+    for name, eras in WATERSIDE_ERAS.items():
+        const = name.upper()
+        out.append(f"    val {const} = intArrayOf({', '.join(str(index[(name, k, e)]) for k in range(eras) for e in range(4))})")
+        out.append(f"    val {const}_SHADOW = intArrayOf({', '.join(str(index[(name + '_shadow', k, e)]) for k in range(eras) for e in range(4))})")
     for name in ("tower", "strip_hut"):
         out.append(f"    const val {name.upper()} = {index[(name,)]}")
         out.append(f"    const val {name.upper()}_SHADOW = {index[(name + '_shadow',)]}")
@@ -556,7 +572,7 @@ def main():
     tasks = []
     for name, mine in dirty:
         done = [fresh[i] if i in fresh else load_job(i, metas[i]) for i in mine]
-        sheet, ups, rects[name], heights[name] = layout(done, SHEET_W if name in ("static", "shadows") else 1024)
+        sheet, ups, rects[name], heights[name] = layout(done, STATIC_W if name == "static" else SHEET_W if name == "shadows" else 1024)
         SHEETS[name] = (sheet, ups)
         tasks += [("level", name, level) for level in range(LEVELS)]
         if name.startswith("vehicle_"):

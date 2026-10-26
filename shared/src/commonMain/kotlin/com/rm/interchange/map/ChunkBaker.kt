@@ -366,7 +366,7 @@ internal class ChunkBaker(
             // Drawn rising to its higher end.
             val high = if (axis == Track.X) (if (world.heightAt(wx + 1, wy) > world.heightAt(wx, wy)) Track.XP else Track.XM)
             else (if (world.heightAt(wx, wy + 1) > world.heightAt(wx, wy)) Track.YP else Track.YM)
-            val e = viewEdge(high)
+            val e = lockEra(year) * 4 + viewEdge(high)
             return art(if (shadow) Atlas.LOCK_SHADOW[e] else Atlas.LOCK[e], base)
         }
         if (world.canals.contains(tile)) return NO_ART
@@ -782,25 +782,28 @@ internal class ChunkBaker(
         val ly = if (a.axis == Track.X) wy - a.y else wx - a.x
         val e = viewEdge(if (a.axis == Track.X) Track.YM else Track.XM)
         fun pick(art: IntArray, shade: IntArray) = if (shadow) shade[e] else art[e]
+        // Terminals look like the year the airport went up, by its hangar's build year.
+        val era = terminalEra(world.depots.getOrNull(a.depot)?.built?.takeIf { it > 0 } ?: year)
+        fun terminal(art: IntArray, shade: IntArray) = if (shadow) shade[era * 4 + e] else art[era * 4 + e]
         val back = Airports.WIDTH[a.kind] - 1
         return when (a.kind) {
             Airports.SEAPLANE -> viewEdge(a.axis).let { if (shadow) Atlas.SEAPLANE_SHADOW[it] else Atlas.SEAPLANE[it] }
             Airports.STRIP -> if (lx == Airports.LENGTH[a.kind] - 1) (if (shadow) Atlas.STRIP_HUT_SHADOW else Atlas.STRIP_HUT) else -1
             Airports.REGIONAL -> if (ly != back) -1 else when (lx) {
                 0 -> pick(Atlas.HANGAR_SMALL, Atlas.HANGAR_SMALL_SHADOW)
-                2 -> pick(Atlas.TERMINAL_SMALL, Atlas.TERMINAL_SMALL_SHADOW)
+                2 -> terminal(Atlas.TERMINAL_SMALL, Atlas.TERMINAL_SMALL_SHADOW)
                 4 -> if (shadow) Atlas.TOWER_SHADOW else Atlas.TOWER
                 else -> -1
             }
             Airports.CITY -> if (ly != back) -1 else when (lx) {
                 0 -> pick(Atlas.HANGAR, Atlas.HANGAR_SHADOW)
-                2, 3 -> pick(Atlas.TERMINAL_MID, Atlas.TERMINAL_MID_SHADOW)
+                2, 3 -> terminal(Atlas.TERMINAL_MID, Atlas.TERMINAL_MID_SHADOW)
                 5 -> if (shadow) Atlas.TOWER_SHADOW else Atlas.TOWER
                 else -> -1
             }
             Airports.INTERNATIONAL -> if (ly != back) -1 else when (lx) {
                 0, 1 -> pick(Atlas.HANGAR, Atlas.HANGAR_SHADOW)
-                3, 4, 5 -> pick(Atlas.TERMINAL_BIG, Atlas.TERMINAL_BIG_SHADOW)
+                3, 4, 5 -> terminal(Atlas.TERMINAL_BIG, Atlas.TERMINAL_BIG_SHADOW)
                 7 -> if (shadow) Atlas.TOWER_SHADOW else Atlas.TOWER
                 else -> -1
             }
@@ -1294,8 +1297,8 @@ internal class ChunkBaker(
             Triple("sand_pit_corner", 1998, "sand_pit_corner_early"),
         )
 
-        /** The years engine houses and platform canopies change their look ([depotEra], [canopyEra]). */
-        private val SCENERY_YEARS = intArrayOf(1900, 1915, 1960, 1970)
+        /** The years engine houses, platform canopies, locks and terminals change their look ([depotEra], [canopyEra], [lockEra], [terminalEra]). */
+        private val SCENERY_YEARS = intArrayOf(1900, 1915, 1930, 1958, 1960, 1970, 1985)
 
         /** An engine house's look by the year it was built (the game's year for one from an older save): 0 wooden to 1900, 1 brick to 1960, 2 a steel diesel shop. */
         fun depotEra(year: Int): Int = when {
@@ -1308,6 +1311,16 @@ internal class ChunkBaker(
         fun canopyEra(year: Int): Int = when {
             year < 1915 -> 0
             year < 1970 -> 1
+            else -> 2
+        }
+
+        /** A lock's look by the game's year: 0 a Rideau lock in stone to 1930, 1 a Seaway lock in concrete (the Welland Ship Canal opened in 1932). */
+        fun lockEra(year: Int): Int = if (year < 1930) 0 else 1
+
+        /** A terminal's look by the year its airport went up: 0 a Department of Transport terminal to 1958, 1 a glass curtain terminal to 1985, 2 a glass hall. */
+        fun terminalEra(year: Int): Int = when {
+            year < 1958 -> 0
+            year < 1985 -> 1
             else -> 2
         }
 

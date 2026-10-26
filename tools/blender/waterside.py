@@ -1,28 +1,13 @@
 """Docks, shipyards and locks, and what stands at airports: hangars, terminals, a control tower, a gravel strip's hut and
 a seaplane base's float dock. Each is built on one tile in its own terms, x across and y along, z in steps. Docks,
-shipyards and seaplane bases have their water at y = -0.5 and are turned to their edge (WATER_HEADING); the rest with a
-front are built facing view edge [edge] (XM, XP, YM or YP), as the garage is.
+shipyards and seaplane bases have their water at y = -0.5 and are turned to their edge (WATER_HEADING); hangars,
+terminals and locks face +y and are turned by houses.FACING, as the garage is.
 """
 import math
 
 import harbour
 import houses
 from parts import material
-
-
-def _b(m, edge):
-    """A box maker that turns the model so its front, at y = -0.5, faces [edge]."""
-    along_u = edge in ("XM", "XP")
-    flip = edge in ("XP", "YP")
-
-    def b(x0, x1, y0, y1, z0, z1, mat, bevel=0.0):
-        if flip:
-            y0, y1 = -y1, -y0
-        if along_u:
-            m.box(x0, x1, y0, y1, z0, z1, mat, bevel)
-        else:
-            m.box(y0, y1, x0, x1, z0, z1, mat, bevel)
-    return b
 
 
 # Dock, shipyard and seaplane base are built with the water at y = -0.5 and turned to their edge by render_scenery.
@@ -259,25 +244,6 @@ def shipyard(m):
     m.rod((-0.04, -0.455, 3.05), (-0.04, -0.455, 1.3), 0.002, material("hoist", "#2a2a2a", rough=0.6))
 
 
-def lock(m, edge):
-    """A lock rising to [edge]: concrete walls either side of the chamber, gates at both ends and halfway, the water low
-    in the chamber's lower half and high in its upper half."""
-    b = _b(m, edge)
-    concrete = material("lock wall", "#a8a49c", rough=0.85)
-    gate = material("lock gate", "#3a3026", rough=0.7)
-    water = material("lock water", "#3a5a6e", rough=0.15)
-    rail = material("lock rail", "#d8d8d4", metal=0.3, rough=0.4)
-    # The chamber runs along y, upper end at y = -0.5 (edge), lower at +0.5.
-    for side in (-1, 1):
-        b(side * 0.42 - 0.07, side * 0.42 + 0.07, -0.5, 0.5, 0.0, 1.35, concrete, 0.004)
-        b(side * 0.42 - 0.07, side * 0.42 - 0.064, -0.5, 0.5, 1.35, 1.6, rail)
-    b(-0.35, 0.35, 0.0, 0.5, 0.0, 0.2, water)
-    b(-0.35, 0.35, -0.5, 0.0, 0.0, 1.05, water)
-    for y in (-0.48, 0.0, 0.48):
-        b(-0.35, 0.35, y - 0.025, y + 0.025, 0.0, 1.3, gate, 0.003)
-        b(-0.4, 0.4, y - 0.03, y + 0.03, 1.3, 1.36, rail)
-
-
 def seaplane_dock(m):
     """A seaplane base: a float dock of planks on pontoons with a T at its end, tire fenders and cleats, a hinged
     gangway up to a crib on shore, a small gabled fuel shed, drums on a rack with a hand pump, and a windsock."""
@@ -356,59 +322,6 @@ def seaplane_dock(m):
     harbour.windsock(m, 0.38, 0.0, 0.0, 2.4, toward=(0.6, 0.8))
 
 
-def hangar(m, edge, big):
-    """A hangar with its doors to [edge]: a curved roof over a long shed, the doors most of its front."""
-    b = _b(m, edge)
-    wall = material("hangar wall", "#b8b4ac", rough=0.8)
-    roof = material("hangar roof", "#5a6066", metal=0.5, rough=0.45)
-    door = material("hangar door", "#7a8890", metal=0.4, rough=0.45)
-    w = 0.46 if big else 0.4
-    tall = 2.4 if big else 1.8
-    b(-w, w, -0.42, 0.42, 0.0, tall, wall, 0.004)
-    # The barrel roof, in steps across.
-    n = 8
-    for k in range(n):
-        a0 = math.pi * k / n
-        a1 = math.pi * (k + 1) / n
-        x0, x1 = -w * math.cos(a0), -w * math.cos(a1)
-        z = tall + math.sin((a0 + a1) / 2) * (0.9 if big else 0.7)
-        b(min(x0, x1), max(x0, x1), -0.44, 0.44, tall, z, roof)
-    b(-w * 0.85, w * 0.85, -0.43, -0.42, 0.0, tall * 0.92, door)
-    for k in range(1, 6):
-        x = -w * 0.85 + k * w * 1.7 / 6
-        b(x - 0.004, x + 0.004, -0.435, -0.42, 0.0, tall * 0.92, wall)
-
-
-def terminal(m, edge, size):
-    """A terminal facing [edge]: a small one-storey building, a two-storey terminal with a glass front, or a big
-    terminal with a jet bridge out to the apron."""
-    b = _b(m, edge)
-    wall = material("terminal wall", "#d8d4cc", rough=0.7)
-    glass = material("terminal glass", "#3a5a6e", rough=0.1, metal=0.2)
-    roof = material("terminal roof", "#5a5e62", rough=0.6)
-    tall = {"small": 1.1, "mid": 2.0, "big": 2.6}[size]
-    deep = {"small": 0.25, "mid": 0.35, "big": 0.42}[size]
-    b(-0.48, 0.48, -deep, 0.42, 0.0, tall, wall, 0.004)
-    b(-0.5, 0.5, -deep - 0.04, 0.44, tall, tall + 0.15, roof, 0.004)
-    b(-0.46, 0.46, -deep - 0.004, -deep + 0.002, 0.25, tall - 0.15, glass)
-    if size == "big":
-        jet = material("jet bridge", "#a8acb0", metal=0.4, rough=0.5)
-        b(-0.05, 0.05, -0.85, -deep, 0.9, 1.4, jet, 0.004)
-        b(-0.06, 0.06, -0.8, -0.74, 0.0, 0.9, jet)
-
-
-def tower(m):
-    """A control tower: a concrete shaft and a glass cab on top."""
-    concrete = material("tower", "#c8c4bc", rough=0.8)
-    glass = material("tower glass", "#2e4a5e", rough=0.1, metal=0.2)
-    roof = material("tower roof", "#3a3a3c", rough=0.6)
-    m.box(-0.3, 0.3, -0.3, 0.3, 0.0, 1.0, concrete, 0.004)
-    m.upright(0.0, 0.0, 1.0, 4.2, 0.09, 0.08, concrete, segments=16)
-    m.upright(0.0, 0.0, 4.2, 4.8, 0.17, 0.2, glass, segments=16)
-    m.upright(0.0, 0.0, 4.8, 4.95, 0.21, 0.12, roof, segments=16)
-    m.rod((0.0, 0.0, 4.95), (0.0, 0.0, 5.6), 0.005, roof)
-
-
 def strip_hut(m):
     """A gravel strip's hut: board walls, a shed roof, a door and windows, a stovepipe, drums beside it and a windsock."""
     wood = material("hut wood", "#7a5a3a", rough=0.85)
@@ -442,3 +355,710 @@ def strip_hut(m):
         harbour.drum(m, 0.03 + k * 0.05, 0.44, 0.0, colour="#c8302a", r=0.02, h=0.42, name="strip drum")
     harbour.drum(m, 0.055, 0.39, 0.0, colour="#c8302a", r=0.02, h=0.42, name="strip drum")
     harbour.windsock(m, -0.35, 0.35, 0.0, 2.2, toward=(0.8, -0.6))
+
+
+# ---- airports and locks ---------------------------------------------------------------------------
+# Hangars and terminals are built with their fronts to +y and turned to their edge by place() (houses.FACING), as the
+# garage is. Terminals that take two or three tiles repeat the same piece, so theirs run the whole tile across x and
+# join their neighbours.
+
+def _bx(m, xa, xb, ya, yb, za, zb, mat, bevel=0.0):
+    """A box from corners given either way round."""
+    m.box(min(xa, xb), max(xa, xb), min(ya, yb), max(ya, yb), za, zb, mat, bevel)
+
+
+def _poly(n, r, rot, x=0.0, y=0.0):
+    return [(x + r * math.cos(rot + 2 * math.pi * k / n), y + r * math.sin(rot + 2 * math.pi * k / n)) for k in range(n)]
+
+
+def _frustum(m, x, y, z0, z1, r0, r1, n, mat, rot=None):
+    """A flat faced n-sided frustum, r0 to its corners at z0 and r1 at z1, a flat side square to x and y."""
+    rot = math.pi / n if rot is None else rot
+    m.wedge([(px, py, z0) for px, py in _poly(n, r0, rot, x, y)], [(px, py, z1) for px, py in _poly(n, r1, rot, x, y)], mat)
+
+
+def _plank(m, a, b, w, z0, z1, mat):
+    """A board standing on edge from a to b (x, y), w tiles thick, z0 to z1 steps."""
+    dx, dy = b[0] - a[0], b[1] - a[1]
+    n = math.hypot(dx, dy) or 1.0
+    px, py = -dy / n * w / 2, dx / n * w / 2
+    pts = [(a[0] + px, a[1] + py), (b[0] + px, b[1] + py), (b[0] - px, b[1] - py), (a[0] - px, a[1] - py)]
+    m.wedge([(x, y, z0) for x, y in pts], [(x, y, z1) for x, y in pts], mat)
+
+
+def _wall(m, ya, yb, ring, mat):
+    """A wall from ya to yb along y in the outline ring, a closed list of (x, z)."""
+    m.loft([(ya, list(ring)), (yb, list(ring))], {"wall": mat})
+
+
+def _bow(x, w=0.4, base=2.2, rise=1.1):
+    """The bowstring hangar's roof line across x."""
+    return base + rise * (1 - (x / w) ** 2)
+
+
+def _leaf(m, xa, xb, y, h, paint, frame, glass, brace):
+    """A hangar door leaf on its track at y: a framed panel with a strip of windows high up, braced across."""
+    m.box(xa, xb, y - 0.005, y + 0.005, 0.02, h, paint)
+    f = y + 0.0065
+    for a, b in ((xa, xa + 0.008), (xb - 0.008, xb)):
+        m.box(a, b, f - 0.0015, f + 0.0015, 0.02, h, frame)
+    for z in (0.02, h * 0.5, h - 0.04):
+        m.box(xa, xb, f - 0.0015, f + 0.0015, z, z + 0.04, frame)
+    m.box(xa + 0.014, xb - 0.014, f - 0.001, f + 0.002, h * 0.74, h * 0.9, glass)
+    for k in (1, 2):
+        x = xa + (xb - xa) * k / 3
+        m.box(x - 0.002, x + 0.002, f, f + 0.003, h * 0.74, h * 0.9, frame)
+    m.rod((xa + 0.01, f, 0.08), (xb - 0.01, f, h * 0.48), 0.0025, brace, segments=5)
+    m.rod((xa + 0.01, f, h * 0.48), (xb - 0.01, f, 0.08), 0.0025, brace, segments=5)
+    m.box(xa + 0.01, xb - 0.01, y - 0.007, y + 0.007, 0.0, 0.03, material("door rollers", "#2a2a2c", metal=0.5, rough=0.5))
+
+
+def hangar(m, big):
+    """A hangar with its doors to +y: the small one a Butler steel arch, the big one a wartime RCAF hangar."""
+    if not big:
+        _arch_hangar(m)
+        return
+    # A wartime double hangar: wood sided walls under a bowstring truss roof, sliding door leaves on three tracks
+    # running out into pockets at the sides (the right hand ones run back to open the door), lean-to shops down both sides.
+    siding = material("hangar siding", "#d6cdb2", rough=0.8)
+    lines = material("hangar siding lines", "#b4aa8e", rough=0.85)
+    trim = material("hangar trim", "#3e5a44", rough=0.6)
+    roof = material("hangar roof", "#4a4e50", rough=0.7)
+    seam = material("hangar roof seams", "#5e6264", rough=0.6)
+    dark = material("hangar inside", "#1c1a18", rough=1.0)
+    glass = houses.glass()
+    w, y0, y1 = 0.4, -0.45, 0.4
+    xs = [-w + 2 * w * k / 20 for k in range(21)]
+    for s in (-1, 1):
+        _bx(m, s * w - 0.012, s * w + 0.012, y0, y1, 0.0, 2.2, siding)
+        for k in range(1, 20):
+            _bx(m, s * (w + 0.012), s * (w + 0.015), y0, y1, k * 0.11, k * 0.11 + 0.012, lines)
+    m.box(-w, w, y0 - 0.012, y0 + 0.012, 0.0, 2.2, siding)
+    end = [(x, _bow(x)) for x in xs]
+    _wall(m, y1 - 0.012, y1 + 0.004, end, siding)
+    _wall(m, y0 - 0.004, y0 + 0.012, end, siding)
+    for k in range(1, 20):
+        m.box(-w, w, y0 - 0.015, y0 - 0.012, k * 0.11, k * 0.11 + 0.012, lines)
+    # The roof, its seams running over the bow, and ventilators along the crown.
+    rx = [-0.43 + 0.86 * k / 20 for k in range(21)]
+    ring = [(x, _bow(x) + 0.07) for x in rx] + [(x, _bow(x)) for x in reversed(rx)]
+    m.loft([(y0 - 0.035, ring), (y1 + 0.03, ring)], {"roof": roof})
+    for k in range(13):
+        y = y0 - 0.02 + k * (y1 - y0 + 0.04) / 12
+        for a, b in zip(rx, rx[1:]):
+            m.rod((a, y, _bow(a) + 0.075), (b, y, _bow(b) + 0.075), 0.003, seam, segments=4)
+    for y in (-0.3, -0.05, 0.2):
+        m.lathe(0.0, y, 3.3, [(0.02, 0), (0.02, 0.08), (0.034, 0.1), (0.03, 0.16), (0.0, 0.17)], seam, segments=12)
+    # Clerestory windows in the gable over the doors, and a trim board along the roof's edge.
+    for k in range(8):
+        x = -0.28 + k * 0.08
+        m.box(x - 0.032, x + 0.032, y1 + 0.004, y1 + 0.008, 2.42, 2.74, glass)
+        m.box(x - 0.036, x + 0.036, y1 + 0.004, y1 + 0.01, 2.38, 2.42, trim)
+    for a, b in zip(rx, rx[1:]):
+        m.rod((a, y1 + 0.032, _bow(a) + 0.03), (b, y1 + 0.032, _bow(b) + 0.03), 0.008, trim, segments=6)
+    # The door head girder across the front and its pockets out at the sides, the dark hall behind the opening.
+    m.box(-0.47, 0.47, y1, y1 + 0.05, 2.14, 2.34, trim, 0.003)
+    for s in (-1, 1):
+        _bx(m, s * w, s * 0.47, y1 - 0.08, y1 + 0.05, 0.0, 2.34, siding)
+        for k in range(1, 21):
+            _bx(m, s * 0.47, s * 0.473, y1 - 0.08, y1 + 0.05, k * 0.11, k * 0.11 + 0.012, lines)
+        _bx(m, s * 0.465, s * 0.475, y1 + 0.04, y1 + 0.055, 0.0, 2.34, trim)
+    m.box(-w + 0.01, w - 0.01, y1 - 0.12, y1 - 0.004, 0.0, 2.14, dark)
+    # Concrete apron in front with the three door tracks set in it.
+    m.box(-0.49, 0.49, y1, 0.5, 0.0, 0.015, material("hangar apron", "#aaa69e", rough=0.9))
+    rail = material("door track", "#5a5a5c", metal=0.6, rough=0.4)
+    tracks = (y1 + 0.012, y1 + 0.024, y1 + 0.036)
+    for y in tracks:
+        m.box(-0.47, 0.47, y - 0.002, y + 0.002, 0.015, 0.022, rail)
+    paint = material("hangar doors", "#6a8068", rough=0.6)
+    brace = material("door braces", "#4e6250", rough=0.6)
+    for k in range(3):
+        _leaf(m, -0.395 + k * 0.13, -0.395 + k * 0.13 + 0.138, tracks[k], 2.13, paint, trim, glass, brace)
+    for k in range(3):
+        _leaf(m, 0.31, 0.448, tracks[k], 2.13, paint, trim, glass, brace)
+    m.box(-0.36, -0.32, tracks[0] + 0.006, tracks[0] + 0.01, 0.03, 0.82, material("wicket door", "#3e4a40", rough=0.6))
+    for x in (-0.22, 0.12):
+        harbour.lamp(m, x, y1 + 0.05, 2.34, 2.44, reach=0.045, toward=(0.0, 1.0))
+    # Lean-to shops down both sides: shed roofs, windows, doors and a chimney.
+    shop = material("lean-to siding", "#d6cdb2", rough=0.8)
+    lroof = material("lean-to roof", "#3e4244", rough=0.75)
+    trim_white = material("lean-to trim", "#ecebe4", rough=0.6)
+    ly0, ly1 = -0.43, 0.3
+    for s in (-1, 1):
+        a, b = s * (w + 0.012), s * 0.49
+        bot = [(a, ly0, 0.0), (b, ly0, 0.0), (b, ly1, 0.0), (a, ly1, 0.0)]
+        m.wedge(bot, [(a, ly0, 1.05), (b, ly0, 0.8), (b, ly1, 0.8), (a, ly1, 1.05)], shop)
+        slab = [(a, ly0 - 0.015, 1.06), (s * 0.5, ly0 - 0.015, 0.8), (s * 0.5, ly1 + 0.015, 0.8), (a, ly1 + 0.015, 1.06)]
+        houses.slab(m, slab, 0.045, lroof)
+        for k in range(1, 7):
+            _bx(m, b, b + s * 0.003, ly0, ly1, k * 0.11, k * 0.11 + 0.012, lines)
+        for k, c in enumerate((-0.34, -0.2, -0.06, 0.1, 0.24)):
+            if k == 2:
+                _bx(m, b, b + s * 0.006, c - 0.03, c + 0.03, 0.0, 0.62, trim)
+                continue
+            houses.pane(m, "x", b, s, c, 0.3, 0.62, 0.075, glass, trim_white, trim, bars=1)
+    m.upright(0.45, -0.32, 0.9, 1.45, 0.018, 0.018, material("shop chimney", "#8a4a36", rough=0.85), segments=8)
+
+
+def _arch_hangar(m):
+    """A Butler steel arch hangar: galvanized corrugated sheets bent over in one span on a concrete curb, end walls of
+    ribbed steel, two pairs of sliding doors on a track running out past the arch (the right hand pair slid open),
+    windows low in the sides, a stovepipe and ventilators."""
+    galv = material("arch steel", "#a2a6a6", metal=0.6, rough=0.45)
+    corr = material("arch corrugations", "#8a8e90", metal=0.6, rough=0.45)
+    end = material("arch end wall", "#d4d0c4", metal=0.3, rough=0.6)
+    rib = material("end wall ribs", "#b8b4a8", metal=0.3, rough=0.6)
+    dark = material("hangar inside", "#1c1a18", rough=1.0)
+    steel = material("door track", "#3a3c3e", metal=0.5, rough=0.5)
+    glass = houses.glass()
+    w, hh, p = 0.42, 2.5, 2.6
+    y0, y1 = -0.42, 0.39
+
+    def at(a, ww=w, h=hh):
+        c, s = math.cos(a), math.sin(a)
+        return (ww * math.copysign(abs(c) ** (2 / p), c), h * abs(s) ** (2 / p))
+
+    def z_at(x):
+        return hh * max(0.0, 1 - (abs(x) / w) ** p) ** (1 / p)
+
+    angles = [math.pi * k / 24 for k in range(25)]
+    outer = [at(a) for a in angles]
+    inner = [at(a, w - 0.012, hh - 0.05) for a in reversed(angles)]
+    m.box(-w - 0.01, w + 0.01, y0 - 0.01, y1 + 0.01, 0.0, 0.05, material("hangar curb", "#a8a49c", rough=0.9))
+    m.loft([(y0, outer + inner), (y1 + 0.01, outer + inner)], {"steel": galv})
+    big = [at(a, w + 0.003, hh + 0.012) for a in angles]
+    for k in range(17):
+        y = y0 + 0.02 + k * (y1 - y0 - 0.03) / 16
+        for (xa, za), (xb, zb) in zip(big, big[1:]):
+            m.rod((xa, y, za), (xb, y, zb), 0.0025, corr, segments=4)
+    # The front wall: a header over the door and the pieces either side down to the arch, the back wall whole.
+    door_w, door_h = 0.34, 1.68
+    right = [(door_w, 0.0)] + sorted([q for q in outer if q[0] > door_w], key=lambda q: q[1]) + [(door_w, z_at(door_w))]
+    left = [(-x, z) for x, z in reversed(right)]
+    head = [(door_w, door_h), (door_w, z_at(door_w))] + [q for q in outer if abs(q[0]) < door_w] + [(-door_w, z_at(door_w)), (-door_w, door_h)]
+    for ring in (right, left, head):
+        _wall(m, y1 - 0.01, y1, ring, end)
+    _wall(m, y0 - 0.002, y0 + 0.008, outer, end)
+    for k in range(-15, 16):
+        x = k * 0.027
+        top = z_at(x) - 0.03
+        if abs(x) < door_w and top > door_h:
+            m.box(x - 0.002, x + 0.002, y1, y1 + 0.004, door_h + 0.08, top, rib)
+        elif abs(x) >= door_w:
+            m.box(x - 0.002, x + 0.002, y1, y1 + 0.004, 0.05, top, rib)
+        m.box(x - 0.002, x + 0.002, y0 - 0.006, y0 - 0.002, 0.05, top, rib)
+    m.box(-door_w, door_w, y1 - 0.1, y1 - 0.004, 0.0, door_h, dark)
+    for x in (-0.09, 0.09):
+        m.box(x - 0.04, x + 0.04, y1 + 0.002, y1 + 0.006, 1.98, 2.2, glass)
+        m.box(x - 0.044, x + 0.044, y1 + 0.002, y1 + 0.008, 1.95, 1.98, rib)
+    m.box(-0.05, 0.05, y0 - 0.008, y0 - 0.004, 1.6, 1.85, glass)
+    # The door track on outriggers past the arch, and four leaves of ribbed steel with a strip of windows.
+    m.box(-0.5, 0.5, y1 + 0.004, y1 + 0.03, door_h + 0.02, door_h + 0.1, steel, 0.003)
+    for s in (-1, 1):
+        m.upright(s * 0.49, y1 + 0.017, 0.0, door_h + 0.1, 0.008, 0.008, steel, segments=8)
+    m.box(-0.5, 0.5, y1, 0.5, 0.0, 0.012, material("hangar apron", "#aaa69e", rough=0.9))
+    leaf = material("arch doors", "#5a6e5a", metal=0.3, rough=0.55)
+    leaf_rib = material("arch door ribs", "#4a5c4a", metal=0.3, rough=0.55)
+    for xa, y in ((-0.34, y1 + 0.01), (-0.17, y1 + 0.022), (0.32, y1 + 0.01), (0.32, y1 + 0.022)):
+        xb = xa + 0.175
+        m.box(xa, xb, y - 0.005, y + 0.005, 0.015, door_h, leaf)
+        harbour.ribs(m, xa + 0.006, xb - 0.006, y + 0.003, 0.02, door_h - 0.02, leaf_rib, gap=0.022, face=1)
+        m.box(xa + 0.012, xb - 0.012, y + 0.005, y + 0.01, 1.2, 1.4, glass)
+        m.box(xa, xb, y - 0.006, y + 0.012, door_h - 0.05, door_h, leaf_rib)
+    # Windows low in the sides where the arch stands near upright, a stovepipe and ventilators along the crown.
+    for s in (-1, 1):
+        for y in (-0.28, -0.06, 0.16):
+            _bx(m, s * 0.414, s * 0.426, y - 0.04, y + 0.04, 0.28, 0.55, glass)
+            _bx(m, s * 0.412, s * 0.428, y - 0.045, y + 0.045, 0.25, 0.28, rib)
+    pipe = material("stovepipe", "#4a4a4c", metal=0.6, rough=0.4)
+    m.upright(0.24, -0.25, z_at(0.24) - 0.1, z_at(0.24) + 0.45, 0.008, 0.008, pipe, segments=10)
+    m.lathe(0.24, -0.25, z_at(0.24) + 0.45, [(0.0, 0), (0.02, 0.04), (0.0, 0.07)], pipe, segments=10)
+    for y in (-0.2, 0.12):
+        m.lathe(0.0, y, hh, [(0.018, 0), (0.018, 0.07), (0.03, 0.09), (0.026, 0.14), (0.0, 0.15)], corr, segments=12)
+    for k in range(3):
+        harbour.drum(m, -0.47, -0.3 + k * 0.04, 0.0, colour="#c8302a", r=0.016, h=0.36)
+
+
+# Terminals: 0 a Department of Transport terminal of the 1940s, 1 a 1960s glass curtain terminal, 2 a 1990s glass hall.
+TERMINAL_ERAS = 3
+TERMINAL_TALL = {"small": 1.1, "mid": 2.0, "big": 2.6}
+TERMINAL_FRONT = {"small": 0.25, "mid": 0.35, "big": 0.42}
+
+
+def terminal(m, size, era):
+    """A terminal its airside front to +y, in the look of [era]. The small one stands alone; mid and big ones take two
+    and three tiles, so run the whole tile across and join up."""
+    tall, y1 = TERMINAL_TALL[size], TERMINAL_FRONT[size]
+    ends = size == "small"
+    x0, x1 = (-0.44, 0.44) if ends else (-0.5, 0.5)
+    (_terminal_dot, _terminal_curtain, _terminal_hall)[era](m, size, tall, x0, x1, -0.42, y1, ends)
+
+
+def _band(m, xa, xb, y, d, z0, z1, glass, frame, sill, pitch=0.05, transom=True):
+    """A band of steel sash windows in the wall at y facing d: glass with mullions every pitch, a transom, a sill."""
+    m.box(xa, xb, *sorted((y + d * 0.001, y + d * 0.004)), z0, z1, glass)
+    n = max(1, round((xb - xa) / pitch))
+    for k in range(n + 1):
+        x = xa + (xb - xa) * k / n
+        m.box(x - 0.0025, x + 0.0025, *sorted((y, y + d * 0.007)), z0, z1, frame)
+    if transom:
+        zt = z0 + (z1 - z0) * 0.66
+        m.box(xa, xb, *sorted((y, y + d * 0.006)), zt - 0.01, zt + 0.01, frame)
+    m.box(xa - 0.006, xb + 0.006, *sorted((y, y + d * 0.014)), z0 - 0.04, z0, sill)
+
+
+def _terminal_dot(m, size, tall, x0, x1, y0, y1, ends):
+    """A Department of Transport terminal of the 1940s in buff brick: bands of steel sash windows, a stone entrance bay
+    with glass block and a canopy, a flat roof with coping; the small one has a rounded end and the control cab on its
+    roof, the bigger ones a spectators' deck."""
+    brick = material("terminal brick", "#c9b48c", rough=0.85)
+    stone = material("terminal stone", "#e4ddcb", rough=0.8)
+    frame = material("steel sash", "#2e3634", metal=0.3, rough=0.5)
+    tar = material("tar roof", "#3a3a3c", rough=0.95)
+    glass = houses.glass()
+    r = 0.12
+    xe = x1 - r if ends else x1
+    m.box(x0, xe, y0, y1, 0.0, tall, brick)
+    m.box(x0 - 0.004, xe, y0 - 0.004, y1 + 0.004, 0.0, 0.1, stone)
+    if ends:
+        m.box(xe - 0.001, x1, y0, y1 - r, 0.0, tall, brick)
+        m.box(xe - 0.001, x1 + 0.004, y0 - 0.004, y1 - r, 0.0, 0.1, stone)
+        m.upright(xe, y1 - r, 0.0, tall, r, r, brick, segments=32)
+        m.upright(xe, y1 - r, 0.0, 0.1, r + 0.004, r + 0.004, stone, segments=32)
+    # Coping round the roof, the tar roof inside it.
+    m.box(x0, x1 if not ends else xe, y0 + 0.01, y1 - 0.01, tall, tall + 0.03, tar)
+    for y in (y0, y1):
+        m.box(x0 - (0.006 if ends else 0), xe, y - 0.008, y + 0.008, tall, tall + 0.1, stone)
+    if ends:
+        m.box(x0 - 0.008, x0 + 0.008, y0, y1, tall, tall + 0.1, stone)
+        m.box(x1 - 0.008, x1 + 0.006, y0, y1 - r, tall, tall + 0.1, stone)
+        m.upright(xe, y1 - r, tall - 0.001, tall + 0.1, r + 0.006, r + 0.006, stone, segments=32)
+        m.upright(xe, y1 - r, tall + 0.09, tall + 0.104, r - 0.01, r - 0.01, tar, segments=32)
+    # Window bands, a storey at a time, round the rounded end on the small one.
+    storeys = max(1, round(tall / 0.95))
+    sh = tall / storeys
+    bay = (-0.13, 0.13) if not ends else (-0.12, 0.1)
+    for s in range(storeys):
+        za, zb = s * sh + sh * 0.32, s * sh + sh * 0.8
+        for xa, xb in ((x0 + (0.04 if ends else 0.0), bay[0] - 0.03), (bay[1] + 0.03, xe - (0.0 if ends else 0.0))):
+            _band(m, xa, xb, y1, 1, za, zb, glass, frame, stone)
+        _band(m, x0 + (0.04 if ends else 0.0), xe - (0.02 if ends else 0.0), y0, -1, za, zb, glass, frame, stone, pitch=0.06)
+        if ends:
+            m.upright(xe, y1 - r, za, zb, r + 0.002, r + 0.002, glass, segments=32)
+            for k in range(7):
+                a = k * math.pi / 12
+                m.rod((xe + math.cos(a) * (r + 0.004), y1 - r + math.sin(a) * (r + 0.004), za),
+                      (xe + math.cos(a) * (r + 0.004), y1 - r + math.sin(a) * (r + 0.004), zb), 0.0028, frame, segments=4)
+            m.upright(xe, y1 - r, za - 0.04, za, r + 0.012, r + 0.012, stone, segments=32)
+    # The entrance bay: stone, standing proud and over the roof, a tall strip of glass block, doors and a canopy.
+    ba, bb = bay
+    bt = tall + 0.3
+    m.box(ba, bb, y1 - 0.02, y1 + 0.05, 0.0, bt, stone)
+    m.box(ba - 0.006, bb + 0.006, y1 - 0.02, y1 + 0.056, bt - 0.05, bt, stone)
+    block = material("glass block", "#a8bcc4", rough=0.3)
+    c = (ba + bb) / 2
+    m.box(c - 0.045, c + 0.045, y1 + 0.05, y1 + 0.054, 0.75, bt - 0.12, block)
+    z = 0.78
+    while z < bt - 0.14:
+        m.box(c - 0.045, c + 0.045, y1 + 0.054, y1 + 0.056, z, z + 0.006, stone)
+        z += 0.045
+    for k in (-1, 1):
+        m.box(c + k * 0.015 - 0.003, c + k * 0.015 + 0.003, y1 + 0.054, y1 + 0.056, 0.75, bt - 0.12, stone)
+    m.box(c - 0.07, c + 0.07, y1 + 0.05, y1 + 0.054, 0.02, 0.5, material("entrance doors", "#2a3236", metal=0.3, rough=0.4))
+    for k in (-1, 0, 1):
+        m.box(c + k * 0.035 - 0.003, c + k * 0.035 + 0.003, y1 + 0.054, y1 + 0.058, 0.02, 0.5, frame)
+    m.box(c - 0.11, c + 0.11, y1 + 0.05, y1 + 0.17, 0.56, 0.6, stone, 0.012)
+    m.box(c - 0.11, c + 0.11, y1 + 0.165, y1 + 0.172, 0.53, 0.62, frame)
+    if ends:
+        # The control cab: a brick room on the roof, a catwalk round it with a rail, the glass cab leaning out, a beacon.
+        cx, cy = -0.25, -0.1
+        zr = tall + 0.03
+        m.box(cx - 0.1, cx + 0.1, cy - 0.1, cy + 0.1, zr, zr + 0.32, brick)
+        _band(m, cx - 0.06, cx + 0.06, cy + 0.1, 1, zr + 0.1, zr + 0.26, glass, frame, stone, pitch=0.04, transom=False)
+        m.box(cx - 0.14, cx + 0.14, cy - 0.14, cy + 0.14, zr + 0.32, zr + 0.36, stone)
+        rail = material("cab rail", "#2e3634", metal=0.4, rough=0.5)
+        corners = [(cx - 0.135, cy - 0.135), (cx + 0.135, cy - 0.135), (cx + 0.135, cy + 0.135), (cx - 0.135, cy + 0.135)]
+        for (ax, ay), (bx, by) in zip(corners, corners[1:] + corners[:1]):
+            m.rod((ax, ay, zr + 0.52), (bx, by, zr + 0.52), 0.002, rail, segments=4)
+            for f in (0.0, 0.33, 0.67):
+                px, py = ax + (bx - ax) * f, ay + (by - ay) * f
+                m.rod((px, py, zr + 0.36), (px, py, zr + 0.52), 0.0018, rail, segments=4)
+        m.box(cx - 0.085, cx + 0.085, cy - 0.085, cy + 0.085, zr + 0.36, zr + 0.42, brick)
+        _frustum(m, cx, cy, zr + 0.42, zr + 0.72, 0.085 * math.sqrt(2), 0.105 * math.sqrt(2), 4, glass, rot=math.pi / 4)
+        for px, py in _poly(4, 1.0, math.pi / 4):
+            m.rod((cx + px * 0.085, cy + py * 0.085, zr + 0.42), (cx + px * 0.105, cy + py * 0.105, zr + 0.72), 0.004, frame, segments=5)
+        m.box(cx - 0.125, cx + 0.125, cy - 0.125, cy + 0.125, zr + 0.72, zr + 0.78, material("cab roof", "#3a3a3c", rough=0.6), 0.004)
+        m.upright(cx, cy, zr + 0.78, zr + 0.86, 0.02, 0.016, rail, segments=10)
+        m.upright(cx, cy, zr + 0.86, zr + 0.94, 0.018, 0.018, material("beacon", "#3a9a5a", rough=0.2), segments=10)
+        m.rod((cx + 0.08, cy - 0.08, zr + 0.78), (cx + 0.08, cy - 0.08, zr + 1.3), 0.003, rail)
+        m.rod((cx + 0.06, cy - 0.08, zr + 1.2), (cx + 0.1, cy - 0.08, zr + 1.2), 0.002, rail)
+    else:
+        # The spectators' deck: a rail along the front of the roof and a stair house onto it.
+        rail = material("deck rail", "#2e3634", metal=0.4, rough=0.5)
+        for k in range(11):
+            x = -0.5 + k * 0.1
+            if ba - 0.01 < x < bb + 0.01:
+                continue
+            m.rod((x, y1 - 0.02, tall + 0.1), (x, y1 - 0.02, tall + 0.36), 0.002, rail, segments=4)
+        for xa, xb in ((-0.5, ba), (bb, 0.5)):
+            m.rod((xa, y1 - 0.02, tall + 0.36), (xb, y1 - 0.02, tall + 0.36), 0.0025, rail, segments=4)
+            m.rod((xa, y1 - 0.02, tall + 0.23), (xb, y1 - 0.02, tall + 0.23), 0.0018, rail, segments=4)
+        m.box(0.22, 0.38, -0.25, -0.05, tall, tall + 0.48, brick)
+        m.box(0.215, 0.385, -0.255, -0.045, tall + 0.48, tall + 0.53, stone)
+        m.box(0.27, 0.33, -0.05, -0.046, tall + 0.03, tall + 0.38, material("stair door", "#3e5a44", rough=0.6))
+
+
+def _terminal_curtain(m, size, tall, x0, x1, y0, y1, ends):
+    """A 1960s terminal: a glass curtain wall front with aluminium mullions and dark spandrels, a deep white roof
+    fascia, a long canopy along the front on slim columns, precast fins on the back; the small one between fieldstone
+    end walls."""
+    glass = material("curtain glass", "#3e6276", rough=0.08, metal=0.3)
+    mullion = material("aluminium", "#c8ccd0", metal=0.6, rough=0.35)
+    spandrel = material("spandrel panels", "#2e3e4a", rough=0.4)
+    fascia = material("roof fascia", "#ebe9e2", rough=0.6)
+    precast = material("precast", "#d4d2ca", rough=0.8)
+    soffit = material("canopy soffit", "#b8b6ae", rough=0.7)
+    m.box(x0, x1, y0, y1, 0.0, tall, precast)
+    storeys = 1 if size == "small" else 2
+    sh = tall / storeys
+    m.box(x0 + (0.01 if ends else 0.0), x1 - (0.01 if ends else 0.0), y1, y1 + 0.006, 0.02, tall, glass)
+    n = max(1, round((x1 - x0) / 0.055))
+    for k in range(n + 1):
+        x = x0 + (x1 - x0) * k / n
+        if ends and k in (0, n):
+            continue
+        m.box(x - 0.003, x + 0.003, y1 + 0.006, y1 + 0.018, 0.02, tall, mullion)
+    for s in range(1, storeys + 1):
+        z = s * sh
+        m.box(x0, x1, y1 + 0.004, y1 + 0.009, z - 0.16, z, spandrel)
+    m.box(x0, x1, y1 + 0.004, y1 + 0.009, 0.0, 0.05, spandrel)
+    # The roof: a deep fascia standing out all round, a gravel roof inside, a louvred penthouse.
+    o = 0.03 if ends else 0.0
+    m.box(x0 - o, x1 + o, y0 - 0.035, y1 + 0.05, tall, tall + 0.15, fascia, 0.004)
+    m.box(x0 - o, x1 + o, y1 + 0.02, y1 + 0.05, tall - 0.02, tall, soffit)
+    m.box(x0 - o + 0.02, x1 + o - 0.02, y0 - 0.015, y1 + 0.03, tall + 0.15, tall + 0.17, material("gravel roof", "#7a7670", rough=1.0))
+    m.box(0.12, 0.34, -0.32, -0.08, tall + 0.15, tall + 0.4, precast)
+    for k in range(9):
+        x = 0.135 + k * 0.024
+        m.box(x - 0.006, x + 0.006, -0.08, -0.076, tall + 0.2, tall + 0.36, spandrel)
+    m.box(0.11, 0.35, -0.33, -0.07, tall + 0.4, tall + 0.44, fascia)
+    # The long canopy along the front.
+    cz = 0.78 if size == "small" else 1.05
+    cy = y1 + 0.16
+    m.box(x0 - o, x1 + o, y1 + 0.018, cy, cz, cz + 0.05, fascia)
+    m.box(x0 - o, x1 + o, cy - 0.006, cy + 0.008, cz - 0.03, cz + 0.08, fascia)
+    m.box(x0 - o, x1 + o, y1 + 0.018, cy - 0.006, cz - 0.004, cz, soffit)
+    cols = (-0.32, -0.08, 0.16, 0.38) if ends else (-0.375, -0.125, 0.125, 0.375)
+    for x in cols:
+        m.upright(x, cy - 0.02, 0.0, cz, 0.008, 0.008, mullion, segments=10)
+    # The back: precast fins and a band of windows high up, a door for the baggage room.
+    nb = round((x1 - x0) / 0.06)
+    for k in range(nb + 1):
+        x = x0 + (x1 - x0) * k / nb
+        if ends and k in (0, nb):
+            continue
+        m.box(x - 0.006, x + 0.006, y0 - 0.016, y0, 0.05, tall - 0.02, precast)
+    for k in range(nb):
+        xa = x0 + (x1 - x0) * k / nb
+        m.box(xa + 0.008, xa + (x1 - x0) / nb - 0.008, y0 - 0.006, y0 - 0.002, tall - sh * 0.45, tall - sh * 0.12, glass)
+    m.box(-0.08, 0.08, y0 - 0.006, y0 - 0.002, 0.02, 0.55, material("baggage door", "#5a6670", metal=0.4, rough=0.5))
+    if ends:
+        stone = material("fieldstone", "#8e8172", rough=0.95)
+        course = material("fieldstone joints", "#6e6458", rough=0.95)
+        for x in (x0, x1):
+            m.box(x - 0.025, x + 0.025, y0 - 0.04, y1 + 0.06, 0.0, tall + 0.2, stone)
+            z = 0.1
+            while z < tall + 0.15:
+                for y, d in ((y1 + 0.06, 1), (y0 - 0.04, -1)):
+                    m.box(x - 0.026, x + 0.026, *sorted((y, y + d * 0.002)), z, z + 0.012, course)
+                m.box(x - 0.027, x + 0.027, y0 - 0.04, y1 + 0.06, z, z + 0.012, course)
+                z += 0.13
+        houses.sign_text(m, "AIR TERMINAL", "y", y1 + 0.05, 1, 0.0, tall + 0.075, 0.07, material("fascia letters", "#2e3e4a", rough=0.5))
+
+
+def _jet_bridge(m, x, y1):
+    """A jet bridge out from the front at y1: a rotunda on its column, two telescoping tunnels, a drive column on
+    wheels and the cab with its bellows, floor at 0.45 to meet an airliner's door."""
+    steel = material("jet bridge", "#b4b8bc", metal=0.4, rough=0.5)
+    rib = material("jet bridge ribs", "#9a9ea2", metal=0.4, rough=0.5)
+    dark = material("bellows", "#2a2a2c", rough=0.8)
+    glass = houses.glass()
+    ry = y1 + 0.045
+    m.upright(x, ry, 0.0, 0.44, 0.014, 0.014, steel, segments=10)
+    m.upright(x, ry, 0.44, 0.84, 0.045, 0.045, steel, segments=20)
+    m.upright(x, ry, 0.84, 0.88, 0.048, 0.04, rib, segments=20)
+    for (a, b, hw, z0, z1) in ((ry + 0.03, ry + 0.2, 0.031, 0.47, 0.78), (ry + 0.18, ry + 0.34, 0.037, 0.45, 0.8)):
+        m.box(x - hw, x + hw, a, b, z0, z1, steel, 0.003)
+        for s in (-1, 1):
+            harbour.ribs_y(m, x + s * hw, a + 0.006, b - 0.006, z0 + 0.02, z1 - 0.02, rib, gap=0.018, face=s)
+            _bx(m, x + s * hw, x + s * (hw + 0.004), a + 0.01, b - 0.01, z0 + 0.15, z0 + 0.24, glass)
+    for s in (-1, 1):
+        m.rod((x + s * 0.03, ry + 0.3, 0.06), (x + s * 0.03, ry + 0.3, 0.45), 0.006, steel, segments=8)
+        m.tube_x(x + s * 0.03 - 0.008, x + s * 0.03 + 0.008, ry + 0.3, 0.025, 0.025, dark, segments=14)
+    m.box(x - 0.04, x + 0.04, ry + 0.29, ry + 0.31, 0.04, 0.07, steel)
+    m.box(x - 0.046, x + 0.046, ry + 0.34, ry + 0.41, 0.44, 0.81, steel, 0.006)
+    for s in (-1, 1):
+        _bx(m, x + s * 0.046, x + s * 0.05, ry + 0.35, ry + 0.4, 0.6, 0.75, glass)
+    m.box(x - 0.042, x + 0.042, ry + 0.41, ry + 0.43, 0.46, 0.79, dark)
+
+
+def _terminal_hall(m, size, tall, x0, x1, y0, y1, ends):
+    """A 1990s terminal hall: a curved roof sweeping out over a leaning glass front on branching steel columns, metal
+    panels and a band of windows on the back, and on the bigger ones a jet bridge from each tile."""
+    glass = material("hall glass", "#5a8296", rough=0.06, metal=0.3)
+    mullion = material("hall mullions", "#d8dcde", metal=0.5, rough=0.35)
+    roof = material("hall roof", "#c4c8ca", metal=0.6, rough=0.35)
+    under = material("hall soffit", "#e4e2dc", rough=0.6)
+    panel = material("hall panels", "#a8acae", metal=0.4, rough=0.5)
+    seam = material("hall panel seams", "#8a8e90", metal=0.4, rough=0.5)
+    lean = 0.05
+    m.box(x0, x1, y0, y1, 0.0, tall, panel)
+    # The glass front leaning out, mullions and transoms over it.
+    bot = [(x0, y1, 0.0), (x1, y1, 0.0), (x1, y1 + 0.006, 0.0), (x0, y1 + 0.006, 0.0)]
+    m.wedge(bot, [(x, y + lean, tall) for x, y, _ in bot], glass)
+    m.wedge([(x0, y1 - 0.001, 0.0), (x1, y1 - 0.001, 0.0), (x1, y1 + 0.001, 0.0), (x0, y1 + 0.001, 0.0)],
+            [(x0, y1 - 0.001, tall), (x1, y1 - 0.001, tall), (x1, y1 + lean, tall), (x0, y1 + lean, tall)], panel)
+    n = max(1, round((x1 - x0) / 0.08))
+    for k in range(n + 1):
+        x = x0 + (x1 - x0) * k / n
+        if ends and k in (0, n):
+            continue
+        m.rod((x, y1 + 0.009, 0.0), (x, y1 + 0.009 + lean, tall), 0.003, mullion, segments=5)
+    z = 0.4
+    while z < tall - 0.1:
+        y = y1 + 0.009 + lean * z / tall
+        m.rod((x0, y, z), (x1, y, z), 0.0022, mullion, segments=4)
+        z += 0.4
+    # The roof, curved in section and running across the tile.
+    ya, yb = y0 - 0.05, y1 + lean + 0.12
+    top = []
+    for k in range(13):
+        t = k / 12
+        y = yb + (ya - yb) * t
+        top.append((y, tall - 0.02 + 0.3 * math.sin(math.pi * (0.15 + 0.85 * t)) - 0.12 * t))
+    bottom = [(y, z - 0.07) for y, z in reversed(top)]
+    prof = [(y, z, 0.0, "roof") for y, z in top] + [(y, z, 0.0, "under") for y, z in bottom]
+    hx = (x1 - x0) / 2 + (0.025 if ends else 0.0)
+    m.shell(prof, hx, {"roof": roof, "under": under}, x=(x0 + x1) / 2, cols=(-1, -0.5, 0, 0.5, 1))
+    for k in range(9 if ends else 10):
+        x = x0 + 0.05 + k * 0.1 if ends else -0.45 + k * 0.1
+        for (ya_, za), (yb_, zb) in zip(top, top[1:]):
+            m.rod((x, ya_, za + 0.004), (x, yb_, zb + 0.004), 0.002, seam, segments=4)
+    # Branching columns holding up the overhang.
+    tree_x = (-0.25, 0.22) if ends else (-0.25, 0.25)
+    yr = top[1][0]
+    zr = top[1][1] - 0.07
+    for x in tree_x:
+        foot = (x, y1 + lean + 0.07, 0.0)
+        knot = (x, y1 + lean + 0.07, zr * 0.55)
+        m.rod(foot, knot, 0.007, mullion, segments=10)
+        for dx in (-0.06, 0.0, 0.06):
+            m.rod(knot, (x + dx, yr, zr), 0.004, mullion, segments=6)
+    # The back: seams up the metal panels, a band of windows, doors.
+    nb = round((x1 - x0) / 0.04)
+    for k in range(nb + 1):
+        x = x0 + (x1 - x0) * k / nb
+        m.box(x - 0.002, x + 0.002, y0 - 0.004, y0, 0.0, tall - 0.08, seam)
+    m.box(x0 + (0.02 if ends else 0.0), x1 - (0.02 if ends else 0.0), y0 - 0.006, y0 - 0.002, tall * 0.55, tall * 0.8, glass)
+    m.box(-0.1, 0.1, y0 - 0.008, y0 - 0.002, 0.02, 0.5, glass)
+    if ends:
+        for x, d in ((x0, -1), (x1, 1)):
+            nb = round((y1 - y0) / 0.04)
+            for k in range(nb + 1):
+                y = y0 + (y1 - y0) * k / nb
+                _bx(m, x, x + d * 0.004, y - 0.002, y + 0.002, 0.0, tall - 0.08, seam)
+    else:
+        _jet_bridge(m, 0.12, y1 + lean)
+
+
+def tower(m):
+    """A Transport Canada control tower: a two storey base building, an eight sided concrete shaft with a stair window
+    strip, an equipment floor, a catwalk with a rail round the cab, the cab's glass leaning out between mullions, and a
+    roof with a mast, whips, a dish and the beacon."""
+    concrete = material("tower", "#cdc9bf", rough=0.8)
+    joints = material("tower joints", "#aaa69c", rough=0.85)
+    glass = material("tower glass", "#2e4a5e", rough=0.06, metal=0.3)
+    frame = material("tower frames", "#3a3e42", metal=0.4, rough=0.5)
+    roof = material("tower roof", "#3a3a3c", rough=0.6)
+    rail = material("tower rail", "#d8d8d4", metal=0.4, rough=0.45)
+    wglass = houses.glass()
+    # The base building: precast panels, ribbon windows on both floors, a flat roof with coping, a canopy at the door.
+    x0, x1, y0, y1 = -0.32, 0.32, -0.3, 0.28
+    m.box(x0, x1, y0, y1, 0.0, 0.95, concrete)
+    for z in (0.18, 0.62):
+        for y, d in ((y1, 1), (y0, -1)):
+            m.box(x0 + 0.03, x1 - 0.03, *sorted((y, y + d * 0.004)), z, z + 0.2, wglass)
+            for k in range(13):
+                x = x0 + 0.03 + k * (x1 - x0 - 0.06) / 12
+                m.box(x - 0.002, x + 0.002, *sorted((y, y + d * 0.007)), z, z + 0.2, frame)
+        for x, d in ((x1, 1), (x0, -1)):
+            m.box(*sorted((x, x + d * 0.004)), y0 + 0.04, y1 - 0.04, z, z + 0.2, wglass)
+    m.box(x0 - 0.01, x1 + 0.01, y0 - 0.01, y1 + 0.01, 0.95, 1.05, joints)
+    m.box(x0, x1, y0, y1, 1.0, 1.03, roof)
+    m.box(0.1, 0.26, y1, y1 + 0.12, 0.42, 0.46, joints, 0.004)
+    m.box(0.15, 0.21, y1, y1 + 0.004, 0.02, 0.38, material("tower door", "#2a3236", metal=0.3, rough=0.4))
+    m.box(-0.26, -0.1, -0.24, -0.08, 1.03, 1.25, joints)
+    # The shaft, a stair window strip up one face, panel joints.
+    sx, sy = 0.06, -0.02
+    _frustum(m, sx, sy, 1.03, 3.85, 0.12, 0.105, 8, concrete)
+    for k in range(1, 9):
+        z = 1.03 + k * 0.32
+        _frustum(m, sx, sy, z, z + 0.015, 0.121 - 0.0017 * k, 0.121 - 0.0017 * k, 8, joints)
+    yf = sy + 0.12 * math.cos(math.pi / 8) - 0.001
+    for k in range(8):
+        z = 1.2 + k * 0.32
+        m.box(sx - 0.018, sx + 0.018, yf, yf + 0.006, z, z + 0.14, wglass)
+    # The equipment floor and the catwalk round the cab.
+    _frustum(m, sx, sy, 3.85, 4.15, 0.15, 0.17, 8, concrete)
+    for k in range(8):
+        a = math.pi / 8 + k * math.pi / 4 + math.pi / 8
+        px, py = sx + 0.158 * math.cos(a), sy + 0.158 * math.sin(a)
+        m.box(px - 0.012, px + 0.012, py - 0.012, py + 0.012, 3.95, 4.05, frame)
+    _frustum(m, sx, sy, 4.15, 4.2, 0.25, 0.25, 8, joints)
+    pts = _poly(8, 0.245, math.pi / 8, sx, sy)
+    for (ax, ay), (bx, by) in zip(pts, pts[1:] + pts[:1]):
+        m.rod((ax, ay, 4.38), (bx, by, 4.38), 0.002, rail, segments=4)
+        m.rod((ax, ay, 4.3), (bx, by, 4.3), 0.0015, rail, segments=4)
+        for f in (0.0, 0.5):
+            px, py = ax + (bx - ax) * f, ay + (by - ay) * f
+            m.rod((px, py, 4.2), (px, py, 4.38), 0.0016, rail, segments=4)
+    # The cab: a sill, glass leaning out, mullions at the corners, the roof standing out over it.
+    _frustum(m, sx, sy, 4.2, 4.28, 0.18, 0.182, 8, concrete)
+    _frustum(m, sx, sy, 4.28, 4.8, 0.182, 0.22, 8, glass)
+    for px, py in _poly(8, 1.0, math.pi / 8):
+        m.rod((sx + px * 0.184, sy + py * 0.184, 4.28), (sx + px * 0.222, sy + py * 0.222, 4.8), 0.004, frame, segments=5)
+    _frustum(m, sx, sy, 4.8, 4.86, 0.235, 0.235, 8, roof)
+    _frustum(m, sx, sy, 4.86, 4.93, 0.2, 0.17, 8, roof)
+    # The mast with cross arms and its beacon, two whips and a dish.
+    m.rod((sx, sy, 4.93), (sx, sy, 5.6), 0.005, frame)
+    for z in (5.15, 5.4):
+        m.rod((sx - 0.04, sy, z), (sx + 0.04, sy, z), 0.002, frame, segments=4)
+    m.upright(sx, sy, 5.6, 5.66, 0.008, 0.008, material("beacon red", "#d82a20", rough=0.2), segments=8)
+    for a in (0.7, 2.6):
+        px, py = sx + 0.15 * math.cos(a), sy + 0.15 * math.sin(a)
+        m.rod((px, py, 4.93), (px, py, 5.3), 0.0018, frame, segments=4)
+    m.rod((sx - 0.12, sy - 0.08, 4.93), (sx - 0.12, sy - 0.08, 5.05), 0.004, frame)
+    m.lathe(sx - 0.12, sy - 0.08, 5.05, [(0.004, 0.0), (0.03, 0.05), (0.035, 0.07), (0.0, 0.065)], rail, segments=14, lean=0.02)
+
+
+# Locks: 0 a Rideau lock in stone with timber gates and a stone keeper's house, 1 a Seaway lock in concrete.
+LOCK_ERAS = 2
+
+
+def lock(m, era):
+    """A lock with its upper end to +y (turned to the edge it rises to by place()): walls either side of the chamber,
+    mitre gates at both ends and halfway, the water low in the chamber's lower half and high in its upper half, gate
+    machinery, bollards and a keeper's house or control house on the wall."""
+    water = material("lock water", "#3a5a6e", rough=0.15)
+    slime = material("lock wet band", "#3e4434", rough=0.9)
+    stone = era == 0
+    wall = material("lock stone", "#b5ad9c", rough=0.9) if stone else material("lock wall", "#a8a49c", rough=0.85)
+    joint = material("lock joints", "#8e8676", rough=0.95) if stone else material("lock wall joints", "#8a8680", rough=0.9)
+    cope = material("lock coping", "#c8c2b2", rough=0.85) if stone else material("lock coping", "#b8b4ac", rough=0.8)
+    top = 1.35
+    for s in (-1, 1):
+        _bx(m, s * 0.35, s * 0.49, -0.5, 0.5, 0.0, top - 0.04, wall)
+        _bx(m, s * 0.345, s * 0.495, -0.5, 0.5, top - 0.05, top, cope)
+        if stone:
+            # Coursed limestone on the chamber face, joints broken course by course.
+            for c, z in enumerate([0.1 + 0.11 * k for k in range(11)]):
+                _bx(m, s * 0.348, s * 0.352, -0.5, 0.5, z, z + 0.01, joint)
+                _bx(m, s * 0.488, s * 0.492, -0.5, 0.5, z, z + 0.01, joint)
+                for j in range(10):
+                    y = -0.5 + (j + 0.5 * (c % 2)) * 0.1
+                    if -0.5 < y < 0.5:
+                        _bx(m, s * 0.348, s * 0.352, y - 0.004, y + 0.004, z + 0.01, z + 0.11, joint)
+            for j in range(9):
+                y = -0.45 + j * 0.11
+                _bx(m, s * 0.344, s * 0.496, y - 0.003, y + 0.003, top - 0.05, top + 0.002, joint)
+        else:
+            for j in range(9):
+                y = -0.5 + (j + 0.5) * 0.111
+                _bx(m, s * 0.347, s * 0.351, y - 0.003, y + 0.003, 0.0, top - 0.05, joint)
+            _bx(m, s * 0.35, s * 0.37, -0.5, 0.5, top, top + 0.004, material("lock edge line", "#e0c030", rough=0.6))
+        # Wet bands at both water levels.
+        _bx(m, s * 0.348, s * 0.353, -0.5, 0.0, 0.2, 0.36, slime)
+        _bx(m, s * 0.348, s * 0.353, 0.0, 0.5, 1.05, 1.13, slime)
+    m.box(-0.35, 0.35, -0.5, 0.0, 0.0, 0.2, water)
+    m.box(-0.35, 0.35, 0.0, 0.5, 0.0, 1.05, water)
+    timber = material("gate timber", "#4a3a2a", rough=0.85)
+    wale = material("gate wales", "#3a2e22", rough=0.85)
+    steel = material("gate steel", "#4a5258", metal=0.4, rough=0.5)
+    yellow = material("gate rail", "#e0b828", metal=0.3, rough=0.5)
+    iron = material("crab winch", "#2e3032", metal=0.5, rough=0.5)
+    for g, gz in ((-0.46, top - 0.02), (0.0, top - 0.02), (0.42, top - 0.02)):
+        for s in (-1, 1):
+            hinge, mitre = (s * 0.35, g), (s * 0.004, g + 0.07)
+            dx, dy = mitre[0] - hinge[0], mitre[1] - hinge[1]
+            ln = math.hypot(dx, dy)
+            nx, ny = dy / ln, -dx / ln
+            if ny > 0:
+                nx, ny = -nx, -ny
+            if stone:
+                _plank(m, hinge, mitre, 0.024, 0.0, gz, timber)
+                for z in (0.25, 0.55, 0.85, 1.15):
+                    o = 0.014
+                    _plank(m, (hinge[0] + nx * o, hinge[1] + ny * o), (mitre[0] + nx * o, mitre[1] + ny * o), 0.006, z, z + 0.05, wale)
+                # The balance beam on top, out past the hinge over the wall.
+                tail = (hinge[0] - dx / ln * 0.13, hinge[1] - dy / ln * 0.13)
+                _plank(m, tail, mitre, 0.026, gz, gz + 0.07, timber)
+                harbour.capstan(m, s * 0.43, g - 0.1 if g < 0.4 else g - 0.12, top)
+                m.rod((s * 0.43, g - 0.1, top + 0.12), ((hinge[0] + mitre[0]) / 2, (hinge[1] + mitre[1]) / 2, gz + 0.03), 0.0015, iron, segments=4)
+            else:
+                _plank(m, hinge, mitre, 0.034, 0.0, gz, steel)
+                for z in (0.2, 0.45, 0.7, 0.95, 1.2):
+                    o = 0.019
+                    _plank(m, (hinge[0] + nx * o, hinge[1] + ny * o), (mitre[0] + nx * o, mitre[1] + ny * o), 0.006, z, z + 0.04, steel)
+                for f in (0.05, 0.5, 0.95):
+                    px, py = hinge[0] + dx * f, hinge[1] + dy * f
+                    m.rod((px, py, gz), (px, py, gz + 0.22), 0.0018, yellow, segments=4)
+                m.rod((hinge[0], hinge[1], gz + 0.22), (mitre[0], mitre[1], gz + 0.22), 0.0022, yellow, segments=4)
+                # The machinery house on the wall and its strut to the leaf.
+                hy0, hy1 = (g - 0.13, g - 0.05) if g < 0.4 else (g - 0.16, g - 0.08)
+                _bx(m, s * 0.37, s * 0.48, hy0, hy1, top, top + 0.36, wall)
+                _bx(m, s * 0.365, s * 0.485, hy0 - 0.005, hy1 + 0.005, top + 0.36, top + 0.4, cope)
+                _bx(m, s * 0.365, s * 0.369, hy0 + 0.02, hy1 - 0.02, top + 0.02, top + 0.26, material("machinery door", "#3e5a6a", rough=0.6))
+                m.rod((s * 0.37, (hy0 + hy1) / 2, top + 0.1), (hinge[0] + dx * 0.3, hinge[1] + dy * 0.3, gz - 0.02), 0.006, iron, segments=6)
+    if stone:
+        # The keeper's house on the wall by the lower gates: stone walls, a hip roof, chimney, door and windows.
+        hx0, hx1, hy0, hy1 = 0.355, 0.495, -0.36, -0.13
+        hz = top + 0.75
+        house = material("keeper's house stone", "#a89e8a", rough=0.9)
+        m.box(hx0, hx1, hy0, hy1, top, hz, house)
+        for z in (top + 0.12, top + 0.27, top + 0.42, top + 0.57):
+            m.box(hx0 - 0.002, hx1 + 0.002, hy0 - 0.002, hy1 + 0.002, z, z + 0.008, joint)
+        houses.hip(m, hx0, hx1, hy0, hy1, hz, hz + 0.42, material("keeper's roof", "#5a4a3e", rough=0.8), over=0.02, thick=0.05)
+        m.box(0.44, 0.47, -0.2, -0.17, hz + 0.1, hz + 0.6, house)
+        hwhite = material("keeper's trim", "#e8e4d8", rough=0.6)
+        houses.pane(m, "x", hx0, -1, -0.29, top + 0.25, top + 0.55, 0.05, houses.glass(), hwhite, joint)
+        m.box(hx0 - 0.006, hx0, -0.2, -0.16, top, top + 0.5, material("keeper's door", "#3e5a44", rough=0.6))
+        houses.pane(m, "y", hy0, -1, 0.425, top + 0.25, top + 0.55, 0.05, houses.glass(), hwhite, joint)
+        for y in (-0.06, 0.26):
+            for s in (-1, 1):
+                harbour.bollard(m, s * 0.4, y, top, s=0.8)
+        harbour.lamp(m, -0.44, 0.2, top, top + 0.65, toward=(1.0, 0.0))
+    else:
+        # The control house on the wall: glazed all round under a flat roof standing out, a lamp and bollards.
+        hx0, hx1, hy0, hy1 = 0.36, 0.49, -0.34, -0.16
+        m.box(hx0, hx1, hy0, hy1, top, top + 0.2, wall)
+        glass = houses.glass()
+        m.box(hx0 + 0.004, hx1 - 0.004, hy0 + 0.004, hy1 - 0.004, top + 0.2, top + 0.5, glass)
+        for x, y in ((hx0, hy0), (hx1, hy0), (hx0, hy1), (hx1, hy1)):
+            m.box(x - 0.005, x + 0.005, y - 0.005, y + 0.005, top + 0.2, top + 0.5, wall)
+        m.box(hx0 - 0.025, hx1 + 0.005, hy0 - 0.025, hy1 + 0.025, top + 0.5, top + 0.56, cope)
+        m.rod((0.45, -0.2, top + 0.56), (0.45, -0.2, top + 0.85), 0.002, iron)
+        for y in (-0.06, 0.12, 0.3):
+            for s in (-1, 1):
+                harbour.bollard(m, s * 0.4, y, top)
+        harbour.lamp(m, -0.44, 0.22, top, top + 0.8, toward=(1.0, 0.0))
+        harbour.ladder(m, -0.352, -0.25, 0.15, top, face_x=True, grab=0.12)
+        harbour.ladder(m, 0.352, 0.25, 1.0, top, face_x=True, grab=0.12)
+        # A chain fence along the outer edges of the walls.
+        post = material("lock fence", "#c8c8c4", metal=0.4, rough=0.5)
+        for s in (-1, 1):
+            fy0 = -0.49 if s < 0 else -0.1
+            for k in range(6):
+                y = fy0 + 0.01 + k * (0.48 - fy0) / 5
+                m.rod((s * 0.485, y, top), (s * 0.485, y, top + 0.25), 0.002, post, segments=4)
+            m.rod((s * 0.485, fy0, top + 0.25), (s * 0.485, 0.49, top + 0.25), 0.0018, post, segments=4)
+            m.rod((s * 0.485, fy0, top + 0.14), (s * 0.485, 0.49, top + 0.14), 0.0012, post, segments=4)
