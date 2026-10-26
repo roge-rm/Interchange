@@ -59,7 +59,7 @@
       "from": 1840,
       "until": 2100,
       "regions": { "shield": 5, "north": 3, "mixed": 2, "rockies": 1, "maritimes": 1, "prairies": 0 },
-      "layout": ["open_pit open_pit", "ore_crusher ore_heap"],
+      "layout": ["open_pit open_pit_far", "ore_crusher ore_heap"],
       "produces": { "iron_ore": 90 }
     },
     {

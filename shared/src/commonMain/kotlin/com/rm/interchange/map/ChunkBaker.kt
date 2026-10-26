@@ -1268,7 +1268,11 @@ internal class ChunkBaker(
         private val INDUSTRY_FACING = intArrayOf(Track.XP, Track.YP, Track.XM, Track.YM)
 
         /** Industry pieces drawn another way before a year: the piece, the year its own drawing starts, and the drawing before it. */
-        private val PART_ERAS = listOf(Triple("mill_yard", 1925, "mill_yard_team"))
+        private val PART_ERAS = listOf(
+            Triple("mill_yard", 1925, "mill_yard_team"),
+            Triple("headframe", 1920, "headframe_wood"),
+            Triple("headframe", 1960, "headframe_steel"),
+        )
 
         /** Which of [PART_ERAS]' years have come by [year], as bits, so chunks bake again as each one comes. */
         fun partEras(year: Int): Int = PART_ERAS.foldIndexed(0) { i, bits, e -> if (year >= e.second) bits or (1 shl i) else bits }

@@ -8,6 +8,8 @@ one place across their tiles.
 import math
 import random
 
+import bmesh
+
 from mathutils import Matrix
 
 import cars
@@ -1071,39 +1073,427 @@ def mill_yard(m, team=False):
 
 # ---- coal, iron and steel ------------------------------------------------------------------------
 
-def headframe(m):
+def siding(m, x0, x1, ty, z=0.0):
+    """Track along x from x0 to x1 at y = ty on its ballast, z steps up."""
+    tie = material("tie", "#4e3626", rough=0.9)
+    rail = material("rail", "#6a6662", metal=0.9, rough=0.45)
+    m.box(x0, x1, ty - 0.16, ty + 0.16, z, z + 0.03, material("ballast", "#7a746a", rough=1.0))
+    x = x0 + 0.03
+    while x < x1 - 0.01:
+        m.box(x - 0.02, x + 0.02, ty - 0.14, ty + 0.14, z + 0.02, z + 0.06, tie)
+        x += 0.1
+    for s in (-1, 1):
+        m.box(x0, x1, ty + s * 0.095 - 0.006, ty + s * 0.095 + 0.006, z + 0.06, z + 0.12, rail)
+
+
+def sheave(m, x, y, z, r, mat):
+    """A spoked sheave wheel turning in the y-z plane, its middle at x, y and z steps up, r tiles round."""
+    s = UNSQUASH / rig.RISE
+
+    def at(a, rr):
+        return (x, y + rr * math.cos(a), z + rr * math.sin(a) * s)
+    n = 24
+    for rr, t in ((r, 0.006), (r * 0.86, 0.0025)):
+        for k in range(n):
+            m.rod(at(2 * math.pi * k / n, rr), at(2 * math.pi * (k + 1) / n, rr), t, mat, segments=5)
+    for k in range(8):
+        m.rod((x, y, z), at(2 * math.pi * k / 8 + 0.2, r * 0.86), 0.002, mat, segments=4)
+    m.tube_x(x - 0.012, x + 0.012, y, z, r * 0.16, mat, segments=10)
+
+
+def terrain(m, height, mats, pick, n=110, oy=0.0, wall=1):
+    """Shaped ground over the tile: height(x, y) in steps on an n by n grid, y offset by oy for a shape that runs across two
+    tiles, with walls of mats[wall] down its edges. pick(x, y, slope) gives each face's index in mats, slope its rise in
+    steps a tile."""
+    bm = bmesh.new()
+    picks = []
+    xs = [-0.5 + i / n for i in range(n + 1)]
+    hs = [[height(x, y + oy) for y in xs] for x in xs]
+    vs = [[bm.verts.new((x, y, m.z(hs[i][j]) * rig.RISE)) for j, y in enumerate(xs)] for i, x in enumerate(xs)]
+    for i in range(n):
+        for j in range(n):
+            bm.faces.new((vs[i][j], vs[i + 1][j], vs[i + 1][j + 1], vs[i][j + 1]))
+            hh = (hs[i][j], hs[i + 1][j], hs[i + 1][j + 1], hs[i][j + 1])
+            picks.append(pick((xs[i] + xs[i + 1]) / 2, (xs[j] + xs[j + 1]) / 2 + oy, (max(hh) - min(hh)) * n))
+    # Walls down the four edges to the ground.
+    edges = [[vs[i][0] for i in range(n + 1)], [vs[n][j] for j in range(n + 1)], [vs[i][n] for i in range(n, -1, -1)], [vs[0][j] for j in range(n, -1, -1)]]
+    for line in edges:
+        low = [bm.verts.new((v.co.x, v.co.y, 0.0)) for v in line]
+        for k in range(len(line) - 1):
+            bm.faces.new((low[k], low[k + 1], line[k + 1], line[k]))
+            picks.append(wall)
+    # Every face turned to look up or out from the tile's middle.
+    for f in bm.faces:
+        f.normal_update()
+        c = f.calc_center_median()
+        if f.normal.z < -1e-6 or (abs(f.normal.z) <= 1e-6 and f.normal.x * c.x + f.normal.y * c.y < 0):
+            f.normal_flip()
+    obj = m._mesh("terrain", bm, mats[0])
+    for mat in mats[1:]:
+        obj.data.materials.append(mat)
+    obj.data.polygons.foreach_set("material_index", picks)
+    return obj
+
+
+def benched(e, steps, w=0.012):
+    """The height of benched ground at e: steps is [(e out to, height)], each bench flat with a steep face to the next."""
+    h = steps[0][1]
+    for (t, h0), (_, h1) in zip(steps, steps[1:]):
+        f = min(1.0, max(0.0, (e - t) / w + 0.5))
+        h += (h1 - h0) * f * f * (3 - 2 * f)
+    return h
+
+
+def bumps(x, y, seed):
+    """A little roughness, from -1 to 1, for loose rock on the benches."""
+    return (math.sin(x * 61 + seed) * math.sin(y * 53 + seed * 1.7) + math.sin((x + y) * 97 + seed * 2.3) * 0.5) / 1.5
+
+
+class Benches:
+    """Benched ground round a middle at cx, cy, rx by ry tiles to its outer edge (e = 1), wobbled by seed so it isn't a
+    clean oval, with a road spiralling over the benches: from angle a0, turning by turns, from e0 at h0 steps to e1 at h1.
+    face is how far in e each bench's face runs, small for a cut face and larger for loose rock at its angle of rest."""
+
+    def __init__(self, cx, cy, rx, ry, steps, seed, road=None, rough=0.012, face=0.012):
+        self.cx, self.cy, self.rx, self.ry, self.steps, self.seed, self.road, self.rough = cx, cy, rx, ry, steps, seed, road, rough
+        self.face = face
+
+    def at(self, x, y):
+        dx, dy = (x - self.cx) / self.rx, (y - self.cy) / self.ry
+        a = math.atan2(dy, dx)
+        s = self.seed
+        wob = 1 + 0.07 * math.sin(3 * a + s) + 0.045 * math.sin(5 * a + s * 2.1) + 0.03 * math.sin(8 * a + s * 0.7)
+        return math.hypot(dx, dy) / wob, a
+
+    def on_road(self, e, a):
+        """The road's height where e, a is on it, or None."""
+        if self.road is None:
+            return None
+        a0, turns, e0, e1, h0, h1, w = self.road
+        span = turns * math.tau
+        for k in range(-1, int(turns) + 2):
+            t = (a - a0) * (1 if turns > 0 else -1) + k * math.tau
+            if 0 <= t <= abs(span):
+                f = t / abs(span)
+                if abs(e - (e0 + (e1 - e0) * f)) < w:
+                    return h0 + (h1 - h0) * f
+        return None
+
+    def height(self, x, y):
+        e, a = self.at(x, y)
+        r = self.on_road(e, a)
+        if r is not None:
+            return r
+        return benched(e, self.steps, self.face) + self.rough * bumps(x, y, self.seed) * min(1.0, max(0.0, (1.0 - e) / 0.1))
+
+    def pick(self, faces):
+        """A pick() for terrain(): 3 on the road, the bench faces 1 or 2 by where round they are, 0 on the benches."""
+        def pick(x, y, slope):
+            e, a = self.at(x, y)
+            if self.on_road(e, a) is not None:
+                return 3
+            if slope > faces:
+                return 2 if math.sin(2 * a + self.seed * 1.3) + 0.4 * math.sin(7 * a) > -0.4 else 1
+            return 0
+        return pick
+
+
+# ---- mines ----------------------------------------------------------------------------------------
+
+# Where the headframe's conveyor crosses into the next tile (+y), x across and its bed's height, and how fast it climbs,
+# in steps a tile: it carries on at the same slope up the tipple, into the potash mill or out over the rock dump.
+HEAD_X, HEAD_Z, HEAD_CLIMB = 0.3, 3.0, 4.2
+
+
+def head_z(y, beyond=False):
+    """The headframe conveyor's bed at y, in the headframe's tile or the one beyond it."""
+    return HEAD_Z + (y + (0.5 if beyond else -0.5)) * HEAD_CLIMB
+
+
+def head_conveyor(m, y0, y1, frame, belt, wall=None, roof=None, legs=0.25, beyond=False):
+    """The headframe's conveyor along x = HEAD_X from y0 to y1, in the headframe's tile or the one beyond: open on
+    trestles, or an enclosed gallery if wall is given."""
+    a = (HEAD_X, y0, head_z(y0, beyond))
+    b = (HEAD_X, y1, head_z(y1, beyond))
+    if wall is None:
+        conveyor(m, a, b, 0.06, frame, belt, legs=legs, hood=roof, load=material("ore on belt", "#4a4440", rough=1.0))
+    else:
+        gallery(m, a, b, 0.075, 0.42, wall, roof, glass())
+    return a, b
+
+
+def hoist_ropes(m, xs, a, b, mat):
+    """Hoist ropes from the sheaves at a down to the drum at b, each (y, z), one at each x."""
+    for x in xs:
+        m.rod((x, a[0], a[1]), (x, b[0], b[1]), 0.0018, mat, segments=4)
+
+
+def headframe(m, era=2):
+    """A mine's headframe over the shaft. era 0 a timber A-frame, 1 an open steel frame with its backlegs braced down to
+    the hoist house, 2 a tall concrete tower with the hoists in the headhouse on top, as at Sudbury and the potash mines.
+    The ore goes up out of a bin house beside it on a conveyor to the next tile (+y)."""
     ground(m, "#3e3a36", "mine yard")
-    steel = material("headframe steel", "#5a4a42", metal=0.4, rough=0.6)
-    # Four legs leaning in to the sheave wheels at the top, braced, over the shaft house.
-    top = 7.0
-    for x in (-0.18, 0.18):
-        for y in (-0.18, 0.18):
-            m.rod((x * 1.6, y * 1.6, 0), (x * 0.5, y * 0.5, top), 0.012, steel)
-    for z in (1.8, 3.6, 5.4):
-        f = 1.6 - (z / top) * 1.1
-        for a, b in (((-0.18, -0.18), (0.18, -0.18)), ((0.18, -0.18), (0.18, 0.18)), ((0.18, 0.18), (-0.18, 0.18)), ((-0.18, 0.18), (-0.18, -0.18))):
-            m.rod((a[0] * f, a[1] * f, z), (b[0] * f, b[1] * f, z), 0.007, steel)
-    m.box(-0.11, 0.11, -0.11, 0.11, top, top + 0.15, steel)
-    for x in (-0.05, 0.05):
-        m.tube_x(x - 0.006, x + 0.006, 0, top + 0.5, 0.11, steel, segments=24, ring_inner=0.09)
-    # The backstay out to the hoist house.
-    m.rod((0, 0, top), (0, -0.48, 1.2), 0.01, steel)
-    m.box(-0.2, 0.2, -0.2, 0.2, 0, 1.2, material("shaft house", "#6a5a4e", rough=0.8), 0.004)
+    sx, sy = 0.0, 0.04
+    g = glass()
+    trim = material("mine trim", "#c8bca8", rough=0.8)
+    belt = material("conveyor belt", "#2e2a26", rough=0.8)
+    if era == 2:
+        _headframe_tower(m, sx, sy, g, belt)
+        return
+    if era == 0:
+        frame = material("headframe timber", "#6a5640", rough=0.9)
+        board = material("shaft house boards", "#7a6248", rough=0.9)
+        roof = material("shake roof", "#4e4640", rough=0.9)
+        r = 0.009
+    else:
+        frame = material("headframe steel", "#4e4844", metal=0.5, rough=0.55)
+        board = material("shaft house siding", "#7e7a72", metal=0.4, rough=0.6)
+        roof = material("shaft house roof", "#4a4e52", metal=0.4, rough=0.6)
+        r = 0.0065
+    rope = material("hoist rope", "#2a2a2a", metal=0.6, rough=0.5)
+    # Four legs leaning in from the collar to the sheave deck, girts and cross braces on every face.
+    top = 6.4
+    b0x, b0y, b1x, b1y = 0.11, 0.09, 0.055, 0.05
+    corners = [(-1, -1), (1, -1), (1, 1), (-1, 1)]
+
+    def pt(c, z):
+        f = z / top
+        hx, hy = b0x + (b1x - b0x) * f, b0y + (b1y - b0y) * f
+        return (sx + c[0] * hx, sy + c[1] * hy, z)
+    for c in corners:
+        if era == 0:
+            p, q = pt(c, 0), pt(c, top)
+            m.rod(p, q, r * 1.3, frame, segments=4)
+        else:
+            m.rod(pt(c, 0), pt(c, top), r, frame, segments=6)
+        p = pt(c, 0)
+        m.box(p[0] - 0.014, p[0] + 0.014, p[1] - 0.014, p[1] + 0.014, 0, 0.12, material("footing", "#9a968c", rough=1.0))
+    levels = [1.4, 2.4, 3.4, 4.4, 5.4, top]
+    for za, zb in zip([0.15] + levels, levels):
+        for k in range(4):
+            ca, cb = corners[k], corners[(k + 1) % 4]
+            m.rod(pt(ca, zb), pt(cb, zb), r * 0.8, frame, segments=4)
+            m.rod(pt(ca, za), pt(cb, zb), r * 0.45, frame, segments=4)
+            if era == 1:
+                m.rod(pt(cb, za), pt(ca, zb), r * 0.45, frame, segments=4)
+    # The sheave deck with its rail, two sheaves on it, and over a timber frame a small hood.
+    deck = material("sheave deck", "#5a5450", metal=0.3, rough=0.7)
+    m.box(sx - 0.085, sx + 0.085, sy - 0.08, sy + 0.08, top, top + 0.08, deck)
+    post = frame
+    for xx in (sx - 0.08, sx + 0.08):
+        for yy in (sy - 0.075, sy + 0.075):
+            m.box(xx - 0.003, xx + 0.003, yy - 0.003, yy + 0.003, top + 0.08, top + 0.45, post)
+    for xx in (sx - 0.08, sx + 0.08):
+        m.box(xx - 0.002, xx + 0.002, sy - 0.075, sy + 0.075, top + 0.42, top + 0.45, post)
+    m.box(sx - 0.08, sx + 0.08, sy + 0.073, sy + 0.077, top + 0.42, top + 0.45, post)
+    wr = 0.055
+    wz = top + 0.08 + wr / rig.RISE * UNSQUASH + 0.04
+    for xx in (sx - 0.035, sx + 0.035):
+        sheave(m, xx, sy, wz, wr, material("sheave", "#3a3a3c", metal=0.6, rough=0.4))
+        m.box(xx - 0.01, xx + 0.01, sy - 0.012, sy + 0.012, top + 0.08, wz, frame)
+    if era == 0:
+        gable(m, sx - 0.1, sx + 0.1, sy - 0.1, sy + 0.1, wz + 0.45, wz + 0.8, roof, board, along_x=False, over=0.015, thick=0.05)
+        for xx in (sx - 0.09, sx + 0.09):
+            for yy in (sy - 0.09, sy + 0.09):
+                m.box(xx - 0.004, xx + 0.004, yy - 0.004, yy + 0.004, top + 0.08, wz + 0.45, frame)
+    # The backlegs, braced down towards the hoist house to take the ropes' pull.
+    fy = -0.2
+    for s in (-1, 1):
+        a, b = (sx + s * 0.06, sy - 0.04, top), (sx + s * 0.1, fy, 0.0)
+        if era == 0:
+            m.rod(a, b, r * 1.5, frame, segments=4)
+        else:
+            harbour.lattice(m, b, a, 0.03, 0.02, frame, n=10, r=0.003, axis=(1.0, 0.0))
+        m.box(b[0] - 0.016, b[0] + 0.016, b[1] - 0.016, b[1] + 0.016, 0, 0.12, material("footing", "#9a968c", rough=1.0))
+    for z in (1.6, 3.4, 5.0):
+        f = z / top
+        y = fy + (sy - 0.04 - fy) * f
+        w = 0.1 + (0.06 - 0.1) * f
+        m.rod((sx - w, y, z), (sx + w, y, z), r * 0.7, frame, segments=4)
+        # A strut back from the backlegs to the tower at each level.
+        m.rod((sx, y, z), pt((0, -1), z), r * 0.6, frame, segments=4)
+    # The shaft house round the collar, the tower rising through its roof.
+    hx0, hx1, hy0, hy1 = sx - 0.14, sx + 0.14, sy - 0.12, sy + 0.14
+    if era == 0:
+        boards(m, hx0, hx1, hy0, hy1, 0, 1.2, board)
+    else:
+        clad_box(m, hx0, hx1, hy0, hy1, 0, 1.2, board, material("siding ribs", "#6a665e", metal=0.4, rough=0.6))
+    gable(m, hx0, hx1, hy0, hy1, 1.2, 1.7, roof, board, along_x=False, over=0.02, thick=0.05)
+    m.box(sx - 0.03, sx + 0.03, hy1, hy1 + 0.006, 0, 0.75, material("door", "#4a3a2e", rough=0.8))
+    houses.pane(m, "x", hx0, -1, sy, 0.45, 0.85, 0.05, g, trim, trim, sash=True)
+    # The hoist house behind, the ropes coming down to its end wall.
+    ux0, ux1, uy0, uy1 = -0.26, 0.24, -0.48, -0.25
+    if era == 0:
+        boards(m, ux0, ux1, uy0, uy1, 0, 1.4, board)
+        gable(m, ux0, ux1, uy0, uy1, 1.4, 2.1, roof, board, along_x=False, trim=trim)
+        windows(m, ux0, ux1, uy0, uy1, 0.0, 1, 0, 2, g, trim)
+        # The boiler's brick stack for the steam hoist, guyed.
+        brick = material("stack brick", "#7e4232", rough=0.9)
+        stack(m, 0.36, -0.4, 0, 4.2, 0.035, brick, material("stack band", "#3a2a24", rough=0.9))
+        for gx, gy in ((0.48, -0.48), (0.46, -0.22), (0.24, -0.48)):
+            m.rod((0.36, -0.4, 3.6), (gx, gy, 0.0), 0.0012, rope, segments=4)
+        m.box(0.26, 0.46, -0.48, -0.3, 0, 0.9, board)
+        gable(m, 0.26, 0.46, -0.48, -0.3, 0.9, 1.25, roof, board, along_x=False, over=0.015, thick=0.05)
+        logs(m, -0.46, -0.32, -0.15, 0.02, 0.012, 3, material(*LOG, rough=0.9))
+    else:
+        brick = material("hoist house brick", "#7e4232", rough=0.9)
+        m.box(ux0, ux1, uy0, uy1, 0, 1.5, brick, 0.003)
+        gable(m, ux0, ux1, uy0, uy1, 1.5, 2.15, roof, brick, along_x=False, trim=trim)
+        for y in (-0.42, -0.31):
+            for x, d in ((ux0, -1), (ux1, 1)):
+                houses.arched_pane(m, "x", x, d, y, 0.4, 1.15, 0.06, g, trim, trim, rise=0.08, keystone=False)
+        # The transformer yard for the electric hoist.
+        fence = material("yard fence", "#6a6a66", metal=0.5, rough=0.5)
+        m.box(0.3, 0.46, -0.46, -0.3, 0, 0.04, material("yard gravel", "#8a8478", rough=1.0))
+        for x in (0.34, 0.42):
+            m.box(x - 0.025, x + 0.025, -0.42, -0.36, 0.04, 0.45, material("transformer", "#5a6a5e", metal=0.4, rough=0.6), 0.004)
+            for k in range(3):
+                m.upright(x - 0.015 + k * 0.015, -0.39, 0.45, 0.65, 0.004, 0.003, material("insulator", "#8a5a3a", rough=0.5), segments=6)
+        for a, b in (((0.3, -0.46), (0.46, -0.46)), ((0.46, -0.46), (0.46, -0.3)), ((0.46, -0.3), (0.3, -0.3)), ((0.3, -0.3), (0.3, -0.46))):
+            houses.chain(m, a, b, height=0.5)
+    m.box(sx - 0.05, sx + 0.05, uy1, uy1 + 0.008, 1.0, 1.25, material("rope slot", "#1a1a1a", rough=0.9))
+    hoist_ropes(m, (sx - 0.035, sx + 0.035), (sy - wr * 0.5, wz + 0.2), (uy1, 1.12), rope)
+    # The bin house beside the tower, the skip's chute down into it, and the conveyor away up to the next tile.
+    bx0, bx1, by0, by1 = 0.19, 0.42, -0.2, 0.04
+    if era == 0:
+        boards(m, bx0, bx1, by0, by1, 0, 1.3, board)
+    else:
+        clad_box(m, bx0, bx1, by0, by1, 0, 1.3, board, material("siding ribs", "#6a665e", metal=0.4, rough=0.6))
+    slab(m, [(bx0 - 0.02, by0 - 0.02, 1.55), (bx1 + 0.02, by0 - 0.02, 1.3), (bx1 + 0.02, by1 + 0.02, 1.3), (bx0 - 0.02, by1 + 0.02, 1.55)], 0.05, roof)
+    m.wedge([(sx + 0.06, sy - 0.03, 4.2), (sx + 0.06, sy + 0.03, 4.2), (sx + 0.08, sy + 0.03, 4.3), (sx + 0.08, sy - 0.03, 4.3)],
+            [(bx0 + 0.02, -0.11, 1.5), (bx0 + 0.02, -0.05, 1.5), (bx0 + 0.04, -0.05, 1.6), (bx0 + 0.04, -0.11, 1.6)], frame)
+    head_conveyor(m, by1 - 0.06, 0.5, frame, belt, roof=roof if era == 0 else None)
+    m.box(bx0 + 0.04, bx0 + 0.1, by1, by1 + 0.006, 0, 0.7, material("door", "#4a3a2e", rough=0.8))
+    harbour.drum(m, -0.4, 0.3, 0.02)
+    harbour.drum(m, -0.36, 0.34, 0.02, colour="#7a3a2a")
+    if era == 0:
+        m.box(-0.44, -0.24, 0.24, 0.44, 0.02, 0.06, material("mine timbers", "#7a6248", rough=0.9))
+        logs(m, -0.44, -0.24, 0.32, 0.06, 0.012, 4, material("mine props", "#8a7050", rough=0.9))
+    else:
+        for x in (-0.42, -0.3):
+            m.box(x - 0.04, x + 0.04, 0.22, 0.42, 0.02, 0.3, material("ore car", "#5a4a42", metal=0.4, rough=0.6), 0.004)
+
+
+def _headframe_tower(m, sx, sy, g, belt):
+    """The late headframe: a slipformed concrete tower with pilasters and a stair of small windows, the clad headhouse
+    on top where the friction hoists are, the collar house at its foot and an enclosed gallery away from the bin house."""
+    concrete = material("headframe concrete", "#bab4a8", rough=0.9)
+    clad = material("headhouse cladding", "#8e3a2e", metal=0.3, rough=0.6)
+    rib = material("headhouse ribs", "#7a3228", metal=0.3, rough=0.6)
+    trim = material("headframe trim", "#5a5c5e", metal=0.3, rough=0.6)
+    tx0, tx1, ty0, ty1, top = sx - 0.12, sx + 0.12, sy - 0.11, sy + 0.13, 6.5
+    m.box(tx0, tx1, ty0, ty1, 0, top, concrete, 0.01)
+    for x in (tx0 + 0.03, sx, tx1 - 0.03):
+        for y, d in ((ty0, -1), (ty1, 1)):
+            houses.on_wall(m, "y", y, d, x - 0.012, x + 0.012, 0, 0.01, 0.2, top, concrete)
+    for y in (ty0 + 0.04, ty1 - 0.04):
+        for x, d in ((tx0, -1), (tx1, 1)):
+            houses.on_wall(m, "x", x, d, y - 0.012, y + 0.012, 0, 0.01, 0.2, top, concrete)
+    for k in range(8):
+        z = 0.7 + k * 0.7
+        houses.pane(m, "x", tx1, 1, sy + 0.04, z, z + 0.2, 0.025, g, trim, trim, sash=False)
+        houses.pane(m, "y", ty1, 1, sx - 0.06, z + 0.35, z + 0.55, 0.025, g, trim, trim, sash=False)
+    # The headhouse, wider than the tower, a band of windows round it and the hoist motors' vents on its roof.
+    hx0, hx1, hy0, hy1, h1 = tx0 - 0.03, tx1 + 0.03, ty0 - 0.03, ty1 + 0.03, 7.9
+    m.box(tx0 - 0.01, tx1 + 0.01, ty0 - 0.01, ty1 + 0.01, top - 0.1, top, trim)
+    clad_box(m, hx0, hx1, hy0, hy1, top, h1, clad, rib, gap=0.028)
+    houses.flat_top(m, hx0, hx1, hy0, hy1, h1, trim, parapet=0.1)
+    for face, at, d, a0, a1 in (("y", hy1, 1, hx0 + 0.02, hx1 - 0.02), ("y", hy0, -1, hx0 + 0.02, hx1 - 0.02), ("x", hx1, 1, hy0 + 0.02, hy1 - 0.02), ("x", hx0, -1, hy0 + 0.02, hy1 - 0.02)):
+        houses.on_wall(m, face, at, d, a0, a1, 0, 0.008, top + 0.75, top + 1.05, g)
+        houses.on_wall(m, face, at, d, a0, a1, 0, 0.01, top + 0.71, top + 0.75, trim)
+    vent = material("vent", "#6a6a66", metal=0.5, rough=0.5)
+    for x in (sx - 0.07, sx + 0.07):
+        m.box(x - 0.03, x + 0.03, sy - 0.02, sy + 0.06, h1 + 0.06, h1 + 0.3, vent, 0.004)
+    m.upright(sx + 0.1, ty1, h1, h1 + 0.6, 0.003, 0.002, trim, segments=6)
+    # The collar house round its foot, where the cages land.
+    wall = material("collar house cladding", "#a8a49a", metal=0.3, rough=0.6)
+    wrib = material("collar house ribs", "#96928a", metal=0.3, rough=0.6)
+    cx0, cx1, cy0, cy1 = -0.32, 0.17, -0.42, 0.24
+    clad_box(m, cx0, cx1, cy0, ty0, 0, 1.4, wall, wrib)
+    houses.flat_top(m, cx0, cx1, cy0, ty0, 1.4, trim, parapet=0.1)
+    clad_box(m, cx0, tx0, ty0, cy1, 0, 1.1, wall, wrib)
+    houses.flat_top(m, cx0, tx0, ty0, cy1, 1.1, trim, parapet=0.1)
+    harbour.rollup_door(m, -0.3, -0.18, cy1, 0, 0.75, face=1)
+    harbour.rollup_door(m, -0.06, 0.08, cy0, 0, 0.8, face=-1)
+    for y in (-0.36, -0.26, -0.16):
+        houses.pane(m, "x", cx0, -1, y, 0.5, 0.95, 0.05, g, trim, trim, sash=False)
+    for x in (-0.2, 0.1):
+        m.box(x - 0.03, x + 0.03, -0.32, -0.24, 1.46, 1.7, vent, 0.004)
+    # The bin house and the enclosed gallery up to the next tile on its bents.
+    bx0, bx1, by0, by1 = 0.2, 0.42, -0.3, 0.04
+    clad_box(m, bx0, bx1, by0, by1, 0, 1.6, wall, wrib)
+    houses.flat_top(m, bx0, bx1, by0, by1, 1.6, trim, parapet=0.1)
+    roof = material("gallery roof", "#4e5458", metal=0.3, rough=0.6)
+    frame = material("mill steel", "#4a4c4e", metal=0.5, rough=0.5)
+    head_conveyor(m, by1 - 0.02, 0.5, frame, belt, wall=wall, roof=roof)
+    for y in (0.22, 0.42):
+        bent(m, HEAD_X, y, head_z(y) - 0.01, 0.1, frame)
+    harbour.drum(m, 0.0, 0.38, 0.02)
+    houses.car(m, -0.36, 0.38, colour="#3a4a6a")
+    houses.lamp_post(m, -0.42, 0.3)
 
 
 def tipple(m):
+    """A coal tipple: a tall timber frame over the loading track, the screen house on top with chutes down to a hopper
+    car, a picking lean-to, and the covered conveyor climbing in from the headframe (-y)."""
     ground(m, "#3e3a36", "mine yard")
-    wood = material("tipple boards", "#4a4038", rough=0.9)
-    # A tall house on legs where the coal is screened and dropped into cars.
-    for x in (-0.3, 0.3):
-        for y in (-0.25, 0.25):
-            m.box(x - 0.025, x + 0.025, y - 0.025, y + 0.025, 0, 2.6, wood)
-    m.box(-0.34, 0.34, -0.3, 0.3, 2.6, 4.6, wood, 0.004)
-    gable(m, -0.34, 0.34, -0.3, 0.3, 4.6, 5.3, material("tipple roof", "#3a3a3a", metal=0.3, rough=0.6), wood, along_x=True)
-    windows(m, -0.34, 0.34, -0.3, 0.3, 2.8, 1, 3, 2, glass(), wood)
-    m.wedge([(-0.05, -0.3, 2.6), (0.05, -0.3, 2.6), (0.05, -0.5, 1.6), (-0.05, -0.5, 1.6)],
-            [(-0.05, -0.3, 2.75), (0.05, -0.3, 2.75), (0.05, -0.5, 1.75), (-0.05, -0.5, 1.75)], wood)
-    heap(m, 0.0, 0.0, 0.18, 0.7, "#1a1a1c", 51, "coal under tipple")
+    wood = material("tipple timber", "#5a4a3a", rough=0.9)
+    board = material("tipple boards", "#4a4038", rough=0.9)
+    roof = material("tipple roof", "#3a3a3a", metal=0.3, rough=0.6)
+    trim = material("tipple trim", "#6a5a48", rough=0.9)
+    coal = material("coal", "#161618", rough=0.95)
+    ty = 0.06
+    siding(m, -0.5, 0.5, ty)
+    m.box(-0.5, 0.5, ty - 0.16, ty + 0.16, 0.0, 0.02, coal)
+    # Timber bents straddling the track, each braced across and to the next.
+    floor = 2.6
+    py = (ty - 0.22, ty + 0.24)
+    xs = (-0.33, -0.11, 0.11, 0.31)
+    for x in xs:
+        for y in py:
+            m.box(x - 0.016, x + 0.016, y - 0.016, y + 0.016, 0, floor, wood)
+            m.box(x - 0.024, x + 0.024, y - 0.024, y + 0.024, 0, 0.1, material("footing", "#9a968c", rough=1.0))
+        m.box(x - 0.016, x + 0.016, py[0], py[1], floor - 0.15, floor, wood)
+        for y, d in ((py[0], 1), (py[1], -1)):
+            m.rod((x, y, floor - 0.6), (x, y + d * 0.09, floor - 0.13), 0.006, wood, segments=4)
+    for y in py:
+        for xa, xb in zip(xs, xs[1:]):
+            m.box(xa, xb, y - 0.012, y + 0.012, floor - 0.12, floor, wood)
+            m.box(xa, xb, y - 0.01, y + 0.01, 1.85, 1.93, wood)
+            m.rod((xa, y, 0.1), (xb, y, 1.85), 0.0045, wood, segments=4)
+            m.rod((xb, y, 1.93), (xa, y, floor - 0.12), 0.0045, wood, segments=4)
+    # The screen house on top, board and batten, windows along it.
+    hx0, hx1, hy0, hy1, eave = -0.37, 0.35, -0.28, 0.32, 4.3
+    m.box(hx0, hx1, hy0, hy1, floor, floor + 0.08, wood)
+    boards(m, hx0, hx1, hy0, hy1, floor + 0.08, eave, board)
+    gable(m, hx0, hx1, hy0, hy1, eave, 5.1, roof, board, along_x=True, over=0.025)
+    g = glass()
+    for x in (-0.25, -0.05, 0.15):
+        for y, d in ((hy0, -1), (hy1, 1)):
+            houses.pane(m, "y", y, d, x, 3.3, 3.85, 0.07, g, trim, trim, sash=True)
+    houses.pane(m, "x", hx1, 1, 0.12, 3.3, 3.85, 0.07, g, trim, trim, sash=True)
+    m.box(-0.06, 0.06, -0.04, 0.12, 5.0, 5.25, roof, 0.003)
+    # The chutes down from the screens to the car, one for each size of coal, and their hinged aprons.
+    chute = material("chute plate", "#3a3634", metal=0.5, rough=0.6)
+    for x in (-0.22, 0.0, 0.2):
+        m.wedge([(x - 0.035, ty + 0.2, floor), (x + 0.035, ty + 0.2, floor), (x + 0.035, ty + 0.2, floor - 0.1), (x - 0.035, ty + 0.2, floor - 0.1)],
+                [(x - 0.03, ty + 0.03, 1.85), (x + 0.03, ty + 0.03, 1.85), (x + 0.03, ty + 0.03, 1.75), (x - 0.03, ty + 0.03, 1.75)], chute)
+        for s in (-1, 1):
+            m.rod((x + s * 0.035, ty + 0.2, floor - 0.02), (x + s * 0.03, ty + 0.03, 1.87), 0.003, chute, segments=4)
+    moved(m, lambda mm: cars.hopper(mm, 9 / 16), -0.02, ty, -math.pi / 2, z=0.12)
+    # The picking lean-to off the +y side, sloping down over its posts.
+    slab(m, [(hx0 + 0.06, hy1, 3.7), (hx1 - 0.1, hy1, 3.7), (hx1 - 0.1, 0.47, 3.1), (hx0 + 0.06, 0.47, 3.1)], 0.05, roof)
+    for x in (hx0 + 0.08, -0.1, hx1 - 0.12):
+        m.box(x - 0.014, x + 0.014, 0.44, 0.47, 0, floor, wood)
+    # The screen shaking out: the refuse chute out the end to the rock pile.
+    m.wedge([(hx0, -0.02, 2.9), (hx0, 0.06, 2.9), (hx0, 0.06, 3.0), (hx0, -0.02, 3.0)],
+            [(-0.48, 0.0, 1.3), (-0.48, 0.06, 1.3), (-0.48, 0.06, 1.4), (-0.48, 0.0, 1.4)], chute)
+    heap(m, -0.45, 0.4, 0.08, 0.6, "#3e3a36", 54, "mine refuse")
+    # The covered conveyor up from the headframe, its gallery on bents.
+    frame = wood
+    head_conveyor(m, -0.5, hy0, frame, material("conveyor belt", "#2e2a26", rough=0.8), wall=board, roof=roof, beyond=True)
+    bent(m, HEAD_X, -0.42, head_z(-0.42, True) - 0.02, 0.1, wood)
+    heap(m, 0.43, -0.4, 0.06, 0.35, "#1a1a1c", 51, "coal spill")
 
 
 def coal_heap(m):
@@ -1113,46 +1503,251 @@ def coal_heap(m):
 
 
 def mine_shed(m):
+    """The lamp and wash house: brick, a louvred monitor along its ridge with round ventilators on the slopes, the lamp
+    room wing with its counter window, and the boiler house behind with its stack on a square base."""
     ground(m, "#3e3a36", "mine yard")
-    brick = material("hoist house brick", "#7e4232", rough=0.9)
-    x0, x1, y0, y1 = -0.3, 0.3, -0.22, 0.22
-    m.box(x0, x1, y0, y1, 0, 2.0, brick, 0.004)
-    gable(m, x0, x1, y0, y1, 2.0, 2.8, material("hoist house roof", "#4a4e52", rough=0.6), brick, along_x=True)
-    windows(m, x0, x1, y0, y1, 0.2, 1, 4, 2, glass(), material("hoist trim", "#c8bca8", rough=0.8))
-    stack(m, 0.36, -0.3, 0, 5.0, 0.04, brick, material("stack band", "#3a2a24", rough=0.9))
+    brick = material("wash house brick", "#7e4232", rough=0.9)
+    roof = material("wash house roof", "#4a4e52", rough=0.6)
+    trim = material("mine trim", "#c8bca8", rough=0.8)
+    g = glass()
+    x0, x1, y0, y1, eave = -0.34, 0.24, -0.2, 0.2, 2.0
+    houses.foundation(m, x0, x1, y0, y1, 0.15, material("foundation", "#8a8478", rough=1.0))
+    m.box(x0, x1, y0, y1, 0, eave, brick)
+    for x in (x0 + 0.003, x1 - 0.003):
+        for y, d in ((y0, -1), (y1, 1)):
+            houses.on_wall(m, "y", y, d, x - 0.014, x + 0.014, 0, 0.008, 0, eave, brick)
+    houses.on_wall(m, "y", y1, 1, x0, x1, 0, 0.008, eave - 0.12, eave, trim)
+    houses.on_wall(m, "y", y0, -1, x0, x1, 0, 0.008, eave - 0.12, eave, trim)
+    gable(m, x0, x1, y0, y1, eave, 2.6, roof, brick, along_x=True, trim=trim)
+    for x in (-0.25, -0.13, -0.01, 0.11):
+        for y, d in ((y1, 1), (y0, -1)):
+            houses.arched_pane(m, "y", y, d, x, 0.55, 1.5, 0.06, g, trim, trim, rise=0.08, keystone=False)
+    houses.door(m, 0.19, y1, material("door", "#3e4a3a", rough=0.8), trim, w=0.05, h=0.85)
+    slab(m, [(0.14, y1, 1.05), (0.24, y1, 1.05), (0.24, y1 + 0.06, 0.95), (0.14, y1 + 0.06, 0.95)], 0.04, roof)
+    houses.sign_text(m, "WASH HOUSE", "y", y1, 1, -0.1, 1.68, 0.032, material("sign letters", "#e8e0c8", rough=0.6), o=0.009)
+    # The monitor down the ridge, louvred both sides, and the ventilators.
+    mx0, mx1 = -0.28, 0.18
+    m.box(mx0, mx1, -0.06, 0.06, 2.4, 2.85, brick)
+    slat = material("monitor louvres", "#8a8680", metal=0.3, rough=0.6)
+    for k in range(5):
+        x = mx0 + 0.05 + k * 0.09
+        for y, d in ((-0.06, -1), (0.06, 1)):
+            houses.louvres(m, "y", y, d, x, 2.5, 2.78, 0.06, trim, slat)
+    gable(m, mx0, mx1, -0.06, 0.06, 2.85, 2.98, roof, brick, along_x=True, over=0.015, thick=0.04)
+    vent = material("ventilator", "#8a8a86", metal=0.6, rough=0.4)
+    for x in (-0.2, 0.1):
+        for y in (-0.12, 0.12):
+            z = eave + (2.6 - eave) * (1 - abs(y) / 0.2)
+            m.upright(x, y, z - 0.05, z + 0.18, 0.012, 0.012, vent, segments=10)
+            m.lathe(x, y, z + 0.18, [(0.024, 0), (0.026, 0.08), (0.012, 0.14), (0.0, 0.15)], vent, segments=12)
+    # The lamp room wing, its counter window where the lamps are handed out.
+    lx0, lx1, ly0, ly1 = x1, 0.44, -0.12, 0.16
+    m.box(lx0, lx1, ly0, ly1, 0, 1.35, brick)
+    houses.flat_top(m, lx0, lx1, ly0, ly1, 1.35, trim, parapet=0.12)
+    houses.pane(m, "y", ly1, 1, 0.34, 0.5, 0.95, 0.12, g, trim, trim, sash=False, bars=3)
+    houses.on_wall(m, "y", ly1, 1, 0.27, 0.41, 0, 0.03, 0.44, 0.48, trim)
+    houses.pane(m, "x", lx1, 1, 0.02, 0.5, 0.95, 0.06, g, trim, trim)
+    # The boiler house behind, with its stack on a square brick base, and the coal for it.
+    bx0, bx1, by0, by1 = -0.46, -0.16, -0.46, y0
+    m.box(bx0, bx1, by0, by1, 0, 1.2, brick)
+    slab(m, [(bx0 - 0.02, by0 - 0.02, 1.2), (bx1 + 0.02, by0 - 0.02, 1.2), (bx1 + 0.02, by1, 1.45), (bx0 - 0.02, by1, 1.45)], 0.05, roof)
+    houses.pane(m, "x", bx0, -1, -0.33, 0.4, 0.85, 0.06, g, trim, trim)
+    m.box(-0.32, -0.24, by0 - 0.004, by0, 0, 0.8, material("door", "#4a3a2e", rough=0.8))
+    base = material("stack base", "#6e3a2c", rough=0.9)
+    m.box(-0.08, 0.04, -0.46, -0.34, 0, 0.9, base, 0.004)
+    m.box(-0.088, 0.048, -0.468, -0.332, 0.9, 1.0, trim)
+    stack(m, -0.02, -0.4, 1.0, 5.0, 0.036, brick, material("stack band", "#3a2a24", rough=0.9))
+    m.rod((bx1, -0.4, 0.9), (-0.08, -0.4, 0.7), 0.012, material("breeching", "#4a4644", metal=0.5, rough=0.6))
+    heap(m, 0.2, -0.38, 0.1, 0.45, "#1a1a1c", 55, "boiler coal")
+    # The path to the door, and a bench.
+    m.box(0.15, 0.23, y1, 0.5, 0.0, 0.025, material("cinder path", "#5a5652", rough=1.0))
+    bench = material("bench", "#6a5440", rough=0.9)
+    m.box(-0.2, -0.04, y1 + 0.03, y1 + 0.06, 0.22, 0.26, bench)
+    for x in (-0.19, -0.05):
+        m.box(x - 0.004, x + 0.004, y1 + 0.035, y1 + 0.055, 0, 0.22, bench)
 
 
-def open_pit(m, look=0):
-    """An open pit mine: terraced red earth and rock stepping down to its floor, a haul road round it."""
-    rock = material("pit rock", "#7a5a48", rough=1.0)
-    rim = material("pit rim", "#8a6a54", rough=1.0)
-    floor = material("pit floor", "#5a3e32", rough=1.0)
-    m.box(-0.5, 0.5, -0.5, 0.5, 0, 0.02, floor)
-    # Benches round the edge, highest at the rim.
-    for k, (inset, h) in enumerate(((0.0, 0.9), (0.1, 0.6), (0.2, 0.3))):
-        for xa, xb, ya, yb in ((-0.5 + inset, 0.5 - inset, -0.5 + inset, -0.4 + inset), (-0.5 + inset, 0.5 - inset, 0.4 - inset, 0.5 - inset),
-                               (-0.5 + inset, -0.4 + inset, -0.4 + inset, 0.4 - inset), (0.4 - inset, 0.5 - inset, -0.4 + inset, 0.4 - inset)):
-            m.box(xa, xb, ya, yb, 0, h, rock if k else rim)
-    # A steam shovel at work in the bottom.
-    body = material("shovel", "#3a3a3a", metal=0.4, rough=0.6)
-    m.box(-0.08, 0.08, -0.06, 0.08, 0.05, 0.6, body, 0.004)
-    m.rod((0.0, 0.08, 0.5), (0.0, 0.22, 1.4), 0.01, body)
-    m.box(-0.03, 0.03, 0.19, 0.25, 0.9, 1.15, body)
+def haul_truck(m, paint="#d8a428"):
+    """A rear dump haul truck facing +y: big tires, duals at the back, a dump body sloping up to a canopy over the cab,
+    the cab on the left of the deck and the engine and grille out front."""
+    body = material("haul truck " + paint, paint, metal=0.3, rough=0.5)
+    dark = material("truck frame", "#2e2e30", metal=0.4, rough=0.6)
+    tire = material("big tire", "#1a1a1a", rough=0.9)
+    g = glass()
+    r = 0.038
+    zc = r / rig.RISE
+    for y, xs in ((0.085, (0.062,)), (-0.075, (0.05, 0.075))):
+        for x in xs:
+            for s in (-1, 1):
+                m.tube_x(s * x - 0.012, s * x + 0.012, y, zc, r, tire, segments=18)
+                m.tube_x(s * x - 0.013, s * x + 0.013, y, zc, r * 0.45, dark, segments=12)
+    m.box(-0.035, 0.035, -0.12, 0.14, 0.22, 0.42, dark)
+    # The dump body, its side outline run across.
+    side = [(-0.13, 0.5), (0.055, 0.6), (0.065, 0.98), (0.14, 1.0), (0.14, 1.06), (0.05, 1.08), (-0.13, 0.88)]
+    m.wedge([(-0.078, y, z) for y, z in side], [(0.078, y, z) for y, z in side], body)
+    for y in (-0.08, -0.02, 0.03):
+        for s in (-1, 1):
+            m.box(s * 0.078 - 0.003, s * 0.078 + 0.003, y - 0.005, y + 0.005, 0.55, 0.95, body)
+    m.box(-0.07, 0.07, -0.125, 0.05, 0.86, 0.9, material("ore load", "#7a3a2a", rough=1.0))
+    m.box(-0.034, 0.034, 0.06, 0.145, 0.32, 0.66, body, 0.004)
+    m.box(-0.026, 0.026, 0.145, 0.15, 0.36, 0.6, dark)
+    m.box(-0.075, 0.075, 0.07, 0.145, 0.6, 0.63, dark)
+    m.box(-0.072, -0.022, 0.08, 0.128, 0.63, 0.94, body, 0.003)
+    m.box(-0.07, -0.024, 0.128, 0.131, 0.72, 0.9, g)
+    m.box(-0.0735, -0.0715, 0.085, 0.124, 0.72, 0.9, g)
+    m.rod((0.06, 0.145, 0.62), (0.06, 0.155, 0.1), 0.003, dark, segments=4)
+
+
+def shovel(m, paint="#c8a028"):
+    """An electric mining shovel facing +y: crawlers, the revolving house with its cab and A-frame gantry, the boom and
+    its ropes, and the dipper on its handle down at the face."""
+    body = material("shovel " + paint, paint, metal=0.3, rough=0.55)
+    dark = material("shovel crawler", "#2e2e30", metal=0.4, rough=0.6)
+    steel = material("shovel steel", "#4a4a48", metal=0.5, rough=0.5)
+    rope = material("hoist rope", "#2a2a2a", metal=0.6, rough=0.5)
+    g = glass()
+    for s in (-1, 1):
+        m.box(s * 0.062 - 0.02, s * 0.062 + 0.02, -0.085, 0.085, 0.0, 0.22, dark, 0.012)
+        for y in (-0.06, -0.02, 0.02, 0.06):
+            m.box(s * 0.083 - 0.002, s * 0.083 + 0.002, y - 0.006, y + 0.006, 0.05, 0.17, steel)
+    m.box(-0.045, 0.045, -0.045, 0.045, 0.2, 0.3, steel)
+    m.box(-0.07, 0.07, -0.11, 0.055, 0.3, 0.8, body, 0.004)
+    gable(m, -0.07, 0.07, -0.11, 0.055, 0.8, 0.88, body, body, along_x=False, over=0.004, thick=0.03)
+    m.box(-0.07, 0.07, -0.125, -0.11, 0.3, 0.6, dark)
+    for y in (-0.08, -0.04, 0.0):
+        houses.louvres(m, "x", 0.07, 1, y, 0.45, 0.7, 0.03, steel, steel)
+    m.box(-0.07, -0.03, 0.055, 0.09, 0.5, 0.82, body, 0.003)
+    m.box(-0.068, -0.032, 0.09, 0.093, 0.6, 0.78, g)
+    # The gantry and the boom with its suspension ropes, the sheave at the point.
+    apex = (0.0, -0.035, 1.55)
+    for s in (-1, 1):
+        m.rod((s * 0.045, -0.09, 0.85), apex, 0.005, body, segments=4)
+        m.rod((s * 0.045, 0.02, 0.85), apex, 0.005, body, segments=4)
+    foot, point = (0.0, 0.06, 0.55), (0.0, 0.25, 1.9)
+    for s in (-1, 1):
+        m.rod((s * 0.014, foot[1], foot[2]), (s * 0.008, point[1], point[2]), 0.007, body, segments=4)
+    for f in (0.3, 0.55, 0.8):
+        p = tuple(foot[i] + (point[i] - foot[i]) * f for i in range(3))
+        m.rod((-0.014, p[1], p[2]), (0.014, p[1], p[2]), 0.003, body, segments=4)
+    for s in (-1, 1):
+        m.rod((s * 0.006, apex[1], apex[2]), (s * 0.008, point[1] - 0.01, point[2] + 0.03), 0.0018, rope, segments=4)
+    m.tube_x(-0.012, 0.012, point[1], point[2], 0.018, steel, segments=12)
+    # The dipper handle through the shipper shaft, the dipper at the face, its hoist rope from the point.
+    mid = (0.0, foot[1] + (point[1] - foot[1]) * 0.45, foot[2] + (point[2] - foot[2]) * 0.45)
+    dip = (0.0, 0.25, 0.45)
+    m.rod((0.0, mid[1] - 0.03, mid[2] + 0.2), dip, 0.006, steel, segments=6)
+    m.tube_x(-0.02, 0.02, mid[1], mid[2], 0.012, steel, segments=10)
+    m.wedge([(-0.03, dip[1] - 0.03, 0.2), (0.03, dip[1] - 0.03, 0.2), (0.03, dip[1] + 0.035, 0.28), (-0.03, dip[1] + 0.035, 0.28)],
+            [(-0.032, dip[1] - 0.035, 0.68), (0.032, dip[1] - 0.035, 0.68), (0.032, dip[1] + 0.04, 0.68), (-0.032, dip[1] + 0.04, 0.68)], dark)
+    for k in range(4):
+        x = -0.022 + k * 0.0147
+        m.rod((x, dip[1] + 0.035, 0.28), (x, dip[1] + 0.05, 0.2), 0.003, steel, segments=4)
+    m.rod((0.0, point[1] + 0.015, point[2] - 0.05), (0.0, dip[1] + 0.005, 0.7), 0.002, rope, segments=4)
+
+
+# The open pit's benches, its middle on the shared edge of its two tiles (y = 0.5 in the first tile's terms).
+PIT = Benches(0.0, 0.5, 0.42, 0.9, [(0.32, 0.02), (0.5, 0.36), (0.67, 0.7), (0.84, 1.04), (9.0, 1.38)], seed=2.0,
+              road=(-math.pi / 2 - 0.5, 1.3, 1.0, 0.26, 1.38, 0.02, 0.07), rough=0.014, face=0.03)
+
+
+def pit_edge(x, y):
+    """How far x, y is in from the outside of the open pit's two tiles."""
+    return min(0.5 - abs(x), y + 0.5, 1.5 - y)
+
+
+def pit_pick(x, y, slope):
+    """The open pit's faces as PIT.pick() has them, but its spoil berm all dirt."""
+    return 0 if pit_edge(x, y) < 0.08 else PIT.pick(5.0)(x, y, slope)
+
+
+def pit_height(x, y):
+    """The open pit's ground, its spoil berm sloping down to the land round the pit's two tiles."""
+    d = pit_edge(x, y)
+    h = PIT.height(x, y)
+    return min(h, 0.1 + 1.28 * max(0.0, d) / 0.07) if d < 0.07 else h
+
+
+def open_pit(m, far=False):
+    """An open pit iron mine across two tiles, this one and far, its +y neighbour: irregular benches of red ore and grey
+    rock down to the floor, the haul road spiralling down them, a shovel at the face and a haul truck."""
+    mats = [material("pit bench", "#94765a", rough=1.0), material("pit rock face", "#7a7068", rough=1.0),
+            material("pit ore face", "#b0442a", rough=1.0), material("haul road", "#c4b49c", rough=1.0)]
+    terrain(m, pit_height, mats, pit_pick, oy=1.0 if far else 0.0, wall=0)
+    if not far:
+        moved(m, shovel, 0.01, 0.34, math.pi, z=0.02)
+    else:
+        moved(m, haul_truck, 0.02, -0.28, 0.5, z=0.02)
+        m.box(-0.07, 0.04, -0.2, -0.12, 0.02, 0.035, material("pit water", "#3a4a52", rough=0.15))
 
 
 def ore_crusher(m):
+    """The crusher house stepping down from the dump pocket on its bank, a covered conveyor on trestles up to the ore
+    bins over the loading track, and the ramp the trucks climb to dump."""
     ground(m, "#5a4a42", "ore yard")
-    steel = material("crusher siding", "#7a7a76", metal=0.4, rough=0.6)
-    x0, x1, y0, y1 = -0.26, 0.26, -0.3, 0.2
-    m.box(x0, x1, y0, y1, 0, 4.2, steel, 0.004)
-    for k in range(1, 9):
-        x = x0 + (x1 - x0) * k / 9
-        m.box(x - 0.003, x + 0.003, y1, y1 + 0.004, 0, 4.2, material("crusher ribs", "#5a5a56", metal=0.4, rough=0.6))
-    gable(m, x0, x1, y0, y1, 4.2, 4.8, material("crusher roof", "#4a4a48", metal=0.4, rough=0.6), steel, along_x=True)
-    windows(m, x0, x1, y0, y1, 2.2, 1, 3, 3, glass(), steel)
-    # The conveyor out to the heap.
-    m.wedge([(-0.04, 0.2, 3.6), (0.04, 0.2, 3.6), (0.04, 0.5, 2.2), (-0.04, 0.5, 2.2)],
-            [(-0.04, 0.2, 3.72), (0.04, 0.2, 3.72), (0.04, 0.5, 2.32), (-0.04, 0.5, 2.32)], material("conveyor", "#4a4038", rough=0.8))
+    earth = material("crusher bank", "#6a5444", rough=1.0)
+    wall = material("crusher siding", "#7e7c74", metal=0.4, rough=0.6)
+    rib = material("crusher ribs", "#6a6862", metal=0.4, rough=0.6)
+    roof = material("crusher roof", "#4a4a48", metal=0.4, rough=0.6)
+    trim = material("crusher trim", "#4a4c4e", metal=0.3, rough=0.6)
+    concrete = material("pocket concrete", "#9a958c", rough=0.95)
+    g = glass()
+    bank = 1.4
+    prof = [(-0.5, 0.0), (-0.06, 0.0), (-0.3, bank), (-0.5, bank)]
+    m.wedge([(-0.5, y, z) for y, z in prof], [(0.08, y, z) for y, z in prof], earth)
+    # The ramp up the bank's side.
+    m.wedge([(0.46, -0.48, 0.0), (0.46, -0.34, 0.0), (0.08, -0.34, bank), (0.08, -0.48, bank)],
+            [(0.46, -0.48, 0.0), (0.46, -0.34, 0.0), (0.08, -0.34, 0.0), (0.08, -0.48, 0.0)], earth)
+    for y in (-0.485, -0.335):
+        m.rod((0.46, y, 0.05), (0.08, y, bank + 0.05), 0.003, material("guard rail", "#8a8a86", metal=0.4, rough=0.5), segments=4)
+    # The dump pocket: a concrete-walled pit with its grizzly bars and a bumper log.
+    px0, px1, py0, py1 = -0.12, 0.05, -0.47, -0.33
+    m.box(px0, px1, py0, py1, bank, bank + 0.02, material("pocket dark", "#1e1c1a", rough=1.0))
+    for x0, x1, y0, y1 in ((px0, px1, py0, py0 + 0.012), (px0, px1, py1 - 0.012, py1), (px0, px0 + 0.012, py0, py1)):
+        m.box(x0, x1, y0, y1, bank, bank + 0.12, concrete)
+    for k in range(6):
+        y = py0 + 0.02 + k * 0.02
+        m.box(px0 + 0.012, px1, y - 0.002, y + 0.002, bank + 0.03, bank + 0.05, trim)
+    m.tube(py0, py1, px1 + 0.012, bank + 0.06, 0.01, material("bumper log", "#5a4a38", rough=0.9), segments=8)
+    # The house in three steps down the slope: primary crusher on the bank, secondary below, screens at the foot.
+    hx0, hx1 = -0.46, -0.14
+    for y0, y1, base, eave, ridge in ((-0.47, -0.26, bank, 3.9, 4.6), (-0.28, -0.1, 0.0, 3.0, 3.55), (-0.12, 0.06, 0.0, 2.1, 2.55)):
+        clad_box(m, hx0, hx1, y0, y1, base, eave, wall, rib, gap=0.028)
+        gable(m, hx0, hx1, y0, y1, eave, ridge, roof, wall, along_x=True, over=0.015, thick=0.05)
+        for x in (-0.38, -0.22):
+            houses.on_wall(m, "y", y1, 1, x - 0.04, x + 0.04, 0, 0.007, eave - 0.6, eave - 0.3, g)
+        houses.on_wall(m, "x", hx0, -1, y0 + 0.03, y1 - 0.03, 0, 0.007, eave - 0.55, eave - 0.3, g)
+    harbour.rollup_door(m, -0.34, -0.24, 0.06, 0.0, 0.7, face=1)
+    # A dust collector by the primary house.
+    m.lathe(-0.08, -0.2, 1.0, [(0.0, 0), (0.012, 0.0), (0.04, 0.5), (0.04, 1.1), (0.03, 1.2), (0.0, 1.22)], material("cyclone", "#9a9a94", metal=0.4, rough=0.5), segments=16)
+    for x in (-0.1, -0.06):
+        m.box(x - 0.003, x + 0.003, -0.203, -0.197, 0, 1.0, trim)
+    m.rod((-0.08, -0.2, 2.2), (hx1, -0.2, 2.5), 0.01, material("cyclone", "#9a9a94", metal=0.4, rough=0.5), segments=8)
+    # The ore bins over the track, three pockets with hopper bottoms, and a tripper house along their top.
+    ty = 0.34
+    siding(m, -0.5, 0.5, ty)
+    steel = material("bin steel", "#6a5448", metal=0.4, rough=0.6)
+    bx0, bx1, by0, by1, b0, b1 = 0.04, 0.46, 0.25, 0.43, 2.0, 2.9
+    m.box(bx0, bx1, by0, by1, b0, b1, steel, 0.003)
+    for x in (bx0, bx1):
+        m.box(x - 0.004, x + 0.004, by0 - 0.004, by1 + 0.004, b0, b1 + 0.04, trim)
+    for k in range(3):
+        cx = bx0 + (k + 0.5) * (bx1 - bx0) / 3
+        hw = (bx1 - bx0) / 6
+        m.wedge([(cx - 0.02, ty - 0.03, 1.72), (cx + 0.02, ty - 0.03, 1.72), (cx + 0.02, ty + 0.03, 1.72), (cx - 0.02, ty + 0.03, 1.72)],
+                [(cx - hw, by0, b0), (cx + hw, by0, b0), (cx + hw, by1, b0), (cx - hw, by1, b0)], steel)
+        m.box(cx - 0.012, cx + 0.012, ty - 0.02, ty + 0.02, 1.6, 1.72, trim)
+        for y in (by0 + 0.003, by1 - 0.003):
+            for x in (cx - hw + 0.006,):
+                m.box(x - 0.006, x + 0.006, y - 0.006, y + 0.006, 0, b0, trim)
+        m.rod((cx - hw + 0.006, by0, 0.2), (cx + hw - 0.006, by0, b0 - 0.1), 0.0025, trim, segments=4)
+    for y in (by0 + 0.003, by1 - 0.003):
+        m.box(bx1 - 0.012, bx1, y - 0.006, y + 0.006, 0, b0, trim)
+    m.box(0.1, 0.4, ty - 0.035, ty + 0.035, b1, b1 + 0.3, wall)
+    gable(m, 0.1, 0.4, ty - 0.035, ty + 0.035, b1 + 0.3, b1 + 0.4, roof, wall, along_x=True, over=0.01, thick=0.03)
+    heap(m, 0.25, ty, 0.07, 0.15, "#6a3426", 63, "ore spill")
+    # The covered conveyor from the screens up to the tripper.
+    conveyor(m, (hx1 - 0.02, 0.0, 1.3), (0.12, ty, b1 + 0.08), 0.055, trim, material("conveyor belt", "#2e2a26", rough=0.8), legs=0.14,
+             hood=roof, load=material("ore on belt", "#6a3426", rough=1.0))
 
 
 def ore_heap(m):
@@ -1201,10 +1796,57 @@ def steel_shed(m):
     slab(m, [(-0.46, -0.12, 4.6), (0.46, -0.12, 4.6), (0.46, 0.12, 4.6), (-0.46, 0.12, 4.6)], 0.05, roof)
 
 
+def slag_pot(m, x, y, z, tip=0.0, glow=None):
+    """A slag pot car on the track along x at x, y, z steps up: its frame and wheels and the cast pot in its ring,
+    tipped toward +y by tip radians, the molten slag in it glowing."""
+    iron = material("pot car iron", "#2e2c2a", metal=0.5, rough=0.6)
+    m.box(x - 0.07, x + 0.07, y - 0.05, y + 0.05, z + 0.12, z + 0.22, iron, 0.003)
+    for xx in (x - 0.045, x + 0.045):
+        for s in (-1, 1):
+            m.tube_x(xx - 0.016, xx + 0.016, y + s * 0.095, z + 0.08, 0.014, iron, segments=10)
+        m.tube(y - 0.1, y + 0.1, xx, z + 0.08, 0.004, iron, segments=6)
+    for s in (-1, 1):
+        m.box(x + s * 0.062 - 0.008, x + s * 0.062 + 0.008, y - 0.03, y + 0.03, z + 0.22, z + 0.5, iron)
+    n0 = len(m.objects)
+    m.lathe(0.0, 0.0, 0.0, [(0.025, 0.0), (0.05, 0.1), (0.065, 0.35), (0.072, 0.55), (0.078, 0.58)], iron, segments=24)
+    m.upright(0.0, 0.0, 0.5, 0.54, 0.068, 0.068, glow, segments=24)
+    mat = Matrix.Translation((x, y, (z + 0.22) * rig.RISE)) @ Matrix.Rotation(-tip, 4, "X")
+    for o in m.objects[n0:]:
+        o.matrix_basis = mat @ o.matrix_basis
+
+
 def slag_heap(m):
+    """A slag dump: benched black slag with a dump road, the slag train's track along its top and a pot tipped over the
+    edge, the pour glowing down the side to a pool at its foot."""
     ground(m, "#3e3c3a", "slag yard")
-    heap(m, -0.05, 0.0, 0.42, 2.4, "#4a4644", 71, "slag")
-    heap(m, 0.3, -0.32, 0.12, 0.6, "#5a5450", 72, "slag")
+    dump = Benches(-0.04, -0.06, 0.46, 0.44, [(0.62, 2.0), (0.78, 1.4), (0.9, 0.76), (9.0, 0.0)], seed=8.0,
+                   road=(math.pi * 1.1, -0.65, 0.97, 0.55, 0.04, 2.0, 0.07), rough=0.025, face=0.035)
+    mats = [material("slag", "#36322f", rough=0.9), material("slag face", "#4a4440", rough=0.9),
+            material("slag rust", "#5a4234", rough=0.9), material("slag road", "#5e5a56", rough=1.0)]
+    terrain(m, dump.height, mats, dump.pick(9.0))
+    glow = lit("slag glow", "#ff6a1a", 9.0)
+    crust = lit("slag crust", "#8a2814", 1.2)
+    # The track along the top and a pot tipped out over the +y edge.
+    ty = 0.02
+    siding(m, -0.3, 0.2, ty, z=1.98)
+    m.box(-0.33, -0.3, ty - 0.12, ty + 0.12, 1.98, 2.2, material("bumper", "#5a4a3a", rough=0.9))
+    slag_pot(m, -0.16, ty, 2.1, glow=glow)
+    slag_pot(m, 0.06, ty, 2.1, tip=1.25, glow=glow)
+    # The pour down the face, spreading as it goes, and the pool and crust at its foot.
+    pts = []
+    y = 0.16
+    while y < 0.5:
+        x = 0.06 + 0.012 * math.sin(y * 30)
+        pts.append((x, y, dump.height(x, y) + 0.03))
+        y += 0.01
+    for (xa, ya, za), (xb, yb, zb) in zip(pts, pts[1:]):
+        w = 0.014 + (ya - 0.16) * 0.1
+        m.wedge([(xa - w, ya, za), (xb - w, yb, zb), (xb + w, yb, zb), (xa + w, ya, za)],
+                [(xa - w, ya, za + 0.03), (xb - w, yb, zb + 0.03), (xb + w, yb, zb + 0.03), (xa + w, ya, za + 0.03)], glow)
+    m.lathe(0.1, 0.44, 0.0, [(0.09, 0.0), (0.085, 0.04), (0.0, 0.05)], crust, segments=20, oval=0.6)
+    m.lathe(0.07, 0.45, 0.0, [(0.05, 0.0), (0.045, 0.06), (0.0, 0.07)], glow, segments=20, oval=0.7)
+    for x, y in ((0.2, 0.42), (-0.1, 0.44)):
+        m.lathe(x, y, 0.0, [(0.035, 0.0), (0.03, 0.04), (0.0, 0.05)], crust, segments=14, oval=0.7)
 
 
 def steel_yard(m):
@@ -2302,23 +2944,112 @@ def cannery(m):
 # ---- potash, nickel and aluminium ----------------------------------------------------------------
 
 def potash_mill(m):
+    """A Saskatchewan potash mill: the tall metal-clad mill with the headframe's gallery coming in (-y), the A-frame
+    storage building with its conveyor along the ridge, and the loadout over the track."""
     ground(m, "#8a7a6a", "mine gravel")
-    wall = material("potash mill siding", "#c8beb0", rough=0.85)
-    x0, x1, y0, y1 = -0.4, 0.4, -0.36, 0.36
-    m.box(x0, x1, y0, y1, 0, 4.0, wall, 0.004)
-    houses.flat_top(m, x0, x1, y0, y1, 4.0, material("potash trim", "#8a3a2a", rough=0.8))
-    m.box(-0.15, 0.25, -0.2, 0.2, 4.0, 6.0, wall, 0.004)
-    windows(m, x0, x1, y0, y1, 1.0, 2, 5, 5, glass(), material("potash trim", "#8a3a2a", rough=0.8), w=0.06, h=0.8)
+    wall = material("potash mill siding", "#d4cec0", metal=0.3, rough=0.6)
+    rib = material("potash mill ribs", "#bcb6a8", metal=0.3, rough=0.6)
+    red = material("potash trim", "#8a3a2a", rough=0.8)
+    groof = material("gallery roof", "#4e5458", metal=0.3, rough=0.6)
+    frame = material("mill steel", "#4a4c4e", metal=0.5, rough=0.5)
+    g = glass()
+    x0, x1, y0, y1 = -0.08, 0.44, -0.3, 0.14
+    clad_box(m, x0, x1, y0, y1, 0, 4.4, wall, rib, gap=0.03)
+    houses.flat_top(m, x0, x1, y0, y1, 4.4, red, parapet=0.12)
+    ux0, uy1 = 0.16, -0.04
+    clad_box(m, ux0, x1, y0, uy1, 4.4, 6.0, wall, rib, gap=0.03)
+    houses.flat_top(m, ux0, x1, y0, uy1, 6.0, red, parapet=0.12)
+    for z in (1.2, 2.3, 3.4):
+        for face, at, d, a0, a1 in (("y", y1, 1, x0 + 0.03, x1 - 0.03), ("x", x1, 1, y0 + 0.03, y1 - 0.03), ("x", x0, -1, y0 + 0.03, y1 - 0.03)):
+            houses.on_wall(m, face, at, d, a0, a1, 0, 0.008, z, z + 0.22, g)
+    for face, at, d, a0, a1 in (("x", x1, 1, y0 + 0.03, uy1 - 0.03), ("y", uy1, 1, ux0 + 0.03, x1 - 0.03)):
+        houses.on_wall(m, face, at, d, a0, a1, 0, 0.008, 5.1, 5.35, g)
+    houses.on_wall(m, "y", y1, 1, x0, x1, 0, 0.01, 0.0, 0.18, red)
+    harbour.rollup_door(m, 0.26, 0.38, y1, 0.0, 0.85, face=1)
+    vent = material("vent", "#6a6a66", metal=0.5, rough=0.5)
+    for x in (0.0, 0.1):
+        m.box(x - 0.03, x + 0.03, 0.0, 0.08, 4.46, 4.7, vent, 0.004)
+    m.upright(0.38, -0.2, 6.06, 6.5, 0.022, 0.02, material("dryer stack", "#9a9890", metal=0.5, rough=0.5), segments=12)
+    # The gallery in from the headframe on a bent.
+    head_conveyor(m, -0.5, y0, frame, material("conveyor belt", "#2e2a26", rough=0.8), wall=wall, roof=groof, beyond=True)
+    bent(m, HEAD_X, -0.42, head_z(-0.42, True) - 0.01, 0.1, frame)
+    # The A-frame storage building, its roof down to a low concrete wall, the conveyor along its ridge.
+    sx0, sx1, sy0, sy1, ridge = -0.47, -0.13, -0.47, 0.22, 2.5
+    sc = (sx0 + sx1) / 2
+    sroof = material("storage roof", "#c4c0b4", metal=0.3, rough=0.6)
+    knee = material("storage wall", "#a8a49a", rough=0.95)
+    seam = material("storage seams", "#8a867c", metal=0.3, rough=0.6)
+    m.box(sx0, sx1, sy0, sy1, 0, 0.18, knee)
+    for xa in (sx0, sx1):
+        slab(m, [(xa, sy0, 0.18), (xa, sy1, 0.18), (sc, sy1, ridge), (sc, sy0, ridge)], 0.06, sroof)
+        y = sy0 + 0.04
+        while y < sy1 - 0.02:
+            m.rod((xa + (0.004 if xa < sc else -0.004), y, 0.24), (sc, y, ridge + 0.06), 0.003, seam, segments=4)
+            y += 0.06
+    for ya in (sy0, sy1):
+        tri = [(sx0, ya, 0.18), (sx1, ya, 0.18), (sc, ya, ridge)]
+        m.wedge(tri, [(x, ya + 0.008, z) for x, _, z in tri], knee)
+    m.box(sc - 0.025, sc + 0.025, sy0, sy1, ridge, ridge + 0.25, wall)
+    gable(m, sc - 0.025, sc + 0.025, sy0, sy1, ridge + 0.25, ridge + 0.32, groof, wall, along_x=False, over=0.008, thick=0.03)
+    gallery(m, (x0, -0.12, 3.2), (sc + 0.025, -0.12, ridge + 0.05), 0.06, 0.32, wall, groof, g, along_y=False)
+    # The loadout over the track and the gallery out to it.
+    ty = 0.36
+    siding(m, -0.12, 0.5, ty)
+    lx0, lx1 = 0.02, 0.22
+    clad_box(m, lx0, lx1, ty - 0.1, ty + 0.1, 1.9, 2.6, wall, rib, gap=0.03)
+    houses.flat_top(m, lx0, lx1, ty - 0.1, ty + 0.1, 2.6, red, parapet=0.08)
+    for x in (lx0 + 0.01, lx1 - 0.01):
+        for y in (ty - 0.15, ty + 0.13):
+            m.box(x - 0.006, x + 0.006, y - 0.006, y + 0.006, 0, 1.9, frame)
+        m.box(x - 0.004, x + 0.004, ty - 0.15, ty + 0.13, 1.84, 1.9, frame)
+    m.upright(0.12, ty, 1.55, 1.9, 0.012, 0.03, frame, segments=10)
+    gallery(m, (0.12, y1, 2.9), (0.12, ty - 0.1, 2.3), 0.06, 0.3, wall, groof, g)
 
 
 def tailings(m, look=0):
+    """The salt tailings pile: benched sides with a dump road winding up to its flat top, a dozer working there."""
     ground(m, "#8a7a6a", "mine gravel")
-    heap(m, 0.0, 0.0, 0.46, 1.6, "#d8b8b0", 93 + look, "salt tailings")
+    pile = Benches(0.0, 0.0, 0.48, 0.48, [(0.34, 1.6), (0.53, 1.22), (0.71, 0.84), (0.88, 0.44), (9.0, 0.0)], seed=4.0 + look,
+                   road=(math.pi * 0.3, 1.05, 0.97, 0.3, 0.04, 1.6, 0.06), rough=0.012, face=0.04)
+    mats = [material("salt tailings", "#d8c4bc", rough=1.0), material("salt tailings face", "#c4aaa2", rough=1.0),
+            material("salt tailings crust", "#e2d6cc", rough=1.0), material("tailings road", "#b4a49a", rough=1.0)]
+    terrain(m, pile.height, mats, pile.pick(9.0))
+    _dozer(m, -0.04, 0.06, 1.6)
+
+
+def _dozer(m, x, y, z, turn=0.6):
+    """A small crawler dozer at x, y, z steps up, turned by turn radians."""
+    def build(mm):
+        paint = material("dozer yellow", "#d8a428", metal=0.3, rough=0.5)
+        dark = material("dozer dark", "#2e2e30", metal=0.4, rough=0.6)
+        for s in (-1, 1):
+            mm.box(s * 0.024 - 0.008, s * 0.024 + 0.008, -0.035, 0.035, 0, 0.13, dark, 0.004)
+        mm.box(-0.016, 0.016, -0.03, 0.03, 0.1, 0.26, paint, 0.003)
+        mm.box(-0.014, 0.014, -0.03, 0.0, 0.26, 0.42, paint, 0.003)
+        mm.box(-0.012, 0.012, -0.028, -0.002, 0.3, 0.4, glass())
+        mm.box(-0.036, 0.036, 0.045, 0.052, 0.0, 0.16, paint)
+        for s in (-1, 1):
+            mm.rod((s * 0.03, 0.0, 0.08), (s * 0.03, 0.047, 0.06), 0.0025, dark, segments=4)
+    moved(m, build, x, y, turn, z=z)
 
 
 def rock_dump(m):
+    """The waste rock dump: benched grey rock with a dump road up it, and the headframe's conveyor carried out over it
+    to a head pulley that drops the rock on a cone."""
     ground(m, "#4a4644", "mine rock")
-    heap(m, 0.0, 0.0, 0.42, 2.0, "#6a6a66", 95, "waste rock")
+    dump = Benches(-0.04, 0.08, 0.46, 0.42, [(0.3, 2.0), (0.5, 1.5), (0.7, 1.0), (0.88, 0.5), (9.0, 0.0)], seed=6.0,
+                   road=(-math.pi * 0.8, -1.0, 0.98, 0.28, 0.04, 2.0, 0.065), rough=0.02, face=0.06)
+    mats = [material("waste rock", "#6a6a66", rough=1.0), material("waste rock face", "#5a5a56", rough=1.0),
+            material("waste rock rust", "#7a5a48", rough=1.0), material("dump road", "#8a8680", rough=1.0)]
+    terrain(m, dump.height, mats, dump.pick(9.0))
+    frame = material("mill steel", "#4a4c4e", metal=0.5, rough=0.5)
+    end = (HEAD_X, -0.26, HEAD_Z + 0.25)
+    conveyor(m, (HEAD_X, -0.5, HEAD_Z), end, 0.06, frame, material("conveyor belt", "#2e2a26", rough=0.8), legs=0,
+             load=material("rock on belt", "#5a5a56", rough=1.0))
+    bent(m, HEAD_X, -0.44, HEAD_Z - 0.06, 0.1, frame)
+    bent(m, HEAD_X, -0.3, HEAD_Z + 0.15, 0.1, frame)
+    m.tube_x(HEAD_X - 0.035, HEAD_X + 0.035, end[1], end[2] - 0.02, 0.016, frame, segments=12)
+    heap(m, HEAD_X, -0.22, 0.2, 1.7, "#5e5e5a", 97, "waste rock")
 
 
 def nickel_heap(m):
@@ -2337,21 +3068,134 @@ def superstack(m):
 
 
 def roaster(m):
+    """The roaster house: steel clad with a louvred monitor along its ridge, the roasters' offtakes up through the roof
+    and sloping down into the brick flue that runs to the superstack (-y), and the concentrate bins with their bucket
+    elevator at the end."""
     ground(m, "#4a4644", "smelter yard")
-    steel = material("roaster siding", "#5e5a56", metal=0.4, rough=0.6)
-    m.box(-0.36, 0.36, -0.3, 0.3, 0, 3.6, steel, 0.004)
-    gable(m, -0.36, 0.36, -0.3, 0.3, 3.6, 4.4, material("roaster roof", "#3e3c3a", metal=0.4, rough=0.6), steel, along_x=True)
-    for x in (-0.2, 0.0, 0.2):
-        m.upright(x, 0.0, 4.2, 5.4, 0.05, 0.05, material("roaster vent", "#7a5a46", metal=0.4, rough=0.6), segments=12)
+    wall = material("roaster siding", "#5e5a56", metal=0.4, rough=0.6)
+    rib = material("roaster ribs", "#4e4a46", metal=0.4, rough=0.6)
+    roof = material("roaster roof", "#3e3c3a", metal=0.4, rough=0.6)
+    trim = material("roaster trim", "#3a3c3e", metal=0.3, rough=0.6)
+    brick = material("flue brick", "#6e3e30", rough=0.9)
+    duct = material("roaster duct", "#7a5a46", metal=0.4, rough=0.6)
+    g = glass()
+    x0, x1, y0, y1, eave, ridge = -0.27, 0.45, -0.26, 0.3, 3.3, 3.9
+    yc = (y0 + y1) / 2
+    m.box(x0 - 0.004, x1 + 0.004, y0 - 0.004, y1 + 0.004, 0, 0.6, brick)
+    clad_box(m, x0, x1, y0, y1, 0.6, eave, wall, rib, gap=0.03)
+    gable(m, x0, x1, y0, y1, eave, ridge, roof, wall, along_x=True, over=0.02)
+    for x in (-0.12, 0.08, 0.28):
+        houses.on_wall(m, "y", y1, 1, x - 0.06, x + 0.06, 0, 0.008, 1.9, 2.6, g)
+    houses.on_wall(m, "x", x0, -1, -0.1, 0.14, 0, 0.008, 2.0, 2.5, g)
+    harbour.rollup_door(m, 0.3, 0.4, y1, 0.0, 0.9, face=1)
+    # The monitor down the ridge.
+    mx0, mx1 = x0 + 0.06, x1 - 0.06
+    m.box(mx0, mx1, yc - 0.07, yc + 0.07, ridge - 0.2, ridge + 0.22, wall)
+    slat = material("monitor louvres", "#7a7672", metal=0.3, rough=0.6)
+    for k in range(6):
+        x = mx0 + 0.05 + k * 0.1
+        for y, d in ((yc - 0.07, -1), (yc + 0.07, 1)):
+            houses.louvres(m, "y", y, d, x, ridge - 0.02, ridge + 0.18, 0.07, trim, slat)
+    gable(m, mx0, mx1, yc - 0.07, yc + 0.07, ridge + 0.22, ridge + 0.34, roof, wall, along_x=True, over=0.015, thick=0.04)
+    # The brick flue to the stack, and the offtakes up through the roof and sloping down into it.
+    fx0, fx1, fy0, fy1 = -0.36, 0.0, -0.5, y0
+    m.box(fx0, fx1, fy0, fy1, 0, 0.8, brick)
+    gable(m, fx0, fx1, fy0, fy1, 0.8, 0.95, brick, brick, along_x=False, over=0.0, thick=0.04)
+    for y in (-0.46, -0.34):
+        m.box(fx0 - 0.008, fx1 + 0.008, y - 0.01, y + 0.01, 0, 0.85, trim)
+    r = 0.024
+    yo = -0.1
+    zr = eave + (ridge - eave) * (1 - abs(yo - yc) / ((y1 - y0) / 2))
+    for x in (-0.2, -0.1, 0.0):
+        m.upright(x, yo, zr - 0.1, 4.3, r, r, duct, segments=12)
+        m.upright(x, yo, zr - 0.02, zr + 0.06, r * 1.4, r * 1.4, trim, segments=12)
+        m.lathe(x, yo, 4.25, [(r * 1.15, 0), (r * 1.15, 0.12), (0, 0.13)], duct, segments=12)
+        xf = max(fx0 + 0.04, min(fx1 - 0.04, x))
+        m.rod((x, yo, 4.3), (xf, -0.42, 0.9), r, duct, segments=12)
+        m.upright(xf, -0.42, 0.85, 1.05, r * 1.3, r * 1.3, trim, segments=12)
+    # The concentrate bins on their legs at the end, the bucket elevator up to them and the feed into the house.
+    steel = material("bin steel", "#6a6662", metal=0.4, rough=0.6)
+    for cy in (-0.16, 0.04):
+        bx0, bx1, by0, by1 = -0.46, -0.31, cy - 0.08, cy + 0.08
+        m.box(bx0, bx1, by0, by1, 1.2, 3.3, steel, 0.003)
+        m.box(bx0 - 0.004, bx1 + 0.004, by0 - 0.004, by1 + 0.004, 3.3, 3.36, trim)
+        m.wedge([(-0.4, cy - 0.02, 0.8), (-0.37, cy - 0.02, 0.8), (-0.37, cy + 0.02, 0.8), (-0.4, cy + 0.02, 0.8)],
+                [(bx0, by0, 1.2), (bx1, by0, 1.2), (bx1, by1, 1.2), (bx0, by1, 1.2)], steel)
+        for x in (bx0 + 0.006, bx1 - 0.006):
+            for y in (by0 + 0.006, by1 - 0.006):
+                m.box(x - 0.005, x + 0.005, y - 0.005, y + 0.005, 0, 1.2, trim)
+        m.tube_x(bx1, x0, cy, 1.0, 0.012, steel, segments=10)
+    m.box(-0.42, -0.36, 0.18, 0.24, 0, 3.9, steel)
+    m.box(-0.43, -0.35, 0.17, 0.25, 3.9, 4.2, steel, 0.003)
+    m.rod((-0.39, 0.17, 4.0), (-0.39, 0.08, 3.4), 0.01, steel, segments=6)
+    harbour.ladder(m, -0.43, 0.21, 0, 3.9, face_x=True, grab=0.1)
+    conveyor(m, (-0.39, 0.5, 0.35), (-0.39, 0.25, 0.35), 0.05, trim, material("conveyor belt", "#2e2a26", rough=0.8), legs=0,
+             load=material("concentrate", "#5a5848", rough=1.0))
 
 
 def smelter_shed(m):
+    """The smelter's furnace and converter building: brick with pilasters, a long louvred monitor along its ridge, fume
+    ducts out of the roof sloping down to a header (-y), and the converter aisle doors glowing at the end with the slag
+    track out of them."""
     ground(m, "#4a4644", "smelter yard")
     brick = material("smelter brick", "#6e3e30", rough=0.9)
-    x0, x1, y0, y1 = -0.44, 0.44, -0.4, 0.36
-    m.box(x0, x1, y0, y1, 0, 3.0, brick, 0.004)
-    gable(m, x0, x1, y0, y1, 3.0, 3.8, material("smelter roof", "#3e3c3a", metal=0.4, rough=0.6), brick, along_x=True)
-    windows(m, x0, x1, y0, y1, 0.6, 1, 6, 5, glass(), brick, w=0.06, h=1.2)
+    roof = material("smelter roof", "#3e3c3a", metal=0.4, rough=0.6)
+    trim = material("smelter trim", "#3a3c3e", metal=0.3, rough=0.6)
+    duct = material("fume duct", "#6a5a4e", metal=0.4, rough=0.6)
+    g = glass()
+    x0, x1, y0, y1, eave, ridge = -0.44, 0.44, -0.36, 0.36, 2.9, 3.4
+    yc = (y0 + y1) / 2
+    m.box(x0, x1, y0, y1, 0, eave, brick)
+    x = x0
+    while x <= x1 + 1e-6:
+        for y, d in ((y0, -1), (y1, 1)):
+            houses.on_wall(m, "y", y, d, x - 0.012, x + 0.012, 0, 0.01, 0, eave, brick)
+        x += 0.11
+    for y, d in ((y0, -1), (y1, 1)):
+        houses.on_wall(m, "y", y, d, x0, x1, 0, 0.012, eave - 0.12, eave, trim)
+        for k in range(8):
+            c = x0 + 0.055 + k * 0.11
+            houses.pane(m, "y", y, d, c, 1.4, 2.5, 0.06, g, trim, trim, sash=False, bars=1)
+    gable(m, x0, x1, y0, y1, eave, ridge, roof, brick, along_x=True, over=0.02)
+    # The monitor nearly the whole length, louvred both sides.
+    mx0, mx1 = -0.4, 0.4
+    m.box(mx0, mx1, yc - 0.075, yc + 0.075, ridge - 0.2, ridge + 0.24, brick)
+    slat = material("monitor louvres", "#7a7672", metal=0.3, rough=0.6)
+    for k in range(8):
+        c = mx0 + 0.05 + k * 0.1
+        for y, d in ((yc - 0.075, -1), (yc + 0.075, 1)):
+            houses.louvres(m, "y", y, d, c, ridge - 0.02, ridge + 0.2, 0.075, trim, slat)
+    gable(m, mx0, mx1, yc - 0.075, yc + 0.075, ridge + 0.24, ridge + 0.36, roof, brick, along_x=True, over=0.015, thick=0.04)
+    # The converter aisle doors at the -x end, molten light inside, and the slag pot track out of one of them.
+    hot = lit("converter glow", "#ff7a2a", 5.0)
+    leaf = material("door leaf", "#3a3634", metal=0.4, rough=0.6)
+    for c, open_ in ((-0.2, True), (0.16, False)):
+        houses.on_wall(m, "x", x0, -1, c - 0.085, c + 0.085, 0, 0.004, 0, 1.75, hot if open_ else leaf)
+        for s in (-1, 1):
+            houses.on_wall(m, "x", x0, -1, c + s * 0.085 - 0.01, c + s * 0.085 + 0.01, 0, 0.014, 0, 1.85, trim)
+        houses.on_wall(m, "x", x0, -1, c - 0.1, c + 0.1, 0, 0.014, 1.75, 1.85, trim)
+        if open_:
+            houses.on_wall(m, "x", x0, -1, c - 0.085, c + 0.085, 0.004, 0.008, 1.1, 1.75, leaf)
+    siding(m, -0.5, x0, -0.2)
+    for c in (-0.2, 0.16):
+        houses.on_wall(m, "x", x1, 1, c - 0.085, c + 0.085, 0, 0.004, 0, 1.75, leaf)
+        houses.on_wall(m, "x", x1, 1, c - 0.1, c + 0.1, 0, 0.014, 1.75, 1.85, trim)
+    # The fume ducts up out of the roof and sloping down to the header on its bents.
+    r = 0.028
+    hy, hz = -0.45, 2.2
+    yo = -0.2
+    zr = eave + (ridge - eave) * (1 - abs(yo - yc) / ((y1 - y0) / 2))
+    for x in (-0.28, 0.0, 0.28):
+        m.upright(x, yo, zr - 0.1, 3.7, r, r, duct, segments=12)
+        m.upright(x, yo, zr - 0.02, zr + 0.06, r * 1.4, r * 1.4, trim, segments=12)
+        m.lathe(x, yo, 3.65, [(r * 1.15, 0), (r * 1.15, 0.12), (0, 0.13)], duct, segments=12)
+        m.rod((x, yo, 3.7), (x + 0.05, hy, hz + 0.1), r, duct, segments=12)
+    m.tube_x(-0.36, 0.5, hy, hz, 0.038, duct, segments=16)
+    for x in (-0.3, 0.06, 0.4):
+        m.box(x - 0.006, x + 0.006, hy - 0.04, hy - 0.028, 0, hz, trim)
+        m.box(x - 0.006, x + 0.006, hy + 0.028, hy + 0.04, 0, hz, trim)
+        m.box(x - 0.006, x + 0.006, hy - 0.04, hy + 0.04, hz - 0.2, hz - 0.16, trim)
+    m.lathe(-0.38, hy, 0.0, [(0.05, 0), (0.05, 1.8), (0.03, 2.1), (0.0, 2.15)], duct, segments=16)
 
 
 def dam(m):
@@ -2428,8 +3272,8 @@ PARTS = {
     "sawmill": sawmill, "log_deck": log_deck, "burner": burner, "lumber_stack": lumber_stack,
     "barn": barn, "silo": silo, "wheat_field": wheat_field,
     "mill_building": mill_building, "mill_silos": mill_silos, "mill_yard": mill_yard, "mill_yard_team": lambda m: mill_yard(m, team=True),
-    "headframe": headframe, "tipple": tipple, "coal_heap": coal_heap, "mine_shed": mine_shed,
-    "open_pit": open_pit, "ore_crusher": ore_crusher, "ore_heap": ore_heap,
+    "headframe": headframe, "headframe_wood": lambda m: headframe(m, 0), "headframe_steel": lambda m: headframe(m, 1), "tipple": tipple, "coal_heap": coal_heap, "mine_shed": mine_shed,
+    "open_pit": open_pit, "open_pit_far": lambda m: open_pit(m, far=True), "ore_crusher": ore_crusher, "ore_heap": ore_heap,
     "blast_furnace": blast_furnace, "stacks": stacks, "steel_shed": steel_shed, "slag_heap": slag_heap, "steel_yard": steel_yard,
     "factory_shed": factory_shed, "factory_chimney": factory_chimney, "loading_dock": loading_dock, "factory_yard": factory_yard,
     "pumpjack": pumpjack, "oil_tank": oil_tank,
