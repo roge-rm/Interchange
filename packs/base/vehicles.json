@@ -2850,6 +2850,26 @@
       "running": 650,
       "length": 7,
       "plow": "oneway"
+    },
+    {
+      "id": "alp45",
+      "kind": "engine",
+      "name": { "en": "ALP-45DP", "fr": "ALP-45DP" },
+      "type": { "en": "Bo-Bo dual-mode", "fr": "Bimode Bo-Bo" },
+      "from": 2012,
+      "until": 2100,
+      "speed": 200,
+      "power": 4800,
+      "diesel_speed": 160,
+      "diesel_power": 3800,
+      "tractive": 300,
+      "weight": 130,
+      "cost": 400000,
+      "running": 6600,
+      "length": 14,
+      "traction": "dual",
+      "life": 35,
+      "reliability": 94
     }
   ]
 }

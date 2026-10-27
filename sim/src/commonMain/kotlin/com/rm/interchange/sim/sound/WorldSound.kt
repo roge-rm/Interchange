@@ -265,7 +265,7 @@ class WorldSound(private val world: World) {
         val recipe = if (!ship && electric) Recipes.HORN else Recipes.WHISTLE
         val kind = when {
             ship || electric -> 2f
-            m.traction == Traction.DIESEL -> 1f
+            m.traction == Traction.DIESEL || m.traction == Traction.DUAL -> 1f
             else -> 0f
         }
         val params = FloatArray(SharedParams.COUNT)
@@ -442,9 +442,9 @@ class WorldSound(private val world: World) {
     /** One sound's loudness, from how close it is, so a vehicle under the camera stays audible at any zoom. */
     private fun pointGain(weight: Float, full: Float) = level(weight, POINT_REF) * full
 
-    /** 0 steam, 1 diesel, 2 electric. */
+    /** 0 steam, 1 diesel, 2 electric; a dual-mode engine sounds like a diesel. */
     private fun trainKind(traction: Int) = when (traction) {
-        Traction.DIESEL -> 1f
+        Traction.DIESEL, Traction.DUAL -> 1f
         Traction.ELECTRIC -> 2f
         else -> 0f
     }

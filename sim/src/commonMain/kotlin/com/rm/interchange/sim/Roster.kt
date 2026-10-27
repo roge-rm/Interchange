@@ -37,6 +37,9 @@ class Engine(
     val tractive: Int = weight * 245 / 100,
     /** A [Traction] kind. */
     val traction: Int = Traction.STEAM,
+    /** A dual-mode engine's power in hp and top speed in km/h on its diesel, off the wires. */
+    val dieselPower: Int = power,
+    val dieselSpeed: Int = speed,
     /** Years it runs well, and how reliable it is new, in percent. */
     val life: Int = 35,
     val reliability: Int = 85,
@@ -53,6 +56,9 @@ class Engine(
     val floats: Boolean = false,
 ) {
     val pulls get() = kind == VehicleKind.ENGINE
+    /** Its power and top speed with wires overhead or without them. */
+    fun power(wired: Boolean) = if (traction == Traction.DUAL && !wired) dieselPower else power
+    fun speed(wired: Boolean) = if (traction == Traction.DUAL && !wired) dieselSpeed else speed
     /** What it can carry as [Cargo] numbers; empty for nothing. */
     val cargoes: IntArray = carries.map { Cargo.of(it) }.filter { it >= 0 }.toIntArray()
     val isTender get() = kind == VehicleKind.TENDER
@@ -75,7 +81,8 @@ object Plows {
 }
 
 /**
- * How an engine is driven. Electric ones need wires over the track. Horses pull road vehicles: shod, they need no
+ * How an engine is driven. Electric ones need wires over the track. Dual-mode ones run anywhere, on their electric
+ * power under wires and on their diesel off them. Horses pull road vehicles: shod, they need no
  * winter tires, and in winter their vehicles go on sleigh runners, so deep snow doesn't hold them up.
  */
 object Traction {
@@ -83,7 +90,8 @@ object Traction {
     const val DIESEL = 1
     const val ELECTRIC = 2
     const val HORSE = 3
-    val NAMES = listOf("steam", "diesel", "electric", "horse")
+    const val DUAL = 4
+    val NAMES = listOf("steam", "diesel", "electric", "horse", "dual")
 }
 
 /**
@@ -226,12 +234,15 @@ class Roster(
                 val sprite = s.sprite!!
                 if (d.plow == "oneway" && d.kind != VehicleKind.ROAD) problems += "${s.key}: only road vehicles have one-way plows"
                 if (d.plow != null && d.kind != VehicleKind.WAGON && d.kind != VehicleKind.ROAD) problems += "${s.key}: only wagons and road vehicles are plows"
+                if ((d.dieselPower != null || d.dieselSpeed != null) && d.traction != "dual") problems += "${s.key}: only dual-mode engines have a diesel power and speed"
+                if (d.traction == "dual" && d.kind != VehicleKind.ENGINE) problems += "${s.key}: only engines are dual-mode"
                 Engine(
                     id = i, key = s.key, kind = d.kind!!, names = d.names!!, plurals = d.plurals ?: emptyMap(), types = d.types ?: emptyMap(),
                     from = d.from!!, until = d.until!!, speed = d.speed ?: 0, power = d.power ?: 0, weight = d.weight!!,
                     cost = d.cost!!, running = d.running!!, length = d.length!!, carries = d.carries ?: emptyList(), capacity = d.capacity ?: 0,
                     sprite = spriteIds.getOrPut(sprite) { sprites += sprite; sprites.size - 1 }, tender = tender, enabled = s.enabled,
                     tractive = d.tractive ?: (d.weight!! * 245 / 100), traction = Traction.NAMES.indexOf(d.traction ?: "steam").coerceAtLeast(0),
+                    dieselPower = d.dieselPower ?: d.power ?: 0, dieselSpeed = d.dieselSpeed ?: d.speed ?: 0,
                     life = d.life ?: 35, reliability = d.reliability ?: 85,
                     plow = d.plow?.let { Plows.NAMES.indexOf(it) + 1 } ?: Plows.NONE,
                     tram = d.tram ?: false,
@@ -266,6 +277,7 @@ class Roster(
             tender = v.tender?.let { if (':' in it) it else "${pack.id}:$it" } ?: old.tender,
             sprite = v.sprite ?: old.sprite,
             tractive = v.tractive ?: old.tractive, traction = v.traction ?: old.traction,
+            dieselPower = v.dieselPower ?: old.dieselPower, dieselSpeed = v.dieselSpeed ?: old.dieselSpeed,
             life = v.life ?: old.life, reliability = v.reliability ?: old.reliability,
             plow = v.plow ?: old.plow,
             tram = v.tram ?: old.tram,

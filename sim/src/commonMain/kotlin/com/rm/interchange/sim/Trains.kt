@@ -89,6 +89,7 @@ class Train(
         life = locomotives.minOf { roster[it].life }
         newReliability = locomotives.minOf { roster[it].reliability } * 100
         topSpeed = locomotives.minOf { roster[it].speed }
+        dieselSpeed = locomotives.minOf { roster[it].speed(false) }
         carEngines = formationModels(roster, formation)
         carCargoes = formationCargoes(roster, formation)
         length = carEngines.sumOf { roster[it].length } * FIX
@@ -198,6 +199,11 @@ class Train(
         private set
     val wagonInfo get() = roster[wagon]
     val maxSpeed get() = topSpeed * 4096 * 16 / 2700
+    /** Its top speed off the wires, in km/h: lower than [topSpeed] for a dual-mode engine on its diesel. */
+    var dieselSpeed = locomotives.minOf { roster[it].speed(false) }
+        private set
+    /** Its top speed in speed units, [wired] if under wires. */
+    fun maxSpeed(wired: Boolean) = (if (wired) topSpeed else dieselSpeed) * 4096 * 16 / 2700
     val weight get() = carEngines.sumOf { roster[it].weight }
     /** What it cost new: the engine, its tender and its wagons. */
     val price get() = carEngines.sumOf { roster[it].cost }
@@ -525,11 +531,15 @@ private fun World.drive(t: Train) {
     val brake = BRAKE * (50 + grip / 2) / 100
     val (free, stop) = freeAhead(t, brake)
     val allowed = isqrt(2L * brake * 16 * free).toInt()
+    // A dual-mode engine runs on its electric power and speed with wires over its nose, on its diesel without, braking
+    // down to the diesel's top speed when it leaves them.
+    val wire = wired(t.steps.last())
+    val top = t.maxSpeed(wire).let { if (t.speed > it) maxOf(it, t.speed - brake) else it }
     // Pulling: faster or slower by what the engine has over what holds the train back, never below a crawl.
-    val pulled = maxOf(t.speed + acceleration(t, grip), minOf(CRAWL, maxOf(t.speed, 1) + 4))
+    val pulled = maxOf(t.speed + acceleration(t, grip, wire), minOf(CRAWL, maxOf(t.speed, 1) + 4))
     val worn = if (stepLevel(t.steps.last()) == 0) trackLimit(nose) else -1
     val wornLimit = if (worn < 0) t.maxSpeed else worn * 4096 * 16 / 2700
-    t.speed = minOf(minOf(pulled, if (out) snowLimit(t, nose) else t.maxSpeed), minOf(spanLimit(t), wornLimit), allowed)
+    t.speed = minOf(minOf(pulled, if (out) snowLimit(t, nose) else t.maxSpeed), minOf(spanLimit(t), wornLimit), minOf(allowed, top))
     val move = minOf(t.speed / 16, free)
     advance(t, move, free)
     if (stop == Stop.SNOW && t.speed / 16 >= free) {

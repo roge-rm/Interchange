@@ -691,6 +691,8 @@
     <string name="no_wagons_on_sale">No wagons on sale yet</string>
     <string name="kmh">%1$d km/h</string>
     <string name="horsepower">%1$s hp</string>
+    <string name="horsepower_dual">%1$s/%2$s hp</string>
+    <string name="kmh_dual">%1$d/%2$d km/h</string>
     <string name="kilonewtons">%1$d kN</string>
     <string name="on_sale_until">until %1$d</string>
     <string name="a_year">%1$s a year</string>

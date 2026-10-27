@@ -27,6 +27,7 @@ import androidx.compose.ui.unit.dp
 import com.rm.interchange.res.*
 import com.rm.interchange.sim.Engine
 import com.rm.interchange.sim.MAX_AT_ONCE
+import com.rm.interchange.sim.Traction
 import org.jetbrains.compose.resources.pluralStringResource
 import org.jetbrains.compose.resources.stringArrayResource
 import org.jetbrains.compose.resources.stringResource
@@ -52,10 +53,14 @@ private fun capacityText(e: Engine, cargo: Int, choosing: Boolean): String? {
 @Composable
 private fun statsText(e: Engine, cargo: Int, choosing: Boolean): String {
     val parts = ArrayList<String>()
-    if (e.speed > 0) parts += stringResource(Res.string.kmh, e.speed)
+    // A dual-mode engine shows its numbers under wires and off them.
+    val dual = e.traction == Traction.DUAL
+    if (e.speed > 0) parts += if (dual) stringResource(Res.string.kmh_dual, e.speed, e.dieselSpeed) else stringResource(Res.string.kmh, e.speed)
     capacityText(e, cargo, choosing)?.let { parts += it }
     if (e.pulls) {
-        if (e.power > 0) parts += stringResource(Res.string.horsepower, Numbers.grouped(e.power.toLong()))
+        if (e.power > 0) parts += if (dual) {
+            stringResource(Res.string.horsepower_dual, Numbers.grouped(e.power.toLong()), Numbers.grouped(e.dieselPower.toLong()))
+        } else stringResource(Res.string.horsepower, Numbers.grouped(e.power.toLong()))
         parts += stringResource(Res.string.kilonewtons, e.tractive)
     }
     if (e.range > 0) parts += stringResource(Res.string.range_stat, Numbers.grouped(e.range.toLong()))

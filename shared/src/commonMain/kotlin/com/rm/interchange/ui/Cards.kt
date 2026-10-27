@@ -93,7 +93,7 @@ fun TrainCard(
         VehicleStats(
             t.kmh, t.topSpeed, t.age, t.old, t.reliability, t.profitThisYear, t.profitLastYear,
             (0 until Cargo.COUNT).filter { t.capacity[it] > 0 }.map { VehicleLoad(it, t.load[it], t.capacity[it]) },
-            listOf(stringResource(Res.string.breakdowns) to t.breakdowns.toString()),
+            listOf(stringResource(Res.string.breakdowns) to t.breakdowns.toString()), t.dieselSpeed,
         )
         // Someone else's shows what it is but none of the controls, and a wreck is cleared away by itself.
         if (!mine || t.wrecked) return@Card

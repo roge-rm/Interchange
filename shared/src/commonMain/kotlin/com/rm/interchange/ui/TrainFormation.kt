@@ -115,11 +115,18 @@ internal fun TrainFormationEditor(
     val cost = trainFormationCost(roster, t.formation, draft, t.age, price)
     val fits = preview != null && (0 until Cargo.COUNT).all { t.load[it] <= preview.capacity(it) }
     if (preview != null) {
+        // With a dual-mode engine, its numbers under wires and off them.
+        val power = draft.sumOf { roster[it.model].power }.toLong()
+        val dieselPower = draft.sumOf { roster[it.model].power(false) }.toLong()
+        val speedText = if (preview.dieselSpeed != preview.topSpeed) stringResource(Res.string.kmh_dual, preview.topSpeed, preview.dieselSpeed)
+        else stringResource(Res.string.kmh, preview.topSpeed)
+        val powerText = if (dieselPower != power) stringResource(Res.string.horsepower_dual, Numbers.grouped(power), Numbers.grouped(dieselPower))
+        else stringResource(Res.string.horsepower, Numbers.grouped(power))
         Head(stringResource(Res.string.formation_preview))
         StatColumns(listOf(
-            stringResource(Res.string.top_speed) to stringResource(Res.string.kmh, preview.topSpeed),
+            stringResource(Res.string.top_speed) to speedText,
             stringResource(Res.string.formation_weight) to stringResource(Res.string.formation_tonnes, preview.weight),
-            stringResource(Res.string.formation_power) to stringResource(Res.string.horsepower, Numbers.grouped(draft.sumOf { roster[it.model].power }.toLong())),
+            stringResource(Res.string.formation_power) to powerText,
         ))
         val tenths = preview.length * 10 / (com.rm.interchange.sim.FIX * 16)
         InfoRow(stringResource(Res.string.formation_length), stringResource(Res.string.formation_tiles, tenths / 10, tenths % 10))

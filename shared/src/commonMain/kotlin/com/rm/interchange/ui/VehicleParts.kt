@@ -77,14 +77,14 @@ class VehicleLoad(val cargo: Int, val load: Int, val capacity: Int)
 @Composable
 fun VehicleStats(
     kmh: Int, top: Int, age: Int, old: Boolean, reliability: Int, profitThisYear: Long, profitLastYear: Long, loads: List<VehicleLoad>,
-    extra: List<Pair<String, String>> = emptyList(),
+    extra: List<Pair<String, String>> = emptyList(), dieselTop: Int = top,
 ) {
     val c = LocalColors.current
     Head(stringResource(Res.string.head_running))
     StatColumns(
         listOf(
             stringResource(Res.string.speed) to stringResource(Res.string.kmh, kmh),
-            stringResource(Res.string.top_speed) to stringResource(Res.string.kmh, top),
+            stringResource(Res.string.top_speed) to if (dieselTop != top) stringResource(Res.string.kmh_dual, top, dieselTop) else stringResource(Res.string.kmh, top),
             stringResource(Res.string.age) to pluralStringResource(Res.plurals.years_n, age, age),
         ),
         valueColours = listOf(null, null, if (old) c.warn else null),

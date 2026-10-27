@@ -62,7 +62,8 @@ Each vehicle:
 | speed | engines, road, ships, aircraft | Top speed in km/h. |
 | power | engines, road, ships, aircraft | Horsepower. |
 | tractive | no | Engines' starting tractive effort in kN, what the wheels pull before they slip. A quarter of the engine's weight if left out (its weight in tonnes times 2.45). |
-| traction | no | Engines and road vehicles: `steam` (the default), `diesel`, `electric` or `horse`. Electric engines only run under wires. Horse-drawn road vehicles need no winter tires and go on sleigh runners in deep snow, so it doesn't hold them up. |
+| traction | no | Engines and road vehicles: `steam` (the default), `diesel`, `electric`, `dual` or `horse`. Electric engines only run under wires. Dual-mode engines run anywhere, on their speed and power under wires and on their diesel speed and power off them. Horse-drawn road vehicles need no winter tires and go on sleigh runners in deep snow, so it doesn't hold them up. |
+| diesel_speed, diesel_power | no | Dual-mode engines: top speed in km/h and horsepower off the wires. Their speed and power if left out. |
 | life | no | Years it runs well before it wears out and breaks down more. 35 if left out. |
 | reliability | no | How reliable it is new, in percent. 85 if left out. |
 | plow | no | Wagons: `wedge` or `rotary` makes it a snow plow, run at the head of its train. A wedge clears up to a metre of snow and pushes through drifts four times as fast; a rotary clears anything. Road vehicles: `wedge` or `oneway`, a plow truck that clears the road it drives. |

@@ -39,8 +39,11 @@ class VehicleDef(
     val sprite: String?,
     /** Starting tractive effort in kN, for engines. */
     val tractive: Int? = null,
-    /** steam, diesel or electric, for engines. */
+    /** steam, diesel, electric or dual, for engines. */
     val traction: String? = null,
+    /** A dual-mode engine's power in hp and top speed in km/h off the wires. */
+    val dieselPower: Int? = null,
+    val dieselSpeed: Int? = null,
     /** Years it runs well before it wears out, and how reliable it is new, in percent. */
     val life: Int? = null,
     val reliability: Int? = null,
@@ -242,6 +245,8 @@ object Packs {
                     sprite = f.string("sprite") ?: if (fresh) vid else null,
                     tractive = f.int("tractive", 1, 10_000),
                     traction = f.string("traction"),
+                    dieselPower = f.int("diesel_power", 1, 1_000_000),
+                    dieselSpeed = f.int("diesel_speed", 1, 2000),
                     life = f.int("life", 1, 200),
                     reliability = f.int("reliability", 1, 100),
                     plow = f.string("plow"),

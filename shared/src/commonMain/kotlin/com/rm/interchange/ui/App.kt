@@ -51,6 +51,8 @@ import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.foundation.layout.RowScope
 import org.jetbrains.compose.resources.pluralStringResource
 import org.jetbrains.compose.resources.StringResource
+import com.rm.interchange.sim.Traction
+import com.rm.interchange.sim.TrainView
 import com.rm.interchange.sim.VehicleKind
 import com.rm.interchange.sim.Autorenew
 import com.rm.interchange.sim.Crash
@@ -1701,7 +1703,7 @@ private fun heardMovers(world: World, snap: WorldView, camX: Float, camY: Float,
         if (t.inDepot || t.wrecked) continue
         val engine = roster.getOrNull(t.engine) ?: continue
         val y = trainY[id] ?: continue
-        out.add(WorldSound.Mover(WorldSound.TRAIN, t.id, x, y, speedFraction(t.kmh, engine.speed), engine.traction, waiting = t.waiting))
+        out.add(WorldSound.Mover(WorldSound.TRAIN, t.id, x, y, speedFraction(t.kmh, soundTop(engine.traction, t)), engine.traction, waiting = t.waiting))
     }
     val roads = snap.roadVehicles.associateBy { it.id }
     val ships = snap.ships.associateBy { it.id }
@@ -2062,3 +2064,6 @@ private fun refusalText(why: Int): StringResource = when (why) {
     Refusal.ENDS -> Res.string.refuse_ends
     else -> Res.string.refuse_in_the_way
 }
+
+/** The speed that counts as flat out for [t]'s engine sound: a dual-mode train is on its diesel speed until it goes faster than that. */
+private fun soundTop(traction: Int, t: TrainView) = if (traction == Traction.DUAL && t.kmh <= t.dieselSpeed) t.dieselSpeed else t.topSpeed

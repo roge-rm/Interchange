@@ -432,7 +432,8 @@ internal fun World.loadAt(t: Carrier, s: Station) {
         val capacity = if (t is RoadVehicle && c > Cargo.MAIL && loadLimits()) t.capacity(c) / 2 else t.capacity(c)
         if (capacity > 0) {
             s.lastCall[c] = tick
-            s.lastSpeed[c] = t.topSpeed
+            // A dual-mode train off the wires runs at its diesel speed.
+            s.lastSpeed[c] = if (t is Train && !wired(t.steps.last())) t.dieselSpeed else t.topSpeed
         }
         var room = capacity - t.load(c)
         val it = s.cargo[c].iterator()

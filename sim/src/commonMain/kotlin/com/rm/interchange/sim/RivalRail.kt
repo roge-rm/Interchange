@@ -262,7 +262,7 @@ private class RailTrain(val engine: Engine, val wagon: Engine, val wagons: Int)
 
 /**
  * The trains that could run for [cargo], about [load] of it at a time and no longer than [platforms]: the wagon of the
- * day holding most for its length behind each engine strong enough to pull them. Steam or diesel, as the line has no wires.
+ * day holding most for its length behind each engine strong enough to pull them. Steam, diesel or dual-mode on its diesel, as the line has no wires.
  * [loose] takes as many wagons as each engine can pull at a third the power, for the scripted test player.
  */
 private fun World.railTrains(cargo: Int, load: Int, platforms: Int, loose: Boolean = false): List<RailTrain> {
@@ -277,8 +277,8 @@ private fun World.railTrains(cargo: Int, load: Int, platforms: Int, loose: Boole
         // Loaded weight in tonnes against power, about what a freight engine pulls on the level at a fair speed.
         fun tonnes() = e.weight + (roster.getOrNull(e.tender)?.weight ?: 0) + n * (wagon.weight + wagon.capacity)
         val hp = if (loose) 1 else HP_PER_TONNE
-        if (loose) while (n > 1 && e.power < tonnes() * hp) n--
-        if (e.power >= tonnes() * hp) out += RailTrain(e, wagon, n)
+        if (loose) while (n > 1 && e.power(false) < tonnes() * hp) n--
+        if (e.power(false) >= tonnes() * hp) out += RailTrain(e, wagon, n)
     }
     return out
 }
@@ -292,8 +292,8 @@ private fun World.railTrains(cargo: Int, load: Int, platforms: Int, loose: Boole
 private fun World.yearly(c: Company, train: RailTrain, cargo: Int, load: Int, people: Int, tiles: Int, from: Int, to: Int): Long {
     val capacity = train.wagon.capacity * train.wagons
     // A tile a day at 40-odd km/h, a fifth more for starting, stopping and servicing, and a few days at each end.
-    val there = tiles * KMH_PER_TILE_A_DAY * 6 / (5 * train.engine.speed.coerceAtLeast(1)) + 4
-    val month = if (cargo == Cargo.PASSENGERS) people * 15 * railRating(there * 2, train.engine.speed) / (16 * 255) else load
+    val there = tiles * KMH_PER_TILE_A_DAY * 6 / (5 * train.engine.speed(false).coerceAtLeast(1)) + 4
+    val month = if (cargo == Cargo.PASSENGERS) people * 15 * railRating(there * 2, train.engine.speed(false)) / (16 * 255) else load
     val hauled = minOf(365 / (there * 2) * capacity, month * 12)
     val dist = kotlin.math.abs(from % width - to % width) + kotlin.math.abs(from / width - to / width)
     // Freight waits on board for a full load, half of it the whole time it takes to fill.
@@ -635,7 +635,7 @@ internal fun World.addTrain(c: Company, route: RivalRoute): Boolean {
     val e = roster[first.engine]
     val w = roster[first.wagon]
     val train = if (year >= e.from && year < e.until && year >= w.from && year < w.until) RailTrain(e, w, first.wagons)
-    else railTrains(route.cargo, first.wagons * w.capacity, minOf(a.tiles.size, b.tiles.size)).maxByOrNull { it.wagon.capacity * it.wagons * it.engine.speed } ?: return false
+    else railTrains(route.cargo, first.wagons * w.capacity, minOf(a.tiles.size, b.tiles.size)).maxByOrNull { it.wagon.capacity * it.wagons * it.engine.speed(false) } ?: return false
     val before = trains.size
     buyTrain(c, route, train)
     return trains.size > before

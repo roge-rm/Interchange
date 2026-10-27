@@ -105,6 +105,8 @@ class TrainView(
     val group: Int = -1,
     val formation: List<TrainCar> = emptyList(),
     val topSpeed: Int = 0,
+    /** Its top speed off the wires, in km/h. */
+    val dieselSpeed: Int = topSpeed,
 )
 
 /** A bus, truck or streetcar as the screen shows it. */
@@ -421,7 +423,7 @@ fun World.view(company: Int = 0, withReserved: Boolean = false): WorldView {
             t.inDepot && t.electric && depots.getOrNull(t.depot)?.let { !depotWired(it) } == true,
             owner = t.owner, wrecked = t.wreckedFor > 0, number = t.number,
             at = if (t.waiting > 0 && !t.inDepot) t.steps.lastOrNull()?.let { stationAt(stepTile(it))?.id } ?: -1 else -1,
-            x = tx, y = ty, gap = t.gap, wagonCargo = t.wagonCargo, group = t.group, formation = t.formation.toList(), topSpeed = t.topSpeed,
+            x = tx, y = ty, gap = t.gap, wagonCargo = t.wagonCargo, group = t.group, formation = t.formation.toList(), topSpeed = t.topSpeed, dieselSpeed = t.dieselSpeed,
         )
     }
     val stationViews = stations.filterNotNull().map { s ->

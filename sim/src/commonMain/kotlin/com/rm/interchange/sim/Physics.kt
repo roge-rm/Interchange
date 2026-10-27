@@ -56,22 +56,22 @@ fun resistance(mass: Long, speed: Int): Long {
     return mass / 1000 * (12 + kmh / 10 + kmh * kmh / 500)
 }
 
-/** The engine's pull at [speed] units with [grip] percent of full grip, in newtons. */
-fun Train.tractiveForce(speed: Int, grip: Int): Long {
+/** The engine's pull at [speed] units with [grip] percent of full grip, in newtons, [wired] if under wires. */
+fun Train.tractiveForce(speed: Int, grip: Int, wired: Boolean = true): Long {
     val cms = (speed.toLong() * 1144 / 1000).coerceAtLeast(150)
     return locomotives.sumOf { id ->
         val e = roster[id]
         val slip = e.tractive.toLong() * 1000 * grip / 100
         // Power over speed, in cm/s so slow speeds don't lose it, never from less than 1.5 m/s.
-        val power = e.power.toLong() * 74_570 / cms
+        val power = e.power(wired).toLong() * 74_570 / cms
         minOf(slip, power)
     }
 }
 
-/** How much train [t]'s speed changes this tick under power with [grip] percent grip, in speed units. */
-fun World.acceleration(t: Train, grip: Int): Int {
+/** How much train [t]'s speed changes this tick under power with [grip] percent grip, in speed units, [wired] if under wires. */
+fun World.acceleration(t: Train, grip: Int, wired: Boolean = true): Int {
     val mass = t.massKg()
-    val net = t.tractiveForce(t.speed, grip) - resistance(mass, t.speed) - gradeForce(t, mass)
+    val net = t.tractiveForce(t.speed, grip, wired) - resistance(mass, t.speed) - gradeForce(t, mass)
     // A twentieth more for the wheels and axles turning.
     return (net * UNITS_PER_MS2 / (mass * 21 / 20 * 10).coerceAtLeast(1)).toInt()
 }

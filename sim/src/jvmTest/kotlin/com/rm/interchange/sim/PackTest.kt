@@ -75,7 +75,7 @@ class PackTest {
     @Test
     fun theBasePackHasTheWholeRoster() {
         val r = Roster.BASE
-        assertEquals(147, r.engines.size)
+        assertEquals(148, r.engines.size)
         assertEquals(Plows.ROTARY, r.engines.first { it.key == "base:rotary_plow" }.plow)
         assertEquals("base:american", r[2].key)
         assertEquals(r[3].id, r[2].tender)
@@ -148,6 +148,17 @@ class PackTest {
             "vehicles.json" to """{ "vehicles": [ { "id": "c", "replaces": "base:caboose", "plow": "oneway" } ] }""",
         )))
         assertEquals(listOf("base:caboose: only road vehicles have one-way plows"), assertFailsWith<BadPack> { Roster.build(listOf(Packs.BASE, plow)) }.problems)
+        // Diesel figures need a dual-mode engine, also when a replacement gets the engine's traction from what it replaces.
+        val diesel = Packs.unzip(zip(mapOf(
+            "manifest.json" to manifest,
+            "vehicles.json" to """{ "vehicles": [ { "id": "d", "replaces": "base:american", "diesel_speed": 90 } ] }""",
+        )))
+        assertEquals(listOf("base:american: only dual-mode engines have a diesel power and speed"), assertFailsWith<BadPack> { Roster.build(listOf(Packs.BASE, diesel)) }.problems)
+        val dual = Packs.unzip(zip(mapOf(
+            "manifest.json" to manifest,
+            "vehicles.json" to """{ "vehicles": [ { "id": "w", "replaces": "base:caboose", "traction": "dual" } ] }""",
+        )))
+        assertEquals(listOf("base:caboose: only engines are dual-mode"), assertFailsWith<BadPack> { Roster.build(listOf(Packs.BASE, dual)) }.problems)
         assertEquals(listOf("prairie needs base before it"), assertFailsWith<BadPack> { Roster.build(listOf(thirdParty())) }.problems.take(1))
     }
 
