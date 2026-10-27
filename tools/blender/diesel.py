@@ -496,13 +496,16 @@ def cowl(m, L, scheme, axles=2, nose="short", dynamic=False):
     return c, a0, cab0, cab1, top
 
 
-def pantograph(m, y, z, c):
-    """A pantograph folded halfway up from the roof at z, its pan at the top across the engine."""
+def pantograph(m, y, z, c, down=False):
+    """A pantograph folded halfway up from the roof at z, its pan at the top across the engine; down, folded flat on
+    its frame with the pan just over the roof."""
     steel = c["steel"]
+    # Knee and pan heights over the roof, in steps, and how far the knee reaches along it.
+    knee, pan, reach = (0.1, 0.14, 0.11) if down else (0.5, 0.95, 0.02)
     for side in (-1, 1):
-        m.rod((side * 0.05, y - 0.05, z), (side * 0.03, y + 0.02, z + 0.5), 0.004, steel)
-        m.rod((side * 0.03, y + 0.02, z + 0.5), (side * 0.03, y - 0.03, z + 0.95), 0.004, steel)
-    m.box(-0.08, 0.08, y - 0.04, y - 0.02, z + 0.95, z + 0.99, steel)
+        m.rod((side * 0.05, y - 0.05, z + (0.04 if down else 0)), (side * 0.03, y + reach, z + knee), 0.004, steel)
+        m.rod((side * 0.03, y + reach, z + knee), (side * 0.03, y - 0.03, z + pan), 0.004, steel)
+    m.box(-0.08, 0.08, y - 0.04, y - 0.02, z + pan, z + pan + 0.04, steel)
     m.box(-0.06, 0.06, y - 0.07, y + 0.07, z, z + 0.04, c["dark"])
 
 
@@ -649,9 +652,10 @@ def _outline_back(outline, z):
     return best
 
 
-def alp45(m, L, scheme="exo"):
+def alp45(m, L, scheme="exo", pan_down=False):
     """A Bombardier ALP-45DP, exo's dual-mode engine: a full-width body with a cab at each end, each with a
-    blunt lower nose under a raked two-piece windshield, one pantograph at the back and the diesels' fans mid-roof."""
+    blunt lower nose under a raked two-piece windshield, one pantograph at the back and the diesels' fans mid-roof.
+    pan_down folds the pantograph flat, for running on its diesels off the wires."""
     c = livery(scheme)
     frame(m, L, c, 2)
     a0, a1 = -L / 2 + 0.012, L / 2 - 0.012
@@ -706,7 +710,7 @@ def alp45(m, L, scheme="exo"):
     # Roof: the fans over the two diesels, the pantograph at the back with its breaker and the bus bar.
     roof_fans(m, -0.14, 0.14, top, c, n=3, w=0.055)
     m.box(-0.06, 0.06, b0 + 0.1, b0 + 0.18, top - 0.02, top + 0.05, c["roof"], bevel=0.006)
-    pantograph(m, b0 + 0.04, top, c)
+    pantograph(m, b0 + 0.04, top, c, down=pan_down)
     for y in (b0 + 0.14, b0 + 0.22):
         m.upright(0.03, y, top - 0.01, top + 0.09, 0.008, 0.006, material("insulator", "#e8e6e0", rough=0.3), segments=10)
     m.rod((0.03, b0 + 0.14, top + 0.1), (0.03, b0 + 0.22, top + 0.1), 0.004, c["steel"])

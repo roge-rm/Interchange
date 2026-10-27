@@ -341,6 +341,8 @@ fun World.view(company: Int = 0, withReserved: Boolean = false): WorldView {
     val cars = ArrayList<Float>()
     for (t in trains) {
         if (t == null || t.inDepot) continue
+        // Under wires at the nose, as the engine's power goes: a dual-mode engine off them is drawn with its pantograph down.
+        val wire = t.steps.isEmpty() || wired(t.steps.last())
         for (c in 0 until t.cars) {
             val at = t.behind(t.carMiddle(c))
             val i = (at shr 32).toInt()
@@ -362,7 +364,7 @@ fun World.view(company: Int = 0, withReserved: Boolean = false): WorldView {
             cars += ax + (bx - ax) * along
             cars += ay + (by - ay) * along
             cars += heading(Track.edgeX4(b) - Track.edgeX4(a), Track.edgeY4(b) - Track.edgeY4(a)).toFloat()
-            cars += roster[t.carEngines[c]].sprite.toFloat()
+            cars += roster[t.carEngines[c]].sprite(wire).toFloat()
             // Climbing or going down: the edge it leaves by against the edge it came in at.
             val pieces = track[tile].toInt()
             val rise = if (span != null) 0 else edgeHeight(tile % width, tile / width, pieces, b) - edgeHeight(tile % width, tile / width, pieces, a)

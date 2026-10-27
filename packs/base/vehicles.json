@@ -2868,6 +2868,7 @@
       "running": 6600,
       "length": 14,
       "traction": "dual",
+      "sprite_off_wire": "alp45_down",
       "life": 35,
       "reliability": 94
     }

@@ -373,6 +373,7 @@ ROSTER = [
     ("sd70", 16, lambda f: boxcar(f, L(16), True)),
     ("charger", 14, lambda f: boxcar(f, L(14), True)),
     ("alp45", 14, lambda f: boxcar(f, L(14), True)),
+    ("alp45_down", 14, lambda f: boxcar(f, L(14), True)),
     ("coach_streamline", 14, lambda f: coach(f, L(14), True)),
     ("well_car", 14, lambda f: flatcar(f, L(14))),
     # Road vehicles, drawn plain until their Blender models are there.

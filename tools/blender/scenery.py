@@ -315,7 +315,7 @@ def white_pine(m, rng, size):
 
 
 # Understorey shrubs: blueberry and Labrador tea, ferns, and alder or young maple, each lighter than the forest floor.
-UNDERSTOREY = (("#3c5a22", "#6e8e38"), ("#4a6e24", "#86aa40"), ("#365a2c", "#62884a"))
+UNDERSTOREY = (("#36502a", "#587240"), ("#3e5a2a", "#647e44"), ("#32502e", "#527048"))
 
 
 def understorey(m, rng, size, seed, amount=1.0, reach=1.0):
@@ -324,7 +324,8 @@ def understorey(m, rng, size, seed, amount=1.0, reach=1.0):
     # Its own dice, so the tree drawn after it comes out the same whatever the shrubs take.
     rng = random.Random(seed)
     palettes = [greens(f"understorey {k}", a, b) for k, (a, b) in enumerate(UNDERSTOREY)]
-    lit = greens("understorey lit", "#6a8a36", "#a4c25c")
+    # A sunlit top a little lighter than its clump, kept dull so it reads as leaves at a distance.
+    lit = greens("understorey lit", "#4c6432", "#6a7e4a")
     n = max(1, round(3 * amount))
     k0 = rng.uniform(0, 2 * math.pi)
     for k in range(n):

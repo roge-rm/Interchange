@@ -85,4 +85,22 @@ class DualModeTest {
         repeat(200) { w.step() }
         assertTrue(!w.trains[0]!!.inDepot, "stayed in its depot")
     }
+
+    @Test
+    fun itsDrawnWithItsPantographDownOffTheWires() {
+        fun engineSprite(wiredTo: Int): Int {
+            val w = line(true, wiredTo)
+            w.apply(Command.BuyTrain(0, 0, alp45(w).id, coach(w), 2))
+            w.apply(Command.TrainOrder(0, 0, Command.TrainOrder.ORDERS, intArrayOf(0, 1)))
+            w.apply(Command.TrainOrder(0, 0, Command.TrainOrder.START_STOP))
+            repeat(200) { w.step() }
+            val v = w.view().vehicles
+            return (0 until v.count).first { v.train(it) == 0 && v.key(it) % 256 == 0 }.let { v.sprite(it) }
+        }
+        val e = alp45(line(false))
+        assertTrue(e.offWireSprite != e.sprite, "no drawing off the wires")
+        assertEquals(SpriteRef(Packs.BASE_ID, "alp45_down"), Roster.BASE.sprites[e.offWireSprite])
+        assertEquals(e.sprite, engineSprite(245))
+        assertEquals(e.offWireSprite, engineSprite(3))
+    }
 }

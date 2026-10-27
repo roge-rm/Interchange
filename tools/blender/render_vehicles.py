@@ -82,6 +82,8 @@ MODELS = {
     "sd70": (16, lambda m: diesel.hood(m, L(16), "red", axles=3, wide=True, dynamic=True, maker="ge", short=0.1, hood_top=1.72, flare=True, evo=True)),
     "charger": (14, lambda m: diesel.charger(m, L(14))),
     "alp45": (14, lambda m: diesel.alp45(m, L(14))),
+    # Off the wires, on its diesels.
+    "alp45_down": (14, lambda m: diesel.alp45(m, L(14), pan_down=True)),
     "coach_streamline": (14, lambda m: cars.coach_streamline(m, L(14))),
     "well_car": (14, lambda m: cars.well_car(m, L(14))),
     "horse_omnibus": (7, lambda m: horses.omnibus(m, L(7))),

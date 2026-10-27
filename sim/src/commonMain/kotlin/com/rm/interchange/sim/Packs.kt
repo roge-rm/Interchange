@@ -37,6 +37,8 @@ class VehicleDef(
     val capacity: Int?,
     val tender: String?,
     val sprite: String?,
+    /** A dual-mode engine's drawing off the wires, its pantograph down; [sprite] if not given. */
+    val spriteOffWire: String? = null,
     /** Starting tractive effort in kN, for engines. */
     val tractive: Int? = null,
     /** steam, diesel, electric or dual, for engines. */
@@ -243,6 +245,7 @@ object Packs {
                     capacity = f.int("capacity", 0, 100_000),
                     tender = f.string("tender"),
                     sprite = f.string("sprite") ?: if (fresh) vid else null,
+                    spriteOffWire = f.string("sprite_off_wire"),
                     tractive = f.int("tractive", 1, 10_000),
                     traction = f.string("traction"),
                     dieselPower = f.int("diesel_power", 1, 1_000_000),
@@ -276,6 +279,8 @@ object Packs {
                 if (def.capacity != null && def.capacity > 0 && def.carries == null) problems += "$at: capacity without carries"
                 for (cg in def.carries.orEmpty()) if (Cargo.of(cg) < 0) problems += "$at: unknown cargo \"$cg\" (${Cargo.IDS.joinToString()})"
                 if (!spritesElsewhere && def.sprite != null && "sprites/${def.sprite}.png" !in inner) problems += "$at: sprites/${def.sprite}.png is missing"
+                if (!spritesElsewhere && def.spriteOffWire != null && "sprites/${def.spriteOffWire}.png" !in inner) problems += "$at: sprites/${def.spriteOffWire}.png is missing"
+                if (def.spriteOffWire != null && def.traction != null && def.traction != "dual") problems += "$at: only dual-mode engines have a drawing off the wires"
                 vehicles += def
             }
         }

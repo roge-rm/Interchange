@@ -54,11 +54,15 @@ class Engine(
     val range: Int = 0,
     val runway: Int = Runways.REGIONAL,
     val floats: Boolean = false,
+    /** Its drawing off the wires, a place in [Roster.sprites]: a dual-mode engine's with its pantograph down. */
+    val offWireSprite: Int = sprite,
 ) {
     val pulls get() = kind == VehicleKind.ENGINE
     /** Its power and top speed with wires overhead or without them. */
     fun power(wired: Boolean) = if (traction == Traction.DUAL && !wired) dieselPower else power
     fun speed(wired: Boolean) = if (traction == Traction.DUAL && !wired) dieselSpeed else speed
+    /** Its drawing with wires overhead or without them. */
+    fun sprite(wired: Boolean) = if (wired) sprite else offWireSprite
     /** What it can carry as [Cargo] numbers; empty for nothing. */
     val cargoes: IntArray = carries.map { Cargo.of(it) }.filter { it >= 0 }.toIntArray()
     val isTender get() = kind == VehicleKind.TENDER
@@ -199,7 +203,7 @@ class Roster(
         /** The roster from [packs], in order. Packs build on those before them: adding vehicles, changing them or turning them off. */
         fun build(packs: List<Pack>): Roster {
             val problems = ArrayList<String>()
-            class Spec(val key: String, var def: VehicleDef, var sprite: SpriteRef?, var enabled: Boolean = true)
+            class Spec(val key: String, var def: VehicleDef, var sprite: SpriteRef?, var offWire: SpriteRef?, var enabled: Boolean = true)
             val specs = ArrayList<Spec>()
             val byKey = HashMap<String, Spec>()
             val seen = HashSet<String>()
@@ -209,15 +213,20 @@ class Roster(
                 for (need in pack.needs) if (need !in seen) problems += "${pack.id} needs $need before it"
                 for (v in pack.vehicles) {
                     val sprite = v.sprite?.let { SpriteRef(pack.id, it) }
+                    val offWire = v.spriteOffWire?.let { SpriteRef(pack.id, it) }
                     if (v.replaces == null) {
-                        val s = Spec(qualify(pack, v.id), v, sprite)
+                        val s = Spec(qualify(pack, v.id), v, sprite, offWire)
                         specs += s
                         byKey[s.key] = s
                         continue
                     }
                     val old = byKey[qualify(pack, v.replaces)] ?: run { problems += "${pack.id}:${v.id} replaces ${v.replaces}, which isn't there"; continue }
                     old.def = merge(old.def, v, pack)
-                    if (sprite != null) old.sprite = sprite
+                    // New art without a drawing off the wires uses the new drawing for both, not the old one's.
+                    if (sprite != null) {
+                        old.sprite = sprite
+                        old.offWire = offWire
+                    } else if (offWire != null) old.offWire = offWire
                 }
                 for (d in pack.disables) byKey[qualify(pack, d)]?.let { it.enabled = false } ?: run { problems += "${pack.id} turns off $d, which isn't there" }
             }
@@ -232,6 +241,8 @@ class Roster(
                     if (at == null || specs[at].def.kind != VehicleKind.TENDER) { problems += "${s.key}: tender $t isn't a tender in these packs"; -1 } else at
                 } ?: -1
                 val sprite = s.sprite!!
+                val offWire = s.offWire ?: sprite
+                if (s.offWire != null && d.traction != "dual") problems += "${s.key}: only dual-mode engines have a drawing off the wires"
                 if (d.plow == "oneway" && d.kind != VehicleKind.ROAD) problems += "${s.key}: only road vehicles have one-way plows"
                 if (d.plow != null && d.kind != VehicleKind.WAGON && d.kind != VehicleKind.ROAD) problems += "${s.key}: only wagons and road vehicles are plows"
                 if ((d.dieselPower != null || d.dieselSpeed != null) && d.traction != "dual") problems += "${s.key}: only dual-mode engines have a diesel power and speed"
@@ -240,7 +251,8 @@ class Roster(
                     id = i, key = s.key, kind = d.kind!!, names = d.names!!, plurals = d.plurals ?: emptyMap(), types = d.types ?: emptyMap(),
                     from = d.from!!, until = d.until!!, speed = d.speed ?: 0, power = d.power ?: 0, weight = d.weight!!,
                     cost = d.cost!!, running = d.running!!, length = d.length!!, carries = d.carries ?: emptyList(), capacity = d.capacity ?: 0,
-                    sprite = spriteIds.getOrPut(sprite) { sprites += sprite; sprites.size - 1 }, tender = tender, enabled = s.enabled,
+                    sprite = spriteIds.getOrPut(sprite) { sprites += sprite; sprites.size - 1 },
+                    offWireSprite = spriteIds.getOrPut(offWire) { sprites += offWire; sprites.size - 1 }, tender = tender, enabled = s.enabled,
                     tractive = d.tractive ?: (d.weight!! * 245 / 100), traction = Traction.NAMES.indexOf(d.traction ?: "steam").coerceAtLeast(0),
                     dieselPower = d.dieselPower ?: d.power ?: 0, dieselSpeed = d.dieselSpeed ?: d.speed ?: 0,
                     life = d.life ?: 35, reliability = d.reliability ?: 85,
@@ -275,7 +287,7 @@ class Roster(
             weight = v.weight ?: old.weight, cost = v.cost ?: old.cost, running = v.running ?: old.running, length = v.length ?: old.length,
             carries = v.carries ?: old.carries, capacity = v.capacity ?: old.capacity,
             tender = v.tender?.let { if (':' in it) it else "${pack.id}:$it" } ?: old.tender,
-            sprite = v.sprite ?: old.sprite,
+            sprite = v.sprite ?: old.sprite, spriteOffWire = if (v.sprite != null) v.spriteOffWire else v.spriteOffWire ?: old.spriteOffWire,
             tractive = v.tractive ?: old.tractive, traction = v.traction ?: old.traction,
             dieselPower = v.dieselPower ?: old.dieselPower, dieselSpeed = v.dieselSpeed ?: old.dieselSpeed,
             life = v.life ?: old.life, reliability = v.reliability ?: old.reliability,
