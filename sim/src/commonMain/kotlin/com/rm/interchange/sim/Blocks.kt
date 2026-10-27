@@ -16,6 +16,8 @@ internal fun World.networkChanged() {
     catchmentDirty = true
     linksDirty = true
     for (t in trains) if (t != null) {
+        // One on its way to stand aside plans again; one stood there keeps waiting.
+        if (t.route != null) t.aside = -1
         t.route = null
         releaseAhead(t)
     }

@@ -39,7 +39,104 @@ internal fun World.wayRound(t: Train, avoid: Set<Int>): IntArray? {
     return search(step(stepTile(s), Track.index(stepPiece(s)), stepExit(s), stepLevel(s)), t, avoid, onward)?.steps
 }
 
-/** Whether [next] carries on from [cur]: the tile through its way out, come in at the matching edge. */
+/**
+ * A way back from [t]'s last wagon, turned round, into a loop or siding where the whole train stands off the tiles in
+ * [clear] (tile keys), keeping off the pieces in [avoid], the tiles in [past] and other trains and what they hold; the
+ * nearest, or null if there's none within [ASIDE_REACH]. The way ends where the nose stops.
+ */
+internal fun World.wayAside(t: Train, clear: Set<Int>, past: Set<Int>, avoid: Set<Int>): IntArray? {
+    val i = (t.behind(t.length) shr 32).toInt()
+    if (i < 0) return null
+    val s = t.steps[i]
+    val from = step(stepTile(s), Track.index(stepPiece(s)), stepExit(s), stepLevel(s))
+    val exit = stepExit(from)
+    val a = across(stepTile(from), stepLevel(from), exit)
+    if (a < 0) return null
+    // A place is (tile * 2 + level) * 4 + the edge come in at; each is reached by the step run on the tile before.
+    val first = a * 4 + Track.opposite(exit)
+    val dist = HashMap<Int, Int>()
+    val prev = HashMap<Int, Int>()
+    val heap = Heap()
+    dist[first] = 0
+    heap.push(0, first)
+    fun before(w: Int) = (stepTile(w) * 2 + stepLevel(w)) * 4 + stepEntry(w)
+    // Whether the train, nose up to [node], stands wholly off [clear].
+    fun standsClear(node: Int): Boolean {
+        var n = node
+        var run = 0
+        while (run < t.length) {
+            if (n == first) return false
+            val w = prev.getValue(n)
+            if (tileKey(w) in clear) return false
+            run += stepLength(w)
+            n = before(w)
+        }
+        return true
+    }
+    var looked = 0
+    while (heap.size > 0) {
+        val top = heap.pop()
+        val cost = (top ushr 32).toInt()
+        val node = top.toInt()
+        if (cost > (dist[node] ?: Int.MAX_VALUE)) continue
+        if (node != first && standsClear(node)) {
+            val back = ArrayList<Int>()
+            var n = node
+            while (n != first) {
+                val w = prev.getValue(n)
+                back += w
+                n = before(w)
+            }
+            back.reverse()
+            return back.toIntArray()
+        }
+        if (cost > ASIDE_REACH || ++looked > MAX_LOOK) return null
+        val nt = node / 8
+        val level = (node / 4) % 2
+        val entry = node % 4
+        if (level == 0 && depotTiles.containsKey(nt)) continue
+        for (w in waysIn(nt, entry, level)) {
+            val piece = stepPiece(w)
+            if (level == 0 && !mayPass(nt, piece, entry)) continue
+            if (t.electric && !wired(w)) continue
+            if (stepKey(w) in avoid) continue
+            if (level == 0 && closedTile(nt)) continue
+            if (!settings.sharing && owner[nt].toInt() != t.owner) continue
+            if (takenByOther(t, w) || tileKey(w) in past) continue
+            val out = Track.other(piece, entry)
+            val na = across(nt, level, out)
+            if (na < 0 || piecesAt(na / 2, na % 2) == 0) continue
+            val n = na * 4 + Track.opposite(out)
+            val c = cost + Track.length(piece)
+            if (c < (dist[n] ?: Int.MAX_VALUE)) {
+                dist[n] = c
+                prev[n] = w
+                heap.push(c, n)
+            }
+        }
+    }
+    return null
+}
+
+/** Whether another train is on step [w]'s tile, or holds its piece or one meeting it there. */
+private fun World.takenByOther(t: Train, w: Int): Boolean {
+    val place = tileKey(w)
+    if ((tileTrains[place] ?: 0) - (if (place in t.onTiles) 1 else 0) > 0) return true
+    val tile = stepTile(w)
+    val level = stepLevel(w)
+    val piece = stepPiece(w)
+    for (q in Track.PIECES) {
+        if (q != piece && !Track.touch(q, piece)) continue
+        val id = reserved[pieceKey(tile, q, level)] ?: continue
+        if (id != t.id) return true
+    }
+    return false
+}
+
+/** How far back a train looks for a loop or siding to stand aside in, in sixteenths of a tile: 64 tiles. */
+private const val ASIDE_REACH = 64 * 16
+
+/** Whether [next] carries on from [cur]:the tile through its way out, come in at the matching edge. */
 fun World.follows(cur: Int, next: Int): Boolean {
     val a = across(stepTile(cur), stepLevel(cur), stepExit(cur))
     return a >= 0 && stepTile(next) == a / 2 && stepLevel(next) == a % 2 && stepEntry(next) == Track.opposite(stepExit(cur))

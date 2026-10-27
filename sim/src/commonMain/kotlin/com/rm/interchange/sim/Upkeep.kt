@@ -67,6 +67,7 @@ internal fun World.forService(t: Train) {
     t.toDepot = true
     t.servicing = true
     t.route = null
+    t.aside = -1
 }
 
 /** Whether train [t], heading for a depot, may take any of its company's: off for a service, or with its home gone. */

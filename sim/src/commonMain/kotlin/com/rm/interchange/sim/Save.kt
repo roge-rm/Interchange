@@ -16,7 +16,7 @@ package com.rm.interchange.sim
  */
 object Save {
     private val MAGIC = "ICHG".encodeToByteArray()
-    const val VERSION = 48
+    const val VERSION = 49
 
     /** A vehicle's [built] day as saved by [version]: work days from 36, calendar days before. */
     private fun World.builtOut(built: Int, version: Int) = if (version >= 36) built else built / settings.dayLength
@@ -98,6 +98,7 @@ object Save {
                 if (version >= 43) { w.int(t.gap); w.long(t.departed) }
                 if (version >= 45) w.int(t.group)
                 if (version >= 46) writeFormation(w, t.formation)
+                if (version >= 49) { w.int(t.aside); w.int(t.asideTicks) }
             }
             w.uvar(towns.size.toLong())
             for (t in towns) { w.string(t.name); w.int(t.x); w.int(t.y); w.int(t.grid); w.bool(t.french); w.int(t.population); w.int(t.houses); w.int(t.growIn); w.int(t.servedThisMonth); w.int(t.servedLastMonth); w.ints(t.approval)
@@ -385,6 +386,7 @@ object Save {
                             if (!validTrainFormation(roster, cars)) throw BadData("invalid train formation")
                             t.setFormation(cars)
                         }
+                        if (version >= 49) { t.aside = r.int(); t.asideTicks = r.int() }
                     } else {
                         t.built = (tick / Calendar.TICKS_PER_DAY).toInt()
                         t.serviced = t.built

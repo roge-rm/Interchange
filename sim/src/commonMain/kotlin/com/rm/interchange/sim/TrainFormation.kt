@@ -84,6 +84,7 @@ internal fun World.editTrain(company: Company, c: Command.EditTrain) {
     train.setFormation(c.cars)
     train.reliability = minOf(train.reliability, train.newReliability)
     train.route = null
+    train.aside = -1
     train.renewFailed = false
     linksDirty = true
 }

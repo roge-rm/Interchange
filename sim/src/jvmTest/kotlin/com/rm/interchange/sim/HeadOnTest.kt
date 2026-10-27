@@ -180,4 +180,109 @@ class HeadOnTest {
         assertEquals(0, t.headOn)
         assertTrue(w.chronicle.none { it.kind == News.TRAIN_STUCK })
     }
+
+    /**
+     * A line between depots at x = 2 and x = 45, stations at x = 5 to 7 and 38 to 40, and a passing loop at y = 11
+     * from x = 24 to 34. Train 1 runs west past the loop before train 0 sets out east, so they meet west of it. Train 1
+     * turns, backs into the loop, waits there while train 0 goes by on the main line, then carries on west.
+     */
+    /** A line between depots at x = 2 and x = 45, stations at x = 5 to 7 and 38 to 40, and a loop at y = 11 from x = 24 to 34. */
+    private fun loopLine(): World {
+        val w = world()
+        w.apply(Command.Depot(0, 2, 10, Track.XP))
+        w.apply(Command.Depot(0, 45, 10, Track.XM))
+        w.apply(Command.Rail(0, 3, 10, 44, 10, Track.X, remove = false))
+        w.apply(Command.Rail(0, 24, 10, 24, 10, Track.W, remove = false))
+        w.apply(Command.Rail(0, 24, 11, 24, 11, Track.E, remove = false))
+        w.apply(Command.Rail(0, 25, 11, 33, 11, Track.X, remove = false))
+        w.apply(Command.Rail(0, 34, 11, 34, 11, Track.N, remove = false))
+        w.apply(Command.Rail(0, 34, 10, 34, 10, Track.S, remove = false))
+        w.apply(Command.Station(0, 5, 10, 7, 10, Track.X))
+        w.apply(Command.Station(0, 38, 10, 40, 10, Track.X))
+        return w
+    }
+
+    @Test
+    fun theTurnedTrainBacksIntoALoopAndLetsTheOtherBy() {
+        val w = loopLine()
+        val engine = w.roster.engines.first { it.key == "base:american" }.id
+        val coach = w.roster.engines.first { it.key == "base:coach_wood" }.id
+        w.apply(Command.BuyTrain(0, 0, engine, coach, 2))
+        w.apply(Command.TrainOrder(0, 0, Command.TrainOrder.ORDERS, intArrayOf(Order.withWait(1, 20))))
+        val a = w.trains[0]!!
+        val b = buy(w, 1, 0)
+        var ticks = 0
+        while (b.inDepot || b.x(w) > 18) { w.step(); assertTrue(ticks++ < 5_000, "train 1 never got west of the loop") }
+        w.apply(Command.TrainOrder(0, a.id, Command.TrainOrder.START_STOP))
+        var inLoop = false
+        var passed = false
+        var aThere = false
+        var bThere = false
+        ticks = 0
+        while (!(aThere && bThere) && ticks++ < 20_000) {
+            w.step()
+            if (b.y(w) == 11 && b.aside == a.id && !inLoop) {
+                inLoop = true
+                // Standing aside is saved.
+                assertEquals(a.id, Save.read(Save.write(w)).trains[b.id]!!.aside)
+            }
+            if (inLoop && !a.inDepot && a.x(w) > 34) passed = true
+            if (a.atStation(w, 1)) aThere = true
+            if (b.atStation(w, 0)) bThere = true
+        }
+        assertTrue(inLoop, "train 1 didn't back into the loop")
+        assertTrue(passed, "train 0 didn't go by")
+        assertTrue(aThere, "train 0 never got to the east station")
+        assertTrue(bThere, "train 1 never got to the west station")
+        assertEquals(-1, b.aside)
+        assertTrue(w.chronicle.none { it.kind == News.TRAIN_STUCK })
+    }
+
+    /**
+     * On the loop line with a platform in the loop, train 1 stands stopped in it. Trains 0 and 2 meet west of the loop:
+     * train 2 doesn't back into the taken loop, and nobody is left standing aside. Once train 1 has gone off to its
+     * depot, train 2 backs into the loop and both get where they're going.
+     */
+    @Test
+    fun aTrainDoesntBackIntoALoopWithATrainInIt() {
+        val w = loopLine()
+        w.apply(Command.Station(0, 25, 11, 30, 11, Track.X))
+        val engine = w.roster.engines.first { it.key == "base:american" }.id
+        val coach = w.roster.engines.first { it.key == "base:coach_wood" }.id
+        w.apply(Command.BuyTrain(0, 0, engine, coach, 2))
+        w.apply(Command.TrainOrder(0, 0, Command.TrainOrder.ORDERS, intArrayOf(Order.withWait(1, 20))))
+        val a = w.trains[0]!!
+        val c = buy(w, 1, 2)
+        var ticks = 0
+        while (!c.atStation(w, 2)) { w.step(); assertTrue(ticks++ < 5_000, "train 1 never got to the loop") }
+        w.apply(Command.TrainOrder(0, c.id, Command.TrainOrder.START_STOP))
+        val b = buy(w, 1, 0)
+        ticks = 0
+        while (b.inDepot || b.x(w) > 18) { w.step(); assertTrue(ticks++ < 5_000, "train 2 never got west of the loop") }
+        w.apply(Command.TrainOrder(0, a.id, Command.TrainOrder.START_STOP))
+        repeat((ASIDE_WAIT + 4 * HEAD_ON_WAIT).toInt()) {
+            w.step()
+            assertTrue(b.aside < 0 && a.aside < 0, "a train went to stand aside in the taken loop")
+        }
+        assertTrue(c.y(w) == 11 && !c.running)
+        w.apply(Command.TrainOrder(0, c.id, Command.TrainOrder.TO_DEPOT))
+        w.apply(Command.TrainOrder(0, c.id, Command.TrainOrder.START_STOP))
+        var inLoop = false
+        var aThere = false
+        var bThere = false
+        var asideFor = 0
+        ticks = 0
+        while (!(aThere && bThere) && ticks++ < 20_000) {
+            w.step()
+            if (b.y(w) == 11 && b.aside == a.id) inLoop = true
+            if (b.aside >= 0) asideFor++ else asideFor = 0
+            assertTrue(asideFor <= ASIDE_WAIT, "train 2 stood aside too long")
+            if (a.atStation(w, 1)) aThere = true
+            if (b.atStation(w, 0)) bThere = true
+        }
+        assertTrue(c.inDepot, "train 1 never got to its depot")
+        assertTrue(inLoop, "train 2 didn't back into the loop once it was free")
+        assertTrue(aThere, "train 0 never got to the east station")
+        assertTrue(bThere, "train 2 never got to the west station")
+    }
 }

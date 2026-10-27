@@ -166,6 +166,10 @@ class Train(
     var headOn = 0
     /** Held head-on with no way round, so the news is told once. */
     var stuck = false
+    /** The id of the train it backed out of the way of, into a loop or siding, and stands there for; -1 for none. */
+    var aside = -1
+    /** Ticks since it set off to stand aside, to give up after [ASIDE_WAIT]. */
+    var asideTicks = 0
     /** Standing at a signal or behind a train, as of its last move. */
     var held = false
     /** Came into the block it's in past a signal, so with collisions on it still stops for a train ahead. */
@@ -293,6 +297,7 @@ internal fun World.trainCommand(company: Company, c: Command.TrainOrder) {
                 for (o in c.stations) if (stations.getOrNull(Order.station(o))?.owner == company.id) g.orders += o
                 g.order = 0
                 g.route = null
+                g.aside = -1
             }
         }
         Command.TrainOrder.GAP -> {
@@ -311,12 +316,14 @@ internal fun World.trainCommand(company: Company, c: Command.TrainOrder) {
             t.orders += other.orders
             t.order = 0
             t.route = null
+            t.aside = -1
         }
         Command.TrainOrder.UNSHARE -> t.shared = -1
         Command.TrainOrder.TO_DEPOT -> {
             if (!t.inDepot) {
                 t.toDepot = !t.toDepot
                 t.servicing = false
+                t.aside = -1
                 t.route = null
             }
         }
@@ -326,6 +333,7 @@ internal fun World.trainCommand(company: Company, c: Command.TrainOrder) {
                 t.servicing = false
                 t.toDepot = false
                 t.route = null
+                t.aside = -1
             }
         }
         Command.TrainOrder.RENEW -> if (t.inDepot) {
@@ -338,6 +346,7 @@ internal fun World.trainCommand(company: Company, c: Command.TrainOrder) {
         }
         Command.TrainOrder.TURN -> if (!t.inDepot) {
             t.turnRound = true
+            t.aside = -1
             t.route = null
         }
         Command.TrainOrder.SELL -> if (t.inDepot) {
@@ -371,6 +380,7 @@ private fun World.leaveDepot(t: Train) {
     t.running = true
     t.route = null
     t.signalled = false
+    t.aside = -1
     countOn(t)
 }
 
@@ -380,7 +390,7 @@ internal fun World.moveTrains() {
     val list = trains.filterNotNull()
     // Trains in their depot set going, waiting for the door to clear.
     for (t in list) if (t.inDepot && t.running) leaveDepot(t)
-    val planning = list.filter { !it.inDepot && it.running && it.route == null && tick >= it.lostUntil && it.target != -2 && it.waiting == 0 }
+    val planning = list.filter { !it.inDepot && it.running && it.route == null && tick >= it.lostUntil && it.target != -2 && it.waiting == 0 && it.aside < 0 }
     val routes = arrayOfNulls<Plan>(planning.size)
     Workers.run(planning.size) { i -> routes[i] = planRoute(planning[i]) }
     for ((i, t) in planning.withIndex()) {
@@ -447,6 +457,7 @@ internal fun World.wreck(t: Train) {
     t.held = false
     t.stuck = false
     t.headOn = 0
+    t.aside = -1
     t.snowbound = false
     t.route = null
     t.orders.clear()
@@ -472,6 +483,13 @@ private fun World.anyWreck() = trains.any { it != null && it.wreckedFor > 0 }
 
 private fun World.drive(t: Train) {
     t.held = false
+    if (t.aside >= 0 && ++t.asideTicks >= ASIDE_WAIT) {
+        // Waited long enough, stood aside or still on its way there: it plans again from where it is.
+        t.aside = -1
+        t.headOn = 0
+        t.route = null
+        t.lostUntil = 0
+    }
     if (t.waiting > 0) {
         if (--t.waiting == 0) {
             // A full load order keeps it there, loading as more comes, till it's full, unless it's due a service.
@@ -518,11 +536,21 @@ private fun World.drive(t: Train) {
         } else turnRound(t)
         return
     }
+    if (t.aside >= 0 && t.route == null) {
+        // Stood aside: it waits till the train it made way for has gone by.
+        t.speed = 0
+        if (tick % HEAD_ON_CHECK == 0L && gonePast(t)) {
+            t.aside = -1
+            t.lostUntil = 0
+        }
+        return
+    }
     // Going via a station: once the nose is in it, on to the next order without stopping.
     val o = t.orders.getOrNull(t.order % t.orders.size.coerceAtLeast(1)) ?: 0
     if ((Order.has(o, Order.VIA) || stations.getOrNull(Order.station(o))?.waypoint == true) && stationTiles[stepTile(t.steps.last())] == Order.station(o)) {
         nextOrder(t)
         t.route = null
+        t.aside = -1
     }
     // Wet rail, leaves, ice and snow take the grip away, for pulling away and for braking; deep snow holds it back.
     val nose = stepTile(t.steps.last())
@@ -567,7 +595,7 @@ private fun World.drive(t: Train) {
         t.held = stop == Stop.TRAIN || stop == Stop.SIGNAL
         if ((stop == Stop.TRAIN || stop == Stop.SIGNAL) && tick % HEAD_ON_CHECK == 0L && headOnWait(t)) return
         when (stop) {
-            Stop.SIGNAL -> if (tick % PATH_RETRY == 0L && t.route != null) {
+            Stop.SIGNAL -> if (tick % PATH_RETRY == 0L && t.route != null && t.aside < 0) {
                 // Held at a signal: look again for a way, another platform perhaps.
                 t.route = null
                 releaseAhead(t)
@@ -607,7 +635,11 @@ private fun World.headOnWait(t: Train): Boolean {
     val avoid = HashSet<Int>()
     for (p in u.onPieces) avoid += p
     for ((key, id) in reserved) if (id == u.id) avoid += key
-    val way = wayRound(t, avoid)
+    // On a single line with no way round, it backs into a loop or siding behind it and lets the other by, once the
+    // other has a way ahead to keep clear of.
+    var aside = -1
+    val ahead = u.route.let { it != null && u.routeAt < it.size }
+    val way = wayRound(t, avoid) ?: if (u.held && ahead) wayAside(t, wayOf(u), endOf(u), avoid)?.also { aside = u.id } else null
     if (way == null) {
         if (!t.stuck) {
             t.stuck = true
@@ -619,7 +651,42 @@ private fun World.headOnWait(t: Train): Boolean {
     t.route = way
     t.routeAt = 0
     t.lostUntil = 0
+    t.aside = aside
+    t.asideTicks = 0
+    t.stuck = false
     return true
+}
+
+/** The tiles, as tile keys, train [u] is on, holds, or has yet to run over on its route. */
+private fun World.wayOf(u: Train): Set<Int> {
+    val out = HashSet<Int>()
+    for (k in u.onTiles) out += k
+    u.route?.let { r -> for (k in u.routeAt until r.size) out += tileKey(r[k]) }
+    for ((key, id) in reserved) if (id == u.id) out += if (key >= 0) key / 8 else -((-key - 1) / 8) - 1
+    return out
+}
+
+/**
+ * The tiles, as tile keys, where [u]'s route ends: the whole station if it ends at one. A train standing aside past
+ * them would have [u] stop in front of it, so it doesn't go there.
+ */
+private fun World.endOf(u: Train): Set<Int> {
+    val last = u.route?.lastOrNull() ?: return emptySet()
+    val station = if (stepLevel(last) == 0) stationTiles[stepTile(last)] else null
+    return stations.getOrNull(station ?: -1)?.tiles?.toSet() ?: setOf(tileKey(last))
+}
+
+/**
+ * Whether the train [t] stood aside for has gone by: it's gone, or nothing it's on, holds or has yet to run over lies
+ * on [t]'s way on from here. One between routes isn't judged till it has one again.
+ */
+private fun World.gonePast(t: Train): Boolean {
+    val u = trains.getOrNull(t.aside) ?: return true
+    if (u.inDepot || u.wreckedFor > 0) return true
+    if (u.route == null && u.running && u.waiting == 0) return false
+    val p = planRoute(t) ?: return true
+    val way = wayOf(u)
+    return p.steps.none { tileKey(it) in way }
 }
 
 /**
@@ -753,6 +820,8 @@ private fun World.freeAhead(t: Train, brake: Int = BRAKE): Pair<Int, Stop> {
 /** The step after [cur]: the route's, if it has one there, else where plain track leads with no choice to make. */
 private fun World.nextFrom(t: Train, cur: Int, at: Int): Int {
     val r = t.route
+    // Standing aside, it stops where its way into the loop or siding ends.
+    if (t.aside >= 0 && (r == null || at >= r.size)) return -1
     val next = if (r != null && at < r.size) r[at] else onlyWayOn(cur)
     // Without sharing, another company's track is the end of the line.
     if (!settings.sharing && next >= 0 && owner[stepTile(next)].toInt() != t.owner) return -1
@@ -1042,6 +1111,8 @@ const val MAX_PRESIGNALS = 4
 /** How often a standing train looks for one coming the other way, and how long it waits for it, in ticks: a work day. */
 const val HEAD_ON_CHECK = 8L
 const val HEAD_ON_WAIT = Calendar.TICKS_PER_DAY
+/** The longest a train spends backing aside for one coming the other way and standing there, in ticks: 8 work days. */
+const val ASIDE_WAIT = 8 * Calendar.TICKS_PER_DAY
 /** Ticks a train waits at a path signal before looking for another way, to a free platform say. */
 const val PATH_RETRY = 128L
 
