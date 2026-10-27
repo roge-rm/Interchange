@@ -543,21 +543,17 @@ def boxcab(m, L, scheme="boxcab"):
             m.box(x1 - 0.01, x1 + 0.006 * side, lo, hi, 0.42, 0.45, c["dark"])
     for side in (-1, 1):
         x = side * (half + 0.0006)
-        # A cab window by each end, and tall louvred grilles along the middle down to the cream line: a dark panel behind
-        # body-coloured slats standing out from the side, in a frame, taller than the windows so they don't read as more.
+        # A cab window by each end, and tall louvred grilles along the middle: fine body-coloured slats standing out
+        # over thin dark gaps, no frame, so they read as louvres and not as more windows.
         for y in (b0 + 0.025, b1 - 0.065):
             m.box(x - 0.0008, x + 0.0008, y, y + 0.04, 1.3, 1.56, c["glass"])
         for k in range(4):
             y = b0 + 0.12 + k * (b1 - b0 - 0.24) / 3
             m.box(x - 0.0008, x + 0.0008, y - 0.026, y + 0.026, 0.98, 1.62, c["grille"])
             out = side * 0.0022
-            for z0, z1 in ((0.95, 0.98), (1.62, 1.65)):
-                m.box(min(x, x + out), max(x, x + out), y - 0.03, y + 0.03, z0, z1, c["body"])
-            for yy in (y - 0.028, y + 0.028):
-                m.box(min(x, x + out), max(x, x + out), yy - 0.002, yy + 0.002, 0.98, 1.62, c["body"])
-            for j in range(8):
-                z = 1.0 + j * 0.08
-                m.box(min(x, x + out * 0.8), max(x, x + out * 0.8), y - 0.026, y + 0.026, z, z + 0.045, c["louvre"])
+            for j in range(15):
+                z = 0.985 + j * 0.0423
+                m.box(min(x, x + out), max(x, x + out), y - 0.026, y + 0.026, z, z + 0.031, c["body"])
     side_band(m, b0, b1, 0.86, 0.89, c["trim"], half=half)
     # Roof gear: resistor grids either side of the pantograph, the bus bar along the roof's crown.
     for y in (-0.15, 0.15):
