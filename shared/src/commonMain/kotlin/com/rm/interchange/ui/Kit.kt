@@ -52,7 +52,10 @@ import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.paneTitle
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.platform.LocalDensity
@@ -309,28 +312,110 @@ fun <T> StepSliderRow(glyph: Glyph, label: String, options: List<T>, value: T, n
     }
 }
 
-/** One of a set across the whole width, sized in proportion to its label and all as tall as the tallest. */
+/** Padding inside a chip each side, and the gap between chips and between their rows. */
+private val CHIP_PAD = 6.dp
+private val CHIP_GAP = 6.dp
+
+/**
+ * One of a set across the whole width, each as wide as its label in proportion and all in a row as tall as the
+ * tallest. A chip is never narrower than its longest word, so no word breaks; when even that doesn't fit, whole
+ * chips go on to more rows, about as many in each.
+ */
 @Composable
 fun <T> FillChips(options: List<T>, selected: T, label: @Composable (T) -> String, onSelect: (T) -> Unit) {
     val c = LocalColors.current
-    Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min).selectableGroup(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        for (o in options) {
-            val on = o == selected
-            // Give longer labels more room while keeping the entire set within the row.
-            val text = label(o)
-            val width = text.length.coerceAtLeast(1).toFloat()
-            Box(
-                Modifier.weight(width).fillMaxHeight()
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(if (on) c.accent else c.button)
-                    .selectable(selected = on, role = Role.RadioButton) { onSelect(o) }
-                    .padding(horizontal = 6.dp, vertical = 8.dp),
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(text, color = if (on) c.onAccent else c.text, style = KitType.Body, textAlign = TextAlign.Center, maxLines = 2)
+    val texts = options.map { label(it) }
+    val measurer = rememberTextMeasurer()
+    val density = LocalDensity.current
+    // Each chip's width with its label on one line, and with only its longest word, in pixels without padding.
+    // Measured again only when the labels or the density change.
+    val measured = remember(texts, density) {
+        fun width(s: String) = measurer.measure(s, KitType.Body, softWrap = false, maxLines = 1, density = density).size.width
+        texts.map { t -> width(t) to t.split(' ').maxOf { width(it) } }
+    }
+    Layout(
+        content = {
+            for ((i, o) in options.withIndex()) {
+                val on = o == selected
+                Box(
+                    Modifier.clip(RoundedCornerShape(8.dp))
+                        .background(if (on) c.accent else c.button)
+                        .selectable(selected = on, role = Role.RadioButton) { onSelect(o) }
+                        .padding(horizontal = CHIP_PAD, vertical = 8.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(texts[i], color = if (on) c.onAccent else c.text, style = KitType.Body, textAlign = TextAlign.Center)
+                }
+            }
+        },
+        modifier = Modifier.fillMaxWidth().selectableGroup(),
+    ) { measurables, constraints ->
+        val pad = (CHIP_PAD * 2).roundToPx() + 1
+        val gap = CHIP_GAP.roundToPx()
+        val whole = measured.map { it.first + pad }
+        val least = measured.map { it.second + pad }
+        val room = if (constraints.hasBoundedWidth) constraints.maxWidth else whole.sum() + gap * (whole.size - 1).coerceAtLeast(0)
+        val rows = chipRows(least, room, gap)
+        val widths = IntArray(options.size)
+        for (row in rows) {
+            val shares = chipWidths(row.map { whole[it] }, row.map { least[it] }, room - gap * (row.size - 1))
+            // No wider than the row, so a word too long for it breaks rather than being cut off.
+            for ((k, i) in row.withIndex()) widths[i] = minOf(shares[k], room)
+        }
+        val heights = rows.map { row -> row.maxOf { measurables[it].minIntrinsicHeight(widths[it]) } }
+        val placeables = rows.mapIndexed { r, row -> row.map { measurables[it].measure(Constraints.fixed(widths[it], heights[r])) } }
+        val height = heights.sum() + gap * (rows.size - 1).coerceAtLeast(0)
+        layout(room, height) {
+            var y = 0
+            for ((r, row) in placeables.withIndex()) {
+                var x = 0
+                for (p in row) {
+                    p.place(x, y)
+                    x += p.width + gap
+                }
+                y += heights[r] + gap
             }
         }
     }
+}
+
+/**
+ * The chips by row, as indices, so each row's [least] widths fit in [room]: as few rows as fit, then about as many
+ * chips in each where that fits too. A chip wider than [room] gets a row to itself.
+ */
+private fun chipRows(least: List<Int>, room: Int, gap: Int): List<List<Int>> {
+    fun fits(row: List<Int>) = row.sumOf { least[it] } + gap * (row.size - 1) <= room
+    val greedy = mutableListOf<MutableList<Int>>()
+    for (i in least.indices) {
+        val last = greedy.lastOrNull()
+        if (last != null && fits(last + i)) last += i else greedy += mutableListOf(i)
+    }
+    if (greedy.size <= 1) return greedy
+    val per = (least.size + greedy.size - 1) / greedy.size
+    val even = least.indices.chunked(per)
+    return if (even.size == greedy.size && even.all(::fits)) even else greedy
+}
+
+/**
+ * Widths for one row of chips sharing [room]: in proportion to their [whole] widths, but none below its [least],
+ * the rest shared among the others.
+ */
+private fun chipWidths(whole: List<Int>, least: List<Int>, room: Int): IntArray {
+    val fixed = BooleanArray(whole.size)
+    val out = FloatArray(whole.size)
+    while (true) {
+        val left = room - whole.indices.filter { fixed[it] }.sumOf { least[it] }
+        val free = whole.indices.filter { !fixed[it] }
+        val total = free.sumOf { whole[it] }.coerceAtLeast(1)
+        var changed = false
+        for (i in whole.indices) out[i] = if (fixed[i]) least[i].toFloat() else whole[i].toFloat() * left / total
+        for (i in free) if (out[i] < least[i]) { fixed[i] = true; changed = true }
+        if (!changed || free.isEmpty()) break
+    }
+    // Whole pixels, the last taking what rounding leaves, so the row ends at the edge.
+    val px = IntArray(whole.size) { out[it].toInt().coerceAtLeast(0) }
+    if (px.isNotEmpty()) px[px.size - 1] = (room - px.sum() + px[px.size - 1]).coerceAtLeast(0)
+    return px
 }
 
 /** A choice that's on or off, lit when on. */

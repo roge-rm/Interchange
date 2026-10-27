@@ -8,8 +8,8 @@ import com.rm.interchange.sim.World
 /**
  * A small picture of a whole map as the game first shows it: a diamond, each
  * pixel a tile or a few, coloured by its ground and lit by its slope from the
- * top left. Clear outside the diamond. For the new game screen's preview and
- * the title screen. At most [most] pixels across.
+ * top left. Clear outside the diamond. For the title screen. At most [most]
+ * pixels across.
  */
 fun mapPicture(world: World, most: Int = 640): ImageBitmap {
     val w = world.width
@@ -28,6 +28,22 @@ fun mapPicture(world: World, most: Int = 640): ImageBitmap {
         if (vx < 0 || vy < 0 || vx >= w || vy >= h) continue
         out[py * pw + px] = colourOf(world, vx, vy)
     }
+    return imageBitmapOf(out, pw, ph)
+}
+
+/**
+ * A whole map seen from above, as the overview map draws it: x to the right, y
+ * down, each pixel a tile or a few. For the new game screen's preview. At most
+ * [most] pixels on its longer side.
+ */
+fun mapPictureFlat(world: World, most: Int = 640): ImageBitmap {
+    val w = world.width
+    val h = world.height
+    val k = maxOf(1, (maxOf(w, h) + most - 1) / most)
+    val pw = maxOf(1, w / k)
+    val ph = maxOf(1, h / k)
+    val out = IntArray(pw * ph)
+    for (py in 0 until ph) for (px in 0 until pw) out[py * pw + px] = colourOf(world, px * k, py * k)
     return imageBitmapOf(out, pw, ph)
 }
 

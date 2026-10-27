@@ -63,9 +63,13 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.ui.unit.sp
 import com.rm.interchange.map.mapPicture
+import com.rm.interchange.map.mapPictureFlat
 import com.rm.interchange.res.*
 import com.rm.interchange.sim.BadPack
 import com.rm.interchange.sim.NewGame
@@ -189,7 +193,7 @@ fun NewGameScreen(packs: List<Pack>, onStart: (NewGame, List<Pack>) -> Unit, onB
     LaunchedEffect(land) {
         // A moment's wait, so sliding through sizes doesn't make a map for every stop.
         delay(150)
-        preview = if (width.toLong() * height > PREVIEW_MOST) null else withContext(Dispatchers.Default) { mapPicture(World(land)) }
+        preview = if (width.toLong() * height > PREVIEW_MOST) null else withContext(Dispatchers.Default) { mapPictureFlat(World(land)) }
     }
     val newSeed = stringResource(Res.string.new_seed)
     val title: @Composable () -> Unit = { Text(stringResource(if (editor) Res.string.new_scenario else Res.string.new_game), color = c.text, fontSize = 24.sp, fontWeight = FontWeight.SemiBold) }
@@ -230,10 +234,11 @@ fun NewGameScreen(packs: List<Pack>, onStart: (NewGame, List<Pack>) -> Unit, onB
     val treeNames = stringArrayResource(Res.array.tree_levels)
     val townNames = stringArrayResource(Res.array.town_levels)
     val lang = languageCode()
-    val options: @Composable (Boolean) -> Unit = { wide ->
+    // The region, size and lie of the land, then the rest.
+    val shape: @Composable (Boolean) -> Unit = { wide ->
         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text(stringResource(Res.string.region), color = c.text, style = KitType.Label)
-            for (row in Region.entries.chunked(if (wide) 6 else 3)) FillChips(row, region, { r -> regionNames.getOrElse(r.ordinal) { r.name } }) { region = it }
+            FillChips(Region.entries, region, { r -> regionNames.getOrElse(r.ordinal) { r.name } }) { region = it }
         }
         SideBySide(wide, {
             StepSlider(stringResource(Res.string.width), NewGame.SIZES.toList(), width, { "$it" }) { width = it }
@@ -241,30 +246,38 @@ fun NewGameScreen(packs: List<Pack>, onStart: (NewGame, List<Pack>) -> Unit, onB
             StepSlider(stringResource(Res.string.height), NewGame.SIZES.toList(), height, { "$it" }) { height = it }
         })
         SideBySide(wide, {
-            StepSlider(stringResource(Res.string.start_year), YEARS, year, { "$it" }) { year = it }
-        }, {
-            StepSlider(stringResource(Res.string.sea), SEAS, sea, { stringResource(Res.string.sea_percent, it) }) { sea = it }
-        })
-        SideBySide(wide, {
             StepSlider(stringResource(Res.string.hills), (0..3).toList(), hills, { hillNames.getOrElse(it) { "$it" } }) { hills = it }
         }, {
             StepSlider(stringResource(Res.string.trees), (0..3).toList(), trees, { treeNames.getOrElse(it) { "$it" } }) { trees = it }
+        })
+    }
+    val play: @Composable (Boolean) -> Unit = { wide ->
+        SideBySide(wide, {
+            StepSlider(stringResource(Res.string.start_year), YEARS, year, { "$it" }) { year = it }
+        }, {
+            StepSlider(stringResource(Res.string.sea), SEAS, sea, { stringResource(Res.string.sea_percent, it) }) { sea = it }
         })
         SideBySide(wide, {
             StepSlider(stringResource(Res.string.towns), (0..3).toList(), towns, { townNames.getOrElse(it) { "$it" } }) { towns = it }
         }, {
             StepSlider(stringResource(Res.string.industries), (0..3).toList(), industries, { townNames.getOrElse(it) { "$it" } }) { industries = it }
         })
-        StepSlider(stringResource(Res.string.rivals), (0..NewGame.MOST_RIVALS).toList(), rivals, { "$it" }) { rivals = it }
         val levels = stringArrayResource(Res.array.rival_levels)
-        if (rivals > 0) StepSlider(stringResource(Res.string.rival_level), (0..2).toList(), rivalLevel, { levels.getOrElse(it) { "" } }) { rivalLevel = it }
-        StepSlider(stringResource(Res.string.day_length), NewGame.DAY_LENGTHS.toList(), dayLength, { stringResource(Res.string.day_length_value, it) }) { dayLength = it }
+        SideBySide(wide, {
+            StepSlider(stringResource(Res.string.rivals), (0..NewGame.MOST_RIVALS).toList(), rivals, { "$it" }) { rivals = it }
+        }, {
+            if (rivals > 0) StepSlider(stringResource(Res.string.rival_level), (0..2).toList(), rivalLevel, { levels.getOrElse(it) { "" } }) { rivalLevel = it }
+        })
         val growthNames = stringArrayResource(Res.array.town_growth_levels)
         val goalNames = stringArrayResource(Res.array.goal_sets)
-        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text(stringResource(Res.string.town_growth), color = c.text, style = KitType.Label)
-            FillChips(com.rm.interchange.sim.TownGrowth.entries, townGrowth, { g -> growthNames.getOrElse(g.ordinal) { g.name } }) { townGrowth = it }
-        }
+        SideBySide(wide, {
+            StepSlider(stringResource(Res.string.day_length), NewGame.DAY_LENGTHS.toList(), dayLength, { stringResource(Res.string.day_length_value, it) }) { dayLength = it }
+        }, {
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(stringResource(Res.string.town_growth), color = c.text, style = KitType.Label)
+                FillChips(com.rm.interchange.sim.TownGrowth.entries, townGrowth, { g -> growthNames.getOrElse(g.ordinal) { g.name } }) { townGrowth = it }
+            }
+        })
         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text(stringResource(Res.string.goals), color = c.text, style = KitType.Label)
             val sets = com.rm.interchange.sim.GoalSet.entries
@@ -272,13 +285,17 @@ fun NewGameScreen(packs: List<Pack>, onStart: (NewGame, List<Pack>) -> Unit, onB
             val rows = if (wide) listOf(sets) else listOf(listOf(sets.first(), sets.last()), sets.subList(1, sets.size - 1))
             for (row in rows) FillChips(row, goals, { g -> goalNames.getOrElse(g.ordinal) { g.name } }) { goals = it }
         }
-        Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            TogglePill(stringResource(Res.string.inflation), inflation, Modifier.weight(1f).fillMaxHeight()) { inflation = it }
-            TogglePill(stringResource(Res.string.weather), weather, Modifier.weight(1f).fillMaxHeight()) { weather = it }
-        }
-        Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            TogglePill(stringResource(Res.string.shared_track), sharing, Modifier.weight(1f).fillMaxHeight()) { sharing = it }
-            TogglePill(stringResource(Res.string.collisions), collisions, Modifier.weight(1f).fillMaxHeight()) { collisions = it }
+        // The four switches, all in a row where wide, else two and two.
+        val toggles = listOf<@Composable (Modifier) -> Unit>(
+            { m -> TogglePill(stringResource(Res.string.inflation), inflation, m) { inflation = it } },
+            { m -> TogglePill(stringResource(Res.string.weather), weather, m) { weather = it } },
+            { m -> TogglePill(stringResource(Res.string.shared_track), sharing, m) { sharing = it } },
+            { m -> TogglePill(stringResource(Res.string.collisions), collisions, m) { collisions = it } },
+        )
+        for (row in toggles.chunked(if (wide) 4 else 2)) {
+            Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                for (t in row) t(Modifier.weight(1f).fillMaxHeight())
+            }
         }
         if (packs.isNotEmpty()) {
             Text(stringResource(Res.string.packs), color = c.text, style = KitType.Label)
@@ -299,7 +316,7 @@ fun NewGameScreen(packs: List<Pack>, onStart: (NewGame, List<Pack>) -> Unit, onB
             }
         }
     }
-    NewGameLayout(map, title, identity, options, footer)
+    NewGameLayout(map, title, identity, shape, play, footer)
 }
 
 /** How wide the choices have to be for two to a row, and the widest they get above the map. */
@@ -311,16 +328,39 @@ private val BAND_LEAST = 150.dp
 private val BAND_MOST = 760.dp
 
 /** The widest the map and the choices together get on a wide screen. */
-private val SPREAD_MOST = 1100.dp
+private val SPREAD_MOST = 1400.dp
 
-/** The preview is twice as wide as it's tall, as the map's diamond is. */
-private const val PREVIEW_RATIO = 2f
+/** The least gap between rows of choices when they're spread over the height. */
+private val SPREAD_GAP = 8.dp
+
+/**
+ * Rows spread evenly over the height, at least [gap] apart. Used in a scrolling column at least as tall as its
+ * view, so they fill it when there's room and scroll at [gap] apart when there isn't.
+ */
+private class SpreadEvenly(private val gap: Dp) : Arrangement.Vertical {
+    override val spacing = gap
+    override fun Density.arrange(totalSize: Int, sizes: IntArray, outPositions: IntArray) {
+        val least = gap.roundToPx()
+        val spare = totalSize - sizes.sum()
+        val between = if (sizes.size > 1) maxOf(least, spare / (sizes.size - 1)) else 0
+        var y = 0
+        for (i in sizes.indices) {
+            outPositions[i] = y
+            y += sizes[i] + between
+        }
+    }
+}
+
+/** About how tall the title and seed are with their gaps, so the picture beside the choices can be square. */
+private val TITLE_AND_SEED = 132.dp
 
 /**
  * The new game screen, laid out for its shape. Wider than it's tall: the
- * picture on the left and the choices beside it. About square: a band across
- * the top with the picture and, beside it, the title and seed, the rest the
- * full width below. Taller than it's wide: the picture above the choices.
+ * title, a square picture and the seed on the left, and the choices beside
+ * it, spread over the height. About square:
+ * a band across the top with the picture and, beside it, the title and
+ * seed, the rest the full width below. Taller than it's wide: the picture
+ * above the choices. [land] is what shapes the map and [play] the rest.
  * The choices scroll if they must, and [footer] stays in view below.
  */
 @Composable
@@ -328,17 +368,22 @@ private fun NewGameLayout(
     map: @Composable (Modifier) -> Unit,
     title: @Composable () -> Unit,
     identity: @Composable () -> Unit,
-    options: @Composable (Boolean) -> Unit,
+    land: @Composable (Boolean) -> Unit,
+    play: @Composable (Boolean) -> Unit,
     footer: @Composable () -> Unit,
 ) {
     val c = LocalColors.current
     @Composable
-    fun ColumnScope.choices(withIdentity: Boolean) {
+    fun ColumnScope.choices(withIdentity: Boolean, spread: Boolean = false) {
         BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
             val wide = maxWidth >= PAIRS_FROM
-            Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Column(
+                Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).heightIn(min = if (spread) maxHeight else 0.dp),
+                verticalArrangement = if (spread) SpreadEvenly(SPREAD_GAP) else Arrangement.spacedBy(12.dp),
+            ) {
                 if (withIdentity) identity()
-                options(wide)
+                land(wide)
+                play(wide)
             }
         }
     }
@@ -351,14 +396,17 @@ private fun NewGameLayout(
                 Modifier.fillMaxHeight().widthIn(max = SPREAD_MOST).fillMaxWidth().align(Alignment.Center),
                 horizontalArrangement = Arrangement.spacedBy(16.dp),
             ) {
-                val across = minOf(w, SPREAD_MOST)
-                val pictureWidth = maxOf(across - PAIRS_FROM - 16.dp, across * 0.4f)
-                Column(Modifier.width(pictureWidth).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(10.dp, Alignment.CenterVertically)) {
+                val across = minOf(w, SPREAD_MOST) - 16.dp
+                // The picture's side is as wide as the picture is tall, so it's about square, leaving the
+                // choices room for two to a row.
+                val left = (h - TITLE_AND_SEED).coerceIn(160.dp, maxOf(160.dp, across - PAIRS_FROM))
+                Column(Modifier.width(left).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     title()
-                    map(Modifier.fillMaxWidth().aspectRatio(PREVIEW_RATIO))
+                    map(Modifier.fillMaxWidth().weight(1f))
+                    identity()
                 }
-                Column(Modifier.weight(1f).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    choices(withIdentity = true)
+                Column(Modifier.weight(1f).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    choices(withIdentity = false, spread = true)
                     footer()
                 }
             }
@@ -366,9 +414,9 @@ private fun NewGameLayout(
                 Modifier.fillMaxHeight().widthIn(max = BAND_MOST).fillMaxWidth().align(Alignment.TopCenter),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                val band = (h * 0.3f).coerceIn(BAND_LEAST, w * 0.25f)
+                val band = (h * 0.32f).coerceIn(BAND_LEAST, maxOf(BAND_LEAST, w * 0.4f))
                 Row(Modifier.fillMaxWidth().height(band), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                    map(Modifier.fillMaxHeight().aspectRatio(PREVIEW_RATIO))
+                    map(Modifier.fillMaxHeight().aspectRatio(1f))
                     Column(Modifier.weight(1f).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterVertically)) {
                         title()
                         identity()
@@ -382,7 +430,7 @@ private fun NewGameLayout(
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 title()
-                map(Modifier.fillMaxWidth().aspectRatio(PREVIEW_RATIO))
+                Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) { map(Modifier.size(minOf(w, CHOICES_MOST, h * 0.32f))) }
                 choices(withIdentity = true)
                 footer()
             }
