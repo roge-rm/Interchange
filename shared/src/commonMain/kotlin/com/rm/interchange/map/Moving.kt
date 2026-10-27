@@ -405,18 +405,19 @@ private fun fenceAlongX(world: World, x: Int, y: Int): Boolean {
     return false
 }
 
-/** A fence item: two rails between its ends, slats along them, a step high. */
+/** A fence item: two rails between its ends, slats along them, 0.6 step high (about 2 m). */
 private fun DrawScope.drawFence(it: FloatArray) {
     val step = it[7]
+    val tall = step * 0.6f
     val wood = Color(0xff6a5038)
     val n = 9
     for (k in 0..n) {
         val t = k / n.toFloat()
         val x = it[1] + (it[5] - it[1]) * t
         val y = it[2] + (it[6] - it[2]) * t
-        drawLine(wood, Offset(x, y), Offset(x, y - step * 1.1f), step / 6f)
+        drawLine(wood, Offset(x, y), Offset(x, y - tall), step / 6f)
     }
-    for (f in floatArrayOf(0.35f, 0.85f)) drawLine(Color(0xff4a3828), Offset(it[1], it[2] - step * f), Offset(it[5], it[6] - step * f), step / 10f)
+    for (f in floatArrayOf(0.3f, 0.8f)) drawLine(Color(0xff4a3828), Offset(it[1], it[2] - tall * f), Offset(it[5], it[6] - tall * f), step / 10f)
 }
 
 /** Flames licking up from a burning tile, flickering, and smoke rising off it; [seed] keeps tiles from flickering together. */

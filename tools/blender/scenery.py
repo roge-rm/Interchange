@@ -1573,13 +1573,14 @@ def decor(m, kind, look):
             lumpy(m, obj, r * 0.3, r * 0.8, look * 7 + k)
     elif kind == "shrub":
         green = leafy("shrub leaves", "#2e4a20", "#5a7a36")
-        for k in range(rng.randint(6, 9)):
-            blob(m, rng.uniform(-0.08, 0.08), rng.uniform(-0.08, 0.08), rng.uniform(0.35, 0.9), rng.uniform(0.055, 0.085), green, look * 9 + k)
+        # Smaller blobs than a tree's, more of them so it reads as one low mound about 1.5 m tall.
+        for k in range(rng.randint(10, 14)):
+            blob(m, rng.uniform(-0.085, 0.085), rng.uniform(-0.085, 0.085), rng.uniform(0.2, 0.55), rng.uniform(0.04, 0.06), green, look * 9 + k)
     else:
         blades = leafy("tall grass", "#4a6a2a", "#a0a456")
         for k in range(rng.randint(30, 45)):
             x, y = rng.uniform(-0.09, 0.09), rng.uniform(-0.09, 0.09)
-            m.upright(x, y, 0, rng.uniform(1.4, 2.6), 0.009, 0.0, blades, segments=4)
+            m.upright(x, y, 0, rng.uniform(0.35, 0.65), 0.009, 0.0, blades, segments=4)
 
 
 def road_stop(m, along_u):
@@ -1600,15 +1601,15 @@ def road_stop(m, along_u):
         x = side * 0.42
         y0, y1 = (-0.3, 0.05) if side < 0 else (-0.05, 0.3)
         b(x - 0.035, x + 0.035, y0, y1, 0.0, 0.05, frame)
-        b(x + side * 0.03 - 0.004, x + side * 0.03 + 0.004, y0, y1, 0.05, 1.2, glass)
+        b(x + side * 0.03 - 0.004, x + side * 0.03 + 0.004, y0, y1, 0.05, 1.05, glass)
         for y in (y0, y1):
-            b(x - 0.035, x + 0.035, y - 0.004, y + 0.004, 0.05, 1.2, glass)
-            b(x + side * 0.03 - 0.006, x + side * 0.03 + 0.006, y - 0.006, y + 0.006, 0.0, 1.25, frame)
-        b(x - 0.05, x + 0.05, y0 - 0.01, y1 + 0.01, 1.2, 1.28, roof, 0.003)
-        b(x + side * 0.005 - 0.015, x + side * 0.005 + 0.015, y0 + 0.04, y1 - 0.04, 0.3, 0.36, bench)
+            b(x - 0.035, x + 0.035, y - 0.004, y + 0.004, 0.05, 1.05, glass)
+            b(x + side * 0.03 - 0.006, x + side * 0.03 + 0.006, y - 0.006, y + 0.006, 0.0, 1.09, frame)
+        b(x - 0.05, x + 0.05, y0 - 0.01, y1 + 0.01, 1.05, 1.12, roof, 0.003)
+        b(x + side * 0.005 - 0.015, x + side * 0.005 + 0.015, y0 + 0.04, y1 - 0.04, 0.17, 0.21, bench)
         sy = y1 + 0.08 if side < 0 else y0 - 0.08
-        b(x - 0.005, x + 0.005, sy - 0.005, sy + 0.005, 0.0, 1.5, frame)
-        b(x - 0.004, x + 0.004, sy - 0.03, sy + 0.03, 1.3, 1.55, sign)
+        b(x - 0.005, x + 0.005, sy - 0.005, sy + 0.005, 0.0, 1.3, frame)
+        b(x - 0.004, x + 0.004, sy - 0.03, sy + 0.03, 1.12, 1.3, sign)
 
 
 def _arch(x0, x1, eave, top, n=10):

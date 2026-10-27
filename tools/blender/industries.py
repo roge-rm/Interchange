@@ -2673,8 +2673,10 @@ def pumpjack(m):
 def oil_tank(m):
     ground(m, "#6a5e4a", "lease dirt")
     steel = material("tank white", "#d8d4cc", metal=0.3, rough=0.5)
-    tank(m, -0.12, -0.08, 0.2, 1.6, steel, material("tank roof", "#9a9690", metal=0.4, rough=0.5))
-    tank(m, 0.26, 0.26, 0.12, 1.1, steel)
+    # 400 bbl tanks, about 6 m tall and 3.6 m across: 2.25 steps of shell under a 0.25 cone.
+    roof = material("tank roof", "#9a9690", metal=0.4, rough=0.5)
+    tank(m, -0.13, -0.1, 0.13, 2.25, steel, roof)
+    tank(m, 0.2, 0.2, 0.13, 2.25, steel, roof)
     # A berm round them.
     berm = material("berm", "#7a6a50", rough=1.0)
     for xa, xb, ya, yb in ((-0.48, 0.48, -0.48, -0.42), (-0.48, 0.48, 0.42, 0.48), (-0.48, -0.42, -0.42, 0.42), (0.42, 0.48, -0.42, 0.42)):
