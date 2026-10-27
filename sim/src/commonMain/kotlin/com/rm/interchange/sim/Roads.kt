@@ -354,15 +354,15 @@ internal fun World.saltDepot(company: Company, c: Command.SaltDepot) {
         val ny = c.y + Track.dy(e)
         inside(nx, ny) && roadOwner[index(nx, ny)].toInt() == company.id
     }
-    if (!byRoad || company.money < price(SALT_DEPOT_COST)) return
-    spend(company, Books.CONSTRUCTION, price(SALT_DEPOT_COST) + fellTrees(company, i))
+    if (!byRoad || company.money < price(saltDepotCost())) return
+    spend(company, Books.CONSTRUCTION, price(saltDepotCost()) + fellTrees(company, i))
     saltDepots += i
     // Whose it is, kept where the road owner would be.
     roadOwner[i] = company.id.toByte()
     touched(c.x, c.y)
 }
 
-/** Whether road tile [i] is within reach of a sand depot of the road's owner, so it gives grip: sand before [SALT_FROM]. */
+/** Whether road tile [i] is within reach of a sand depot of the road's owner, so it gives grip on ice and packed snow: sand before [SALT_FROM]. */
 fun World.sanded(i: Int): Boolean {
     if (saltDepots.isEmpty() || Calendar.year(startYear, day) >= SALT_FROM) return false
     val owner = roadOwner[i].toInt()
@@ -379,5 +379,26 @@ const val SALT_FROM = 1950
 const val SALT_REACH = 8
 const val SALT_COST = 50L
 const val SAND_COST = 20L
-/** A salt depot, in dollars before inflation. */
+/**
+ * A salt depot, a sand depot, and a sand depot from [Tires.WINTER_FROM] to [SALT_FROM] (cheaper, as winter tires
+ * leave sand less to do), in dollars before inflation.
+ */
 const val SALT_DEPOT_COST = 2_500L
+const val SAND_DEPOT_COST = 1_200L
+const val LATE_SAND_DEPOT_COST = 400L
+
+/** What a salt or sand depot costs in [year], in dollars before inflation. */
+fun saltDepotCost(year: Int) = when {
+    year >= SALT_FROM -> SALT_DEPOT_COST
+    year >= Tires.WINTER_FROM -> LATE_SAND_DEPOT_COST
+    else -> SAND_DEPOT_COST
+}
+
+/** What a salt or sand depot costs this year, in dollars before inflation. */
+fun World.saltDepotCost() = saltDepotCost(Calendar.year(startYear, day))
+
+/** The price a depot sells back from, before halving: the lower of this year's and last year's, so one bought cheap before a price change can't sell dear after it. */
+internal fun World.saltDepotSale(): Long {
+    val year = Calendar.year(startYear, day)
+    return minOf(saltDepotCost(year), saltDepotCost(year - 1))
+}

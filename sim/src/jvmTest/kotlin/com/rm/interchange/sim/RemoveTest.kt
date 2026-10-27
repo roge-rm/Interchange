@@ -73,12 +73,30 @@ class RemoveTest {
         assertTrue(w.saltDepots.contains(i))
         val before = w.companies[0].money
         val (cost, n) = w.removeCost(0, Command.RemoveArea(0, 11, 11, 11, 11))
-        assertEquals(-(w.price(SALT_DEPOT_COST) / 2), cost)
+        assertEquals(-(w.price(w.saltDepotSale()) / 2), cost)
         assertEquals(1, n)
         w.apply(Command.Remove(0, 11, 11))
         assertTrue(!w.saltDepots.contains(i))
-        assertEquals(before + w.price(SALT_DEPOT_COST) / 2, w.companies[0].money)
+        assertEquals(before + w.price(w.saltDepotSale()) / 2, w.companies[0].money)
         assertTrue(w.road[w.index(11, 10)].toInt() != 0)
+    }
+
+    @Test
+    fun aSandDepotBoughtIn1949SellsForNoMoreThanHalfItsPriceIn1950() {
+        val w = World(64, 64, 1, startYear = 1949)
+        for (i in w.corners.indices) w.corners[i] = 3
+        w.trees.fill(0)
+        w.companies[0].money = 1_000_000
+        w.apply(Command.Road(0, 10, 10, 12, 10, Surface.DIRT, remove = false))
+        val paid = w.companies[0].money
+        w.apply(Command.SaltDepot(0, 11, 11))
+        assertEquals(w.price(LATE_SAND_DEPOT_COST), paid - w.companies[0].money)
+        w.tick = Calendar.TICKS_PER_DAY * 366L
+        assertEquals(1950, Calendar.year(w.startYear, w.day))
+        val before = w.companies[0].money
+        w.apply(Command.Remove(0, 11, 11))
+        assertTrue(!w.saltDepots.contains(w.index(11, 11)))
+        assertTrue(w.companies[0].money - before in 1..w.price(LATE_SAND_DEPOT_COST) / 2)
     }
 
     @Test

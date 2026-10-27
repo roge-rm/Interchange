@@ -571,7 +571,8 @@ internal fun World.roadLimit(v: RoadVehicle, tile: Int): Int {
     var kmh = minOf(v.info.speed, Surface.SPEED[surfaceAt(tile)])
     if (mud(tile) > 60 && surfaceAt(tile) <= Surface.GRAVEL) kmh = minOf(kmh, MUD_KMH)
     val snow = weather.snow[tile].toInt() and 255
-    if (slippery(tile) || snow >= 5) kmh = minOf(kmh, when (v.tires) { Tires.CHAINS -> 40; Tires.WINTER -> 55; else -> 35 })
+    // Sand gives grip: a sanded road has no tire cap for ice or packed snow, but keeps it in deep snow.
+    if (slippery(tile) || (snow >= 5 && (!sanded(tile) || snow >= DEEP_ROAD_SNOW))) kmh = minOf(kmh, when (v.tires) { Tires.CHAINS -> 40; Tires.WINTER -> 55; else -> 35 })
     if (snow >= DEEP_ROAD_SNOW && v.info.plow == Plows.NONE && v.info.traction != Traction.HORSE) kmh = minOf(kmh, 10)
     val c = condition[tile].toInt() and 255
     if (track[tile].toInt() == 0 && c < POTHOLES) kmh = minOf(kmh, POTHOLE_KMH)

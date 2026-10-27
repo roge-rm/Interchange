@@ -79,7 +79,7 @@ private fun World.roadClearable(company: Company, i: Int) = road[i].toInt() != 0
 private fun World.clearSalt(company: Company, x: Int, y: Int) {
     val i = index(x, y)
     if (!saltDepots.contains(i) || roadOwner[i].toInt() != company.id) return
-    scrap(company, SALT_DEPOT_COST)
+    scrap(company, saltDepotSale())
     saltDepots.remove(i)
     roadOwner[i] = -1
     touched(x, y)
@@ -218,7 +218,7 @@ private fun World.areaNet(company: Int, x0: Int, y0: Int, x1: Int, y1: Int, with
             any = true
         }
         if (saltDepots.contains(i) && roadOwner[i].toInt() == company) {
-            here -= scrapBack(SALT_DEPOT_COST)
+            here -= scrapBack(saltDepotSale())
             any = true
         }
         if (withTrees && Trees.count(trees[i].toInt()) > 0) {

@@ -21,7 +21,8 @@ import kotlin.test.Test
  *
  * Slow, so it runs only when asked: `./gradlew :sim:jvmTest --tests '*WeatherRun*' -Pinterchange.weatherYears=4`,
  * and optionally interchange.weatherEras, weatherLengths, weatherRegions, weatherSeeds and weatherModes (route modes
- * starting with these, as train, bus, ship) as comma lists.
+ * starting with these, as train, bus, ship, or busy for the busy road only) as comma lists. The busy road ([busyRun]),
+ * several trucks and buses on one road with and without sand, takes weatherBusyEras, weatherBusyRegions and weatherBusySeeds.
  */
 class WeatherRun {
     class Route(val mode: String, val key: String, val year: Int, val tiles: Int, val cargo: Int, val engine: Engine, val wagon: Engine?, val wagons: Int, val bad: Boolean = false) {
@@ -234,6 +235,107 @@ class WeatherRun {
         return Result(profit, income, upkeep, dayLength * years, years, shut, slow, closed, kinked, deep, capped, iced, breakdowns, kinks, veryWorn)
     }
 
+
+    /** Profit, income less running and upkeep, sand's upkeep and work years of a busy road run. */
+    class Busy(val profit: Long, val upkeep: Long, val workYears: Int)
+
+    /**
+     * A busy road in [year]: [BUSY_TRUCKS] trucks and [BUSY_BUSES] buses, the best on sale, full, on one road of
+     * [BUSY_TILES] tiles, with sand (or salt) depots placed as a player would to cover it when [sand].
+     */
+    private fun busyRun(year: Int, region: Region?, sand: Boolean, dayLength: Int, years: Int, seed: Long): Busy? {
+        val r = Roster.BASE
+        val speedCap = { e: Engine -> e.capacity.toLong() * e.speed }
+        val roads = b.onSale(r, year, VehicleKind.ROAD).filter { !it.tram && it.capacity > 0 && it.cargoes.isNotEmpty() }
+        val bus = roads.filter { Cargo.PASSENGERS in it.cargoes }.maxByOrNull(speedCap) ?: return null
+        val truck = roads.filter { Cargo.PASSENGERS !in it.cargoes && !it.cargoes.contentEquals(intArrayOf(Cargo.MAIL)) }.maxByOrNull(speedCap) ?: return null
+        val freight = b.freightCargo(truck)
+        val w = World(NewGame(128, 64, seed, year, region ?: Region.MIXED, towns = 0, industries = 0, weather = region != null, inflation = false, dayLength = dayLength))
+        for (i in w.corners.indices) w.corners[i] = 3
+        w.trees.fill(0)
+        val c = w.companies[0]
+        c.money = 1_000_000_000L
+        val x0 = 10
+        val y = 30
+        val x1 = x0 + BUSY_TILES - 1
+        w.apply(Command.Road(0, x0, y, x1, y, Surface.PAVED.coerceAtMost(Surface.entries(year).last()), remove = false))
+        w.apply(Command.Road(0, x0, y, x0, y + 2, Surface.DIRT, remove = false))
+        w.apply(Command.Garage(0, x0, y + 3, Track.YM))
+        // Two stops at each end, joined into one station.
+        for (x in listOf(x0 + 2, x0 + 3, x1 - 3, x1 - 2)) w.apply(Command.RoadStop(0, x, y))
+        if (w.stations.count { it != null } != 2) return null
+        if (sand) for (x in busyDepots(x0, x1)) w.apply(Command.SaltDepot(0, x, y - 1))
+        if (sand && w.saltDepots.size != busyDepots(x0, x1).size) return null
+        repeat(BUSY_TRUCKS) { w.apply(Command.BuyRoadVehicle(0, 0, truck.id, freight)) }
+        repeat(BUSY_BUSES) { w.apply(Command.BuyRoadVehicle(0, 0, bus.id, Cargo.PASSENGERS)) }
+        if (w.roadVehicles.count { it != null } != BUSY_TRUCKS + BUSY_BUSES) return null
+        for (v in w.roadVehicles) if (v != null) w.apply(Command.RoadOrder(0, v.id, Command.TrainOrder.ORDERS, intArrayOf(0, 1)))
+        val total = Calendar.TICKS_PER_DAY * 365L * dayLength * years
+        val sums = LongArray(Books.COUNT)
+        var calendar = Calendar.year(w.startYear, w.day)
+        // One vehicle out of the garage every few ticks, trucks and buses in turn.
+        val order = w.roadVehicles.filterNotNull().let { all -> all.filter { it.model == truck.id }.zip(all.filter { it.model == bus.id }).flatMap { listOf(it.first, it.second) } }
+        var next = 0
+        while (w.tick < total) {
+            if (next < order.size && w.tick % 200 == 0L) w.apply(Command.RoadOrder(0, order[next++].id, Command.TrainOrder.START_STOP))
+            if (w.tick % Calendar.TICKS_PER_DAY == 0L) for (s in w.stations) {
+                if (s == null) continue
+                if (s.id == 0) {
+                    s.cargo[freight].clear()
+                    w.addWaiting(s, freight, 1, s.id, 1000, w.tick)
+                }
+                s.cargo[Cargo.PASSENGERS].clear()
+                w.addWaiting(s, Cargo.PASSENGERS, if (s.id == 0) 1 else 0, s.id, 1000, w.tick)
+            }
+            w.step()
+            val now = Calendar.year(w.startYear, w.day)
+            if (now != calendar) {
+                for (k in sums.indices) sums[k] += c.lastYear[k]
+                calendar = now
+            }
+        }
+        for (k in sums.indices) sums[k] += c.thisYear[k]
+        val upkeep = -sums[Books.UPKEEP]
+        return Busy(sums[Books.INCOME] + sums[Books.RUNNING] - upkeep, upkeep, dayLength * years)
+    }
+
+    /** Where along a road from [x0] to [x1] a player puts sand depots to cover it: one every reach's width, the last at the end. */
+    private fun busyDepots(x0: Int, x1: Int) = (x0 + SALT_REACH..x1 + SALT_REACH step SALT_REACH * 2 + 1).map { it.coerceAtMost(x1) }
+
+    /** The busy road in each region, with and without sand, as a markdown section. */
+    private fun busyTable(years: Int, lengths: List<Int>): String {
+        val regions = System.getProperty("interchange.weatherBusyRegions")?.split(",")?.map { Region.valueOf(it.trim()) } ?: Region.entries
+        val seeds = (System.getProperty("interchange.weatherBusySeeds") ?: "1,2,3,4,5,6").split(",").map { it.trim().toLong() }
+        val eras = (System.getProperty("interchange.weatherBusyEras") ?: "1930,1940").split(",").map { it.trim().toInt() }
+        class Job(val year: Int, val region: Region?, val sand: Boolean, val length: Int, val seed: Long)
+        val jobs = eras.flatMap { e -> (regions + null).flatMap { r -> (if (r == null) listOf(false) else listOf(false, true)).flatMap { s -> lengths.flatMap { l -> seeds.map { Job(e, r, s, l, it) } } } } }
+            .sortedByDescending { it.length }
+        val pool = Executors.newFixedThreadPool(10)
+        val done = pool.invokeAll(jobs.map { j -> Callable { j to busyRun(j.year, j.region, j.sand, j.length, years, j.seed) } }).map { it.get() }
+        pool.shutdown()
+        val depots = busyDepots(10, 10 + BUSY_TILES - 1).size
+        val out = StringBuilder("## Busy road\n\n")
+        out.append("$BUSY_TRUCKS trucks and $BUSY_BUSES buses, the best on sale, full, on one road of $BUSY_TILES tiles, $years calendar years on seeds ${seeds.joinToString()}, ")
+        out.append("with no depot and with $depots sand depots covering the road. Company road profit a work year is income less running and upkeep; ")
+        out.append("no weather is the road with the weather off; sand is the extra upkeep a work year; the depots are their price over $DEPOT_LIFE work years. Gain is sand's profit less the depots, less no depot's profit.\n\n")
+        out.append("| year | day length | region | no weather | no depot | sand depot | sand | depots | gain |\n|").append("---|".repeat(9)).append("\n")
+        for (e in eras) for (l in lengths) for (reg in regions) {
+            fun got(sand: Boolean, region: Region? = reg) = done.filter { (j, x) -> j.year == e && j.length == l && j.region == region && j.sand == sand && x != null }.map { it.second!! }
+            val clear = got(false, null)
+            val none = got(false)
+            val sand = got(true)
+            if (none.isEmpty() || sand.isEmpty()) continue
+            val wy = none.sumOf { it.workYears }
+            val a = none.sumOf { it.profit } / wy
+            val bProfit = sand.sumOf { it.profit } / wy
+            val sandCost = (sand.sumOf { it.upkeep } - none.sumOf { it.upkeep }) / wy
+            val depotCost = depots * saltDepotCost(e) / DEPOT_LIFE
+            val ideal = if (clear.isEmpty()) "-" else "${clear.sumOf { it.profit } / clear.sumOf { it.workYears }}"
+            out.append("| $e | $l | ${reg.name.lowercase()} | $ideal | $a | $bProfit | $sandCost | $depotCost | ${bProfit - depotCost - a} |\n")
+        }
+        return out.append("\n").toString()
+    }
+
     @Test
     fun table() {
         val years = (System.getProperty("interchange.weatherYears") ?: return).toInt()
@@ -316,6 +418,7 @@ class WeatherRun {
             }
             out.append("\n")
         }
+        if (modes == null || "busy" in modes) out.append(busyTable(years, lengths))
         val dir = File("build/balance").apply { mkdirs() }
         File(dir, "weather.md").writeText(out.toString())
     }
@@ -323,5 +426,10 @@ class WeatherRun {
     companion object {
         /** Extra trains a work day over each tile of a busy line. */
         const val BUSY = 8
+        /** The busy road: trucks, buses, its length in tiles, and the work years a sand depot's price is spread over. */
+        const val BUSY_TRUCKS = 4
+        const val BUSY_BUSES = 4
+        const val BUSY_TILES = 40
+        const val DEPOT_LIFE = 20
     }
 }

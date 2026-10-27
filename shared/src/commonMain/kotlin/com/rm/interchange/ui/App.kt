@@ -121,7 +121,7 @@ import com.rm.interchange.sim.SIGNAL_SPACING_MIN
 import com.rm.interchange.sim.Signals
 import com.rm.interchange.sim.signalRunCost
 import com.rm.interchange.sim.Surface
-import com.rm.interchange.sim.SALT_DEPOT_COST
+import com.rm.interchange.sim.saltDepotCost
 import com.rm.interchange.sim.Airports
 import com.rm.interchange.sim.Depots
 import com.rm.interchange.sim.VehicleView
@@ -1571,7 +1571,7 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
                     Tool.Road -> stringResource(Res.string.cost_tile, money(world.price(Surface.COST[roadSurface])))
                     Tool.RoadStop -> money(world.price(Prices.ROAD_STOP))
                     Tool.Garage -> money(world.price(Prices.DEPOT))
-                    Tool.SaltDepot -> money(world.price(SALT_DEPOT_COST))
+                    Tool.SaltDepot -> money(world.price(world.saltDepotCost()))
                     Tool.Canal -> if (removing) stringResource(Res.string.cost_tile, money(world.price(Prices.CLEAR))) else stringResource(Res.string.cost_tile, money(world.price(CANAL_COST)))
                     Tool.Lock -> money(world.price(LOCK_DOLLARS))
                     Tool.Dock -> money(world.price(DOCK_COST))
