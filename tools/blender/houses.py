@@ -826,24 +826,27 @@ def church(m):
     # The tower: clapboard to a cornice, the belfry with louvred openings, a second cornice and the spire.
     tx0, tx1, ty0, ty1 = -0.06, 0.06, y1 - 0.02, y1 + 0.1
     tc = (ty0 + ty1) / 2
-    m.box(tx0, tx1, ty0, ty1, 0, 3.7, wood, 0.003)
+    tt = 4.9
+    m.box(tx0, tx1, ty0, ty1, 0, tt, wood, 0.003)
     foundation(m, tx0, tx1, ty0, ty1, base, stone)
-    lap_siding(m, tx0, tx1, ty0, ty1, base + 0.05, 3.6, lap)
-    corner_boards(m, tx0, tx1, ty0, ty1, base, 3.7, trim, w=0.012)
-    m.box(tx0 - 0.012, tx1 + 0.012, ty0 - 0.012, ty1 + 0.012, 3.7, 3.82, trim)
+    lap_siding(m, tx0, tx1, ty0, ty1, base + 0.05, tt - 0.1, lap)
+    corner_boards(m, tx0, tx1, ty0, ty1, base, tt, trim, w=0.012)
+    m.box(tx0 - 0.012, tx1 + 0.012, ty0 - 0.012, ty1 + 0.012, tt, tt + 0.12, trim)
     bx0, bx1, by0, by1 = tx0 + 0.006, tx1 - 0.006, ty0 + 0.006, ty1 - 0.006
-    m.box(bx0, bx1, by0, by1, 3.82, 4.62, wood, 0.002)
-    corner_boards(m, bx0, bx1, by0, by1, 3.82, 4.62, trim, w=0.012)
+    bt = tt + 0.92
+    m.box(bx0, bx1, by0, by1, tt + 0.12, bt, wood, 0.002)
+    corner_boards(m, bx0, bx1, by0, by1, tt + 0.12, bt, trim, w=0.012)
     for face, at, d, c in (("y", by1, 1, 0.0), ("y", by0, -1, 0.0), ("x", bx1, 1, tc), ("x", bx0, -1, tc)):
-        louvres(m, face, at, d, c, 3.95, 4.3, 0.05, trim, trim, point=4.5)
-    m.box(bx0 - 0.014, bx1 + 0.014, by0 - 0.014, by1 + 0.014, 4.62, 4.72, trim)
-    m.box(bx0 - 0.02, bx1 + 0.02, by0 - 0.02, by1 + 0.02, 4.72, 4.8, trim)
+        louvres(m, face, at, d, c, tt + 0.25, tt + 0.6, 0.05, trim, trim, point=tt + 0.8)
+    m.box(bx0 - 0.014, bx1 + 0.014, by0 - 0.014, by1 + 0.014, bt, bt + 0.1, trim)
+    m.box(bx0 - 0.02, bx1 + 0.02, by0 - 0.02, by1 + 0.02, bt + 0.1, bt + 0.18, trim)
     for x in (bx0 - 0.01, bx1 + 0.01):
         for y in (by0 - 0.01, by1 + 0.01):
-            spire(m, x, y, 4.8, 5.25, 0.008, trim, sides=4)
-    spire(m, 0.0, tc, 4.8, 7.45, 0.048, roof)
-    finial(m, 0.0, tc, 7.4, 0.3, material("gilt finial", "#c8a84a", metal=0.7, rough=0.35))
+            spire(m, x, y, bt + 0.18, bt + 0.63, 0.008, trim, sides=4)
+    spire(m, 0.0, tc, bt + 0.18, 10.15, 0.048, roof)
+    finial(m, 0.0, tc, 10.1, 0.3, material("gilt finial", "#c8a84a", metal=0.7, rough=0.35))
     pointed_pane(m, "y", ty1, 1, 0.0, 2.1, 2.9, 3.15, 0.04, glass_c, trim, trim)
+    pointed_pane(m, "y", ty1, 1, 0.0, 3.6, 4.1, 4.3, 0.03, glass_c, trim, trim)
     door(m, 0.0, ty1, material("church doors", "#5a3a26", rough=0.6), trim, w=0.055, h=1.0, z0=base)
     m.box(-0.002, 0.002, ty1 + 0.009, ty1 + 0.011, base, base + 1.0, material("door split", "#3a2618", rough=0.7))
     m.wedge([(-0.04, ty1, 1.22), (0.04, ty1, 1.22), (0.0, ty1, 1.42)], [(-0.04, ty1 + 0.012, 1.22), (0.04, ty1 + 0.012, 1.22), (0.0, ty1 + 0.012, 1.42)], trim)
@@ -909,24 +912,27 @@ def stone_church(m):
     # The corner tower: buttressed at its corners, a louvred belfry, a parapet with pinnacles and a tin spire.
     tx0, tx1, ty0, ty1 = 0.08, 0.22, 0.04, 0.18
     tcx, tcy = (tx0 + tx1) / 2, (ty0 + ty1) / 2
-    m.box(tx0, tx1, ty0, ty1, 0, 4.7, rubble, 0.003)
+    tt = 5.9
+    m.box(tx0, tx1, ty0, ty1, 0, tt, rubble, 0.003)
     foundation(m, tx0, tx1, ty0, ty1, 0.2, dressed, out=0.006)
     for face, at, d, a0, a1 in (("y", ty1, 1, tx0, tx1), ("x", tx1, 1, ty0, ty1)):
         for a in (a0 + 0.01, a1 - 0.01):
-            buttress(m, face, at, d, a, 0.018, 0.028, 3.4, dressed)
-    for z in (2.3, 3.55):
+            buttress(m, face, at, d, a, 0.018, 0.028, 4.5, dressed)
+    for z in (2.3, 3.55, 4.75):
         m.box(tx0 - 0.006, tx1 + 0.006, ty0 - 0.006, ty1 + 0.006, z, z + 0.06, dressed)
     pointed_pane(m, "y", ty1, 1, tcx, 1.0, 1.9, 2.1, 0.03, glass_c, frame, dressed)
     pointed_pane(m, "x", tx1, 1, tcy, 1.0, 1.9, 2.1, 0.03, glass_c, frame, dressed)
+    pointed_pane(m, "y", ty1, 1, tcx, 3.85, 4.4, 4.6, 0.024, glass_c, frame, dressed)
+    pointed_pane(m, "x", tx1, 1, tcy, 3.85, 4.4, 4.6, 0.024, glass_c, frame, dressed)
     for face, at, d, c in (("y", ty1, 1, tcx), ("y", ty0, -1, tcx), ("x", tx1, 1, tcy), ("x", tx0, -1, tcy)):
-        louvres(m, face, at, d, c, 3.75, 4.25, 0.05, dressed, frame, point=4.5)
-    m.box(tx0 - 0.01, tx1 + 0.01, ty0 - 0.01, ty1 + 0.01, 4.7, 4.82, dressed)
+        louvres(m, face, at, d, c, tt - 0.95, tt - 0.45, 0.05, dressed, frame, point=tt - 0.2)
+    m.box(tx0 - 0.01, tx1 + 0.01, ty0 - 0.01, ty1 + 0.01, tt, tt + 0.12, dressed)
     for x in (tx0 - 0.002, tx1 + 0.002):
         for y in (ty0 - 0.002, ty1 + 0.002):
-            m.box(x - 0.01, x + 0.01, y - 0.01, y + 0.01, 4.82, 5.0, dressed)
-            spire(m, x, y, 5.0, 5.55, 0.01, dressed, sides=4)
-    spire(m, tcx, tcy, 4.82, 7.4, 0.06, tin)
-    finial(m, tcx, tcy, 7.35, 0.3, material("gilt finial", "#c8a84a", metal=0.7, rough=0.35))
+            m.box(x - 0.01, x + 0.01, y - 0.01, y + 0.01, tt + 0.12, tt + 0.3, dressed)
+            spire(m, x, y, tt + 0.3, tt + 0.85, 0.01, dressed, sides=4)
+    spire(m, tcx, tcy, tt + 0.12, 10.15, 0.06, tin)
+    finial(m, tcx, tcy, 10.1, 0.3, material("gilt finial", "#c8a84a", metal=0.7, rough=0.35))
     # The chancel and its apse: lower and narrower, a hip of tin over the half octagon.
     cx0, cx1, cy0 = -0.09, 0.05, y0 - 0.05
     m.box(cx0, cx1, cy0, y0 + 0.01, 0, 1.9, rubble, 0.003)
@@ -1713,7 +1719,7 @@ def apartment_tower(m):
     panel = material("balcony fronts", "#dcd6c8", rough=0.8)
     alu = material("lobby frames", "#9a9ea2", metal=0.6, rough=0.4)
     x0, x1, y0, y1 = -0.2, 0.2, -0.22, 0.2
-    storeys = 9
+    storeys = 13
     top = storeys * STOREY + 0.2
     m.box(x0, x1, y0, y1, 0, top, concrete, 0.003)
     windows(m, x0, x1, y0, y1, 0.1, storeys, 4, 4, glass(), concrete, skip=((0, 1), (0, 2)))

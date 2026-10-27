@@ -4240,11 +4240,11 @@ def superstack(m, brick_stacks=False):
     if not brick_stacks:
         smelter_flue(m, 0.08, brick, trim)
         concrete = material("superstack", "#bcb6aa", rough=0.9)
-        m.lathe(0, 0, 0, [(0.16, 0), (0.13, 3.0), (0.09, 9.0), (0.07, 14.0)], concrete, segments=28)
-        for z in (13.0, 13.4):
-            m.upright(0, 0, z, z + 0.2, 0.08, 0.08, material("stack red band", "#a83a2a", rough=0.8), segments=28)
-        m.upright(0, 0, 13.85, 14.0, 0.074, 0.074, material("stack cap", "#2e2c2a", metal=0.4, rough=0.6), segments=28)
-        m.box(-0.17, -0.12, -0.03, 0.03, 0, 0.7, material("stack door", "#3a3634", metal=0.4, rough=0.6))
+        m.lathe(0, 0, 0, [(0.18, 0), (0.145, 3.8), (0.1, 11.5), (0.075, 18.0)], concrete, segments=28)
+        for z in (16.9, 17.35):
+            m.upright(0, 0, z, z + 0.25, 0.085, 0.085, material("stack red band", "#a83a2a", rough=0.8), segments=28)
+        m.upright(0, 0, 17.82, 18.0, 0.079, 0.079, material("stack cap", "#2e2c2a", metal=0.4, rough=0.6), segments=28)
+        m.box(-0.19, -0.14, -0.03, 0.03, 0, 0.7, material("stack door", "#3a3634", metal=0.4, rough=0.6))
         return
     # The flue turns along x into a header, the three stacks standing on brick bases off its -y side.
     smelter_flue(m, 0.1, brick, trim)
