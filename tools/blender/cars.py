@@ -904,3 +904,45 @@ def reefer_mech(m, L):
         # The fuel tank under the frame near the unit.
         m.box(min(side * 0.03, side * 0.095), max(side * 0.03, side * 0.095), unit[0] - 0.09, unit[0] - 0.01, 0.3, 0.46, c["iron"], bevel=0.006)
     _ladders(m, a0, a1, top, c["iron"])
+
+
+def alto_coach(m, L):
+    """A single-deck trailer for the Alto power car: its rounded body and green with the pale sill line, a long row
+    of windows, a plug door near each end and dark diaphragms where the cars meet."""
+    import diesel
+    c = diesel.livery("silver")
+    mats = diesel.alto_mats()
+    a0, a1 = -L / 2 + 0.008, L / 2 - 0.008
+    z0, z1, half = diesel.ALTO_FLOOR, diesel.ALTO_TOP, diesel.ALTO_HALF
+    secs = [(a0, diesel.alto_ring(half * 0.92, z0 + 0.03, z1 - 0.05)), (a0 + 0.008, diesel.alto_ring(half, z0, z1)),
+            (a1 - 0.008, diesel.alto_ring(half, z0, z1)), (a1, diesel.alto_ring(half * 0.92, z0 + 0.03, z1 - 0.05))]
+    body = m.loft(secs, {"green": mats["green"]}, sharp=50)
+
+    def colour(y, x, z):
+        up = (z - z0) / (z1 - z0)
+        if up < 0.1:
+            return "skirt"
+        if 0.19 <= up < 0.23:
+            return "line"
+        return None
+
+    diesel.alto_paint(m, body, mats, colour)
+    for y in (a0 + 0.09, a1 - 0.09):
+        diesel.truck(m, y, c)
+    diesel.alto_skirts(m, a0 + 0.2, a1 - 0.2, mats)
+    for y0, y1 in ((a0 - 0.008, a0 + 0.002), (a1 - 0.002, a1 + 0.008)):
+        m.box(-0.08, 0.08, y0, y1, 0.6, 1.4, mats["skirt"], bevel=0.002)
+    doors = (a0 + 0.05, a1 - 0.08)
+    for side in (-1, 1):
+        x = side * (half + 0.0008)
+        for d in doors:
+            for yy in (d, d + 0.03):
+                m.box(x - 0.0007, x + 0.0007, yy, yy + 0.003, 0.6, 1.26, mats["skirt"])
+            m.box(x - 0.0007, x + 0.0007, d, d + 0.033, 1.26, 1.27, mats["skirt"])
+            m.box(x - 0.0008, x + 0.0008, d + 0.009, d + 0.024, 1.06, 1.22, c["glass"])
+        n = 9
+        w0, w1 = doors[0] + 0.05, doors[1] - 0.02
+        for i in range(n):
+            y0 = w0 + (w1 - w0) * i / n
+            m.box(x - 0.0008, x + 0.0008, y0 + 0.006, y0 + (w1 - w0) / n - 0.006, 1.06, 1.26, mats["mask"])
+        m.text(diesel.LETTERS, side * (half + 0.0012), (a0 + a1) / 2, 0.9, 0.026, mats["line"], side)

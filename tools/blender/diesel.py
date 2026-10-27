@@ -902,3 +902,123 @@ def alp46(m, L, scheme="exo"):
         m.upright(0.03, y, top - 0.01, top + 0.09, 0.008, 0.006, material("insulator", "#e8e6e0", rough=0.3), segments=10)
     m.rod((0.03, b0 + 0.22, top + 0.1), (0.03, b0 + 0.28, top + 0.1), 0.004, c["steel"])
     letters(m, L, c, 1.3, at=b1 - 0.028, size=0.028, x=side_x(1.3) + 0.0012)
+
+
+# Alto's colours, after its published renders: a deep green, a pale line along the sill, black glass round the cab.
+ALTO = {"green": "#1d5a30", "line": "#d6ded6", "roof": "#2a3c33", "skirt": "#1c2421", "mask": "#0c1012", "red": "#c8282a"}
+# Half of a cross-section, from the middle of the floor round to the middle of the roof, as (across, up), each 0 to 1:
+# sides near upright below the windows, a rounded roof. The line along the sill is between up 0.19 and 0.23.
+ALTO_RING = [(0.0, 0.0), (0.5, 0.0), (0.86, 0.0), (0.95, 0.03), (0.99, 0.1), (1.0, 0.19), (1.0, 0.23), (1.0, 0.3), (1.0, 0.37),
+             (1.0, 0.44), (1.0, 0.5), (1.0, 0.55), (0.997, 0.6), (0.99, 0.65), (0.985, 0.68), (0.975, 0.73), (0.96, 0.78),
+             (0.94, 0.82), (0.9, 0.86), (0.85, 0.89), (0.8, 0.92), (0.65, 0.96), (0.45, 0.99), (0.22, 1.0),
+             (0.0, 1.0)]
+ALTO_FLOOR, ALTO_TOP, ALTO_HALF = 0.5, 1.62, 0.12
+
+
+def alto_ring(half, z0, z1):
+    """A whole cross-section, half tiles each side and from z0 to z1 steps, round from the middle of the floor."""
+    right = [(u * half, z0 + v * (z1 - z0)) for u, v in ALTO_RING]
+    left = [(-u * half, z0 + v * (z1 - z0)) for u, v in reversed(ALTO_RING[1:-1])]
+    return right + left
+
+
+def alto_mats():
+    return {k: material(f"alto {k}", v, rough=0.35 if k == "mask" else 0.45, clearcoat=0.25) for k, v in ALTO.items()}
+
+
+def alto_paint(m, obj, mats, colour):
+    """Paints each face of a lofted body by colour(y, up) at its middle, up being 0 to 1 from floor to roof there."""
+    keys = list(mats)
+    for k in keys:
+        if obj.data.materials.find(mats[k].name) < 0:
+            obj.data.materials.append(mats[k])
+    names = [mt.name for mt in obj.data.materials]
+    for p in obj.data.polygons:
+        c = p.center
+        name = colour(c.y, c.x, m.fixed(c.z / rig.RISE))
+        if name:
+            p.material_index = names.index(mats[name].name)
+
+
+def alto_skirts(m, y0, y1, mats):
+    """The underframe under the body between the trucks, with skirts down its sides."""
+    m.box(-0.09, 0.09, y0 - 0.2, y1 + 0.2, 0.36, ALTO_FLOOR + 0.02, mats["skirt"])
+    for side in (-1, 1):
+        x = side * (ALTO_HALF * 0.93)
+        m.box(x - 0.003, x + 0.003, y0, y1, 0.42, ALTO_FLOOR + 0.04, mats["skirt"], bevel=0.002)
+
+
+def alto(m, L):
+    """A power car for Alto's high-speed line, after the Avelia Horizon (TGV M): a smooth rounded body with no side
+    windows, a long nose falling from the roof to a low rounded snout, a black glass mask round the windshield and cab
+    side windows, one pantograph on a roof fairing. In Alto's deep green with a pale line along the sill."""
+    c = livery("silver")
+    mats = alto_mats()
+    a0, a1 = -L / 2 + 0.012, L / 2 - 0.004
+    z0, z1, half = ALTO_FLOOR, ALTO_TOP, ALTO_HALF
+    # The nose, from where the roof starts to fall to the tip: t from 0 to 1 along it.
+    nose = 0.4
+    n0 = a1 - nose
+    tip_z = 0.56
+
+    def section(t):
+        """(half, floor, roof) at t along the nose: the roof falls on a rounded curve, steeper towards the tip, the
+        floor tucks up a little under the snout and the sides round in at the very end."""
+        roof = tip_z + (z1 - tip_z) * (1 - t ** 1.35) ** (1 / 1.25)
+        floor = z0 - 0.06 * t ** 2
+        w = half * (1 - t ** 3.2) ** (1 / 2.6)
+        return w, floor, max(roof, floor + 0.02)
+
+    secs = [(a0, alto_ring(half * 0.9, z0 + 0.04, z1 - 0.06)), (a0 + 0.006, alto_ring(half * 0.97, z0 + 0.01, z1 - 0.015)),
+            (a0 + 0.016, alto_ring(half, z0, z1))]
+    ts = [k / 64 for k in range(63)] + [0.975, 0.985]
+    for t in ts:
+        w, f, r = section(t)
+        secs.append((n0 + nose * t, alto_ring(w, f, r)))
+    body = m.loft(secs, {"green": mats["green"]}, sharp=50)
+
+    def colour(y, x, z):
+        t = (y - n0) / nose
+        if t <= 0:
+            w, f, r = half, z0, z1
+        else:
+            w, f, r = section(min(t, 0.985))
+        up = (z - f) / max(r - f, 1e-6)
+        if up < 0.1:
+            return "skirt"
+        if 0.19 <= up < 0.23 and t < 0.8:
+            return "line"
+        # The black mask: cab side windows from behind the nose, round the windshield and down to the lamps.
+        edge = 0.62 - 0.22 * max(0.0, min(1.0, (t - 0.05) / 0.6))
+        if -0.04 < t < 0.8 and up > edge and (t > 0.08 or up < 0.8):
+            return "mask"
+        if up > 0.93 and t < 0.05:
+            return "roof"
+        return None
+
+    alto_paint(m, body, mats, colour)
+    # Lamps low in the mask at the front corners.
+    for side in (-1, 1):
+        t = 0.74
+        w, f, r = section(t)
+        y = n0 + nose * t
+        z = f + (r - f) * 0.5
+        with m.keep(at=z):
+            m.upright(side * w * 0.97, y, z - 0.03, z + 0.03, 0.009, 0.009, c["lamp"], segments=10)
+    for y in (a0 + 0.11, a1 - nose + 0.08):
+        truck(m, y, c)
+    alto_skirts(m, a0 + 0.2, a1 - nose - 0.03, mats)
+    # A cab door each side behind the mask, grilles high along the side, the company's letters in the middle.
+    door = n0 - 0.05
+    for side in (-1, 1):
+        x = side * (half + 0.0007)
+        for yy in (door - 0.035, door):
+            m.box(x - 0.0007, x + 0.0007, yy, yy + 0.003, 0.6, 1.26, mats["skirt"])
+        m.box(x - 0.0007, x + 0.0007, door - 0.035, door + 0.003, 1.26, 1.27, mats["skirt"])
+        for k in range(3):
+            y0 = a0 + 0.06 + k * 0.1
+            louvres(m, side * (half + 0.0002), y0, y0 + 0.08, 1.08, 1.24, dict(c, louvre=mats["skirt"], grille=mats["roof"]))
+        m.text(LETTERS, side * (half + 0.0012), (a0 + door) / 2 + 0.05, 0.9, 0.03, mats["line"], side)
+    # The roof fairing with the pantograph on it, over the back truck.
+    m.box(-0.07, 0.07, a0 + 0.03, a0 + 0.3, z1 - 0.03, z1 + 0.03, mats["roof"], bevel=0.01)
+    pantograph(m, a0 + 0.16, z1 + 0.03, c)

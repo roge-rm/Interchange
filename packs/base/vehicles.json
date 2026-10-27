@@ -2889,6 +2889,39 @@
       "traction": "electric",
       "life": 35,
       "reliability": 95
+    },
+    {
+      "id": "alto",
+      "kind": "engine",
+      "name": { "en": "Alto power car", "fr": "Motrice Alto" },
+      "type": { "en": "High-speed power car", "fr": "Motrice à grande vitesse" },
+      "from": 2035,
+      "until": 2100,
+      "speed": 300,
+      "power": 11800,
+      "tractive": 220,
+      "weight": 68,
+      "cost": 560000,
+      "running": 7600,
+      "length": 14,
+      "traction": "electric",
+      "life": 30,
+      "reliability": 96
+    },
+    {
+      "id": "alto_coach",
+      "kind": "wagon",
+      "name": { "en": "Alto coach", "fr": "Voiture Alto" },
+      "plural": { "en": "Alto coaches", "fr": "Voitures Alto" },
+      "type": { "en": "High-speed coach", "fr": "Voiture à grande vitesse" },
+      "from": 2035,
+      "until": 2100,
+      "weight": 40,
+      "cost": 30000,
+      "running": 1200,
+      "length": 13,
+      "carries": "passengers",
+      "capacity": 72
     }
   ]
 }

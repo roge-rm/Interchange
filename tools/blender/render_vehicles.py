@@ -85,6 +85,8 @@ MODELS = {
     # Off the wires, on its diesels.
     "alp45_down": (14, lambda m: diesel.alp45(m, L(14), pan_down=True)),
     "alp46": (13, lambda m: diesel.alp46(m, L(13))),
+    "alto": (14, lambda m: diesel.alto(m, L(14))),
+    "alto_coach": (13, lambda m: cars.alto_coach(m, L(13))),
     "coach_streamline": (14, lambda m: cars.coach_streamline(m, L(14))),
     "well_car": (14, lambda m: cars.well_car(m, L(14))),
     "horse_omnibus": (7, lambda m: horses.omnibus(m, L(7))),
