@@ -273,7 +273,7 @@ private fun GroupButton(glyph: Glyph, label: String, selected: Boolean, compact:
         BasicText(
             label, maxLines = 1,
             style = TextStyle(color = if (selected) c.onAccent else c.textDim, textAlign = TextAlign.Center),
-            autoSize = TextAutoSize.StepBased(minFontSize = 8.sp, maxFontSize = if (compact) 10.sp else 11.sp),
+            autoSize = TextAutoSize.StepBased(minFontSize = 5.sp, maxFontSize = if (compact) 10.sp else 11.sp),
         )
     }
 }
@@ -327,7 +327,7 @@ fun ToolTray(
                             if (!compact) BasicText(
                                 toolTitle, maxLines = 1,
                                 style = TextStyle(color = if (on) c.onAccent else c.textDim, textAlign = TextAlign.Center),
-                                autoSize = TextAutoSize.StepBased(minFontSize = 7.sp, maxFontSize = 10.sp),
+                                autoSize = TextAutoSize.StepBased(minFontSize = 4.sp, maxFontSize = 10.sp),
                             )
                         }
                     }

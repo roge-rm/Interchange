@@ -430,11 +430,11 @@ fun PictureRow(
             icon?.invoke()
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(title, color = c.text, style = KitType.RowTitle, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                    Text(title, color = c.text, style = KitType.RowTitle, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
                     if (titleEnd != null) Text(titleEnd, color = c.text, style = KitType.Value, maxLines = 1, modifier = Modifier.padding(start = 8.dp))
                 }
                 if (line != null || lineEnd != null) Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(line ?: "", color = c.textDim, style = KitType.Dim, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                    Text(line ?: "", color = c.textDim, style = KitType.Dim, maxLines = 3, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
                     if (lineEnd != null) Text(lineEnd, color = c.textDim, style = KitType.Dim, maxLines = 1, modifier = Modifier.padding(start = 8.dp))
                 }
                 if (!stats.isNullOrEmpty()) Text(stats, color = c.text, style = KitType.Dim, maxLines = 2)

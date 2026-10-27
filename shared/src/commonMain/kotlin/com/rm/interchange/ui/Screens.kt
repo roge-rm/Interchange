@@ -12,6 +12,9 @@ import com.rm.interchange.sim.goalProgress
 import com.rm.interchange.sim.human
 import com.rm.interchange.sim.townNeeds
 import com.rm.interchange.sim.townSupplied
+import androidx.compose.foundation.text.BasicText
+import androidx.compose.foundation.text.TextAutoSize
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -120,7 +123,12 @@ fun TitleScreen(continueLine: String?, onContinue: () -> Unit, onNew: () -> Unit
     Page(rememberBackdrop()) {
         Row(Modifier.padding(bottom = 16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
             Image(painterResource(Res.drawable.app_icon), null, Modifier.size(64.dp).clip(RoundedCornerShape(14.dp)))
-            Text(stringResource(Res.string.app_name), color = c.text, fontSize = 44.sp, fontWeight = FontWeight.Bold)
+            // Shrinks to the width left, so a large system font doesn't break the name mid-word.
+            BasicText(
+                stringResource(Res.string.app_name), maxLines = 1, modifier = Modifier.weight(1f, fill = false),
+                style = TextStyle(color = c.text, fontWeight = FontWeight.Bold),
+                autoSize = TextAutoSize.StepBased(minFontSize = 16.sp, maxFontSize = 44.sp),
+            )
         }
         if (continueLine != null) {
             BigButton(stringResource(Res.string.continue_game), primary = true, glyph = Glyph.Play, onClick = onContinue)
