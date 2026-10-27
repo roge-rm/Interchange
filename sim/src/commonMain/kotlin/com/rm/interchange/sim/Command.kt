@@ -23,13 +23,25 @@ sealed interface Command {
     /** Plants trees on the open tiles from ([x0], [y0]) to ([x1], [y1]). Each tile that takes one costs what felling a tree does. */
     data class PlantTrees(override val company: Int, val x0: Int, val y0: Int, val x1: Int, val y1: Int) : Command
 
-    /** Lays or lifts a line of track, as [Track.line] makes it. */
+    /**
+     * Lays or lifts a line of track, as [Track.line] makes it. With [JOIN] in [join] the line joins track it meets with
+     * junctions; the other bits say which way a curve at the start or the end turns, to the low x or y side or the high.
+     */
     data class Rail(
         override val company: Int,
         val sx: Int, val sy: Int, val ex: Int, val ey: Int,
         val first: Int,
         val remove: Boolean,
-    ) : Command
+        val join: Int = 0,
+    ) : Command {
+        companion object {
+            const val JOIN = 1
+            const val START_X_LOW = 2
+            const val START_Y_LOW = 4
+            const val END_X_LOW = 8
+            const val END_Y_LOW = 16
+        }
+    }
 
     /** Lays platforms over a rectangle, running along [axis]. */
     data class Station(override val company: Int, val x0: Int, val y0: Int, val x1: Int, val y1: Int, val axis: Int) : Command

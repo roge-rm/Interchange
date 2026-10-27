@@ -17,6 +17,7 @@ import com.rm.interchange.map.Pick
 import com.rm.interchange.sim.Command
 import com.rm.interchange.sim.Track
 import com.rm.interchange.sim.World
+import com.rm.interchange.sim.planJoins
 import com.rm.interchange.sim.planRail
 import com.rm.interchange.sim.planSignals
 import kotlin.math.abs
@@ -45,25 +46,42 @@ fun trackLine(company: Int, start: Pick, end: Pick, remove: Boolean): Command.Ra
         }
         return Command.Rail(company, sx, sy, sx, sy, piece, remove)
     }
-    if (abs(dy) * 3 <= abs(dx)) return Command.Rail(company, sx, sy, sx + dx, sy, Track.X, remove)
-    if (abs(dx) * 3 <= abs(dy)) return Command.Rail(company, sx, sy, sx, sy + dy, Track.Y, remove)
     val m = max(abs(dx), abs(dy))
-    val ex = sx + m * dx.sign
-    val ey = sy + m * dy.sign
+    val (ex, ey) = when {
+        abs(dy) * 3 <= abs(dx) -> sx + dx to sy
+        abs(dx) * 3 <= abs(dy) -> sx to sy + dy
+        else -> sx + m * dx.sign to sy + m * dy.sign
+    }
+    // Where the line meets other track it joins it, a curve at either end turning to the side of that end's tile the
+    // finger is on; the line's end tile may not be the finger's, so it goes by the middle of that tile. A lifted
+    // line takes the junction curves it leaves as stubs with it.
+    val join = Command.Rail.JOIN or if (remove) 0 else
+        (if (start.fx < 0.5f) Command.Rail.START_X_LOW else 0) or (if (start.fy < 0.5f) Command.Rail.START_Y_LOW else 0) or
+            (if (end.x < ex + 0.5f) Command.Rail.END_X_LOW else 0) or (if (end.y < ey + 0.5f) Command.Rail.END_Y_LOW else 0)
+    if (ey == sy) return Command.Rail(company, sx, sy, ex, sy, Track.X, remove, join)
+    if (ex == sx) return Command.Rail(company, sx, sy, sx, ey, Track.Y, remove, join)
     // Two diagonals run through the tile each way; take the one nearer where the finger went down.
     val first = if (dx.sign == dy.sign) (if (u - v > 0) Track.E else Track.W) else (if (u + v < 0) Track.N else Track.S)
-    return Command.Rail(company, sx, sy, ex, ey, first, remove)
+    return Command.Rail(company, sx, sy, ex, ey, first, remove, join)
 }
 
 /** The line [rail] would lay, drawn over the map: pale where it'll go, red where it can't. */
 fun DrawScope.drawTrackPlan(world: World, painter: LandPainter, rail: Command.Rail) {
     val line = Track.line(world, rail.sx, rail.sy, rail.ex, rail.ey, rail.first) ?: return
     val ok = world.planRail(rail) ?: return
+    val joins = world.planJoins(rail)
     for ((k, entry) in line.withIndex()) {
         val i = entry / 64
+        // A straight a junction curve takes the place of isn't drawn.
+        if (!rail.remove && joins.any { it.tile == i && it.to and (entry % 64) == 0 }) continue
         with(painter) {
             track(i % world.width, i / world.width, entry % 64, if (ok[k]) PLAN_OK else PLAN_BAD, if (ok[k]) PLAN_RAIL else PLAN_BAD)
         }
+    }
+    // Pieces a junction adds, or when lifting the stubs it takes up.
+    for (j in joins) for (p in Track.PIECES) {
+        if (if (rail.remove) j.from and p == 0 || j.to and p != 0 else j.to and p == 0 || j.from and p != 0) continue
+        with(painter) { track(j.tile % world.width, j.tile / world.width, p, PLAN_OK, PLAN_RAIL) }
     }
 }
 

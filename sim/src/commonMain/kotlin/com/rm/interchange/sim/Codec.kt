@@ -70,6 +70,8 @@ object Codec {
     private const val COPY_VEHICLES = 60
     private const val CREATE_GROUP = 61
     private const val EDIT_TRAIN = 62
+    /** Track laid with junctions where it meets other track. */
+    private const val RAIL_JOIN = 63
 
     /** The most goals a [Command.SetGoals] may carry. */
     const val MOST_GOALS = 100
@@ -77,7 +79,11 @@ object Codec {
     fun write(w: ByteWriter, c: Command) {
         when (c) {
             is Command.Terraform -> { w.byte(TERRAFORM); w.int(c.company); w.int(c.x); w.int(c.y); w.bool(c.up) }
-            is Command.Rail -> { w.byte(RAIL); w.int(c.company); w.int(c.sx); w.int(c.sy); w.int(c.ex); w.int(c.ey); w.int(c.first); w.bool(c.remove) }
+            is Command.Rail -> {
+                w.byte(if (c.join == 0) RAIL else RAIL_JOIN)
+                w.int(c.company); w.int(c.sx); w.int(c.sy); w.int(c.ex); w.int(c.ey); w.int(c.first); w.bool(c.remove)
+                if (c.join != 0) w.int(c.join)
+            }
             is Command.Station -> { w.byte(STATION); w.int(c.company); w.int(c.x0); w.int(c.y0); w.int(c.x1); w.int(c.y1); w.int(c.axis) }
             is Command.Depot -> { w.byte(DEPOT); w.int(c.company); w.int(c.x); w.int(c.y); w.int(c.edge) }
             is Command.Signal -> { w.byte(SIGNAL_KIND); w.int(c.company); w.int(c.x); w.int(c.y); w.int(c.piece); w.int(c.facing); w.int(c.kind) }
@@ -142,6 +148,7 @@ object Codec {
     fun read(r: ByteReader): Command = when (val kind = r.byte()) {
         TERRAFORM -> Command.Terraform(r.int(), r.int(), r.int(), r.bool())
         RAIL -> Command.Rail(r.int(), r.int(), r.int(), r.int(), r.int(), r.int(), r.bool())
+        RAIL_JOIN -> Command.Rail(r.int(), r.int(), r.int(), r.int(), r.int(), r.int(), r.bool(), r.int())
         STATION -> Command.Station(r.int(), r.int(), r.int(), r.int(), r.int(), r.int())
         DEPOT -> Command.Depot(r.int(), r.int(), r.int(), r.int())
         SIGNAL -> Command.Signal(r.int(), r.int(), r.int(), r.int(), r.int())
