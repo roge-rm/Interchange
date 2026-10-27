@@ -608,7 +608,8 @@ private fun World.trainsOn(c: Company, route: RivalRoute) =
 internal fun World.growRail(c: Company, route: RivalRoute, payback: Int, ranLastYear: (Int) -> Boolean) {
     val on = trainsOn(c, route)
     val first = on.firstOrNull() ?: return
-    if (on.any { it.toDepot && !it.servicing || it.inDepot && !it.running || ranLastYear(it.built) && it.profitLastYear < 0 }) return
+    // Not while one is on its way to the depot or about to be, as the new train would wait at the signal in its way.
+    if (on.size > 1 && on.any { it.service } || on.any { it.toDepot || it.inDepot && !it.running || ranLastYear(it.built) && it.profitLastYear < 0 }) return
     val a = stations.getOrNull(route.a) ?: return
     val b = stations.getOrNull(route.b) ?: return
     val capacity = first.wagons * roster[first.wagon].capacity
@@ -644,15 +645,20 @@ internal fun World.addTrain(c: Company, route: RivalRoute): Boolean {
 /**
  * Each day, for a railway with more than one train. A train out of the depot waits at the signal by it while another
  * is at the platforms; if that one is heading into the depot, neither can move, and the one out of the depot can't
- * back in with its tail still in there. So these trains aren't serviced, and one sent in to be sold or renewed has its trip
- * called off and goes on to the far end first, its orders turned round so that's next.
+ * back in with its tail still in there. So one train at a time is serviced ([serviceTurn]), and one sent in to be sold
+ * or renewed while another waits at the signal has its trip called off and goes on to the far end first, its orders
+ * turned round so that's next.
  */
 internal fun World.unblockDepot(c: Company, route: RivalRoute) {
     if (blocksDirty) return
     val on = trainsOn(c, route)
-    if (on.size < 2) return
-    for (t in on) if (t.service && !t.toDepot) apply(Command.TrainOrder(c.id, t.id, Command.TrainOrder.SERVICE))
+    if (on.size < 2) {
+        // Down to one train, it's serviced as any is.
+        for (t in on) if (!t.service) apply(Command.TrainOrder(c.id, t.id, Command.TrainOrder.SERVICE))
+        return
+    }
     val lead = leadTile(c, route)
+    serviceTurn(c, on, lead)
     if (lead < 0) return
     if (on.none { !it.inDepot && !it.toDepot && it.speed == 0 && stepTile(it.steps.last()) == lead }) return
     val platforms = stations.getOrNull(route.a)?.tiles?.firstOrNull() ?: return
@@ -663,6 +669,24 @@ internal fun World.unblockDepot(c: Company, route: RivalRoute) {
         apply(Command.TrainOrder(c.id, t.id, Command.TrainOrder.ORDERS, far))
         // A train going in to be renewed has servicing off, so its trip is called off as one going to be sold.
         apply(Command.TrainOrder(c.id, t.id, if (t.servicing && t.service) Command.TrainOrder.SERVICE else Command.TrainOrder.TO_DEPOT))
+    }
+}
+
+/**
+ * Servicing on a railway with more than one train: only one has servicing on, and only while it stands at a platform
+ * due a service, with no other train on its way to the depot, in it, or on the signal tile [lead] by it (-1 for a line
+ * without one, where one at a time is still kept to). So it goes in
+ * from the station when it leaves, finds the way into the depot clear, and comes out to wait at the signal as a new
+ * train does. The one longest since its service goes first, the lowest id on a tie. Servicing is off for the rest.
+ */
+private fun World.serviceTurn(c: Company, on: List<Train>, lead: Int) {
+    val busy = on.any { it.toDepot || it.inDepot && it.running || lead in it.onTiles }
+    val next = if (busy) null else on.filter { it.running && it.waiting > 0 && !it.inDepot && due(true, it.serviced) }
+        .minWithOrNull(compareBy<Train> { it.serviced }.thenBy { it.id })
+    for (t in on) {
+        // One already on its way for a service keeps it.
+        val keep = t === next || t.toDepot && t.servicing
+        if (t.service != keep) apply(Command.TrainOrder(c.id, t.id, Command.TrainOrder.SERVICE))
     }
 }
 

@@ -76,19 +76,10 @@ internal inline fun World.renewNow(v: Carrier, kind: Int, due: Boolean, service:
     return false
 }
 
-internal fun World.renewNow(t: Train) = renewNow(t, Autorenew.TRAIN, renewDue(t), t.service || rivalMayRenew(t), t.built, t.profitLastYear) { renewCost(t) }
+internal fun World.renewNow(t: Train) = renewNow(t, Autorenew.TRAIN, renewDue(t), t.service, t.built, t.profitLastYear) { renewCost(t) }
 internal fun World.renewNow(v: RoadVehicle) = renewNow(v, Autorenew.ROAD, renewDue(v), v.service, v.built, v.profitLastYear) { renewCost(v) }
 internal fun World.renewNow(v: Ship) = renewNow(v, Autorenew.SHIP, renewDue(v), v.service, v.built, v.profitLastYear) { renewCost(v) }
 internal fun World.renewNow(v: Aircraft) = renewNow(v, Autorenew.AIRCRAFT, renewDue(v), v.service, v.built, v.profitLastYear) { renewCost(v) }
-
-/**
- * Whether rival train [t], not serviced as its line has more than one train ([unblockDepot]), may still go in to be
- * renewed: only while no other train with the same stops is on its way in, so the line keeps running.
- */
-private fun World.rivalMayRenew(t: Train): Boolean {
-    if (human(t.owner) || t.orders.size != 2) return false
-    return trains.none { o -> o != null && o !== t && o.owner == t.owner && o.toDepot && o.orders.size == 2 && o.orders.toSet() == t.orders.toSet() }
-}
 
 /**
  * [v], of [kind], in a depot for a service and due renewing: paid for at [cost] if its company keeps its floor,

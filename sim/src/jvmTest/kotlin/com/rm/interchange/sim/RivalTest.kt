@@ -182,6 +182,61 @@ class RivalTest {
     }
 
     @Test
+    fun aLineWithTwoTrainsHasThemServiced() {
+        val w = World(NewGame(160, 160, 1, 1930, Region.MIXED, towns = 3, industries = 0, rivals = 1))
+        val r = w.rivals[0]
+        val c = w.companies[r.company]
+        c.money = 10_000_000
+        r.thinkOn = Int.MAX_VALUE
+        val route = railFor(w, r) ?: error("no line to test with")
+        assertTrue(w.addLoop(c, route), "no loop laid")
+        assertTrue(w.addTrain(c, route), "no second train")
+        val on = w.trains.filterNotNull().filter { it.owner == r.company }
+        assertEquals(2, on.size)
+        // Three work years: each is serviced in turn, never going twice the service time without, and both keep calling.
+        val calls = IntArray(2)
+        val last = IntArray(2) { -1 }
+        var longest = 0
+        var leastReliable = 10_000
+        repeat(Calendar.TICKS_PER_DAY * 365 * 3) {
+            w.step()
+            for ((k, t) in on.withIndex()) {
+                if (t.order != last[k]) { calls[k]++; last[k] = t.order }
+                longest = maxOf(longest, w.workDay - t.serviced)
+                leastReliable = minOf(leastReliable, t.reliability)
+            }
+        }
+        assertTrue(longest <= SERVICE_DAYS * 2, "went $longest work days without a service")
+        assertTrue(leastReliable >= 5000, "reliability fell to $leastReliable")
+        assertTrue(calls.all { it >= 30 }, "calls ${calls.toList()}")
+        assertTrue(on.all { it.running && !it.inDepot }, "a train stopped")
+    }
+
+    @Test
+    fun theTrainLeftOnALineIsServicedAgain() {
+        val w = World(NewGame(160, 160, 1, 1930, Region.MIXED, towns = 3, industries = 0, rivals = 1))
+        val r = w.rivals[0]
+        val c = w.companies[r.company]
+        c.money = 10_000_000
+        r.thinkOn = Int.MAX_VALUE
+        val route = railFor(w, r) ?: error("no line to test with")
+        assertTrue(w.addLoop(c, route), "no loop laid")
+        assertTrue(w.addTrain(c, route), "no second train")
+        val (left, sold) = w.trains.filterNotNull().filter { it.owner == r.company }
+        w.days(30)
+        // The second one is sent in and sold, as a loser would be.
+        if (sold.toDepot) w.apply(Command.TrainOrder(c.id, sold.id, Command.TrainOrder.TO_DEPOT))
+        w.apply(Command.TrainOrder(c.id, sold.id, Command.TrainOrder.TO_DEPOT))
+        repeat(60) { if (!sold.inDepot) w.days(1) }
+        assertTrue(sold.inDepot, "the train sent in never got there")
+        w.apply(Command.TrainOrder(c.id, sold.id, Command.TrainOrder.SELL))
+        assertTrue(w.trains[sold.id] == null, "not sold")
+        w.days(SERVICE_DAYS * 2)
+        assertTrue(left.service, "servicing left off")
+        assertTrue(w.workDay - left.serviced < SERVICE_DAYS * 2, "not serviced in ${w.workDay - left.serviced} work days")
+    }
+
+    @Test
     fun rivalStationsGoInTown() {
         // The same line built by a rival, which may pull down a few town buildings, and by the player, who doesn't here.
         fun build(rival: Boolean): Pair<World, RivalRoute> {
