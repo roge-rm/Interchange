@@ -53,13 +53,46 @@ class JunctionTest {
     }
 
     @Test
-    fun aLineAcrossALineJoinsItBothWaysOnItsOwnSide() {
+    fun aStraightLineAcrossALineCrossesIt() {
         val w = world()
-        w.laid(Command.Rail(0, 10, 4, 10, 16, Track.Y, false, join))
-        assertEquals(Track.X or Track.Y or Track.N or Track.E, w.trackAt(10, 10))
-        // Without joining, as the single piece tool lays, it's a plain crossing.
+        w.laid(Command.Rail(0, 10, 4, 10, 16, Track.Y, false, join or Command.Rail.END_X_LOW or Command.Rail.START_X_LOW))
+        assertEquals(Track.X or Track.Y, w.trackAt(10, 10))
         w.laid(Command.Rail(0, 12, 4, 12, 16, Track.Y, false))
         assertEquals(Track.X or Track.Y, w.trackAt(12, 10))
+        // An end on the line with track going on past it crosses too.
+        w.apply(Command.Rail(0, 8, 11, 8, 14, Track.Y, remove = false))
+        w.laid(Command.Rail(0, 8, 4, 8, 10, Track.Y, false, join))
+        assertEquals(Track.X or Track.Y, w.trackAt(8, 10))
+    }
+
+    @Test
+    fun aJunctionIsMadeBesideATrain() {
+        val w = world()
+        w.tileTrains[w.index(10, 10)] = 1
+        w.tileTrains[w.index(8, 10)] = 1
+        w.laid(Command.Rail(0, 10, 4, 10, 10, Track.Y, false, join or Command.Rail.END_X_LOW))
+        assertEquals(Track.X or Track.N, w.trackAt(10, 10))
+        w.laid(Command.Rail(0, 8, 16, 8, 11, Track.Y, false, join))
+        assertEquals(Track.X or Track.S, w.trackAt(8, 10))
+        // Lifting takes nothing from under a train.
+        w.laid(Command.Rail(0, 10, 4, 10, 9, Track.Y, true, join))
+        assertEquals(Track.X or Track.N, w.trackAt(10, 10))
+    }
+
+    @Test
+    fun aCurveTurnsToTheFingersSideOrWhereTheDragHeads() {
+        val sx = Command.Rail.START_X_LOW
+        val sy = Command.Rail.START_Y_LOW
+        val ex = Command.Rail.END_X_LOW
+        val ey = Command.Rail.END_Y_LOW
+        // Off the middle, the side the finger's on.
+        assertEquals(sx or ey, joinSides(-0.3f, 0.3f, 0.3f, -0.3f, 0.5f, 0.5f))
+        // At the middle, the side the drag heads, either way.
+        assertEquals(sx or sy or ex or ey, joinSides(0f, 0f, 0f, 0f, -0.2f, -6f))
+        assertEquals(0, joinSides(0f, 0f, 0f, 0f, 0.2f, 6f))
+        assertEquals(sx or ex, joinSides(0.05f, -0.05f, 0.05f, -0.05f, -0.2f, 6f))
+        // With no drift at all, the finger's side.
+        assertEquals(sy or ey, joinSides(0.05f, -0.05f, 0.05f, -0.05f, 0f, 0f))
     }
 
     @Test

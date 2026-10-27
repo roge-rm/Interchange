@@ -276,19 +276,35 @@ private fun World.joinCorner(company: Company, i: Int) {
     networkChanged()
 }
 
+/**
+ * The [Command.Rail] bits saying which way the curves at a line's ends turn, with the finger [su], [sv] tiles off the
+ * middle of the start tile in x and y, [eu], [ev] off the middle of the end tile, and the drag having gone [dx], [dy]
+ * in all. Each turns to the side the finger is on, but within [JOIN_CENTRE] of the middle to the side the drag
+ * heads, as a finger there can't say.
+ */
+fun joinSides(su: Float, sv: Float, eu: Float, ev: Float, dx: Float, dy: Float): Int {
+    fun low(off: Float, drift: Float) = if (off < -JOIN_CENTRE || off > JOIN_CENTRE || drift == 0f) off < 0f else drift < 0f
+    return (if (low(su, dx)) Command.Rail.START_X_LOW else 0) or (if (low(sv, dy)) Command.Rail.START_Y_LOW else 0) or
+        (if (low(eu, dx)) Command.Rail.END_X_LOW else 0) or (if (low(ev, dy)) Command.Rail.END_Y_LOW else 0)
+}
+
+/** How near a tile's middle, in tiles, a finger is too near to pick a side by. */
+const val JOIN_CENTRE = 0.15f
+
 /** A junction the track tool makes where its line meets other track: tile [tile]'s track goes from [from] to [to], for [cost]. */
 class Join(val tile: Int, val from: Int, val to: Int, val cost: Long)
 
 /**
  * The junctions line [line] of [c] makes with the track it meets, with [laid] saying which of its entries went down
  * and [trackOf] the track after. Each tile has to be the company's own plain track: no platform, depot, bridge or
- * tunnel end, road, train or signal (as [signalled] says).
+ * tunnel end, road or signal (as [signalled] says).
  *
  * - A straight end of the line on another line becomes a curve into it, turning as [c]'s bits for that end say.
  * - An end on the tile next to a straight line at right angles to it adds a curve to that line, turning the same way.
- * - A straight across a straight line, or an end that goes on past it, adds both curves on the side the line came
- *   from (at the start, the side it goes on to), so trains from there can turn either way. The single piece tool
- *   still lays a plain crossing.
+ * - A straight across a straight line, or an end that goes on past it, stays a plain crossing.
+ *
+ * A train on the tile doesn't stop a junction, as each only adds pieces or takes away the one the line just laid,
+ * which no train can be on yet; laying a piece beside a train is allowed anyway.
  */
 private fun World.railJoins(c: Command.Rail, line: IntArray, laid: BooleanArray, trackOf: (Int) -> Int, signalled: (Int) -> Boolean): List<Join> {
     if (c.remove || c.join and Command.Rail.JOIN == 0 || line.size < 2) return emptyList()
@@ -296,7 +312,7 @@ private fun World.railJoins(c: Command.Rail, line: IntArray, laid: BooleanArray,
     // The track with the joins so far made, so each is planned as the build will make it, and each tile used once.
     val joined = HashMap<Int, Int>()
     val now = { i: Int -> joined[i] ?: trackOf(i) }
-    fun usable(t: Int) = t !in joined && joinable(c.company, t) && !signalled(t)
+    fun usable(t: Int) = t !in joined && joinable(c.company, t, trains = false) && !signalled(t)
     // The edge a curve at the start (or end) turns out of, across [axisEdge]'s axis.
     fun turn(axisEdge: Int, atStart: Boolean): Int = if (axisEdge == Track.XM || axisEdge == Track.XP) {
         if (c.join and (if (atStart) Command.Rail.START_Y_LOW else Command.Rail.END_Y_LOW) != 0) Track.YM else Track.YP
@@ -305,6 +321,8 @@ private fun World.railJoins(c: Command.Rail, line: IntArray, laid: BooleanArray,
     }
     fun add(t: Int, from: Int, to: Int, removed: Int) {
         if (!usable(t) || !piecesFit(t % width, t / width, to, now)) return
+        // Taking away a piece that was there before needs the tile clear of trains.
+        if (from and to.inv() and removed.inv() != 0 && trainOnTile(t)) return
         val x = t % width
         val y = t / width
         // A curve in place of a straight just laid costs nothing more.
@@ -326,12 +344,7 @@ private fun World.railJoins(c: Command.Rail, line: IntArray, laid: BooleanArray,
         val back = backEdge(line, k)
         val beyond = Track.other(p, back)
         if ((p == Track.X || p == Track.Y) && has == Track.X or Track.Y) {
-            if (end && !leadsAcross(t, beyond, now)) {
-                add(t, has, (has and p.inv()) or Track.pieceOf(back, turn(back, atStart)), p)
-            } else {
-                val sides = if (p == Track.X) intArrayOf(Track.YM, Track.YP) else intArrayOf(Track.XM, Track.XP)
-                add(t, has, has or Track.pieceOf(back, sides[0]) or Track.pieceOf(back, sides[1]), 0)
-            }
+            if (end && !leadsAcross(t, beyond, now)) add(t, has, (has and p.inv()) or Track.pieceOf(back, turn(back, atStart)), p)
         } else if (end) {
             val n = tileAcross(t % width, t / width, beyond)
             if (n < 0) continue
@@ -344,9 +357,9 @@ private fun World.railJoins(c: Command.Rail, line: IntArray, laid: BooleanArray,
     return out
 }
 
-/** Whether the track tool may change tile [t] to make or lift a junction: [company]'s own plain track with no train on it. */
-private fun World.joinable(company: Int, t: Int) = owner[t].toInt() == company && !stationTiles.containsKey(t) && !depotTiles.containsKey(t) &&
-    !spanHeads.containsKey(t) && !townBuilt(t) && !othersBuilding(company, t) && !trainOnTile(t)
+/** Whether the track tool may change tile [t] to make or lift a junction: [company]'s own plain track, with no train on it if [trains]. */
+private fun World.joinable(company: Int, t: Int, trains: Boolean = true) = owner[t].toInt() == company && !stationTiles.containsKey(t) && !depotTiles.containsKey(t) &&
+    !spanHeads.containsKey(t) && !townBuilt(t) && !othersBuilding(company, t) && !(trains && trainOnTile(t))
 
 /** The edge of entry [k]'s tile towards the entry before it in [line]; for the first, towards the one after. */
 private fun World.backEdge(line: IntArray, k: Int): Int {

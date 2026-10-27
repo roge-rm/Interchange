@@ -17,6 +17,7 @@ import com.rm.interchange.map.Pick
 import com.rm.interchange.sim.Command
 import com.rm.interchange.sim.Track
 import com.rm.interchange.sim.World
+import com.rm.interchange.sim.joinSides
 import com.rm.interchange.sim.planJoins
 import com.rm.interchange.sim.planRail
 import com.rm.interchange.sim.planSignals
@@ -56,8 +57,7 @@ fun trackLine(company: Int, start: Pick, end: Pick, remove: Boolean): Command.Ra
     // finger is on; the line's end tile may not be the finger's, so it goes by the middle of that tile. A lifted
     // line takes the junction curves it leaves as stubs with it.
     val join = Command.Rail.JOIN or if (remove) 0 else
-        (if (start.fx < 0.5f) Command.Rail.START_X_LOW else 0) or (if (start.fy < 0.5f) Command.Rail.START_Y_LOW else 0) or
-            (if (end.x < ex + 0.5f) Command.Rail.END_X_LOW else 0) or (if (end.y < ey + 0.5f) Command.Rail.END_Y_LOW else 0)
+        joinSides(u, v, end.x - ex - 0.5f, end.y - ey - 0.5f, end.x - start.x, end.y - start.y)
     if (ey == sy) return Command.Rail(company, sx, sy, ex, sy, Track.X, remove, join)
     if (ex == sx) return Command.Rail(company, sx, sy, sx, ey, Track.Y, remove, join)
     // Two diagonals run through the tile each way; take the one nearer where the finger went down.
