@@ -991,7 +991,7 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
     fun cornerHeight(at: Pick) = world.heightAt(at.x.roundToInt().coerceIn(0, world.width), at.y.roundToInt().coerceIn(0, world.height))
 
     fun built() {
-        folded = true
+        // The tray stays as it is, so the next tap lands where its buttons were. It folds only when the player folds it.
         // Once for the gesture. A drag's tiles share the one sound.
         when (tool) {
             Tool.Track, Tool.Road, Tool.TramRails, Tool.Canal, Tool.Clear, Tool.Remove, Tool.Level, Tool.Trees -> Sounds.earth()
