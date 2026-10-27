@@ -786,3 +786,119 @@ def alp45(m, L, scheme="exo", pan_down=False):
     m.rod((0.03, b0 + 0.14, top + 0.1), (0.03, b0 + 0.22, top + 0.1), 0.004, c["steel"])
     # The company's letters on the cab sides, under the side windows.
     letters(m, L, c, 1.3, at=b1 - 0.028, size=0.028, x=side_x(1.3) + 0.0012)
+
+
+def alp46(m, L, scheme="exo"):
+    """A Bombardier ALP-46A electric: a flat-sided body with a cab at each end, an upright lower nose under a raked
+    windshield and a chamfered roof edge, a pantograph over each cab and the breaker and roof boxes between them.
+    In an exo-style livery turned round from the ALP-45DP's: silver sides over a blue sill band, the cabs all blue."""
+    c = livery(scheme)
+    frame(m, L, c, 2)
+    a0, a1 = -L / 2 + 0.012, L / 2 - 0.012
+    deck, top, half = 0.62, 1.9, 0.12
+    blue, sky, white, silver = c["body"], c["lower"], c["trim"], c["stripe"]
+    mats = {"paint": blue, "glass": c["glass"], "roof": c["roof"]}
+    # One nose, as (back from the end, z, radius, part to the next, width): near upright up to the windshield.
+    nose = [(0.02, deck - 0.1, 0.01, "paint", 0.97), (0.0, 0.76, 0.02, "paint", 0.98), (0.01, 1.24, 0.02, "paint", 0.99),
+            (0.025, 1.32, 0.02, "glass", 1.0), (0.09, 1.7, 0.03, "paint", 1.0), (0.14, top, 0.04, "paint", 1.0)]
+    shape = [(a0 + nose[0][0], nose[0][1], nose[0][2], "paint", nose[0][4])]
+    shape += [(a1 - dy, z, r, part, w) for dy, z, r, part, w in nose]
+    shape += [(a1 - 0.26, top, 0, "roof", 1.0), (a0 + 0.26, top, 0, "paint", 1.0)]
+    shape += [(a0 + nose[k][0], nose[k][1], nose[k][2], nose[k - 1][3], nose[k][4]) for k in range(len(nose) - 1, 0, -1)]
+    outline = carbody(m, shape, half, mats, crown=0.12)
+    b0, b1 = a0 + 0.15, a1 - 0.15
+
+    def side_x(z):
+        pts = [(p[1], p[4]) for p in nose]
+        for (z0, w0), (z1, w1) in zip(pts, pts[1:]):
+            if z <= z1:
+                return half * (w0 + (w1 - w0) * max(0.0, (z - z0) / (z1 - z0)))
+        return half
+
+    def ends(z):
+        return _outline_back(outline, z), parts.outline_front(outline, z)
+
+    for side in (-1, 1):
+        x = side * (side_x(deck) - 0.002)
+        m.box(x - 0.002, x + 0.002, a0 + 0.19, a1 - 0.19, 0.42, deck, c["dark"], bevel=0.003)
+
+    # The side livery in narrow columns: blue sill, a sky blue line and white stripe, silver above; blue cabs whose
+    # back edge sweeps forward as it rises.
+    sky_lo, white_lo, white_hi = 0.86, 0.92, 0.98
+
+    def colour(y, z):
+        u = min(a1 - y, y - a0) / (a1 - a0)
+        if z < 0.62:
+            return "dark"
+        if z < sky_lo:
+            return "blue"
+        if z < white_lo:
+            return "sky"
+        if z < white_hi:
+            return "white"
+        cab = 0.17 - 0.07 * (z - white_hi) / (1.75 - white_hi)
+        return "blue" if u < cab else "silver"
+
+    paints = {"dark": c["dark"], "sky": sky, "white": white, "blue": blue, "silver": silver}
+    cols, dz, zmax = 96, 0.01, 1.74
+    span = (a1 - a0) / cols
+    for k in range(cols):
+        y0, y1 = a0 + k * span, a0 + (k + 1) * span
+        yc = (y0 + y1) / 2
+        runs, z = [], deck - 0.1
+        while z < zmax - 1e-9:
+            back, front = ends(z + dz / 2)
+            name = colour(yc, z + dz / 2) if back + 0.012 < y0 and y1 < front - 0.012 else None
+            if runs and runs[-1][2] == name:
+                runs[-1][1] = z + dz
+            else:
+                runs.append([z, z + dz, name])
+            z += dz
+        for z0, z1, name in runs:
+            if name is None or name == "blue":
+                continue
+            x = max(side_x(z0), side_x(z1)) + 0.0006
+            for side in (-1, 1):
+                m.box(side * x - 0.0006, side * x + 0.0006, y0, y1 + 0.0005, z0, z1, paints[name])
+
+    for end in (-1, 1):
+        def at(z, out=0.0):
+            return (parts.outline_front(outline, z) if end > 0 else _outline_back(outline, z)) + end * out
+
+        # The sill, sky blue line and white stripe round each nose, in thin slices so they follow its bend at 0.76.
+        bands = [(deck - 0.1 + k * 0.025, deck - 0.075 + k * 0.025, c["dark"]) for k in range(4)]
+        bands += [(sky_lo, white_lo, sky), (white_lo, white_hi, white)]
+        for z0, z1, mat in bands:
+            w = side_x(z1) - 0.006
+            m.wedge([(-w, at(z0, -0.004), z0), (w, at(z0, -0.004), z0), (w, at(z0, 0.0015), z0), (-w, at(z0, 0.0015), z0)],
+                    [(-w, at(z1, -0.004), z1), (w, at(z1, -0.004), z1), (w, at(z1, 0.0015), z1), (-w, at(z1, 0.0015), z1)], mat)
+        m.rod((0, at(1.32, 0.002), 1.32), (0, at(1.7, 0.002), 1.7), 0.005, blue)
+        # Headlights low at the corners and a pair under the windshield.
+        for x, z, r in ((-0.08, 0.8, 0.011), (0.08, 0.8, 0.011), (-0.014, 1.2, 0.009), (0.014, 1.2, 0.009)):
+            yl = at(z)
+            with m.keep(at=z):
+                m.tube(*sorted((yl - end * 0.008, yl + end * 0.003)), x, z, r, c["dark"], segments=14)
+                m.tube(*sorted((yl + end * 0.003, yl + end * 0.005)), x, z, r * 0.8, c["lamp"], segments=14)
+        e = a1 if end > 0 else a0
+        m.wedge([(-0.1, e - end * 0.06, 0.42), (0.1, e - end * 0.06, 0.42), (0.08, e + end * 0.004, 0.42), (-0.08, e + end * 0.004, 0.42)],
+                [(-0.1, e - end * 0.06, 0.53), (0.1, e - end * 0.06, 0.53), (0.09, e - end * 0.016, 0.53), (-0.09, e - end * 0.016, 0.53)], c["dark"])
+    mesh = dict(c, louvre=material("exo mesh", "#3a3e42", metal=0.3, rough=0.6))
+    for side in (-1, 1):
+        # Cab side windows and doors, then a few small grilles high in the middle of the side.
+        for y, end in ((b1, 1), (b0, -1)):
+            x = side * (side_x(1.64) + 0.0008)
+            m.box(x - 0.0008, x + 0.0008, *sorted((y - end * 0.005, y - end * 0.05)), 1.42, 1.64, c["glass"])
+            x = side * (side_x(1.66) + 0.0006)
+            m.box(x - 0.0006, x + 0.0006, *sorted((y - end * 0.06, y - end * 0.09)), 0.82, 1.66, c["louvre"])
+        x = side * (half + 0.0008)
+        for k in range(3):
+            y0 = -0.09 + k * 0.065
+            louvres(m, x, y0, y0 + 0.045, 1.5, 1.7, mesh)
+    # Roof: a pantograph over each cab, the back one up, with the breakers, bus bar and roof boxes between.
+    pantograph(m, b0 + 0.04, top, c)
+    pantograph(m, b1 - 0.14, top, c, down=True)
+    m.box(-0.07, 0.07, b0 + 0.12, b0 + 0.2, top - 0.02, top + 0.05, c["roof"], bevel=0.006)
+    for y in (b0 + 0.22, b0 + 0.28):
+        m.upright(0.03, y, top - 0.01, top + 0.09, 0.008, 0.006, material("insulator", "#e8e6e0", rough=0.3), segments=10)
+    m.rod((0.03, b0 + 0.22, top + 0.1), (0.03, b0 + 0.28, top + 0.1), 0.004, c["steel"])
+    letters(m, L, c, 1.3, at=b1 - 0.028, size=0.028, x=side_x(1.3) + 0.0012)

@@ -2871,6 +2871,24 @@
       "sprite_off_wire": "alp45_down",
       "life": 35,
       "reliability": 94
+    },
+    {
+      "id": "alp46",
+      "kind": "engine",
+      "name": { "en": "ALP-46A", "fr": "ALP-46A" },
+      "type": { "en": "Bo-Bo electric", "fr": "Électrique Bo-Bo" },
+      "from": 2010,
+      "until": 2100,
+      "speed": 200,
+      "power": 7500,
+      "tractive": 316,
+      "weight": 92,
+      "cost": 360000,
+      "running": 5200,
+      "length": 13,
+      "traction": "electric",
+      "life": 35,
+      "reliability": 95
     }
   ]
 }
