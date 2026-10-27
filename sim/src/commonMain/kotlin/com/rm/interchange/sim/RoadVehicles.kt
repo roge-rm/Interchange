@@ -580,8 +580,8 @@ internal fun World.roadLimit(v: RoadVehicle, tile: Int): Int {
     return kmh * 4096 * 16 / 2700
 }
 
-/** Whether tile [i]'s road is icy or under packed snow. */
-fun World.slippery(i: Int) = (weather.ice[i].toInt() and 255) > 2 || (weather.snow[i].toInt() and 255) in 3..40
+/** Whether tile [i]'s road is icy or under packed snow, and not sanded. */
+fun World.slippery(i: Int) = ((weather.ice[i].toInt() and 255) > 2 || (weather.snow[i].toInt() and 255) in 3..40) && !sanded(i)
 
 /**
  * Wear on a road from a vehicle running onto it: trucks more than buses; plows clear the snow, the rest pack deep snow

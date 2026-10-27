@@ -295,15 +295,15 @@ internal fun World.roadsDay() {
             if (roadEdges(i) == 0 || roadOwner[i].toInt() != c.id || !salted.add(i)) continue
             val ice = weather.ice[i].toInt() and 255
             val snow = weather.snow[i].toInt() and 255
-            // Salt melts ice and thin snow; sand only gives grip, so ice is halved. Neither does anything for deep snow.
+            // Salt melts ice and thin snow; sand only gives grip (see [sanded]) and leaves them. Neither does anything for deep snow.
             val thin = salt && snow in 1 until 20
             if (ice == 0 && !thin) continue
-            weather.ice[i] = (if (salt) 0 else ice / 2).toByte()
+            if (salt) weather.ice[i] = 0
             if (thin) weather.snow[i] = 0
             spread++
         }
         // A calendar day's salt keeps the road clear for day length work days, so it's paid as that many, with upkeep.
-        c.upkeepOwed += SALT_COST * spread * settings.dayLength
+        c.upkeepOwed += (if (salt) SALT_COST else SAND_COST) * spread * settings.dayLength
     }
     var changed = false
     val opens = iceRoadsOpen ?: BooleanArray(0)
@@ -362,9 +362,22 @@ internal fun World.saltDepot(company: Company, c: Command.SaltDepot) {
     touched(c.x, c.y)
 }
 
-/** Salt from this year, sand before; how far a depot's trucks spread it, in tiles; and what a tile spread costs a work day, in tenths of a cent. */
+/** Whether road tile [i] is within reach of a sand depot of the road's owner, so it gives grip: sand before [SALT_FROM]. */
+fun World.sanded(i: Int): Boolean {
+    if (saltDepots.isEmpty() || Calendar.year(startYear, day) >= SALT_FROM) return false
+    val owner = roadOwner[i].toInt()
+    val x = i % width
+    val y = i / width
+    for (d in saltDepots) {
+        if (roadOwner[d].toInt() == owner && kotlin.math.abs(d % width - x) <= SALT_REACH && kotlin.math.abs(d / width - y) <= SALT_REACH) return true
+    }
+    return false
+}
+
+/** Salt from this year, sand before; how far a depot's trucks spread it, in tiles; and what a tile of salt spread costs a work day, in tenths of a cent, and what sand costs. */
 const val SALT_FROM = 1950
 const val SALT_REACH = 8
 const val SALT_COST = 50L
+const val SAND_COST = 20L
 /** A salt depot, in dollars before inflation. */
 const val SALT_DEPOT_COST = 2_500L

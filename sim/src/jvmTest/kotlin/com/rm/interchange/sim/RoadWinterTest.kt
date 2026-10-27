@@ -45,6 +45,24 @@ class RoadWinterTest {
     }
 
     @Test
+    fun sandIsCheaperThanSalt() {
+        val w = World(64, 64, 1, startYear = 1930)
+        for (i in w.corners.indices) w.corners[i] = 3
+        w.companies[0].money = 1_000_000
+        w.apply(Command.Road(0, 5, 20, 40, 20, Surface.PAVED, remove = false))
+        w.apply(Command.SaltDepot(0, 14, 21))
+        for (x in 5..40) w.weather.ice[w.index(x, 20)] = 20
+        val owed = w.companies[0].upkeepOwed
+        w.roadsDay()
+        assertEquals(SAND_COST * 17, w.companies[0].upkeepOwed - owed)
+        assertTrue(SAND_COST < SALT_COST)
+        // Sand leaves the ice, and the tile in reach isn't slippery while the one out of reach is.
+        assertEquals(20, w.weather.ice[w.index(12, 20)].toInt())
+        assertTrue(!w.slippery(w.index(12, 20)))
+        assertTrue(w.slippery(w.index(30, 20)))
+    }
+
+    @Test
     fun anIceRoadOpensOnlyOnThickIce() {
         val w = World(64, 64, 1, startYear = 1960)
         for (y in 0..64) for (x in 0..64) w.corners[w.corner(x, y)] = if (x in 21..29) 0 else 3
