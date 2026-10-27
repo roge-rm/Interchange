@@ -363,12 +363,15 @@ fun World.view(company: Int = 0, withReserved: Boolean = false): WorldView {
             cars += (t.id * 256 + c).toFloat()
             cars += ax + (bx - ax) * along
             cars += ay + (by - ay) * along
-            cars += heading(Track.edgeX4(b) - Track.edgeX4(a), Track.edgeY4(b) - Track.edgeY4(a)).toFloat()
+            // An engine at the back of a train is drawn turned round, so its nose points away from the train.
+            val turned = c == t.cars - 1 && c > 0 && roster[t.carEngines[c]].kind == VehicleKind.ENGINE
+            val h = heading(Track.edgeX4(b) - Track.edgeX4(a), Track.edgeY4(b) - Track.edgeY4(a))
+            cars += (if (turned) (h + 4) % 8 else h).toFloat()
             cars += roster[t.carEngines[c]].sprite(wire).toFloat()
             // Climbing or going down: the edge it leaves by against the edge it came in at.
             val pieces = track[tile].toInt()
             val rise = if (span != null) 0 else edgeHeight(tile % width, tile / width, pieces, b) - edgeHeight(tile % width, tile / width, pieces, a)
-            cars += rise.coerceIn(-1, 1).toFloat()
+            cars += (if (turned) -rise else rise).coerceIn(-1, 1).toFloat()
             cars += roster[t.carEngines[c]].length / 16f
             cars += span?.height?.toFloat() ?: -1f
         }

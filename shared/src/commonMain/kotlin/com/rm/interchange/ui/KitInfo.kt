@@ -712,16 +712,16 @@ private fun DrawScope.drawSprite(image: ImageBitmap, x: Int, y: Int, w0: Int, h0
     )
 }
 
-/** [e]'s drawing from the map's sheets, scaled to fit the box and centred; blank until its sheet is unpacked. */
+/** [e]'s drawing from the map's sheets, scaled to fit the box and centred, or [turned] round; blank until its sheet is unpacked. */
 @Composable
-fun VehiclePicture(e: Engine, modifier: Modifier) {
+fun VehiclePicture(e: Engine, modifier: Modifier, turned: Boolean = false) {
     val sheets = LocalSheets.current
     Canvas(modifier) {
         sheets ?: return@Canvas
         // Read here so the picture draws again once the sheet below is unpacked.
         sheets.revision.intValue
         val rects = sheets.vehicleRects(e.sprite) ?: return@Canvas
-        val r = PICTURE_CELL * 6
+        val r = (if (turned) (PICTURE_CELL + 4) % 8 else PICTURE_CELL) * 6
         val w0 = rects[r + 2]
         val h0 = rects[r + 3]
         if (w0 == 0 || h0 == 0) return@Canvas

@@ -71,7 +71,7 @@ internal fun TrainFormationEditor(
         val carried = if (car.cargo in e.cargoes) car.cargo else e.cargoes.firstOrNull() ?: -1
         PictureRow(
             stringResource(Res.string.formation_car, index + 1, e.name(lang)),
-            picture = { VehiclePicture(e, it) }, selected = chosen, onClick = { selected = index },
+            picture = { VehiclePicture(e, it, turned = index == draft.lastIndex && index > 0 && e.kind == VehicleKind.ENGINE && e.tender < 0) }, selected = chosen, onClick = { selected = index },
             line = if (e.tender >= 0) stringResource(Res.string.formation_tender, roster[e.tender].name(lang)) else null,
             stats = if (carried >= 0 && e.capacity > 0) cargoAmount(carried, e.capacity) else null,
         )
