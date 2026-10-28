@@ -15,6 +15,7 @@ import androidx.compose.ui.unit.LayoutDirection
 import com.rm.interchange.sim.Calendar
 import com.rm.interchange.sim.Climate
 import com.rm.interchange.sim.Workers
+import com.rm.interchange.sim.CurveTiles
 import com.rm.interchange.sim.World
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -51,6 +52,10 @@ internal class Renderer(private val world: World, private val sheets: Sheets, pr
     }
 
     private val cache = HashMap<Key, Entry>()
+
+    init {
+        CurveArt.install()
+    }
 
     /** The overlays baked in, as [ChunkBaker.GRID], [ChunkBaker.HEIGHTS] and [ChunkBaker.SNOW] bits. A change bakes every chunk again, the old ones drawn meanwhile. */
     var overlays = 0
@@ -372,7 +377,8 @@ internal class Renderer(private val world: World, private val sheets: Sheets, pr
     /** How many times the weather anywhere has changed. */
     private fun weatherVersions(): Long = world.weatherVersions.fold(0L) { sum, v -> sum + v }
 
-    /** The sum of [versions] over the world's blocks under chunk ([cx], [cy]) at [level]. */
+    /** The sum of [versions] over the world's blocks under chunk ([cx], [cy]) at [level], and those within
+     *  [CURVE_REACH] tiles of it, as far as a track tile's curved art reads. */
     private fun sumOf(versions: IntArray, view: View, level: Int, cx: Int, cy: Int): Int {
         val t = tileRange(view, level, cx, cy)
         if (t[0] > t[2] || t[1] > t[3]) return 0
@@ -380,10 +386,10 @@ internal class Renderer(private val world: World, private val sheets: Sheets, pr
         val vy0 = t[1]
         val vx1 = t[2]
         val vy1 = t[3]
-        val x0 = min(view.worldX(vx0, vy0), view.worldX(vx1, vy1)) / World.BLOCK
-        val x1 = max(view.worldX(vx0, vy0), view.worldX(vx1, vy1)) / World.BLOCK
-        val y0 = min(view.worldY(vx0, vy0), view.worldY(vx1, vy1)) / World.BLOCK
-        val y1 = max(view.worldY(vx0, vy0), view.worldY(vx1, vy1)) / World.BLOCK
+        val x0 = max(0, min(view.worldX(vx0, vy0), view.worldX(vx1, vy1)) - CURVE_REACH) / World.BLOCK
+        val x1 = min(world.width - 1, max(view.worldX(vx0, vy0), view.worldX(vx1, vy1)) + CURVE_REACH) / World.BLOCK
+        val y0 = max(0, min(view.worldY(vx0, vy0), view.worldY(vx1, vy1)) - CURVE_REACH) / World.BLOCK
+        val y1 = min(world.height - 1, max(view.worldY(vx0, vy0), view.worldY(vx1, vy1)) + CURVE_REACH) / World.BLOCK
         val across = world.width / World.BLOCK
         var sum = 0
         for (y in y0..y1) for (x in x0..x1) sum += versions[y * across + x]
@@ -483,6 +489,8 @@ internal class Renderer(private val world: World, private val sheets: Sheets, pr
         /** A chunk's size, small enough that it bakes again quickly when something's built on it. */
         const val CHUNK_PIXELS = 512
         const val CHUNK_ROWS = 256
+        /** How far a track tile's curves read: a change rebakes the chunks of tiles this far away. */
+        const val CURVE_REACH = CurveTiles.REACH
         /** The sharpest level drawn. Level 0's sheets take some 130 MB, more than a small heap holds with everything else. */
         val SHARPEST = if (heapBytes() >= 400L * 1024 * 1024) 0 else 1
         /** Chunks baking at once, leaving cores for the screen and the game. */

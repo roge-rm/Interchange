@@ -1,0 +1,977 @@
+# Written by tools/blender/curve_art.py: curved track sprites, by layer and key, and the layout each was found in (seed, index, tile).
+bed bE_XP 7000 6 0 2
+bed bE_YM 7000 30 2 -2
+bed bN_XM 7000 42 1 1
+bed bN_YM 7000 12 1 1
+bed bS_XP 7000 16 -2 0
+bed bS_YP 7000 30 0 1
+bed bW_XM 7000 1 -1 -1
+bed bW_YP 7000 44 0 2
+bed bXtoE_XM 7000 6 1 2
+bed bXtoN_XP 7000 39 2 0
+bed bXtoS_XM 7000 16 -1 0
+bed bXtoW_XP 7000 1 -2 -1
+bed bYtoE_YP 7000 65 -1 0
+bed bYtoN_YP 7000 12 1 0
+bed bYtoS_YM 7000 30 0 2
+bed bYtoW_YM 7000 61 0 -2
+bed cE_XP 7000 581 1 2
+bed cE_YM 7000 1479 0 1
+bed cN_XM 7000 581 2 2
+bed cN_YM 7000 454 1 -1
+bed cS_XP 7000 225 -2 0
+bed cS_YP 7000 298 0 2
+bed cW_XM 7000 225 -1 0
+bed cW_YP 7000 454 1 -2
+bed pEDD looks
+bed pEDT looks
+bed pEST looks
+bed pETD looks
+bed pETS looks
+bed pETT looks
+bed pNDD looks
+bed pNDT looks
+bed pNST looks
+bed pNTD looks
+bed pNTS looks
+bed pNTT looks
+bed pSDD looks
+bed pSDT looks
+bed pSST looks
+bed pSTD looks
+bed pSTS looks
+bed pSTT looks
+bed pWDD looks
+bed pWDT looks
+bed pWST looks
+bed pWTD looks
+bed pWTS looks
+bed pWTT looks
+bed pXTT looks
+bed pYTT looks
+ties bE_XP 7000 6 0 2
+ties bE_XPt 7000 759 2 -1
+ties bE_YM 7000 30 2 -2
+ties bE_YMt 7000 70 0 0
+ties bN_XM 7000 42 1 1
+ties bN_XMt 7000 409 2 0
+ties bN_YM 7000 12 1 1
+ties bN_YMt 7000 57 1 1
+ties bS_XP 7000 16 -2 0
+ties bS_XPt 7000 630 -2 2
+ties bS_YP 7000 30 0 1
+ties bS_YPt 7000 223 2 -1
+ties bW_XM 7000 1 -1 -1
+ties bW_XMt 7000 182 1 -2
+ties bW_YP 7000 44 0 2
+ties bW_YPt 7000 366 -1 -2
+ties bXtoE_XM 7000 6 1 2
+ties bXtoE_XMt 7000 878 0 1
+ties bXtoN_XP 7000 39 2 0
+ties bXtoN_XPt 7000 409 1 0
+ties bXtoS_XM 7000 16 -1 0
+ties bXtoS_XMt 7000 630 -1 2
+ties bXtoW_XP 7000 1 -2 -1
+ties bXtoW_XPt 7000 182 0 -2
+ties bYtoE_YP 7000 65 -1 0
+ties bYtoE_YPt 7000 70 0 -1
+ties bYtoN_YP 7000 12 1 0
+ties bYtoN_YPt 7000 57 1 0
+ties bYtoS_YM 7000 30 0 2
+ties bYtoS_YMt 7000 223 2 0
+ties bYtoW_YM 7000 61 0 -2
+ties bYtoW_YMt 7000 366 -1 -1
+ties cE_XP 7000 581 1 2
+ties cE_YM 7000 1479 0 1
+ties cN_XM 7000 581 2 2
+ties cN_YM 7000 454 1 -1
+ties cS_XP 7000 225 -2 0
+ties cS_YP 7000 298 0 2
+ties cW_XM 7000 225 -1 0
+ties cW_YP 7000 454 1 -2
+ties pEDD looks
+ties pEDD_-t looks
+ties pEDD_t- looks
+ties pEDD_tt looks
+ties pEDT looks
+ties pEDT_-t looks
+ties pEDT_t- looks
+ties pEDT_tt looks
+ties pEST looks
+ties pEST_-t looks
+ties pEST_t- looks
+ties pEST_tt looks
+ties pETD looks
+ties pETD_-t looks
+ties pETD_t- looks
+ties pETD_tt looks
+ties pETS looks
+ties pETS_-t looks
+ties pETS_t- looks
+ties pETS_tt looks
+ties pETT looks
+ties pETT_-t looks
+ties pETT_t- looks
+ties pETT_tt looks
+ties pNDD looks
+ties pNDD_-t looks
+ties pNDD_t- looks
+ties pNDD_tt looks
+ties pNDT looks
+ties pNDT_-t looks
+ties pNDT_t- looks
+ties pNDT_tt looks
+ties pNST looks
+ties pNST_-t looks
+ties pNST_t- looks
+ties pNST_tt looks
+ties pNTD looks
+ties pNTD_-t looks
+ties pNTD_t- looks
+ties pNTD_tt looks
+ties pNTS looks
+ties pNTS_-t looks
+ties pNTS_t- looks
+ties pNTS_tt looks
+ties pNTT looks
+ties pNTT_-t looks
+ties pNTT_t- looks
+ties pNTT_tt looks
+ties pSDD looks
+ties pSDD_-t looks
+ties pSDD_t- looks
+ties pSDD_tt looks
+ties pSDT looks
+ties pSDT_-t looks
+ties pSDT_t- looks
+ties pSDT_tt looks
+ties pSST looks
+ties pSST_-t looks
+ties pSST_t- looks
+ties pSST_tt looks
+ties pSTD looks
+ties pSTD_-t looks
+ties pSTD_t- looks
+ties pSTD_tt looks
+ties pSTS looks
+ties pSTS_-t looks
+ties pSTS_t- looks
+ties pSTS_tt looks
+ties pSTT looks
+ties pSTT_-t looks
+ties pSTT_t- looks
+ties pSTT_tt looks
+ties pWDD looks
+ties pWDD_-t looks
+ties pWDD_t- looks
+ties pWDD_tt looks
+ties pWDT looks
+ties pWDT_-t looks
+ties pWDT_t- looks
+ties pWDT_tt looks
+ties pWST looks
+ties pWST_-t looks
+ties pWST_t- looks
+ties pWST_tt looks
+ties pWTD looks
+ties pWTD_-t looks
+ties pWTD_t- looks
+ties pWTD_tt looks
+ties pWTS looks
+ties pWTS_-t looks
+ties pWTS_t- looks
+ties pWTS_tt looks
+ties pWTT looks
+ties pWTT_-t looks
+ties pWTT_t- looks
+ties pWTT_tt looks
+ties pXTT looks
+ties pYTT looks
+running bE_XP 7000 6 0 2
+running bE_YM 7000 30 2 -2
+running bN_XM 7000 42 1 1
+running bN_YM 7000 12 1 1
+running bS_XP 7000 16 -2 0
+running bS_YP 7000 30 0 1
+running bW_XM 7000 1 -1 -1
+running bW_YP 7000 44 0 2
+running bXtoE_XM 7000 6 1 2
+running bXtoN_XP 7000 39 2 0
+running bXtoS_XM 7000 16 -1 0
+running bXtoW_XP 7000 1 -2 -1
+running bYtoE_YP 7000 65 -1 0
+running bYtoN_YP 7000 12 1 0
+running bYtoS_YM 7000 30 0 2
+running bYtoW_YM 7000 61 0 -2
+running cE_XP 7000 581 1 2
+running cE_YM 7000 1479 0 1
+running cN_XM 7000 581 2 2
+running cN_YM 7000 454 1 -1
+running cS_XP 7000 225 -2 0
+running cS_YP 7000 298 0 2
+running cW_XM 7000 225 -1 0
+running cW_YP 7000 454 1 -2
+running pEDD looks
+running pEDT looks
+running pEST looks
+running pETD looks
+running pETS looks
+running pETT looks
+running pNDD looks
+running pNDT looks
+running pNST looks
+running pNTD looks
+running pNTS looks
+running pNTT looks
+running pSDD looks
+running pSDT looks
+running pSST looks
+running pSTD looks
+running pSTS looks
+running pSTT looks
+running pWDD looks
+running pWDT looks
+running pWST looks
+running pWTD looks
+running pWTS looks
+running pWTT looks
+running pXTT looks
+running pYTT looks
+gear gEXPDDqDD looks
+gear gEXPDDqDT looks
+gear gEXPDDqST looks
+gear gEXPDDqTD looks
+gear gEXPDDqTS looks
+gear gEXPDDqTT looks
+gear gEXPDDs looks
+gear gEXPDDsqDD looks
+gear gEXPDDsqDT looks
+gear gEXPDDsqST looks
+gear gEXPDDsqTD looks
+gear gEXPDDsqTS looks
+gear gEXPDDsqTT looks
+gear gEXPDTqDD looks
+gear gEXPDTqDT looks
+gear gEXPDTqST looks
+gear gEXPDTqTD looks
+gear gEXPDTqTS looks
+gear gEXPDTqTT looks
+gear gEXPDTs looks
+gear gEXPDTsqDD looks
+gear gEXPDTsqDT looks
+gear gEXPDTsqST looks
+gear gEXPDTsqTD looks
+gear gEXPDTsqTS looks
+gear gEXPDTsqTT looks
+gear gEXPSTqDD looks
+gear gEXPSTqDT looks
+gear gEXPSTqST looks
+gear gEXPSTqTD looks
+gear gEXPSTqTS looks
+gear gEXPSTqTT looks
+gear gEXPSTs looks
+gear gEXPSTsqDD looks
+gear gEXPSTsqDT looks
+gear gEXPSTsqST looks
+gear gEXPSTsqTD looks
+gear gEXPSTsqTS looks
+gear gEXPSTsqTT looks
+gear gEXPTDqDD looks
+gear gEXPTDqDT looks
+gear gEXPTDqST looks
+gear gEXPTDqTD looks
+gear gEXPTDqTS looks
+gear gEXPTDqTT looks
+gear gEXPTDs looks
+gear gEXPTDsqDD looks
+gear gEXPTDsqDT looks
+gear gEXPTDsqST looks
+gear gEXPTDsqTD looks
+gear gEXPTDsqTS looks
+gear gEXPTDsqTT looks
+gear gEXPTSqDD looks
+gear gEXPTSqDT looks
+gear gEXPTSqST looks
+gear gEXPTSqTD looks
+gear gEXPTSqTS looks
+gear gEXPTSqTT looks
+gear gEXPTSs looks
+gear gEXPTSsqDD looks
+gear gEXPTSsqDT looks
+gear gEXPTSsqST looks
+gear gEXPTSsqTD looks
+gear gEXPTSsqTS looks
+gear gEXPTSsqTT looks
+gear gEXPTTqDD looks
+gear gEXPTTqDT looks
+gear gEXPTTqST looks
+gear gEXPTTqTD looks
+gear gEXPTTqTS looks
+gear gEXPTTqTT looks
+gear gEXPTTs looks
+gear gEXPTTsqDD looks
+gear gEXPTTsqDT looks
+gear gEXPTTsqST looks
+gear gEXPTTsqTD looks
+gear gEXPTTsqTS looks
+gear gEXPTTsqTT looks
+gear gEYMDDqDD looks
+gear gEYMDDqDT looks
+gear gEYMDDqST looks
+gear gEYMDDqTD looks
+gear gEYMDDqTS looks
+gear gEYMDDqTT looks
+gear gEYMDDs looks
+gear gEYMDDsqDD looks
+gear gEYMDDsqDT looks
+gear gEYMDDsqST looks
+gear gEYMDDsqTD looks
+gear gEYMDDsqTS looks
+gear gEYMDDsqTT looks
+gear gEYMDTqDD looks
+gear gEYMDTqDT looks
+gear gEYMDTqST looks
+gear gEYMDTqTD looks
+gear gEYMDTqTS looks
+gear gEYMDTqTT looks
+gear gEYMDTs looks
+gear gEYMDTsqDD looks
+gear gEYMDTsqDT looks
+gear gEYMDTsqST looks
+gear gEYMDTsqTD looks
+gear gEYMDTsqTS looks
+gear gEYMDTsqTT looks
+gear gEYMSTqDD looks
+gear gEYMSTqDT looks
+gear gEYMSTqST looks
+gear gEYMSTqTD looks
+gear gEYMSTqTS looks
+gear gEYMSTqTT looks
+gear gEYMSTs looks
+gear gEYMSTsqDD looks
+gear gEYMSTsqDT looks
+gear gEYMSTsqST looks
+gear gEYMSTsqTD looks
+gear gEYMSTsqTS looks
+gear gEYMSTsqTT looks
+gear gEYMTDqDD looks
+gear gEYMTDqDT looks
+gear gEYMTDqST looks
+gear gEYMTDqTD looks
+gear gEYMTDqTS looks
+gear gEYMTDqTT looks
+gear gEYMTDs looks
+gear gEYMTDsqDD looks
+gear gEYMTDsqDT looks
+gear gEYMTDsqST looks
+gear gEYMTDsqTD looks
+gear gEYMTDsqTS looks
+gear gEYMTDsqTT looks
+gear gEYMTSqDD looks
+gear gEYMTSqDT looks
+gear gEYMTSqST looks
+gear gEYMTSqTD looks
+gear gEYMTSqTS looks
+gear gEYMTSqTT looks
+gear gEYMTSs looks
+gear gEYMTSsqDD looks
+gear gEYMTSsqDT looks
+gear gEYMTSsqST looks
+gear gEYMTSsqTD looks
+gear gEYMTSsqTS looks
+gear gEYMTSsqTT looks
+gear gEYMTTqDD looks
+gear gEYMTTqDT looks
+gear gEYMTTqST looks
+gear gEYMTTqTD looks
+gear gEYMTTqTS looks
+gear gEYMTTqTT looks
+gear gEYMTTs looks
+gear gEYMTTsqDD looks
+gear gEYMTTsqDT looks
+gear gEYMTTsqST looks
+gear gEYMTTsqTD looks
+gear gEYMTTsqTS looks
+gear gEYMTTsqTT looks
+gear gNXMDDqDD looks
+gear gNXMDDqDT looks
+gear gNXMDDqST looks
+gear gNXMDDqTD looks
+gear gNXMDDqTS looks
+gear gNXMDDqTT looks
+gear gNXMDDs looks
+gear gNXMDDsqDD looks
+gear gNXMDDsqDT looks
+gear gNXMDDsqST looks
+gear gNXMDDsqTD looks
+gear gNXMDDsqTS looks
+gear gNXMDDsqTT looks
+gear gNXMDTqDD looks
+gear gNXMDTqDT looks
+gear gNXMDTqST looks
+gear gNXMDTqTD looks
+gear gNXMDTqTS looks
+gear gNXMDTqTT looks
+gear gNXMDTs looks
+gear gNXMDTsqDD looks
+gear gNXMDTsqDT looks
+gear gNXMDTsqST looks
+gear gNXMDTsqTD looks
+gear gNXMDTsqTS looks
+gear gNXMDTsqTT looks
+gear gNXMSTqDD looks
+gear gNXMSTqDT looks
+gear gNXMSTqST looks
+gear gNXMSTqTD looks
+gear gNXMSTqTS looks
+gear gNXMSTqTT looks
+gear gNXMSTs looks
+gear gNXMSTsqDD looks
+gear gNXMSTsqDT looks
+gear gNXMSTsqST looks
+gear gNXMSTsqTD looks
+gear gNXMSTsqTS looks
+gear gNXMSTsqTT looks
+gear gNXMTDqDD looks
+gear gNXMTDqDT looks
+gear gNXMTDqST looks
+gear gNXMTDqTD looks
+gear gNXMTDqTS looks
+gear gNXMTDqTT looks
+gear gNXMTDs looks
+gear gNXMTDsqDD looks
+gear gNXMTDsqDT looks
+gear gNXMTDsqST looks
+gear gNXMTDsqTD looks
+gear gNXMTDsqTS looks
+gear gNXMTDsqTT looks
+gear gNXMTSqDD looks
+gear gNXMTSqDT looks
+gear gNXMTSqST looks
+gear gNXMTSqTD looks
+gear gNXMTSqTS looks
+gear gNXMTSqTT looks
+gear gNXMTSs looks
+gear gNXMTSsqDD looks
+gear gNXMTSsqDT looks
+gear gNXMTSsqST looks
+gear gNXMTSsqTD looks
+gear gNXMTSsqTS looks
+gear gNXMTSsqTT looks
+gear gNXMTTqDD looks
+gear gNXMTTqDT looks
+gear gNXMTTqST looks
+gear gNXMTTqTD looks
+gear gNXMTTqTS looks
+gear gNXMTTqTT looks
+gear gNXMTTs looks
+gear gNXMTTsqDD looks
+gear gNXMTTsqDT looks
+gear gNXMTTsqST looks
+gear gNXMTTsqTD looks
+gear gNXMTTsqTS looks
+gear gNXMTTsqTT looks
+gear gNYMDDqDD looks
+gear gNYMDDqDT looks
+gear gNYMDDqST looks
+gear gNYMDDqTD looks
+gear gNYMDDqTS looks
+gear gNYMDDqTT looks
+gear gNYMDDs looks
+gear gNYMDDsqDD looks
+gear gNYMDDsqDT looks
+gear gNYMDDsqST looks
+gear gNYMDDsqTD looks
+gear gNYMDDsqTS looks
+gear gNYMDDsqTT looks
+gear gNYMDTqDD looks
+gear gNYMDTqDT looks
+gear gNYMDTqST looks
+gear gNYMDTqTD looks
+gear gNYMDTqTS looks
+gear gNYMDTqTT looks
+gear gNYMDTs looks
+gear gNYMDTsqDD looks
+gear gNYMDTsqDT looks
+gear gNYMDTsqST looks
+gear gNYMDTsqTD looks
+gear gNYMDTsqTS looks
+gear gNYMDTsqTT looks
+gear gNYMSTqDD looks
+gear gNYMSTqDT looks
+gear gNYMSTqST looks
+gear gNYMSTqTD looks
+gear gNYMSTqTS looks
+gear gNYMSTqTT looks
+gear gNYMSTs looks
+gear gNYMSTsqDD looks
+gear gNYMSTsqDT looks
+gear gNYMSTsqST looks
+gear gNYMSTsqTD looks
+gear gNYMSTsqTS looks
+gear gNYMSTsqTT looks
+gear gNYMTDqDD looks
+gear gNYMTDqDT looks
+gear gNYMTDqST looks
+gear gNYMTDqTD looks
+gear gNYMTDqTS looks
+gear gNYMTDqTT looks
+gear gNYMTDs looks
+gear gNYMTDsqDD looks
+gear gNYMTDsqDT looks
+gear gNYMTDsqST looks
+gear gNYMTDsqTD looks
+gear gNYMTDsqTS looks
+gear gNYMTDsqTT looks
+gear gNYMTSqDD looks
+gear gNYMTSqDT looks
+gear gNYMTSqST looks
+gear gNYMTSqTD looks
+gear gNYMTSqTS looks
+gear gNYMTSqTT looks
+gear gNYMTSs looks
+gear gNYMTSsqDD looks
+gear gNYMTSsqDT looks
+gear gNYMTSsqST looks
+gear gNYMTSsqTD looks
+gear gNYMTSsqTS looks
+gear gNYMTSsqTT looks
+gear gNYMTTqDD looks
+gear gNYMTTqDT looks
+gear gNYMTTqST looks
+gear gNYMTTqTD looks
+gear gNYMTTqTS looks
+gear gNYMTTqTT looks
+gear gNYMTTs looks
+gear gNYMTTsqDD looks
+gear gNYMTTsqDT looks
+gear gNYMTTsqST looks
+gear gNYMTTsqTD looks
+gear gNYMTTsqTS looks
+gear gNYMTTsqTT looks
+gear gSXPDDqDD looks
+gear gSXPDDqDT looks
+gear gSXPDDqST looks
+gear gSXPDDqTD looks
+gear gSXPDDqTS looks
+gear gSXPDDqTT looks
+gear gSXPDDs looks
+gear gSXPDDsqDD looks
+gear gSXPDDsqDT looks
+gear gSXPDDsqST looks
+gear gSXPDDsqTD looks
+gear gSXPDDsqTS looks
+gear gSXPDDsqTT looks
+gear gSXPDTqDD looks
+gear gSXPDTqDT looks
+gear gSXPDTqST looks
+gear gSXPDTqTD looks
+gear gSXPDTqTS looks
+gear gSXPDTqTT looks
+gear gSXPDTs looks
+gear gSXPDTsqDD looks
+gear gSXPDTsqDT looks
+gear gSXPDTsqST looks
+gear gSXPDTsqTD looks
+gear gSXPDTsqTS looks
+gear gSXPDTsqTT looks
+gear gSXPSTqDD looks
+gear gSXPSTqDT looks
+gear gSXPSTqST looks
+gear gSXPSTqTD looks
+gear gSXPSTqTS looks
+gear gSXPSTqTT looks
+gear gSXPSTs looks
+gear gSXPSTsqDD looks
+gear gSXPSTsqDT looks
+gear gSXPSTsqST looks
+gear gSXPSTsqTD looks
+gear gSXPSTsqTS looks
+gear gSXPSTsqTT looks
+gear gSXPTDqDD looks
+gear gSXPTDqDT looks
+gear gSXPTDqST looks
+gear gSXPTDqTD looks
+gear gSXPTDqTS looks
+gear gSXPTDqTT looks
+gear gSXPTDs looks
+gear gSXPTDsqDD looks
+gear gSXPTDsqDT looks
+gear gSXPTDsqST looks
+gear gSXPTDsqTD looks
+gear gSXPTDsqTS looks
+gear gSXPTDsqTT looks
+gear gSXPTSqDD looks
+gear gSXPTSqDT looks
+gear gSXPTSqST looks
+gear gSXPTSqTD looks
+gear gSXPTSqTS looks
+gear gSXPTSqTT looks
+gear gSXPTSs looks
+gear gSXPTSsqDD looks
+gear gSXPTSsqDT looks
+gear gSXPTSsqST looks
+gear gSXPTSsqTD looks
+gear gSXPTSsqTS looks
+gear gSXPTSsqTT looks
+gear gSXPTTqDD looks
+gear gSXPTTqDT looks
+gear gSXPTTqST looks
+gear gSXPTTqTD looks
+gear gSXPTTqTS looks
+gear gSXPTTqTT looks
+gear gSXPTTs looks
+gear gSXPTTsqDD looks
+gear gSXPTTsqDT looks
+gear gSXPTTsqST looks
+gear gSXPTTsqTD looks
+gear gSXPTTsqTS looks
+gear gSXPTTsqTT looks
+gear gSYPDDqDD looks
+gear gSYPDDqDT looks
+gear gSYPDDqST looks
+gear gSYPDDqTD looks
+gear gSYPDDqTS looks
+gear gSYPDDqTT looks
+gear gSYPDDs looks
+gear gSYPDDsqDD looks
+gear gSYPDDsqDT looks
+gear gSYPDDsqST looks
+gear gSYPDDsqTD looks
+gear gSYPDDsqTS looks
+gear gSYPDDsqTT looks
+gear gSYPDTqDD looks
+gear gSYPDTqDT looks
+gear gSYPDTqST looks
+gear gSYPDTqTD looks
+gear gSYPDTqTS looks
+gear gSYPDTqTT looks
+gear gSYPDTs looks
+gear gSYPDTsqDD looks
+gear gSYPDTsqDT looks
+gear gSYPDTsqST looks
+gear gSYPDTsqTD looks
+gear gSYPDTsqTS looks
+gear gSYPDTsqTT looks
+gear gSYPSTqDD looks
+gear gSYPSTqDT looks
+gear gSYPSTqST looks
+gear gSYPSTqTD looks
+gear gSYPSTqTS looks
+gear gSYPSTqTT looks
+gear gSYPSTs looks
+gear gSYPSTsqDD looks
+gear gSYPSTsqDT looks
+gear gSYPSTsqST looks
+gear gSYPSTsqTD looks
+gear gSYPSTsqTS looks
+gear gSYPSTsqTT looks
+gear gSYPTDqDD looks
+gear gSYPTDqDT looks
+gear gSYPTDqST looks
+gear gSYPTDqTD looks
+gear gSYPTDqTS looks
+gear gSYPTDqTT looks
+gear gSYPTDs looks
+gear gSYPTDsqDD looks
+gear gSYPTDsqDT looks
+gear gSYPTDsqST looks
+gear gSYPTDsqTD looks
+gear gSYPTDsqTS looks
+gear gSYPTDsqTT looks
+gear gSYPTSqDD looks
+gear gSYPTSqDT looks
+gear gSYPTSqST looks
+gear gSYPTSqTD looks
+gear gSYPTSqTS looks
+gear gSYPTSqTT looks
+gear gSYPTSs looks
+gear gSYPTSsqDD looks
+gear gSYPTSsqDT looks
+gear gSYPTSsqST looks
+gear gSYPTSsqTD looks
+gear gSYPTSsqTS looks
+gear gSYPTSsqTT looks
+gear gSYPTTqDD looks
+gear gSYPTTqDT looks
+gear gSYPTTqST looks
+gear gSYPTTqTD looks
+gear gSYPTTqTS looks
+gear gSYPTTqTT looks
+gear gSYPTTs looks
+gear gSYPTTsqDD looks
+gear gSYPTTsqDT looks
+gear gSYPTTsqST looks
+gear gSYPTTsqTD looks
+gear gSYPTTsqTS looks
+gear gSYPTTsqTT looks
+gear gWXMDDqDD looks
+gear gWXMDDqDT looks
+gear gWXMDDqST looks
+gear gWXMDDqTD looks
+gear gWXMDDqTS looks
+gear gWXMDDqTT looks
+gear gWXMDDs looks
+gear gWXMDDsqDD looks
+gear gWXMDDsqDT looks
+gear gWXMDDsqST looks
+gear gWXMDDsqTD looks
+gear gWXMDDsqTS looks
+gear gWXMDDsqTT looks
+gear gWXMDTqDD looks
+gear gWXMDTqDT looks
+gear gWXMDTqST looks
+gear gWXMDTqTD looks
+gear gWXMDTqTS looks
+gear gWXMDTqTT looks
+gear gWXMDTs looks
+gear gWXMDTsqDD looks
+gear gWXMDTsqDT looks
+gear gWXMDTsqST looks
+gear gWXMDTsqTD looks
+gear gWXMDTsqTS looks
+gear gWXMDTsqTT looks
+gear gWXMSTqDD looks
+gear gWXMSTqDT looks
+gear gWXMSTqST looks
+gear gWXMSTqTD looks
+gear gWXMSTqTS looks
+gear gWXMSTqTT looks
+gear gWXMSTs looks
+gear gWXMSTsqDD looks
+gear gWXMSTsqDT looks
+gear gWXMSTsqST looks
+gear gWXMSTsqTD looks
+gear gWXMSTsqTS looks
+gear gWXMSTsqTT looks
+gear gWXMTDqDD looks
+gear gWXMTDqDT looks
+gear gWXMTDqST looks
+gear gWXMTDqTD looks
+gear gWXMTDqTS looks
+gear gWXMTDqTT looks
+gear gWXMTDs looks
+gear gWXMTDsqDD looks
+gear gWXMTDsqDT looks
+gear gWXMTDsqST looks
+gear gWXMTDsqTD looks
+gear gWXMTDsqTS looks
+gear gWXMTDsqTT looks
+gear gWXMTSqDD looks
+gear gWXMTSqDT looks
+gear gWXMTSqST looks
+gear gWXMTSqTD looks
+gear gWXMTSqTS looks
+gear gWXMTSqTT looks
+gear gWXMTSs looks
+gear gWXMTSsqDD looks
+gear gWXMTSsqDT looks
+gear gWXMTSsqST looks
+gear gWXMTSsqTD looks
+gear gWXMTSsqTS looks
+gear gWXMTSsqTT looks
+gear gWXMTTqDD looks
+gear gWXMTTqDT looks
+gear gWXMTTqST looks
+gear gWXMTTqTD looks
+gear gWXMTTqTS looks
+gear gWXMTTqTT looks
+gear gWXMTTs looks
+gear gWXMTTsqDD looks
+gear gWXMTTsqDT looks
+gear gWXMTTsqST looks
+gear gWXMTTsqTD looks
+gear gWXMTTsqTS looks
+gear gWXMTTsqTT looks
+gear gWYPDDqDD looks
+gear gWYPDDqDT looks
+gear gWYPDDqST looks
+gear gWYPDDqTD looks
+gear gWYPDDqTS looks
+gear gWYPDDqTT looks
+gear gWYPDDs looks
+gear gWYPDDsqDD looks
+gear gWYPDDsqDT looks
+gear gWYPDDsqST looks
+gear gWYPDDsqTD looks
+gear gWYPDDsqTS looks
+gear gWYPDDsqTT looks
+gear gWYPDTqDD looks
+gear gWYPDTqDT looks
+gear gWYPDTqST looks
+gear gWYPDTqTD looks
+gear gWYPDTqTS looks
+gear gWYPDTqTT looks
+gear gWYPDTs looks
+gear gWYPDTsqDD looks
+gear gWYPDTsqDT looks
+gear gWYPDTsqST looks
+gear gWYPDTsqTD looks
+gear gWYPDTsqTS looks
+gear gWYPDTsqTT looks
+gear gWYPSTqDD looks
+gear gWYPSTqDT looks
+gear gWYPSTqST looks
+gear gWYPSTqTD looks
+gear gWYPSTqTS looks
+gear gWYPSTqTT looks
+gear gWYPSTs looks
+gear gWYPSTsqDD looks
+gear gWYPSTsqDT looks
+gear gWYPSTsqST looks
+gear gWYPSTsqTD looks
+gear gWYPSTsqTS looks
+gear gWYPSTsqTT looks
+gear gWYPTDqDD looks
+gear gWYPTDqDT looks
+gear gWYPTDqST looks
+gear gWYPTDqTD looks
+gear gWYPTDqTS looks
+gear gWYPTDqTT looks
+gear gWYPTDs looks
+gear gWYPTDsqDD looks
+gear gWYPTDsqDT looks
+gear gWYPTDsqST looks
+gear gWYPTDsqTD looks
+gear gWYPTDsqTS looks
+gear gWYPTDsqTT looks
+gear gWYPTSqDD looks
+gear gWYPTSqDT looks
+gear gWYPTSqST looks
+gear gWYPTSqTD looks
+gear gWYPTSqTS looks
+gear gWYPTSqTT looks
+gear gWYPTSs looks
+gear gWYPTSsqDD looks
+gear gWYPTSsqDT looks
+gear gWYPTSsqST looks
+gear gWYPTSsqTD looks
+gear gWYPTSsqTS looks
+gear gWYPTSsqTT looks
+gear gWYPTTqDD looks
+gear gWYPTTqDT looks
+gear gWYPTTqST looks
+gear gWYPTTqTD looks
+gear gWYPTTqTS looks
+gear gWYPTTqTT looks
+gear gWYPTTs looks
+gear gWYPTTsqDD looks
+gear gWYPTTsqDT looks
+gear gWYPTTsqST looks
+gear gWYPTTsqTD looks
+gear gWYPTTsqTS looks
+gear gWYPTTsqTT looks
+gear gbE_XPqE 7002 464 -2 -2
+gear gbE_XPqTS -1 27 0 0
+gear gbE_XPqTT 7005 1572 -2 0
+gear gbE_XPs 7000 759 2 -1
+gear gbE_XPsqE -1 29 0 0
+gear gbE_XPsqTS -1 31 0 0
+gear gbE_XPsqTT 7005 220 -2 1
+gear gbE_YMqE 7006 465 -2 2
+gear gbE_YMqTS -1 19 0 0
+gear gbE_YMqTT 7001 1357 2 0
+gear gbE_YMs 7000 70 0 0
+gear gbE_YMsqE -1 5 0 0
+gear gbE_YMsqTS -1 23 0 0
+gear gbE_YMsqTT 7011 1082 1 0
+gear gbN_XMqE 7005 907 -1 1
+gear gbN_XMqTS -1 11 0 0
+gear gbN_XMqTT 7000 1880 -2 -2
+gear gbN_XMs 7000 409 2 0
+gear gbN_XMsqE -1 13 0 0
+gear gbN_XMsqTS -1 15 0 0
+gear gbN_XMsqTT -1 14 0 0
+gear gbN_YMqE 7006 465 -2 2
+gear gbN_YMqTS 7000 985 0 -2
+gear gbN_YMqTT 7001 1771 0 2
+gear gbN_YMs 7000 57 1 1
+gear gbN_YMsqE -1 5 0 0
+gear gbN_YMsqTS 7013 1179 0 2
+gear gbN_YMsqTT -1 6 0 0
+gear gbS_XPqE 7002 464 -2 -2
+gear gbS_XPqST 7003 618 -2 0
+gear gbS_XPqTT 7003 1160 -2 0
+gear gbS_XPs 7000 630 -2 2
+gear gbS_XPsqE -1 29 0 0
+gear gbS_XPsqST -1 39 0 0
+gear gbS_XPsqTT -1 38 0 0
+gear gbS_YPqE 7001 434 0 2
+gear gbS_YPqST -1 43 0 0
+gear gbS_YPqTT 7001 266 -1 1
+gear gbS_YPs 7000 223 2 -1
+gear gbS_YPsqE -1 45 0 0
+gear gbS_YPsqST -1 47 0 0
+gear gbS_YPsqTT -1 46 0 0
+gear gbW_XMqE 7005 907 -1 1
+gear gbW_XMqST 7001 1163 0 -1
+gear gbW_XMqTT 7000 299 -1 -1
+gear gbW_XMs 7000 182 1 -2
+gear gbW_XMsqE -1 13 0 0
+gear gbW_XMsqST -1 55 0 0
+gear gbW_XMsqTT 7002 1258 -1 -2
+gear gbW_YPqE 7001 434 0 2
+gear gbW_YPqST 7002 155 -1 2
+gear gbW_YPqTT 7000 415 1 -2
+gear gbW_YPs 7000 366 -1 -2
+gear gbW_YPsqE -1 45 0 0
+gear gbW_YPsqST -1 63 0 0
+gear gbW_YPsqTT -1 62 0 0
+gear gbXtoE_XMqE 7002 464 -1 -2
+gear gbXtoE_XMqTS -1 27 1 0
+gear gbXtoE_XMqTT 7005 1572 -1 0
+gear gbXtoE_XMs 7000 878 0 1
+gear gbXtoE_XMsqE -1 29 1 0
+gear gbXtoE_XMsqTS -1 31 1 0
+gear gbXtoE_XMsqTT 7005 220 -1 1
+gear gbXtoN_XPqE 7005 907 -2 1
+gear gbXtoN_XPqTS -1 11 -1 0
+gear gbXtoN_XPqTT 7000 39 2 0
+gear gbXtoN_XPs 7000 409 1 0
+gear gbXtoN_XPsqE -1 13 -1 0
+gear gbXtoN_XPsqTS -1 15 -1 0
+gear gbXtoN_XPsqTT -1 14 -1 0
+gear gbXtoS_XMqE 7002 464 -1 -2
+gear gbXtoS_XMqST 7003 618 -1 0
+gear gbXtoS_XMqTT 7002 631 -2 0
+gear gbXtoS_XMs 7000 630 -1 2
+gear gbXtoS_XMsqE -1 29 1 0
+gear gbXtoS_XMsqST -1 39 1 0
+gear gbXtoS_XMsqTT -1 38 1 0
+gear gbXtoW_XPqE 7005 907 -2 1
+gear gbXtoW_XPqST 7001 1163 -1 -1
+gear gbXtoW_XPqTT 7000 299 -2 -1
+gear gbXtoW_XPs 7000 182 0 -2
+gear gbXtoW_XPsqE -1 13 -1 0
+gear gbXtoW_XPsqST -1 55 -1 0
+gear gbXtoW_XPsqTT 7002 1258 -2 -2
+gear gbYtoE_YPqE 7006 465 -2 1
+gear gbYtoE_YPqTS -1 19 0 -1
+gear gbYtoE_YPqTT 7001 1357 2 -1
+gear gbYtoE_YPs 7000 70 0 -1
+gear gbYtoE_YPsqE -1 5 0 -1
+gear gbYtoE_YPsqTS -1 23 0 -1
+gear gbYtoE_YPsqTT 7011 1082 1 -1
+gear gbYtoN_YPqE 7006 465 -2 1
+gear gbYtoN_YPqTS -1 3 0 -1
+gear gbYtoN_YPqTT 7001 1771 0 1
+gear gbYtoN_YPs 7000 57 1 0
+gear gbYtoN_YPsqE -1 5 0 -1
+gear gbYtoN_YPsqTS 7013 1179 0 1
+gear gbYtoN_YPsqTT -1 6 0 -1
+gear gbYtoS_YMqDT 7000 524 -2 -2
+gear gbYtoS_YMqE 7008 353 2 -2
+gear gbYtoS_YMqST -1 43 0 1
+gear gbYtoS_YMqTT 7001 266 -1 2
+gear gbYtoS_YMs 7000 223 2 0
+gear gbYtoS_YMsqE -1 45 0 1
+gear gbYtoS_YMsqST -1 47 0 1
+gear gbYtoS_YMsqTT -1 46 0 1
+gear gbYtoW_YMqDT 7000 524 -2 -2
+gear gbYtoW_YMqE 7008 353 2 -2
+gear gbYtoW_YMqST 7002 911 -1 0
+gear gbYtoW_YMqTT 7000 415 1 -1
+gear gbYtoW_YMs 7000 366 -1 -1
+gear gbYtoW_YMsqE -1 45 0 1
+gear gbYtoW_YMsqST -1 63 0 1
+gear gbYtoW_YMsqTT -1 62 0 1

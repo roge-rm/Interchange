@@ -25,6 +25,8 @@ a tunnel mouth; span_shed_<a>.png and span_shed_concrete_<a>.png snow sheds.
 
 Maples, birches and aspens come again for the seasons, as
 tree_<kind>_<look>_autumn.png and tree_<kind>_<look>_bare.png.
+
+curve_<layer>_<key>.png are curved track on level tiles, by tools/blender/curve_keys.txt (curve_art.py).
 """
 import sys
 from pathlib import Path
@@ -32,6 +34,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import bpy  # noqa: E402
 
+import curve_art  # noqa: E402
+import curves  # noqa: E402
 import houses  # noqa: E402
 import industries  # noqa: E402
 import parts  # noqa: E402
@@ -234,6 +238,23 @@ def main():
     for mask in range(1, 64):
         if bin(mask).count("1") >= 2:
             shot(out, f"railset_{mask}.png", lambda m, mask=mask: scenery.rail_set(m, mask), shadow=False, placed=False)
+    # Curved track on level tiles, a layer of one piece at a time, by curve_art's keys.
+    for layer, found in curve_art.read_keys().items():
+        for key, where in sorted(found.items()):
+            shot(out, f"curve_{layer}_{key}.png", lambda m, layer=layer, key=key, where=where: curve(m, layer, key, where),
+                 shadow=False, placed=False)
+
+
+def curve(m, layer, key, where):
+    """One layer of a curved piece as curve_art finds it: bed, ties with any long ties, running rails, or the gear
+    at one switch end."""
+    got = curve_art.what(layer, key, where)
+    if layer in ("bed", "running"):
+        curves.track(m, got, layer)
+    elif layer == "ties":
+        curves.track(m, got[0], "sleepers", got[1])
+    else:
+        curves.track(m, got[0], "gear", got[1], got[2])
 
 
 main()

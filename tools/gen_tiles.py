@@ -139,6 +139,12 @@ for mask in range(1, 64):
     if bin(mask).count("1") >= 2:
         JOBS.append(("static", ("railset", mask), lambda mask=mask: scenery(f"railset_{mask}.png", base.cell), None))
         UP[("railset", mask)] = f"railset_{mask}.png"
+# Curved track on level tiles, a layer of a piece at a time, by tools/blender/curve_keys.txt's layer and key.
+CURVE_KEYS = [tuple(line.split()[:2]) for line in (ROOT / "tools/blender/curve_keys.txt").read_text().splitlines()
+              if line.strip() and not line.startswith("#")]
+for layer, ck in CURVE_KEYS:
+    JOBS.append(("static", ("curve", layer, ck), lambda layer=layer, ck=ck: scenery(f"curve_{layer}_{ck}.png", base.cell), None))
+    UP[("curve", layer, ck)] = f"curve_{layer}_{ck}.png"
 # Platforms and the engine house over their track, each with its shadow apart so the game can lay shadows first.
 # Platform canopies by era (ChunkBaker.canopyEra): wooden, steel butterfly, modern.
 CANOPY_ERAS = 3
@@ -289,7 +295,26 @@ def rendered_slope(key, h, way, build):
     return Image.open(path).convert("RGBA") if path.exists() else rendered(key, h, build)
 
 
+# Rail vehicles also have the eight headings between the others, so sixteen in all; the rest have eight. Their other
+# drawings count too, like an engine's pantograph down off the wires.
+RAIL = {
+    key
+    for v in json.loads((ROOT / "packs/base/vehicles.json").read_text())["vehicles"] if v["kind"] in ("engine", "wagon", "tender")
+    for key in (v["id"], v.get("sprite"), v.get("sprite_off_wire")) if key
+}
+
+
+def rendered_odd(key, n, build):
+    """A rail vehicle n sixteenths of a turn round (n odd), from Blender, or its nearest eighth if there's no render."""
+    path = RENDERS / f"{key}_q{n}.png"
+    dep(path)
+    return Image.open(path).convert("RGBA") if path.exists() else rendered(key, (n + 1) // 2 % 8, build)
+
+
 for m, (key, length, build) in enumerate(vehicles.ROSTER):
+    if key in RAIL:
+        for n in range(1, 16, 2):
+            JOBS.append((f"vehicle_{key}", ("vehicle16", m, n), lambda key=key, build=build, n=n: rendered_odd(key, n, build), "outline"))
     for h in range(8):
         JOBS.append((f"vehicle_{key}", ("vehicle", m, h), lambda key=key, build=build, h=h: rendered(key, h, build), "outline"))
     for h in (0, 2, 4, 6):
@@ -589,6 +614,8 @@ def main():
             cells = [None] * 16
             for i, (_, _, cell, _) in zip(mine, done):
                 key = JOBS[i][1]
+                if key[0] == "vehicle16":
+                    continue
                 cells[key[2] if key[0] == "vehicle" else 8 + key[2] // 2 * 2 + (0 if key[3] == "up" else 1)] = cell
             PACK_CELLS[name.removeprefix("vehicle_")] = cells
             tasks.append(("pack", name.removeprefix("vehicle_"), 0))
@@ -634,6 +661,7 @@ def main():
     tracks = [index.get(("track", p, s), -1) for p in range(6) for s in range(16)]
     rails = [index.get(("rails", p, s), -1) for p in range(6) for s in range(16)]
     railsets = [index.get(("railset", mask), -1) for mask in range(64)]
+    curve_cells = [index.get(("curve", layer, ck), -1) for layer, ck in CURVE_KEYS]
     trees = [index[("tree", t, lk)] for t in range(len(ground.TREES)) for lk in range(ground.TREE_LOOKS)]
     autumn = [index.get(("tree_autumn", t, lk), index[("tree", t, lk)]) for t in range(len(ground.TREES)) for lk in range(ground.TREE_LOOKS)]
     bare = [index.get(("tree_bare", t, lk), index[("tree", t, lk)]) for t in range(len(ground.TREES)) for lk in range(ground.TREE_LOOKS)]
@@ -641,13 +669,15 @@ def main():
     bare_shadows = [index.get(("tree_bare_shadow", t, lk), index[("tree_shadow", t, lk)]) for t in range(len(ground.TREES)) for lk in range(ground.TREE_LOOKS)]
     decor = [index[("decor", d, lk)] for d in range(len(ground.DECOR)) for lk in range(ground.DECOR_LOOKS)]
     decor_shadows = [index[("decor_shadow", d, lk)] for d in range(len(ground.DECOR)) for lk in range(ground.DECOR_LOOKS)]
-    # Each vehicle's sixteen sprites in its own sheet, in a fixed order: eight headings, then the slopes.
+    # Each vehicle's sprites in its own sheet, in a fixed order: eight headings, the slopes, then the odd sixteenths
+    # for rail vehicles (blank rects for the rest).
     vehicle_rects = []
     for m, (key, _, _) in enumerate(vehicles.ROSTER):
         r = rects[f"vehicle_{key}"]
         order = [index[("vehicle", m, h)] for h in range(8)] + [index[("slope", m, h, way)] for h in (0, 2, 4, 6) for way in ("up", "down")]
+        order += [index[("vehicle16", m, n)] if key in RAIL else -1 for n in range(1, 16, 2)]
         for n in order:
-            vehicle_rects += r[n * 6:n * 6 + 6]
+            vehicle_rects += r[n * 6:n * 6 + 6] if n >= 0 else [0] * 6
     vehicle_keys = ", ".join(f'"{key}"' for key, _, _ in vehicles.ROSTER)
     kinds = list(textures.KINDS)
     t = time.time()
@@ -699,8 +729,9 @@ object Atlas {{
     val VEHICLE_KEYS = listOf({vehicle_keys})
 
     /**
-     * Sixteen sprites a vehicle, in its own sheet: the eight headings in the view (0 down the u axis, on round
-     * towards v), then the four straight headings climbing and going down a slope, at heading / 2 * 2 + 0 or 1.
+     * Twenty-four sprites a vehicle, in its own sheet: the eight headings in the view (0 down the u axis, on round
+     * towards v), then the four straight headings climbing and going down a slope, at heading / 2 * 2 + 0 or 1, then
+     * the odd sixteenths of a turn, 16 + n / 2 for n = 1, 3 ... 15. Only rail vehicles have those; the rest are blank.
      */
     val VEHICLE_RECTS = ints("{",".join(str(x) for x in vehicle_rects)}")
 
@@ -726,6 +757,13 @@ object Atlas {{
     val RAIL_SETS = intArrayOf(
         {arr(railsets)},
     )
+
+    /**
+     * Curved track on level tiles, a layer of one piece at a time, as "layer key" in [CURVE_KEYS] (see
+     * tools/blender/curve_art.py for the keys) and the sprite of each in [CURVE]. On the static sheet.
+     */
+    val CURVE_KEYS: List<String> = "{",".join(f"{layer} {ck}" for layer, ck in CURVE_KEYS)}".split(',')
+    val CURVE = ints("{",".join(str(c) for c in curve_cells)}")
 
     /** A platform with its track, at canopy era * 2 + along view u (0) or v (1), and its shadow, on the shadows sheet. On the static sheet. */
     val STATION = intArrayOf({arr([index[("station", k, a)] for k in range(CANOPY_ERAS) for a in (0, 1)])})

@@ -368,6 +368,8 @@ internal fun World.placeSignal(company: Company, c: Command.Signal) {
         Signals.kind(had) == Signals.PATH -> signals[key] = Signals.pack(c.facing, Signals.ONE_WAY_PATH)
         else -> signals.remove(key)
     }
+    // A signal keeps eased track off its tile, so the track round it is drawn again.
+    touched(c.x, c.y)
     networkChanged()
 }
 
@@ -425,7 +427,10 @@ internal fun World.placeSignalRun(company: Company, c: Command.SignalRun) {
         for (entry in line) {
             val i = entry / 64
             if (owner[i].toInt() != company.id) continue
-            if (signals.remove(pieceKey(i, entry % 64)) != null) any = true
+            if (signals.remove(pieceKey(i, entry % 64)) != null) {
+                any = true
+                touched(i % width, i / width)
+            }
         }
         if (any) networkChanged()
         return
@@ -436,7 +441,10 @@ internal fun World.placeSignalRun(company: Company, c: Command.SignalRun) {
     if (company.money < cost) return
     val kind = if (c.kind in Signals.PLACED) c.kind else Signals.TWO_WAY
     if (cost > 0) spend(company, Books.CONSTRUCTION, cost)
-    for (s in spots) signals[pieceKey(index(s.x, s.y), s.piece)] = Signals.pack(s.facing, kind)
+    for (s in spots) {
+        signals[pieceKey(index(s.x, s.y), s.piece)] = Signals.pack(s.facing, kind)
+        touched(s.x, s.y)
+    }
     networkChanged()
 }
 

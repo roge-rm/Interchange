@@ -5,6 +5,7 @@
 Each file is OUT_DIR/<key>_<heading>.png, a whole cell at twice the sharpest
 level, the vehicle's middle on the tile's middle. On slopes, the four straight
 headings come tilted up and down too: OUT_DIR/<key>_s<heading>_up.png and _down.png.
+Rail vehicles also get the headings between, on the level: OUT_DIR/<key>_q<n>.png for n odd, 1 to 15, n sixteenths of a turn.
 A file already there is left alone, so a run can carry on where one stopped.
 """
 import sys
@@ -244,6 +245,9 @@ def main():
             shots += [(f"{key}_s{h // 2 * 2}_{'up' if h % 2 == 0 else 'down'}.png", 0.0, h) for h in range(8)]
         elif key not in SHIPS:
             shots += [(f"{key}_s{h}_{way}.png", tilt if way == "up" else -tilt, h) for h in (0, 2, 4, 6) for way in ("up", "down")]
+        if key not in ROAD and key not in SHIPS and key not in AIRCRAFT:
+            # The odd sixteenths of a turn, h counting in eighths.
+            shots += [(f"{key}_q{n}.png", 0.0, n / 2) for n in range(1, 16, 2)]
         for k, (name, pitch, h) in enumerate(shots):
             if (out / name).exists():
                 continue

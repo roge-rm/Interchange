@@ -19,7 +19,10 @@ import org.jetbrains.compose.resources.decodeToImageBitmap
  */
 class LevelSheets(val ground: IntArray, val static: IntArray, val staticWidth: Int, val shadows: ByteArray, val shadowWidth: Int, val signals: ImageBitmap)
 
-/** A vehicle drawing: its sixteen rects, as [Atlas.VEHICLE_RECTS] has them for one vehicle, and its sheet at each level. */
+/**
+ * A vehicle drawing: its rects, as [Atlas.VEHICLE_RECTS] has them for one vehicle (24 sprites, or the 16 of a pack
+ * vehicle, which has no odd sixteenths), and its sheet at each level.
+ */
 class VehicleSource(val rects: IntArray, val sheet: (level: Int) -> ByteArray?)
 
 /** The packed sheets for each level, as read from the app, and each base vehicle's, by its place in [Atlas.VEHICLE_KEYS]. */
@@ -90,7 +93,7 @@ class Sheets(private val packed: PackedSheets, private val scope: CoroutineScope
     fun baseVehicle(name: String): VehicleSource? {
         val i = Atlas.VEHICLE_KEYS.indexOf(name)
         if (i < 0) return null
-        return VehicleSource(Atlas.VEHICLE_RECTS.copyOfRange(i * 96, i * 96 + 96)) { level -> packed.vehicles[i][level] }
+        return VehicleSource(Atlas.VEHICLE_RECTS.copyOfRange(i * 144, i * 144 + 144)) { level -> packed.vehicles[i][level] }
     }
 
     /** The drawings of a game's vehicles, by their place in its roster's sprites. */
@@ -99,6 +102,18 @@ class Sheets(private val packed: PackedSheets, private val scope: CoroutineScope
         vehicles.clear()
         vehiclesUnpacking.clear()
         generation++
+    }
+
+    /**
+     * The sprite for vehicle drawing [model] flat at heading [h16], in sixteenths of a turn. Even ones are the eight
+     * headings; odd ones are only drawn for rail vehicles, and the rest use the eighth nearest, the later one on a tie.
+     */
+    fun flatCell(model: Int, h16: Int): Int {
+        if (h16 and 1 == 0) return h16 shr 1
+        val rects = sources.getOrNull(model)?.rects
+        val cell = 16 + (h16 shr 1)
+        if (rects != null && rects.size > cell * 6 + 3 && rects[cell * 6 + 2] > 0) return cell
+        return (h16 + 1 shr 1) and 7
     }
 
     /** Vehicle drawing [model]'s rects, or null if it has none. */

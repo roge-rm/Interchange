@@ -12,10 +12,14 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.rm.interchange.map.View
 import androidx.compose.ui.graphics.drawscope.DrawScope
+import com.rm.interchange.map.DrawLines
+import com.rm.interchange.sim.CurveTiles
 import com.rm.interchange.map.LandPainter
 import com.rm.interchange.map.Pick
 import com.rm.interchange.sim.Command
+import com.rm.interchange.sim.TileCurve
 import com.rm.interchange.sim.Track
+import com.rm.interchange.sim.TrackCurves
 import com.rm.interchange.sim.World
 import com.rm.interchange.sim.joinSides
 import com.rm.interchange.sim.planJoins
@@ -65,23 +69,79 @@ fun trackLine(company: Int, start: Pick, end: Pick, remove: Boolean): Command.Ra
     return Command.Rail(company, sx, sy, ex, ey, first, remove, join)
 }
 
+/** The curves a plan would be drawn on, kept while the drag stays the same. */
+private class PlanCurves(val world: World, val touches: Int, val rail: Command.Rail, val curves: TrackCurves)
+
+private var planCurves: PlanCurves? = null
+
+/**
+ * The curves the track of [rail] would be drawn on once built, from the pieces it lays and the track round it; eased
+ * spans included. Lifting leaves the track as it is, so it uses the map's own.
+ */
+private fun planCurvesOf(world: World, rail: Command.Rail, line: IntArray, joins: List<com.rm.interchange.sim.Join>): TrackCurves {
+    if (rail.remove) return DrawLines.of(world).curves
+    planCurves?.let { if (it.world === world && it.touches == world.touches && it.rail == rail) return it.curves }
+    val laid = HashMap<Int, Int>()
+    for (entry in line) {
+        val i = entry / 64
+        if (joins.any { it.tile == i && it.to and (entry % 64) == 0 }) continue
+        laid[i] = (laid[i] ?: (world.track[i].toInt() and 63)) or (entry % 64)
+    }
+    for (j in joins) laid[j.tile] = j.to
+    val curves = TrackCurves({ x, y ->
+        if (!world.inside(x, y)) 0 else world.index(x, y).let { laid[it] ?: (world.track[it].toInt() and 63) }
+    }, { x, y -> TrackCurves.flagsOf(world, x, y) })
+    planCurves = PlanCurves(world, world.touches, rail, curves)
+    return curves
+}
+
+/** The curve to draw [piece] of tile [i] on in [curves], or null to run edge to edge: tiles that keep the old straight art. */
+private fun planLine(world: World, curves: TrackCurves, i: Int, piece: Int): TileCurve? {
+    val x = i % world.width
+    val y = i / world.width
+    if (!CurveTiles.levelRail(world, x, y, planned(curves, x, y))) return null
+    return curves.curveOf(x, y, piece)
+}
+
+/** The pieces tile ([x], [y]) would hold with the plan built, from its curves in [curves]. */
+private fun planned(curves: TrackCurves, x: Int, y: Int): Int = curves.curvesAt(x, y).fold(0) { m, c -> m or c.sim }
+
 /** The line [rail] would lay, drawn over the map: pale where it'll go, red where it can't. */
 fun DrawScope.drawTrackPlan(world: World, painter: LandPainter, rail: Command.Rail) {
     val line = Track.line(world, rail.sx, rail.sy, rail.ex, rail.ey, rail.first) ?: return
     val ok = world.planRail(rail) ?: return
     val joins = world.planJoins(rail)
+    val curves = planCurvesOf(world, rail, line, joins)
     for ((k, entry) in line.withIndex()) {
         val i = entry / 64
         // A straight a junction curve takes the place of isn't drawn.
         if (!rail.remove && joins.any { it.tile == i && it.to and (entry % 64) == 0 }) continue
         with(painter) {
-            track(i % world.width, i / world.width, entry % 64, if (ok[k]) PLAN_OK else PLAN_BAD, if (ok[k]) PLAN_RAIL else PLAN_BAD)
+            track(i % world.width, i / world.width, entry % 64, if (ok[k]) PLAN_OK else PLAN_BAD, if (ok[k]) PLAN_RAIL else PLAN_BAD, planLine(world, curves, i, entry % 64))
         }
     }
     // Pieces a junction adds, or when lifting the stubs it takes up.
     for (j in joins) for (p in Track.PIECES) {
         if (if (rail.remove) j.from and p == 0 || j.to and p != 0 else j.to and p == 0 || j.from and p != 0) continue
-        with(painter) { track(j.tile % world.width, j.tile / world.width, p, PLAN_OK, PLAN_RAIL) }
+        with(painter) { track(j.tile % world.width, j.tile / world.width, p, PLAN_OK, PLAN_RAIL, planLine(world, curves, j.tile, p)) }
+    }
+    // An eased turnout also bends the straight beside its switch tile: the part of that curve on the neighbouring tile is
+    // drawn where the plan makes it, for the tiles of the line that already hold track and for the junctions.
+    if (!rail.remove) {
+        val now = DrawLines.of(world)
+        for (k in 0..line.size + joins.size) {
+            val tile = if (k < line.size) line[k] / 64 else if (k < line.size + joins.size) joins[k - line.size].tile else continue
+            if (k < line.size && world.track[tile].toInt() == 0) continue
+            for (edge in 0..4) {
+                val x = tile % world.width + if (edge < 4) Track.dx(edge) else 0
+                val y = tile / world.width + if (edge < 4) Track.dy(edge) else 0
+                if (!CurveTiles.levelRail(world, x, y, planned(curves, x, y))) continue
+                for (c in curves.curvesAt(x, y)) {
+                    if (c.via == 0 || now.at(x, y).any { it.sim == c.sim && it.via == c.via }) continue
+                    with(painter) { track(x, y, c.sim, PLAN_OK, PLAN_RAIL, c) }
+                }
+            }
+        }
     }
 }
 

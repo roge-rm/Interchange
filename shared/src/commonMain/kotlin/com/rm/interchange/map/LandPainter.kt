@@ -10,6 +10,7 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
+import com.rm.interchange.sim.TileCurve
 import com.rm.interchange.sim.Track
 import com.rm.interchange.sim.World
 
@@ -79,38 +80,64 @@ class LandPainter(private val world: World, private val view: View, private val 
     /** A world heading in eighths, as it shows in this view. */
     fun viewHeading(h: Int): Int = (h + 2 * view.turn) % 8
 
-    /** One track piece on world tile ([wx], [wy]), drawn as plain shapes: a bed and two rails. For previews. */
-    fun DrawScope.track(wx: Int, wy: Int, piece: Int, bed: Color, rail: Color) {
+    /** Sixteenth-turn heading [h16] in the view, for sprites drawn with 16 headings. */
+    fun viewHeading16(h16: Int): Int = (h16 + 4 * view.turn) % 16
+
+    private val pose = DoubleArray(4)
+    private var sides = FloatArray(0)
+
+    /**
+     * One track piece on world tile ([wx], [wy]), drawn as plain shapes: a bed and two rails. For previews. With a
+     * [curve] it follows it, in short straight runs; without, it runs edge to edge.
+     */
+    fun DrawScope.track(wx: Int, wy: Int, piece: Int, bed: Color, rail: Color, curve: TileCurve? = null) {
         val e = Track.edges(piece)
-        val a = e and 3
-        val b = e shr 2
-        val ax = wx + Track.edgeX4(a) / 4f
-        val ay = wy + Track.edgeY4(a) / 4f
-        val bx = wx + Track.edgeX4(b) / 4f
-        val by = wy + Track.edgeY4(b) / 4f
-        val len = kotlin.math.sqrt((bx - ax) * (bx - ax) + (by - ay) * (by - ay))
+        val n = if (curve == null) 1 else 1 + (curve.length * 8).toInt().coerceIn(2, 9)
+        // Points along the line and the unit direction at each, as x, y, dx, dy.
+        if (sides.size < (n + 1) * 4) sides = FloatArray((n + 1) * 4)
+        for (k in 0..n) {
+            if (curve == null) {
+                val a = e and 3
+                val b = e shr 2
+                val ax = Track.edgeX4(a) / 4f
+                val ay = Track.edgeY4(a) / 4f
+                val bx = Track.edgeX4(b) / 4f
+                val by = Track.edgeY4(b) / 4f
+                val len = kotlin.math.sqrt((bx - ax) * (bx - ax) + (by - ay) * (by - ay))
+                sides[k * 4] = wx + if (k == 0) ax else bx
+                sides[k * 4 + 1] = wy + if (k == 0) ay else by
+                sides[k * 4 + 2] = (bx - ax) / len
+                sides[k * 4 + 3] = (by - ay) / len
+            } else {
+                curve.poseInto(curve.from, curve.length * k / n, pose)
+                sides[k * 4] = wx + pose[0].toFloat()
+                sides[k * 4 + 1] = wy + pose[1].toFloat()
+                sides[k * 4 + 2] = pose[2].toFloat()
+                sides[k * 4 + 3] = pose[3].toFloat()
+            }
+        }
         // Across the track, a fifth of a tile each side for the bed.
-        val nx = -(by - ay) / len
-        val ny = (bx - ax) / len
-        val p = floatArrayOf(
-            ax + nx * 0.2f, ay + ny * 0.2f, bx + nx * 0.2f, by + ny * 0.2f,
-            bx - nx * 0.2f, by - ny * 0.2f, ax - nx * 0.2f, ay - ny * 0.2f,
-        )
         path.reset()
-        for (i in 0 until 4) {
-            val sx = screenX(p[i * 2], p[i * 2 + 1])
-            val sy = screenY(p[i * 2], p[i * 2 + 1])
-            if (i == 0) path.moveTo(sx, sy) else path.lineTo(sx, sy)
+        for (k in 0..n) {
+            val px = sides[k * 4] - sides[k * 4 + 3] * 0.2f
+            val py = sides[k * 4 + 1] + sides[k * 4 + 2] * 0.2f
+            if (k == 0) path.moveTo(screenX(px, py), screenY(px, py)) else path.lineTo(screenX(px, py), screenY(px, py))
+        }
+        for (k in n downTo 0) {
+            val px = sides[k * 4] + sides[k * 4 + 3] * 0.2f
+            val py = sides[k * 4 + 1] - sides[k * 4 + 2] * 0.2f
+            path.lineTo(screenX(px, py), screenY(px, py))
         }
         path.close()
         drawPath(path, bed)
         for (side in floatArrayOf(-0.09f, 0.09f)) {
-            drawLine(
-                rail,
-                Offset(screenX(ax + nx * side, ay + ny * side), screenY(ax + nx * side, ay + ny * side)),
-                Offset(screenX(bx + nx * side, by + ny * side), screenY(bx + nx * side, by + ny * side)),
-                strokeWidth = (halfWidth / 16f).coerceAtLeast(1f),
-            )
+            for (k in 0 until n) {
+                val ax = sides[k * 4] - sides[k * 4 + 3] * side
+                val ay = sides[k * 4 + 1] + sides[k * 4 + 2] * side
+                val bx = sides[k * 4 + 4] - sides[k * 4 + 7] * side
+                val by = sides[k * 4 + 5] + sides[k * 4 + 6] * side
+                drawLine(rail, Offset(screenX(ax, ay), screenY(ax, ay)), Offset(screenX(bx, by), screenY(bx, by)), strokeWidth = (halfWidth / 16f).coerceAtLeast(1f))
+            }
         }
     }
 

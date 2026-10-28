@@ -15,6 +15,8 @@ class VehicleView(val tick: Long, val cars: FloatArray, val wrecks: Set<Int> = e
     fun y(i: Int) = cars[i * CAR_FIELDS + 2]
     /** The way it faces in the world, 0 along x, on round towards y, in eighths. */
     fun heading(i: Int) = cars[i * CAR_FIELDS + 3].toInt()
+    /** The same as an angle in eighths, 0 up to 8; between eighths for a train car on a curve. */
+    fun angle(i: Int) = cars[i * CAR_FIELDS + 8]
     fun sprite(i: Int) = cars[i * CAR_FIELDS + 4].toInt()
     /** 1 climbing, -1 going down, 0 level. */
     fun slope(i: Int) = cars[i * CAR_FIELDS + 5].toInt()
@@ -34,7 +36,7 @@ class VehicleView(val tick: Long, val cars: FloatArray, val wrecks: Set<Int> = e
     fun flying(i: Int) = slope(i) == FLYING
 
     companion object {
-        const val CAR_FIELDS = 8
+        const val CAR_FIELDS = 9
         /** What a key below zero is: [ROAD], [SHIP] or [AIRCRAFT] in its low byte, the id above. */
         const val ROAD = 0
         const val SHIP = 1
@@ -339,41 +341,47 @@ class WorldView(
  */
 fun World.view(company: Int = 0, withReserved: Boolean = false): WorldView {
     val cars = ArrayList<Float>()
-    for (t in trains) {
-        if (t == null || t.inDepot) continue
-        // Under wires at the nose, as the engine's power goes: a dual-mode engine off them is drawn with its pantograph down.
-        val wire = t.steps.isEmpty() || wired(t.steps.last())
-        for (c in 0 until t.cars) {
-            val at = t.behind(t.carMiddle(c))
-            val i = (at shr 32).toInt()
-            if (i < 0) continue
-            val s = t.steps[i]
-            val tile = stepTile(s)
-            // A car that's run on in past the end of its depot's tile is inside the shed; one in a tunnel is out of sight.
-            if ((at and 0xffffffffL).toInt() > stepLength(s) && depotTiles.containsKey(tile)) continue
-            val span = spanOf(s)
-            if (span != null && span.tunnel) continue
-            val along = (at and 0xffffffffL).toFloat() / stepLength(s)
-            val a = stepEntry(s)
-            val b = stepExit(s)
-            val ax = tile % width + Track.edgeX4(a) / 4f
-            val ay = tile / width + Track.edgeY4(a) / 4f
-            val bx = tile % width + Track.edgeX4(b) / 4f
-            val by = tile / width + Track.edgeY4(b) / 4f
-            cars += (t.id * 256 + c).toFloat()
-            cars += ax + (bx - ax) * along
-            cars += ay + (by - ay) * along
-            // An engine at the back of a train is drawn turned round, so its nose points away from the train.
-            val turned = c == t.cars - 1 && c > 0 && roster[t.carEngines[c]].kind == VehicleKind.ENGINE
-            val h = heading(Track.edgeX4(b) - Track.edgeX4(a), Track.edgeY4(b) - Track.edgeY4(a))
-            cars += (if (turned) (h + 4) % 8 else h).toFloat()
-            cars += roster[t.carEngines[c]].sprite(wire).toFloat()
-            // Climbing or going down: the edge it leaves by against the edge it came in at.
-            val pieces = track[tile].toInt()
-            val rise = if (span != null) 0 else edgeHeight(tile % width, tile / width, pieces, b) - edgeHeight(tile % width, tile / width, pieces, a)
-            cars += (if (turned) -rise else rise).coerceIn(-1, 1).toFloat()
-            cars += roster[t.carEngines[c]].length / 16f
-            cars += span?.height?.toFloat() ?: -1f
+    val curves = DrawCache.carCurves(this)
+    val pose = FloatArray(3)
+    curves.using(this) {
+        for (t in trains) {
+            if (t == null || t.inDepot) continue
+            curves.noteFirst(t)
+            val ahead = curves.ahead(t)
+            val before = curves.before(t)
+            // Under wires at the nose, as the engine's power goes: a dual-mode engine off them is drawn with its pantograph down.
+            val wire = t.steps.isEmpty() || wired(t.steps.last())
+            for (c in 0 until t.cars) {
+                val middle = t.carMiddle(c)
+                val at = t.behind(middle)
+                val i = (at shr 32).toInt()
+                if (i < 0) continue
+                val s = t.steps[i]
+                val tile = stepTile(s)
+                // A car that's run on in past the end of its depot's tile is inside the shed; one in a tunnel is out of sight.
+                if ((at and 0xffffffffL).toInt() > stepLength(s) && depotTiles.containsKey(tile)) continue
+                val span = spanOf(s)
+                if (span != null && span.tunnel) continue
+                val a = stepEntry(s)
+                val b = stepExit(s)
+                // On its two bogie points along the drawn line (CarCurves).
+                curves.place(t.steps, t.nose, middle, roster[t.carEngines[c]].length * FIX / 2, ahead, before, pose)
+                cars += (t.id * 256 + c).toFloat()
+                cars += pose[0]
+                cars += pose[1]
+                // An engine at the back of a train is drawn turned round, so its nose points away from the train.
+                val turned = c == t.cars - 1 && c > 0 && roster[t.carEngines[c]].kind == VehicleKind.ENGINE
+                val angle = if (turned) (pose[2] + 4f) % 8f else pose[2]
+                cars += (kotlin.math.round(angle).toInt() % 8).toFloat()
+                cars += roster[t.carEngines[c]].sprite(wire).toFloat()
+                // Climbing or going down: the edge it leaves by against the edge it came in at.
+                val pieces = track[tile].toInt()
+                val rise = if (span != null) 0 else edgeHeight(tile % width, tile / width, pieces, b) - edgeHeight(tile % width, tile / width, pieces, a)
+                cars += (if (turned) -rise else rise).coerceIn(-1, 1).toFloat()
+                cars += roster[t.carEngines[c]].length / 16f
+                cars += span?.height?.toFloat() ?: -1f
+                cars += angle
+            }
         }
     }
     // Road vehicles, each a single car, keyed below zero.
@@ -392,6 +400,7 @@ fun World.view(company: Int = 0, withReserved: Boolean = false): WorldView {
         cars += rise.coerceIn(-1, 1).toFloat()
         cars += v.info.length / 16f
         cars += -1f
+        cars += p[2]
     }
     for (v in ships) {
         if (v == null || v.inDepot) continue
@@ -403,6 +412,7 @@ fun World.view(company: Int = 0, withReserved: Boolean = false): WorldView {
         cars += 0f
         cars += v.info.length / 16f
         cars += -1f
+        cars += v.heading.toFloat()
     }
     for (v in aircraft) {
         if (v == null || v.inDepot) continue
@@ -414,6 +424,7 @@ fun World.view(company: Int = 0, withReserved: Boolean = false): WorldView {
         cars += if (v.flying) VehicleView.FLYING.toFloat() else 0f
         cars += v.info.length / 16f
         cars += if (v.flying) v.altitude / 16f else -1f
+        cars += v.heading.toFloat()
     }
     // The middle of a tile, or nothing if it isn't on the map.
     fun atTile(tile: Int) = if (tile < 0) 0f to 0f else (tile % width + 0.5f) to (tile / width + 0.5f)

@@ -79,6 +79,7 @@ internal class ChunkBaker(
     private val year: Int = Int.MAX_VALUE,
 ) {
     private val hw = Renderer.LEVELS[level]
+    private val curveArt = CurveArt(world, view)
     private val hh = hw / 2
     private val step = hw / 4
     private val shrink = 1 shl level
@@ -327,6 +328,12 @@ internal class ChunkBaker(
         }
         // Platforms bring their own track, drawn with them.
         if (world.isPlatform(tile)) return
+        // A level tile draws its pieces on their curves, each layer of every piece in turn, where CurveTiles says so;
+        // the cars and the lines drawn over the map follow the same rule.
+        curveArt.cells(wx, wy)?.let { cells ->
+            for (c in cells) sprite(c, vx, vy, sBase)
+            return
+        }
         // Every piece's bed, then the rails over them all: a single piece's own, or for two or more, which always lie
         // level, the rails of them together, gapped where they cross.
         var view = 0
