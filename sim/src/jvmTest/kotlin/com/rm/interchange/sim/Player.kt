@@ -557,11 +557,13 @@ class Player(val world: World, val thinkDays: Int = 30, val mostRoutes: Int = 12
         val n = if (value) 0 else plan.routes.size
         for (k in kinds.indices) {
             val kind = kinds[(n + k) % kinds.size]
+            // The player keeps its own road payback, longer than a hard rival asks.
+            val road = PLAYER_ROAD_PAYBACK[w.settings.rivalLevel.coerceIn(RivalLevel.EASY, RivalLevel.HARD)]
             val tried = when (kind) {
-                KIND_BUS -> w.newRoute(plan, c)
+                KIND_BUS -> w.newRoute(plan, c, payback = road)
                 // A railway that's expected to pay for itself within ten work years.
                 KIND_RAIL -> w.newRailRoute(plan, c, payback = 10)
-                else -> w.newFreightRoute(plan, c)
+                else -> w.newFreightRoute(plan, c, payback = road)
             }
             if (tried == Tried.BUILT) {
                 when (kind) { KIND_BUS -> buses++; KIND_RAIL -> railways++; else -> trucks++ }
@@ -615,3 +617,6 @@ class Player(val world: World, val thinkDays: Int = 30, val mostRoutes: Int = 12
             Player(game(seed, year, dayLength, rivals)).also { it.play(n) }
     }
 }
+
+/** Work years a road route must pay back in, by rival level. */
+internal val PLAYER_ROAD_PAYBACK = intArrayOf(14, 16, 24)

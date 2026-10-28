@@ -58,11 +58,14 @@ class RivalTest {
         val r = w.rivals.first { it.routes.isNotEmpty() }
         val route = r.routes.first()
         // Every vehicle on it old and losing money.
+        var n = 0
         for (v in w.roadVehicles) if (v != null && v.owner == r.company && Order.station(v.orders[0]) == route.a) {
             v.built = w.workDay - 1000 * w.settings.dayLength
             v.profitLastYear = -100
+            n++
         }
-        w.days(120)
+        // Sent to the garage one at a time, a look apart.
+        w.days(30 * (n + 2))
         assertTrue(route !in r.routes, "the route is still run")
         assertTrue(w.roadVehicles.none { it != null && it.owner == r.company && it.orders.isNotEmpty() && Order.station(it.orders[0]) == route.a }, "its vehicles weren't sold")
         assertTrue(w.stations.getOrNull(route.a) == null || r.routes.any { it.a == route.a || it.b == route.a }, "its stop is still there")
@@ -234,6 +237,291 @@ class RivalTest {
         w.days(SERVICE_DAYS * 2)
         assertTrue(left.service, "servicing left off")
         assertTrue(w.workDay - left.serviced < SERVICE_DAYS * 2, "not serviced in ${w.workDay - left.serviced} work days")
+    }
+
+    @Test
+    fun trainsStuckOnTheWayToTheDepotSetOffAgain() {
+        val w = World(NewGame(160, 160, 1, 1930, Region.MIXED, towns = 3, industries = 0, rivals = 1))
+        val r = w.rivals[0]
+        val c = w.companies[r.company]
+        c.money = 10_000_000
+        r.thinkOn = Int.MAX_VALUE
+        val route = railFor(w, r) ?: error("no line to test with")
+        assertTrue(w.addLoop(c, route), "no loop laid")
+        assertTrue(w.addTrain(c, route), "no second train")
+        val on = w.trains.filterNotNull().filter { it.owner == r.company }
+        w.days(30)
+        // The depot cut off, and both sent in to be sold: neither can get there, and they stand.
+        val d = w.depots[route.depot]!!
+        val x = d.tile % w.width + Track.dx(d.edge)
+        val y = d.tile / w.width + Track.dy(d.edge)
+        // Taken up once no train stands on it.
+        for (k in 0 until 30) {
+            w.apply(Command.Rail(c.id, x, y, x, y, Track.straight(d.edge), remove = true))
+            if (w.track[w.index(x, y)].toInt() and Track.straight(d.edge) == 0) break
+            w.days(1)
+        }
+        assertEquals(0, w.track[w.index(x, y)].toInt() and Track.straight(d.edge), "the way to the depot is still there")
+        for (t in on) {
+            if (t.toDepot) w.apply(Command.TrainOrder(c.id, t.id, Command.TrainOrder.TO_DEPOT))
+            w.apply(Command.TrainOrder(c.id, t.id, Command.TrainOrder.TO_DEPOT))
+        }
+        w.days(JAM_DAYS / 2)
+        assertTrue(on.all { it.speed == 0 && it.toDepot }, "not stuck")
+        // Stuck that long, their trips are called off and they run their line again.
+        val calls = IntArray(2)
+        val last = IntArray(2) { on[it].order }
+        repeat(Calendar.TICKS_PER_DAY * 365) {
+            w.step()
+            for ((k, t) in on.withIndex()) if (t.order != last[k]) { calls[k]++; last[k] = t.order }
+        }
+        assertTrue(calls.all { it >= 6 }, "calls ${calls.toList()}")
+    }
+
+    @Test
+    fun losingTrainsGoInOneAtATimeAndNotStraightBackAfterAJam() {
+        val w = World(NewGame(160, 160, 1, 1930, Region.MIXED, towns = 3, industries = 0, rivals = 1))
+        val r = w.rivals[0]
+        val c = w.companies[r.company]
+        c.money = 10_000_000
+        r.thinkOn = Int.MAX_VALUE
+        val route = railFor(w, r) ?: error("no line to test with")
+        assertTrue(w.addLoop(c, route), "no loop laid")
+        assertTrue(w.addTrain(c, route), "no second train")
+        val on = w.trains.filterNotNull().filter { it.owner == r.company }
+        w.days(30)
+        // The depot cut off, and both old and losing money: one goes in to be sold, can't get there and stands.
+        val d = w.depots[route.depot]!!
+        val x = d.tile % w.width + Track.dx(d.edge)
+        val y = d.tile / w.width + Track.dy(d.edge)
+        w.apply(Command.Rail(c.id, x, y, x, y, Track.straight(d.edge), remove = true))
+        for (t in on) {
+            if (t.toDepot) w.apply(Command.TrainOrder(c.id, t.id, Command.TrainOrder.TO_DEPOT))
+            t.built = w.workDay - 1000 * w.settings.dayLength
+            t.profitLastYear = -100
+        }
+        fun selling(t: Train) = t.toDepot && !t.servicing
+        // Looks every 30 work days as a rival does, for the rest of the year.
+        val trips = IntArray(2)
+        val was = BooleanArray(2)
+        var both = 0
+        for (day in 0 until 300) {
+            if (day % 30 == 0) w.sellLosers(r, c)
+            repeat(Calendar.TICKS_PER_DAY) { w.step() }
+            for ((k, t) in on.withIndex()) {
+                if (selling(t) && !was[k]) trips[k]++
+                was[k] = selling(t)
+            }
+            if (on.all { selling(it) }) both++
+        }
+        assertEquals(0, both, "days with both on their way to be sold")
+        assertTrue(trips.all { it in 1..2 }, "trips ${trips.toList()}")
+    }
+
+    @Test
+    fun aJammedRoadVehicleOverdueAServiceIsntSentStraightBack() {
+        val w = game()
+        w.days(400)
+        val r = w.rivals.first { it.routes.any { !it.rail } }
+        val c = w.companies[r.company]
+        r.thinkOn = Int.MAX_VALUE
+        val v = w.roadVehicles.first { it != null && it.owner == c.id && !it.inDepot && it.running }!!
+        // Overdue, on its way to the garage, and stood there since a jam began.
+        v.serviced = w.workDay - 1000
+        v.toDepot = true
+        v.servicing = true
+        v.speed = 0
+        v.waiting = 0
+        v.brokenFor = 0
+        r.stood[v.id] = w.workDay - JAM_DAYS
+        w.unjam(r, c)
+        assertTrue(!v.toDepot, "its garage trip wasn't called off")
+        w.roadVehiclesDay()
+        assertTrue(!v.toDepot, "sent back to the garage the next day")
+        w.days(10)
+        assertTrue(!v.toDepot || !v.servicing, "sent back to the garage within days")
+    }
+
+    @Test
+    fun oneLoserARoadRouteGoesInAtATime() {
+        val w = game()
+        w.days(400)
+        val (r, route) = w.rivals.flatMap { r -> r.routes.filter { !it.rail }.map { r to it } }
+            .maxBy { (r, rt) -> w.roadVehicles.count { it != null && it.owner == r.company && onRoute(it, rt) } }
+        val c = w.companies[r.company]
+        r.thinkOn = Int.MAX_VALUE
+        val on = w.roadVehicles.filterNotNull().filter { it.owner == c.id && onRoute(it, route) }
+        assertTrue(on.size >= 2, "only ${on.size} on the route")
+        for (v in on) {
+            if (v.toDepot) w.apply(Command.RoadOrder(c.id, v.id, Command.TrainOrder.TO_DEPOT))
+            v.built = w.workDay - 1000 * w.settings.dayLength
+            v.profitLastYear = -100
+        }
+        w.sellLosers(r, c)
+        assertEquals(1, on.count { it.toDepot && !it.servicing }, "on their way to be sold")
+        w.sellLosers(r, c)
+        assertEquals(1, on.count { it.toDepot && !it.servicing }, "on their way to be sold after another look")
+    }
+
+    @Test
+    fun aRouteIsHeldWhileAnotherCompanysVehicleIsOnItsStop() {
+        val w = game()
+        w.days(400)
+        val (r, route) = w.rivals.flatMap { r -> r.routes.filter { !it.rail }.map { r to it } }.first { (r, rt) ->
+            r.routes.none { it !== rt && !it.rail && (it.a == rt.a || it.b == rt.a) } && w.roadVehicles.any { it != null && it.owner == r.company && onRoute(it, rt) }
+        }
+        val c = w.companies[r.company]
+        r.thinkOn = Int.MAX_VALUE
+        val stops = w.stations[route.a]!!.stops.toSet()
+        // One of its vehicles on its stop, handed to another company and stopped there; the rest gone.
+        var v: RoadVehicle? = null
+        repeat(Calendar.TICKS_PER_DAY * 60) {
+            if (v == null) {
+                w.step()
+                v = w.roadVehicles.firstOrNull { it != null && it.owner == c.id && onRoute(it, route) && !it.inDepot && roadStepTile(it.at) in stops }
+            }
+        }
+        val parked = v ?: error("none reached its stop")
+        val other = w.companies.first { it.id != c.id }.id
+        parked.owner = other
+        parked.running = false
+        for (u in w.roadVehicles) if (u != null && u.owner == c.id && onRoute(u, route)) w.roadVehicles[u.id] = null
+        w.sellLosers(r, c)
+        assertTrue(route in r.routes, "given up with another's vehicle on its stop")
+        assertEquals(1, r.held.size)
+        // Held that long, it's given up anyway.
+        r.held.replaceAll { _, _ -> w.workDay - HOLD_DAYS }
+        w.sellLosers(r, c)
+        assertTrue(route !in r.routes, "still held")
+        assertTrue(r.held.isEmpty())
+    }
+
+    @Test
+    fun standingVehiclesAndHeldRoutesAreSaved() {
+        val w = game()
+        w.days(100)
+        val r = w.rivals[0]
+        r.stood[3] = w.workDay - 5
+        r.stood[-2] = w.workDay - 40
+        r.held[1234L] = w.workDay - 7
+        val c = Save.read(Save.write(w))
+        assertEquals(r.stood, c.rivals[0].stood)
+        assertEquals(r.held, c.rivals[0].held)
+        assertEquals(w.checksum(), c.checksum())
+        r.stood[3] = w.workDay - 6
+        assertTrue(w.checksum() != c.checksum(), "stood isn't in the checksum")
+    }
+
+    /** Runs on a day at a time, up to a work year, till [a] and [b] are both out running the line, clear of the depot. */
+    private fun World.bothOut(c: Company, route: RivalRoute, a: Train, b: Train): Boolean {
+        val lead = leadTile(c, route)
+        fun out(t: Train) = t.running && !t.inDepot && !t.toDepot && t.wreckedFor == 0 && lead !in t.onTiles
+        for (d in 0 until 365) {
+            if (out(a) && out(b) && !blocksDirty) return true
+            days(1)
+        }
+        return false
+    }
+
+    @Test
+    fun rivalReachAndPaybackGrowWithSpareMoneyWithinTheCap() {
+        for (level in listOf(RivalLevel.NORMAL, RivalLevel.HARD)) {
+            val w = World(NewGame(128, 128, 7, 1930, Region.MIXED, towns = 3, industries = 0, rivals = 1, rivalLevel = level))
+            val c = w.companies[w.rivals[0].company]
+            c.loan = 0
+            val cap = if (level == RivalLevel.HARD) HARD_ROUTES else MAX_ROUTES
+            var reach = 0
+            var payback = 0
+            for (k in 0..20) {
+                c.money = w.maxLoan() * k
+                val now = w.homeReach(c)
+                val asks = w.richPayback(c, 16)
+                assertTrue(now >= reach && asks >= payback, "level $level, $k limits: reach $now, payback $asks")
+                assertTrue(now <= HOME_REACH + HARD_REACH + maxOf(w.width, w.height) && asks <= 32, "level $level, $k limits: reach $now, payback $asks")
+                assertTrue(w.maxRoutes(c) <= cap, "level $level, $k limits: ${w.maxRoutes(c)} routes")
+                reach = now
+                payback = asks
+            }
+            assertTrue(reach > HOME_REACH + HARD_REACH && payback == 32, "level $level: reach $reach, payback $payback")
+        }
+    }
+
+    @Test
+    fun aPlayerKeepsHomeReachAndItsOwnPayback() {
+        for (level in listOf(RivalLevel.NORMAL, RivalLevel.HARD)) {
+            val w = World(NewGame(128, 128, 7, 1930, Region.MIXED, towns = 3, industries = 0, rivals = 1, rivalLevel = level))
+            val c = w.companies[0]
+            assertTrue(w.human(c.id))
+            c.loan = 0
+            for (k in 0..20) {
+                c.money = w.maxLoan() * k
+                assertEquals(HOME_REACH, w.homeReach(c), "level $level, $k limits")
+                assertEquals(16, w.richPayback(c, 16), "level $level, $k limits")
+            }
+        }
+        assertEquals(listOf(14, 16, 24), PLAYER_ROAD_PAYBACK.toList())
+    }
+
+    @Test
+    fun theServiceTurnSkipsATrainHeldAfterAJam() {
+        val w = World(NewGame(160, 160, 1, 1930, Region.MIXED, towns = 3, industries = 0, rivals = 1))
+        val r = w.rivals[0]
+        val c = w.companies[r.company]
+        c.money = 10_000_000
+        r.thinkOn = Int.MAX_VALUE
+        val route = railFor(w, r) ?: error("no line to test with")
+        assertTrue(w.addLoop(c, route), "no loop laid")
+        assertTrue(w.addTrain(c, route), "no second train")
+        val (held, other) = w.trains.filterNotNull().filter { it.owner == r.company }
+        w.days(30)
+        assertTrue(w.bothOut(c, route, held, other), "no day with both trains out on the line")
+        // Both stand at a platform overdue; the one longest without, held by unjam, would go first.
+        for (t in listOf(held, other)) { t.waiting = 100; t.speed = 0 }
+        held.serviced = w.workDay - SERVICE_DAYS * 3
+        other.serviced = w.workDay - SERVICE_DAYS * 2
+        held.noDepotUntil = w.tick + UNJAM_HOLD
+        w.unblockDepot(c, route)
+        assertTrue(!held.service, "the held train has the service turn")
+        assertTrue(other.service, "the other overdue train wasn't given the turn")
+        // Its hold run out, it goes first again.
+        held.noDepotUntil = 0
+        w.unblockDepot(c, route)
+        assertTrue(held.service && !other.service, "the turn didn't go back to the one longest without")
+    }
+
+    @Test
+    fun aTrainQueuedBehindALoadingTrainIsntUnjammed() {
+        val w = World(NewGame(160, 160, 1, 1930, Region.MIXED, towns = 3, industries = 0, rivals = 1))
+        val r = w.rivals[0]
+        val c = w.companies[r.company]
+        c.money = 10_000_000
+        r.thinkOn = Int.MAX_VALUE
+        val route = railFor(w, r) ?: error("no line to test with")
+        assertTrue(w.addLoop(c, route), "no loop laid")
+        assertTrue(w.addTrain(c, route), "no second train")
+        val (loading, queued) = w.trains.filterNotNull().filter { it.owner == r.company }
+        w.days(30)
+        assertTrue(w.bothOut(c, route, loading, queued), "no day with both trains out on the line")
+        // One loads at a stop and the other, headed there, has stood the whole time.
+        loading.waiting = 100
+        loading.speed = 0
+        val stop = Order.station(loading.orders[loading.order])
+        queued.order = queued.orders.indexOfFirst { Order.station(it) == stop }
+        queued.speed = 0
+        queued.waiting = 0
+        queued.brokenFor = 0
+        if (queued.toDepot) w.apply(Command.TrainOrder(c.id, queued.id, Command.TrainOrder.TO_DEPOT))
+        fun headedFor() = Order.station(queued.orders[queued.order])
+        r.stood[-1 - queued.id] = w.workDay - JAM_DAYS
+        w.unjam(r, c)
+        assertEquals(stop, headedFor(), "the queued train's orders were turned")
+        assertTrue(-1 - queued.id !in r.stood, "the queued train is still counted as standing")
+        // With the other gone on, it's stuck.
+        loading.waiting = 0
+        loading.speed = 1
+        r.stood[-1 - queued.id] = w.workDay - JAM_DAYS
+        w.unjam(r, c)
+        assertTrue(headedFor() != stop, "a stuck train's orders weren't turned")
     }
 
     @Test

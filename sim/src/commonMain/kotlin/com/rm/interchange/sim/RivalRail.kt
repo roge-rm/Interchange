@@ -63,6 +63,14 @@ private fun World.mayClear(c: Company, id: Int): Int {
  * signal tile behind. [loose] needs only the first platform in the site, for freight.
  */
 private fun World.termini(c: Company, site: RailSite, depot: Boolean, people: Boolean, clearing: Boolean, loose: Boolean = false): List<Terminus> {
+    val near = sites(c, site, depot, people, clearing, loose)
+    if (near.isNotEmpty() || site.town < 0 || human(c.id)) return near
+    // A rival's town with no room for one near the middle, a little further out.
+    val w = RailSite(site.x0 - WIDER_REACH, site.y0 - WIDER_REACH, site.x1 + WIDER_REACH, site.y1 + WIDER_REACH, site.cx, site.cy, site.town)
+    return sites(c, w, depot, people, clearing, loose)
+}
+
+private fun World.sites(c: Company, site: RailSite, depot: Boolean, people: Boolean, clearing: Boolean, loose: Boolean): List<Terminus> {
     val found = ArrayList<Pair<Terminus, Int>>()
     val budget = if (clearing && people && site.town >= 0) mayClear(c, site.town) else 0
     val sizes = if (budget > 0) intArrayOf(PLATFORMS, TOWN_PLATFORMS) else intArrayOf(PLATFORMS)
@@ -274,50 +282,93 @@ private fun World.railTrains(cargo: Int, load: Int, platforms: Int, loose: Boole
     for (e in roster.available(year, true)) {
         if (e.traction == Traction.ELECTRIC || fits(e) < wagon.length) continue
         var n = ((load + wagon.capacity - 1) / wagon.capacity).coerceIn(1, fits(e) / wagon.length)
-        // Loaded weight in tonnes against power, about what a freight engine pulls on the level at a fair speed.
-        fun tonnes() = e.weight + (roster.getOrNull(e.tender)?.weight ?: 0) + n * (wagon.weight + wagon.capacity)
-        val hp = if (loose) 1 else HP_PER_TONNE
-        if (loose) while (n > 1 && e.power(false) < tonnes() * hp) n--
-        if (e.power(false) >= tonnes() * hp) out += RailTrain(e, wagon, n)
+        if (loose) {
+            // Loaded weight in tonnes against power, a horsepower a tonne.
+            fun tonnes() = e.weight + (roster.getOrNull(e.tender)?.weight ?: 0) + n * (wagon.weight + wagon.capacity)
+            while (n > 1 && e.power(false) < tonnes()) n--
+            if (e.power(false) >= tonnes()) out += RailTrain(e, wagon, n)
+            continue
+        }
+        while (n > 1 && !pulls(e, wagon, n, cargo)) n--
+        // Shorter ones too, as a few cars may pay better than many half empty.
+        if (pulls(e, wagon, n, cargo)) for (k in n downTo 1) out += RailTrain(e, wagon, k)
     }
     return out
+}
+
+/** Whether a train for [cargo] can be bought now that fits a terminus. */
+internal fun World.railCarries(cargo: Int): Boolean = railTrains(cargo, 1, PLATFORMS).isNotEmpty()
+
+/**
+ * Whether [e], off the wires, can start [n] of [wagon] loaded with [cargo] on a half percent grade and hold 70% of its
+ * top speed up it, as the balance tables reckon a train.
+ */
+private fun World.pulls(e: Engine, wagon: Engine, n: Int, cargo: Int): Boolean {
+    val tender = roster.getOrNull(e.tender)?.weight ?: 0
+    // Kilograms, and newtons for the grade.
+    val mass = (e.weight + tender + n * (wagon.weight + wagon.capacity * Cargo.KG[cargo] / 1000)).toLong() * 1000
+    val grade = mass * 981 / 100 * 5 / 1000
+    val slip = e.tractive * 1000L
+    val units = maxOf(10, e.speed(false) * 7 / 10) * 65536 / 2700
+    val pull = minOf(slip, e.power(false) * 74_570L / (units * 1144L / 1000).coerceAtLeast(150))
+    return slip * 8 / 10 > resistance(mass, 0) + grade && pull > resistance(mass, units) + grade
 }
 
 /**
  * What [train] is expected to make in a work year after its running cost and the line's upkeep, carrying [cargo]
  * between tiles [from] and [to] over [tiles] of track one way: whichever's less of what it can haul at its speed and
  * what comes to it, at the fare for its days on board. That's about [load] a month for freight, and for passengers
- * what [people] in reach of the quieter end make each way at the rating its trains every so often earn.
+ * what [peopleA] and [peopleB] in reach of each end make, each way, at the rating its trains every so often earn.
  */
-private fun World.yearly(c: Company, train: RailTrain, cargo: Int, load: Int, people: Int, tiles: Int, from: Int, to: Int): Long {
+private fun World.yearly(c: Company, train: RailTrain, cargo: Int, load: Int, peopleA: Int, peopleB: Int, tiles: Int, from: Int, to: Int): Long {
     val capacity = train.wagon.capacity * train.wagons
     // A tile a day at 40-odd km/h, a fifth more for starting, stopping and servicing, and a few days at each end.
     val there = tiles * KMH_PER_TILE_A_DAY * 6 / (5 * train.engine.speed(false).coerceAtLeast(1)) + 4
-    val month = if (cargo == Cargo.PASSENGERS) people * 15 * railRating(there * 2, train.engine.speed(false)) / (16 * 255) else load
-    val hauled = minOf(365 / (there * 2) * capacity, month * 12)
+    val trips = 365 / (there * 2) * capacity
+    val every = there * 2
+    // A passenger train coming round less often than people wait for one isn't reckoned on: too many go home.
+    if (cargo == Cargo.PASSENGERS && every > GIVE_UP_DAYS) return -price(train.engine.cost)
+    fun month(people: Int): Int {
+        val first = people * 15 * railRating(every, train.engine.speed(false), 0) / (16 * 255)
+        // About half of what gathers between calls is waiting at any time, and a fifth off for the slower running,
+        // breakdowns and quiet days this leaves out.
+        return people * 12 * railRating(every, train.engine.speed(false), first * every / 60) / (16 * 255)
+    }
+    // Passengers come from each end, both ways; freight one way.
+    val hauled = if (cargo == Cargo.PASSENGERS) minOf(trips, month(peopleA) * 12) + minOf(trips, month(peopleB) * 12) else minOf(trips, load * 12)
     val dist = kotlin.math.abs(from % width - to % width) + kotlin.math.abs(from / width - to / width)
     // Freight waits on board for a full load, half of it the whole time it takes to fill.
     val filling = if (cargo == Cargo.PASSENGERS) 0 else capacity * 15 / load.coerceAtLeast(1)
     val late = (there + filling - dist * Cargo.PACE[cargo] - Cargo.GRACE[cargo]).coerceAtLeast(0)
     val share = (100 - late * Cargo.DECAY[cargo]).coerceAtLeast(33)
-    val ways = if (cargo == Cargo.PASSENGERS) 2 else 1
-    val income = pay(hauled.toLong() * dist * Cargo.RATE[cargo] * share / 10_000) * ways
+    val income = pay(hauled.toLong() * dist * Cargo.RATE[cargo] * share / 10_000)
     val running = price(train.engine.running + train.wagon.running * train.wagons + (roster.getOrNull(train.engine.tender)?.running ?: 0))
     // Upkeep on the line and both stations, in tenths of a cent a work day.
     val upkeep = price(tiles.toLong() * Upkeep.TRACK[c.upkeep] * 365 / 1_000)
     return income - running - upkeep
 }
 
-/** About the passenger rating a station settles at with a train calling every [days] at [speed] km/h, few waiting. */
-private fun railRating(days: Int, speed: Int): Int {
-    val calls = when {
-        days <= 7 -> 95
-        days <= 15 -> 65
-        days <= 30 -> 45
-        days <= 52 -> 25
+/**
+ * About the passenger rating a station keeps with a train calling every [days] at [speed] km/h and [waiting] there:
+ * the rating follows how long since the last call, so it's the average of that over the days between calls.
+ */
+private fun railRating(days: Int, speed: Int, waiting: Int): Int {
+    val n = days.coerceAtLeast(1)
+    var calls = 0
+    for (d in 0 until n) calls += when {
+        d <= 7 -> 95
+        d <= 15 -> 65
+        d <= 30 -> 45
+        d <= 52 -> 25
         else -> 0
     }
-    return 33 + calls + 40 + ((speed - 50) / 4).coerceIn(0, 42)
+    val queue = when {
+        waiting <= 100 -> 40
+        waiting <= 300 -> 30
+        waiting <= 600 -> 10
+        else -> 0
+    }
+    return 33 + calls / n + queue + ((speed - 50) / 4).coerceIn(0, 42)
 }
 
 /**
@@ -400,33 +451,60 @@ internal fun World.tryRail(
     val clearing = passengers && !human(c.id)
     val years = if (payback > 0) payback else ANY_PAYBACK
     for (a in termini(c, sa, true, passengers, clearing, loose)) for (b in termini(c, sb, false, passengers, clearing, loose)) {
-        // A computer company runs feeder buses from the middle of each town its platforms don't reach.
-        fun people(t: Terminus, s: RailSite) = catchPeople(t) + if (clearing && s.town >= 0) feederPeople(t, s.town) else 0
-        val people = if (passengers) minOf(people(a, sa), people(b, sb)) else 0
+        // A computer company runs feeder buses from the middle of each town its platforms don't reach. Those riding
+        // them go to either station by its people and nearness, as passengers choose, and only those for the far
+        // one take the train.
+        val ca = if (passengers) catchPeople(a) else 0
+        val cb = if (passengers) catchPeople(b) else 0
+        val apart = kotlin.math.abs(a.mouth(this) % width - b.mouth(this) % width) + kotlin.math.abs(a.mouth(this) / width - b.mouth(this) / width)
+        fun people(t: Terminus, s: RailSite, here: Int, there: Int): Int {
+            if (!clearing || s.town < 0) return here
+            val town = towns.getOrNull(s.town) ?: return here
+            val p = t.platform(this, 1)
+            val near = (here + 20) * 256L / (kotlin.math.abs(town.x - p % width) + kotlin.math.abs(town.y - p / width) + 8)
+            val far = (there + 20) * 256L / (apart + 8)
+            return here + (feederPeople(t, s.town) * far / (near + far)).toInt()
+        }
+        val pa = if (passengers) people(a, sa, ca, cb) else 0
+        val pb = if (passengers) people(b, sb, cb, ca) else 0
         // Loose, a pair of termini where one has nobody in reach isn't built only to come up again.
         if (loose && (passengers || cargo == Cargo.MAIL) && minOf(catchPeople(a), catchPeople(b)) == 0) continue
-        // Sized for about what it'll get a month at a middling rating.
-        val trains = if (loose) railTrains(cargo, LOOSE_LOAD, minOf(a.n, b.n), true) else railTrains(cargo, if (passengers) people * 3 / 8 else load, minOf(a.n, b.n))
+        // Every length the platforms hold, the best picked below.
+        val trains = railTrains(cargo, LOOSE_LOAD, minOf(a.n, b.n), loose)
         if (trains.isEmpty()) continue
-        fun made(t: RailTrain, tiles: Int) = yearly(c, t, cargo, load, people, tiles, a.platform(this, 1), b.platform(this, 1))
+        fun made(t: RailTrain, tiles: Int) = yearly(c, t, cargo, load, pa, pb, tiles, a.platform(this, 1), b.platform(this, 1))
         // The line can't be shorter than the way straight there, so a pair that can't pay even then isn't searched.
         val am = a.mouth(this)
         val bm = b.mouth(this)
         val least = kotlin.math.abs(am % width - bm % width) + kotlin.math.abs(am / width - bm / width) + a.last + b.last
         val fixed = price(Prices.PLATFORM) * (a.n + b.n) + price(Prices.DEPOT) + price(Prices.SIGNAL) + price(Prices.TRACK) * least
         if (payback > 0 && trains.none { made(it, least) * payback >= fixed + trainCost(it) }) continue
-        val path = railPath(c, a, b, clearing, loose) ?: continue
-        // Town buildings in the way, by town: each town lets only so many go.
-        val houses = (a.tiles(this) + b.tiles(this) + path.map { it / 16 }).filter { house[it].toInt() != 0 }.distinct()
-        if (houses.groupingBy { townOf[it].toInt() }.eachCount().any { (t, n) -> n > mayClear(c, t) }) continue
+        // Town buildings in the way, by town: each town lets only so many go. A way that pulls down too many with the
+        // termini' own is looked for again round the buildings.
+        fun houses(path: IntArray) = (a.tiles(this) + b.tiles(this) + path.map { it / 16 }).filter { house[it].toInt() != 0 }.distinct()
+        fun tooMany(houses: List<Int>) = houses.groupingBy { townOf[it].toInt() }.eachCount().any { (t, n) -> n > mayClear(c, t) }
+        var path = railPath(c, a, b, clearing, loose) ?: continue
+        var houses = houses(path)
+        if (clearing && tooMany(houses)) {
+            path = railPath(c, a, b, false, loose) ?: continue
+            houses = houses(path)
+        }
+        if (tooMany(houses)) continue
         val runs = railRuns(c.id, path)
         val spans = if (loose) railBridges(c.id, path) else emptyList()
         var cost = houses.sumOf { demolishCost(c.id, it) }
         var ok = true
         for (run in runs) {
             val (each, n) = railCost(run)
-            if (each < 0 || n == 0) { ok = false; break }
-            cost += each
+            // Track on a town building is laid once it's down, so costs a plain tile then. Any other piece that
+            // wouldn't go down leaves a gap, so no line.
+            val line = Track.line(this, run.sx, run.sy, run.ex, run.ey, run.first)
+            val laid = planRail(run)
+            if (each < 0 || line == null || laid == null) { ok = false; break }
+            var onHouses = 0
+            for (k in line.indices) if (!laid[k]) { if (house[line[k] / 64].toInt() != 0) onHouses++ else ok = false }
+            if (!ok || n == 0 && onHouses == 0) { ok = false; break }
+            cost += each + price(Prices.TRACK) * onHouses
         }
         for (span in spans) {
             val each = bridgeCost(c, span)
@@ -537,7 +615,7 @@ internal fun World.loopTiles(loop: Int): IntArray {
 }
 
 /** The plain track tile between [route]'s depot and its first platforms, or -1 for a line built without one. */
-private fun World.leadTile(c: Company, route: RivalRoute): Int {
+internal fun World.leadTile(c: Company, route: RivalRoute): Int {
     val d = depots.getOrNull(route.depot) ?: return -1
     val x = d.tile % width + Track.dx(d.edge)
     val y = d.tile / width + Track.dy(d.edge)
@@ -658,6 +736,7 @@ internal fun World.unblockDepot(c: Company, route: RivalRoute) {
         return
     }
     val lead = leadTile(c, route)
+    saleTurn(c, on, lead)
     serviceTurn(c, on, lead)
     if (lead < 0) return
     if (on.none { !it.inDepot && !it.toDepot && it.speed == 0 && stepTile(it.steps.last()) == lead }) return
@@ -673,15 +752,29 @@ internal fun World.unblockDepot(c: Company, route: RivalRoute) {
 }
 
 /**
+ * Selling on a railway with more than one train, as [serviceTurn] services: one losing train ([lostAWorkYear]) at a
+ * time is sent in to be sold, while it stands at a platform with no other train on its way to the depot, in it or on
+ * the signal tile [lead]. One whose trip [unjam] called off waits till its noDepotUntil.
+ */
+private fun World.saleTurn(c: Company, on: List<Train>, lead: Int) {
+    if (on.any { it.toDepot || it.inDepot && it.running || lead in it.onTiles }) return
+    val t = on.firstOrNull {
+        it.running && it.waiting > 0 && !it.inDepot && it.wreckedFor == 0 && tick >= it.noDepotUntil && lostAWorkYear(it.built, it.profitThisYear, it.profitLastYear)
+    } ?: return
+    apply(Command.TrainOrder(c.id, t.id, Command.TrainOrder.TO_DEPOT))
+}
+
+/**
  * Servicing on a railway with more than one train: only one has servicing on, and only while it stands at a platform
  * due a service, with no other train on its way to the depot, in it, or on the signal tile [lead] by it (-1 for a line
  * without one, where one at a time is still kept to). So it goes in
  * from the station when it leaves, finds the way into the depot clear, and comes out to wait at the signal as a new
- * train does. The one longest since its service goes first, the lowest id on a tie. Servicing is off for the rest.
+ * train does. The one longest since its service goes first, the lowest id on a tie; one whose trip [unjam] called
+ * off waits till its noDepotUntil. Servicing is off for the rest.
  */
 private fun World.serviceTurn(c: Company, on: List<Train>, lead: Int) {
     val busy = on.any { it.toDepot || it.inDepot && it.running || lead in it.onTiles }
-    val next = if (busy) null else on.filter { it.running && it.waiting > 0 && !it.inDepot && due(true, it.serviced) }
+    val next = if (busy) null else on.filter { it.running && it.waiting > 0 && !it.inDepot && tick >= it.noDepotUntil && due(true, it.serviced) }
         .minWithOrNull(compareBy<Train> { it.serviced }.thenBy { it.id })
     for (t in on) {
         // One already on its way for a service keeps it.
@@ -788,8 +881,10 @@ private const val PLATFORMS = 5
 private const val TOWN_PLATFORMS = 4
 /** How far from a town's middle its station goes. */
 private const val TOWN_REACH = 6
+/** How much further out a terminus may go in a town with no room for one within [TOWN_REACH]. */
+private const val WIDER_REACH = 3
 /** People in reach worth a tile further from where the line heads, choosing a passenger terminus. */
-private const val PEOPLE_A_TILE = 10
+private const val PEOPLE_A_TILE = 3
 /** Tiles further a terminus may be for each town building it doesn't pull down. */
 private const val HOUSE_TILES = 4
 /** Most of one town's buildings a line pulls down, and approval kept above where the town refuses. */
@@ -812,7 +907,5 @@ private const val LOOSE_PATH_LIMIT = 600_000
 private const val LOOSE_LOAD = 10_000
 /** Km/h for a train to go a tile a work day. */
 internal const val KMH_PER_TILE_A_DAY = 42
-/** Horsepower an engine needs for each tonne of its train, loaded. */
-private const val HP_PER_TONNE = 3
 /** Most work years another train on a line may take to pay for itself. */
 private const val TRAIN_PAYBACK = 10
