@@ -19,13 +19,13 @@ Dan
 
 <table>
   <tr>
-    <td align="center" width="33%"><img src="screenshots/town.jpg" width="100%" alt="A town in summer with a diesel train at the station and buses in the streets"></td>
-    <td align="center" width="33%"><img src="screenshots/winter.jpg" width="100%" alt="The same town in January, under snow"></td>
-    <td align="center" width="33%"><img src="screenshots/logging.jpg" width="100%" alt="Logging trucks on a snowy road through the woods"></td>
+    <td align="center" width="33%"><img src="screenshots/town.jpg" width="100%" alt="A four track station in summer with three trains in, the town and buses behind"></td>
+    <td align="center" width="33%"><img src="screenshots/winter.jpg" width="100%" alt="The same station in March, under snow"></td>
+    <td align="center" width="33%"><img src="screenshots/logging.jpg" width="100%" alt="Log trucks on a salted road by a logging camp in February"></td>
   </tr>
   <tr>
-    <td align="center" width="33%"><img src="screenshots/building.jpg" width="100%" alt="Laying track by the station"></td>
-    <td align="center" width="33%"><img src="screenshots/companies.jpg" width="100%" alt="The companies, with their insignias and what they're worth"></td>
+    <td align="center" width="33%"><img src="screenshots/freight.jpg" width="100%" alt="Ore trains at an iron mine in October, with a sawmill below"></td>
+    <td align="center" width="33%"><img src="screenshots/building.jpg" width="100%" alt="Laying track by the junction outside the station, two trains going through"></td>
     <td align="center" width="33%"><img src="screenshots/campaign.jpg" width="100%" alt="The campaign's seven chapters"></td>
   </tr>
 </table>
