@@ -4,6 +4,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -57,6 +58,8 @@ fun MapView(
 ) {
     val scope = rememberCoroutineScope()
     val renderer = remember(world) { Renderer(world, sheets, scope) }
+    // The lines drawn over the map keep their world, so let go of it when the map shows another.
+    DisposableEffect(world) { onDispose { DrawLines.drop(world) } }
     renderer.overlays = overlays
     val currentInput by rememberUpdatedState(input)
     Canvas(

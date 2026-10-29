@@ -150,6 +150,9 @@ class TrackCurves(private val maskAt: (Int, Int) -> Int, private val flagsAt: (I
 
     fun invalidateAll() = cache.clear()
 
+    /** How many tiles' curves are kept. */
+    val size get() = cache.size
+
     companion object {
         const val PLAIN = 0
         const val BACK = 1

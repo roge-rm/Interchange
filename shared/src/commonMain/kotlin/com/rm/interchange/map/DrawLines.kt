@@ -12,7 +12,7 @@ import com.rm.interchange.sim.World
  * straight art has no list: its pieces run edge to edge.
  */
 internal class DrawLines(private val world: World) {
-    private val tiles = CurveTiles { world }
+    val tiles = CurveTiles { world }
     val curves = tiles.curves
     private val lines = arrayOfNulls<List<TileCurve>>(world.width * world.height)
     private val watch = BlockWatch(world)
@@ -55,6 +55,11 @@ internal class DrawLines(private val world: World) {
             val l = last?.takeIf { it.world === world } ?: DrawLines(world).also { last = it }
             l.refresh()
             return l
+        }
+
+        /** Lets go of the lines of [world] when it is dropped. */
+        fun drop(world: World) {
+            if (last?.world === world) last = null
         }
     }
 }

@@ -9,26 +9,35 @@ package com.rm.interchange.sim
  * of the view, so turning the view never swaps it between curved and straight art. Elsewhere its pieces run straight
  * edge to edge with the old art.
  *
- * [world] gives the world when asked, so a cache holding this needn't keep a dropped world. Not thread safe: one per
- * thread.
+ * [world] gives the world when asked, so a cache holding this needn't keep a dropped world. [maskOf] gives the track
+ * pieces on a tile in world terms, the world's own unless a plan is being looked at. Not thread safe: one per thread.
+ *
+ * Only the curves in the view's own turn are kept ([keys]); [curved] works out the other turns on small capped caches.
  */
-class CurveTiles(private val world: () -> World) {
-    /** The world's curves, in world terms. */
-    val curves = TrackCurves({ x, y -> maskAt(world(), x, y) }, { x, y -> TrackCurves.flagsOf(world(), x, y) })
+class CurveTiles(private val world: () -> World, private val maskOf: (Int, Int) -> Int) {
+    constructor(world: () -> World) : this(world, { x, y -> maskAt(world(), x, y) })
 
-    /** The same, turned as a view at each quarter turn has it; tile (u, v) of turn t is [worldOf] it. */
-    private val turned = Array(4) { t ->
-        if (t == 0) curves else TrackCurves({ u, v -> viewMask(t, u, v) }, { u, v -> TrackCurves.flagsOf(world(), wx(t, u, v), wy(t, u, v)) })
-    }
+    /** The world's curves, in world terms. */
+    val curves = TrackCurves(maskOf) { x, y -> TrackCurves.flagsOf(world(), x, y) }
+
+    /** The same, turned as a view at each quarter turn has it, made when asked; tile (u, v) of turn t is [worldOf] it. */
+    private val turned = arrayOfNulls<TrackCurves>(4).also { it[0] = curves }
     private val masks: Array<(Int, Int) -> Int> = Array(4) { t -> { u: Int, v: Int -> viewMask(t, u, v) } }
+
+    private fun turnedCurves(t: Int) = TrackCurves(masks[t]) { u, v -> TrackCurves.flagsOf(world(), wx(t, u, v), wy(t, u, v)) }
+
+    /** The curves other turns work out the keys of [curved] from, emptied past [PROBE_KEEP] tiles. */
+    private val probes = arrayOfNulls<TrackCurves>(4)
 
     /** Whether tile ([x], [y]) draws its track on curves. */
     fun curved(x: Int, y: Int): Boolean {
         val w = world()
-        if (!levelRail(w, x, y)) return false
+        if (!levelRail(w, x, y, if (w.inside(x, y)) maskOf(x, y) else 0)) return false
         val known = CurveKeys.known ?: return true
         for (t in 0..3) {
-            val keys = keys(x, y, t)
+            val probe = if (t == 0) curves else (probes[t] ?: turnedCurves(t).also { probes[t] = it })
+            val keys = CurveKeys.at(probe, masks[t], ux(t, x, y), uy(t, x, y))
+            if (t != 0 && probe.size > PROBE_KEEP) probe.invalidateAll()
             if (keys.isEmpty()) return false
             for (k in keys) if (k !in known) return false
         }
@@ -36,7 +45,7 @@ class CurveTiles(private val world: () -> World) {
     }
 
     /** The sprite keys tile ([x], [y]) draws with the view at quarter turn [turn], as [CurveKeys.at] gives them. */
-    fun keys(x: Int, y: Int, turn: Int): List<String> = CurveKeys.at(turned[turn], masks[turn], ux(turn, x, y), uy(turn, x, y))
+    fun keys(x: Int, y: Int, turn: Int): List<String> = CurveKeys.at(turned[turn] ?: turnedCurves(turn).also { turned[turn] = it }, masks[turn], ux(turn, x, y), uy(turn, x, y))
 
     /** Forgets the curves that read any tile from ([x0], [y0]) to ([x1], [y1]) inclusive. */
     fun invalidate(x0: Int, y0: Int, x1: Int, y1: Int) {
@@ -45,12 +54,13 @@ class CurveTiles(private val world: () -> World) {
             val ub = ux(t, x1, y1)
             val va = uy(t, x0, y0)
             val vb = uy(t, x1, y1)
-            turned[t].invalidate(minOf(ua, ub), minOf(va, vb), maxOf(ua, ub), maxOf(va, vb))
+            turned[t]?.invalidate(minOf(ua, ub), minOf(va, vb), maxOf(ua, ub), maxOf(va, vb))
+            if (t != 0) probes[t]?.invalidate(minOf(ua, ub), minOf(va, vb), maxOf(ua, ub), maxOf(va, vb))
         }
     }
 
     private fun viewMask(t: Int, u: Int, v: Int): Int {
-        val m = maskAt(world(), wx(t, u, v), wy(t, u, v))
+        val m = maskOf(wx(t, u, v), wy(t, u, v))
         if (t == 0 || m == 0) return m
         var out = 0
         for (p in Track.PIECES) if (m and p != 0) {
@@ -66,6 +76,9 @@ class CurveTiles(private val world: () -> World) {
 
         /** How far a tile's curved art reads: its keys read the curves of the tile next door, which read two further. */
         const val REACH = 3
+
+        /** Tiles a probe keeps, enough for the neighbours along a chunk's rows to be shared. */
+        private const val PROBE_KEEP = 512
 
         /**
          * Whether tile ([x], [y]) with track [pieces] on it would lie level and could be drawn curved, before asking for

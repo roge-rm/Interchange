@@ -73,6 +73,21 @@ class CurveTilesTest {
     }
 
     @Test
+    fun checkingATileInAllTurnsLeavesItsKeysTheSame() {
+        val w = flat()
+        layout(w)
+        val tiles = CurveTiles { w }
+        try {
+            CurveKeys.known = HashSet<String>().also { all -> for (t in 0..3) for (y in 0..30) for (x in 0..30) if (CurveTiles.levelRail(w, x, y)) all += tiles.keys(x, y, t) }
+            val before = tiles.keys(12, 20, 1)
+            assertTrue(tiles.curved(12, 20))
+            assertEquals(before, tiles.keys(12, 20, 1))
+        } finally {
+            CurveKeys.known = null
+        }
+    }
+
+    @Test
     fun aTileMissingASpriteInAnyTurnStaysStraight() {
         val w = flat()
         layout(w)
