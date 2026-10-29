@@ -87,6 +87,13 @@ internal class Renderer(private val world: World, private val sheets: Sheets, pr
     /** How much the map is still hidden behind the page as it first comes up: 1 till it's ready, fading to 0 just after. */
     fun cover(): Float = if (readyAt < 0) 1f else (1f - (clock.elapsedNow().inWholeMilliseconds - readyAt) / FADE_MILLIS.toFloat()).coerceIn(0f, 1f)
 
+    /** Stand-ins for missing chunks baking on the screen lane. */
+    private val standInsBaking = HashSet<Key>()
+
+    /** The level zooming is heading for and since when, to stop waiting on chunks of older weather after a while. */
+    private var waitTarget = -1
+    private var waitSince = 0L
+
     /** The level on screen and the view's turn then, which zooming changes only once the next level's ready. */
     private var shownLevel = -1
     private var shownTurn = -1
@@ -136,17 +143,25 @@ internal class Renderer(private val world: World, private val sheets: Sheets, pr
     fun DrawScope.draw(view: View) {
         frame++
         if (Probe.ON) Probe.frameStart()
-        // Zooming across a level, the one shown stays on screen, scaled, till every chunk of the next is baked; then
-        // the screen changes over all at once, with no patches of the two.
+        // Zooming across a level, the one shown stays on screen, scaled, till every chunk of the next is baked with the
+        // weather showing, or for a moment if it can stand in for the rest; then the screen changes over at once.
         val target = levelFor(view.halfWidth)
         var level = if (shownLevel >= 0 && view.turn == shownTurn && kotlin.math.abs(shownLevel - target) == 1) shownLevel else target
         val wanted = ArrayList<Pair<Key, Float>>()
+        val standIns = HashSet<Key>()
         var zoomMissing = 0
+        val now = clock.elapsedNow().inWholeMilliseconds
+        if (target != waitTarget) { waitTarget = target; waitSince = now }
         if (level != target) {
             var ready = true
+            // After a moment it switches anyway if what's still to come has the level shown to stand in, so it looks
+            // just as it did, and chunks of older weather show and fade to the new.
+            val waited = now - waitSince
+            val current = shown.takeIf { waited < ZOOM_WAIT_MILLIS }
             forEachVisible(view, target) { key, _, _, _, _ ->
-                if (key !in cache) {
-                    ready = false
+                val entry = cache[key]
+                if (entry == null || (current != null && entry.weatherSum != weatherSum(view, key, current))) {
+                    if (entry != null || waited < ZOOM_WAIT_MILLIS || !covers(level, key)) ready = false
                     wanted += key to 1f
                     zoomMissing++
                 }
@@ -155,14 +170,16 @@ internal class Renderer(private val world: World, private val sheets: Sheets, pr
         }
         shownLevel = level
         shownTurn = view.turn
-        if (Probe.ON) { Probe.zoom(level, target, zoomMissing); Probe.level = level }
+        if (Probe.ON) { Probe.zoom(level, target, zoomMissing); Probe.level = level; Probe.covered = readyAt < 0 }
         // Hidden till the first screen is all baked, then shown at once.
         if (readyAt < 0) {
             var all = true
             forEachVisible(view, level) { key, _, _, _, _ -> if (key !in cache) all = false }
-            if (all) readyAt = clock.elapsedNow().inWholeMilliseconds
+            if (all) {
+                readyAt = clock.elapsedNow().inWholeMilliseconds
+                if (Probe.ON) Probe.log("ready")
+            }
         }
-        val now = clock.elapsedNow().inWholeMilliseconds
         // Which way the map's moving, in view tiles a frame, to bake ahead that way first.
         val fx = view.focusViewX()
         val fy = view.focusViewY()
@@ -219,26 +236,75 @@ internal class Renderer(private val world: World, private val sheets: Sheets, pr
                     else if (next == null || entry.weatherSum != weatherSum(view, key, weather)) wanted += key to 1.2f
                 }
             } else {
-                val kind = drawFallback(view, level, key)
-                if (Probe.ON) when (kind) { 1 -> Probe.finer++; 2 -> Probe.coarser++; else -> Probe.nothing++ }
-                wanted += key to 1f
+                val other = drawFallback(view, level, key)
+                if (Probe.ON) when {
+                    other < 0 -> Probe.nothing++
+                    other < level -> Probe.finer++
+                    else -> { Probe.coarser++; if (other - level >= 2) Probe.far++ }
+                }
+                // Zooming out, the level going bakes after the one coming in.
+                wanted += key to if (target > level) 1.7f else 1f
                 missing = true
+                // With nothing close to stand in, the next level out bakes first, a quarter the chunks for the same
+                // area, and with nothing at all the coarsest too, which covers the most.
+                if (readyAt >= 0) {
+                    if (other < 0 && level != COARSE) { wanted += outer(key, COARSE) to 0.5f; standIns += outer(key, COARSE) }
+                    if ((other < 0 || other - level >= 2) && level + 1 < COARSE) { wanted += outer(key, level + 1) to 0.9f; standIns += outer(key, level + 1) }
+                }
             }
         }
-        // The coarsest level round about, a few chunks that always have something to show while sharper ones bake.
-        forEachVisible(view, COARSE, margin = COARSE_REACH * view.halfWidth) { key, _, _, _, _ ->
+        val cx = size.width / 2 + (driftX - driftY) * view.halfWidth * AHEAD
+        val cy = size.height / 2 + (driftX + driftY) * view.halfHeight * AHEAD
+        // The coarsest level, for the whole map when that's small or else round about, so there's always something to show
+        // while sharper ones bake.
+        forEachVisible(view, COARSE, margin = if (coarseWhole) 1e9f else COARSE_REACH * view.halfWidth) { key, left, top, right, bottom ->
             val entry = cache[key]
             if (entry != null) entry.used = frame
-            if (entry == null) wanted += key to 1.5f
-            else if (entry.version != versionOf(view, COARSE, key.cx, key.cy)) wanted += key to 4f
-            // Cheap, so soon in step with the weather, as it stands in for every other level.
-            else if (entry.weatherSum != weatherSum(view, key, weather)) wanted += key to 2f
+            // Once the screen's up: those round about right after it, so a jump or a fast pan finds them there, the rest of
+            // the map in the background along with the ring, nearest first by how far its edge is from the screen's
+            // middle, as its chunks are many screens across. One with much on it can take a second or two.
+            val m = COARSE_REACH * view.halfWidth
+            val near = right > -m && bottom > -m && left < size.width + m && top < size.height + m
+            val mx = max(0f, max(left - cx, cx - right))
+            val my = max(0f, max(top - cy, cy - bottom))
+            val d = kotlin.math.sqrt(mx * mx + my * my) / (size.width + size.height)
+            if (entry == null) { if (readyAt >= 0) wanted += key to if (near) 1.5f else 2f + d }
+            else if (entry.version != versionOf(view, COARSE, key.cx, key.cy)) wanted += key to 4f + d
+            // In step with the weather near the screen; the rest once there's nothing else to bake.
+            else if (entry.weatherSum != weatherSum(view, key, weather)) wanted += key to if (d < 1f) 2f + d else 5f + d
         }
-        // Once the screen has all it needs: a ring round it at this level, the way it's moving first, then the next level
-        // out for zooming out, while there's room for them.
+        // The next level out, kept baked as the stand-in for this one and so zooming out switches at once: over the screen
+        // right after it, round it with the ring. Kept in step with the weather and building in the background.
+        if (readyAt >= 0 && (level + 1 < COARSE || (level + 1 == COARSE && !coarseWhole))) {
+            val room = bytes < BUDGET * 3 / 4
+            forEachVisible(view, level + 1, margin = size.width * RING) { key, left, top, right, bottom ->
+                val entry = cache[key]
+                if (entry != null) entry.used = frame
+                val onScreen = right > 0f && bottom > 0f && left < size.width && top < size.height
+                val mx = (left + right) / 2 - cx
+                val my = (top + bottom) / 2 - cy
+                val d = kotlin.math.sqrt(mx * mx + my * my) / (size.width + size.height)
+                if (entry == null) { if (onScreen) wanted += key to 1.6f else if (room) wanted += key to 2f + d }
+                else if (entry.version != versionOf(view, level + 1, key.cx, key.cy) || entry.weatherSum != weatherSum(view, key, weather)) {
+                    if (onScreen || room) wanted += key to 2f + d
+                }
+            }
+        }
+        // Once the screen has all it needs: a ring round it at this level, the way it's moving first, and the next level
+        // in where zooming in would show it, once the screen is near the size that switches to it, while there's room.
         if (wanted.none { it.second < 2f } && bytes < BUDGET * 3 / 4) {
-            val cx = size.width / 2 + (driftX - driftY) * view.halfWidth * AHEAD
-            val cy = size.height / 2 + (driftX + driftY) * view.halfHeight * AHEAD
+            val near = view.halfWidth / LEVELS[level]
+            if (level - 1 >= SHARPEST && near > FINER_FROM) {
+                forEachVisible(view, level - 1, margin = -(1f - near) / 2 * min(size.width, size.height)) { key, left, top, right, bottom ->
+                    val entry = cache[key]
+                    if (entry != null) entry.used = frame
+                    if (entry == null || entry.version != versionOf(view, level - 1, key.cx, key.cy) || entry.weatherSum != weatherSum(view, key, weather)) {
+                        val mx = (left + right - size.width) / 2
+                        val my = (top + bottom - size.height) / 2
+                        wanted += key to 2.4f + kotlin.math.sqrt(mx * mx + my * my) / (size.width + size.height)
+                    }
+                }
+            }
             forEachVisible(view, level, margin = size.width * (if (level >= FAR_LEVEL) FAR_RING else RING)) { key, left, top, right, bottom ->
                 val entry = cache[key]
                 if (entry != null) entry.used = frame
@@ -247,11 +313,6 @@ internal class Renderer(private val world: World, private val sheets: Sheets, pr
                     val my = (top + bottom) / 2 - cy
                     wanted += key to 2f + kotlin.math.sqrt(mx * mx + my * my) / (size.width + size.height)
                 }
-            }
-            if (level + 1 < LEVELS.size) forEachVisible(view, level + 1) { key, _, _, _, _ ->
-                val entry = cache[key]
-                if (entry != null) entry.used = frame
-                if (entry == null || entry.version != versionOf(view, level + 1, key.cx, key.cy) || entry.weatherSum != weatherSum(view, key, weather)) wanted += key to 3f
             }
         }
         // Cached chunks off screen with older weather, the nearest first along with the ring, the rest after it. A level
@@ -289,7 +350,16 @@ internal class Renderer(private val world: World, private val sheets: Sheets, pr
             }
         }
         val sorted = wanted.sortedBy { it.second }
-        for ((key, priority) in sorted) if (priority < 2f) want(key, priority)
+        // At most one stand-in baking on the screen lane at a time, so the sharp chunks keep coming after a turn or a
+        // fast pan leaves the whole screen without one.
+        standInsBaking.retainAll(baking)
+        for ((key, priority) in sorted) if (priority < 2f) {
+            if (priority < 1f && key in standIns) {
+                if (standInsBaking.isNotEmpty() || key in baking) continue
+                want(key, priority)
+                if (key in baking) standInsBaking += key
+            } else want(key, priority)
+        }
         // The weather batch next, on every baker once nothing on screen is missing, or else only in the background.
         while (batchQueue.isNotEmpty()) {
             val onScreenLane = !missing && baking.size - behind.size < BAKERS
@@ -353,17 +423,39 @@ internal class Renderer(private val world: World, private val sheets: Sheets, pr
         return (d / 8f).coerceAtMost(0.9f)
     }
 
+    /** The chunk at coarser [level] that covers [key]. */
+    private fun outer(key: Key, level: Int): Key {
+        val n = 1 shl (level - key.level)
+        return Key(level, key.turn, key.cx.floorDiv(n), key.cy.floorDiv(n))
+    }
+
+    /** Whether the coarsest level for the whole map fits in [COARSE_BUDGET], counting every chunk that could hold some of it. */
+    private val coarseWhole: Boolean = run {
+        val hw = LEVELS[COARSE]
+        val across = floor((max(world.width, world.height) + 1) * hw / CHUNK_PIXELS).toInt() - floor(-(max(world.width, world.height) + 1) * hw / CHUNK_PIXELS).toInt() + 1
+        val down = floor(((world.width + world.height) * hw / 2 + hw) / CHUNK_ROWS).toInt() - floor(-above(hw) / CHUNK_ROWS).toInt() + 1
+        val whole = across.toLong() * down * CHUNK_PIXELS * CHUNK_ROWS * 4 <= COARSE_BUDGET
+        if (Probe.ON) Probe.log("coarse whole=$whole chunks=${across * down}")
+        whole
+    }
+
     /** The tile last built on, so its chunk is baked again before the others its building touched. */
     var lastEdit = -1 to -1
 
-    /** A chunk missing at this level, drawn from whichever other level has it, kept to the chunk's own rectangle. */
-    /** Returns what stood in, for [Probe]: 0 nothing, 1 a finer level, 2 a coarser one. */
+    /** A chunk missing at this level, drawn from whichever other level has it, kept to the chunk's own rectangle. Returns that level, or -1 if none had it. */
     private fun DrawScope.drawFallback(view: View, level: Int, key: Key): Int {
-        var kind = 0
+        var kind = -1
         placeChunk(view, level, key.cx, key.cy) { left, top, right, bottom ->
             clipRect(left, top, right, bottom) { kind = drawStandIn(view, level, key) }
         }
         return kind
+    }
+
+    /** Whether [level], a level out or in from chunk [key]'s, has all of [key] baked: the chunk over it or the four under it. */
+    private fun covers(level: Int, key: Key): Boolean {
+        if (level > key.level) return outer(key, level) in cache
+        for (j in 0 until 2) for (i in 0 until 2) if (Key(level, key.turn, key.cx * 2 + i, key.cy * 2 + j) !in cache) return false
+        return true
     }
 
     private fun DrawScope.drawStandIn(view: View, level: Int, key: Key): Int {
@@ -377,7 +469,7 @@ internal class Renderer(private val world: World, private val sheets: Sheets, pr
                 e.used = frame
                 placeChunk(view, other, ok.cx, ok.cy) { l, t, r, b -> drawChunk(e, l, t, r, b) }
                 if (Probe.ON && shown != null && e.weatherSum != weatherSum(view, ok, shown!!)) Probe.standInOtherWeather++
-                return 2
+                return other
             } else {
                 // A finer level: draw what of its chunks are here, if all are.
                 val n = 1 shl (level - other)
@@ -392,10 +484,10 @@ internal class Renderer(private val world: World, private val sheets: Sheets, pr
                     placeChunk(view, other, k.cx, k.cy) { l, t, r, b -> drawChunk(e, l, t, r, b) }
                     if (Probe.ON && shown != null && e.weatherSum != weatherSum(view, k, shown!!)) Probe.standInOtherWeather++
                 }
-                return 1
+                return other
             }
         }
-        return 0
+        return -1
     }
 
     /** Draws [entry]'s picture into its chunk's screen rectangle, its trimmed rows left out at the top. */
@@ -651,6 +743,12 @@ internal class Renderer(private val world: World, private val sheets: Sheets, pr
         /** The coarsest level, kept baked this far round the screen's middle, in view tiles, as a stand-in for any other. */
         val COARSE = LEVELS.size - 1
         const val COARSE_REACH = 128
+        /** Bitmap memory the coarsest level may take to be kept for the whole map, 48 chunks, which holds a 256 by 256 map. */
+        const val COARSE_BUDGET = BUDGET / 8
+        /** How long a zoom waits for the next level's chunks the level shown can stand in for, and for those of older weather, in milliseconds. */
+        const val ZOOM_WAIT_MILLIS = 400L
+        /** How near the screen's scale is to switching to the next level in before that level is baked ahead. */
+        const val FINER_FROM = 0.8f
         /** How far round the screen chunks are baked ahead, as a share of its width, and how many frames of drift ahead the nearest are counted from. */
         const val RING = 0.4f
         /** From this level out, the ring goes a screen further, so a slow device has scrolled-to chunks ready. The sharpest level's chunks are too big for it. */

@@ -24,6 +24,10 @@ internal object Probe {
     private var windowStart = -1L
     /** On-screen chunks this frame: drawn sharp, fading in, drawn from a finer or coarser level, drawn as nothing. */
     var ok = 0; var fading = 0; var finer = 0; var coarser = 0; var nothing = 0
+    /** Of the coarser stand-ins, those two or more levels out, scaled 4x or more. */
+    var far = 0
+    /** Whether the map is still hidden behind the cover; those frames are only counted. */
+    var covered = false
     /** On-screen chunks drawn sharp but from another weather copy than the one showing (they'll pop when rebaked), older or newer than it. */
     var staleOld = 0; var staleNew = 0
     /** On-screen chunks fading from their old weather. */
@@ -36,9 +40,10 @@ internal object Probe {
     private var sumOk = 0; private var sumFading = 0; private var sumFiner = 0; private var sumCoarser = 0; private var sumNothing = 0
     private var sumCross = 0; private var sumStaleOld = 0; private var sumStaleNew = 0; private var sumStandInW = 0; private var sumVehicles = 0
     private var framesNothing = 0; private var framesStandIn = 0; private var maxNothing = 0
+    private var sumFar = 0; private var framesFar = 0; private var framesCovered = 0
 
     fun frameStart() {
-        crossfading = 0; ok = 0; fading = 0; finer = 0; coarser = 0; nothing = 0; staleOld = 0; staleNew = 0; standInOtherWeather = 0
+        far = 0; crossfading = 0; ok = 0; fading = 0; finer = 0; coarser = 0; nothing = 0; staleOld = 0; staleNew = 0; standInOtherWeather = 0
     }
 
     /** Called once a frame after the chunks are drawn; vehicles skipped are counted into the next window. */
@@ -46,20 +51,25 @@ internal object Probe {
         val t = now()
         if (windowStart < 0) windowStart = t
         frames++
-        sumOk += ok; sumFading += fading; sumFiner += finer; sumCoarser += coarser; sumNothing += nothing
-        sumCross += crossfading; sumStaleOld += staleOld; sumStaleNew += staleNew; sumStandInW += standInOtherWeather; sumVehicles += vehiclesSkipped
-        if (nothing > 0) framesNothing++
-        if (finer + coarser > 0) framesStandIn++
-        if (nothing > maxNothing) maxNothing = nothing
+        if (covered) framesCovered++ else {
+            sumFar += far; if (far > 0) framesFar++
+            sumOk += ok; sumFading += fading; sumFiner += finer; sumCoarser += coarser; sumNothing += nothing
+            sumCross += crossfading; sumStaleOld += staleOld; sumStaleNew += staleNew; sumStandInW += standInOtherWeather; sumVehicles += vehiclesSkipped
+            if (nothing > 0) framesNothing++
+            if (finer + coarser > 0) framesStandIn++
+            if (nothing > maxNothing) maxNothing = nothing
+        }
         vehiclesSkipped = 0
         if (t - windowStart >= 500) {
             // Sums over the window's frames, so chunk-frames; divide by frames for a per-frame average.
             log("win ms=${t - windowStart} frames=$frames L=$level ok=$sumOk fade=$sumFading finer=$sumFiner coarser=$sumCoarser nothing=$sumNothing " +
-                "fNothing=$framesNothing fStandIn=$framesStandIn maxNothing=$maxNothing cross=$sumCross staleOld=$sumStaleOld staleNew=$sumStaleNew standInW=$sumStandInW vehSkip=$sumVehicles")
+                "fNothing=$framesNothing fStandIn=$framesStandIn maxNothing=$maxNothing cross=$sumCross staleOld=$sumStaleOld staleNew=$sumStaleNew standInW=$sumStandInW vehSkip=$sumVehicles " +
+                "far=$sumFar fFar=$framesFar covered=$framesCovered")
             frames = 0; windowStart = t
             sumOk = 0; sumFading = 0; sumFiner = 0; sumCoarser = 0; sumNothing = 0
             sumCross = 0; sumStaleOld = 0; sumStaleNew = 0; sumStandInW = 0; sumVehicles = 0
             framesNothing = 0; framesStandIn = 0; maxNothing = 0
+            sumFar = 0; framesFar = 0; framesCovered = 0
         }
     }
 
