@@ -111,6 +111,8 @@ private fun World.sites(c: Company, site: RailSite, depot: Boolean, people: Bool
  * A way for track from [a]'s mouth to [b]'s, as tiles each with the edges it's come in and goes out by, packed
  * tile * 16 + in * 4 + out. Null if there's none within reach. With [bridges], [c]'s bridges can carry
  * it straight over water or anything else in the way, from one tile on the way to the next some tiles on.
+ * The search keeps what the tile before did, so a tight bend (a lone diagonal between straights, or two diagonals
+ * turning the same way) costs more and a 90 is spread over three diagonals where there's room.
  */
 private fun World.railPath(c: Company, a: Terminus, b: Terminus, clearing: Boolean, bridges: Boolean = false): IntArray? {
     val start = a.mouth(this)
@@ -126,7 +128,11 @@ private fun World.railPath(c: Company, a: Terminus, b: Terminus, clearing: Boole
     val back = HashMap<Int, Int>()
     val heap = LongHeap()
     fun h(i: Int) = (kotlin.math.abs(i % width - gx) + kotlin.math.abs(i / width - gy)) * RAIL_MOVE
-    val s0 = start * 4 + Track.opposite(a.out)
+    // A state is a tile, the edge come in at and what the tile before did: [BEND_STRAIGHT], a lone diagonal after a
+    // straight or one in a run of diagonals, each turning one way or the other.
+    fun state(tile: Int, came: Int, bend: Int) = (tile * 4 + came) * 5 + bend
+    fun tileOf(s: Int) = s / 20
+    val s0 = state(start, Track.opposite(a.out), BEND_STRAIGHT)
     best[s0] = 0
     heap.push(h(start).toLong() shl 32 or s0.toLong())
     val limit = (chebyshev(start % width, start / width, gx, gy) + 10).let { it * it * 16 }.coerceAtMost(if (bridges) LOOSE_PATH_LIMIT else RAIL_PATH_LIMIT)
@@ -135,20 +141,22 @@ private fun World.railPath(c: Company, a: Terminus, b: Terminus, clearing: Boole
         val top = heap.pop()
         val s = (top and 0xffffffffL).toInt()
         val g = best[s] ?: continue
-        if ((top ushr 32).toInt() - h(s / 4) > g) continue
+        if ((top ushr 32).toInt() - h(tileOf(s)) > g) continue
         expanded++
-        val t = s / 4
-        val came = s % 4
+        val t = tileOf(s)
+        val came = (s / 5) % 4
+        val bend = s % 5
         // A bridge's far head takes straight track only.
-        val landed = back[s]?.let { !next(it / 4, t) } == true
+        val landed = back[s]?.let { !next(tileOf(it), t) } == true
         // A mouth on a road is crossed straight.
         if (t == goal && came != into && (road[t].toInt() == 0 || came == b.out) && (!landed || came == b.out)) {
             val out = ArrayList<Int>()
             var at = s
             var exit = into
             while (true) {
-                out += (at / 4) * 16 + (at % 4) * 4 + exit
-                exit = Track.opposite(at % 4)
+                val atCame = (at / 5) % 4
+                out += tileOf(at) * 16 + atCame * 4 + exit
+                exit = Track.opposite(atCame)
                 at = back[at] ?: break
             }
             out.reverse()
@@ -170,8 +178,8 @@ private fun World.railPath(c: Company, a: Terminus, b: Terminus, clearing: Boole
             if (bridges && !turn && !landed && blockedAhead(c, tx, ty, e)) {
                 val land = bridgeLanding(c, tx, ty, e, kept)
                 if (land >= 0) {
-                    val ns = land * 4 + Track.opposite(e)
-                    val ng = g + chebyshev(tx, ty, land % width, land / width) * RAIL_MOVE * RAIL_BRIDGE
+                    val ns = state(land, Track.opposite(e), BEND_STRAIGHT)
+                    val ng = g + chebyshev(tx, ty, land % width, land / width) * RAIL_MOVE * RAIL_BRIDGE + (if (tightAt(bend, came, e)) RAIL_TIGHT else 0)
                     if (ng < (best[ns] ?: Int.MAX_VALUE)) {
                         best[ns] = ng
                         back[ns] = s
@@ -181,8 +189,12 @@ private fun World.railPath(c: Company, a: Terminus, b: Terminus, clearing: Boole
             }
             val step = railStep(c, n, e, clearing) ?: continue
             if (edgeHeight(tx, ty, Track.pieceOf(came, e), e) != edgeHeight(nx, ny, Track.straight(e), Track.opposite(e))) continue
-            val ns = n * 4 + Track.opposite(e)
-            val ng = g + step + if (turn) RAIL_TURN else 0
+            val tight = tightAt(bend, came, e)
+            val nextBend = bendAfter(bend, came, e)
+            val ns = state(n, Track.opposite(e), nextBend)
+            // The goal's own piece is laid on the way into the station's straight, so its bend is counted here too.
+            val atGoal = n == goal && (tightAt(nextBend, Track.opposite(e), into) || bendAfter(nextBend, Track.opposite(e), into).let { it == BEND_LONE_LEFT || it == BEND_LONE_RIGHT })
+            val ng = g + step + (if (turn) RAIL_TURN else 0) + (if (tight) RAIL_TIGHT else 0) + (if (atGoal) RAIL_TIGHT else 0)
             if (ng >= (best[ns] ?: Int.MAX_VALUE)) continue
             best[ns] = ng
             back[ns] = s
@@ -190,6 +202,31 @@ private fun World.railPath(c: Company, a: Terminus, b: Terminus, clearing: Boole
         }
     }
     return null
+}
+
+/** Which way a tile come in at [came] and left by [e] turns: 0 straight, 1 or -1. */
+private fun turnWay(came: Int, e: Int): Int {
+    if (e == Track.opposite(came)) return 0
+    val ix = Track.dx(Track.opposite(came))
+    val iy = Track.dy(Track.opposite(came))
+    return if (ix * Track.dy(e) - iy * Track.dx(e) > 0) 1 else -1
+}
+
+/** Whether a tile come in at [came] and left by [e], after a tile that did [bend], makes a tight bend. */
+private fun tightAt(bend: Int, came: Int, e: Int): Boolean = when (turnWay(came, e)) {
+    0 -> bend == BEND_LONE_LEFT || bend == BEND_LONE_RIGHT
+    1 -> bend == BEND_LONE_LEFT || bend == BEND_RUN_LEFT
+    else -> bend == BEND_LONE_RIGHT || bend == BEND_RUN_RIGHT
+}
+
+/** What a tile come in at [came] and left by [e] did, after one that did [bend]. */
+private fun bendAfter(bend: Int, came: Int, e: Int): Int {
+    val way = turnWay(came, e)
+    return when {
+        way == 0 -> BEND_STRAIGHT
+        bend == BEND_STRAIGHT -> if (way > 0) BEND_LONE_LEFT else BEND_LONE_RIGHT
+        else -> if (way > 0) BEND_RUN_LEFT else BEND_RUN_RIGHT
+    }
 }
 
 /** The nearest tile a bridge from ([x], [y]) going out through edge [e] can land on, free for track beyond; -1 for none. */
@@ -320,10 +357,12 @@ private fun World.pulls(e: Engine, wagon: Engine, n: Int, cargo: Int): Boolean {
  * what comes to it, at the fare for its days on board. That's about [load] a month for freight, and for passengers
  * what [peopleA] and [peopleB] in reach of each end make, each way, at the rating its trains every so often earn.
  */
-private fun World.yearly(c: Company, train: RailTrain, cargo: Int, load: Int, peopleA: Int, peopleB: Int, tiles: Int, from: Int, to: Int): Long {
+private fun World.yearly(c: Company, train: RailTrain, cargo: Int, load: Int, peopleA: Int, peopleB: Int, tiles: Int, from: Int, to: Int, path: IntArray? = null): Long {
     val capacity = train.wagon.capacity * train.wagons
-    // A tile a day at 40-odd km/h, a fifth more for starting, stopping and servicing, and a few days at each end.
-    val there = tiles * KMH_PER_TILE_A_DAY * 6 / (5 * train.engine.speed(false).coerceAtLeast(1)) + 4
+    // A tile a day at 40-odd km/h, a fifth more for starting, stopping and servicing, and a few days at each end;
+    // the bends on the way count as the tiles they'd be at top speed.
+    val sixteenths = tiles * 16 + (if (path != null) bendSixteenths(path, train) else 0)
+    val there = sixteenths * KMH_PER_TILE_A_DAY * 6 / (5 * 16 * train.engine.speed(false).coerceAtLeast(1)) + 4
     val trips = 365 / (there * 2) * capacity
     val every = there * 2
     // A passenger train coming round less often than people wait for one isn't reckoned on: too many go home.
@@ -346,6 +385,27 @@ private fun World.yearly(c: Company, train: RailTrain, cargo: Int, load: Int, pe
     // Upkeep on the line and both stations, in tenths of a cent a work day.
     val upkeep = price(tiles.toLong() * Upkeep.TRACK[c.upkeep] * 365 / 1_000)
     return income - running - upkeep
+}
+
+/**
+ * How much longer than at top speed [train] takes over [path]'s bends, in sixteenths of a tile at top speed. Each bend
+ * holds it to its cap from a tile before it, braking, till its tail is a tile past, picking up again.
+ */
+private fun World.bendSixteenths(path: IntArray, train: RailTrain): Int {
+    val top = train.engine.speed(false)
+    val steps = IntArray(path.size) { k -> step(path[k] / 16, Track.index(Track.pieceOf((path[k] / 4) % 4, path[k] % 4)), (path[k] / 4) % 4) }
+    val caps = bendCaps(steps)
+    val tender = roster.getOrNull(train.engine.tender)?.length ?: 0
+    val cars = (train.engine.length + tender + train.wagon.length * train.wagons + 15) / 16
+    val held = IntArray(path.size)
+    for (i in caps.indices) {
+        val cap = caps[i]
+        if (cap == 0 || cap >= top) continue
+        for (k in maxOf(0, i - 1)..minOf(path.size - 1, i + cars)) if (held[k] == 0 || cap < held[k]) held[k] = cap
+    }
+    var extra = 0
+    for (cap in held) if (cap > 0) extra += 16 * top / cap - 16
+    return extra
 }
 
 /**
@@ -472,7 +532,7 @@ internal fun World.tryRail(
         // Every length the platforms hold, the best picked below.
         val trains = railTrains(cargo, LOOSE_LOAD, minOf(a.n, b.n), loose)
         if (trains.isEmpty()) continue
-        fun made(t: RailTrain, tiles: Int) = yearly(c, t, cargo, load, pa, pb, tiles, a.platform(this, 1), b.platform(this, 1))
+        fun made(t: RailTrain, tiles: Int, path: IntArray? = null) = yearly(c, t, cargo, load, pa, pb, tiles, a.platform(this, 1), b.platform(this, 1), path)
         // The line can't be shorter than the way straight there, so a pair that can't pay even then isn't searched.
         val am = a.mouth(this)
         val bm = b.mouth(this)
@@ -515,13 +575,13 @@ internal fun World.tryRail(
         val tiles = path.size + a.last + b.last
         // The train that would do best over the payback time: what it makes in that time less what it costs.
         var train = trains.first()
-        var best = made(train, tiles) * years - trainCost(train)
+        var best = made(train, tiles, path) * years - trainCost(train)
         for (t in trains.drop(1)) {
-            val v = made(t, tiles) * years - trainCost(t)
+            val v = made(t, tiles, path) * years - trainCost(t)
             if (v > best) { train = t; best = v }
         }
         cost += price(Prices.PLATFORM) * (a.n + b.n) + price(Prices.DEPOT) + price(Prices.TRACK) + price(Prices.SIGNAL) + trainCost(train)
-        if (payback > 0 && made(train, tiles) * payback < cost) continue
+        if (payback > 0 && made(train, tiles, path) * payback < cost) continue
         if (!afford(c, cost * 6 / 5)) return Tried.POOR
         val route = buildRail(c, a, b, houses, path, runs + spans, train, cargo, from, to, serves) ?: return Tried.CANT
         built(route)
@@ -898,6 +958,14 @@ private const val RAIL_SLOPE = 4
 private const val RAIL_FOUNDATION = 6
 private const val RAIL_CROSSING = 6
 private const val RAIL_TURN = 4
+/** A tight bend, which holds trains to [CURVE_TIGHT_KMH]: worth going three tiles further round. */
+private const val RAIL_TIGHT = 24
+/** What the tile before did, in the path search: straight, a lone diagonal or one in a run, turning either way. */
+private const val BEND_STRAIGHT = 0
+private const val BEND_LONE_LEFT = 1
+private const val BEND_LONE_RIGHT = 2
+private const val BEND_RUN_LEFT = 3
+private const val BEND_RUN_RIGHT = 4
 private const val RAIL_HOUSE = 40
 /** A bridge tile costs the search this many times a tile of track on the ground. */
 private const val RAIL_BRIDGE = 4

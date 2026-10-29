@@ -301,7 +301,7 @@ class AutorenewTest {
         var inAtOnce = 0
         val calls = IntArray(2)
         val last = IntArray(2) { -1 }
-        repeat(240) {
+        repeat(360) {
             w.days(1)
             inAtOnce = maxOf(inAtOnce, on.count { it.toDepot })
             for ((k, t) in on.withIndex()) if (t.order != last[k]) { calls[k]++; last[k] = t.order }

@@ -149,6 +149,8 @@ class World(settings: NewGame, val roster: Roster = Roster.BASE, generate: Boole
     val stations = ArrayList<Station?>()
     val depots = ArrayList<Depot?>()
     val trains = ArrayList<Train?>()
+    /** Scratch for each train's bends as it moves, one at a time. Not game state. */
+    internal val bendScan = CurveScan()
 
     /** Each tile's track condition, 255 new; fire on each tile, days left burning or how long it's been black; kinked track by tile, days left; closed track by tile, why in the high bits and days left in the low 16. */
     val condition = ByteArray(width * height) { -1 }

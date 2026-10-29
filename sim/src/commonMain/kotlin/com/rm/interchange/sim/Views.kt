@@ -109,6 +109,8 @@ class TrainView(
     val topSpeed: Int = 0,
     /** Its top speed off the wires, in km/h. */
     val dieselSpeed: Int = topSpeed,
+    /** The km/h a bend holds it to now, or 0. */
+    val curveKmh: Int = 0,
 )
 
 /** A bus, truck or streetcar as the screen shows it. */
@@ -440,6 +442,7 @@ fun World.view(company: Int = 0, withReserved: Boolean = false): WorldView {
             owner = t.owner, wrecked = t.wreckedFor > 0, number = t.number,
             at = if (t.waiting > 0 && !t.inDepot) t.steps.lastOrNull()?.let { stationAt(stepTile(it))?.id } ?: -1 else -1,
             x = tx, y = ty, gap = t.gap, wagonCargo = t.wagonCargo, group = t.group, formation = t.formation.toList(), topSpeed = t.topSpeed, dieselSpeed = t.dieselSpeed,
+            curveKmh = t.curveKmh,
         )
     }
     val stationViews = stations.filterNotNull().map { s ->

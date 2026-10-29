@@ -176,6 +176,11 @@ class Train(
     var signalled = false
     /** A wreck, with this many ticks left before it's cleared away; 0 for a train that's whole. */
     var wreckedFor = 0
+    /**
+     * The curve speed in km/h a bend under it or ahead holds it to as of its last move, or 0. Only for the screen,
+     * worked out again each tick from the track, so it's neither saved nor in the checksum.
+     */
+    var curveKmh = 0
 
     /** The work day it was bought or last renewed, and last serviced. */
     var built = 0
@@ -483,6 +488,7 @@ private fun World.anyWreck() = trains.any { it != null && it.wreckedFor > 0 }
 
 private fun World.drive(t: Train) {
     t.held = false
+    t.curveKmh = 0
     if (t.aside >= 0 && ++t.asideTicks >= ASIDE_WAIT) {
         // Waited long enough, stood aside or still on its way there: it plans again from where it is.
         t.aside = -1
@@ -495,7 +501,8 @@ private fun World.drive(t: Train) {
             // A full load order keeps it there, loading as more comes, till it's full, unless it's due a service.
             val o = t.orders.getOrNull(t.order % t.orders.size.coerceAtLeast(1)) ?: 0
             val s = stations.getOrNull(Order.station(o))
-            val due = !t.toDepot && hasDepot(t.owner, Depots.RAIL) && (due(t.service, t.serviced) || renewNow(t))
+            // One held off the depot, by no way there or a jam called off, isn't sent again till its noDepotUntil.
+            val due = !t.toDepot && tick >= t.noDepotUntil && hasDepot(t.owner, Depots.RAIL) && (due(t.service, t.serviced) || renewNow(t))
             fun loaded() = when {
                 Order.has(o, Order.FULL_LOAD) -> t.full()
                 Order.has(o, Order.FULL_LOAD_ANY) -> t.anyFull()
@@ -557,7 +564,8 @@ private fun World.drive(t: Train) {
     val out = exposed(t.steps.last())
     val grip = if (out) adhesion(nose) else 100
     val brake = BRAKE * (50 + grip / 2) / 100
-    val (free, stop) = freeAhead(t, brake)
+    val bends = bendScan.reset(t.speed, brake)
+    val (free, stop) = freeAhead(t, brake, bends)
     val allowed = isqrt(2L * brake * 16 * free).toInt()
     // A dual-mode engine runs on its electric power and speed with wires over its nose, on its diesel without, braking
     // down to the diesel's top speed when it leaves them.
@@ -567,7 +575,9 @@ private fun World.drive(t: Train) {
     val pulled = maxOf(t.speed + acceleration(t, grip, wire), minOf(CRAWL, maxOf(t.speed, 1) + 4))
     val worn = if (stepLevel(t.steps.last()) == 0) trackLimit(nose) else -1
     val wornLimit = if (worn < 0) t.maxSpeed else worn * 4096 * 16 / 2700
-    t.speed = minOf(minOf(pulled, if (out) snowLimit(t, nose) else t.maxSpeed), minOf(spanLimit(t), wornLimit), minOf(allowed, top))
+    val speed = minOf(minOf(pulled, if (out) snowLimit(t, nose) else t.maxSpeed), minOf(spanLimit(t), wornLimit), minOf(allowed, top))
+    if (bends.limit < speed) t.curveKmh = bends.kmh
+    t.speed = minOf(speed, bends.limit)
     val move = minOf(t.speed / 16, free)
     advance(t, move, free)
     if (stop == Stop.SNOW && t.speed / 16 >= free) {
@@ -784,38 +794,223 @@ private fun World.snowLimit(t: Train, tile: Int): Int {
     return t.maxSpeed * maxOf(25, 100 - (snow - Weather.DEEP) * 2) / 100
 }
 
-/** How far the train can go before it has to stand, up to what it needs to brake from full speed, and why it would stop. */
-private fun World.freeAhead(t: Train, brake: Int = BRAKE): Pair<Int, Stop> {
+/**
+ * How far the train can go before it has to stand, up to what it needs to brake from full speed, and why it would stop.
+ * With [bends] it also works out how fast the bends under the train and on the way to that point let it go.
+ */
+private fun World.freeAhead(t: Train, brake: Int = BRAKE, bends: CurveScan? = null): Pair<Int, Stop> {
+    if (bends == null) return walkAhead(t, brake, null)
+    // Two steps behind the tail where the track doesn't branch, so a bend the tail is still on is known for what it
+    // was. Where it does, the step before is taken as straight in through the edge it came in at.
+    val b1 = soleWayOn(reverseStep(t.steps[0]))
+    if (b1 >= 0) {
+        val b2 = soleWayOn(b1)
+        if (b2 >= 0) bends.add(stepHeading(reverseStep(b2)), CurveScan.BEHIND)
+        else bends.add(straightHeading(stepEntry(reverseStep(b1))), CurveScan.BEHIND)
+        bends.add(stepHeading(reverseStep(b1)), CurveScan.BEHIND)
+    } else bends.add(straightHeading(stepEntry(t.steps[0])), CurveScan.BEHIND)
+    for (i in t.steps.indices) bends.add(stepHeading(t.steps[i]), if (i == 0) CurveScan.BEHIND else CurveScan.UNDER)
+    val r = walkAhead(t, brake, bends)
+    bends.finish()
+    return r
+}
+
+private fun World.walkAhead(t: Train, brake: Int, bends: CurveScan?): Pair<Int, Stop> {
     val reach = t.maxSpeed.toLong().let { (it * it / (2L * brake) / 16).toInt() } + 16 * FIX
     var cur = t.steps.last()
     var free = stepLength(cur) - t.nose
     var at = t.routeAt
     val target = t.target
-    while (free < reach) {
+    var stop = Stop.NONE
+    var stand = 0
+    while (stop == Stop.NONE && free < reach) {
         val tile = stepTile(cur)
+        stand = free
         if (target >= 0 && stationTiles[tile] == target && !Order.has(t.orders.getOrNull(t.order % t.orders.size.coerceAtLeast(1)) ?: 0, Order.VIA) && stations.getOrNull(target)?.waypoint != true) {
             val nx = nextFrom(t, cur, at)
-            if (nx < 0 || stationTiles[stepTile(nx)] != target) return free to Stop.STATION
+            if (nx < 0 || stationTiles[stepTile(nx)] != target) { stop = Stop.STATION; break }
         }
         // Into the depot: it runs on in past the end of the tile until its last car is inside.
-        if (target == -1 && depotTiles[tile] == t.depot) return free + t.length to Stop.DEPOT
+        if (target == -1 && depotTiles[tile] == t.depot) { stand = free + t.length; stop = Stop.DEPOT; break }
         val next = nextFrom(t, cur, at)
-        if (next < 0) return free to Stop.END
-        val nt = stepTile(next)
-        if (stepLevel(next) == 0 && !mayPass(nt, stepPiece(next), stepEntry(next))) return free to Stop.END
-        if (t.electric && !wired(next)) return free to Stop.END
-        if (stepLevel(next) == 0 && closedTile(nt)) return free to Stop.END
-        val signal = signalFor(cur, next)
-        if (signal >= 0 && !signalLets(t, signal, next, at)) return free to Stop.SIGNAL
-        if (stepLevel(next) == 0 && t.plow != Plows.ROTARY && (weather.snow[nt].toInt() and 255) >= (if (t.plow == Plows.WEDGE) WEDGE_STOPS else Weather.BLOCKING)) return free to Stop.SNOW
-        // On tiles in a path signal's area other trains can be on pieces that don't cross; elsewhere a train anywhere on the tile holds it.
-        if (!pieceFree(t, next, occupiedTile = !inPathArea(next))) return free to Stop.TRAIN
+        val nt = if (next >= 0) stepTile(next) else -1
+        stop = when {
+            next < 0 -> Stop.END
+            stepLevel(next) == 0 && !mayPass(nt, stepPiece(next), stepEntry(next)) -> Stop.END
+            t.electric && !wired(next) -> Stop.END
+            stepLevel(next) == 0 && closedTile(nt) -> Stop.END
+            signalFor(cur, next).let { it >= 0 && !signalLets(t, it, next, at) } -> Stop.SIGNAL
+            stepLevel(next) == 0 && t.plow != Plows.ROTARY && (weather.snow[nt].toInt() and 255) >= (if (t.plow == Plows.WEDGE) WEDGE_STOPS else Weather.BLOCKING) -> Stop.SNOW
+            // On tiles in a path signal's area other trains can be on pieces that don't cross; elsewhere a train anywhere on the tile holds it.
+            !pieceFree(t, next, occupiedTile = !inPathArea(next)) -> Stop.TRAIN
+            else -> Stop.NONE
+        }
+        if (stop != Stop.NONE) break
+        bends?.add(stepHeading(next), maxOf(free, 0))
         free += stepLength(next)
         cur = next
         at++
     }
-    return free to Stop.NONE
+    if (stop == Stop.NONE) stand = free
+    // Two steps more, past braking reach or the stopping point, so a bend there is known to be tight or gentle.
+    if (bends != null) {
+        var past = free
+        for (i in 0 until 2) {
+            val next = nextFrom(t, cur, at)
+            if (next < 0) break
+            bends.add(stepHeading(next), maxOf(past, 0))
+            past += stepLength(next)
+            cur = next
+            at++
+        }
+    }
+    return stand to stop
 }
+
+/** The next step from [cur] when the track doesn't branch, or -1, as [onlyWayOn] but making nothing. */
+private fun World.soleWayOn(cur: Int): Int {
+    val a = across(stepTile(cur), stepLevel(cur), stepExit(cur))
+    if (a < 0) return -1
+    val tile = a / 2
+    val level = a % 2
+    val entry = Track.opposite(stepExit(cur))
+    val pieces = piecesAt(tile, level)
+    if (pieces == 0) return -1
+    if (level == 1) return if (Track.has(pieces, entry)) step(tile, Track.index(pieces), entry, 1) else -1
+    depotAt(tile)?.let { d -> return if (d.edge == entry) step(tile, Track.index(Track.straight(entry)), entry) else -1 }
+    var found = -1
+    for ((i, p) in Track.PIECES.withIndex()) if (pieces and p != 0 && Track.has(p, entry)) {
+        if (found >= 0) return -1
+        found = step(tile, i, entry)
+    }
+    return found
+}
+
+/** The heading of a straight piece coming in at [entry]. */
+private fun straightHeading(entry: Int) = stepHeading(step(0, Track.index(Track.straight(entry)), entry))
+
+/** Step [s] run the other way. */
+fun reverseStep(s: Int) = step(stepTile(s), (s shr 2) and 7, stepExit(s), stepLevel(s))
+
+/** Which of the eight ways step [s] runs, from 0 along +x round towards +y, in eighths of a turn. */
+fun stepHeading(s: Int): Int {
+    val dx = Track.edgeX4(stepExit(s)).compareTo(Track.edgeX4(stepEntry(s)))
+    val dy = Track.edgeY4(stepExit(s)).compareTo(Track.edgeY4(stepEntry(s)))
+    return HEADINGS[(dx + 1) * 3 + dy + 1]
+}
+
+private val HEADINGS = intArrayOf(5, 4, 3, 6, 0, 2, 7, 0, 1)
+
+/**
+ * How fast bends let a train go, from the steps under it, tail first, then the steps ahead. Each edge between two steps
+ * turns by -2 to 2 eighths. An edge is tight when it's in a run of up to three edges that turns 90 degrees or more,
+ * so a 90 made within about a tile of track: a diagonal between straights, two diagonals, or a V of two diagonals.
+ * Any other edge that turns is gentle: a single 45, or an S-bend that goes 45 one way and back. A run of diagonals
+ * or straights doesn't turn at all. A bend holds the train to its cap from when the nose reaches it till the tail is
+ * past it, and ahead it brakes down to the cap in time, so [limit] is the least over every bend in reach.
+ */
+internal class CurveScan {
+    private var speed = 0
+    private var brake = 0
+    /** The speed the bends allow, and the cap in km/h of the bend that sets it. */
+    var limit = Int.MAX_VALUE
+        private set
+    var kmh = 0
+        private set
+
+    private var heading = -1
+    private var n = 0
+    private val turns = IntArray(3)
+    private val dists = IntArray(3)
+    private val tight = BooleanArray(3)
+
+    /** Starts again for a train at [speed] braking by [brake]. */
+    fun reset(speed: Int, brake: Int): CurveScan {
+        this.speed = speed
+        this.brake = brake
+        limit = Int.MAX_VALUE
+        kmh = 0
+        heading = -1
+        n = 0
+        return this
+    }
+
+    /** Adds a step heading [h], whose edge with the step before is [dist] ahead of the nose, or [UNDER] or [BEHIND] the train. */
+    fun add(h: Int, dist: Int) {
+        val last = heading
+        heading = h
+        if (last < 0) return
+        if (n == 3) {
+            settle(0)
+            turns[0] = turns[1]; dists[0] = dists[1]; tight[0] = tight[1]
+            turns[1] = turns[2]; dists[1] = dists[2]; tight[1] = tight[2]
+            n = 2
+        }
+        turns[n] = (h - last + 12) % 8 - 4
+        dists[n] = dist
+        tight[n] = false
+        n++
+        // Runs of one, two and three edges ending here.
+        var sum = 0
+        for (i in n - 1 downTo 0) {
+            sum += turns[i]
+            if (sum >= 2 || sum <= -2) for (j in i until n) tight[j] = true
+        }
+    }
+
+    /** Settles the edges still waiting on the ones after them. */
+    fun finish() {
+        for (i in 0 until n) settle(i)
+        n = 0
+    }
+
+    private fun settle(i: Int) {
+        val k = when {
+            tight[i] -> CURVE_TIGHT_KMH
+            turns[i] != 0 -> CURVE_GENTLE_KMH
+            else -> return
+        }
+        val c = k * 4096 * 16 / 2700
+        val d = dists[i]
+        if (d == BEHIND) return
+        val v = if (d == UNDER) maxOf(c, speed - brake) else isqrt(c.toLong() * c + 2L * brake * 16 * d).toInt()
+        if (v < limit) {
+            limit = v
+            kmh = k
+        }
+    }
+
+    companion object {
+        const val UNDER = -1
+        const val BEHIND = -2
+    }
+}
+
+/**
+ * The cap in km/h of each edge along [steps] by [CurveScan]'s rule, at the place of the step after the edge, 0 where
+ * it doesn't turn; for working out ahead of time how bends slow a line.
+ */
+fun bendCaps(steps: IntArray): IntArray {
+    val n = steps.size
+    val caps = IntArray(n)
+    if (n < 2) return caps
+    val turns = IntArray(n)
+    for (i in 1 until n) turns[i] = (stepHeading(steps[i]) - stepHeading(steps[i - 1]) + 12) % 8 - 4
+    val tight = BooleanArray(n)
+    for (i in 1 until n) {
+        var sum = 0
+        for (j in i until minOf(n, i + 3)) {
+            sum += turns[j]
+            if (sum >= 2 || sum <= -2) for (k in i..j) tight[k] = true
+        }
+    }
+    for (i in 1 until n) caps[i] = if (tight[i]) CURVE_TIGHT_KMH else if (turns[i] != 0) CURVE_GENTLE_KMH else 0
+    return caps
+}
+
+/** How fast a train takes a tight bend and a gentle one, in km/h. */
+const val CURVE_TIGHT_KMH = 60
+const val CURVE_GENTLE_KMH = 100
 
 /** The step after [cur]: the route's, if it has one there, else where plain track leads with no choice to make. */
 private fun World.nextFrom(t: Train, cur: Int, at: Int): Int {

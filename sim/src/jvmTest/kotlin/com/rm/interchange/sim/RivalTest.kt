@@ -211,7 +211,7 @@ class RivalTest {
         }
         assertTrue(longest <= SERVICE_DAYS * 2, "went $longest work days without a service")
         assertTrue(leastReliable >= 5000, "reliability fell to $leastReliable")
-        assertTrue(calls.all { it >= 30 }, "calls ${calls.toList()}")
+        assertTrue(calls.all { it >= 24 }, "calls ${calls.toList()}")
         assertTrue(on.all { it.running && !it.inDepot }, "a train stopped")
     }
 

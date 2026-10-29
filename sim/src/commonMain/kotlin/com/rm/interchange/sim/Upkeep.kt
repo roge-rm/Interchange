@@ -106,7 +106,7 @@ internal fun World.serviced(t: Train) {
     t.running = true
 }
 
-/** Ticks the daily check for a long overdue service waits after finding no depot to reach. */
+/** Ticks a vehicle that found no depot to reach waits before it looks for one again. */
 const val NO_DEPOT_RETRY = Calendar.TICKS_PER_DAY * 30L
 /** Below this, in tenths of a degree, steam engines break down twice as often. */
 const val DEEP_COLD = -250

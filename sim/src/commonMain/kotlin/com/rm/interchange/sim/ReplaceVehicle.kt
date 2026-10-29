@@ -53,6 +53,7 @@ internal fun World.replaceTrain(company: Company, old: Train, model: Int?) {
     made.aside = old.aside
     made.asideTicks = old.asideTicks
     made.held = old.held
+    made.curveKmh = old.curveKmh
     made.signalled = old.signalled
     made.wreckedFor = old.wreckedFor
     made.built = old.built

@@ -318,7 +318,7 @@ class SaveTest {
         }
         assertTrue(snow && ice && subsidies, "snow $snow, ice $ice, subsidies $subsidies")
         assertTrue(troubled >= TROUBLE_FOR_SALE && a.companies[1].gone, "a company in trouble and gone")
-        assertTrue(a.rivals.sumOf { it.routes.size } >= 3, "rivals' routes growing")
+        assertTrue(a.rivals.sumOf { it.routes.size } >= 3, "rivals' routes growing: ${a.rivals.map { it.routes.size }}")
         assertTrue(a.trains.any { it != null } && a.ships.any { it != null }, "a train and a ship")
     }
 

@@ -712,6 +712,7 @@
     </plurals>
     <string name="reliability">Reliability</string>
     <string name="breakdowns">Breakdowns</string>
+    <string name="curve_limit">Slowed for a curve</string>
     <string name="tires">Tires</string>
     <string name="gear">Gear</string>
     <string name="range">Range</string>

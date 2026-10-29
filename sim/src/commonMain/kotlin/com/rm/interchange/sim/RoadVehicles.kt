@@ -306,7 +306,7 @@ internal fun World.moveRoadVehicles() {
     for ((i, v) in planning.withIndex()) {
         val r = routes[i]
         if (r == null) {
-            // No garage it can reach for its service: straight back to its orders, to try again after its next call.
+            // No garage it can reach for its service: straight back to its orders, to try again after NO_DEPOT_RETRY.
             if (v.toDepot && v.servicing) {
                 v.toDepot = false
                 v.servicing = false
@@ -400,7 +400,8 @@ private fun World.driveRoadVehicle(v: RoadVehicle, on: HashMap<Int, ArrayList<Ro
             // standing in a drive-through stop it would hold up everyone behind it.
             val o = v.orders.getOrNull(v.order % v.orders.size.coerceAtLeast(1)) ?: 0
             val s = stations.getOrNull(Order.station(o))
-            val due = !v.toDepot && hasDepot(v.owner, Depots.ROAD) && (due(v.service, v.serviced) || needsTires(v) || renewNow(v))
+            // One held off its garage, by no way there or a jam called off, isn't sent again till its noDepotUntil.
+            val due = !v.toDepot && tick >= v.noDepotUntil && hasDepot(v.owner, Depots.ROAD) && (due(v.service, v.serviced) || needsTires(v) || renewNow(v))
             fun loaded() = when {
                 Order.has(o, Order.FULL_LOAD) -> roadFull(v)
                 Order.has(o, Order.FULL_LOAD_ANY) -> roadAnyFull(v)

@@ -695,6 +695,7 @@
     </plurals>
     <string name="reliability">Fiabilité</string>
     <string name="breakdowns">Pannes</string>
+    <string name="curve_limit">Ralenti par une courbe</string>
     <string name="tires">Pneus</string>
     <string name="gear">Train d'atterrissage</string>
     <string name="range">Autonomie</string>
