@@ -46,8 +46,13 @@ internal class Renderer(private val world: World, private val sheets: Sheets, pr
         override fun hashCode() = ((level * 4 + turn) * 8191 + cx) * 8191 + cy
     }
 
-    /** A baked chunk: its picture, the world's version and the [WeatherCopy] it shows, and when it was baked and last drawn. */
-    private class Entry(val image: ImageBitmap?, val top: Int, val version: Long, val weather: Int, val baked: Long, var used: Long, val fades: Boolean = false) {
+    /**
+     * A baked chunk: its picture, the world's version, the [WeatherCopy] it shows and that copy's [WeatherCopy.blocks]
+     * summed over it, when it went in and was last drawn. [old] is the picture it replaced for the weather, faded out
+     * over [WEATHER_FADE_MILLIS] and then let go.
+     */
+    private class Entry(val image: ImageBitmap?, val top: Int, val version: Long, val weather: Int, val weatherSum: Long, var baked: Long, var used: Long, val fades: Boolean = false) {
+        var old: Entry? = null
         val bytes get() = if (image == null) 0L else image.width.toLong() * image.height * 4
     }
 
@@ -55,7 +60,11 @@ internal class Renderer(private val world: World, private val sheets: Sheets, pr
 
     init {
         CurveArt.install()
+        if (Probe.ON) Probe.log("config threads=${Workers.threads} BAKERS=$BAKERS BACKGROUND=$BACKGROUND SHARPEST=$SHARPEST heapMb=${heapBytes() / 1048576}")
     }
+
+    /** When the weather batch started baking, for [Probe]. */
+    private var batchStart = 0L
 
     /** The overlays baked in, as [ChunkBaker.GRID], [ChunkBaker.HEIGHTS] and [ChunkBaker.SNOW] bits. A change bakes every chunk again, the old ones drawn meanwhile. */
     var overlays = 0
@@ -84,8 +93,15 @@ internal class Renderer(private val world: World, private val sheets: Sheets, pr
     /** A weather batch's chunks baked so far and how many are still to come. */
     private val held = HashMap<Key, Entry>()
     private var batch = 0
-    /** The chunks in the weather batch. */
+    /** The chunks in the weather batch, those not started yet, and the sheet and copy they bake from. */
     private val batchKeys = HashSet<Key>()
+    private val batchQueue = ArrayDeque<Key>()
+    private var batchSheet: LevelSheets? = null
+    private var batchWeather: WeatherCopy? = null
+    /** Chunks in the cache, off screen when the weather last moved on, that show older weather, baked again nearest first. */
+    private val refresh = HashSet<Key>()
+    /** Chunks still fading from their [Entry.old] picture. */
+    private val crossfading = HashSet<Key>()
     /**
      * The weather as the map shows it, every chunk baked from the same copy so neighbours agree; the next copy, while
      * the chunks on screen bake from it to be swapped in together; and when the last copy was asked for.
@@ -119,23 +135,27 @@ internal class Renderer(private val world: World, private val sheets: Sheets, pr
     /** Draws the chunks that are on screen and asks for any that are missing or out of date. */
     fun DrawScope.draw(view: View) {
         frame++
+        if (Probe.ON) Probe.frameStart()
         // Zooming across a level, the one shown stays on screen, scaled, till every chunk of the next is baked; then
         // the screen changes over all at once, with no patches of the two.
         val target = levelFor(view.halfWidth)
         var level = if (shownLevel >= 0 && view.turn == shownTurn && kotlin.math.abs(shownLevel - target) == 1) shownLevel else target
         val wanted = ArrayList<Pair<Key, Float>>()
+        var zoomMissing = 0
         if (level != target) {
             var ready = true
             forEachVisible(view, target) { key, _, _, _, _ ->
                 if (key !in cache) {
                     ready = false
                     wanted += key to 1f
+                    zoomMissing++
                 }
             }
             if (ready) level = target
         }
         shownLevel = level
         shownTurn = view.turn
+        if (Probe.ON) { Probe.zoom(level, target, zoomMissing); Probe.level = level }
         // Hidden till the first screen is all baked, then shown at once.
         if (readyAt < 0) {
             var all = true
@@ -148,14 +168,19 @@ internal class Renderer(private val world: World, private val sheets: Sheets, pr
         val fy = view.focusViewY()
         if (view.turn == lastTurn) { driftX = driftX * 0.8f + (fx - lastX) * 0.2f; driftY = driftY * 0.8f + (fy - lastY) * 0.2f } else { driftX = 0f; driftY = 0f }
         lastX = fx; lastY = fy; lastTurn = view.turn
-        // A copy of the weather to bake from: the first, then a new one every while if it's changed.
+        // A copy of the weather to bake from: the first, then a new one every while if it's changed, counted from when
+        // the map first shows so the first screen is all one copy.
         val weather = shown
+        if (readyAt < 0) lastCopy = now
         if (!copying && next == null && (weather == null || (now - lastCopy > WEATHER_MILLIS && weatherVersions() != weather.versions))) {
             copying = true
             lastCopy = now
             val id = (weather?.id ?: 0) + 1
             scope.launch {
-                val copy = withContext(background) { WeatherCopy.of(world, id, weatherVersions()) }
+                val started = if (Probe.ON) Probe.now() else 0L
+                // Not on the background lane, so it never waits behind the bakes there.
+                val copy = withContext(Dispatchers.Default) { WeatherCopy.of(world, id, weatherVersions(), weather) }
+                if (Probe.ON) Probe.weatherDiff(weather, copy, Probe.now() - started)
                 copying = false
                 if (shown == null) shown = copy else next = copy
                 revision.intValue++
@@ -171,14 +196,31 @@ internal class Renderer(private val world: World, private val sheets: Sheets, pr
             val version = versionOf(view, level, key.cx, key.cy)
             if (entry != null) {
                 entry.used = frame
-                // A chunk just baked where nothing was fades in over what stood in for it.
+                // A chunk just baked where nothing was fades in over what stood in for it, and one baked again for the
+                // weather fades in over its old picture.
                 val alpha = if (entry.fades) ((now - entry.baked) / FADE_MILLIS.toFloat()).coerceIn(0f, 1f) else 1f
                 if (alpha < 1f) drawFallback(view, level, key)
-                drawChunk(entry, left, top, right, bottom, alpha)
+                val old = entry.old
+                if (old != null) {
+                    drawChunk(old, left, top, right, bottom)
+                    drawChunk(entry, left, top, right, bottom, ((now - entry.baked) / WEATHER_FADE_MILLIS.toFloat()).coerceIn(0f, 1f))
+                } else drawChunk(entry, left, top, right, bottom, alpha)
+                val sum = weatherSum(view, key, showing)
+                if (Probe.ON) {
+                    if (alpha < 1f) Probe.fading++ else Probe.ok++
+                    if (old != null) Probe.crossfading++
+                    if (entry.weatherSum != weatherSum(view, key, weather)) { if (entry.weather <= weather.id) Probe.staleOld++ else Probe.staleNew++ }
+                }
                 if (entry.version != version) wanted += key to editDistance(view, key)
-                else if (entry.weather != showing.id && key !in baking) stale += key
+                else if (entry.weatherSum != sum && key !in baking && key !in batchKeys) {
+                    // Behind the new copy waiting: baked again with the rest of the screen and shown together. Behind
+                    // the copy showing, as when it comes back on screen: baked again alone.
+                    if (next != null && batch == 0) stale += key
+                    else if (next == null || entry.weatherSum != weatherSum(view, key, weather)) wanted += key to 1.2f
+                }
             } else {
-                drawFallback(view, level, key)
+                val kind = drawFallback(view, level, key)
+                if (Probe.ON) when (kind) { 1 -> Probe.finer++; 2 -> Probe.coarser++; else -> Probe.nothing++ }
                 wanted += key to 1f
                 missing = true
             }
@@ -189,7 +231,8 @@ internal class Renderer(private val world: World, private val sheets: Sheets, pr
             if (entry != null) entry.used = frame
             if (entry == null) wanted += key to 1.5f
             else if (entry.version != versionOf(view, COARSE, key.cx, key.cy)) wanted += key to 4f
-            else if (entry.weather != showing.id) wanted += key to 4f
+            // Cheap, so soon in step with the weather, as it stands in for every other level.
+            else if (entry.weatherSum != weatherSum(view, key, weather)) wanted += key to 2f
         }
         // Once the screen has all it needs: a ring round it at this level, the way it's moving first, then the next level
         // out for zooming out, while there's room for them.
@@ -208,8 +251,24 @@ internal class Renderer(private val world: World, private val sheets: Sheets, pr
             if (level + 1 < LEVELS.size) forEachVisible(view, level + 1) { key, _, _, _, _ ->
                 val entry = cache[key]
                 if (entry != null) entry.used = frame
-                if (entry == null || entry.version != versionOf(view, level + 1, key.cx, key.cy)) wanted += key to 3f
+                if (entry == null || entry.version != versionOf(view, level + 1, key.cx, key.cy) || entry.weatherSum != weatherSum(view, key, weather)) wanted += key to 3f
             }
+        }
+        // Cached chunks off screen with older weather, the nearest first along with the ring, the rest after it. A level
+        // away counts as a third of a screen further.
+        if (refresh.isNotEmpty() && wanted.none { it.second < 2f }) {
+            val gone = ArrayList<Key>()
+            for (key in refresh) {
+                val entry = cache[key]
+                if (entry == null || key.turn != view.turn || entry.weatherSum == weatherSum(view, key, weather)) { gone += key; continue }
+                placeChunk(view, key.level, key.cx, key.cy) { left, top, right, bottom ->
+                    val mx = (left + right - size.width) / 2
+                    val my = (top + bottom - size.height) / 2
+                    val d = kotlin.math.sqrt(mx * mx + my * my) / (size.width + size.height) + kotlin.math.abs(key.level - level) / 3f
+                    wanted += key to if (d < 2f) 2f + d else 3.5f + d
+                }
+            }
+            refresh -= gone.toSet()
         }
         // Once every chunk on screen is there: every one from another copy of the weather, shown all at once when the
         // last is done, so no seams show between chunks of different days. A new copy is shown from then on. Chunks
@@ -218,32 +277,66 @@ internal class Renderer(private val world: World, private val sheets: Sheets, pr
             val sheet = sheets.get(level)
             if (sheet != null) {
                 if (stale.isEmpty()) {
-                    next?.let { shown = it }
-                    next = null
+                    next?.let { advance(it) }
                 } else {
+                    if (Probe.ON) { batchStart = Probe.now(); Probe.log("batchStart L=$level chunks=${stale.size} w=${showing.id}") }
                     batch = stale.size
                     batchKeys += stale
-                    for (key in stale) bake(key, sheet, hold = true, weather = showing)
+                    batchQueue += stale
+                    batchSheet = sheet
+                    batchWeather = showing
                 }
             }
         }
-        for ((key, priority) in wanted.sortedBy { it.second }) {
-            if (key in baking) continue
-            // Building on a chunk in the weather batch waits till the batch is in, so the batch always ends.
-            if (key in batchKeys) continue
-            val ahead = priority >= 2f
-            if (if (ahead) behind.size >= BACKGROUND else baking.size - behind.size >= BAKERS) continue
-            // Waits for its level's sheet to be unpacked; asking starts that.
-            val sheet = sheets.get(key.level) ?: continue
-            bake(key, sheet, ahead = ahead)
+        val sorted = wanted.sortedBy { it.second }
+        for ((key, priority) in sorted) if (priority < 2f) want(key, priority)
+        // The weather batch next, on every baker once nothing on screen is missing, or else only in the background.
+        while (batchQueue.isNotEmpty()) {
+            val onScreenLane = !missing && baking.size - behind.size < BAKERS
+            if (!onScreenLane && behind.size >= BACKGROUND) break
+            bake(batchQueue.removeFirst(), batchSheet!!, hold = true, ahead = !onScreenLane, weather = batchWeather!!)
         }
+        for ((key, priority) in sorted) if (priority >= 2f) want(key, priority)
+        if (crossfading.isNotEmpty()) revision.intValue++
         // The levels either side unpacked ahead, so zooming finds them ready, once this one's in and the screen's baked.
         if (readyAt >= 0 && sheets.get(target) != null) {
             if (target + 1 < LEVELS.size) sheets.get(target + 1)
             if (target > 0) sheets.get(target - 1)
         }
         trim()
+        if (Probe.ON) Probe.frameEnd()
     }
+
+    /** Starts baking [key] if its lane has room: on screen under priority 2, ahead from there. */
+    private fun want(key: Key, priority: Float) {
+        if (key in baking) return
+        // Building on a chunk in the weather batch waits till the batch is in, so the batch always ends.
+        if (key in batchKeys) return
+        val ahead = priority >= 2f
+        if (if (ahead) behind.size >= BACKGROUND else baking.size - behind.size >= BAKERS) return
+        // Waits for its level's sheet to be unpacked; asking starts that.
+        val sheet = sheets.get(key.level) ?: return
+        bake(key, sheet, ahead = ahead)
+    }
+
+    /** Shows [copy] from now on, and lists the chunks cached off screen that show older weather, to bake again. */
+    private fun advance(copy: WeatherCopy) {
+        if (Probe.ON) Probe.log("weatherShown id=${copy.id}")
+        shown = copy
+        next = null
+        refresh.clear()
+        val views = HashMap<Int, View>()
+        for ((key, entry) in cache) {
+            if (key in baking) continue
+            val v = views.getOrPut(key.turn) { View(world.width, world.height).also { it.turnBy(key.turn) } }
+            if (entry.weatherSum != weatherSum(v, key, copy)) refresh += key
+        }
+        if (Probe.ON) Probe.log("refresh chunks=${refresh.size} of=${cache.size}")
+    }
+
+    /** [copy]'s [WeatherCopy.blocks] summed over chunk [key], which only changes where its weather looks different. */
+    private fun weatherSum(view: View, key: Key, copy: WeatherCopy): Long =
+        if (copy.blocks.isEmpty()) copy.id.toLong() else sumOf(copy.blocks, view, key.level, key.cx, key.cy).toLong()
 
     /**
      * How soon a chunk changed by building should bake again, from 0 up to under 1: the chunk with the tile last built
@@ -264,13 +357,16 @@ internal class Renderer(private val world: World, private val sheets: Sheets, pr
     var lastEdit = -1 to -1
 
     /** A chunk missing at this level, drawn from whichever other level has it, kept to the chunk's own rectangle. */
-    private fun DrawScope.drawFallback(view: View, level: Int, key: Key) {
+    /** Returns what stood in, for [Probe]: 0 nothing, 1 a finer level, 2 a coarser one. */
+    private fun DrawScope.drawFallback(view: View, level: Int, key: Key): Int {
+        var kind = 0
         placeChunk(view, level, key.cx, key.cy) { left, top, right, bottom ->
-            clipRect(left, top, right, bottom) { drawStandIn(view, level, key) }
+            clipRect(left, top, right, bottom) { kind = drawStandIn(view, level, key) }
         }
+        return kind
     }
 
-    private fun DrawScope.drawStandIn(view: View, level: Int, key: Key) {
+    private fun DrawScope.drawStandIn(view: View, level: Int, key: Key): Int {
         for (other in LEVELS.indices.sortedBy { kotlin.math.abs(it - level) }) {
             if (other == level) continue
             if (other > level) {
@@ -280,7 +376,8 @@ internal class Renderer(private val world: World, private val sheets: Sheets, pr
                 val e = cache[ok] ?: continue
                 e.used = frame
                 placeChunk(view, other, ok.cx, ok.cy) { l, t, r, b -> drawChunk(e, l, t, r, b) }
-                return
+                if (Probe.ON && shown != null && e.weatherSum != weatherSum(view, ok, shown!!)) Probe.standInOtherWeather++
+                return 2
             } else {
                 // A finer level: draw what of its chunks are here, if all are.
                 val n = 1 shl (level - other)
@@ -293,10 +390,12 @@ internal class Renderer(private val world: World, private val sheets: Sheets, pr
                 for ((k, e) in parts) {
                     e.used = frame
                     placeChunk(view, other, k.cx, k.cy) { l, t, r, b -> drawChunk(e, l, t, r, b) }
+                    if (Probe.ON && shown != null && e.weatherSum != weatherSum(view, k, shown!!)) Probe.standInOtherWeather++
                 }
-                return
+                return 1
             }
         }
+        return 0
     }
 
     /** Draws [entry]'s picture into its chunk's screen rectangle, its trimmed rows left out at the top. */
@@ -398,12 +497,14 @@ internal class Renderer(private val world: World, private val sheets: Sheets, pr
 
     /**
      * Bakes [key] off the main thread and puts it in the cache, or with [hold] keeps it till the rest of its batch is
-     * done. It bakes from the newest copy of the weather, so it's never left behind the batch that's showing it.
+     * done. It bakes from the copy of the weather showing, so it matches its neighbours; a weather batch bakes from
+     * the next.
      */
-    private fun bake(key: Key, sheet: LevelSheets, hold: Boolean = false, ahead: Boolean = hold, weather: WeatherCopy = next ?: shown!!) {
+    private fun bake(key: Key, sheet: LevelSheets, hold: Boolean = false, ahead: Boolean = hold, weather: WeatherCopy = shown!!) {
         // The view as it is now, kept apart so turning while this bakes doesn't change it.
         val bakeView = View(world.width, world.height).also { it.turnBy(key.turn) }
         val version = versionOf(bakeView, key.level, key.cx, key.cy)
+        val sum = weatherSum(bakeView, key, weather)
         baking += key
         if (ahead) behind += key
         // The scope is the composition's, on the main thread; only the baking goes off it.
@@ -411,26 +512,54 @@ internal class Renderer(private val world: World, private val sheets: Sheets, pr
             val o = overlays
             val l = look()
             val yr = year()
-            val (image, top) = withContext(if (ahead) background else bakers) { bakeChunk(bakeView, key, sheet, o, l, yr, weather) }
+            val asked = if (Probe.ON) Probe.now() else 0L
+            var started = 0L
+            var micros = 0L
+            val (image, top) = withContext(if (ahead) background else bakers) {
+                if (Probe.ON) started = Probe.micros()
+                bakeChunk(bakeView, key, sheet, o, l, yr, weather).also { if (Probe.ON) micros = Probe.micros() - started }
+            }
+            if (Probe.ON) Probe.bakeDone(key.level, if (hold) "batch" else if (ahead) "ahead" else "screen", micros, started / 1000 - asked, weather.id, key !in cache)
             baking -= key
             behind -= key
-            val entry = Entry(image, top, version, weather.id, clock.elapsedNow().inWholeMilliseconds, frame, fades = key !in cache && !hold)
+            val entry = Entry(image, top, version, weather.id, sum, clock.elapsedNow().inWholeMilliseconds, frame, fades = key !in cache && !hold)
             if (!hold) {
                 install(key, entry)
+                // Baked from a copy no longer showing: baked again before it shows.
+                if (shown !== weather && entry.weatherSum != weatherSum(bakeView, key, shown!!)) refresh += key
             } else {
                 held[key] = entry
                 if (--batch == 0) {
+                    if (Probe.ON) Probe.log("batchInstall chunks=${held.size} ms=${Probe.now() - batchStart}")
                     for ((k, e) in held) install(k, e)
                     held.clear()
                     batchKeys.clear()
+                    // Shown from now on; chunks that came on screen meanwhile catch up alone.
+                    val copy = batchWeather
+                    batchSheet = null
+                    batchWeather = null
+                    if (copy != null && copy === next) advance(copy)
                 }
             }
             revision.intValue++
         }
     }
 
+    /** Puts [entry] in the cache. One baked again for the weather alone keeps the picture it replaces to fade from. */
     private fun install(key: Key, entry: Entry) {
-        cache.put(key, entry)?.let { bytes -= it.bytes }
+        entry.baked = clock.elapsedNow().inWholeMilliseconds
+        refresh -= key
+        val prev = cache.put(key, entry)
+        if (prev != null) {
+            prev.old?.let { bytes -= it.bytes }
+            prev.old = null
+            // Only on screen, drawn last frame; off screen it's swapped.
+            if (prev.image != null && prev.used >= frame - 1 && prev.version == entry.version && prev.weatherSum != entry.weatherSum) {
+                // Still counted till it's let go, a second or so on.
+                entry.old = prev
+                crossfading += key
+            } else bytes -= prev.bytes
+        }
         bytes += entry.bytes
     }
 
@@ -472,14 +601,30 @@ internal class Renderer(private val world: World, private val sheets: Sheets, pr
 
     private fun giveBack(buffer: IntArray) = synchronized(buffers) { if (buffers.size < BAKERS) buffers += buffer }
 
-    /** Lets go of the chunks used longest ago, past the memory budget. */
+    /** Lets go of old pictures done fading, and of the chunks used longest ago past the memory budget. */
     private fun trim() {
+        if (crossfading.isNotEmpty()) {
+            val now = clock.elapsedNow().inWholeMilliseconds
+            crossfading.removeAll { key ->
+                val e = cache[key]
+                val old = e?.old
+                if (e == null || old == null) true
+                else if (now - e.baked < WEATHER_FADE_MILLIS) false
+                else {
+                    bytes -= old.bytes
+                    e.old = null
+                    true
+                }
+            }
+        }
         if (bytes <= BUDGET) return
         val old = cache.entries.filter { it.value.used < frame }.sortedBy { it.value.used }
         for ((k, e) in old) {
             if (bytes <= BUDGET) break
             cache.remove(k)
             bytes -= e.bytes
+            e.old?.let { bytes -= it.bytes; e.old = null }
+            refresh -= k
         }
     }
 
@@ -500,8 +645,9 @@ internal class Renderer(private val world: World, private val sheets: Sheets, pr
         const val WEATHER_MILLIS = 15_000L
         /** Bitmap memory for chunks, in bytes. */
         const val BUDGET = 192L * 1024 * 1024
-        /** How long a newly baked chunk takes to fade in, in milliseconds. */
+        /** How long a newly baked chunk takes to fade in, and one baked again for the weather, in milliseconds. */
         const val FADE_MILLIS = 180
+        const val WEATHER_FADE_MILLIS = 1200
         /** The coarsest level, kept baked this far round the screen's middle, in view tiles, as a stand-in for any other. */
         val COARSE = LEVELS.size - 1
         const val COARSE_REACH = 128

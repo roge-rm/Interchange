@@ -50,7 +50,10 @@ class Sheets(private val packed: PackedSheets, private val scope: CoroutineScope
         if (!unpacking[level]) {
             unpacking[level] = true
             scope.launch {
+                val asked = if (Probe.ON) Probe.now() else 0L
+                var started = 0L
                 levels[level] = withContext(decoder) {
+                    if (Probe.ON) started = Probe.now()
                     fun pixels(bytes: ByteArray): Pair<IntArray, Int> {
                         val image = bytes.decodeToImageBitmap()
                         val out = IntArray(image.width * image.height)
@@ -72,6 +75,7 @@ class Sheets(private val packed: PackedSheets, private val scope: CoroutineScope
                     }
                     LevelSheets(ground, static, width, shadows, shadeWidth, packed.signals[level].decodeToImageBitmap())
                 }
+                if (Probe.ON) Probe.log("sheetDecode L=$level ms=${Probe.now() - started} queueMs=${started - asked}")
                 // Every level stays unpacked but the sharpest, some 100 MB, which goes once the screen's well away from it.
                 if (level >= 2 && levels[0] != null) {
                     levels[0] = null
@@ -128,7 +132,9 @@ class Sheets(private val packed: PackedSheets, private val scope: CoroutineScope
         if (vehiclesUnpacking.add(key)) {
             val mine = generation
             scope.launch {
+                val asked = if (Probe.ON) Probe.now() else 0L
                 val image = withContext(decoder) { source.sheet(level)?.decodeToImageBitmap() } ?: return@launch
+                if (Probe.ON) Probe.log("vehicleDecode model=$model L=$level ms=${Probe.now() - asked}")
                 if (mine != generation) return@launch
                 vehicles[key] = image
                 revision.intValue++
