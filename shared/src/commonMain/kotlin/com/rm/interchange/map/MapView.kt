@@ -55,12 +55,15 @@ fun MapView(
     label: (DrawScope.() -> Unit)? = null,
     /** What shows while the map first bakes. */
     page: Color = Color.Black,
+    /** Called once, when the first screen has all its chunks at its own level. */
+    onSharp: () -> Unit = {},
 ) {
     val scope = rememberCoroutineScope()
     val renderer = remember(world) { Renderer(world, sheets, scope) }
     // The lines drawn over the map keep their world, so let go of it when the map shows another.
     DisposableEffect(world) { onDispose { DrawLines.drop(world) } }
     renderer.overlays = overlays
+    renderer.onSharp = onSharp
     val currentInput by rememberUpdatedState(input)
     Canvas(
         modifier.pointerInput(world, view) {

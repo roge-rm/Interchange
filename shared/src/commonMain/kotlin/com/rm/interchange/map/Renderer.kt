@@ -85,8 +85,15 @@ internal class Renderer(private val world: World, private val sheets: Sheets, pr
     /** What's baking in the background lane. */
     private val behind = HashSet<Key>()
     private val clock = kotlin.time.TimeSource.Monotonic.markNow()
-    /** When the first screen was all baked, or -1 till it is. */
+    /** When every chunk on the first screen had something to show, its own level or a stand-in, or -1 till then. */
     private var readyAt = -1L
+    /**
+     * Whether the first screen's own level has all come in since. Till then its chunks bake before anything else:
+     * stand-ins, the next level out, the coarsest round about, look-ahead and the levels either side's sheets.
+     */
+    private var sharp = false
+    /** Called once [sharp] turns true. */
+    var onSharp: () -> Unit = {}
 
     /** How much the map is still hidden behind the page as it first comes up: 1 till it's ready, fading to 0 just after. */
     fun cover(): Float = if (readyAt < 0) 1f else (1f - (clock.elapsedNow().inWholeMilliseconds - readyAt) / FADE_MILLIS.toFloat()).coerceIn(0f, 1f)
@@ -182,14 +189,20 @@ internal class Renderer(private val world: World, private val sheets: Sheets, pr
         shownLevel = level
         shownTurn = view.turn
         if (Probe.ON) { Probe.zoom(level, target, zoomMissing); Probe.level = level; Probe.covered = readyAt < 0 }
-        // Hidden till the first screen is all baked, then shown at once.
+        // Hidden till every chunk on the first screen has something to draw, its own or a stand-in from another level,
+        // then faded in; the sharp chunks fade in over their stand-ins as they bake.
         if (readyAt < 0) {
             var all = true
-            forEachVisible(view, level) { key, _, _, _, _ -> if (key !in cache) all = false }
+            forEachVisible(view, level) { key, _, _, _, _ -> if (key !in cache && !hasStandIn(level, key)) all = false }
             if (all) {
                 readyAt = clock.elapsedNow().inWholeMilliseconds
                 if (Probe.ON) Probe.log("ready")
             }
+        }
+        if (readyAt >= 0 && !sharp) {
+            var all = true
+            forEachVisible(view, level) { key, _, _, _, _ -> if (key !in cache) all = false }
+            if (all) { sharp = true; if (Probe.ON) Probe.log("sharp"); onSharp() }
         }
         // Which way the map's moving, in view tiles a frame, to bake ahead that way first.
         val fx = view.focusViewX()
@@ -225,10 +238,13 @@ internal class Renderer(private val world: World, private val sheets: Sheets, pr
             val version = versionOf(view, level, key.cx, key.cy)
             if (entry != null) {
                 entry.used = frame
-                // A chunk just baked where nothing was fades in over what stood in for it, and one baked again for the
-                // weather fades in over its old picture.
-                val alpha = if (entry.fades) ((now - entry.baked) / FADE_MILLIS.toFloat()).coerceIn(0f, 1f) else 1f
-                if (alpha < 1f) drawFallback(view, level, key)
+                // A chunk just baked where nothing was fades in over what stood in for it, slowly enough to read at 10 fps,
+                // or quickly over nothing; one baked again for the weather fades in over its old picture.
+                var alpha = 1f
+                if (entry.fades && now - entry.baked < CHUNK_FADE_MILLIS) {
+                    val under = drawFallback(view, level, key)
+                    alpha = ((now - entry.baked) / (if (under >= 0) CHUNK_FADE_MILLIS else FADE_MILLIS).toFloat()).coerceIn(0f, 1f)
+                }
                 val old = entry.old
                 if (old != null) {
                     drawChunk(old, left, top, right, bottom)
@@ -259,9 +275,13 @@ internal class Renderer(private val world: World, private val sheets: Sheets, pr
                 missing = true
                 // With nothing close to stand in, the next level out bakes first, a quarter the chunks for the same
                 // area, and with nothing at all the coarsest too, which covers the most.
-                if (readyAt >= 0) {
+                if (sharp) {
                     if (other < 0 && level != COARSE) { wanted += outer(key, COARSE) to 0.5f; standIns += outer(key, COARSE) }
                     if ((other < 0 || other - level >= 2) && level + 1 < COARSE) { wanted += outer(key, level + 1) to 0.9f; standIns += outer(key, level + 1) }
+                } else if (other < 0 && level != COARSE) {
+                    // At start, the coarsest first, a few chunks quick to bake, so the cover can lift on them; all at once,
+                    // as the screen is nothing till they're in. Once it's up, only this level's chunks.
+                    wanted += outer(key, COARSE) to 0.5f
                 }
             }
         }
@@ -292,14 +312,14 @@ internal class Renderer(private val world: World, private val sheets: Sheets, pr
             val mx = max(0f, max(left - cx, cx - right))
             val my = max(0f, max(top - cy, cy - bottom))
             val d = kotlin.math.sqrt(mx * mx + my * my) / (size.width + size.height)
-            if (entry == null) { if (readyAt >= 0) wanted += key to if (near) 1.5f else 2f + d }
+            if (entry == null) { if (sharp) wanted += key to if (near) 1.5f else 2f + d }
             else if (entry.version != versionOf(view, COARSE, key.cx, key.cy)) wanted += key to 4f + d
             // In step with the weather near the screen; the rest once there's nothing else to bake.
             else if (entry.weatherSum != weatherSum(view, key, weather)) wanted += key to if (d < 1f) 2f + d else 5f + d
         }
         // The next level out, kept baked as the stand-in for this one and so zooming out switches at once: over the screen
         // right after it, round it with the ring. Kept in step with the weather and building in the background.
-        if (readyAt >= 0 && (level + 1 < COARSE || (level + 1 == COARSE && !coarseWhole))) {
+        if (sharp && (level + 1 < COARSE || (level + 1 == COARSE && !coarseWhole))) {
             val room = bytes < BUDGET * 3 / 4
             // When the pan outruns the bakers, ahead along it too, ahead of this level's: a quarter the chunks for the same ground.
             val ahead = if (outrun) 1f else 0f
@@ -411,10 +431,10 @@ internal class Renderer(private val world: World, private val sheets: Sheets, pr
             if (!onScreenLane && behind.size >= BACKGROUND) break
             bake(batchQueue.removeFirst(), batchSheet!!, hold = true, ahead = !onScreenLane, weather = batchWeather!!)
         }
-        for ((key, priority) in sorted) if (priority >= 2f) want(key, priority)
+        if (sharp) for ((key, priority) in sorted) if (priority >= 2f) want(key, priority)
         if (crossfading.isNotEmpty()) revision.intValue++
-        // The levels either side unpacked ahead, so zooming finds them ready, once this one's in and the screen's baked.
-        if (readyAt >= 0 && sheets.get(target) != null) {
+        // The levels either side unpacked ahead, so zooming finds them ready, once this one's in and the screen's sharp.
+        if (sharp && sheets.get(target) != null) {
             if (target + 1 < LEVELS.size) sheets.get(target + 1)
             if (target > 0) sheets.get(target - 1)
         }
@@ -540,6 +560,23 @@ internal class Renderer(private val world: World, private val sheets: Sheets, pr
             clipRect(left, top, right, bottom) { kind = drawStandIn(view, level, key) }
         }
         return kind
+    }
+
+    /** Whether [drawStandIn] would draw something for chunk [key] missing at [level]: a coarser chunk over it or every finer one under it. */
+    private fun hasStandIn(level: Int, key: Key): Boolean {
+        // Coarser first, as the coarsest is nearly always there.
+        for (other in level + 1 until LEVELS.size) if (outer(key, other) in cache) return true
+        for (other in 0 until level) {
+            val n = 1 shl (level - other)
+            if (allIn(other, key, n)) return true
+        }
+        return false
+    }
+
+    /** Whether all [n] by [n] chunks at finer level [other] under [key] are baked. */
+    private fun allIn(other: Int, key: Key, n: Int): Boolean {
+        for (j in 0 until n) for (i in 0 until n) if (Key(other, key.turn, key.cx * n + i, key.cy * n + j) !in cache) return false
+        return true
     }
 
     /** Whether [level], a level out or in from chunk [key]'s, has all of [key] baked: the chunk over it or the four under it. */
@@ -928,9 +965,11 @@ internal class Renderer(private val world: World, private val sheets: Sheets, pr
         const val WEATHER_MILLIS = 15_000L
         /** Bitmap memory for chunks, in bytes. */
         const val BUDGET = 192L * 1024 * 1024
-        /** How long a newly baked chunk takes to fade in, and one baked again for the weather, in milliseconds. */
+        /** How long the cover and a new chunk with nothing under it take to fade in, and one baked again for the weather, in milliseconds. */
         const val FADE_MILLIS = 180
         const val WEATHER_FADE_MILLIS = 1200
+        /** How long a newly baked chunk takes to fade in over its stand-in, in milliseconds: five frames at 10 fps. */
+        const val CHUNK_FADE_MILLIS = 500
         /** The coarsest level, kept baked this far round the screen's middle, in view tiles, as a stand-in for any other. */
         val COARSE = LEVELS.size - 1
         const val COARSE_REACH = 128

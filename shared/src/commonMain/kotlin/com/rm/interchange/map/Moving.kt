@@ -45,7 +45,9 @@ private val carChainItems = ArrayList<FloatArray>()
  */
 internal fun DrawScope.drawMoving(world: World, view: View, sheets: Sheets, moving: Moving) {
     // The level's sheet, or the nearest one unpacked while it isn't yet.
-    val level = sheets.nearest(Renderer.levelFor(view.halfWidth)) ?: return
+    val start = Renderer.levelFor(view.halfWidth)
+    moving.now.vehicles.let { sheets.askVehicles(it, start, view.focusX, view.focusY) }
+    val level = sheets.nearest(start) ?: return
     val hw = Renderer.LEVELS[level]
     val painter = LandPainter(world, view, hw, sheets.get(level)?.signals)
     val scale = view.halfWidth / hw

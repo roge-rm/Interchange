@@ -13,6 +13,8 @@ kotlin {
         compileSdk = 37
         minSdk = 27
         androidResources { enable = true }
+        // Plain JVM tests of the map's pixel code: ./gradlew :shared:testAndroidHostTest
+        withHostTest {}
     }
 
     sourceSets {
@@ -24,6 +26,9 @@ kotlin {
             implementation(libs.jb.compose.material3)
             implementation(libs.jb.compose.resources)
             implementation(libs.kotlinx.coroutines.core)
+        }
+        getByName("androidHostTest").dependencies {
+            implementation(kotlin("test"))
         }
     }
 }

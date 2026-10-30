@@ -22,6 +22,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.runtime.LaunchedEffect
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
 import androidx.compose.runtime.State
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.getValue
@@ -39,6 +40,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.graphics.ImageBitmap
 import com.rm.interchange.map.MapInput
 import com.rm.interchange.map.Moving
+import com.rm.interchange.map.Probe
 import com.rm.interchange.map.vehicleAt
 import com.rm.interchange.map.NO_VEHICLE
 import com.rm.interchange.map.Sheets
@@ -68,6 +70,7 @@ import com.rm.interchange.sim.clearCost
 import com.rm.interchange.sim.removeCost
 import com.rm.interchange.sim.levelCost
 import com.rm.interchange.sim.plantCost
+import com.rm.interchange.map.Renderer
 import com.rm.interchange.map.View
 import com.rm.interchange.map.buildingAt
 import com.rm.interchange.platform.logLine
@@ -424,6 +427,11 @@ private fun Root(settings: Settings) {
     /** Reads a save off the main thread, with the packs it needs, and plays it, or says why it can't. */
     fun load(entry: SavedGames.Entry) {
         scope.launch {
+            if (Probe.ON) Probe.log("loadStart ${entry.name}")
+            // The level the game opens at decodes alongside the save's read, after the coarsest, which is tiny and stands
+            // in for it till its chunks are baked.
+            sheets?.get(Renderer.COARSE)
+            sheets?.get(Renderer.levelFor(View.START_HALF_WIDTH))
             val world = withContext(Dispatchers.Default) {
                 try {
                     val w = Save.read(SavedGames.read(entry.name) ?: throw BadData("missing"), InstalledPacks::find)
@@ -433,10 +441,12 @@ private fun Root(settings: Settings) {
                     Result.failure(e)
                 }
             }
+            if (Probe.ON) Probe.log("loadRead")
             world.onSuccess { w -> loadError = null; play({ w }) }.onFailure {
                 loadError = if (it is MissingPacks) needsPacks.replace("%s", it.packs.joinToString { p -> "${p.id} ${p.version}" })
                 else cantLoad.replace("%s", it.message ?: "")
             }
+            if (Probe.ON) Probe.log("loadEnd")
         }
     }
 
@@ -793,7 +803,15 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
             focusY = i / world.width + 0.5f
         }
     }
-    val overviewOptions = remember { OverviewOptions() }
+    val overviewOptions = remember(runner) { OverviewOptions() }
+    val mapSharp = remember(runner) { mutableStateOf(false) }
+    // The overview's picture made once the map's first screen is sharp, so it doesn't hold up the start, and kept so
+    // the window has one the first time it opens.
+    LaunchedEffect(runner) {
+        snapshotFlow { mapSharp.value }.first { it }
+        val snapshot = mapRead(runner) { MapSnapshot(it) }
+        overviewOptions.image.value = withContext(overviewDispatcher) { MapImage(snapshot) }
+    }
     // Going where a window asked to.
     goTo.value?.let { (x, y) ->
         view.focusX = x
@@ -1288,6 +1306,7 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
                 },
             label = dragAt?.takeIf { dragText != null }?.let { at -> { drawDragLabel(world, view, measurer, dragText!!, shortOf, at) } },
             page = c.page,
+            onSharp = { mapSharp.value = true },
             overlays = (if (settings.grid) ChunkBaker.GRID else 0) or (if (settings.heights) ChunkBaker.HEIGHTS else 0) or (if (settings.snow) ChunkBaker.SNOW else 0) or (if (settings.condition) ChunkBaker.CONDITION else 0),
             labels = {
                 val wv = worldView.value

@@ -7,7 +7,12 @@ import androidx.compose.runtime.produceState
 import androidx.compose.ui.graphics.ImageBitmap
 import com.rm.interchange.res.Res
 import kotlinx.coroutines.CoroutineScope
+import com.rm.interchange.sim.VehicleView
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.jetbrains.compose.resources.ExperimentalResourceApi
@@ -38,7 +43,12 @@ class PackedSheets(val ground: List<ByteArray>, val static: List<ByteArray>, val
 class Sheets(private val packed: PackedSheets, private val scope: CoroutineScope) {
     private val levels = arrayOfNulls<LevelSheets>(Atlas.LEVELS)
     private val unpacking = BooleanArray(Atlas.LEVELS)
-    private val decoder = Dispatchers.Default.limitedParallelism(1)
+    /** Each level's decode while it runs; the others wait for the coarsest's, which is small and stands in for the rest. */
+    private val decoding = arrayOfNulls<Job>(Atlas.LEVELS)
+    /** Level decodes, a level's parts side by side; two threads, as four together took the Fire's heap near its 256 MB. */
+    private val levelDecoder = Dispatchers.Default.limitedParallelism(2)
+    /** Vehicles' own, so they don't wait behind a level's sheets. */
+    private val vehicleDecoder = Dispatchers.Default.limitedParallelism(1)
 
     /** Goes up as each level is unpacked, so whatever waited on it draws again. */
     val revision = mutableIntStateOf(0)
@@ -49,42 +59,83 @@ class Sheets(private val packed: PackedSheets, private val scope: CoroutineScope
         levels[level]?.let { return it }
         if (!unpacking[level]) {
             unpacking[level] = true
-            scope.launch {
+            decoding[level] = scope.launch {
                 val asked = if (Probe.ON) Probe.now() else 0L
+                if (level != COARSEST) decoding[COARSEST]?.join()
                 var started = 0L
-                levels[level] = withContext(decoder) {
+                // Wall time of each part, ms; the parts overlap, so they add up to more than the whole.
+                val parts = LongArray(8)
+                levels[level] = withContext(levelDecoder) {
                     if (Probe.ON) started = Probe.now()
-                    fun pixels(bytes: ByteArray): Pair<IntArray, Int> {
-                        val image = bytes.decodeToImageBitmap()
-                        val out = IntArray(image.width * image.height)
-                        image.readPixels(out)
-                        return out to image.width
-                    }
-                    val (ground, _) = pixels(packed.ground[level])
-                    val (static, width) = pixels(packed.static[level])
-                    packed.staticSnow[level]?.let { restoreStaticSnow(static, it) }
-                    // Grey, so any one channel is how dark. Read a strip at a time, as the sharpest is some 70 MB as ints.
-                    val shade = packed.shadows[level].decodeToImageBitmap()
-                    val shadeWidth = shade.width
-                    val shadows = ByteArray(shade.width * shade.height)
-                    val strip = IntArray(shade.width * SHADE_ROWS)
-                    for (y in 0 until shade.height step SHADE_ROWS) {
-                        val rows = minOf(SHADE_ROWS, shade.height - y)
-                        shade.readPixels(strip, 0, y, shade.width, rows)
-                        for (i in 0 until shade.width * rows) shadows[y * shade.width + i] = strip[i].toByte()
-                    }
-                    LevelSheets(ground, static, width, shadows, shadeWidth, packed.signals[level].decodeToImageBitmap())
+                    coroutineScope { decodeLevel(level, parts) }
                 }
+                if (Probe.ON) Probe.log("sheetParts L=$level groundDecode=${parts[0]} groundRead=${parts[1]} staticDecode=${parts[2]} staticRead=${parts[3]} " +
+                    "snow=${parts[4]} shadeDecode=${parts[5]} shadeCopy=${parts[6]} signals=${parts[7]}")
                 if (Probe.ON) Probe.log("sheetDecode L=$level ms=${Probe.now() - started} queueMs=${started - asked}")
                 // Every level stays unpacked but the sharpest, some 100 MB, which goes once the screen's well away from it.
                 if (level >= 2 && levels[0] != null) {
                     levels[0] = null
                     unpacking[0] = false
                 }
+                decoding[level] = null
                 revision.intValue++
             }
         }
         return null
+    }
+
+    /**
+     * Decodes [level]'s four images side by side on [levelDecoder], then restores the static snow and copies the
+     * shadows in strips across it. [parts] gets each part's wall time, ms, in the order of the sheetParts probe line.
+     */
+    @OptIn(ExperimentalResourceApi::class)
+    private suspend fun CoroutineScope.decodeLevel(level: Int, parts: LongArray): LevelSheets {
+        fun pixels(bytes: ByteArray, part: Int): Pair<IntArray, Int> {
+            var t = if (Probe.ON) Probe.now() else 0L
+            val image = bytes.decodeToImageBitmap()
+            if (Probe.ON) { val n = Probe.now(); parts[part] = n - t; t = n }
+            val out = IntArray(image.width * image.height)
+            image.readPixels(out)
+            if (Probe.ON) parts[part + 1] = Probe.now() - t
+            return out to image.width
+        }
+        val ground = async { pixels(packed.ground[level], 0).first }
+        val static = async {
+            val (static, width) = pixels(packed.static[level], 2)
+            packed.staticSnow[level]?.let { snow ->
+                val t = if (Probe.ON) Probe.now() else 0L
+                strips(static.size, STRIPS).map { r -> launch { restoreStaticSnow(static, snow, r.first, r.last + 1) } }.joinAll()
+                if (Probe.ON) parts[4] = Probe.now() - t
+            }
+            static to width
+        }
+        // Grey, so any one channel is how dark. Read a few rows at a time, as the sharpest is some 70 MB as ints.
+        val shadows = async {
+            var t = if (Probe.ON) Probe.now() else 0L
+            val shade = packed.shadows[level].decodeToImageBitmap()
+            if (Probe.ON) { val n = Probe.now(); parts[5] = n - t; t = n }
+            val w = shade.width
+            val out = ByteArray(w * shade.height)
+            strips(shade.height, STRIPS).map { rows ->
+                launch {
+                    val strip = IntArray(w * SHADE_ROWS)
+                    for (y in rows step SHADE_ROWS) {
+                        val n = minOf(SHADE_ROWS, rows.last + 1 - y)
+                        shade.readPixels(strip, 0, y, w, n)
+                        copyShade(strip, w * n, out, y * w)
+                    }
+                }
+            }.joinAll()
+            if (Probe.ON) parts[6] = Probe.now() - t
+            out to w
+        }
+        val signals = async {
+            val t = if (Probe.ON) Probe.now() else 0L
+            packed.signals[level].decodeToImageBitmap().also { if (Probe.ON) parts[7] = Probe.now() - t }
+        }
+        val (staticPixels, staticWidth) = static.await()
+        val (shadowBytes, shadowWidth) = shadows.await()
+        return LevelSheets(ground.await(), staticPixels, staticWidth, shadowBytes, shadowWidth, signals.await())
     }
 
     private var sources: List<VehicleSource?> = emptyList()
@@ -106,6 +157,17 @@ class Sheets(private val packed: PackedSheets, private val scope: CoroutineScope
         vehicles.clear()
         vehiclesUnpacking.clear()
         generation++
+        asked = false
+    }
+
+    private var asked = false
+
+    /** Once a game, asks for the sheets at [level] of every model in [v], those nearest ([x], [y]) first. */
+    fun askVehicles(v: VehicleView, level: Int, x: Float, y: Float) {
+        if (asked || v.count == 0) return
+        asked = true
+        val order = (0 until v.count).sortedBy { (v.x(it) - x) * (v.x(it) - x) + (v.y(it) - y) * (v.y(it) - y) }
+        for (i in order) vehicle(v.sprite(i), level)
     }
 
     /**
@@ -133,8 +195,12 @@ class Sheets(private val packed: PackedSheets, private val scope: CoroutineScope
             val mine = generation
             scope.launch {
                 val asked = if (Probe.ON) Probe.now() else 0L
-                val image = withContext(decoder) { source.sheet(level)?.decodeToImageBitmap() } ?: return@launch
-                if (Probe.ON) Probe.log("vehicleDecode model=$model L=$level ms=${Probe.now() - asked}")
+                var started = 0L
+                val image = withContext(vehicleDecoder) {
+                    if (Probe.ON) started = Probe.now()
+                    source.sheet(level)?.decodeToImageBitmap()
+                } ?: return@launch
+                if (Probe.ON) Probe.log("vehicleDecode model=$model L=$level ms=${Probe.now() - started} queueMs=${started - asked}")
                 if (mine != generation) return@launch
                 vehicles[key] = image
                 revision.intValue++
@@ -157,7 +223,7 @@ class Sheets(private val packed: PackedSheets, private val scope: CoroutineScope
         if (!staticsUnpacking[at]) {
             staticsUnpacking[at] = true
             scope.launch {
-                statics[at] = withContext(decoder) { packed.static[at].decodeToImageBitmap() }
+                statics[at] = withContext(levelDecoder) { packed.static[at].decodeToImageBitmap() }
                 revision.intValue++
             }
         }
@@ -171,15 +237,20 @@ class Sheets(private val packed: PackedSheets, private val scope: CoroutineScope
     }
 
     private companion object {
-        const val SHADE_ROWS = 256
+        /** Rows of shadow read at a time per strip, 0.5 MB as ints at level 1. */
+        const val SHADE_ROWS = 128
+        /** How many strips the snow restore and shadow copy are split into, more than the threads so they even out. */
+        const val STRIPS = 8
         /** The sharpest static sheet kept for pictures. */
         const val PICTURE_SHARPEST = 2
+        const val COARSEST = Atlas.LEVELS - 1
     }
 }
 
 /** The packed sheets, read off the main thread; null until they're read. */
 @Composable
 fun rememberPackedSheets(): State<PackedSheets?> = produceState<PackedSheets?>(null) {
+    val from = if (Probe.ON) Probe.now() else 0L
     value = withContext(Dispatchers.Default) {
         suspend fun read(name: String) = (0 until Atlas.LEVELS).map { Res.readBytes("files/${name}_$it.webp") }
         val snow = (0 until Atlas.LEVELS).map { level ->
@@ -187,4 +258,5 @@ fun rememberPackedSheets(): State<PackedSheets?> = produceState<PackedSheets?>(n
         }
         PackedSheets(read("ground"), read("static"), snow, read("shadows"), read("signals"), Atlas.VEHICLE_KEYS.map { read("vehicle_$it") })
     }
+    if (Probe.ON) Probe.log("sheetsRead ms=${Probe.now() - from}")
 }

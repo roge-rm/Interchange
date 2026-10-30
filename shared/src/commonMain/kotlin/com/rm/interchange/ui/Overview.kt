@@ -61,7 +61,12 @@ internal class OverviewCamera {
 }
 
 /** Filters and camera kept between visits while this game screen is open. */
+/** One thread for the map pictures, so they never take more than a core from the bakers. */
+internal val overviewDispatcher = Dispatchers.Default.limitedParallelism(1)
+
 internal class OverviewOptions {
+    /** The latest picture of the map, made in the background after a game loads so the window has one when it opens. */
+    val image = mutableStateOf<MapImage?>(null)
     val camera = OverviewCamera()
     val rail = mutableStateOf(true)
     val roads = mutableStateOf(true)
@@ -76,7 +81,7 @@ internal class OverviewOptions {
     val coverage = mutableStateOf(false)
 }
 
-private suspend fun <T> mapRead(runner: GameThread, read: (World) -> T): T = suspendCancellableCoroutine { continuation ->
+internal suspend fun <T> mapRead(runner: GameThread, read: (World) -> T): T = suspendCancellableCoroutine { continuation ->
     runner.onGameThread { game -> if (continuation.isActive) continuation.resume(read(game.world)) }
 }
 
@@ -84,7 +89,7 @@ private suspend fun <T> mapRead(runner: GameThread, read: (World) -> T): T = sus
 @Composable
 internal fun OverviewWindow(runner: GameThread, view: View, viewport: Size, options: OverviewOptions, onClose: () -> Unit) {
     val c = LocalColors.current
-    var image by remember(runner) { mutableStateOf<MapImage?>(null) }
+    var image by options.image
     val traffic = remember(runner) { mutableStateOf<List<OverviewVehicle>>(emptyList()) }
     var selectedIndustry by remember { mutableIntStateOf(-1) }
     var showHelp by remember { mutableStateOf(false) }
@@ -102,7 +107,7 @@ internal fun OverviewWindow(runner: GameThread, view: View, viewport: Size, opti
     LaunchedEffect(runner) {
         while (true) {
             val snapshot = mapRead(runner) { MapSnapshot(it) }
-            image = withContext(Dispatchers.Default) { MapImage(snapshot) }
+            image = withContext(overviewDispatcher) { MapImage(snapshot) }
             delay(2_000)
         }
     }

@@ -25,7 +25,7 @@ class View(val mapWidth: Int, val mapHeight: Int) {
     var focusY = mapHeight / 2f
 
     /** Half a tile's width on screen, in pixels. A tile is twice as wide as it is tall. */
-    var halfWidth = 64f
+    var halfWidth = START_HALF_WIDTH
     val halfHeight get() = halfWidth / 2
     /** One step of height on screen. */
     val step get() = halfWidth / 4
@@ -141,6 +141,8 @@ class View(val mapWidth: Int, val mapHeight: Int) {
     }
 
     companion object {
+        /** The zoom a game opens at. */
+        const val START_HALF_WIDTH = 64f
         const val MIN_HALF_WIDTH = 3f
         const val MAX_HALF_WIDTH = 192f
     }
