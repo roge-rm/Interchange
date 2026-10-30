@@ -16,7 +16,7 @@ package com.rm.interchange.sim
  */
 object Save {
     private val MAGIC = "ICHG".encodeToByteArray()
-    const val VERSION = 51
+    const val VERSION = 52
 
     /** A vehicle's [built] day as saved by [version]: work days from 36, calendar days before. */
     private fun World.builtOut(built: Int, version: Int) = if (version >= 36) built else built / settings.dayLength
@@ -486,6 +486,10 @@ object Save {
                     if (version >= 43) { v.gap = r.int(); v.departed = r.long() }
                     if (version >= 45) v.group = r.int()
                     v.inDepot = r.bool(); v.running = r.bool(); v.waiting = r.int(); v.at = r.int(); v.along = r.int(); v.speed = r.int()
+                    // Turning round on the road was 8 * FIX long before 52.
+                    if (version < 52 && roadStepEntry(v.at) == roadStepExit(v.at) && !depotTiles.containsKey(roadStepTile(v.at))) {
+                        v.along = (v.along.coerceIn(0, 8 * FIX).toLong() * U_TURN_LENGTH / (8 * FIX)).toInt()
+                    }
                     readCargo(r, v.cargo, version); v.profitThisYear = r.long(); v.profitLastYear = r.long()
                     v.orders += r.ints().toList(); v.order = r.int(); v.toDepot = r.bool()
                     v.route = if (r.bool()) r.ints() else null

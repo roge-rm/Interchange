@@ -70,12 +70,20 @@ fun roadStepTile(s: Int) = s ushr 4
 fun roadStepEntry(s: Int) = (s shr 2) and 3
 fun roadStepExit(s: Int) = s and 3
 
-/** How long a step is, in the trains' units: straight across, round a corner, or turning round at a dead end. */
-fun roadStepLength(s: Int): Int = when {
-    roadStepEntry(s) == roadStepExit(s) -> 8 * FIX
+/**
+ * How long a step is, in the trains' units: straight across, round a corner, turning round in a [garage]
+ * (into its middle and back out) or turning round on the road (the loop [roadPose] draws).
+ */
+fun roadStepLength(s: Int, garage: Boolean): Int = when {
+    roadStepEntry(s) == roadStepExit(s) -> if (garage) 8 * FIX else U_TURN_LENGTH
     roadStepEntry(s) == Track.opposite(roadStepExit(s)) -> 16 * FIX
     else -> 11 * FIX
 }
+
+fun World.roadStepLength(s: Int): Int = roadStepLength(s, depotTiles.containsKey(roadStepTile(s)))
+
+/** The turn-round loop's length, 1.858 tiles; whole units so the sim doesn't depend on floats. */
+const val U_TURN_LENGTH = 7612
 
 class RoadVehicle(
     val roster: Roster,
@@ -290,10 +298,15 @@ private fun World.leaveGarage(v: RoadVehicle) {
 
 private fun World.turnAround(v: RoadVehicle) {
     val e = roadStepExit(v.at)
+    val was = roadStepLength(v.at)
     v.at = roadStep(roadStepTile(v.at), e, roadStepEntry(v.at).let { if (roadWays(roadStepTile(v.at), e).isEmpty()) e else it })
-    v.along = roadStepLength(v.at) - v.along.coerceAtMost(roadStepLength(v.at))
+    v.along = reversedAlong(v.along, was, roadStepLength(v.at))
     v.route = null
 }
+
+/** How far along a step of length [now] a vehicle [along] a step of length [was] is once turned to go back, by fraction. */
+internal fun reversedAlong(along: Int, was: Int, now: Int): Int =
+    now - (along.coerceIn(0, was).toLong() * now / was).toInt()
 
 /** Moves every road vehicle a tick: routes first, across the cores, then the moves in order. */
 internal fun World.moveRoadVehicles() {
@@ -519,13 +532,15 @@ private fun World.nextRoadStep(v: RoadVehicle): Int? {
  * its lane, a busy junction or a train at a crossing, short of a vehicle ahead on its own step, and the middle
  * of its stop.
  */
-private fun World.roadFreeAhead(v: RoadVehicle, on: HashMap<Int, ArrayList<RoadVehicle>>): Int {
+internal fun World.roadFreeAhead(v: RoadVehicle, on: HashMap<Int, ArrayList<RoadVehicle>>): Int {
     val tile = roadStepTile(v.at)
     val len = roadStepLength(v.at)
     var free = len - v.along
+    // Ahead on the same tile is nearer the exit; steps that came in at different edges differ in length.
     for (o in on[tile].orEmpty()) {
         if (o === v || roadStepExit(o.at) != roadStepExit(v.at)) continue
-        if (o.along > v.along) free = minOf(free, o.along - v.along - o.size() / 2 - GAP)
+        val left = roadStepLength(o.at) - o.along
+        if (left < len - v.along) free = minOf(free, len - v.along - left - o.size() / 2 - GAP)
     }
     if (free < len - v.along) return free.coerceAtLeast(0)
     // Its stop's middle, if this is its stop.
@@ -813,52 +828,112 @@ private class RoadHeap {
     }
 }
 
-/** Where road vehicle [v] is, in tiles, on the right of its lane: x, y and the way it faces, in eighths. */
-fun World.roadPosition(v: RoadVehicle): FloatArray {
-    val tile = roadStepTile(v.at)
-    val a = roadStepEntry(v.at)
-    val b = roadStepExit(v.at)
-    val t = v.along.toFloat() / roadStepLength(v.at)
+/** Where road vehicle [v] is, in tiles, on the right of its lane: x, y, the way it faces in whole eighths and the same unrounded. */
+fun World.roadPosition(v: RoadVehicle): FloatArray = roadPose(v.at, v.along, width, depotTiles.containsKey(roadStepTile(v.at)))
+
+/**
+ * Where a road vehicle [along] its step [at] is, on a map [width] tiles wide: x, y, whole eighths and unrounded eighths.
+ * In a [garage] it turns round straight into the middle and back out.
+ */
+internal fun roadPose(at: Int, along: Int, width: Int, garage: Boolean = false): FloatArray {
+    val tile = roadStepTile(at)
+    val a = roadStepEntry(at)
+    val b = roadStepExit(at)
+    val t = along.toFloat() / roadStepLength(at, garage)
     val cx = tile % width + 0.5f
     val cy = tile / width + 0.5f
     val ax = tile % width + Track.edgeX4(a) / 4f
     val ay = tile / width + Track.edgeY4(a) / 4f
     val bx = tile % width + Track.edgeX4(b) / 4f
     val by = tile / width + Track.edgeY4(b) / 4f
-    // Turning a corner: round the quarter circle the road sweeps, about the corner its two edges share.
-    if (a != b && a != Track.opposite(b)) {
-        val ex = if (a == Track.XM || a == Track.XP) a else b
-        val ey = if (a == Track.YM || a == Track.YP) a else b
-        val ox = tile % width + Track.edgeX4(ex) / 4f
-        val oy = tile / width + Track.edgeY4(ey) / 4f
-        val sx = ax - ox; val sy = ay - oy
-        val fx = bx - ox; val fy = by - oy
-        val angle = t * (kotlin.math.PI / 2).toFloat()
-        val c = kotlin.math.cos(angle)
-        val s = kotlin.math.sin(angle)
-        var x = ox + sx * c + fx * s
-        var y = oy + sy * c + fy * s
-        val dx = -sx * s + fx * c
-        val dy = -sy * s + fy * c
+    var x: Float
+    var y: Float
+    var dx: Float
+    var dy: Float
+    if (a == b && !garage) {
+        // Turning round: forward and left in the tile, from the middle of the edge it came in at.
+        val fx = (Track.edgeX4(Track.opposite(a)) - Track.edgeX4(a)) / 4f
+        val fy = (Track.edgeY4(Track.opposite(a)) - Track.edgeY4(a)) / 4f
+        val turn = uTurn(t)
+        // Left of (fx, fy) is (fy, -fx), as y runs down the map.
+        x = ax + fx * turn[0] + fy * turn[1]
+        y = ay + fy * turn[0] - fx * turn[1]
+        dx = fx * turn[2] + fy * turn[3]
+        dy = fy * turn[2] - fx * turn[3]
+    } else {
+        if (a != b && a != Track.opposite(b)) {
+            // Turning a corner: round the quarter circle the road sweeps, about the corner its two edges share.
+            val ex = if (a == Track.XM || a == Track.XP) a else b
+            val ey = if (a == Track.YM || a == Track.YP) a else b
+            val ox = tile % width + Track.edgeX4(ex) / 4f
+            val oy = tile / width + Track.edgeY4(ey) / 4f
+            val sx = ax - ox; val sy = ay - oy
+            val fx = bx - ox; val fy = by - oy
+            val angle = t * (kotlin.math.PI / 2).toFloat()
+            val c = kotlin.math.cos(angle)
+            val s = kotlin.math.sin(angle)
+            x = ox + sx * c + fx * s
+            y = oy + sy * c + fy * s
+            dx = -sx * s + fx * c
+            dy = -sy * s + fy * c
+        } else if (a == b) {
+            // In a garage: into the middle, then back out facing the door.
+            if (t < 0.5f) {
+                x = ax + (cx - ax) * t * 2; y = ay + (cy - ay) * t * 2; dx = cx - ax; dy = cy - ay
+            } else {
+                x = cx + (bx - cx) * (t * 2 - 1); y = cy + (by - cy) * (t * 2 - 1); dx = bx - cx; dy = by - cy
+            }
+        } else {
+            x = ax + (bx - ax) * t
+            y = ay + (by - ay) * t
+            dx = bx - ax
+            dy = by - ay
+        }
         val len = kotlin.math.sqrt(dx * dx + dy * dy).coerceAtLeast(0.001f)
+        // Keep right: to the right of the way it's going is (-dy, dx) turned, as y runs down the map.
         x += -dy / len * LANE
         y += dx / len * LANE
-        return floatArrayOf(x, y, heading(kotlin.math.round(dx * 4 / len).toInt(), kotlin.math.round(dy * 4 / len).toInt()).toFloat())
     }
-    // Turning round: into the middle and back out.
-    val (x0, y0, x1, y1, f) = if (a == b) {
-        if (t < 0.5f) listOf(ax, ay, cx, cy, t * 2) else listOf(cx, cy, bx, by, t * 2 - 1)
-    } else listOf(ax, ay, bx, by, t)
-    var x = x0 + (x1 - x0) * f
-    var y = y0 + (y1 - y0) * f
-    var dx = x1 - x0
-    var dy = y1 - y0
-    if (a == b && t >= 0.5f) { dx = bx - cx; dy = by - cy }
-    val len = kotlin.math.sqrt(dx * dx + dy * dy).coerceAtLeast(0.001f)
-    // Keep right: to the right of the way it's going is (-dy, dx) turned, as y runs down the map.
-    x += -dy / len * LANE
-    y += dx / len * LANE
-    return floatArrayOf(x, y, heading(kotlin.math.round(dx * 4).toInt(), kotlin.math.round(dy * 4).toInt()).toFloat())
+    val eighths = ((kotlin.math.atan2(dy, dx) * (4 / kotlin.math.PI).toFloat()) % 8f + 8f) % 8f
+    return floatArrayOf(x, y, (kotlin.math.round(eighths).toInt() % 8).toFloat(), eighths)
+}
+
+/** The loop a road vehicle turns round in: radius in tiles, and the small swing right that leads into it. */
+private const val TURN_LOOP = 0.25f
+private const val TURN_SWING = 0.25f
+/** How far round the swing goes, in radians, so the loop's centre sits on the road's middle. */
+private val TURN_SWING_ANGLE = kotlin.math.acos((LANE + TURN_SWING) / (TURN_LOOP + TURN_SWING))
+/** The straight run in before the swing, so the loop's centre is the tile's middle. */
+private val TURN_RUN = 0.5f - (TURN_LOOP + TURN_SWING) * kotlin.math.sin(TURN_SWING_ANGLE)
+private val TURN_LENGTH = 2 * TURN_RUN + 2 * TURN_SWING * TURN_SWING_ANGLE + TURN_LOOP * (kotlin.math.PI.toFloat() + 2 * TURN_SWING_ANGLE)
+
+/**
+ * A point [t] of the way round the turn, in tiles forward from the edge come in at and left of the road's middle:
+ * forward, left, and the way it faces as forward and left parts. In along the right lane, a short swing right,
+ * round the loop to the left and out along the other lane, a mirror of the way in.
+ */
+private fun uTurn(t: Float): FloatArray {
+    val d = t.coerceIn(0f, 1f) * TURN_LENGTH
+    val loop = TURN_LENGTH - 2 * (TURN_RUN + TURN_SWING * TURN_SWING_ANGLE)
+    val half = TURN_RUN + TURN_SWING * TURN_SWING_ANGLE
+    if (d > half && d < half + loop) {
+        val centre = TURN_RUN + (TURN_LOOP + TURN_SWING) * kotlin.math.sin(TURN_SWING_ANGLE)
+        val f = -TURN_SWING_ANGLE + (d - half) / TURN_LOOP
+        val c = kotlin.math.cos(f)
+        val s = kotlin.math.sin(f)
+        return floatArrayOf(centre + TURN_LOOP * s, -TURN_LOOP * c, c, s)
+    }
+    // The way out is the way in mirrored across the road's middle and driven backwards.
+    val out = d >= half + loop
+    val q = if (out) TURN_LENGTH - d else d
+    val p = if (q <= TURN_RUN) floatArrayOf(q, -LANE, 1f, 0f) else {
+        val f = (q - TURN_RUN) / TURN_SWING
+        val c = kotlin.math.cos(f)
+        val s = kotlin.math.sin(f)
+        floatArrayOf(TURN_RUN + TURN_SWING * s, -LANE - TURN_SWING + TURN_SWING * c, c, -s)
+    }
+    if (out) { p[1] = -p[1]; p[2] = -p[2] }
+    return p
 }
 
 /** How far right of the road's middle vehicles keep, in tiles. */

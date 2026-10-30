@@ -393,7 +393,7 @@ class ReplaceTest {
 
     @Test
     fun saveKeepsTheReplacementModel() {
-        assertEquals(51, Save.VERSION)
+        assertEquals(52, Save.VERSION)
         for (kind in kinds) {
             val f = fleet(kind)
             f.replace()

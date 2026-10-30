@@ -402,7 +402,7 @@ fun World.view(company: Int = 0, withReserved: Boolean = false): WorldView {
         cars += rise.coerceIn(-1, 1).toFloat()
         cars += v.info.length / 16f
         cars += -1f
-        cars += p[2]
+        cars += p[3]
     }
     for (v in ships) {
         if (v == null || v.inDepot) continue

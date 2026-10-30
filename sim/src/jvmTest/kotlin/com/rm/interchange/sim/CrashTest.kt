@@ -93,7 +93,7 @@ class CrashTest {
         // Put straight onto the crossing heading west, broken down.
         west.inDepot = false
         west.at = roadStep(w.index(25, 20), Track.XP, Track.XM)
-        west.along = roadStepLength(west.at) / 2
+        west.along = w.roadStepLength(west.at) / 2
         west.speed = 0
         west.brokenFor = 100_000
         var ticks = 0

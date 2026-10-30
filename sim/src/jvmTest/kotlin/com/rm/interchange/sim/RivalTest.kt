@@ -37,17 +37,20 @@ class RivalTest {
     fun rivalsRunRailways() {
         // Hard rivals try rail first, before buses take the available town pairs.
         val w = World(NewGame(160, 160, 1, 1930, Region.MIXED, towns = 3, industries = 4, rivals = 2, rivalLevel = RivalLevel.HARD))
-        // Past a railway's first year, while its stations' ratings and traffic build.
-        w.days(365 * 7)
+        // Past a railway's first year, while its stations' ratings and traffic build; one built in the last year may not pay yet.
+        w.days(365 * 6)
+        val yearOld = w.rivals.flatMap { r -> r.routes.filter { it.rail }.map { r.company to it.a } }.toSet()
+        w.days(365)
         val rail = w.rivals.flatMap { r -> r.routes.filter { it.rail }.map { r.company to it } }
         assertTrue(rail.isNotEmpty(), "no rival built a railway")
         assertTrue(w.chronicle.none { it.kind == News.CRASH }, "a rival's trains crashed")
+        assertTrue(rail.any { (company, rt) -> (company to rt.a) in yearOld }, "every railway is new")
         for ((company, rt) in rail) {
             assertEquals(company, w.stations[rt.a]!!.owner)
             assertTrue(w.stations[rt.a]!!.tiles.isNotEmpty() && w.stations[rt.b]!!.tiles.isNotEmpty(), "a railway without platforms")
             val on = w.trains.filter { it != null && it.owner == company && Order.station(it.orders[0]) == rt.a }.map { it!! }
             assertTrue(on.isNotEmpty() && on.size <= rt.loops.size + 1, "${on.size} trains on ${rt.loops.size} loops")
-            assertTrue(on.sumOf { it.profitThisYear + it.profitLastYear } > 0, "its trains don't pay")
+            if ((company to rt.a) in yearOld) assertTrue(on.sumOf { it.profitThisYear + it.profitLastYear } > 0, "its trains don't pay")
         }
     }
 
