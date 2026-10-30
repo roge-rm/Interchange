@@ -60,6 +60,10 @@ internal class Renderer(private val world: World, private val sheets: Sheets, pr
 
     init {
         CurveArt.install()
+        if (Probe.HASH && !hashStarted && probeHashWanted()) {
+            hashStarted = true
+            hashCheck()
+        }
         if (Probe.ON) Probe.log("config threads=${Workers.threads} BAKERS=$BAKERS BACKGROUND=$BACKGROUND SHARPEST=$SHARPEST heapMb=${heapBytes() / 1048576}")
     }
 
@@ -658,7 +662,11 @@ internal class Renderer(private val world: World, private val sheets: Sheets, pr
     /** Bakes chunk [key]: its picture with the clear rows above whatever's highest on it left off, and how many rows those were; no picture if it's all clear. */
     private fun bakeChunk(view: View, key: Key, sheet: LevelSheets, overlays: Int, look: Int, year: Int, weather: WeatherCopy): Pair<ImageBitmap?, Int> {
         val buffer = takeBuffer(CHUNK_PIXELS * CHUNK_ROWS)
-        val baker = ChunkBaker(world, view, key.level, sheet, CHUNK_PIXELS, CHUNK_ROWS, overlays, look, buffer, weather, year)
+        val t0 = if (Probe.ON) Probe.nanos() else 0L
+        val curves = takeCurves()
+        val baker = ChunkBaker(world, view, key.level, sheet, CHUNK_PIXELS, CHUNK_ROWS, overlays, look, buffer, weather, year, curves)
+        val times = baker.times
+        if (Probe.ON) times!!.add(Probe.BakeTimes.MAKE, t0)
         baker.originX = -key.cx * CHUNK_PIXELS.toFloat()
         baker.originY = -key.cy * CHUNK_ROWS.toFloat()
         // Every tile that reaches in, back to front: ground first, then every shadow over it, then what stands up, so
@@ -666,21 +674,98 @@ internal class Renderer(private val world: World, private val sheets: Sheets, pr
         val t = tileRange(view, key.level, key.cx, key.cy)
         val r = reach(key.level, key.cx, key.cy)
         val tiles = ArrayList<Int>()
+        var pt = if (Probe.ON) times!!.start() else 0L
         if (t[0] <= t[2] && t[1] <= t[3]) baker.prepare(t[0], t[1], t[2] + 1, t[3] + 1)
+        if (Probe.ON) { times!!.add(Probe.BakeTimes.PREPARE, pt); pt = times.start() }
         for (vy in t[1]..t[3]) for (vx in t[0]..t[2]) {
             if (vx - vy in r[0]..r[1] && vx + vy in r[2]..r[3] && baker.reaches(vx, vy)) tiles += vy * view.viewWidth + vx
         }
+        if (Probe.ON) times!!.add(Probe.BakeTimes.REACHES, pt)
         if (tiles.isNotEmpty()) {
+            if (Probe.ON) pt = times!!.start()
             for (i in tiles) baker.ground(i % view.viewWidth, i / view.viewWidth)
+            if (Probe.ON) { times!!.add(Probe.BakeTimes.GROUND, pt); pt = times.start() }
             for (i in tiles) baker.shadows(i % view.viewWidth, i / view.viewWidth)
+            if (Probe.ON) { times!!.add(Probe.BakeTimes.SHADOWS, pt); pt = times.start() }
             for (i in tiles) baker.objects(i % view.viewWidth, i / view.viewWidth)
+            if (Probe.ON) times!!.add(Probe.BakeTimes.OBJECTS, pt)
         }
         val pixels = baker.finish()
+        if (Probe.ON) pt = times!!.start()
         var top = 0
         while (top < CHUNK_ROWS && (top * CHUNK_PIXELS until (top + 1) * CHUNK_PIXELS).all { pixels[it] ushr 24 == 0 }) top++
-        val image = if (top == CHUNK_ROWS) null else chunkBitmapOf(pixels, CHUNK_PIXELS, top, CHUNK_ROWS - top)
+        if (Probe.ON) times!!.add(Probe.BakeTimes.TOPSCAN, pt)
+        val split = if (Probe.ON) LongArray(2) else null
+        val image = if (top == CHUNK_ROWS) null else chunkBitmapOf(pixels, CHUNK_PIXELS, top, CHUNK_ROWS - top, split)
+        if (Probe.ON) {
+            times!!.ns[Probe.BakeTimes.SOFT] += split!![0]; times.count[Probe.BakeTimes.SOFT]++
+            times.ns[Probe.BakeTimes.HARD] += split[1]; times.count[Probe.BakeTimes.HARD]++
+            times.log(key.level, key.cx, key.cy, key.turn, tiles.size, top, Probe.nanos() - t0)
+        }
         giveBack(buffer)
+        giveBack(curves)
         return image to top
+    }
+
+    /**
+     * For [Probe.HASH]: bakes chunks round the middle of each saved game, read afresh so the game running doesn't
+     * change them, at every level and two turns, as saved and in summer with no weather, and logs a hash of each.
+     */
+    private fun hashCheck() = scope.launch {
+        val saves = withContext(Dispatchers.Default) { probeSaves() }
+        Probe.log("hash saves=${saves.keys}")
+        val got = arrayOfNulls<LevelSheets>(LEVELS.size)
+        for (level in SHARPEST until LEVELS.size) {
+            while (true) {
+                got[level] = sheets.get(level)
+                if (got[level] != null) break
+                kotlinx.coroutines.delay(250)
+            }
+        }
+        withContext(Dispatchers.Default) {
+            for ((name, bytes) in saves) {
+                val w = try { com.rm.interchange.sim.Save.read(bytes) } catch (e: Exception) { Probe.log("hash save=$name unread $e"); continue }
+                val n = w.width * w.height
+                val yr = Calendar.year(w.startYear, w.day)
+                val asSaved = Climate.look(w.settings.region, yr, Calendar.dayOfYear(w.startYear, w.day))
+                val variants = listOf(
+                    Triple("saved", asSaved, WeatherCopy.of(w, 0, 0, null)),
+                    Triple("summer", Climate.SUMMER, WeatherCopy(0, 0, ByteArray(n), ByteArray(n), ByteArray(n))),
+                )
+                val buffer = IntArray(CHUNK_PIXELS * CHUNK_ROWS)
+                val curves = CurveArt(w)
+                val started = Probe.now()
+                for ((vname, look, weather) in variants) for (level in SHARPEST until LEVELS.size) for (turn in 0..1) {
+                    val view = View(w.width, w.height).also { it.turnBy(turn) }
+                    val mx = view.toViewX(w.width / 2f, w.height / 2f)
+                    val my = view.toViewY(w.width / 2f, w.height / 2f)
+                    val hw = LEVELS[level]
+                    val ccx = floor((mx - my) * hw / CHUNK_PIXELS).toInt()
+                    val ccy = floor((mx + my) * hw / 2 / CHUNK_ROWS).toInt()
+                    for (cy in ccy - 1..ccy + 1) for (cx in ccx - 1..ccx + 1) {
+                        buffer.fill(0)
+                        val baker = ChunkBaker(w, view, level, got[level]!!, CHUNK_PIXELS, CHUNK_ROWS, 0, look, buffer, weather, yr, curves.also { it.refresh() })
+                        baker.originX = -cx * CHUNK_PIXELS.toFloat()
+                        baker.originY = -cy * CHUNK_ROWS.toFloat()
+                        val t = tileRange(view, level, cx, cy)
+                        val r = reach(level, cx, cy)
+                        val tiles = ArrayList<Int>()
+                        if (t[0] <= t[2] && t[1] <= t[3]) baker.prepare(t[0], t[1], t[2] + 1, t[3] + 1)
+                        for (vy in t[1]..t[3]) for (vx in t[0]..t[2]) {
+                            if (vx - vy in r[0]..r[1] && vx + vy in r[2]..r[3] && baker.reaches(vx, vy)) tiles += vy * view.viewWidth + vx
+                        }
+                        for (i in tiles) baker.ground(i % view.viewWidth, i / view.viewWidth)
+                        for (i in tiles) baker.shadows(i % view.viewWidth, i / view.viewWidth)
+                        for (i in tiles) baker.objects(i % view.viewWidth, i / view.viewWidth)
+                        var h = -0x340d631b7bdddcdbL
+                        for (p in baker.finish()) h = (h xor (p.toLong() and 0xffffffffL)) * 0x100000001b3L
+                        Probe.log("hash save=$name v=$vname look=$look L=$level turn=$turn cx=$cx cy=$cy tiles=${tiles.size} h=${h.toULong().toString(16)}")
+                    }
+                }
+                Probe.log("hash save=$name ms=${Probe.now() - started}")
+            }
+        }
+        Probe.log("hash done")
     }
 
     /** Pixel buffers kept between bakes, so baking doesn't make megabytes of garbage each time. */
@@ -692,6 +777,13 @@ internal class Renderer(private val world: World, private val sheets: Sheets, pr
     }
 
     private fun giveBack(buffer: IntArray) = synchronized(buffers) { if (buffers.size < BAKERS) buffers += buffer }
+
+    /** Curved track cells kept between bakes, one lent to each bake at a time as they aren't thread safe. */
+    private val curveArts = ArrayList<CurveArt>()
+
+    private fun takeCurves(): CurveArt = (synchronized(curveArts) { curveArts.removeLastOrNull() } ?: CurveArt(world)).also { it.refresh() }
+
+    private fun giveBack(curves: CurveArt) = synchronized(curveArts) { if (curveArts.size < BAKERS) curveArts += curves }
 
     /** Lets go of old pictures done fading, and of the chunks used longest ago past the memory budget. */
     private fun trim() {
@@ -728,6 +820,8 @@ internal class Renderer(private val world: World, private val sheets: Sheets, pr
         const val CHUNK_ROWS = 256
         /** How far a track tile's curves read: a change rebakes the chunks of tiles this far away. */
         const val CURVE_REACH = CurveTiles.REACH
+        /** Whether the [Probe.HASH] check has run in this process. */
+        private var hashStarted = false
         /** The sharpest level drawn. Level 0's sheets take some 130 MB, more than a small heap holds with everything else. */
         val SHARPEST = if (heapBytes() >= 400L * 1024 * 1024) 0 else 1
         /** Chunks baking at once, leaving cores for the screen and the game. */

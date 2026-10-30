@@ -2,6 +2,15 @@ package com.rm.interchange.map
 
 import com.rm.interchange.platform.logLine
 
+/** The platform's monotonic clock in nanoseconds, cheaper than [kotlin.time.TimeSource] for timing many small parts. */
+internal expect fun probeNanos(): Long
+
+/** Whether the system property debug.interchange.hash is 1, to run [Renderer]'s bake hash check in a [Probe.HASH] build. */
+internal expect fun probeHashWanted(): Boolean
+
+/** The app's saved games but the autosave, by file name, for the bake hash check. */
+internal expect fun probeSaves(): Map<String, ByteArray>
+
 /**
  * Measurement of what the map shows before it's ready: bake times, stand-ins, blank chunks, weather batches, zoom
  * waits and sheet decodes. Lines go to logcat under "Interchange", starting "PROBE". Off unless [ON] is set true in
@@ -11,11 +20,24 @@ import com.rm.interchange.platform.logLine
  */
 internal object Probe {
     const val ON = false
+    /** Bakes a fixed set of chunks from the saved games and logs a hash of each, to check a change to the baker leaves every pixel alone. */
+    const val HASH = false
 
     private val clock = kotlin.time.TimeSource.Monotonic.markNow()
     fun now(): Long = clock.elapsedNow().inWholeMilliseconds
     /** For timing on any thread, in microseconds. */
     fun micros(): Long = clock.elapsedNow().inWholeMicroseconds
+    /** For timing parts of a bake, in nanoseconds. */
+    fun nanos(): Long = probeNanos()
+
+    /** What one [nanos] call costs here now, in nanoseconds, so the bake split can say how much of it is the timing. */
+    fun nanosCost(): Long {
+        val n = 500
+        val start = nanos()
+        var sink = 0L
+        for (i in 0 until n) sink += nanos()
+        return ((nanos() - start) / n).also { if (sink == 42L) log("") }
+    }
 
     fun log(text: String) = logLine("PROBE t=${now()} $text")
 
@@ -103,5 +125,45 @@ internal object Probe {
         var blocks = 0
         if (old.blocks.size == new.blocks.size) for (b in new.blocks.indices) if (new.blocks[b] != old.blocks[b]) blocks++
         log("weather id=${new.id} from=${old.id} copyMs=$copyMs snowTiles=$tiles of=${new.snow.size} sumCm=$sum maxCm=$most ge3=$big iceTiles=$ice blocks=$blocks of=${new.blocks.size}")
+    }
+
+    /**
+     * Where one chunk bake's time went, summed over its tiles in nanoseconds, logged as one "split" line in
+     * microseconds. Made per bake on the baker's thread, so no locking.
+     */
+    class BakeTimes {
+        val ns = LongArray(PARTS.size)
+        val count = IntArray(PARTS.size)
+        /** Ground pixels painted, by the same buckets as the fill times. */
+        val pixels = IntArray(PARTS.size)
+        /** How many [nanos] calls the split took, to tell its own cost from the bake's. */
+        var calls = 0
+
+        fun start(): Long { calls++; return nanos() }
+        fun add(part: Int, from: Long) { calls++; ns[part] += nanos() - from; count[part]++ }
+
+        fun log(level: Int, cx: Int, cy: Int, turn: Int, tiles: Int, top: Int, totalNs: Long) {
+            val b = StringBuilder("split L=$level cx=$cx cy=$cy turn=$turn tiles=$tiles top=$top us=${totalNs / 1000} calls=$calls callNs=${nanosCost()}")
+            for (i in PARTS.indices) if (count[i] > 0 || ns[i] > 0) {
+                b.append(' ').append(PARTS[i]).append('=').append(ns[i] / 1000).append('/').append(count[i])
+                if (pixels[i] > 0) b.append('/').append(pixels[i])
+            }
+            log(b.toString())
+        }
+
+        companion object {
+            // Renderer's phases, then within the ground pass, then within standing (both shadow and object passes).
+            const val MAKE = 0; const val PREPARE = 1; const val REACHES = 2; const val GROUND = 3; const val SHADOWS = 4
+            const val OBJECTS = 5; const val TOPSCAN = 6; const val SOFT = 7; const val HARD = 8
+            const val FILL_PLAIN = 9; const val FILL_SNOW = 10; const val FILL_WATER = 11; const val FILL_ROAD = 12; const val FILL_AERO = 13
+            const val FILL_SETUP = 14; const val FACES = 15; const val TRACK = 16; const val CURVE = 17; const val WALLS = 18
+            const val BUILDING = 19; const val TREES = 20; const val STREET = 21; const val DECOR = 22; const val STATION = 23
+            const val BLIT = 24; const val SHADE = 25
+            val PARTS = arrayOf(
+                "make", "prep", "reach", "ground", "shadows", "objects", "topscan", "soft", "hard",
+                "fPlain", "fSnow", "fWater", "fRoad", "fAero", "fSetup", "faces", "track", "curve", "walls",
+                "bldg", "trees", "street", "decor", "station", "blit", "shade",
+            )
+        }
     }
 }

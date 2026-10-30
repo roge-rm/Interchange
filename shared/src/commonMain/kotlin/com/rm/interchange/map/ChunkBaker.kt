@@ -77,9 +77,13 @@ internal class ChunkBaker(
     private val shown: WeatherCopy,
     /** The game's year, for industry pieces drawn another way before a year ([PART_ERAS]). */
     private val year: Int = Int.MAX_VALUE,
+    /** The curved track's cells, kept between bakes; this bake's alone while it runs. Made on first use if not given. */
+    curveArt: CurveArt? = null,
 ) {
+    private val curveArt by lazy { curveArt ?: CurveArt(world).also { it.refresh() } }
     private val hw = Renderer.LEVELS[level]
-    private val curveArt = CurveArt(world, view)
+    /** Where the bake's time goes, only in a build measuring it ([Probe.ON]). */
+    val times: Probe.BakeTimes? = if (Probe.ON) Probe.BakeTimes() else null
     private val hh = hw / 2
     private val step = hw / 4
     private val shrink = 1 shl level
@@ -135,7 +139,16 @@ internal class ChunkBaker(
         }
         grid = heights
         sums = s
+        kinds = IntArray(gw * gh) { UNKNOWN }
+        snowSums = IntArray(gw * gh) { UNKNOWN }
+        lights = FloatArray(gw * gh) { Float.NaN }
     }
+
+    // By the same view corners as [grid], worked out when first asked for: the kind of the tile whose top corner it is
+    // ([kindOf]), the snow on the four tiles round it ([cornerSnow]) and its [cornerLight]. UNKNOWN and NaN till then.
+    private var kinds = IntArray(0)
+    private var snowSums = IntArray(0)
+    private var lights = FloatArray(0)
 
     private val reliefs = HashMap<Int, Float>()
 
@@ -178,7 +191,16 @@ internal class ChunkBaker(
     }
 
     /** The snow at view corner ([vx], [vy]): the mean of the four tiles round it. */
-    private fun cornerSnow(vx: Int, vy: Int): Float = (snowAt(vx - 1, vy - 1) + snowAt(vx, vy - 1) + snowAt(vx - 1, vy) + snowAt(vx, vy)) / 4f
+    private fun cornerSnow(vx: Int, vy: Int): Float {
+        val gx = vx - gx0
+        val gy = vy - gy0
+        if (gx !in 0 until gw || gy !in 0 until gh) return snowSum(vx, vy) / 4f
+        val i = gy * gw + gx
+        if (snowSums[i] == UNKNOWN) snowSums[i] = snowSum(vx, vy)
+        return snowSums[i] / 4f
+    }
+
+    private fun snowSum(vx: Int, vy: Int): Int = snowAt(vx - 1, vy - 1) + snowAt(vx, vy - 1) + snowAt(vx - 1, vy) + snowAt(vx, vy)
 
     /** The ice at view corner ([vx], [vy]) in cm: the mean of the tiles round it, the shore as thick as the thickest ice there. */
     private fun cornerIce(vx: Int, vy: Int): Float {
@@ -213,6 +235,15 @@ internal class ChunkBaker(
 
     /** The ground kind of view tile ([vx], [vy]) as drawn: water, beach sand, or the land's own. -1 off the map. */
     private fun kindOf(vx: Int, vy: Int): Int {
+        val gx = vx - gx0
+        val gy = vy - gy0
+        if (gx !in 0 until gw || gy !in 0 until gh) return kindAt(vx, vy)
+        val i = gy * gw + gx
+        if (kinds[i] == UNKNOWN) kinds[i] = kindAt(vx, vy)
+        return kinds[i]
+    }
+
+    private fun kindAt(vx: Int, vy: Int): Int {
         if (vx < 0 || vy < 0 || vx >= view.viewWidth || vy >= view.viewHeight) return -1
         val t = cornerHeight(vx, vy)
         val r = cornerHeight(vx + 1, vy)
@@ -244,7 +275,11 @@ internal class ChunkBaker(
         val wx = view.worldX(vx, vy)
         val wy = view.worldY(vx, vy)
         val kind = kindOf(vx, vy)
-        val edges = intArrayOf(kindOf(vx, vy - 1), kindOf(vx + 1, vy), kindOf(vx, vy + 1), kindOf(vx - 1, vy))
+        val edges = edgeKinds
+        edges[0] = kindOf(vx, vy - 1)
+        edges[1] = kindOf(vx + 1, vy)
+        edges[2] = kindOf(vx, vy + 1)
+        edges[3] = kindOf(vx - 1, vy)
         // The town road here in view edges, and whether it's paved.
         val worldRoad = world.road[world.index(wx, wy)].toInt()
         val here = world.index(wx, wy)
@@ -277,23 +312,29 @@ internal class ChunkBaker(
                 val n = if (world.inside(nx, ny)) world.index(nx, ny) else -1
                 if (n < 0 || !(world.canals.contains(n) || world.locks.containsKey(n) || world.isWater(nx, ny))) banks = banks or (1 shl sideOf(viewEdge(e)))
             }
-            ground(vx, vy, t, r, b, l, Atlas.WATER, intArrayOf(-1, -1, -1, -1), weather = true, banks = banks)
+            ground(vx, vy, t, r, b, l, Atlas.WATER, NO_EDGES, weather = true, banks = banks)
+            val ft = if (Probe.ON) times!!.start() else 0L
             earthFaces(vx, vy, r, b, l)
+            if (Probe.ON) times!!.add(Probe.BakeTimes.FACES, ft)
             return
         }
         val aero = world.airportTiles[here]?.let { id -> world.airports.getOrNull(id)?.let { airportGround(it, wx, wy) } } ?: 0
         // A road where the land doesn't suit it goes up on a foundation, as track does, the road on top.
         val raised = road != 0 && world.trackAt(wx, wy) == 0 && world.hasFoundation(wx, wy)
         ground(vx, vy, t, r, b, l, kind, edges, if (raised) 0 else road, weather = true, aero = aero, soft = true)
+        val ft = if (Probe.ON) times!!.start() else 0L
         earthFaces(vx, vy, r, b, l)
+        if (Probe.ON) times!!.add(Probe.BakeTimes.FACES, ft)
         if (raised) {
             val st = world.surfaceHeight(wx, wy, 0, worldCorner(wx, wy, vx, vy))
             val sr = world.surfaceHeight(wx, wy, 0, worldCorner(wx, wy, vx + 1, vy))
             val sb = world.surfaceHeight(wx, wy, 0, worldCorner(wx, wy, vx + 1, vy + 1))
             val sl = world.surfaceHeight(wx, wy, 0, worldCorner(wx, wy, vx, vy + 1))
             val low = minOf(minOf(t, r), minOf(b, l))
+            val wt = if (Probe.ON) times!!.start() else 0L
             sprite(Atlas.WALLS[shapeOf(t - low, r - low, b - low, l - low) * 16 + shapeOf(st - low, sr - low, sb - low, sl - low)], vx, vy, low)
-            ground(vx, vy, st, sr, sb, sl, kind, intArrayOf(-1, -1, -1, -1), road, weather = true)
+            if (Probe.ON) times!!.add(Probe.BakeTimes.WALLS, wt)
+            ground(vx, vy, st, sr, sb, sl, kind, NO_EDGES, road, weather = true)
             return
         }
 
@@ -304,15 +345,19 @@ internal class ChunkBaker(
         if (world.house[tile].toInt() != 0 || world.industryOf[tile].toInt() != 0) {
             val top = maxOf(maxOf(t, r), maxOf(b, l))
             if (top != base) {
+                val wt = if (Probe.ON) times!!.start() else 0L
                 sprite(Atlas.WALLS[shapeOf(t - base, r - base, b - base, l - base) * 16 + 15], vx, vy, base)
-                ground(vx, vy, top, top, top, top, kind, intArrayOf(-1, -1, -1, -1))
+                if (Probe.ON) times!!.add(Probe.BakeTimes.WALLS, wt)
+                ground(vx, vy, top, top, top, top, kind, NO_EDGES)
             }
             return
         }
         if (pieces == 0) return
         world.depotTiles[tile]?.let {
+            val tt = if (Probe.ON) times!!.start() else 0L
             sprite(Atlas.TRACK[viewPieceIndex(Track.index(pieces)) * 16], vx, vy, base)
             sprite(Atlas.RAILS[viewPieceIndex(Track.index(pieces)) * 16], vx, vy, base)
+            if (Probe.ON) times!!.add(Probe.BakeTimes.TRACK, tt)
             return
         }
         val st = world.surfaceHeight(wx, wy, pieces, worldCorner(wx, wy, vx, vy))
@@ -323,17 +368,24 @@ internal class ChunkBaker(
         val sShape = shapeOf(st - sBase, sr - sBase, sb - sBase, sl - sBase)
         if (world.hasFoundation(wx, wy)) {
             val shape = shapeOf(t - base, r - base, b - base, l - base)
+            val wt = if (Probe.ON) times!!.start() else 0L
             sprite(Atlas.WALLS[shape * 16 + shapeOf(st - base, sr - base, sb - base, sl - base)], vx, vy, base)
-            ground(vx, vy, st, sr, sb, sl, kind, intArrayOf(-1, -1, -1, -1))
+            if (Probe.ON) times!!.add(Probe.BakeTimes.WALLS, wt)
+            ground(vx, vy, st, sr, sb, sl, kind, NO_EDGES)
         }
         // Platforms bring their own track, drawn with them.
         if (world.isPlatform(tile)) return
         // A level tile draws its pieces on their curves, each layer of every piece in turn, where CurveTiles says so;
         // the cars and the lines drawn over the map follow the same rule.
-        curveArt.cells(wx, wy)?.let { cells ->
+        val ct = if (Probe.ON) times!!.start() else 0L
+        curveArt.cells(wx, wy, view.turn)?.let { cells ->
             for (c in cells) sprite(c, vx, vy, sBase)
+            if (Probe.ON) times!!.add(Probe.BakeTimes.CURVE, ct)
             return
         }
+        // The curve lookup that said no counts as curve time.
+        val tt = if (Probe.ON) times!!.start() else 0L
+        if (Probe.ON) times!!.add(Probe.BakeTimes.CURVE, ct)
         // Every piece's bed, then the rails over them all: a single piece's own, or for two or more, which always lie
         // level, the rails of them together, gapped where they cross.
         var view = 0
@@ -344,6 +396,7 @@ internal class ChunkBaker(
         }
         if (view.countOneBits() >= 2) sprite(Atlas.RAIL_SETS[view], vx, vy, sBase)
         else sprite(Atlas.RAILS[view.countTrailingZeroBits() * 16 + sShape], vx, vy, sBase)
+        if (Probe.ON) times!!.add(Probe.BakeTimes.TRACK, tt)
     }
 
     /** The second pass: the shadows of what stands on a tile, laid over the ground of every tile before anything stands up. */
@@ -423,21 +476,37 @@ internal class ChunkBaker(
         val pieces = world.trackAt(wx, wy)
         val kind = kindOf(vx, vy)
         if (pieces == 0) {
+            val bt = if (Probe.ON) times!!.start() else 0L
             val b = building(vx, vy, shadow)
             if (b != NOTHING) {
                 if (b >= 0) sprite((b shr 32).toInt(), vx, vy, b.toInt(), shadow)
+                if (Probe.ON) times!!.add(Probe.BakeTimes.BUILDING, bt)
                 return
             }
+            if (Probe.ON) times!!.add(Probe.BakeTimes.BUILDING, bt)
             if (world.road[tile].toInt() != 0) {
+                val st = if (Probe.ON) times!!.start() else 0L
                 streetTrees(wx, wy, shadow)
+                if (Probe.ON) times!!.add(Probe.BakeTimes.STREET, st)
                 return
             }
             if (kind != Atlas.WATER && kind != Atlas.SAND && !world.townBuilt(tile)) {
+                val tt = if (Probe.ON) times!!.start() else 0L
                 trees(wx, wy, shadow)
+                if (Probe.ON) times!!.add(Probe.BakeTimes.TREES, tt)
+                val dt = if (Probe.ON) times!!.start() else 0L
                 decor(wx, wy, kind, shadow)
+                if (Probe.ON) times!!.add(Probe.BakeTimes.DECOR, dt)
             }
             return
         }
+        val pt = if (Probe.ON) times!!.start() else 0L
+        standingOnTrack(vx, vy, wx, wy, tile, pieces, shadow)
+        if (Probe.ON) times!!.add(Probe.BakeTimes.STATION, pt)
+    }
+
+    /** What stands on a tile with track: a depot, or a platform and its canopy. */
+    private fun standingOnTrack(vx: Int, vy: Int, wx: Int, wy: Int, tile: Int, pieces: Int, shadow: Boolean) {
         val base = minOf(minOf(cornerHeight(vx, vy), cornerHeight(vx + 1, vy)), minOf(cornerHeight(vx + 1, vy + 1), cornerHeight(vx, vy + 1)))
         world.depotTiles[tile]?.let { id ->
             val d = world.depots.getOrNull(id) ?: return@let
@@ -480,13 +549,14 @@ internal class ChunkBaker(
      * [soft] for the land's own corners: slopes no lighter than flat take their light from the corners, so it fades across the tile.
      */
     private fun ground(vx: Int, vy: Int, t: Int, r: Int, b: Int, l: Int, kind: Int, edges: IntArray, road: Int = 0, weather: Boolean = false, banks: Int = 0, aero: Int = 0, soft: Boolean = false) {
+        val gt = if (Probe.ON) times!!.start() else 0L
         // Split along whichever diagonal has its ends level, as the slopes are drawn. Each half is a plane
         // h = h0 + gu * u + gv * v over the tile's own u and v.
         val alongRL = r == l
         val p1 = if (alongRL) floatArrayOf(t.toFloat(), (r - t).toFloat(), (l - t).toFloat()) else floatArrayOf(t.toFloat(), (r - t).toFloat(), (b - r).toFloat())
         val p2 = if (alongRL) floatArrayOf((r + l - b).toFloat(), (b - l).toFloat(), (b - r).toFloat()) else floatArrayOf(t.toFloat(), (b - l).toFloat(), (l - t).toFloat())
-        val f1 = light(p1[1], p1[2])
-        val f2 = light(p2[1], p2[2])
+        val f1 = planeLight(p1[1], p1[2])
+        val f2 = planeLight(p2[1], p2[2])
         val sloped1 = p1[1] != 0f || p1[2] != 0f
         val sloped2 = p2[1] != 0f || p2[2] != 0f
         // Ridges and hollows, from each corner, spread across the tile; none on the water.
@@ -543,7 +613,10 @@ internal class ChunkBaker(
         val x1 = minOf(width - 1, right)
         val y0 = maxOf(0, top)
         val y1 = minOf(height - 1, bottom)
-        if (x0 > x1 || y0 > y1) return
+        if (x0 > x1 || y0 > y1) {
+            if (Probe.ON) times!!.add(Probe.BakeTimes.FILL_SETUP, gt)
+            return
+        }
         val rankHere = rank(kind)
         val txBase = (vx % Atlas.PERIOD) * texels
         val tyBase = (vy % Atlas.PERIOD) * texels
@@ -552,17 +625,30 @@ internal class ChunkBaker(
         val baseY = originY + (vx + vy) * hh
         val baseX = originX + (vx - vy) * hw
         // The neighbours whose ground spreads in across each edge, -1 for none.
-        val spread = IntArray(4) { e -> edges[e].let { if (it < 0 || it == kind || rank(it) <= rankHere) -1 else it } }
-        val spreads = spread.any { it >= 0 }
+        val spread = spreadKinds
+        var spreads = false
+        for (e in 0 until 4) {
+            spread[e] = edges[e].let { if (it < 0 || it == kind || rank(it) <= rankHere) -1 else it }
+            if (spread[e] >= 0) spreads = true
+        }
         // Which pixels the tile covers and where each falls on it, the same for every tile of its shape.
         val base = minOf(minOf(t, r), minOf(b, l))
         val cover = coverOf(t - base, r - base, b - base, l - base)
         val bx = baseX.toInt()
         val by = (baseY - base * step).toInt()
+        // Snow covers fully where its depth is 3 cm past 0.5 + 14 * the patch noise (at most 1): 17.5 cm, here 18 for rounding.
+        // On a road or airport paving it packs down and the paving shows, so those are worked out in full.
+        val buried = snowy && (!water || icy || banks != 0) && road == 0 && aero == 0 && minOf(minOf(st, sr), minOf(sb, sl)) >= FULL_SNOW
+        val snowBase = Atlas.SNOW * size * size
+        var roadHere = false
+        if (Probe.ON) times!!.add(Probe.BakeTimes.FILL_SETUP, gt)
+        val lt0 = if (Probe.ON) times!!.start() else 0L
+        var painted = 0
         for (k in 0 until cover.size) {
             val px = bx + cover.dx[k]
             val py = by + cover.dy[k]
             if (px < x0 || px > x1 || py < y0 || py > y1) continue
+            if (Probe.ON) painted++
             val u = cover.u[k]
             val v = cover.v[k]
             val second = cover.second[k]
@@ -572,49 +658,59 @@ internal class ChunkBaker(
             val tx = txBase + (u * texels).toInt()
             val ty = tyBase + (v * texels).toInt()
             val ti = ty * size + tx
-            var texel = sheets.ground[kindBase + ti]
-            val rag = (sheets.ground[ragBase + ti] and 255) / 255f
-            if (sloped && bare >= 0) {
-                // Patches of it, from the same noise read somewhere else so they don't follow the kinds' edges.
-                val patch = (sheets.ground[ragBase + ((ty + size / 2) % size) * size + (tx + size / 3) % size] and 255) / 255f
-                if (patch > BARE_FROM) texel = sheets.ground[bare * size * size + ti]
-            }
-            // Higher ranked ground next door spreads in across the edge with a ragged line; water gets foam at the shore.
-            if (spreads) for (e in 0 until 4) {
-                val other = spread[e]
-                if (other < 0) continue
-                val dist = when (e) { 0 -> v; 1 -> 1f - u; 2 -> 1f - v; else -> u }
-                val reach = 0.08f + rag * 0.26f
-                if (dist < reach) {
-                    texel = sheets.ground[other * size * size + ti]
-                } else if (kind == Atlas.WATER && dist < reach + 0.07f && !icy) {
-                    texel = FOAM
+            var texel: Int
+            // Under full snow only the snow shows: mix(any, snow, 1f) is the snow.
+            if (buried) texel = (0xff shl 24) or (sheets.ground[snowBase + ti] and 0xffffff)
+            else {
+                texel = sheets.ground[kindBase + ti]
+                val rag = (sheets.ground[ragBase + ti] and 255) / 255f
+                if (sloped && bare >= 0) {
+                    // Patches of it, from the same noise read somewhere else so they don't follow the kinds' edges.
+                    val patch = (sheets.ground[ragBase + ((ty + size / 2) % size) * size + (tx + size / 3) % size] and 255) / 255f
+                    if (patch > BARE_FROM) texel = sheets.ground[bare * size * size + ti]
                 }
-            }
-            if (gradeBy > 0f) texel = mix(texel, grade, gradeBy)
-            if (muddy > 0f) texel = mix(texel, MUD, muddy)
-            if (charred > 0f) texel = mix(texel, CHARCOAL, charred * (0.85f + rag * 0.15f))
-            if (road != 0) texel = roadTexel(u, v, road, ti, texel)
-            if (aero != 0) texel = airportTexel(u, v, aero, texel)
-            if (icy) {
-                val ice = iT * (1f - u) * (1f - v) + ir * u * (1f - v) + ib * u * v + il * (1f - u) * v
-                if (ice >= ICE_FROM) texel = mix(texel, mix(ICE, ICE_DARK, rag * 0.6f), (0.5f + ice / 60f).coerceAtMost(0.92f))
-            }
-            if (banks != 0) for (k in 0 until 4) {
-                if (banks and (1 shl k) == 0) continue
-                val dist = when (k) { 0 -> v; 1 -> 1f - u; 2 -> 1f - v; else -> u }
-                if (dist < BANK) texel = mix(STONE, sheets.ground[Atlas.ROCK * size * size + ti], 0.3f)
-            }
-            if (snowy && (!water || icy || banks != 0)) {
-                val depth = st * (1f - u) * (1f - v) + sr * u * (1f - v) + sb * u * v + sl * (1f - u) * v
-                // Thin snow lies in patches, from noise read somewhere else again; deeper, it covers everything.
-                val patch = (sheets.ground[ragBase + ((ty + size / 3) % size) * size + (tx + size / 2) % size] and 255) / 255f
-                val cover = ((depth - (0.5f + patch * 14f)) / 3f).coerceIn(0f, 1f)
-                if (cover > 0f) {
-                    // Traffic packs the snow on a road down to a greyer track, so the road still shows through.
-                    val onRoad = (road != 0 && roadTexel(u, v, road, ti, NOT_ROAD) != NOT_ROAD) || (aero != 0 && airportTexel(u, v, aero, NOT_ROAD) != NOT_ROAD)
-                    texel = mix(texel, sheets.ground[Atlas.SNOW * size * size + ti], if (onRoad) cover * 0.8f else cover)
-                    if (onRoad) texel = mix(texel, PACKED_SNOW, cover * 0.45f)
+                // Higher ranked ground next door spreads in across the edge with a ragged line; water gets foam at the shore.
+                if (spreads) for (e in 0 until 4) {
+                    val other = spread[e]
+                    if (other < 0) continue
+                    val dist = when (e) { 0 -> v; 1 -> 1f - u; 2 -> 1f - v; else -> u }
+                    val reach = 0.08f + rag * 0.26f
+                    if (dist < reach) {
+                        texel = sheets.ground[other * size * size + ti]
+                    } else if (kind == Atlas.WATER && dist < reach + 0.07f && !icy) {
+                        texel = FOAM
+                    }
+                }
+                if (gradeBy > 0f) texel = mix(texel, grade, gradeBy)
+                if (muddy > 0f) texel = mix(texel, MUD, muddy)
+                if (charred > 0f) texel = mix(texel, CHARCOAL, charred * (0.85f + rag * 0.15f))
+                if (road != 0) {
+                    val got = roadTexel(u, v, road, ti, texel)
+                    // Whether roadTexel(u, v, road, ti, NOT_ROAD) would differ from NOT_ROAD: which way it went doesn't depend on the ground.
+                    roadHere = when (roadPart) { ROAD_GROUND -> false; ROAD_SHOULDER -> true; else -> got != NOT_ROAD }
+                    texel = got
+                }
+                if (aero != 0) texel = airportTexel(u, v, aero, texel)
+                if (icy) {
+                    val ice = iT * (1f - u) * (1f - v) + ir * u * (1f - v) + ib * u * v + il * (1f - u) * v
+                    if (ice >= ICE_FROM) texel = mix(texel, mix(ICE, ICE_DARK, rag * 0.6f), (0.5f + ice / 60f).coerceAtMost(0.92f))
+                }
+                if (banks != 0) for (k in 0 until 4) {
+                    if (banks and (1 shl k) == 0) continue
+                    val dist = when (k) { 0 -> v; 1 -> 1f - u; 2 -> 1f - v; else -> u }
+                    if (dist < BANK) texel = mix(STONE, sheets.ground[Atlas.ROCK * size * size + ti], 0.3f)
+                }
+                if (snowy && (!water || icy || banks != 0)) {
+                    val depth = st * (1f - u) * (1f - v) + sr * u * (1f - v) + sb * u * v + sl * (1f - u) * v
+                    // Thin snow lies in patches, from noise read somewhere else again; deeper, it covers everything.
+                    val patch = (sheets.ground[ragBase + ((ty + size / 3) % size) * size + (tx + size / 2) % size] and 255) / 255f
+                    val cover = ((depth - (0.5f + patch * 14f)) / 3f).coerceIn(0f, 1f)
+                    if (cover > 0f) {
+                        // Traffic packs the snow on a road down to a greyer track, so the road still shows through.
+                        val onRoad = (road != 0 && roadHere) || (aero != 0 && airportTexel(u, v, aero, NOT_ROAD) != NOT_ROAD)
+                        texel = mix(texel, sheets.ground[snowBase + ti], if (onRoad) cover * 0.8f else cover)
+                        if (onRoad) texel = mix(texel, PACKED_SNOW, cover * 0.45f)
+                    }
                 }
             }
             val rel = rt * (1f - u) * (1f - v) + rr * u * (1f - v) + rb * u * v + rl * (1f - u) * v
@@ -625,7 +721,7 @@ internal class ChunkBaker(
             if (foot) {
                 // From the corners rather than the half's plane, so it doesn't break along the split.
                 val up = (t * (1f - u) * (1f - v) + r * u * (1f - v) + b * u * v + l * (1f - u) * v - low) / rise
-                if (up < FOOT_BAND && (road == 0 || roadTexel(u, v, road, ti, NOT_ROAD) == NOT_ROAD)) {
+                if (up < FOOT_BAND && (road == 0 || !roadHere)) {
                     val s = 1f - up / FOOT_BAND
                     shade *= 1f - FOOT_SHADE * s * s
                 }
@@ -657,7 +753,22 @@ internal class ChunkBaker(
             }
             pixels[py * width + px] = out
         }
+        if (Probe.ON) {
+            val part = when {
+                aero != 0 -> Probe.BakeTimes.FILL_AERO
+                road != 0 -> Probe.BakeTimes.FILL_ROAD
+                water -> Probe.BakeTimes.FILL_WATER
+                snowy -> Probe.BakeTimes.FILL_SNOW
+                else -> Probe.BakeTimes.FILL_PLAIN
+            }
+            times!!.add(part, lt0)
+            times.pixels[part] += painted
+        }
     }
+
+    /** The kinds across a tile's edges for [ground], and those that spread in, kept to save making them for every tile. */
+    private val edgeKinds = IntArray(4)
+    private val spreadKinds = IntArray(4)
 
     /** The pixels a tile covers, as offsets from its left corner's column and its top at height 0, with where each falls on the tile. */
     private class Cover(val dx: IntArray, val dy: IntArray, val u: FloatArray, val v: FloatArray, val second: BooleanArray) {
@@ -852,6 +963,7 @@ internal class ChunkBaker(
      * to the shopfronts. A paved straight has a dashed line down it. [ground] is what's there otherwise.
      */
     private fun roadTexel(u: Float, v: Float, bits: Int, ti: Int, ground: Int): Int {
+        roadPart = ROAD_PAVING
         val paved = bits and PAVED != 0
         val highway = bits and HIGHWAY != 0
         val d = roadDistance(u, v, bits)
@@ -876,17 +988,25 @@ internal class ChunkBaker(
         }
         // Sidewalks and boulevards only in towns; a company's road out in the country has a gravel shoulder.
         if (!paved || bits and TOWN_ROAD == 0) {
-            return if (paved && d < half + SHOULDER) mix(ground, GRAVEL_GREY, 0.5f) else ground
+            if (paved && d < half + SHOULDER) {
+                roadPart = ROAD_SHOULDER
+                return mix(ground, GRAVEL_GREY, 0.5f)
+            }
+            roadPart = ROAD_GROUND
+            return ground
         }
         val walk = sheets.ground[Atlas.PAVEMENT * size * size + ti]
         return when {
             d < CARRIAGEWAY + KERB -> lit(walk, 190)
             bits and DOWNTOWN != 0 -> walk
-            d < BOULEVARD -> ground
+            d < BOULEVARD -> ground.also { roadPart = ROAD_GROUND }
             d < SIDEWALK -> walk
-            else -> ground
+            else -> ground.also { roadPart = ROAD_GROUND }
         }
     }
+
+    /** Which way the last [roadTexel] went: [ROAD_GROUND] gave the ground back, [ROAD_SHOULDER] mixed it, [ROAD_PAVING] ignored it. */
+    private var roadPart = ROAD_PAVING
 
     /** Whether ([u], [v]) is on a streetcar rail: a pair a little either side of the middle of each arm of the road. */
     /** The tile corner a road that only turns a corner turns round, as (u, v), or null for any other road. */
@@ -995,8 +1115,31 @@ internal class ChunkBaker(
         return (f * 256).toInt()
     }
 
+    /** [light] for a tile half's slopes, which are whole steps, from [PLANE_LIGHTS] for the usual ones. */
+    private fun planeLight(gu: Float, gv: Float): Int {
+        val iu = gu.toInt()
+        val iv = gv.toInt()
+        if (iu.toFloat() != gu || iv.toFloat() != gv || iu !in -PLANE_REACH..PLANE_REACH || iv !in -PLANE_REACH..PLANE_REACH) return light(gu, gv)
+        val k = (iu + PLANE_REACH) * (2 * PLANE_REACH + 1) + iv + PLANE_REACH
+        var f = PLANE_LIGHTS[k]
+        if (f == UNKNOWN) {
+            f = light(gu, gv)
+            PLANE_LIGHTS[k] = f
+        }
+        return f
+    }
+
     /** The [light] at view corner ([vx], [vy]), from the slope across the corners either side of it. */
     private fun cornerLight(vx: Int, vy: Int): Float {
+        val gx = vx - gx0
+        val gy = vy - gy0
+        if (gx !in 0 until gw || gy !in 0 until gh) return lightAt(vx, vy)
+        val i = gy * gw + gx
+        if (lights[i].isNaN()) lights[i] = lightAt(vx, vy)
+        return lights[i]
+    }
+
+    private fun lightAt(vx: Int, vy: Int): Float {
         val x0 = maxOf(0, vx - 1)
         val x1 = minOf(view.viewWidth, vx + 1)
         val y0 = maxOf(0, vy - 1)
@@ -1043,6 +1186,14 @@ internal class ChunkBaker(
     /** Shadow [cell] from the shadows sheet laid at ([ax], [ay]): what's under it darkened by how dark the shadow is there. */
     private fun shade(cell: Int, ax: Float, ay: Float) {
         if (cell < 0) return
+        if (Probe.ON) {
+            val st = times!!.start()
+            shadeOn(cell, ax, ay)
+            times.add(Probe.BakeTimes.SHADE, st)
+        } else shadeOn(cell, ax, ay)
+    }
+
+    private fun shadeOn(cell: Int, ax: Float, ay: Float) {
         val r = cell * 6
         val sx = Atlas.SHADOW_RECTS[r] / shrink
         val sy = Atlas.SHADOW_RECTS[r + 1] / shrink
@@ -1071,6 +1222,14 @@ internal class ChunkBaker(
 
     private fun blit(cell: Int, ax: Float, ay: Float, snow: Int = 0) {
         if (cell < 0) return
+        if (Probe.ON) {
+            val bt = times!!.start()
+            blitOn(cell, ax, ay, snow)
+            times.add(Probe.BakeTimes.BLIT, bt)
+        } else blitOn(cell, ax, ay, snow)
+    }
+
+    private fun blitOn(cell: Int, ax: Float, ay: Float, snow: Int) {
         val r = cell * 6
         val sx = Atlas.STATIC_RECTS[r] / shrink
         val sy = Atlas.STATIC_RECTS[r + 1] / shrink
@@ -1135,12 +1294,62 @@ internal class ChunkBaker(
      * round it and are younger. Some take the kind of a wooded neighbour, so stands mix where they meet.
      */
     private fun trees(wx: Int, wy: Int, shadow: Boolean) {
+        val tile = world.index(wx, wy)
+        val cells = treeCells(shadow)
+        // The shadow pass works the spots out and keeps them; the object pass, coming to the same tiles in the same
+        // order, draws the ones kept.
+        val first: Int
+        val until: Int
+        if (!shadow && treeNext < treeTiles && treeTile[treeNext] == tile) {
+            first = treeFirst[treeNext]
+            until = treeFirst[treeNext + 1]
+            treeNext++
+        } else {
+            first = treeFirst[treeTiles]
+            until = treeSpots(wx, wy, first)
+            if (shadow && until > first) {
+                if (treeTiles + 1 >= treeTile.size) {
+                    treeTile = treeTile.copyOf(treeTile.size * 2)
+                    treeFirst = treeFirst.copyOf(treeFirst.size * 2)
+                }
+                treeTile[treeTiles++] = tile
+                treeFirst[treeTiles] = until
+            }
+        }
+        for (k in first until until) {
+            if (shadow) shade(cells[spotCell[k]], spotAx[k], spotAy[k])
+            else blit(cells[spotCell[k]], spotAx[k], spotAy[k], snowCover(spotSnow[k]))
+        }
+    }
+
+    // Tree spots, kept from the shadow pass for the object pass: the tiles with any in the order they came and where
+    // each one's spots start (one more, the end), then each spot's anchor, tree (kind * looks + look) and world tile.
+    private var treeTile = IntArray(256)
+    private var treeFirst = IntArray(257)
+    private var treeTiles = 0
+    private var treeNext = 0
+    private var spotAx = FloatArray(1024)
+    private var spotAy = FloatArray(1024)
+    private var spotCell = IntArray(1024)
+    private var spotSnow = IntArray(1024)
+    private var spotKey = FloatArray(1024)
+    private val wooded = IntArray(8)
+
+    /** Works out the trees on world tile ([wx], [wy]) into the spots from [first], the furthest first, and returns where they end. */
+    private fun treeSpots(wx: Int, wy: Int, first: Int): Int {
         val packed = world.trees[world.index(wx, wy)].toInt()
         // Each of the sim's trees (0 to 3) is drawn as two, so a full tile reads as forest.
         val n = Trees.count(packed) * TREE_SPRITES
-        if (n == 0) return
+        if (n == 0) return first
+        if (first + n > spotAx.size) {
+            val size = maxOf(spotAx.size * 2, first + n)
+            spotAx = spotAx.copyOf(size)
+            spotAy = spotAy.copyOf(size)
+            spotCell = spotCell.copyOf(size)
+            spotSnow = spotSnow.copyOf(size)
+            spotKey = spotKey.copyOf(size)
+        }
         val kind = Trees.kind(packed)
-        val wooded = IntArray(8)
         var around = 0
         for (dy in -1..1) for (dx in -1..1) {
             if (dx == 0 && dy == 0) continue
@@ -1155,17 +1364,20 @@ internal class ChunkBaker(
         val c = LandPainter.dice(wx, wy, 97)
         val cx = 0.3f + (c and 255) / 255f * 0.4f
         val cy = 0.3f + ((c shr 8) and 255) / 255f * 0.4f
-        val spots = ArrayList<FloatArray>(n)
         for (k in 0 until n) {
             val d = LandPainter.dice(wx, wy, k)
             val jx = (d and 255) / 255f
             val jy = ((d shr 8) and 255) / 255f
             // Kept off the tile's edges so they don't crowd onto the track next door.
-            val (ux, uy) = if (deep) {
+            val ux: Float
+            val uy: Float
+            if (deep) {
                 // Close canopy: a loose three by two grid, each tree in the middle part of its cell so gaps stay small.
-                0.14f + (k % 3 + 0.15f + jx * 0.7f) * 0.24f to 0.14f + (k / 3 % 2 + 0.15f + jy * 0.7f) * 0.36f
+                ux = 0.14f + (k % 3 + 0.15f + jx * 0.7f) * 0.24f
+                uy = 0.14f + (k / 3 % 2 + 0.15f + jy * 0.7f) * 0.36f
             } else {
-                (cx + (jx - 0.5f) * 0.5f).coerceIn(0.12f, 0.88f) to (cy + (jy - 0.5f) * 0.5f).coerceIn(0.12f, 0.88f)
+                ux = (cx + (jx - 0.5f) * 0.5f).coerceIn(0.12f, 0.88f)
+                uy = (cy + (jy - 0.5f) * 0.5f).coerceIn(0.12f, 0.88f)
             }
             val tx = wx + ux
             val ty = wy + uy
@@ -1174,11 +1386,28 @@ internal class ChunkBaker(
             var look = (((d shr 16) and 255) % Atlas.TREE_LOOKS + age).coerceIn(0, Atlas.TREE_LOOKS - 1)
             // A pine's oldest look is the big white pine; only one in four of those, so it stands out among jack pines.
             if (own == Trees.PINE && look == Atlas.TREE_LOOKS - 1 && (d ushr 30) != 0) look--
-            spots += floatArrayOf(view.toViewX(tx, ty) + view.toViewY(tx, ty), tx, ty, look.toFloat(), own.toFloat())
+            // Where it stands, as [standing] works it out, sorted in by how far back it is; ties keep their order.
+            val key = view.toViewX(tx, ty) + view.toViewY(tx, ty)
+            val vx = view.toViewX(tx, ty)
+            val vy = view.toViewY(tx, ty)
+            val ax = x(vx - 0.5f, vy - 0.5f)
+            val ay = y(vx - 0.5f, vy - 0.5f, groundHeight(world, tx, ty))
+            var at = first + k
+            while (at > first && spotKey[at - 1].compareTo(key) > 0) {
+                spotKey[at] = spotKey[at - 1]
+                spotAx[at] = spotAx[at - 1]
+                spotAy[at] = spotAy[at - 1]
+                spotCell[at] = spotCell[at - 1]
+                spotSnow[at] = spotSnow[at - 1]
+                at--
+            }
+            spotKey[at] = key
+            spotAx[at] = ax
+            spotAy[at] = ay
+            spotCell[at] = own * Atlas.TREE_LOOKS + look
+            spotSnow[at] = world.index(tx.toInt().coerceIn(0, world.width - 1), ty.toInt().coerceIn(0, world.height - 1))
         }
-        spots.sortBy { it[0] }
-        val cells = treeCells(shadow)
-        for (sp in spots) standing(cells[sp[4].toInt() * Atlas.TREE_LOOKS + sp[3].toInt()], sp[1], sp[2], shadow)
+        return first + n
     }
 
     /** The trees for the time of year: leafy ones turning in autumn and bare from late autumn till spring. */
@@ -1257,6 +1486,13 @@ internal class ChunkBaker(
 
         /** Corners each way looked at for ridges and hollows, and how much lighter or darker a step above or below makes them. */
         private const val RELIEF = 3
+        /** Not worked out yet, in [kinds], [snowSums] and [PLANE_LIGHTS]. */
+        private const val UNKNOWN = Int.MIN_VALUE
+        /** [light] for slopes of up to this many steps each way, filled as asked for; bakers on other threads may fill the same one, with the same value. */
+        private const val PLANE_REACH = 4
+        private val PLANE_LIGHTS = IntArray((2 * PLANE_REACH + 1) * (2 * PLANE_REACH + 1)) { UNKNOWN }
+        /** No neighbours' ground spreading in. Never written. */
+        private val NO_EDGES = intArrayOf(-1, -1, -1, -1)
         /** What [building] gives for no building, and for one with no drawing. */
         const val NOTHING = -1L
         const val NO_ART = -2L
@@ -1421,6 +1657,11 @@ internal class ChunkBaker(
         private const val TAXI_LINE = 0xffe8c030.toInt()
         /** Passed to roadTexel as the ground, to tell where a road shows. */
         private const val NOT_ROAD = 0x00010203
+        private const val ROAD_GROUND = 0
+        private const val ROAD_SHOULDER = 1
+        private const val ROAD_PAVING = 2
+        /** Snow at every corner of a tile, in cm, that covers its ground fully; see [ground]. */
+        private const val FULL_SNOW = 18f
         private const val MUD_MOST = 0.45f
 
         /**

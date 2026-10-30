@@ -1,0 +1,14 @@
+# Hand-written wildcard rules, compiled ahead of time on install. Covers the app, the shared module
+# (map drawing, sheet decode, UI), sim and net, which are merged into the app's dex, and Compose.
+HSPLcom/rm/interchange/**;->**(**)**
+Lcom/rm/interchange/**;
+HSPLandroidx/compose/**;->**(**)**
+Landroidx/compose/**;
+HSPLandroidx/activity/**;->**(**)**
+HSPLkotlin/**;->**(**)**
+HSPLkotlinx/coroutines/**;->**(**)**
+HSPLkotlinx/serialization/**;->**(**)**
+HSPLandroidx/collection/**;->**(**)**
+HSPLandroidx/lifecycle/**;->**(**)**
+HSPLandroidx/core/**;->**(**)**
+HSPLorg/jetbrains/compose/**;->**(**)**

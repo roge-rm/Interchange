@@ -12,10 +12,13 @@ package com.rm.interchange.sim
  * [world] gives the world when asked, so a cache holding this needn't keep a dropped world. [maskOf] gives the track
  * pieces on a tile in world terms, the world's own unless a plan is being looked at. Not thread safe: one per thread.
  *
- * Only the curves in the view's own turn are kept ([keys]); [curved] works out the other turns on small capped caches.
+ * Only the curves in the view's own turn are kept ([keys]); [curved] works out the other turns on small capped caches,
+ * or with [keepTurns] keeps every turn's, for the map's bakers, which look at every tile at every level.
  */
-class CurveTiles(private val world: () -> World, private val maskOf: (Int, Int) -> Int) {
-    constructor(world: () -> World) : this(world, { x, y -> maskAt(world(), x, y) })
+class CurveTiles private constructor(private val world: () -> World, private val maskOf: (Int, Int) -> Int, private val keepTurns: Boolean) {
+    constructor(world: () -> World, maskOf: (Int, Int) -> Int) : this(world, maskOf, false)
+    constructor(world: () -> World) : this(world, { x, y -> maskAt(world(), x, y) }, false)
+    constructor(keepTurns: Boolean, world: () -> World) : this(world, { x, y -> maskAt(world(), x, y) }, keepTurns)
 
     /** The world's curves, in world terms. */
     val curves = TrackCurves(maskOf) { x, y -> TrackCurves.flagsOf(world(), x, y) }
@@ -35,9 +38,9 @@ class CurveTiles(private val world: () -> World, private val maskOf: (Int, Int) 
         if (!levelRail(w, x, y, if (w.inside(x, y)) maskOf(x, y) else 0)) return false
         val known = CurveKeys.known ?: return true
         for (t in 0..3) {
-            val probe = if (t == 0) curves else (probes[t] ?: turnedCurves(t).also { probes[t] = it })
+            val probe = if (t == 0) curves else if (keepTurns) turnedOf(t) else (probes[t] ?: turnedCurves(t).also { probes[t] = it })
             val keys = CurveKeys.at(probe, masks[t], ux(t, x, y), uy(t, x, y))
-            if (t != 0 && probe.size > PROBE_KEEP) probe.invalidateAll()
+            if (t != 0 && !keepTurns && probe.size > PROBE_KEEP) probe.invalidateAll()
             if (keys.isEmpty()) return false
             for (k in keys) if (k !in known) return false
         }
@@ -45,7 +48,9 @@ class CurveTiles(private val world: () -> World, private val maskOf: (Int, Int) 
     }
 
     /** The sprite keys tile ([x], [y]) draws with the view at quarter turn [turn], as [CurveKeys.at] gives them. */
-    fun keys(x: Int, y: Int, turn: Int): List<String> = CurveKeys.at(turned[turn] ?: turnedCurves(turn).also { turned[turn] = it }, masks[turn], ux(turn, x, y), uy(turn, x, y))
+    fun keys(x: Int, y: Int, turn: Int): List<String> = CurveKeys.at(turnedOf(turn), masks[turn], ux(turn, x, y), uy(turn, x, y))
+
+    private fun turnedOf(t: Int) = turned[t] ?: turnedCurves(t).also { turned[t] = it }
 
     /** Forgets the curves that read any tile from ([x0], [y0]) to ([x1], [y1]) inclusive. */
     fun invalidate(x0: Int, y0: Int, x1: Int, y1: Int) {
