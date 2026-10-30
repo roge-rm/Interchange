@@ -127,6 +127,13 @@ internal class Renderer(private val world: World, private val sheets: Sheets, pr
     private var lastTurn = -1
     private var driftX = 0f
     private var driftY = 0f
+    /** How fast the view's panning, in screen pixels a second, and when it was last worked out, in nanoseconds. */
+    private var velX = 0f
+    private var velY = 0f
+    private var lastNanos = -1L
+    private var lastHalfWidth = 0f
+    /** About how long a chunk takes to bake at each level, in milliseconds, from the last few. */
+    private val bakeMillis = FloatArray(LEVELS.size) { 300f }
 
     private var lookDay = -1
     private var look = Climate.SUMMER
@@ -188,6 +195,7 @@ internal class Renderer(private val world: World, private val sheets: Sheets, pr
         val fx = view.focusViewX()
         val fy = view.focusViewY()
         if (view.turn == lastTurn) { driftX = driftX * 0.8f + (fx - lastX) * 0.2f; driftY = driftY * 0.8f + (fy - lastY) * 0.2f } else { driftX = 0f; driftY = 0f }
+        panVelocity(view, fx, fy)
         lastX = fx; lastY = fy; lastTurn = view.turn
         // A copy of the weather to bake from: the first, then a new one every while if it's changed, counted from when
         // the map first shows so the first screen is all one copy.
@@ -257,6 +265,18 @@ internal class Renderer(private val world: World, private val sheets: Sheets, pr
                 }
             }
         }
+        // Where the pan will be in LEAD_SECONDS, at most a screen on, and whether it's coming on chunks faster than every
+        // baker together can bake them at this level.
+        val leadX = (velX * LEAD_SECONDS).coerceIn(-size.width, size.width)
+        val leadY = (velY * LEAD_SECONDS).coerceIn(-size.height, size.height)
+        val moving = kotlin.math.abs(velX) > size.width * MOVING || kotlin.math.abs(velY) > size.height * MOVING
+        val outrun = moving && run {
+            val scale = view.halfWidth / LEVELS[level]
+            val w = CHUNK_PIXELS * scale
+            val h = CHUNK_ROWS * scale
+            val coming = kotlin.math.abs(velX) / w * (size.height / h + 1) + kotlin.math.abs(velY) / h * (size.width / w + 1)
+            coming > minOf(BAKERS + BACKGROUND, Workers.threads) * 1000f / bakeMillis[level]
+        }
         val cx = size.width / 2 + (driftX - driftY) * view.halfWidth * AHEAD
         val cy = size.height / 2 + (driftX + driftY) * view.halfHeight * AHEAD
         // The coarsest level, for the whole map when that's small or else round about, so there's always something to show
@@ -281,22 +301,32 @@ internal class Renderer(private val world: World, private val sheets: Sheets, pr
         // right after it, round it with the ring. Kept in step with the weather and building in the background.
         if (readyAt >= 0 && (level + 1 < COARSE || (level + 1 == COARSE && !coarseWhole))) {
             val room = bytes < BUDGET * 3 / 4
-            forEachVisible(view, level + 1, margin = size.width * RING) { key, left, top, right, bottom ->
+            // When the pan outruns the bakers, ahead along it too, ahead of this level's: a quarter the chunks for the same ground.
+            val ahead = if (outrun) 1f else 0f
+            val m = size.width * RING
+            forEachVisible(view, level + 1, m + ahead * max(0f, -leadX), m + ahead * max(0f, -leadY), m + ahead * max(0f, leadX), m + ahead * max(0f, leadY)) { key, left, top, right, bottom ->
                 val entry = cache[key]
                 if (entry != null) entry.used = frame
                 val onScreen = right > 0f && bottom > 0f && left < size.width && top < size.height
                 val mx = (left + right) / 2 - cx
                 val my = (top + bottom) / 2 - cy
                 val d = kotlin.math.sqrt(mx * mx + my * my) / (size.width + size.height)
-                if (entry == null) { if (onScreen) wanted += key to 1.6f else if (room) wanted += key to 2f + d }
-                else if (entry.version != versionOf(view, level + 1, key.cx, key.cy) || entry.weatherSum != weatherSum(view, key, weather)) {
+                val reached = if (outrun && !onScreen) reachedIn(left, top, right, bottom) else Float.MAX_VALUE
+                val inRing = right > -m && bottom > -m && left < size.width + m && top < size.height + m
+                if (entry == null) {
+                    if (onScreen) wanted += key to 1.6f
+                    else if (room && reached <= LEAD_SECONDS) wanted += key to 2f + AHEAD_SPAN / 2 * reached / LEAD_SECONDS
+                    else if (room && inRing) wanted += key to 2f + d
+                }
+                else if (inRing && (entry.version != versionOf(view, level + 1, key.cx, key.cy) || entry.weatherSum != weatherSum(view, key, weather))) {
                     if (onScreen || room) wanted += key to 2f + d
                 }
             }
         }
         // Once the screen has all it needs: a ring round it at this level, the way it's moving first, and the next level
         // in where zooming in would show it, once the screen is near the size that switches to it, while there's room.
-        if (wanted.none { it.second < 2f } && bytes < BUDGET * 3 / 4) {
+        val settled = wanted.none { it.second < 2f }
+        if (settled && bytes < BUDGET * 3 / 4) {
             val near = view.halfWidth / LEVELS[level]
             if (level - 1 >= SHARPEST && near > FINER_FROM) {
                 forEachVisible(view, level - 1, margin = -(1f - near) / 2 * min(size.width, size.height)) { key, left, top, right, bottom ->
@@ -309,13 +339,24 @@ internal class Renderer(private val world: World, private val sheets: Sheets, pr
                     }
                 }
             }
-            forEachVisible(view, level, margin = size.width * (if (level >= FAR_LEVEL) FAR_RING else RING)) { key, left, top, right, bottom ->
+        }
+        // A ring round the screen at this level once it has all it needs, the way it's moving first. Panning, ahead along
+        // the pan as far as it goes in LEAD_SECONDS, the soonest reached first, even while the screen still has chunks to
+        // come, as these bake in the background; the ring behind it waits till the pan stops.
+        if ((settled || moving) && bytes < BUDGET * 3 / 4) {
+            val m = size.width * (if (level >= FAR_LEVEL) FAR_RING else RING)
+            val ring = if (settled) m else 0f
+            forEachVisible(view, level, ring + max(0f, -leadX), ring + max(0f, -leadY), ring + max(0f, leadX), ring + max(0f, leadY)) { key, left, top, right, bottom ->
                 val entry = cache[key]
                 if (entry != null) entry.used = frame
                 if (entry == null) {
+                    val onScreen = right > 0f && bottom > 0f && left < size.width && top < size.height
+                    val reached = if (moving && !onScreen) reachedIn(left, top, right, bottom) else Float.MAX_VALUE
                     val mx = (left + right) / 2 - cx
                     val my = (top + bottom) / 2 - cy
-                    wanted += key to 2f + kotlin.math.sqrt(mx * mx + my * my) / (size.width + size.height)
+                    if (reached <= LEAD_SECONDS) wanted += key to 2f + AHEAD_SPAN * reached / LEAD_SECONDS
+                    else if (settled && right > -m && bottom > -m && left < size.width + m && top < size.height + m &&
+                        (!moving || (left + right - size.width) * velX + (top + bottom - size.height) * velY >= 0f)) wanted += key to 2f + kotlin.math.sqrt(mx * mx + my * my) / (size.width + size.height)
                 }
             }
         }
@@ -379,6 +420,52 @@ internal class Renderer(private val world: World, private val sheets: Sheets, pr
         }
         trim()
         if (Probe.ON) Probe.frameEnd()
+    }
+
+    /**
+     * Follows how fast the view's panning: quick to pick up a pan, slow to let go, so the pauses between strokes keep
+     * its way. A turn, a jump or a pinch starts it again.
+     */
+    private fun panVelocity(view: View, fx: Float, fy: Float) {
+        val nanos = clock.elapsedNow().inWholeNanoseconds
+        val zooming = view.halfWidth != lastHalfWidth
+        lastHalfWidth = view.halfWidth
+        if (view.turn != lastTurn || lastNanos < 0 || zooming) { velX = 0f; velY = 0f; lastNanos = nanos; return }
+        val dt = ((nanos - lastNanos) / 1e9f).coerceAtLeast(0.001f)
+        lastNanos = nanos
+        // After a pause in drawing the old pan says nothing about where the view goes next.
+        if (dt > 0.25f) { velX = 0f; velY = 0f; return }
+        val dvx = fx - lastX
+        val dvy = fy - lastY
+        val sx = (dvx - dvy) * view.halfWidth / dt
+        val sy = (dvx + dvy) * view.halfHeight / dt
+        // A jump moves a screen or more in a frame and has no way to carry on.
+        if (kotlin.math.abs(sx * dt) > JUMP_PIXELS || kotlin.math.abs(sy * dt) > JUMP_PIXELS) { velX = 0f; velY = 0f; return }
+        // Turning back picks up as quickly as starting, so it doesn't bake the old way for half a second.
+        val tau = if (sx * sx + sy * sy >= velX * velX + velY * velY || sx * velX + sy * velY < 0f) VEL_RISE else VEL_FALL
+        val a = 1f - kotlin.math.exp(-dt / tau)
+        velX += (sx - velX) * a
+        velY += (sy - velY) * a
+    }
+
+    /** In how many seconds the pan brings the chunk at [left], [top], [right], [bottom] onto the screen, or [Float.MAX_VALUE] if it doesn't. */
+    private fun DrawScope.reachedIn(left: Float, top: Float, right: Float, bottom: Float): Float {
+        // The chunk moves by minus the velocity; each axis gives when it starts and stops overlapping the screen on that axis.
+        var start = 0f
+        var end = Float.MAX_VALUE
+        if (kotlin.math.abs(velX) < 1f) { if (left >= size.width || right <= 0f) return Float.MAX_VALUE }
+        else {
+            val a = (left - size.width) / velX
+            val b = right / velX
+            start = max(start, min(a, b)); end = min(end, max(a, b))
+        }
+        if (kotlin.math.abs(velY) < 1f) { if (top >= size.height || bottom <= 0f) return Float.MAX_VALUE }
+        else {
+            val a = (top - size.height) / velY
+            val b = bottom / velY
+            start = max(start, min(a, b)); end = min(end, max(a, b))
+        }
+        return if (start < end) start else Float.MAX_VALUE
     }
 
     /** Starts baking [key] if its lane has room: on screen under priority 2, ahead from there. */
@@ -521,16 +608,20 @@ internal class Renderer(private val world: World, private val sheets: Sheets, pr
     }
 
     /** Each chunk at [level] that's at least partly within [margin] pixels of the screen and could hold some of the map. */
-    private inline fun DrawScope.forEachVisible(view: View, level: Int, margin: Float = 0f, block: (Key, left: Float, top: Float, right: Float, bottom: Float) -> Unit) {
+    private inline fun DrawScope.forEachVisible(view: View, level: Int, margin: Float = 0f, block: (Key, left: Float, top: Float, right: Float, bottom: Float) -> Unit) =
+        forEachVisible(view, level, margin, margin, margin, margin, block)
+
+    /** As above, with a margin for each side of the screen. */
+    private inline fun DrawScope.forEachVisible(view: View, level: Int, marginLeft: Float, marginTop: Float, marginRight: Float, marginBottom: Float, block: (Key, left: Float, top: Float, right: Float, bottom: Float) -> Unit) {
         val hw = LEVELS[level]
         val scale = view.halfWidth / hw
         val ox = view.screenX(0f, 0f, size.width)
         val oy = view.screenY(0f, 0f, 0f, size.height)
         // The map as drawn at this level, from the left and top of its far corners and highest land to its front edges.
-        val cx0 = max(floor((-margin - ox) / scale / CHUNK_PIXELS).toInt(), floor(-(view.viewHeight + 1) * hw / CHUNK_PIXELS).toInt())
-        val cx1 = min(floor((size.width + margin - ox) / scale / CHUNK_PIXELS).toInt(), floor((view.viewWidth + 1) * hw / CHUNK_PIXELS).toInt())
-        val cy0 = max(floor((-margin - oy) / scale / CHUNK_ROWS).toInt(), floor(-above(hw) / CHUNK_ROWS).toInt())
-        val cy1 = min(floor((size.height + margin - oy) / scale / CHUNK_ROWS).toInt(), floor(((view.viewWidth + view.viewHeight) * hw / 2 + hw) / CHUNK_ROWS).toInt())
+        val cx0 = max(floor((-marginLeft - ox) / scale / CHUNK_PIXELS).toInt(), floor(-(view.viewHeight + 1) * hw / CHUNK_PIXELS).toInt())
+        val cx1 = min(floor((size.width + marginRight - ox) / scale / CHUNK_PIXELS).toInt(), floor((view.viewWidth + 1) * hw / CHUNK_PIXELS).toInt())
+        val cy0 = max(floor((-marginTop - oy) / scale / CHUNK_ROWS).toInt(), floor(-above(hw) / CHUNK_ROWS).toInt())
+        val cy1 = min(floor((size.height + marginBottom - oy) / scale / CHUNK_ROWS).toInt(), floor(((view.viewWidth + view.viewHeight) * hw / 2 + hw) / CHUNK_ROWS).toInt())
         for (cy in cy0..cy1) for (cx in cx0..cx1) {
             placeChunk(view, level, cx, cy) { left, top, right, bottom -> block(Key(level, view.turn, cx, cy), left, top, right, bottom) }
         }
@@ -611,10 +702,16 @@ internal class Renderer(private val world: World, private val sheets: Sheets, pr
             val asked = if (Probe.ON) Probe.now() else 0L
             var started = 0L
             var micros = 0L
+            var took = 0L
             val (image, top) = withContext(if (ahead) background else bakers) {
+                val t0 = clock.elapsedNow().inWholeMilliseconds
                 if (Probe.ON) started = Probe.micros()
-                bakeChunk(bakeView, key, sheet, o, l, yr, weather).also { if (Probe.ON) micros = Probe.micros() - started }
+                bakeChunk(bakeView, key, sheet, o, l, yr, weather).also {
+                    if (Probe.ON) micros = Probe.micros() - started
+                    took = clock.elapsedNow().inWholeMilliseconds - t0
+                }
             }
+            bakeMillis[key.level] += (took - bakeMillis[key.level]) * 0.2f
             if (Probe.ON) Probe.bakeDone(key.level, if (hold) "batch" else if (ahead) "ahead" else "screen", micros, started / 1000 - asked, weather.id, key !in cache)
             baking -= key
             behind -= key
@@ -849,6 +946,17 @@ internal class Renderer(private val world: World, private val sheets: Sheets, pr
         const val FAR_LEVEL = 1
         const val FAR_RING = 1f
         const val AHEAD = 30f
+        /** How far ahead of a pan chunks are baked, in seconds of it at the speed it's going, at most a screen. */
+        const val LEAD_SECONDS = 1.5f
+        /** The priorities ahead chunks take, from 2 for the next one reached to 2 + this for one reached in [LEAD_SECONDS]. */
+        const val AHEAD_SPAN = 0.3f
+        /** Below this share of the screen a second, the view counts as still. */
+        const val MOVING = 0.05f
+        /** How quickly the pan's speed is picked up and let go, in seconds. */
+        const val VEL_RISE = 0.08f
+        const val VEL_FALL = 0.5f
+        /** A move this far in one frame, in screen pixels, is a jump and stops the pan; a fast swipe here is about 100. */
+        const val JUMP_PIXELS = 400f
 
         /** How far above its place at height 0 a tile can draw: the highest land and what stands on it, trees and roofs. */
         fun above(hw: Float) = World.MAX_HEIGHT * hw / 4 + 3 * hw + 2
