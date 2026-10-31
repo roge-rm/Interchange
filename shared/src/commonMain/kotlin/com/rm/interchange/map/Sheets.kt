@@ -25,7 +25,7 @@ import org.jetbrains.compose.resources.decodeToImageBitmap
 class LevelSheets(val ground: IntArray, val static: IntArray, val staticWidth: Int, val shadows: ByteArray, val shadowWidth: Int, val signals: ImageBitmap)
 
 /**
- * A vehicle drawing: its level 0 rects, as [Atlas.VEHICLE_RECTS] has them for one vehicle (24 sprites, or the 16 of a
+ * A vehicle drawing: its level 0 rects, as [Atlas.VEHICLE_RECTS] has them for one vehicle (32 sprites, or the 16 of a
  * pack vehicle, which has no odd sixteenths), each level's own in [levels] if its sheets are packed level by level
  * (null for a pack's, each level half the last), and its sheet at each level.
  */
@@ -161,7 +161,7 @@ class Sheets(private val packed: PackedSheets, private val scope: CoroutineScope
         val i = Atlas.VEHICLE_KEYS.indexOf(name)
         if (i < 0) return null
         // Levels sharper than the renderer draws aren't held.
-        val levels = Array(Atlas.LEVELS) { l -> ((i * Atlas.LEVELS + l) * 144).let { Atlas.VEHICLE_RECTS.copyOfRange(it, it + 144) } }
+        val levels = Array(Atlas.LEVELS) { l -> ((i * Atlas.LEVELS + l) * Atlas.VEHICLE_STRIDE).let { Atlas.VEHICLE_RECTS.copyOfRange(it, it + Atlas.VEHICLE_STRIDE) } }
         return VehicleSource(levels[0], levels) { level -> packed.vehicles[i][level].takeIf { it.isNotEmpty() } }
     }
 
@@ -188,14 +188,19 @@ class Sheets(private val packed: PackedSheets, private val scope: CoroutineScope
 
     /**
      * The sprite for vehicle drawing [model] flat at heading [h16], in sixteenths of a turn. Even ones are the eight
-     * headings; odd ones are only drawn for rail vehicles, and the rest use the eighth nearest, the later one on a tie.
+     * headings; a drawing without the odd ones (a pack's) uses the eighth nearest, the later one on a tie.
      */
-    fun flatCell(model: Int, h16: Int): Int {
-        if (h16 and 1 == 0) return h16 shr 1
+    fun flatCell(model: Int, h16: Int): Int = cell16(model, h16, 0, 16)
+
+    /** The same for an aircraft in the air: its eight flying headings from sprite 8, the odd sixteenths from 24. */
+    fun flyingCell(model: Int, h16: Int): Int = cell16(model, h16, 8, 24)
+
+    private fun cell16(model: Int, h16: Int, even: Int, odd: Int): Int {
+        if (h16 and 1 == 0) return even + (h16 shr 1)
         val rects = sources.getOrNull(model)?.rects
-        val cell = 16 + (h16 shr 1)
+        val cell = odd + (h16 shr 1)
         if (rects != null && rects.size > cell * 6 + 3 && rects[cell * 6 + 2] > 0) return cell
-        return (h16 + 1 shr 1) and 7
+        return even + ((h16 + 1 shr 1) and 7)
     }
 
     /** Vehicle drawing [model]'s level 0 rects, or null if it has none. */

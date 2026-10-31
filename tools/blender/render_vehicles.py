@@ -1,11 +1,12 @@
-"""Renders rail vehicles in eight headings, one PNG each, for tools/gen_tiles.py to pack.
+"""Renders vehicles in sixteen headings, one PNG each, for tools/gen_tiles.py to pack.
 
     blender -b --python tools/blender/render_vehicles.py -- OUT_DIR [key ...]
 
 Each file is OUT_DIR/<key>_<heading>.png, a whole cell at twice the sharpest
 level, the vehicle's middle on the tile's middle. On slopes, the four straight
 headings come tilted up and down too: OUT_DIR/<key>_s<heading>_up.png and _down.png.
-Rail vehicles also get the headings between, on the level: OUT_DIR/<key>_q<n>.png for n odd, 1 to 15, n sixteenths of a turn.
+Aircraft have no slopes; their flying headings take those names. Every vehicle also gets the headings between, on the
+level: OUT_DIR/<key>_q<n>.png for n odd, 1 to 15, n sixteenths of a turn; aircraft get them flying too, OUT_DIR/<key>_f<n>.png.
 A file already there is left alone, so a run can carry on where one stopped.
 """
 import sys
@@ -239,24 +240,25 @@ def main():
         home = pivot.location.copy()
         # A step up over a tile, the steepest track climbs.
         tilt = math.atan2(rig.RISE, 1.0)
-        shots = [(f"{key}_{h}.png", 0.0, h) for h in range(8)]
+        # Each shot: file, pitch, heading in eighths, and whether it's in the air.
+        shots = [(f"{key}_{h}.png", 0.0, h, False) for h in range(8)]
         if key in AIRCRAFT:
             # Flying: each heading again with no ground under it, in the slope drawings' cells (heading h in cell 8 + h).
-            shots += [(f"{key}_s{h // 2 * 2}_{'up' if h % 2 == 0 else 'down'}.png", 0.0, h) for h in range(8)]
+            shots += [(f"{key}_s{h // 2 * 2}_{'up' if h % 2 == 0 else 'down'}.png", 0.0, h, True) for h in range(8)]
         elif key not in SHIPS:
-            shots += [(f"{key}_s{h}_{way}.png", tilt if way == "up" else -tilt, h) for h in (0, 2, 4, 6) for way in ("up", "down")]
-        if key not in ROAD and key not in SHIPS and key not in AIRCRAFT:
-            # The odd sixteenths of a turn, h counting in eighths.
-            shots += [(f"{key}_q{n}.png", 0.0, n / 2) for n in range(1, 16, 2)]
-        for k, (name, pitch, h) in enumerate(shots):
+            shots += [(f"{key}_s{h}_{way}.png", tilt if way == "up" else -tilt, h, False) for h in (0, 2, 4, 6) for way in ("up", "down")]
+        # The odd sixteenths of a turn, h counting in eighths, and for aircraft again in the air.
+        shots += [(f"{key}_q{n}.png", 0.0, n / 2, False) for n in range(1, 16, 2)]
+        if key in AIRCRAFT:
+            shots += [(f"{key}_f{n}.png", 0.0, n / 2, True) for n in range(1, 16, 2)]
+        for name, pitch, h, flying in shots:
             if (out / name).exists():
                 continue
-            if key in AIRCRAFT and k == 8:
-                catcher.hide_render = True
+            catcher.hide_render = flying
             pivot.rotation_euler = (pitch, 0, -h * math.pi / 4)
             pivot.location = home
             stance = getattr(model, "stance", None)
-            if stance and k < 8:
+            if stance and not flying:
                 # A tail-wheel aircraft on the ground sits tipped back about its main wheels' contact.
                 y, angle = stance
                 pivot.rotation_euler = (angle, 0, -h * math.pi / 4)

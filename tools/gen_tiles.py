@@ -295,26 +295,37 @@ def rendered_slope(key, h, way, build):
     return Image.open(path).convert("RGBA") if path.exists() else rendered(key, h, build)
 
 
-# Rail vehicles also have the eight headings between the others, so sixteen in all; the rest have eight. Their other
-# drawings count too, like an engine's pantograph down off the wires.
-RAIL = {
-    key
-    for v in json.loads((ROOT / "packs/base/vehicles.json").read_text())["vehicles"] if v["kind"] in ("engine", "wagon", "tender")
-    for key in (v["id"], v.get("sprite"), v.get("sprite_off_wire")) if key
-}
+# Base pack vehicles have the eight headings between the others, so sixteen in all, and aircraft have them flying too.
+# Their other drawings count as well, like an engine's pantograph down off the wires.
+BASE = json.loads((ROOT / "packs/base/vehicles.json").read_text())["vehicles"]
+SIXTEEN = {key for v in BASE for key in (v["id"], v.get("sprite"), v.get("sprite_off_wire")) if key}
+FLYING = {key for v in BASE if v["kind"] == "aircraft" for key in (v["id"], v.get("sprite")) if key}
 
 
 def rendered_odd(key, n, build):
-    """A rail vehicle n sixteenths of a turn round (n odd), from Blender, or its nearest eighth if there's no render."""
+    """A vehicle n sixteenths of a turn round (n odd), from Blender, or its nearest eighth if there's no render."""
     path = RENDERS / f"{key}_q{n}.png"
     dep(path)
     return Image.open(path).convert("RGBA") if path.exists() else rendered(key, (n + 1) // 2 % 8, build)
 
 
+def rendered_flying_odd(key, n, build):
+    """An aircraft in the air n sixteenths of a turn round (n odd), or its nearest flying eighth if there's no render."""
+    path = RENDERS / f"{key}_f{n}.png"
+    dep(path)
+    if path.exists():
+        return Image.open(path).convert("RGBA")
+    h = (n + 1) // 2 % 8
+    return rendered_slope(key, h // 2 * 2, "up" if h % 2 == 0 else "down", build)
+
+
 for m, (key, length, build) in enumerate(vehicles.ROSTER):
-    if key in RAIL:
+    if key in SIXTEEN:
         for n in range(1, 16, 2):
             JOBS.append((f"vehicle_{key}", ("vehicle16", m, n), lambda key=key, build=build, n=n: rendered_odd(key, n, build), "outline"))
+    if key in FLYING:
+        for n in range(1, 16, 2):
+            JOBS.append((f"vehicle_{key}", ("flying16", m, n), lambda key=key, build=build, n=n: rendered_flying_odd(key, n, build), "outline"))
     for h in range(8):
         JOBS.append((f"vehicle_{key}", ("vehicle", m, h), lambda key=key, build=build, h=h: rendered(key, h, build), "outline"))
     for h in (0, 2, 4, 6):
@@ -672,7 +683,7 @@ def main():
             cells = [None] * 16
             for i, (_, _, cell, _) in zip(mine, done):
                 key = JOBS[i][1]
-                if key[0] == "vehicle16":
+                if key[0] in ("vehicle16", "flying16"):
                     continue
                 cells[key[2] if key[0] == "vehicle" else 8 + key[2] // 2 * 2 + (0 if key[3] == "up" else 1)] = cell
             PACK_CELLS[name.removeprefix("vehicle_")] = cells
@@ -727,12 +738,13 @@ def main():
     bare_shadows = [index.get(("tree_bare_shadow", t, lk), index[("tree_shadow", t, lk)]) for t in range(len(ground.TREES)) for lk in range(ground.TREE_LOOKS)]
     decor = [index[("decor", d, lk)] for d in range(len(ground.DECOR)) for lk in range(ground.DECOR_LOOKS)]
     decor_shadows = [index[("decor_shadow", d, lk)] for d in range(len(ground.DECOR)) for lk in range(ground.DECOR_LOOKS)]
-    # Each vehicle's sprites in its own sheet, level by level, in a fixed order: eight headings, the slopes, then the
-    # odd sixteenths for rail vehicles (blank rects for the rest).
+    # Each vehicle's sprites in its own sheet, level by level, in a fixed order: eight headings, the slopes (or flying
+    # headings), the odd sixteenths, then the flying odd sixteenths for aircraft (blank rects for what a vehicle lacks).
     vehicle_rects = []
     for m, (key, _, _) in enumerate(vehicles.ROSTER):
         order = [index[("vehicle", m, h)] for h in range(8)] + [index[("slope", m, h, way)] for h in (0, 2, 4, 6) for way in ("up", "down")]
-        order += [index[("vehicle16", m, n)] if key in RAIL else -1 for n in range(1, 16, 2)]
+        order += [index[("vehicle16", m, n)] if key in SIXTEEN else -1 for n in range(1, 16, 2)]
+        order += [index[("flying16", m, n)] if key in FLYING else -1 for n in range(1, 16, 2)]
         for r in rects[f"vehicle_{key}"]:
             for n in order:
                 vehicle_rects += r[n * 6:n * 6 + 6] if n >= 0 else [0] * 6
@@ -788,11 +800,13 @@ object Atlas {{
     val VEHICLE_KEYS = listOf({vehicle_keys})
 
     /**
-     * Twenty-four sprites a vehicle, in its own sheet: the eight headings in the view (0 down the u axis, on round
-     * towards v), then the four straight headings climbing and going down a slope, at heading / 2 * 2 + 0 or 1, then
-     * the odd sixteenths of a turn, 16 + n / 2 for n = 1, 3 ... 15. Only rail vehicles have those; the rest are blank.
-     * Each vehicle has 24 for each level, sharpest first, at (vehicle * LEVELS + level) * 144.
+     * Thirty-two sprites a vehicle, in its own sheet: the eight headings in the view (0 down the u axis, on round
+     * towards v), then the four straight headings climbing and going down a slope, at heading / 2 * 2 + 0 or 1 (an
+     * aircraft's eight headings flying instead, at 8 + heading), then the odd sixteenths of a turn, 16 + n / 2 for
+     * n = 1, 3 ... 15, then an aircraft's flying odd sixteenths at 24 + n / 2. What a vehicle lacks is blank.
+     * Each vehicle has 32 for each level, sharpest first, at (vehicle * LEVELS + level) * VEHICLE_STRIDE.
      */
+    const val VEHICLE_STRIDE = 192
     val VEHICLE_RECTS = ints("{",".join(str(x) for x in vehicle_rects)}")
 
     /** A foundation's walls, at land shape * 16 + top shape, or -1. On the static sheet. */

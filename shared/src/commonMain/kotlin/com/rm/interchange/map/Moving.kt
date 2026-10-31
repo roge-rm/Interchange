@@ -223,15 +223,17 @@ internal fun DrawScope.drawMoving(world: World, view: View, sheets: Sheets, movi
         }
         val heading = painter.viewHeading(v.heading(i))
         // On a slope, the straight headings have drawings tilted up or down: sprites 8 on in the vehicle's sheet.
-        // Up in the air, an aircraft's drawings with no shadow are 8 on, one for each heading; its shadow goes on the ground.
+        // Up in the air, an aircraft's drawings with no shadow, at the nearest of 16 headings; its shadow goes on the ground.
         val slope = v.slope(i)
+        val h16 = painter.viewHeading16(kotlin.math.round(angle * 2).toInt() % 16)
         if (v.flying(i)) {
-            add(items, world, view, x, y, (8 + heading).toFloat(), FLYING_DEPTH, v.sprite(i), v.deck(i))
-            add(items, world, view, x + SUN_X * v.deck(i), y + SUN_Y * v.deck(i), (8 + heading).toFloat(), -0.4f, v.sprite(i), shadow = true)
+            val fly = sheets.flyingCell(v.sprite(i), h16).toFloat()
+            add(items, world, view, x, y, fly, FLYING_DEPTH, v.sprite(i), v.deck(i))
+            add(items, world, view, x + SUN_X * v.deck(i), y + SUN_Y * v.deck(i), fly, -0.4f, v.sprite(i), shadow = true)
             continue
         }
         // Flat, the nearest of 16 headings to its angle; train cars on a curve fall between eighths.
-        val cell = if (slope != 0 && heading % 2 == 0) 8 + heading / 2 * 2 + (if (slope > 0) 0 else 1) else sheets.flatCell(v.sprite(i), painter.viewHeading16(kotlin.math.round(angle * 2).toInt() % 16))
+        val cell = if (slope != 0 && heading % 2 == 0) 8 + heading / 2 * 2 + (if (slope > 0) 0 else 1) else sheets.flatCell(v.sprite(i), h16)
         // Sorted by its nearest footprint corner rather than its middle, so a long car in front covers what's behind it;
         // but a car in an engine house stays behind the house.
         val viewAngle = (angle + 2 * view.turn) * (kotlin.math.PI.toFloat() / 4)
