@@ -25,10 +25,17 @@ import org.jetbrains.compose.resources.decodeToImageBitmap
 class LevelSheets(val ground: IntArray, val static: IntArray, val staticWidth: Int, val shadows: ByteArray, val shadowWidth: Int, val signals: ImageBitmap)
 
 /**
- * A vehicle drawing: its rects, as [Atlas.VEHICLE_RECTS] has them for one vehicle (24 sprites, or the 16 of a pack
- * vehicle, which has no odd sixteenths), and its sheet at each level.
+ * A vehicle drawing: its level 0 rects, as [Atlas.VEHICLE_RECTS] has them for one vehicle (24 sprites, or the 16 of a
+ * pack vehicle, which has no odd sixteenths), each level's own in [levels] if its sheets are packed level by level
+ * (null for a pack's, each level half the last), and its sheet at each level.
  */
-class VehicleSource(val rects: IntArray, val sheet: (level: Int) -> ByteArray?)
+class VehicleSource(val rects: IntArray, private val levels: Array<IntArray>? = null, val sheet: (level: Int) -> ByteArray?) {
+    private val halved = arrayOfNulls<IntArray>(Atlas.LEVELS)
+
+    /** The rects at [level], sizes and offsets in that level's pixels. */
+    fun rectsAt(level: Int): IntArray =
+        levels?.get(level) ?: halved[level] ?: IntArray(rects.size) { rects[it] / (1 shl level) }.also { halved[level] = it }
+}
 
 /** The packed sheets for each level, as read from the app, and each base vehicle's, by its place in [Atlas.VEHICLE_KEYS]. */
 class PackedSheets(val ground: List<ByteArray>, val static: List<ByteArray>, val staticSnow: List<ByteArray?>, val shadows: List<ByteArray>, val signals: List<ByteArray>, val vehicles: List<List<ByteArray>>)
@@ -154,7 +161,8 @@ class Sheets(private val packed: PackedSheets, private val scope: CoroutineScope
         val i = Atlas.VEHICLE_KEYS.indexOf(name)
         if (i < 0) return null
         // Levels sharper than the renderer draws aren't held.
-        return VehicleSource(Atlas.VEHICLE_RECTS.copyOfRange(i * 144, i * 144 + 144)) { level -> packed.vehicles[i][level].takeIf { it.isNotEmpty() } }
+        val levels = Array(Atlas.LEVELS) { l -> ((i * Atlas.LEVELS + l) * 144).let { Atlas.VEHICLE_RECTS.copyOfRange(it, it + 144) } }
+        return VehicleSource(levels[0], levels) { level -> packed.vehicles[i][level].takeIf { it.isNotEmpty() } }
     }
 
     /** The drawings of a game's vehicles, by their place in its roster's sprites. */
@@ -190,8 +198,11 @@ class Sheets(private val packed: PackedSheets, private val scope: CoroutineScope
         return (h16 + 1 shr 1) and 7
     }
 
-    /** Vehicle drawing [model]'s rects, or null if it has none. */
+    /** Vehicle drawing [model]'s level 0 rects, or null if it has none. */
     fun vehicleRects(model: Int): IntArray? = sources.getOrNull(model)?.rects
+
+    /** Vehicle drawing [model]'s rects at [level], in that level's pixels, or null if it has none. */
+    fun vehicleRects(model: Int, level: Int): IntArray? = sources.getOrNull(model)?.rectsAt(level)
 
     /** Vehicle drawing [model]'s sheet at [level], unpacked the first time it's asked for; null until then. */
     @OptIn(ExperimentalResourceApi::class)

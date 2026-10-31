@@ -387,8 +387,8 @@ def render(i):
     return i, img.crop((l, t, r, b)), (l, t, r, b), cell, up.crop((l, t, r, b)) if up else None, list(DEPS)
 
 
-def pack(sizes, sheet_w=SHEET_W):
-    """Shelves, tallest first. Returns a position for each size and the sheet's height."""
+def pack(sizes, sheet_w=SHEET_W, step=GRID):
+    """Shelves, tallest first. Returns a position for each size and the sheet's height, rounded up to step."""
     order = sorted(range(len(sizes)), key=lambda i: -sizes[i][1])
     pos = [None] * len(sizes)
     x = y = shelf = 0
@@ -401,7 +401,7 @@ def pack(sizes, sheet_w=SHEET_W):
         pos[i] = (x, y)
         x += w
         shelf = max(shelf, h)
-    return pos, -(-(y + shelf) // GRID) * GRID
+    return pos, -(-(y + shelf) // step) * step
 
 
 def layout(done, sheet_w=SHEET_W):
@@ -421,8 +421,61 @@ def layout(done, sheet_w=SHEET_W):
     return sheet, ups, rects, height
 
 
+def shrink_across_first(img, f):
+    """As shrink, but always across then down: Pillow picks the order by shape, and a wide sheet went across first."""
+    img = img.convert("RGBa")
+    return img.resize((img.width // f, img.height), Image.BOX).resize((img.width // f, img.height // f), Image.BOX).convert("RGBA")
+
+
+def clear_faint(img):
+    """The sprite with every pixel at alpha 12 or under made clear black."""
+    px = np.array(img)
+    px[px[..., 3] <= 12] = 0
+    return Image.fromarray(px, "RGBA")
+
+
+def layout_levels(done, sheet_w):
+    """
+    Packs a vehicle sheet at each level by itself: each sprite's level 0 box shrunk to the level, then trimmed to the
+    pixels that show. Returns each level's sheet and its rects, with sizes and offsets in that level's pixels.
+    """
+    # The faint wisps a render leaves round a vehicle, at alpha 12 or under, are cleared, as the box already ignores them.
+    done = [(None if im is None else clear_faint(im), box, cell, up) for im, box, cell, up in done]
+    out = []
+    for level in range(LEVELS):
+        f = 1 << level
+        parts = []
+        for im, (l, t, _, _), _, _ in done:
+            small = None if im is None else im if f == 1 else shrink_across_first(im, f)
+            box = None if small is None else small.getchannel("A").getbbox()
+            # Box corners are on the GRID, so they divide exactly at every level.
+            parts.append(None if box is None else (small.crop(box), (l - base.HW) // f + box[0], (t - base.TOP) // f + box[1]))
+        sizes = [(p[0].width, p[0].height) if p else (0, 0) for p in parts]
+        widest = max(w for w, _ in sizes)
+        # The narrowest sheet of a few widths round the usual one, by area.
+        best = None
+        for w in sorted({max(widest, (sheet_w >> level) * m // 4) for m in range(2, 9)}):
+            pos, height = pack(sizes, w, 1)
+            if best is None or w * height < best[0] * best[2]:
+                best = (w, pos, height)
+        w, pos, height = best
+        sheet = Image.new("RGBA", (w, max(1, height)))
+        rects = []
+        for p, at in zip(parts, pos):
+            if p:
+                sheet.paste(p[0], at)
+                rects += [at[0], at[1], p[0].width, p[0].height, p[1], p[2]]
+            else:
+                rects += [0] * 6
+        out.append((sheet, rects))
+    return out
+
+
 def write_level(name, level):
     """Writes one zoom level of a laid out sheet."""
+    if name.startswith("vehicle_"):
+        save_sheet(SHEETS[name][level][0], OUT_PNG / f"{name}_{level}.png")
+        return
     sheet, ups = SHEETS[name]
     f = 1 << level
     out = sheet if f == 1 else shrink(sheet, f)
@@ -607,8 +660,13 @@ def main():
     tasks = []
     for name, mine in dirty:
         done = [fresh[i] if i in fresh else load_job(i, metas[i]) for i in mine]
-        sheet, ups, rects[name], heights[name] = layout(done, STATIC_W if name == "static" else SHEET_W if name == "shadows" else 1024)
-        SHEETS[name] = (sheet, ups)
+        if name.startswith("vehicle_"):
+            SHEETS[name] = layout_levels(done, 1024)
+            rects[name] = [r for _, r in SHEETS[name]]
+            heights[name] = SHEETS[name][0][0].height
+        else:
+            sheet, ups, rects[name], heights[name] = layout(done, STATIC_W if name == "static" else SHEET_W if name == "shadows" else 1024)
+            SHEETS[name] = (sheet, ups)
         tasks += [("level", name, level) for level in range(LEVELS)]
         if name.startswith("vehicle_"):
             cells = [None] * 16
@@ -654,7 +712,7 @@ def main():
     for name in names:
         if not name.startswith("vehicle_"):
             print(f"{name}: {len(rects[name]) // 6} sprites, {heights[name]} high at level 0")
-    biggest = max(len(rects[n]) for n in names if n.startswith("vehicle_")) // 6
+    biggest = max(len(rects[n][0]) for n in names if n.startswith("vehicle_")) // 6
     print(f"{len([n for n in names if n.startswith('vehicle_')])} vehicle sheets, {biggest} sprites each")
 
     walls = [index.get(("walls", g, s), -1) for g in range(16) for s in range(16)]
@@ -669,15 +727,15 @@ def main():
     bare_shadows = [index.get(("tree_bare_shadow", t, lk), index[("tree_shadow", t, lk)]) for t in range(len(ground.TREES)) for lk in range(ground.TREE_LOOKS)]
     decor = [index[("decor", d, lk)] for d in range(len(ground.DECOR)) for lk in range(ground.DECOR_LOOKS)]
     decor_shadows = [index[("decor_shadow", d, lk)] for d in range(len(ground.DECOR)) for lk in range(ground.DECOR_LOOKS)]
-    # Each vehicle's sprites in its own sheet, in a fixed order: eight headings, the slopes, then the odd sixteenths
-    # for rail vehicles (blank rects for the rest).
+    # Each vehicle's sprites in its own sheet, level by level, in a fixed order: eight headings, the slopes, then the
+    # odd sixteenths for rail vehicles (blank rects for the rest).
     vehicle_rects = []
     for m, (key, _, _) in enumerate(vehicles.ROSTER):
-        r = rects[f"vehicle_{key}"]
         order = [index[("vehicle", m, h)] for h in range(8)] + [index[("slope", m, h, way)] for h in (0, 2, 4, 6) for way in ("up", "down")]
         order += [index[("vehicle16", m, n)] if key in RAIL else -1 for n in range(1, 16, 2)]
-        for n in order:
-            vehicle_rects += r[n * 6:n * 6 + 6] if n >= 0 else [0] * 6
+        for r in rects[f"vehicle_{key}"]:
+            for n in order:
+                vehicle_rects += r[n * 6:n * 6 + 6] if n >= 0 else [0] * 6
     vehicle_keys = ", ".join(f'"{key}"' for key, _, _ in vehicles.ROSTER)
     kinds = list(textures.KINDS)
     t = time.time()
@@ -695,7 +753,8 @@ def main():
  * The rects hold six numbers a sprite at level 0: x, y, width and height on its
  * sheet, then where its top left sits from its anchor. The anchor is the tile's
  * top corner at the height the sprite stands on; a vehicle, tree or signal is
- * drawn as if on a tile whose middle is where it stands.
+ * drawn as if on a tile whose middle is where it stands. Vehicle sheets are
+ * packed level by level, so their rects are for each level, in its pixels.
  *
  * Foundation and track shapes are which view corners stand a step up: top,
  * right, bottom and left as bits 1, 2, 4 and 8.
@@ -732,6 +791,7 @@ object Atlas {{
      * Twenty-four sprites a vehicle, in its own sheet: the eight headings in the view (0 down the u axis, on round
      * towards v), then the four straight headings climbing and going down a slope, at heading / 2 * 2 + 0 or 1, then
      * the odd sixteenths of a turn, 16 + n / 2 for n = 1, 3 ... 15. Only rail vehicles have those; the rest are blank.
+     * Each vehicle has 24 for each level, sharpest first, at (vehicle * LEVELS + level) * 144.
      */
     val VEHICLE_RECTS = ints("{",".join(str(x) for x in vehicle_rects)}")
 

@@ -730,7 +730,19 @@ fun VehiclePicture(e: Engine, modifier: Modifier, turned: Boolean = false) {
         if (w0 == 0 || h0 == 0) return@Canvas
         val (level, scale) = levelFor(w0, h0, Renderer.SHARPEST)
         val image = sheets.vehicle(e.sprite, level)?.also { held[level] = it } ?: held[level] ?: return@Canvas
-        drawSprite(image, rects[r], rects[r + 1], w0, h0, level, scale)
+        val at = sheets.vehicleRects(e.sprite, level) ?: return@Canvas
+        // The level's own rect, placed where it sits in level 0's, which is centred.
+        val f = 1 shl level
+        val sw = at[r + 2]
+        val sh = at[r + 3]
+        if (sw == 0 || sh == 0) return@Canvas
+        val left = (size.width - (w0 * scale).toInt()) / 2 + (at[r + 4] * f - rects[r + 4]) * scale
+        val top = (size.height - (h0 * scale).toInt()) / 2 + (at[r + 5] * f - rects[r + 5]) * scale
+        drawImage(
+            image, IntOffset(at[r], at[r + 1]), IntSize(sw, sh),
+            IntOffset(left.toInt(), top.toInt()), IntSize((sw * f * scale).toInt(), (sh * f * scale).toInt()),
+            filterQuality = FilterQuality.Medium,
+        )
     }
 }
 

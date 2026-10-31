@@ -308,11 +308,11 @@ internal fun DrawScope.drawMoving(world: World, view: View, sheets: Sheets, movi
             } else {
                 // Its own sheet at this level, unpacked the first time it's on screen; it shows a frame or two later.
                 val sheet = sheets.vehicle(model, level) ?: run { if (Probe.ON) Probe.vehiclesSkipped++; null } ?: continue
-                val rects = sheets.vehicleRects(model) ?: continue
+                val rects = sheets.vehicleRects(model, level) ?: continue
                 // Behind a building in front of it, cut away where the building stands.
                 val hidden = if (it[6] >= 0f) with(cover) { covering(it[6], it[7], Rect(it[1] - view.halfWidth * 1.5f, it[2] - view.halfWidth * 2f, it[1] + view.halfWidth * 1.5f, it[2] + view.halfWidth)) } else null
-                if (hidden != null) clipPath(hidden, ClipOp.Difference) { spriteAt(sheet, rects, it[3].toInt(), it[1], it[2], scale, shadow = it[5] == 1f, wreck = it[5] == 2f) }
-                else spriteAt(sheet, rects, it[3].toInt(), it[1], it[2], scale, shadow = it[5] == 1f, wreck = it[5] == 2f)
+                if (hidden != null) clipPath(hidden, ClipOp.Difference) { spriteAt(sheet, rects, it[3].toInt(), it[1], it[2], scale, shadow = it[5] == 1f, wreck = it[5] == 2f, shrink = 1) }
+                else spriteAt(sheet, rects, it[3].toInt(), it[1], it[2], scale, shadow = it[5] == 1f, wreck = it[5] == 2f, shrink = 1)
             }
         }
     }

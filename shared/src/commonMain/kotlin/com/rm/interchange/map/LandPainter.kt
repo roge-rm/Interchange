@@ -44,8 +44,11 @@ class LandPainter(private val world: World, private val view: View, private val 
         spriteAt(sheet ?: return, Atlas.SIGNAL_RECTS, cell, px, py, scale)
     }
 
-    /** Draws sprite [cell] of [image], whose rects are [rects], standing at screen point ([px], [py]). */
-    fun DrawScope.spriteAt(image: ImageBitmap, rects: IntArray, cell: Int, px: Float, py: Float, scale: Float, shadow: Boolean = false, wreck: Boolean = false) {
+    /**
+     * Draws sprite [cell] of [image], whose rects are [rects], standing at screen point ([px], [py]). The rects are
+     * level 0's, divided by [shrink] for this level; pass 1 for rects already in this level's pixels.
+     */
+    fun DrawScope.spriteAt(image: ImageBitmap, rects: IntArray, cell: Int, px: Float, py: Float, scale: Float, shadow: Boolean = false, wreck: Boolean = false, shrink: Int = this@LandPainter.shrink) {
         if (cell < 0) return
         val r = cell * 6
         val f = shrink
