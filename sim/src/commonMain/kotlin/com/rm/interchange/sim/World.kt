@@ -516,7 +516,7 @@ class World(settings: NewGame, val roster: Roster = Roster.BASE, generate: Boole
         for (k in buoys.keys.sorted()) mix(k.toLong() * 13 + buoys.getValue(k))
         for (v in ships) if (v != null) { mix(v.id.toLong()); mix(v.x.toLong()); mix(v.y.toLong()); mix(v.speed.toLong()); mix(v.waiting.toLong()); for (c in v.cargo) for (p in c) mix(p.count.toLong()) }
         for (a in airports) if (a != null) { mix(a.id.toLong()); mix(a.station.toLong()); mix(if (a.ils) 1L else 0L); mix(if (a.deice) 1L else 0L) }
-        for (v in aircraft) if (v != null) { mix(v.id.toLong()); mix(v.x.toLong()); mix(v.y.toLong()); mix(v.altitude.toLong()); mix(v.state.toLong()); mix(v.waiting.toLong()); for (c in v.cargo) for (p in c) mix(p.count.toLong()) }
+        for (v in aircraft) if (v != null) { mix(v.id.toLong()); mix(v.x.toLong()); mix(v.y.toLong()); mix(v.altitude.toLong()); mix(v.heading.toLong()); mix(v.landing.toLong()); mix(v.route.toLong()); mix(v.node.toLong()); mix(v.stand.toLong()); mix(v.state.toLong()); mix(v.waiting.toLong()); for (c in v.cargo) for (p in c) mix(p.count.toLong()) }
         for (s in spans) if (s != null) { mix(s.x0.toLong()); mix(s.y0.toLong()); mix(s.x1.toLong()); mix(s.y1.toLong()); mix(s.height.toLong()) }
         for (t in trains) if (t != null) {
             mix(t.formation.size.toLong())

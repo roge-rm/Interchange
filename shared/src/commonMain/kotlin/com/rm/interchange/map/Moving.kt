@@ -38,7 +38,7 @@ class Moving(val now: WorldView, val before: WorldView?, val between: Float)
 /** For sorting train cars, reused every frame so they allocate nothing once grown. Drawing only, on the UI thread. */
 private val carChain = CarOrder.Chain()
 private val carChainItems = ArrayList<FloatArray>()
-/** The angles ships and aircraft are drawn at, turning toward their sim headings. */
+/** The angles ships are drawn at, turning toward their sim headings. */
 private val turnEase = TurnEase()
 
 /**
@@ -204,7 +204,7 @@ internal fun DrawScope.drawMoving(world: World, view: View, sheets: Sheets, movi
         chain.clear()
         chainItems.clear()
     }
-    // Sim time in ticks, between the last two views, for turning ships and aircraft; it stands still while paused.
+    // Sim time in ticks, between the last two views, for turning ships; it stands still while paused.
     val beforeTick = before?.tick ?: v.tick
     turnEase.begin(beforeTick + (v.tick - beforeTick) * moving.between.toDouble(), v.count)
     val gap = maxOf(1L, v.tick - beforeTick).toFloat()
@@ -231,11 +231,10 @@ internal fun DrawScope.drawMoving(world: World, view: View, sheets: Sheets, movi
                 if (turn > -1.5f && turn < 1.5f) angle = ((before.angle(j) + turn * moving.between) % 8f + 8f) % 8f
             }
         }
-        // Ships and aircraft face whole eighths in the sim; drawn, they turn through the sixteenths toward it.
+        // Ships face whole eighths in the sim; drawn, they turn through the sixteenths toward it. Aircraft turn
+        // smoothly in the sim and are drawn at the sixteenth nearest their angle.
         val key = v.key(i)
-        if (key < 0 && v.roadVehicle(i) < 0) {
-            angle = turnEase.angle(key, v.angle(i), if (v.ship(i) >= 0) TurnEase.SHIP_RATE else TurnEase.AIRCRAFT_RATE, jumped)
-        }
+        if (v.ship(i) >= 0) angle = turnEase.angle(key, v.angle(i), TurnEase.SHIP_RATE, jumped)
         val heading = painter.viewHeading(v.heading(i))
         // On a slope, the straight headings have drawings tilted up or down: sprites 8 on in the vehicle's sheet.
         // Up in the air, an aircraft's drawings with no shadow, at the nearest of 16 headings; its shadow goes on the ground.
@@ -250,10 +249,11 @@ internal fun DrawScope.drawMoving(world: World, view: View, sheets: Sheets, movi
         // Flat, the nearest of 16 headings to its angle; train cars on a curve fall between eighths.
         val cell = if (slope != 0 && heading % 2 == 0) 8 + heading / 2 * 2 + (if (slope > 0) 0 else 1) else sheets.flatCell(v.sprite(i), h16)
         // Sorted by its nearest footprint corner rather than its middle, so a long car in front covers what's behind it;
-        // but a car in an engine house stays behind the house.
+        // but a car in an engine house stays behind the house. A hangar is drawn with the ground, so an aircraft at its
+        // door isn't held back.
         val viewAngle = (angle + 2 * view.turn) * (kotlin.math.PI.toFloat() / 4)
         var reach = CarOrder.reach(v.length(i) / 2, viewAngle)
-        val inShed = world.depotTiles.containsKey(world.index(x.toInt().coerceIn(0, world.width - 1), y.toInt().coerceIn(0, world.height - 1)))
+        val inShed = v.aircraft(i) < 0 && world.depotTiles.containsKey(world.index(x.toInt().coerceIn(0, world.width - 1), y.toInt().coerceIn(0, world.height - 1)))
         if (inShed) {
             reach = minOf(reach, DEPOT_DEPTH - 0.1f - (view.toViewX(x, y) + view.toViewY(x, y) - (view.toViewX(x.toInt() + 0.5f, y.toInt() + 0.5f) + view.toViewY(x.toInt() + 0.5f, y.toInt() + 0.5f))))
         }

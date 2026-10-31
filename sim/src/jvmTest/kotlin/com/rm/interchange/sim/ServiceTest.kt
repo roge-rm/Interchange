@@ -413,7 +413,7 @@ class ServiceTest {
         assertTrue(!v.inDepot)
         v.serviced = w.workDay - SERVICE_DAYS * 2
         val before = w.workDay
-        repeat(Calendar.TICKS_PER_DAY * 3) { w.step() }
+        repeat(Calendar.TICKS_PER_DAY * 6) { w.step() }
         assertTrue(v.serviced >= before, "never went in")
     }
 
@@ -467,12 +467,16 @@ class ServiceTest {
         assertEquals(Gear.FLOATS, v.gear)
         w.apply(Command.CraftOrder(0, true, 0, Command.TrainOrder.ORDERS, intArrayOf(w.airports[0]!!.station, w.airports[1]!!.station)))
         w.apply(Command.CraftOrder(0, true, 0, Command.TrainOrder.START_STOP))
+        // Out of the hangar and onto a stand.
+        var t = 0
+        while (v.state != Flight.GATE && t++ < 500) w.step()
         assertTrue(!v.inDepot && v.state == Flight.GATE && v.at == base.id)
         // Due as it leaves the base: on floats only the base's own hangar will do.
         v.serviced = w.workDay - SERVICE_DAYS
         v.waiting = 1
         val before = w.workDay
-        repeat(4) { w.step() }
+        t = 0
+        while (v.serviced < before && t++ < 600) w.step()
         assertTrue(v.serviced >= before, "never serviced")
         assertEquals(Gear.WHEELS, v.gear)
         assertEquals(w.wantedGear(v), v.gear)

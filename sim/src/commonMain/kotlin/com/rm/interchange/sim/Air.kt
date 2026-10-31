@@ -13,6 +13,9 @@ package com.rm.interchange.sim
  * their range. Each needs a runway long enough ([Runways]); helicopters land
  * on any airport or pad, bush planes on floats at seaplane bases.
  *
+ * On the ground they taxi along a fixed set of points for the airport's kind ([Taxiways]) between the runway, the
+ * stands and the hangar door, one at a time on the runway.
+ *
  * The weather rules the air: storms ground small aircraft first and then
  * everyone, fog closes airports without landing aids, and icing keeps
  * aircraft at the gate until airports have de-icing. Bush planes go on floats
@@ -101,17 +104,24 @@ class Aircraft(
     var inDepot = true
     var running = false
     override var waiting = 0
-    /** Where it is, in 4096ths of a tile; how high, in 16ths of a step; the way it faces, in eighths. */
+    /** Where it is, in 4096ths of a tile; how high, in 16ths of a step; the way it faces, in 256ths of a turn from along x towards y. */
     var x = 0
     var y = 0
     var altitude = 0
     var heading = 0
     var speed = 0
+    /** The way it lands, in 256ths, once it's lining up on a runway. */
+    var landing = 0
     /** A [Flight] state, the airport it's at or last left, and how long it's been holding. */
     var state = Flight.GATE
     var at = -1
-    // At a gate, -1 marks a retry or diversion rather than a station call.
+    // At a gate, -1 marks a retry or diversion rather than a station call; taxiing, the ticks it has waited for another.
     var holding = 0
+    /** Taxiing: its way, from and to [Taxiways] places packed as from * 16 + to, and the point of it it last passed. */
+    var route = -1
+    var node = 0
+    /** The stand it has at airport [at], landing, parked or taxiing to or from it; -1 for none. */
+    var stand = -1
     var gear = Gear.WHEELS
     var seasonalGear = true
     override val cargo = Array(Cargo.COUNT) { ArrayList<Packet>() }
@@ -137,6 +147,7 @@ class Aircraft(
     val price get() = info.cost
     val heli get() = info.runway == Runways.HELI
     val flying get() = state == Flight.TAKEOFF && altitude > 0 || state == Flight.CRUISE || state == Flight.HOLD || state == Flight.LANDING && altitude > 0
+    val taxiing get() = state == Flight.TAXI_OUT || state == Flight.TAXI_IN
 
     /** Where it's heading: a station id, -1 for its hangar, or -2 for nowhere. */
     val target: Int get() = when {
@@ -152,6 +163,9 @@ object Flight {
     const val CRUISE = 2
     const val HOLD = 3
     const val LANDING = 4
+    /** Taxiing to the runway to take off; and to a stand or the hangar door. */
+    const val TAXI_OUT = 5
+    const val TAXI_IN = 6
 }
 
 /** Whether aircraft [v] can use airport [a] at all. */
@@ -224,7 +238,7 @@ internal fun World.buildAirport(company: Company, c: Command.Airport) {
     spend(company, Books.CONSTRUCTION, price(Airports.COST[kind]))
     for (t in tiles) fellTrees(company, t)
     val s = station ?: Station(stations.size, company.id, stationName(c.x, c.y), c.x, c.y).also { stations += it }
-    val d = Depot(depots.size, company.id, tiles[0], 0, Depots.HANGAR).also { it.built = Calendar.year(startYear, day) }
+    val d = Depot(depots.size, company.id, hangarTile(kind, c.x, c.y, axis), 0, Depots.HANGAR).also { it.built = Calendar.year(startYear, day) }
     depots += d
     depotTiles[d.tile] = d.id
     val a = Airport(airports.size, company.id, s.id, kind, c.x, c.y, axis, d.id)
@@ -249,8 +263,14 @@ private fun World.buildable(i: Int): Boolean {
 }
 
 /** Whether an aircraft is at [a] or based there, so the airport stays. */
-internal fun World.airportBusy(a: Airport): Boolean =
-    aircraft.any { it != null && (it.inDepot && it.depot == a.depot || !it.inDepot && it.at == a.id && (it.state == Flight.GATE || it.wreckedFor > 0)) }
+internal fun World.airportBusy(a: Airport): Boolean = aircraft.any {
+    it != null && (it.inDepot && hangarAirport(it)?.id == a.id || !it.inDepot && it.at == a.id && (it.state == Flight.GATE || it.taxiing || it.wreckedFor > 0 || it.state == Flight.LANDING && it.altitude == 0))
+}
+
+/** The airport whose hangar [v] is in: where it waited for a stand if that's not its home hangar's, else its home's. */
+internal fun World.hangarAirport(v: Aircraft): Airport? =
+    airports.getOrNull(v.at)?.takeIf { v.inDepot && depots.getOrNull(it.depot) != null }
+        ?: airports.firstOrNull { it != null && it.depot == v.depot }
 
 /** Takes airport [a] down, if no aircraft is at it or based there, and pays scrap for its kind once. */
 internal fun World.removeAirport(company: Company, a: Airport) {
@@ -321,7 +341,7 @@ internal fun World.aircraftCommand(company: Company, c: Command.CraftOrder) {
             v.cargoChoice = cargo
             for (c in v.cargo.indices) if (v.capacity(c) == 0) v.cargo[c].clear()
         }
-        Command.TrainOrder.START_STOP -> if (v.inDepot) { if (v.running) v.running = false else outOfHangar(v) } else v.running = !v.running
+        Command.TrainOrder.START_STOP -> if (v.inDepot) { if (v.running) v.running = false else { v.running = true; outOfHangar(v) } } else v.running = !v.running
         Command.TrainOrder.ORDERS -> {
             val group = aircraft.filterNotNull().filter { v.shared >= 0 && it.shared == v.shared }.ifEmpty { listOf(v) }
             for (g in group) {
@@ -373,33 +393,396 @@ internal fun World.aircraftCommand(company: Company, c: Command.CraftOrder) {
     }
 }
 
-/** The hangar's airport rolls the aircraft out to a gate. */
+/**
+ * The hangar's airport rolls the aircraft out of the door to a free stand; a helicopter is set straight on one. It
+ * stays in while every stand is taken, something is at the door, or the runway the door opens onto is in use.
+ */
 private fun World.outOfHangar(v: Aircraft) {
-    val a = airports.firstOrNull { it != null && it.depot == v.depot } ?: return
-    v.running = true
-    v.inDepot = false
+    val a = hangarAirport(v) ?: return
+    val s = freeStand(a, v)
+    if (s < 0) return
     v.at = a.id
-    v.state = Flight.GATE
+    if (v.heli) {
+        v.inDepot = false
+        v.state = Flight.GATE
+        v.stand = s
+        v.waiting = 0
+        v.altitude = 0
+        v.speed = 0
+        val p = standPoint(a, s)
+        v.x = p[0]; v.y = p[1]
+        return
+    }
+    val route = Taxiways.DOOR * 16 + s
+    val pts = taxiRoute(a, route)
+    val door = taxiPoint(a, pts, 0)
+    if (Taxiways.runwayLeg(pts, 0) && runwayBusy(a, v)) return
+    if (aircraft.any { w -> w != null && w !== v && !w.inDepot && w.at == a.id && w.taxiing && near(w, door, (v.info.length + w.info.length) * SHIP_UNIT / 32) }) return
+    v.inDepot = false
     v.waiting = 0
     v.altitude = 0
-    v.speed = 0
-    val g = gatePoint(a, v.id)
-    v.x = g[0]; v.y = g[1]
+    v.x = door[0]; v.y = door[1]
+    val next = taxiPoint(a, pts, 1)
+    v.heading = bearing256(next[0] - door[0], next[1] - door[1])
+    v.stand = s
+    startTaxi(v, Flight.TAXI_IN, route)
 }
 
-/** Where on airport [a] aircraft [id] stands at a gate, in 4096ths: off to the side of the runway, spread by id. */
-fun World.gatePoint(a: Airport, id: Int): IntArray {
-    val u = SHIP_UNIT
-    if (a.kind == Airports.SEAPLANE) {
-        val e = a.axis
-        return intArrayOf(a.x * u + u / 2 + Track.dx(e) * u * 3 / 4, a.y * u + u / 2 + Track.dy(e) * u * 3 / 4)
+/** Whether [w] is within [d] of point [p]. */
+private fun near(w: Aircraft, p: IntArray, d: Int): Boolean {
+    val dx = (w.x - p[0]).toLong()
+    val dy = (w.y - p[1]).toLong()
+    return dx * dx + dy * dy < d.toLong() * d
+}
+
+/**
+ * The points aircraft taxi between on each kind of airport, in 16ths of a tile along the runway and across it from the
+ * airport's corner (for a seaplane base, along its water from where the runway starts, its middle line 8 across).
+ * The runway's middle line is 8 across; a point on it is on the runway, and so is a leg to or from one.
+ *
+ * Each place is a short spur, its first point where it joins the others: a stand is the point in front of it then the
+ * stand, parked nose in; the hangar door the same; a runway end the points out to where it lines up to take off, which
+ * is also where a landing rolls out to with no exit before it. Where the end's spur is given only for end 0, end 1
+ * mirrors it along the runway. An exit is where a landing turns off partway: on a city or international airport an
+ * angled one onto the taxiway for landings going one way, elsewhere a point on the runway for either way.
+ * Strips, regional airports and seaplane bases taxi on the runway itself, turning round at its ends; city and
+ * international airports have a taxiway, held short of where it turns onto the runway.
+ */
+internal object Taxiways {
+    /** Places on a route: stands are 0 up, then these. */
+    const val EXIT0 = 8
+    const val DOOR = 13
+    const val END0 = 14
+    const val END1 = 15
+
+    /** Each kind's stands, as pairs of points: the one in front of it, then the stand. */
+    val STANDS = arrayOf(
+        intArrayOf(24, 8, 24, 14, 40, 8, 40, 14),
+        intArrayOf(4, 8, -4, 4, 4, 8, -4, 12),
+        intArrayOf(8, 8, 8, 8),
+        intArrayOf(24, 8, 24, 25, 56, 8, 56, 25, 40, 8, 40, 19),
+        IntArray(20) { i -> if (i % 4 == 0 || i % 4 == 2) 24 + i / 4 * 16 else if (i % 4 == 1) 21 else 34 },
+        IntArray(32) { i -> if (i % 4 == 0 || i % 4 == 2) 8 + i / 4 * 16 else if (i % 4 == 1) 24 else 40 },
+    )
+    /** The hangar door, the same way, and the hangar's tile along and across. */
+    val DOORS = arrayOf(
+        intArrayOf(56, 8, 56, 14), intArrayOf(4, 8, -10, 8), intArrayOf(8, 8, 8, 8),
+        intArrayOf(8, 8, 8, 21), intArrayOf(8, 21, 8, 35), intArrayOf(16, 24, 16, 50),
+    )
+    val HANGAR_TILE = arrayOf(intArrayOf(3, 0), intArrayOf(0, 0), intArrayOf(0, 0), intArrayOf(0, 1), intArrayOf(0, 2), intArrayOf(1, 3))
+    /** Runway end 0's spur, from where it joins to where it lines up; a seaplane base's end 1 as well. */
+    val ENDS = arrayOf(
+        intArrayOf(4, 8, 12, 8), intArrayOf(10, 8), IntArray(0),
+        intArrayOf(4, 8, 12, 8), intArrayOf(4, 21, 2, 8, 14, 8), intArrayOf(4, 24, 2, 8, 16, 8),
+    )
+    val SEAPLANE_END1 = intArrayOf(44, 8, 36, 8)
+    /** Each kind's exits, from where each joins to where it leaves the runway, [EXIT0] up. */
+    val EXITS = arrayOf(
+        arrayOf(intArrayOf(24, 8), intArrayOf(40, 8), intArrayOf(56, 8)),
+        arrayOf(intArrayOf(20, 8), intArrayOf(28, 8)),
+        arrayOf(),
+        arrayOf(intArrayOf(24, 8), intArrayOf(40, 8), intArrayOf(56, 8)),
+        arrayOf(intArrayOf(48, 21, 32, 8), intArrayOf(72, 21, 56, 8), intArrayOf(48, 21, 64, 8), intArrayOf(24, 21, 40, 8)),
+        arrayOf(intArrayOf(56, 24, 40, 8), intArrayOf(88, 24, 72, 8), intArrayOf(72, 24, 88, 8), intArrayOf(40, 24, 56, 8)),
+    )
+
+    /** Whether [place] is a stand. */
+    fun stand(place: Int) = place < EXIT0
+
+    /** Whether [place] is on the runway: an end or an exit. */
+    fun fromRunway(place: Int) = place >= END0 || place in EXIT0 until DOOR
+
+    /** Which way along the runway exit [e] of [kind] is for, +1 or -1, or 0 for either. */
+    fun exitWay(kind: Int, e: IntArray) = if (e.size < 4) 0 else if (e[0] > e[2]) 1 else -1
+
+    /** The spur of [place] on an airport of [kind]. */
+    fun spur(kind: Int, place: Int): IntArray = when (place) {
+        DOOR -> DOORS[kind]
+        END0 -> ENDS[kind]
+        END1 -> if (kind == Airports.SEAPLANE) SEAPLANE_END1 else ENDS[kind].let { e ->
+            val len = Airports.LENGTH[kind] * 16
+            IntArray(e.size) { i -> if (i % 2 == 0) len - e[i] else e[i] }
+        }
+        in EXIT0 until DOOR -> EXITS[kind][place - EXIT0]
+        else -> STANDS[kind].copyOfRange(place * 4, place * 4 + 4)
     }
-    if (a.kind == Airports.HELIPORT) return intArrayOf(a.x * u + u / 2, a.y * u + u / 2)
-    val gates = Airports.GATES[a.kind]
-    val k = id % gates
-    // Gates in a row along the far side from the runway.
-    return if (a.axis == Track.X) intArrayOf(a.x * u + (a.w * u) * (k + 1) / (gates + 1), a.y * u + a.h * u - u / 3)
-    else intArrayOf(a.x * u + a.w * u - u / 3, a.y * u + (a.h * u) * (k + 1) / (gates + 1))
+
+    /** Route [route]'s points, along and across in pairs: [spur] of where it starts backwards, then of where it ends. */
+    fun points(kind: Int, route: Int): IntArray {
+        val from = spur(kind, route / 16)
+        val to = spur(kind, route % 16)
+        val out = ArrayList<Int>(from.size + to.size)
+        for (i in from.size / 2 - 1 downTo 0) { out += from[i * 2]; out += from[i * 2 + 1] }
+        val same = out.size >= 2 && to.size >= 2 && out[out.size - 2] == to[0] && out[out.size - 1] == to[1]
+        for (i in (if (same) 2 else 0) until to.size) out += to[i]
+        return out.toIntArray()
+    }
+
+    /** Whether leg [i] of [pts], from point [i] to the next, is on the runway. */
+    fun runwayLeg(pts: IntArray, i: Int) = pts[i * 2 + 1] == 8 || pts[i * 2 + 3] == 8
+}
+
+/** The tile of [kind]'s hangar at corner ([x], [y]) with its runway along [axis]. */
+private fun World.hangarTile(kind: Int, x: Int, y: Int, axis: Int): Int {
+    if (kind == Airports.SEAPLANE || kind == Airports.HELIPORT) return index(x, y)
+    val t = Taxiways.HANGAR_TILE[kind]
+    return if (axis == Track.X) index(x + t[0], y + t[1]) else index(x + t[1], y + t[0])
+}
+
+/** Route [route]'s points on airport [a], in 16ths along and across. */
+internal fun taxiRoute(a: Airport, route: Int) = Taxiways.points(a.kind, route)
+
+/** Point [i] of [pts] on airport [a], in 4096ths. */
+internal fun taxiPoint(a: Airport, pts: IntArray, i: Int) = localPoint(a, pts[i * 2], pts[i * 2 + 1])
+
+/** The point [l] along and [c] across airport [a], in 16ths of a tile, in 4096ths. */
+internal fun localPoint(a: Airport, l: Int, c: Int): IntArray {
+    val u = SHIP_UNIT
+    val k = u / 16
+    if (a.kind == Airports.SEAPLANE) {
+        val dx = Track.dx(a.axis)
+        val dy = Track.dy(a.axis)
+        // Across is the way round from the water that counts up in x or y; the runway starts a tile out from the dock.
+        val cx = kotlin.math.abs(dy)
+        val cy = kotlin.math.abs(dx)
+        val ox = a.x * u + u / 2 + dx * u - cx * u / 2
+        val oy = a.y * u + u / 2 + dy * u - cy * u / 2
+        return intArrayOf(ox + dx * l * k + cx * c * k, oy + dy * l * k + cy * c * k)
+    }
+    return if (a.axis == Track.X) intArrayOf(a.x * u + l * k, a.y * u + c * k) else intArrayOf(a.x * u + c * k, a.y * u + l * k)
+}
+
+/** Where stand [s] of airport [a] is, in 4096ths. */
+fun World.standPoint(a: Airport, s: Int): IntArray {
+    val st = Taxiways.STANDS[a.kind]
+    val k = s.coerceIn(0, st.size / 4 - 1) * 4
+    return localPoint(a, st[k + 2], st[k + 3])
+}
+
+/** The first stand of airport [a] no aircraft but [v] has, landing, parked or taxiing there, or -1. */
+internal fun World.freeStand(a: Airport, v: Aircraft): Int {
+    for (s in 0 until Taxiways.STANDS[a.kind].size / 4) {
+        if (aircraft.none { it != null && it !== v && holdsStand(it, a, s) }) return s
+    }
+    return -1
+}
+
+private fun holdsStand(w: Aircraft, a: Airport, s: Int) = !w.inDepot && w.at == a.id && w.stand == s && w.wreckedFor == 0 &&
+    (w.state == Flight.GATE || w.state == Flight.LANDING || w.taxiing)
+
+/**
+ * The free stand of [a] for [v] landing there: the one nearest where the runway end it will take off from for its
+ * next stop joins, or the first free one for a helicopter or with no next stop. -1 with none free.
+ */
+private fun World.standFor(a: Airport, v: Aircraft): Int {
+    val first = freeStand(a, v)
+    if (first < 0 || v.heli || v.toDepot || v.orders.size < 2) return first
+    val next = airportOf(Order.station(v.orders[(v.order + 1) % v.orders.size]))
+    val join = Taxiways.spur(a.kind, endFor(a, takeOffTowards(a, next)))[0]
+    val st = Taxiways.STANDS[a.kind]
+    var best = first
+    for (s in first + 1 until st.size / 4) {
+        if (kotlin.math.abs(st[s * 4] - join) >= kotlin.math.abs(st[best * 4] - join)) continue
+        if (aircraft.none { it != null && it !== v && holdsStand(it, a, s) }) best = s
+    }
+    return best
+}
+
+/** Parks [v] on airport [a]'s first free stand, or in its hangar with none free, to come out when one is. */
+private fun World.park(v: Aircraft, a: Airport) {
+    v.state = Flight.GATE
+    v.route = -1
+    v.node = 0
+    v.altitude = 0
+    v.speed = 0
+    v.stand = freeStand(a, v)
+    if (v.stand < 0) { v.at = a.id; v.inDepot = true; return }
+    val p = standPoint(a, v.stand)
+    v.x = p[0]; v.y = p[1]
+}
+
+/** Sets [v] off taxiing on [route]. */
+private fun startTaxi(v: Aircraft, state: Int, route: Int) {
+    v.state = state
+    v.route = route
+    v.node = 0
+    v.holding = 0
+    v.speed = 0
+}
+
+/** The runway end [v] takes off from on [a] heading [h]: [Taxiways.END0] going the runway's way, else [Taxiways.END1]. */
+private fun World.endFor(a: Airport, h: Int): Int {
+    val r = runway(a)
+    return if (h == bearing256(r[2] - r[0], r[3] - r[1])) Taxiways.END0 else Taxiways.END1
+}
+
+/** The way a plane takes off from runway end [end] of [a], in 256ths. */
+private fun World.endHeading(a: Airport, end: Int): Int {
+    val r = runway(a)
+    val way = bearing256(r[2] - r[0], r[3] - r[1])
+    return if (end == Taxiways.END0) way else (way + 128) and 255
+}
+
+/** Whether [v], taxiing at [a], is on the runway: on a runway leg it has started, or came onto from the runway. */
+private fun taxiHoldsRunway(v: Aircraft, a: Airport): Boolean {
+    if (v.route < 0) return false
+    val pts = taxiRoute(a, v.route)
+    val i = v.node
+    if (i >= pts.size / 2 - 1 || !Taxiways.runwayLeg(pts, i)) return false
+    if (i > 0 && Taxiways.runwayLeg(pts, i - 1) || i == 0 && Taxiways.fromRunway(v.route / 16)) return true
+    val p = taxiPoint(a, pts, i)
+    return v.x != p[0] || v.y != p[1]
+}
+
+/** Whether [w] has airport [a]'s runway: lining up to land or rolling, taking off, taxiing on it, or wrecked on it. */
+internal fun onRunway(w: Aircraft, a: Airport): Boolean {
+    if (w.inDepot || w.at != a.id) return false
+    if (w.wreckedFor > 0) return true
+    if (w.heli) return false
+    return when (w.state) {
+        Flight.LANDING, Flight.TAKEOFF -> true
+        Flight.TAXI_IN, Flight.TAXI_OUT -> taxiHoldsRunway(w, a)
+        else -> false
+    }
+}
+
+/** Whether an aircraft other than [v] has airport [a]'s runway. */
+internal fun World.runwayBusy(a: Airport, v: Aircraft) = aircraft.any { it != null && it !== v && onRunway(it, a) }
+
+/**
+ * Whether taxiing aircraft [v] waits for another taxiing at [a] just ahead of it the way it's going, ([dx], [dy]):
+ * closer than half their lengths together, and not off to the side by more than half that. Two head on, the lower id
+ * goes first.
+ */
+private fun World.taxiBlocked(v: Aircraft, a: Airport, dx: Int, dy: Int): Boolean {
+    val len = isqrt(dx.toLong() * dx + dy.toLong() * dy).coerceAtLeast(1L)
+    for (w in aircraft) {
+        if (w == null || w === v || w.inDepot || w.at != a.id || !w.taxiing) continue
+        val ox = (w.x - v.x).toLong()
+        val oy = (w.y - v.y).toLong()
+        val sep = ((v.info.length + w.info.length) * SHIP_UNIT / 32).toLong()
+        val ahead = (ox * dx + oy * dy) / len
+        val side = kotlin.math.abs(ox * dy - oy * dx) / len
+        if (ahead <= 0 || ahead > sep || side > sep / 2) continue
+        if (v.id < w.id && -ox * cos256(w.heading) - oy * sin256(w.heading) > 0) continue
+        return true
+    }
+    return false
+}
+
+/**
+ * Taxiing a tick at [TAXI_STEP] along its route's legs, its heading turning at [TAXI_TURN] (a turn tighter than a
+ * quarter turns on the spot first), backing off a stand, holding short of a runway someone else has, and waiting for
+ * one just ahead, for [TAXI_PATIENCE] ticks at most. At the end it lines up to take off, parks, or goes into the hangar.
+ */
+private fun World.taxi(v: Aircraft) {
+    val a = airports.getOrNull(v.at)
+    if (a == null) {
+        // Its airport's gone: off from where it is.
+        v.stand = -1
+        v.state = Flight.CRUISE
+        return
+    }
+    if (v.route < 0) { park(v, a); return }
+    val pts = taxiRoute(a, v.route)
+    val i = v.node
+    if (i >= pts.size / 2 - 1) { endTaxi(v, a); return }
+    val from = taxiPoint(a, pts, i)
+    val to = taxiPoint(a, pts, i + 1)
+    val dx = to[0] - from[0]
+    val dy = to[1] - from[1]
+    if (Taxiways.runwayLeg(pts, i) && !taxiHoldsRunway(v, a) && runwayBusy(a, v)) { v.speed = 0; return }
+    // Off a stand it backs out, nose to the stand.
+    val back = i == 0 && Taxiways.stand(v.route / 16)
+    val want = if (back) bearing256(-dx, -dy) else bearing256(dx, dy)
+    if (kotlin.math.abs(turnTo(v.heading, want)) > 64) { v.speed = 0; steer(v, want, TAXI_TURN); return }
+    if (!taxiHoldsRunway(v, a) && v.holding < TAXI_PATIENCE && taxiBlocked(v, a, dx, dy)) { v.speed = 0; v.holding++; return }
+    v.holding = 0
+    v.speed = TAXI_STEP * 16
+    steer(v, want, TAXI_TURN)
+    if (moveTo(v, to[0], to[1], TAXI_STEP) > 0) return
+    v.node = i + 1
+    // Out of its stand onto the way out, it gives the stand up.
+    if (i == 0 && Taxiways.stand(v.route / 16)) v.stand = -1
+    if (v.node >= pts.size / 2 - 1) endTaxi(v, a)
+}
+
+/** At the end of its taxi: lined up, off down the runway; at a stand, parked and calling; at the door, into the hangar. */
+private fun World.endTaxi(v: Aircraft, a: Airport) {
+    val to = v.route % 16
+    val came = v.route / 16
+    v.route = -1
+    v.node = 0
+    v.holding = 0
+    v.speed = 0
+    when {
+        to >= Taxiways.END0 -> {
+            v.state = Flight.TAKEOFF
+            v.heading = endHeading(a, to)
+        }
+        to == Taxiways.DOOR -> {
+            v.state = Flight.GATE
+            v.stand = -1
+            if (v.target == -1 && a.depot == v.depot) intoHangar(v)
+            else {
+                // Somewhere to wait for a stand: in the hangar, coming out again when one's free.
+                v.at = a.id
+                v.inDepot = true
+            }
+        }
+        else -> {
+            v.state = Flight.GATE
+            val st = Taxiways.STANDS[a.kind]
+            val p = localPoint(a, st[to * 4], st[to * 4 + 1])
+            val s = standPoint(a, to)
+            v.heading = bearing256(s[0] - p[0], s[1] - p[1])
+            v.waiting = 0
+            if (Taxiways.fromRunway(came)) callHere(v, a)
+        }
+    }
+}
+
+/** Down and rolled out to [end], a runway end or exit of [a]: taxiing to its stand, or to the door for its hangar or with none free. */
+private fun World.taxiIn(v: Aircraft, a: Airport, end: Int) {
+    val home = v.target == -1 && a.depot == v.depot
+    if (!home && v.stand < 0) v.stand = standFor(a, v)
+    if (home) v.stand = -1
+    startTaxi(v, Flight.TAXI_IN, end * 16 + (if (v.stand >= 0) v.stand else Taxiways.DOOR))
+}
+
+/** Off its stand on [a] for the runway end into the wind or towards where it's going. */
+private fun World.taxiOut(v: Aircraft, a: Airport) {
+    if (v.heli || v.stand < 0) { v.stand = -1; depart(v, a); return }
+    startTaxi(v, Flight.TAXI_OUT, v.stand * 16 + endFor(a, takeOffHeading(v, a)))
+}
+
+/** From its stand on [a] to the hangar door; a helicopter straight in. */
+private fun World.taxiToHangar(v: Aircraft, a: Airport) {
+    if (v.heli || v.stand < 0) { v.stand = -1; intoHangar(v); return }
+    startTaxi(v, Flight.TAXI_IN, v.stand * 16 + Taxiways.DOOR)
+}
+
+/**
+ * Settles aircraft from a save before taxiing (version [version]) onto stands: one at a gate is [park]ed, and one
+ * rolling out given a stand to taxi to. Every version: hangars on their hangar's tile.
+ */
+internal fun World.settleAirports(version: Int) {
+    for (a in airports) {
+        if (a == null) continue
+        val d = depots.getOrNull(a.depot) ?: continue
+        val tile = hangarTile(a.kind, a.x, a.y, a.axis)
+        if (d.tile == tile) continue
+        depotTiles.remove(d.tile)
+        depots[d.id] = Depot(d.id, d.owner, tile, d.edge, d.kind).also { it.built = d.built }
+        depotTiles[tile] = d.id
+    }
+    if (version >= 53) return
+    for (v in aircraft) {
+        if (v == null || v.inDepot || v.wreckedFor > 0) continue
+        val a = airports.getOrNull(v.at) ?: continue
+        if (v.state == Flight.GATE || v.taxiing) park(v, a)
+        else if (v.state == Flight.LANDING && v.altitude == 0 && !v.heli) v.stand = freeStand(a, v)
+    }
 }
 
 /** Where airport [a]'s runway starts and ends, in 4096ths: along its first row, or out across a seaplane base's water. */
@@ -433,13 +816,15 @@ private fun World.airSky(a: Airport): Int {
 private fun Engine.stormLimit() = if (runway == Runways.STRIP || runway == Runways.HELI || floats) SMALL_STORM else BIG_STORM
 
 /** Why aircraft [v] can't land at airport [a] now: null if it can. */
-fun World.cantLand(v: Aircraft, a: Airport): String? {
+fun World.cantLand(v: Aircraft, a: Airport): String? =
+    cantLandFor(v, a) ?: if (!v.heli && runwayBusy(a, v)) "busy" else null
+
+private fun World.cantLandFor(v: Aircraft, a: Airport): String? {
     if (!a.serves(v.info)) return "runway"
     if (wreckAt(a)) return "wreck"
     if (weather.wind >= v.info.stormLimit()) return "storm"
     if (airSky(a) and FOGGY != 0 && !a.ils) return "fog"
-    val busy = aircraft.count { it != null && it !== v && !it.inDepot && it.at == a.id && (it.state == Flight.GATE || it.state == Flight.LANDING) }
-    if (busy >= Airports.GATES[a.kind]) return "gates"
+    if (!homeBound(v, a) && freeStand(a, v) < 0) return "gates"
     if (a.kind == Airports.SEAPLANE) {
         val e = a.axis
         val water = index(a.x + Track.dx(e), a.y + Track.dy(e))
@@ -499,6 +884,7 @@ private fun World.fly(v: Aircraft) {
         Flight.CRUISE -> cruise(v)
         Flight.HOLD -> hold(v)
         Flight.LANDING -> land(v)
+        Flight.TAXI_OUT, Flight.TAXI_IN -> taxi(v)
     }
 }
 
@@ -527,7 +913,7 @@ private fun World.atGate(v: Aircraft) {
     val target = v.target
     if (target == -2) return
     if (target == -1) {
-        if (here != null && here.depot == v.depot) intoHangar(v) else if (here != null && mayLeave(v, here)) depart(v, here)
+        if (here != null && here.depot == v.depot) taxiToHangar(v, here) else if (here != null && mayLeave(v, here)) taxiOut(v, here)
         return
     }
     val dest = airportOf(target)
@@ -544,7 +930,7 @@ private fun World.atGate(v: Aircraft) {
     }
     if (here == null) { depart(v, null); return }
     if (!mayLeave(v, here)) { v.holding = -1; v.waiting = Calendar.TICKS_PER_DAY / 8; return }
-    depart(v, here)
+    taxiOut(v, here)
 }
 
 /** Whether airport [b] is beyond [v]'s range from [a]. */
@@ -555,15 +941,21 @@ private fun World.tooFar(v: Aircraft, a: Airport, b: Airport): Boolean {
     return v.info.range > 0 && km > v.info.range
 }
 
+/** Straight up, for a helicopter or one with no airport or stand to taxi from (from an old save); a plane from the runway's end. */
 private fun World.depart(v: Aircraft, from: Airport?) {
     v.state = Flight.TAKEOFF
     v.speed = 0
     if (from != null && !v.heli) {
-        val r = runway(from)
-        v.x = r[0]; v.y = r[1]
-        v.heading = heading(r[2] - r[0], r[3] - r[1])
+        val h = takeOffHeading(v, from)
+        val e = runwayEnds(from, h)
+        v.x = e[0]; v.y = e[1]
+        v.heading = h
     }
 }
+
+/** The airport it's flying to: its next stop's, or its hangar's. */
+private fun World.destination(v: Aircraft): Airport? =
+    if (v.target == -1) airports.firstOrNull { it != null && it.depot == v.depot } else airportOf(v.target)
 
 /** The height it cruises at, in 16ths of a step, over the highest ground at either end. */
 private fun World.cruiseAltitude(v: Aircraft): Int {
@@ -573,7 +965,7 @@ private fun World.cruiseAltitude(v: Aircraft): Int {
     return (maxOf(dest, from) + over) * 16
 }
 
-/** Rolling down the runway and climbing away, or a helicopter straight up. */
+/** Rolling down the runway the way it faces, off the ground halfway, then climbing straight ahead a little; a helicopter straight up. */
 private fun World.takeOff(v: Aircraft) {
     val top = cruiseAltitude(v)
     if (v.heli) {
@@ -582,15 +974,15 @@ private fun World.takeOff(v: Aircraft) {
         return
     }
     val from = airports.getOrNull(v.at) ?: run { leaveAirport(v); return }
-    val r = runway(from)
+    val e = runwayEnds(from, v.heading)
     v.speed = minOf(v.speed + v.maxSpeed / 40 + 16, v.maxSpeed)
-    val left = moveTo(v, r[2], r[3], v.speed / 16)
-    val total = isqrt((r[2] - r[0]).toLong() * (r[2] - r[0]) + (r[3] - r[1]).toLong() * (r[3] - r[1])).toInt().coerceAtLeast(1)
+    advance(v, v.speed / 16)
+    val total = isqrt((e[2] - e[0]).toLong() * (e[2] - e[0]) + (e[3] - e[1]).toLong() * (e[3] - e[1])).toInt().coerceAtLeast(1)
+    val gone = along(v, e, v.heading)
     val ground = heightAt(from.x, from.y) * 16
-    // Off the ground halfway along.
-    val gone = total - left
-    if (gone > total / 2) v.altitude = ground + (gone - total / 2) * 48 / total
-    if (left == 0) leaveAirport(v)
+    if (gone > total) v.altitude = maxOf(v.altitude, ground + 24) + CLIMB
+    else if (gone > total / 2) v.altitude = ground + (gone - total / 2) * 48 / total
+    if (gone >= total + CLIMB_OUT * SHIP_UNIT) leaveAirport(v)
 }
 
 private fun World.leaveAirport(v: Aircraft) {
@@ -598,42 +990,141 @@ private fun World.leaveAirport(v: Aircraft) {
     v.holding = 0
 }
 
-/** Moves [v] up to [step] towards ([tx], [ty]), turning to face that way; what's left of the way after. */
+/** Moves [v] up to [step] straight towards ([tx], [ty]); what's left of the way after. */
 private fun moveTo(v: Aircraft, tx: Int, ty: Int, step: Int): Int {
     val dx = tx - v.x
     val dy = ty - v.y
     val dist = isqrt(dx.toLong() * dx + dy.toLong() * dy).toInt()
     if (dist == 0) return 0
-    v.heading = flightHeading(dx, dy)
     if (dist <= step) { v.x = tx; v.y = ty; return 0 }
     v.x += (dx.toLong() * step / dist).toInt()
     v.y += (dy.toLong() * step / dist).toInt()
     return dist - step
 }
 
-private fun flightHeading(dx: Int, dy: Int): Int {
-    val ax = kotlin.math.abs(dx)
-    val ay = kotlin.math.abs(dy)
-    return when {
-        ax > ay * 2 -> heading(dx, 0)
-        ay > ax * 2 -> heading(0, dy)
-        else -> heading(dx, dy)
-    }
+/** Moves [v] [step] the way it faces. */
+private fun advance(v: Aircraft, step: Int) {
+    v.x += (step.toLong() * cos256(v.heading) / TRIG_ONE).toInt()
+    v.y += (step.toLong() * sin256(v.heading) / TRIG_ONE).toInt()
 }
 
-/** Where an aircraft lines up to land on [a]: out along the runway's line from its start, or over the pad for a helicopter. */
-private fun World.approach(v: Aircraft, a: Airport): IntArray {
-    if (v.heli) return gatePoint(a, v.id)
+/** The turn from heading [from] to [to] the shorter way, in 256ths, -128 up to 127. */
+private fun turnTo(from: Int, to: Int) = ((to - from + 128) and 255) - 128
+
+/** Turns [v] towards heading [to] the shorter way, by up to [rate]. */
+private fun steer(v: Aircraft, to: Int, rate: Int) {
+    v.heading = (v.heading + turnTo(v.heading, to).coerceIn(-rate, rate)) and 255
+}
+
+/** Turns [v] towards ([tx], [ty]) by up to [rate]; nothing if it's there. */
+private fun steerAt(v: Aircraft, tx: Int, ty: Int, rate: Int) {
+    if (tx != v.x || ty != v.y) steer(v, bearing256(tx - v.x, ty - v.y), rate)
+}
+
+/**
+ * Turns plane [v] towards ([tx], [ty]) at its [turnRate]; but if that point is inside the circle it would turn round,
+ * where it could only circle it, it flies straight on until it can reach it.
+ */
+private fun steerPlane(v: Aircraft, tx: Int, ty: Int) {
+    val dx = (tx - v.x).toLong()
+    val dy = (ty - v.y).toLong()
+    val ahead = (dx * cos256(v.heading) + dy * sin256(v.heading)) / TRIG_ONE
+    val side = kotlin.math.abs(dy * cos256(v.heading) - dx * sin256(v.heading)) / TRIG_ONE
+    val r = turnRadius(v).toLong()
+    if (ahead * ahead + (side - r) * (side - r) < r * r) return
+    steerAt(v, tx, ty, turnRate(v))
+}
+
+/** Its turning circle's radius, in 4096ths: two tiles for airliners, one for small planes, float planes and a helicopter holding. */
+internal fun turnRadius(v: Aircraft) = if (v.heli || v.info.runway == Runways.STRIP || v.info.floats) SHIP_UNIT else 2 * SHIP_UNIT
+
+/** How far [v] turns at most a tick, in 256ths: a helicopter almost on the spot, a plane round its [turnRadius] at its speed, [TAXI_TURN] taxiing. */
+internal fun turnRate(v: Aircraft) = if (v.taxiing) TAXI_TURN else if (v.heli) HELI_TURN else circleRate(v.speed / 16, turnRadius(v))
+
+/** The turn a tick, in 256ths, that goes round a circle of [radius] at [step] a tick; at least 1. */
+private fun circleRate(step: Int, radius: Int): Int = maxOf(1, ((step.toLong() * 256_000 + 3_141L * radius) / (6_283L * radius)).toInt())
+
+/** Airport [a]'s runway from the end it starts at to the end it finishes at for heading [h]: start x, y, end x, y. */
+private fun World.runwayEnds(a: Airport, h: Int): IntArray {
     val r = runway(a)
-    val dx = (r[2] - r[0]).coerceIn(-1, 1)
-    val dy = (r[3] - r[1]).coerceIn(-1, 1)
-    return intArrayOf(r[0] - dx * SHIP_UNIT * APPROACH, r[1] - dy * SHIP_UNIT * APPROACH)
+    val dot = (r[2] - r[0]).toLong() * cos256(h) + (r[3] - r[1]).toLong() * sin256(h)
+    return if (dot >= 0) r else intArrayOf(r[2], r[3], r[0], r[1])
 }
 
-/** Flying to where it lines up for its next airport, at its cruising height. */
+/** How far [v] is past the start of runway ends [e] along heading [h], and off to its right ([h] + a quarter turn), in 4096ths. */
+private fun along(v: Aircraft, e: IntArray, h: Int) = (((v.x - e[0]).toLong() * cos256(h) + (v.y - e[1]).toLong() * sin256(h)) / TRIG_ONE).toInt()
+private fun across(v: Aircraft, e: IntArray, h: Int) = (((v.y - e[1]).toLong() * cos256(h) - (v.x - e[0]).toLong() * sin256(h)) / TRIG_ONE).toInt()
+
+/** The point [a] along and [c] across from the start of runway ends [e] for heading [h]. */
+private fun point(e: IntArray, h: Int, a: Int, c: Int) = intArrayOf(
+    e[0] + ((a.toLong() * cos256(h) - c.toLong() * sin256(h)) / TRIG_ONE).toInt(),
+    e[1] + ((a.toLong() * sin256(h) + c.toLong() * cos256(h)) / TRIG_ONE).toInt(),
+)
+
+/** The way to take off and land on [a] into the wind, in 256ths; null when it's calm, weather is off or the wind is across the runway. */
+private fun World.intoWind(a: Airport): Int? {
+    if (!settings.weather || weather.wind < CALM) return null
+    val r = runway(a)
+    val f = weather.windFrom and 7
+    val dot = (r[2] - r[0]).coerceIn(-1, 1) * WIND_X[f] + (r[3] - r[1]).coerceIn(-1, 1) * WIND_Y[f]
+    if (dot == 0) return null
+    val way = bearing256(r[2] - r[0], r[3] - r[1])
+    return if (dot > 0) way else (way + 128) and 255
+}
+
+/** The way [v] takes off from [a]: into the wind, or without one towards where it's going. */
+private fun World.takeOffHeading(v: Aircraft, a: Airport) = takeOffTowards(a, destination(v))
+
+/** The way a plane takes off from [a] for [dest]: into the wind, or without one towards it. */
+private fun World.takeOffTowards(a: Airport, dest: Airport?): Int {
+    intoWind(a)?.let { return it }
+    val r = runway(a)
+    val way = bearing256(r[2] - r[0], r[3] - r[1])
+    if (dest == null) return way
+    val u = SHIP_UNIT
+    val dx = (dest.x * u + dest.w * u / 2 - (r[0] + r[2]) / 2).toLong()
+    val dy = (dest.y * u + dest.h * u / 2 - (r[1] + r[3]) / 2).toLong()
+    return if (dx * (r[2] - r[0]) + dy * (r[3] - r[1]) < 0) (way + 128) and 255 else way
+}
+
+/** The way [v] lands on [a]: into the wind, or without one from the end nearer it. */
+private fun World.landingHeading(v: Aircraft, a: Airport): Int {
+    intoWind(a)?.let { return it }
+    val r = runway(a)
+    val way = bearing256(r[2] - r[0], r[3] - r[1])
+    val dx = (v.x - (r[0] + r[2]) / 2).toLong()
+    val dy = (v.y - (r[1] + r[3]) / 2).toLong()
+    return if (dx * (r[2] - r[0]) + dy * (r[3] - r[1]) > 0) (way + 128) and 255 else way
+}
+
+/**
+ * Where a plane steers to land on [a] heading [h]: x, y, and 1 if it's on final. On final (ahead of the runway, facing
+ * within a quarter turn of [h], and inside a wedge along the extended centreline that narrows to half a tile [APPROACH]
+ * tiles out) it follows a point further along the line, so it joins it gently; well out on that side, it makes for the
+ * line two turns past [APPROACH] tiles out; nearer in or past the runway, it goes round, out to the side it's on.
+ */
+private fun World.approachTarget(v: Aircraft, a: Airport, h: Int): IntArray {
+    val e = runwayEnds(a, h)
+    val r = turnRadius(v)
+    val out = APPROACH * SHIP_UNIT
+    val along = along(v, e, h)
+    val across = across(v, e, h)
+    val wedge = maxOf(0, (-along - out) / 2) + SHIP_UNIT / 2
+    if (along < 0 && kotlin.math.abs(turnTo(v.heading, h)) <= 64 && kotlin.math.abs(across) <= wedge) {
+        val p = point(e, h, along + maxOf(r + SHIP_UNIT, -along / 2), 0)
+        return intArrayOf(p[0], p[1], 1)
+    }
+    val join = out + 2 * r
+    // Going round, to the side it's on, or near the line the side it's heading for.
+    val side = if (kotlin.math.abs(across) > r) across else sin256(v.heading - h)
+    val p = if (along < -join) point(e, h, -join, 0) else point(e, h, -join - r, (if (side < 0) -2 else 2) * r)
+    return intArrayOf(p[0], p[1], 0)
+}
+
+/** Flying to its next airport at its cruising height, lining up to land on the way; near it, landing or holding. */
 private fun World.cruise(v: Aircraft) {
     val target = v.target
-    val dest = if (target == -1) airports.firstOrNull { it != null && it.depot == v.depot } else airportOf(target)
+    val dest = destination(v)
     if (dest == null || !dest.serves(v.info)) {
         // Its airport's gone, or it can't land there: on to the next stop, or home.
         if (target >= 0 && v.orders.size > 1) v.order = (v.order + 1) % v.orders.size else v.toDepot = true
@@ -642,28 +1133,64 @@ private fun World.cruise(v: Aircraft) {
     v.speed = minOf(v.speed + v.maxSpeed / 40 + 16, v.maxSpeed)
     val top = cruiseAltitude(v)
     v.altitude = if (v.altitude < top) minOf(top, v.altitude + CLIMB) else maxOf(top, v.altitude - CLIMB)
-    val p = approach(v, dest)
-    if (moveTo(v, p[0], p[1], v.speed / 16) == 0) {
-        val why = cantLand(v, dest)
-        if (why == null) { v.state = Flight.LANDING; v.at = dest.id } else { v.state = Flight.HOLD; v.holding = 0 }
+    if (v.heli) {
+        val p = heliPoint(v, dest)
+        steerAt(v, p[0], p[1], HELI_TURN)
+        if (moveTo(v, p[0], p[1], v.speed / 16) == 0) overAirport(v, dest, v.heading)
+        return
     }
+    val h = landingHeading(v, dest)
+    val t = approachTarget(v, dest, h)
+    steerPlane(v, t[0], t[1])
+    advance(v, v.speed / 16)
+    val e = runwayEnds(dest, h)
+    val dx = (v.x - e[0]).toLong()
+    val dy = (v.y - e[1]).toLong()
+    val near = (APPROACH + 2L) * SHIP_UNIT
+    if (dx * dx + dy * dy <= near * near) overAirport(v, dest, h)
 }
 
-/** Circling where it lines up, looking now and then to land; diverting on to its next stop after a while. */
+/** Where a helicopter puts down on [a]: the first free stand, or the hangar door going home. */
+private fun World.heliPoint(v: Aircraft, a: Airport): IntArray {
+    if (homeBound(v, a)) return Taxiways.DOORS[a.kind].let { localPoint(a, it[2], it[3]) }
+    return standPoint(a, freeStand(a, v).coerceAtLeast(0))
+}
+
+/** Whether [v] is going into its hangar at [a]. */
+private fun homeBound(v: Aircraft, a: Airport) = v.target == -1 && a.depot == v.depot
+
+/** Near [dest]: landing on it heading [h] if it can, with a stand to go to unless it's going into the hangar, holding if not. */
+private fun World.overAirport(v: Aircraft, dest: Airport, h: Int) {
+    v.holding = 0
+    val stand = if (homeBound(v, dest)) -1 else standFor(dest, v)
+    // A helicopter comes down where it is, so only onto the stand it's over.
+    val over = !v.heli || stand < 0 || standPoint(dest, stand).let { it[0] == v.x && it[1] == v.y }
+    if (over && cantLand(v, dest) == null) {
+        v.state = Flight.LANDING
+        v.at = dest.id
+        v.landing = h
+        v.stand = stand
+    } else v.state = Flight.HOLD
+}
+
+/** Circling steadily where it is, looking now and then to land; diverting on to its next stop after a while. */
 private fun World.hold(v: Aircraft) {
     val target = v.target
-    val dest = if (target == -1) airports.firstOrNull { it != null && it.depot == v.depot } else airportOf(target)
+    val dest = destination(v)
     if (dest == null) { v.state = Flight.CRUISE; return }
     v.holding++
-    val p = approach(v, dest)
-    // Round a circle of a tile and a half, a sixteenth of the way each few ticks; whole numbers keep every copy alike.
-    val k = (v.holding / 6) % 16
-    val cx = p[0] + CIRCLE[k] * SHIP_UNIT * 3 / 2000
-    val cy = p[1] + CIRCLE[(k + 12) % 16] * SHIP_UNIT * 3 / 2000
-    moveTo(v, cx, cy, v.speed / 16)
-    if (v.holding % 16 == 0 && cantLand(v, dest) == null) {
-        v.state = Flight.CRUISE
-        return
+    v.heading = (v.heading + circleRate(v.speed / 16, turnRadius(v))) and 255
+    advance(v, v.speed / 16)
+    val top = cruiseAltitude(v)
+    if (v.altitude < top) v.altitude = minOf(top, v.altitude + CLIMB)
+    if (v.holding % 16 == 0) {
+        val why = cantLand(v, dest)
+        if (why == null) {
+            v.state = Flight.CRUISE
+            return
+        }
+        // A runway in use soon frees: that never makes it divert.
+        if (why == "busy") v.holding -= 16
     }
     if (v.holding > HOLD_TICKS && v.orders.size > 1 && target >= 0) {
         // Diverted: on to its next stop with what it carries.
@@ -674,7 +1201,10 @@ private fun World.hold(v: Aircraft) {
     }
 }
 
-/** Down the glide path to the runway's start, then rolling to its end; a helicopter straight down onto its pad. */
+/**
+ * Lining up and down the glide path to the runway's start, going round if it can't line up, then rolling to its end;
+ * a helicopter straight down onto its pad.
+ */
 private fun World.land(v: Aircraft) {
     val a = airports.getOrNull(v.at) ?: run { v.state = Flight.CRUISE; return }
     val ground = heightAt(a.x, a.y) * 16
@@ -683,21 +1213,77 @@ private fun World.land(v: Aircraft) {
         if (v.altitude <= ground) { v.altitude = 0; arriveAircraft(v, a) }
         return
     }
-    val r = runway(a)
     if (v.altitude > 0) {
-        // A wreck on the runway: round again and hold.
-        if (wreckAt(a)) { v.state = Flight.HOLD; v.holding = 0; return }
-        val left = moveTo(v, r[0], r[1], v.speed / 16)
-        val glide = SHIP_UNIT * APPROACH
-        v.altitude = ground + ((cruiseAltitude(v) - ground).toLong() * left / glide).toInt().coerceAtLeast(0)
-        if (left == 0) {
-            v.altitude = 0
-            if (settings.collisions && rng.below(crashOdds(v, a)) == 0) crashLanding(v, a)
+        // A wreck on the runway: round again and hold, giving its stand up.
+        if (wreckAt(a)) { v.state = Flight.HOLD; v.holding = 0; v.stand = -1; return }
+        v.holding++
+        val h = v.landing
+        val t = approachTarget(v, a, h)
+        steerPlane(v, t[0], t[1])
+        advance(v, v.speed / 16)
+        val top = cruiseAltitude(v)
+        if (t[2] == 0) {
+            if (v.altitude < top) v.altitude = minOf(top, v.altitude + CLIMB)
+            return
         }
+        val e = runwayEnds(a, h)
+        val along = along(v, e, h)
+        // Down the glide path from its cruising height [APPROACH] tiles out, never climbing back up to it.
+        val glide = (ground + (top - ground).toLong() * -along / (APPROACH * SHIP_UNIT)).toInt().coerceIn(ground + 1, top)
+        if (glide < v.altitude) v.altitude = maxOf(glide, v.altitude - GLIDE)
+        if (along < 0) return
+        // Over the runway's start: down if it's lined up, rolling out onto the centreline, else round again; one that's
+        // gone round too long is put down on the line.
+        val lined = kotlin.math.abs(across(v, e, h)) <= SHIP_UNIT / 4 && kotlin.math.abs(turnTo(v.heading, h)) <= turnRate(v)
+        if (!lined && v.holding <= LANDING_TICKS) return
+        if (!lined) {
+            val p = point(e, h, along, 0)
+            v.x = p[0]; v.y = p[1]
+        }
+        v.heading = h
+        v.altitude = 0
+        if (settings.collisions && rng.below(crashOdds(v, a)) == 0) crashLanding(v, a)
         return
     }
-    v.speed = maxOf(v.speed - v.maxSpeed / 30, v.maxSpeed / 6)
-    if (moveTo(v, r[2], r[3], v.speed / 16) == 0) arriveAircraft(v, a)
+    // Rolling out to the exit it can make nearest its stand, braking to taxi speed just in time, or to the far end's spur.
+    val brake = v.maxSpeed / 10
+    val out = rollOut(v, a, brake)
+    val p = Taxiways.spur(a.kind, out).let { localPoint(a, it[it.size - 2], it[it.size - 1]) }
+    val gap = isqrt((p[0] - v.x).toLong() * (p[0] - v.x) + (p[1] - v.y).toLong() * (p[1] - v.y)).toLong()
+    if (stopping(v.speed, brake) + v.speed / 16 >= gap) v.speed = maxOf(v.speed - brake, minOf(v.speed, TAXI_STEP * 16))
+    if (moveTo(v, p[0], p[1], v.speed / 16) == 0) taxiIn(v, a, out)
+}
+
+/** How far, in 4096ths, rolling at [speed] takes to slow to taxi speed braking by [brake] a tick. */
+private fun stopping(speed: Int, brake: Int): Long {
+    val slow = TAXI_STEP * 16
+    val ticks = if (speed <= slow) 0 else (speed - slow + brake - 1) / brake.coerceAtLeast(1)
+    return ticks.toLong() * (speed + slow) / 32
+}
+
+/**
+ * Where [v], landing on [a] and braking by [brake] a tick, turns off: of the exits ahead for its way no nearer than it
+ * takes to slow to taxi speed, the one joining nearest its stand (or the door without one), else the far end.
+ */
+private fun World.rollOut(v: Aircraft, a: Airport, brake: Int): Int {
+    val far = if (endFor(a, v.heading) == Taxiways.END0) Taxiways.END1 else Taxiways.END0
+    val way = if (far == Taxiways.END1) 1 else -1
+    val o = localPoint(a, 0, 0)
+    val e = localPoint(a, 16, 0)
+    // Along the runway in 4096ths, from the airport's corner.
+    val at = ((v.x - o[0]).toLong() * (e[0] - o[0]) + (v.y - o[1]).toLong() * (e[1] - o[1])) / SHIP_UNIT
+    val stop = stopping(v.speed, brake)
+    val goal = Taxiways.spur(a.kind, if (v.stand >= 0) v.stand else Taxiways.DOOR)[0]
+    var best = far
+    var bestOff = Int.MAX_VALUE
+    for ((k, x) in Taxiways.EXITS[a.kind].withIndex()) {
+        val w = Taxiways.exitWay(a.kind, x)
+        if (w != 0 && w != way) continue
+        if ((x[x.size - 2] * 256L - at) * way < stop) continue
+        val off = kotlin.math.abs(x[0] - goal)
+        if (off < bestOff) { best = Taxiways.EXIT0 + k; bestOff = off }
+    }
+    return best
 }
 
 /** Whether a wreck stands on airport [a]'s runway, closing it. */
@@ -720,6 +1306,7 @@ private fun World.crashLanding(v: Aircraft, a: Airport) {
     v.toDepot = false
     v.servicing = false
     v.holding = 0
+    v.stand = -1
     v.orders.clear()
     v.order = 0
     v.shared = -1
@@ -728,16 +1315,15 @@ private fun World.crashLanding(v: Aircraft, a: Airport) {
     crashed(tile, listOf(CrashVehicle(Crash.AIRCRAFT, v.id, v.owner, v.name) to v))
 }
 
-/** Down and at a gate: calling at the station, or into the hangar. */
+/** A helicopter down on its stand: calling at the station, or into the hangar. */
 private fun World.arriveAircraft(v: Aircraft, a: Airport) {
     v.state = Flight.GATE
     v.altitude = 0
     v.speed = 0
     v.holding = 0
     v.at = a.id
-    val g = gatePoint(a, v.id)
-    v.x = g[0]; v.y = g[1]
-    if (v.target == -1 && a.depot == v.depot) { intoHangar(v); return }
+    if (homeBound(v, a)) { v.stand = -1; intoHangar(v); return }
+    if (v.stand < 0) v.stand = freeStand(a, v)
     callHere(v, a)
 }
 
@@ -751,6 +1337,7 @@ private fun World.callHere(v: Aircraft, a: Airport) {
 
 private fun World.intoHangar(v: Aircraft) {
     v.inDepot = true
+    v.stand = -1
     v.running = false
     v.toDepot = false
     if (v.servicing) {
@@ -773,7 +1360,7 @@ private fun World.needsGear(v: Aircraft) = v.seasonalGear && v.info.floats && v.
  */
 internal fun World.nearestHangar(v: Aircraft, next: Airport? = null): Airport? {
     // From the airport it's at, or where it is in the air, in tiles.
-    val here = if (v.state == Flight.GATE) airports.getOrNull(v.at) else null
+    val here = if (v.state == Flight.GATE || v.taxiing) airports.getOrNull(v.at) else null
     val x = here?.x ?: (v.x / SHIP_UNIT)
     val y = here?.y ?: (v.y / SHIP_UNIT)
     var best: Airport? = null
@@ -835,11 +1422,51 @@ internal fun World.aircraftDay() {
     }
 }
 
-/** Where aircraft [v] is, in tiles: x, y, the way it faces, and how high in steps. */
-fun World.aircraftPosition(v: Aircraft) = floatArrayOf(v.x / SHIP_UNIT.toFloat(), v.y / SHIP_UNIT.toFloat(), v.heading.toFloat(), v.altitude / 16f)
+/** Where aircraft [v] is, in tiles: x, y, the way it faces in eighths, and how high in steps. */
+fun World.aircraftPosition(v: Aircraft) = floatArrayOf(v.x / SHIP_UNIT.toFloat(), v.y / SHIP_UNIT.toFloat(), v.heading / 32f, v.altitude / 16f)
 
-/** Cosines round a circle in sixteenths, in thousandths. */
-private val CIRCLE = intArrayOf(1000, 924, 707, 383, 0, -383, -707, -924, -1000, -924, -707, -383, 0, 383, 707, 924)
+/** Sine of heading [h] in 256ths of a turn, and its cosine, in [TRIG_ONE]ths; whole numbers so every copy of the game agrees. */
+internal fun sin256(h: Int): Int {
+    val a = h and 255
+    return when {
+        a <= 64 -> SINE[a]
+        a <= 128 -> SINE[128 - a]
+        a <= 192 -> -SINE[a - 128]
+        else -> -SINE[256 - a]
+    }
+}
+
+internal fun cos256(h: Int) = sin256(h + 64)
+
+/** The heading of ([dx], [dy]) in 256ths of a turn, 0 along x, on round towards y; 0 for no way at all. */
+internal fun bearing256(dx: Int, dy: Int): Int {
+    val ax = kotlin.math.abs(dx.toLong())
+    val ay = kotlin.math.abs(dy.toLong())
+    val lo = minOf(ax, ay)
+    val hi = maxOf(ax, ay)
+    var k = 0
+    while (k < 32 && lo * TRIG_ONE > TANGENT[k] * hi) k++
+    val a = if (ay > ax) 64 - k else k
+    val q = if (dx < 0) 128 - a else a
+    return (if (dy < 0) -q else q) and 255
+}
+
+const val TRIG_ONE = 16384
+/** Sines from 0 to a quarter turn in 256ths, in [TRIG_ONE]ths. */
+private val SINE = intArrayOf(
+    0, 402, 804, 1205, 1606, 2006, 2404, 2801, 3196, 3590, 3981, 4370, 4756, 5139, 5520, 5897, 6270, 6639, 7005, 7366, 7723, 8076,
+    8423, 8765, 9102, 9434, 9760, 10080, 10394, 10702, 11003, 11297, 11585, 11866, 12140, 12406, 12665, 12916, 13160, 13395, 13623,
+    13842, 14053, 14256, 14449, 14635, 14811, 14978, 15137, 15286, 15426, 15557, 15679, 15791, 15893, 15986, 16069, 16143, 16207,
+    16261, 16305, 16340, 16364, 16379, 16384,
+)
+/** Tangents halfway between 256ths, from a half to 31 and a half, in [TRIG_ONE]ths: [bearing256] counts how many an angle is past. */
+private val TANGENT = longArrayOf(
+    201, 603, 1007, 1411, 1817, 2225, 2636, 3050, 3469, 3891, 4318, 4751, 5190, 5636, 6090, 6552, 7023, 7504, 7997, 8501, 9018, 9549,
+    10096, 10659, 11241, 11842, 12466, 13113, 13786, 14487, 15220, 15987,
+)
+/** Where each of the eight winds of [Weather.windFrom] blows from, as a step in x and y. */
+private val WIND_X = intArrayOf(-1, -1, 0, 1, 1, 1, 0, -1)
+private val WIND_Y = intArrayOf(0, -1, -1, -1, 0, 1, 1, 1)
 
 /** Bits of [airSky]. */
 private const val FOGGY = 1
@@ -856,9 +1483,23 @@ const val SKI_ICE = 30
 /** Steps over the higher airport aircraft cruise at: airliners, and bush planes and helicopters. */
 const val CRUISE = 10
 const val LOW_CRUISE = 6
-/** How fast aircraft climb and descend, in 16ths of a step a tick; how far out they line up to land, in tiles. */
+/** How fast aircraft climb and descend, in 16ths of a step a tick, and the most they come down a tick on the glide path. */
 const val CLIMB = 6
+const val GLIDE = 16
+/** How far out aircraft line up to land, and how far past the runway they climb straight ahead before turning, in tiles. */
 const val APPROACH = 5
+const val CLIMB_OUT = 1
+/** How far a helicopter turns a tick, in 256ths. */
+const val HELI_TURN = 32
+/** How far aircraft taxi a tick, in 4096ths, quick on the map's scale so taxiing adds a day or two a trip; and the most they turn a tick, as round an eighth of a tile. */
+const val TAXI_STEP = 320
+private val TAXI_TURN = circleRate(TAXI_STEP, SHIP_UNIT / 8)
+/** Ticks a taxiing aircraft waits for one in its way before going on anyway, so none waits for another for ever. */
+const val TAXI_PATIENCE = 64
+/** Wind under this, in km/h, is calm: aircraft take off towards where they're going and land from the nearer end. */
+const val CALM = 5
+/** Ticks lining up after which a plane lands at the next pass whether it's lined up or not. */
+const val LANDING_TICKS = 4 * 64
 /** One landing in this many crashes with collisions on, and for a fast aircraft on a small airport; fast is from this, in km/h. */
 const val CRASH_ODDS = 400
 const val SHORT_CRASH_ODDS = 100

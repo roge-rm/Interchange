@@ -183,9 +183,14 @@ class CrashTest {
             v.running = true
             v.state = Flight.LANDING
             v.at = a.id
-            v.x = r[0]; v.y = r[1]
             v.altitude = 5
             v.speed = v.maxSpeed / 2
+            // Lined up, half a tick's flight short of the runway.
+            val h = bearing256(r[2] - r[0], r[3] - r[1])
+            v.heading = h
+            v.landing = h
+            val back = v.speed / 32
+            v.x = r[0] - cos256(h) * back / TRIG_ONE; v.y = r[1] - sin256(h) * back / TRIG_ONE
             w.step()
             if (v.wreckedFor > 0) {
                 crashes++

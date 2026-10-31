@@ -15,7 +15,7 @@ class VehicleView(val tick: Long, val cars: FloatArray, val wrecks: Set<Int> = e
     fun y(i: Int) = cars[i * CAR_FIELDS + 2]
     /** The way it faces in the world, 0 along x, on round towards y, in eighths. */
     fun heading(i: Int) = cars[i * CAR_FIELDS + 3].toInt()
-    /** The same as an angle in eighths, 0 up to 8; between eighths for a train car on a curve. */
+    /** The same as an angle in eighths, 0 up to 8; between eighths for a train car on a curve or an aircraft. */
     fun angle(i: Int) = cars[i * CAR_FIELDS + 8]
     fun sprite(i: Int) = cars[i * CAR_FIELDS + 4].toInt()
     /** 1 climbing, -1 going down, 0 level. */
@@ -421,12 +421,13 @@ fun World.view(company: Int = 0, withReserved: Boolean = false): WorldView {
         cars += VehicleView.key(VehicleView.AIRCRAFT, v.id).toFloat()
         cars += v.x / SHIP_UNIT.toFloat()
         cars += v.y / SHIP_UNIT.toFloat()
-        cars += v.heading.toFloat()
+        // Its heading in 256ths, as the nearest eighth and as an angle in eighths.
+        cars += ((v.heading + 16) shr 5 and 7).toFloat()
         cars += v.info.sprite.toFloat()
         cars += if (v.flying) VehicleView.FLYING.toFloat() else 0f
         cars += v.info.length / 16f
         cars += if (v.flying) v.altitude / 16f else -1f
-        cars += v.heading.toFloat()
+        cars += v.heading / 32f
     }
     // The middle of a tile, or nothing if it isn't on the map.
     fun atTile(tile: Int) = if (tile < 0) 0f to 0f else (tile % width + 0.5f) to (tile / width + 0.5f)

@@ -499,6 +499,7 @@
     <string name="iced_in">Held up by ice</string>
     <string name="storm_in_port">In port for the storm</string>
     <string name="taking_off">Taking off</string>
+    <string name="taxiing">Taxiing</string>
     <string name="landing_at">Landing at %1$s</string>
     <string name="holding_over">Holding over %1$s: %2$s</string>
     <string-array name="hold_reasons">
@@ -510,6 +511,7 @@
         <item>snow on the strip</item>
         <item>runway too short</item>
         <item>a wreck on the runway</item>
+        <item>runway in use</item>
     </string-array>
     <string-array name="gear_kinds">
         <item>wheels</item>

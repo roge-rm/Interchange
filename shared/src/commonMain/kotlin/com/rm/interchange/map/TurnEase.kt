@@ -1,12 +1,12 @@
 package com.rm.interchange.map
 
 /**
- * The angle each ship and aircraft is drawn at, in eighths, turned toward its sim heading at a steady rate the
+ * The angle each ship is drawn at, in eighths, turned toward its sim heading at a steady rate the
  * shorter way round, so a turn shows the pictures in between rather than snapping. Drawing only, on the UI thread.
  *
  * Kept in two open-addressed tables by vehicle key, read from last frame's and written to this frame's, then
  * swapped, so a vehicle not drawn this frame is forgotten and nothing is allocated once the tables have grown.
- * Keys are below zero (ships and aircraft), so 0 marks an empty slot.
+ * Keys are below zero (ships), so 0 marks an empty slot.
  */
 internal class TurnEase {
     private var oldKeys = IntArray(64)
@@ -77,12 +77,10 @@ internal class TurnEase {
 
     companion object {
         /**
-         * Turn rates in eighths a tick, at 30 ticks a second. A ship turns 90 degrees in a second, so a half turn
-         * takes 2 s, while it covers a tile in a few seconds. An aircraft, flying or taxiing, turns 90 degrees in
-         * 0.4 s, quick enough that its picture keeps up with a plane covering several tiles a second.
+         * Turn rate in eighths a tick, at 30 ticks a second. A ship turns 90 degrees in a second, so a half turn
+         * takes 2 s, while it covers a tile in a few seconds.
          */
         const val SHIP_RATE = 2f / 30f
-        const val AIRCRAFT_RATE = 2f / 12f
 
         /** [from] moved up to [step] eighths toward [to] the shorter way round, kept in 0 up to 8. */
         fun toward(from: Float, to: Float, step: Float): Float {

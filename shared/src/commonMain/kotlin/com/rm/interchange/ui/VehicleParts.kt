@@ -181,7 +181,7 @@ fun shipWrong(v: ShipView) = v.lost || v.broken || v.iced
 fun aircraftStatus(view: WorldView, v: AircraftView): String {
     val target = nextStop(v.orders, v.order)
     val reasons = stringArrayResource(Res.array.hold_reasons)
-    val reason = when (v.holdingFor) { "storm" -> 0; "fog" -> 1; "gates" -> 2; "ice" -> 3; "gear" -> 4; "snow" -> 5; "wreck" -> 7; else -> 6 }
+    val reason = when (v.holdingFor) { "storm" -> 0; "fog" -> 1; "gates" -> 2; "ice" -> 3; "gear" -> 4; "snow" -> 5; "wreck" -> 7; "busy" -> 8; else -> 6 }
     return when {
         v.wrecked -> stringResource(Res.string.wrecked)
         v.broken -> stringResource(Res.string.broken_down)
@@ -190,6 +190,7 @@ fun aircraftStatus(view: WorldView, v: AircraftView): String {
         !v.running && v.state == Flight.GATE -> stringResource(Res.string.stopped)
         v.state == Flight.HOLD && target != null -> stringResource(Res.string.holding_over, stationName(view, target), reasons.getOrElse(reason) { "" })
         v.state == Flight.TAKEOFF -> stringResource(Res.string.taking_off)
+        v.state == Flight.TAXI_OUT || v.state == Flight.TAXI_IN -> stringResource(Res.string.taxiing)
         v.state == Flight.LANDING && target != null -> stringResource(Res.string.landing_at, stationName(view, target))
         v.toDepot -> stringResource(Res.string.going_to_hangar, v.kmh)
         v.state == Flight.GATE && target != null && v.waiting -> stringResource(Res.string.at_station, stationName(view, target))

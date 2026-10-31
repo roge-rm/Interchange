@@ -482,6 +482,7 @@
     <string name="iced_in">Retenu par les glaces</string>
     <string name="storm_in_port">Au port pendant la tempête</string>
     <string name="taking_off">Au décollage</string>
+    <string name="taxiing">Au roulage</string>
     <string name="landing_at">Atterrissage à %1$s</string>
     <string name="holding_over">En attente au-dessus de %1$s : %2$s</string>
     <string-array name="hold_reasons">
@@ -493,6 +494,7 @@
         <item>neige sur la piste</item>
         <item>piste trop courte</item>
         <item>une épave sur la piste</item>
+        <item>piste occupée</item>
     </string-array>
     <string-array name="gear_kinds">
         <item>roues</item>

@@ -189,7 +189,7 @@ internal fun World.replaceAircraft(company: Company, old: Aircraft, model: Int?)
     if (!old.inDepot) return
     val e = replacementModel(model, VehicleKind.AIRCRAFT) ?: return
     if (e.id == old.model) return
-    val airport = airports.firstOrNull { it != null && it.depot == old.depot } ?: return
+    val airport = hangarAirport(old) ?: return
     if (!airport.serves(e)) return
     val made = Aircraft(roster, old.id, old.owner, e.id, old.depot, old.cargoChoice)
     made.owner = old.owner
@@ -211,6 +211,10 @@ internal fun World.replaceAircraft(company: Company, old: Aircraft, model: Int?)
     made.altitude = old.altitude
     made.heading = old.heading
     made.speed = old.speed
+    made.landing = old.landing
+    made.route = old.route
+    made.node = old.node
+    made.stand = old.stand
     made.state = old.state
     made.at = old.at
     made.holding = old.holding

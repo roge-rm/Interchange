@@ -16,7 +16,7 @@ package com.rm.interchange.sim
  */
 object Save {
     private val MAGIC = "ICHG".encodeToByteArray()
-    const val VERSION = 52
+    const val VERSION = 53
 
     /** A vehicle's [built] day as saved by [version]: work days from 36, calendar days before. */
     private fun World.builtOut(built: Int, version: Int) = if (version >= 36) built else built / settings.dayLength
@@ -701,7 +701,8 @@ object Save {
             if (version >= 42) w.int(v.shared)
             if (version >= 43) { w.int(v.gap); w.long(v.departed) }
             if (version >= 45) w.int(v.group)
-            w.bool(v.inDepot); w.bool(v.running); w.int(v.waiting); w.int(v.x); w.int(v.y); w.int(v.altitude); w.int(v.heading); w.int(v.speed)
+            w.bool(v.inDepot); w.bool(v.running); w.int(v.waiting); w.int(v.x); w.int(v.y); w.int(v.altitude); w.int(if (version >= 53) v.heading else (v.heading + 16) shr 5 and 7); w.int(v.speed)
+            if (version >= 53) { w.int(v.landing); w.int(v.route); w.int(v.node); w.int(v.stand) }
             w.int(v.state); w.int(v.at); w.int(v.holding); w.int(v.gear); w.bool(v.seasonalGear)
             writeCargo(w, v.cargo); w.long(v.profitThisYear); w.long(v.profitLastYear)
             w.ints(v.orders.toIntArray()); w.int(v.order); w.bool(v.toDepot)
@@ -752,7 +753,13 @@ object Save {
             if (version >= 43) { v.gap = r.int(); v.departed = r.long() }
             if (version >= 45) v.group = r.int()
             v.inDepot = r.bool(); v.running = r.bool(); v.waiting = r.int(); v.x = r.int(); v.y = r.int(); v.altitude = r.int(); v.heading = r.int(); v.speed = r.int()
+            if (version >= 53) { v.landing = r.int(); v.route = r.int(); v.node = r.int(); v.stand = r.int() }
             v.state = r.int(); v.at = r.int(); v.holding = r.int(); v.gear = r.int(); v.seasonalGear = r.bool()
+            // Headings were eighths before 53; one lining up to land then starts over, as the way it lands wasn't kept.
+            if (version < 53) {
+                v.heading = (v.heading and 7) * 32
+                if (v.state == Flight.LANDING && v.altitude > 0) v.state = Flight.CRUISE
+            }
             readCargo(r, v.cargo, version); v.profitThisYear = r.long(); v.profitLastYear = r.long()
             v.orders += r.ints().toList(); v.order = r.int(); v.toDepot = r.bool()
             v.built = r.int(); v.serviced = r.int(); v.reliability = r.int(); v.breakdowns = r.int(); v.brokenFor = r.int()
@@ -761,6 +768,7 @@ object Save {
             aircraft += v
         }
         if (version < 41) giveFleetNumbers(aircraft, { it.owner }, { it.number }) { v, n -> v.number = n }
+        settleAirports(version)
     }
 
     private fun writeCargo(w: ByteWriter, cargo: Array<ArrayList<Packet>>) {

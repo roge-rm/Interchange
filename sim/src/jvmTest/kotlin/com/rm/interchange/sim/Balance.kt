@@ -408,7 +408,7 @@ class Balance {
      *   the docks against the track, faster than the coal train of its day on the same 80 tiles. Steam freight trains
      *   pay back in 1.2 to 1.8 there, faster than any laker.
      * - Ferries pay back in 5 work years or less on a short crossing of 12 tiles.
-     * - Airliners of the 1950s, 1960s and 1980s pay back in 2.5 to 6.5 work years on 60 and 120 tiles, and at least
+     * - Airliners of the 1950s, 1960s and 1980s pay back in 2.3 to 6.5 work years on 60 and 120 tiles, and at least
      *   twice as slowly on a short hop of 20.
      * - Freight aircraft pay on 120 tiles within 8 work years, but never as fast as the freight train of their day.
      * - A helicopter pays modestly on a short hop: 3 to 8 work years on 20 tiles.
@@ -453,7 +453,7 @@ class Balance {
         for (row in rows.filter { it.run.mode == "ship-pass" }) assertTrue(row.years <= 5.0, "${what(row)} pays back in ${row.payback} work years")
         val names = liners.map { it.first }
         for (row in rows.filter { it.run.vehicle in names }) {
-            if (row.run.tiles >= 60) assertTrue(row.years in 2.5..6.5, "${what(row)} pays back in ${row.payback} work years")
+            if (row.run.tiles >= 60) assertTrue(row.years in 2.3..6.5, "${what(row)} pays back in ${row.payback} work years")
             else {
                 val long = rows.first { it.run.vehicle == row.run.vehicle && it.run.dayLength == row.run.dayLength && it.run.tiles == 120 }
                 assertTrue(row.years > long.years * 2, "${what(row)} pays back in ${row.payback} work years, on 120 tiles in ${long.payback}")

@@ -81,7 +81,8 @@ class DepartureGapTest {
                 a.running = true
                 a.state = Flight.GATE
                 a.at = 0
-                val gate = w.gatePoint(w.airports[0]!!, a.id)
+                a.stand = 0
+                val gate = w.standPoint(w.airports[0]!!, 0)
                 a.x = gate[0]; a.y = gate[1]
                 a to w.aircraft[1]!!
             }
