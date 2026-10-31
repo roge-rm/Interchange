@@ -141,6 +141,11 @@ class Sheets(private val packed: PackedSheets, private val scope: CoroutineScope
     private var sources: List<VehicleSource?> = emptyList()
     private val vehicles = HashMap<Int, ImageBitmap>()
     private val vehiclesUnpacking = HashSet<Int>()
+    /** When each unpacked sheet was last asked for, in [probeNanos]. */
+    private val vehicleUsed = HashMap<Int, Long>()
+    private var vehicleBytes = 0L
+    /** What unpacked vehicle sheets may hold: an eighth of the heap, 24 to 96 MB. */
+    private val vehicleBudget = (heapBytes() / 8).coerceIn(24L shl 20, 96L shl 20)
     /** Goes up with each game's drawings, so a sheet still unpacking for the last game is dropped. */
     private var generation = 0
 
@@ -148,13 +153,16 @@ class Sheets(private val packed: PackedSheets, private val scope: CoroutineScope
     fun baseVehicle(name: String): VehicleSource? {
         val i = Atlas.VEHICLE_KEYS.indexOf(name)
         if (i < 0) return null
-        return VehicleSource(Atlas.VEHICLE_RECTS.copyOfRange(i * 144, i * 144 + 144)) { level -> packed.vehicles[i][level] }
+        // Levels sharper than the renderer draws aren't held.
+        return VehicleSource(Atlas.VEHICLE_RECTS.copyOfRange(i * 144, i * 144 + 144)) { level -> packed.vehicles[i][level].takeIf { it.isNotEmpty() } }
     }
 
     /** The drawings of a game's vehicles, by their place in its roster's sprites. */
     fun useVehicles(list: List<VehicleSource?>) {
         sources = list
         vehicles.clear()
+        vehicleUsed.clear()
+        vehicleBytes = 0
         vehiclesUnpacking.clear()
         generation++
         asked = false
@@ -189,7 +197,7 @@ class Sheets(private val packed: PackedSheets, private val scope: CoroutineScope
     @OptIn(ExperimentalResourceApi::class)
     fun vehicle(model: Int, level: Int): ImageBitmap? {
         val key = model * Atlas.LEVELS + level
-        vehicles[key]?.let { return it }
+        vehicles[key]?.let { vehicleUsed[key] = probeNanos(); return it }
         val source = sources.getOrNull(model) ?: return null
         if (vehiclesUnpacking.add(key)) {
             val mine = generation
@@ -203,10 +211,27 @@ class Sheets(private val packed: PackedSheets, private val scope: CoroutineScope
                 if (Probe.ON) Probe.log("vehicleDecode model=$model L=$level ms=${Probe.now() - started} queueMs=${started - asked}")
                 if (mine != generation) return@launch
                 vehicles[key] = image
+                vehicleUsed[key] = probeNanos()
+                vehicleBytes += image.width.toLong() * image.height * 4
+                trimVehicles()
                 revision.intValue++
             }
         }
         return null
+    }
+
+    /** Lets go of the sheets longest unused while over the budget, but none asked for in the last [VEHICLE_KEEP_S] seconds. */
+    private fun trimVehicles() {
+        if (vehicleBytes <= vehicleBudget) return
+        val now = probeNanos()
+        val old = vehicleUsed.entries.filter { now - it.value > VEHICLE_KEEP_S * 1_000_000_000L }.sortedBy { it.value }
+        for ((key, _) in old) {
+            if (vehicleBytes <= vehicleBudget) break
+            val image = vehicles.remove(key) ?: continue
+            vehicleBytes -= image.width.toLong() * image.height * 4
+            vehicleUsed.remove(key)
+            vehiclesUnpacking.remove(key)
+        }
     }
 
     private val statics = arrayOfNulls<ImageBitmap>(Atlas.LEVELS)
@@ -243,6 +268,7 @@ class Sheets(private val packed: PackedSheets, private val scope: CoroutineScope
         const val STRIPS = 8
         /** The sharpest static sheet kept for pictures. */
         const val PICTURE_SHARPEST = 2
+        const val VEHICLE_KEEP_S = 5
         const val COARSEST = Atlas.LEVELS - 1
     }
 }
@@ -253,10 +279,12 @@ fun rememberPackedSheets(): State<PackedSheets?> = produceState<PackedSheets?>(n
     val from = if (Probe.ON) Probe.now() else 0L
     value = withContext(Dispatchers.Default) {
         suspend fun read(name: String) = (0 until Atlas.LEVELS).map { Res.readBytes("files/${name}_$it.webp") }
+        // Vehicle sheets sharper than the renderer draws are left unread.
+        suspend fun readVehicle(name: String) = (0 until Atlas.LEVELS).map { if (it < Renderer.SHARPEST) ByteArray(0) else Res.readBytes("files/${name}_$it.webp") }
         val snow = (0 until Atlas.LEVELS).map { level ->
             if (level < 2) Res.readBytes("files/static_snow_$level.bin") else null
         }
-        PackedSheets(read("ground"), read("static"), snow, read("shadows"), read("signals"), Atlas.VEHICLE_KEYS.map { read("vehicle_$it") })
+        PackedSheets(read("ground"), read("static"), snow, read("shadows"), read("signals"), Atlas.VEHICLE_KEYS.map { readVehicle("vehicle_$it") })
     }
     if (Probe.ON) Probe.log("sheetsRead ms=${Probe.now() - from}")
 }

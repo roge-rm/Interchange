@@ -52,6 +52,7 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.rm.interchange.map.Atlas
+import com.rm.interchange.map.Renderer
 import com.rm.interchange.map.Sheets
 import com.rm.interchange.res.Res
 import com.rm.interchange.res.cargoes
@@ -716,6 +717,8 @@ private fun DrawScope.drawSprite(image: ImageBitmap, x: Int, y: Int, w0: Int, h0
 @Composable
 fun VehiclePicture(e: Engine, modifier: Modifier, turned: Boolean = false) {
     val sheets = LocalSheets.current
+    // The sheet last drawn, kept so the picture doesn't blink if Sheets lets it go while this stays on screen.
+    val held = remember(e.sprite) { arrayOfNulls<ImageBitmap>(6) }
     Canvas(modifier) {
         sheets ?: return@Canvas
         // Read here so the picture draws again once the sheet below is unpacked.
@@ -725,8 +728,8 @@ fun VehiclePicture(e: Engine, modifier: Modifier, turned: Boolean = false) {
         val w0 = rects[r + 2]
         val h0 = rects[r + 3]
         if (w0 == 0 || h0 == 0) return@Canvas
-        val (level, scale) = levelFor(w0, h0)
-        val image = sheets.vehicle(e.sprite, level) ?: return@Canvas
+        val (level, scale) = levelFor(w0, h0, Renderer.SHARPEST)
+        val image = sheets.vehicle(e.sprite, level)?.also { held[level] = it } ?: held[level] ?: return@Canvas
         drawSprite(image, rects[r], rects[r + 1], w0, h0, level, scale)
     }
 }

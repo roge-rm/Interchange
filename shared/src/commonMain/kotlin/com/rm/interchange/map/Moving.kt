@@ -258,7 +258,7 @@ internal fun DrawScope.drawMoving(world: World, view: View, sheets: Sheets, movi
     // Vehicles' drawings at the levels either side unpacked ahead, so they're there when the view zooms.
     for (i in 0 until v.count) {
         val model = v.sprite(i)
-        if (level > 0) sheets.vehicle(model, level - 1)
+        if (level > Renderer.SHARPEST) sheets.vehicle(model, level - 1)
         if (level + 1 < Renderer.LEVELS.size) sheets.vehicle(model, level + 1)
     }
     val lit = if (view.halfWidth >= LIT_FROM) litPieces(world, view, moving, items) else emptyList()
