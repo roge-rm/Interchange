@@ -38,6 +38,8 @@ class Moving(val now: WorldView, val before: WorldView?, val between: Float)
 /** For sorting train cars, reused every frame so they allocate nothing once grown. Drawing only, on the UI thread. */
 private val carChain = CarOrder.Chain()
 private val carChainItems = ArrayList<FloatArray>()
+/** The angles ships and aircraft are drawn at, turning toward their sim headings. */
+private val turnEase = TurnEase()
 
 /**
  * Draws signals and trains over the map, nearest last. Trains are placed
@@ -202,16 +204,24 @@ internal fun DrawScope.drawMoving(world: World, view: View, sheets: Sheets, movi
         chain.clear()
         chainItems.clear()
     }
+    // Sim time in ticks, between the last two views, for turning ships and aircraft; it stands still while paused.
+    val beforeTick = before?.tick ?: v.tick
+    turnEase.begin(beforeTick + (v.tick - beforeTick) * moving.between.toDouble(), v.count)
+    val gap = maxOf(1L, v.tick - beforeTick).toFloat()
     for (i in 0 until v.count) {
         var x = v.x(i)
         var y = v.y(i)
         var angle = v.angle(i)
         val j = was[v.key(i)]
+        var jumped = true
         if (j != null && before != null) {
             val bx = before.x(j)
             val by = before.y(j)
+            val far = (x - bx) * (x - bx) + (y - by) * (y - by)
+            // Up to a tile a tick (faster than anything flies) is a move, not a jump, for turning.
+            jumped = far >= gap * gap
             // Only glide over a short way; a train that's jumped (out of a depot, turned round) just shows where it is.
-            if ((x - bx) * (x - bx) + (y - by) * (y - by) < 1f) {
+            if (far < 1f) {
                 x = bx + (x - bx) * moving.between
                 y = by + (y - by) * moving.between
                 // The angle the short way round, in eighths.
@@ -220,6 +230,11 @@ internal fun DrawScope.drawMoving(world: World, view: View, sheets: Sheets, movi
                 if (turn < -4f) turn += 8f
                 if (turn > -1.5f && turn < 1.5f) angle = ((before.angle(j) + turn * moving.between) % 8f + 8f) % 8f
             }
+        }
+        // Ships and aircraft face whole eighths in the sim; drawn, they turn through the sixteenths toward it.
+        val key = v.key(i)
+        if (key < 0 && v.roadVehicle(i) < 0) {
+            angle = turnEase.angle(key, v.angle(i), if (v.ship(i) >= 0) TurnEase.SHIP_RATE else TurnEase.AIRCRAFT_RATE, jumped)
         }
         val heading = painter.viewHeading(v.heading(i))
         // On a slope, the straight headings have drawings tilted up or down: sprites 8 on in the vehicle's sheet.
@@ -247,7 +262,6 @@ internal fun DrawScope.drawMoving(world: World, view: View, sheets: Sheets, movi
         if (deck >= 0f) reach += ON_DECK
         val item = add(items, world, view, x, y, cell.toFloat(), reach, v.sprite(i), deck, wreck = v.wrecked(i))
         // Train cars on the ground in a row join the chain; anything else ends it.
-        val key = v.key(i)
         val joins = item != null && key >= 0 && deck < 0f && !inShed
         if (!joins || key != chainKey + 1 || key / 256 != chainKey / 256) settle()
         if (joins) {
@@ -257,6 +271,7 @@ internal fun DrawScope.drawMoving(world: World, view: View, sheets: Sheets, movi
         } else chainKey = -2
     }
     settle()
+    turnEase.end()
     // Vehicles' drawings at the levels either side unpacked ahead, so they're there when the view zooms.
     for (i in 0 until v.count) {
         val model = v.sprite(i)
