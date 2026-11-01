@@ -303,9 +303,9 @@ class AirFlightTest {
 
     /**
      * How far along its runway, in hundredths, [key] first leaves the ground taking off from airport 0 of a world with
-     * airport kinds [from] at (5, 5) and [to] at (30, 30), both along x, and the tick it does.
+     * airport kinds [from] at (5, 5) and [to] at (30, 30), both along x, the tick it does, and how far along it started its roll.
      */
-    private fun liftOff(key: String, from: Int, to: Int, year: Int): Pair<Int, Int> {
+    private fun liftOff(key: String, from: Int, to: Int, year: Int): Triple<Int, Int, Int> {
         val w = World(NewGame(64, 64, 1, year, Region.MIXED, sea = 0, hills = 0, trees = 0, towns = 0, industries = 0, weather = false, inflation = false, collisions = false))
         for (y in 0..64) for (x in 0..64) w.corners[w.corner(x, y)] = 1
         w.landShaped()
@@ -318,12 +318,17 @@ class AirFlightTest {
         val v = w.buy(key)
         v.service = false
         var t = 0
-        while (!(v.state == Flight.TAKEOFF && v.altitude > 0) && t < 5000) { w.step(); t++ }
+        var rollFrom = -1
+        while (!(v.state == Flight.TAKEOFF && v.altitude > 0) && t < 5000) {
+            w.step()
+            t++
+            if (v.state == Flight.TAKEOFF && rollFrom < 0) rollFrom = v.x
+        }
         assertTrue(t < 5000, "$key never took off")
         val r = w.runway(w.airports[0]!!)
         val total = abs(r[2] - r[0]) + abs(r[3] - r[1])
         val start = if (cos256(v.heading) > 0) r[0] else r[2]
-        return abs(v.x - start) * 100 / total to t
+        return Triple(abs(v.x - start) * 100 / total, t, abs(rollFrom - start) * 100 / total)
     }
 
     @Test
@@ -333,12 +338,136 @@ class AirFlightTest {
         val jet = liftOff("b737_200", Airports.CITY, Airports.CITY, 1975)
         val dc8 = liftOff("dc8", Airports.INTERNATIONAL, Airports.INTERNATIONAL, 1965)
         println("lift-off along the runway: beaver $beaver, dc3 $dc3, b737_200 $jet, dc8 $dc8 (hundredths, tick)")
-        assertTrue(beaver.first < 50, "a bush plane is off the ground in under half a strip, at ${beaver.first}")
+        assertTrue(beaver.first - beaver.third < 50, "a bush plane is off the ground in under half a strip, at ${beaver.first} from ${beaver.third}")
         for ((name, at) in listOf("dc3" to dc3, "b737_200" to jet, "dc8" to dc8)) {
             assertTrue(at.first > beaver.first, "$name lifts off later than a bush plane, at ${at.first}")
             assertTrue(at.first in 60..100, "$name lifts off most of the way down its runway, at ${at.first}")
         }
         assertEquals(beaver, liftOff("beaver", Airports.STRIP, Airports.STRIP, 1955), "the same each run")
         assertEquals(jet, liftOff("b737_200", Airports.CITY, Airports.CITY, 1975), "the same each run")
+    }
+
+    /**
+     * Takes [key] off from airport 0 of [w] on [gear] with the wind from [wind] (or none), watching the runway: where its taxi out
+     * ended, where it started rolling and where it lifted off, along its runway in 16ths of a tile.
+     */
+    private fun takeOffRun(w: World, key: String, wind: Int?, gear: Int = Gear.WHEELS): IntArray {
+        val v = w.buy(key)
+        v.gear = gear
+        v.service = false
+        val a = w.airports[0]!!
+        var route = -1
+        var from = -1
+        var t = 0
+        while (!(v.state == Flight.TAKEOFF && v.altitude > 0) && t < 6000) {
+            if (v.state == Flight.TAXI_OUT) route = v.route
+            w.stepIn(wind)
+            t++
+            if (v.state == Flight.TAKEOFF && from < 0) {
+                from = alongRunway(w, a, v)
+                // Nothing else is on the runway while it rolls.
+                assertTrue(w.aircraft.none { it != null && it !== v && onRunway(it, a) }, "another on the runway")
+            }
+        }
+        assertTrue(t < 6000, "$key never took off")
+        return intArrayOf(route, from, alongRunway(w, a, v))
+    }
+
+    /** How far along [a]'s runway [v] is from the end it rolls from, in 16ths. */
+    private fun alongRunway(w: World, a: Airport, v: Aircraft): Int {
+        val r = w.runway(a)
+        val start = if (cos256(v.heading) + sin256(v.heading) > 0) intArrayOf(r[0], r[1]) else intArrayOf(r[2], r[3])
+        return (abs(v.x - start[0]) + abs(v.y - start[1])) * 16 / SHIP_UNIT
+    }
+
+    /** A strip at (5, 5) along x and another at (30, 30), or seaplane bases either side of the lake. */
+    private fun strips(kind: Int, weather: Boolean, year: Int = 1955): World {
+        val w = World(NewGame(64, 64, 1, year, Region.MIXED, sea = 0, hills = 0, trees = 0, towns = 0, industries = 0, weather = weather, inflation = false, collisions = false))
+        for (y in 0..64) for (x in 0..64) w.corners[w.corner(x, y)] = if (x in 20..30 && y in 50..60) 0 else 1
+        w.landShaped()
+        for (i in w.trees.indices) w.trees[i] = 0
+        w.shoreChanged()
+        w.companies[0].money = 100_000_000
+        if (kind == Airports.SEAPLANE) {
+            w.apply(Command.Airport(0, 19, 55, Airports.SEAPLANE, 0))
+            w.apply(Command.Airport(0, 30, 52, Airports.SEAPLANE, 0))
+        } else {
+            w.apply(Command.Airport(0, 5, 5, kind, Track.X))
+            w.apply(Command.Airport(0, 30, 30, kind, Track.X))
+        }
+        assertEquals(2, w.airports.count { it != null }, "built both airports")
+        return w
+    }
+
+    @Test
+    fun aSmallPlaneTakesOffFromAnExitPartway() {
+        // Calm, east towards the other strip; then from the north-west, west down the runway the other way.
+        for (wind in listOf(null, 1)) {
+            val w = strips(Airports.STRIP, weather = wind != null)
+            val (route, from, up) = takeOffRun(w, "beaver", wind)
+            val to = Taxiways.to(route)
+            assertTrue(to in Taxiways.EXIT0 until Taxiways.DOOR, "wind $wind: lined up at place $to")
+            assertEquals(wind != null, route >= Taxiways.FAR_WAY, "wind $wind: the way it takes off")
+            assertTrue(from > 1, "wind $wind: started its roll partway, at $from")
+            assertTrue(up > from && up < 64, "wind $wind: lifted off at $up, before the end, from $from")
+        }
+    }
+
+    @Test
+    fun aSmallPlaneWaitsForTheRunwayBeforeLiningUpAtAnExit() {
+        val w = strips(Airports.REGIONAL, weather = false, year = 1965)
+        val a = w.airports[0]!!
+        val liner = w.buy("dc3")
+        val small = w.buy("beaver")
+        liner.service = false
+        small.service = false
+        var held = 0
+        var rolled = false
+        for (t in 0 until 6000) {
+            w.step()
+            val busy = w.aircraft.filter { it != null && onRunway(it, a) }
+            assertTrue(busy.size <= 1, "tick $t: ${busy.size} on the runway together")
+            if (small.state == Flight.TAXI_OUT && small.at == a.id && small.route >= 0 && Taxiways.to(small.route) in Taxiways.EXIT0 until Taxiways.DOOR) {
+                if (small.speed == 0 && w.runwayBusy(a, small)) held++
+            }
+            if (small.state == Flight.TAKEOFF) rolled = true
+        }
+        assertTrue(rolled, "the small plane took off")
+        assertTrue(held > 0, "the small plane held short while the runway was in use")
+    }
+
+    @Test
+    fun airlinersStillUseTheRunwayEnd() {
+        for ((key, kind) in listOf("dc3" to Airports.REGIONAL, "dc8" to Airports.INTERNATIONAL)) {
+            val w = strips(kind, weather = false, year = 1965)
+            val (route, from, _) = takeOffRun(w, key, null)
+            assertTrue(Taxiways.to(route) >= Taxiways.END0, "$key lined up at place ${Taxiways.to(route)}")
+            assertTrue(from <= 16, "$key started its roll at $from")
+        }
+    }
+
+    @Test
+    fun aShortRunLeavesASmallPlaneTheEnd() {
+        // A seaplane base's exits leave less than three times a float plane's run on the water.
+        val w = strips(Airports.SEAPLANE, weather = false)
+        val (route, _, _) = takeOffRun(w, "beaver", null, Gear.FLOATS)
+        assertTrue(Taxiways.to(route) >= Taxiways.END0, "lined up at place ${Taxiways.to(route)}")
+        // Wherever it picks an exit, the run ahead of it is at least three rolls.
+        for (kind in intArrayOf(Airports.STRIP, Airports.REGIONAL, Airports.CITY, Airports.INTERNATIONAL, Airports.SEAPLANE)) {
+            val s = strips(kind, weather = false, year = 1965)
+            val a = s.airports[0]!!
+            val v = s.buy("beaver")
+            if (kind == Airports.SEAPLANE) v.gear = Gear.FLOATS
+            val r = s.runway(a)
+            val len = (abs(r[2] - r[0]) + abs(r[3] - r[1])) / (SHIP_UNIT / 16)
+            for (stand in 0 until Taxiways.STANDS[kind].size / 4) for (end in intArrayOf(Taxiways.END0, Taxiways.END1)) {
+                val at = s.lineUpAt(v, a, stand, end)
+                if (at >= Taxiways.END0) { assertEquals(end, at); continue }
+                val e = Taxiways.spur(kind, at)
+                val on = e[e.size - 2]
+                val run = if (end == Taxiways.END0) len - on else on
+                assertTrue(run.toLong() * (SHIP_UNIT / 16) >= takeOffRoll(v, a).toLong() * 3, "kind $kind stand $stand end $end: exit $at leaves $run")
+            }
+        }
     }
 }

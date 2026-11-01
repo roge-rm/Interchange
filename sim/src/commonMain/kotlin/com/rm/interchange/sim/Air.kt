@@ -118,7 +118,10 @@ class Aircraft(
     var at = -1
     // At a gate, -1 marks a retry or diversion rather than a station call; taxiing, the ticks it has waited for another.
     var holding = 0
-    /** Taxiing: its way, from and to [Taxiways] places packed as from * 16 + to, and the point of it it last passed. */
+    /**
+     * Taxiing: its way, from and to [Taxiways] places packed as from * 16 + to, plus [Taxiways.FAR_WAY] out to an exit
+     * to take off from it the way of [Taxiways.END1]; and the point of it it last passed.
+     */
     var route = -1
     var node = 0
     /** The stand it has at airport [at], landing, parked or taxiing to or from it; -1 for none. */
@@ -457,6 +460,12 @@ object Taxiways {
     const val DOOR = 13
     const val END0 = 14
     const val END1 = 15
+    /** Added to a route out to an exit that takes off the way of [END1]. */
+    const val FAR_WAY = 256
+
+    /** Where route [route] starts and ends. */
+    fun from(route: Int) = (route shr 4) and 15
+    fun to(route: Int) = route and 15
 
     /** Each kind's stands, as pairs of points: the one in front of it, then the stand. */
     val STANDS = arrayOf(
@@ -512,8 +521,8 @@ object Taxiways {
 
     /** Route [route]'s points, along and across in pairs: [spur] of where it starts backwards, then of where it ends. */
     fun points(kind: Int, route: Int): IntArray {
-        val from = spur(kind, route / 16)
-        val to = spur(kind, route % 16)
+        val from = spur(kind, from(route))
+        val to = spur(kind, to(route))
         val out = ArrayList<Int>(from.size + to.size)
         for (i in from.size / 2 - 1 downTo 0) { out += from[i * 2]; out += from[i * 2 + 1] }
         val same = out.size >= 2 && to.size >= 2 && out[out.size - 2] == to[0] && out[out.size - 1] == to[1]
@@ -631,8 +640,10 @@ private fun taxiHoldsRunway(v: Aircraft, a: Airport): Boolean {
     if (v.route < 0) return false
     val pts = taxiRoute(a, v.route)
     val i = v.node
-    if (i >= pts.size / 2 - 1 || !Taxiways.runwayLeg(pts, i)) return false
-    if (i > 0 && Taxiways.runwayLeg(pts, i - 1) || i == 0 && Taxiways.fromRunway(v.route / 16)) return true
+    // At the end of a way out to the runway it is lined up on it.
+    if (i >= pts.size / 2 - 1) return Taxiways.fromRunway(Taxiways.to(v.route))
+    if (!Taxiways.runwayLeg(pts, i)) return false
+    if (i > 0 && Taxiways.runwayLeg(pts, i - 1) || i == 0 && Taxiways.fromRunway(Taxiways.from(v.route))) return true
     val p = taxiPoint(a, pts, i)
     return v.x != p[0] || v.y != p[1]
 }
@@ -696,7 +707,7 @@ private fun World.taxi(v: Aircraft) {
     val dy = to[1] - from[1]
     if (Taxiways.runwayLeg(pts, i) && !taxiHoldsRunway(v, a) && runwayBusy(a, v)) { v.speed = 0; return }
     // Off a stand it backs out, nose to the stand.
-    val back = i == 0 && Taxiways.stand(v.route / 16)
+    val back = i == 0 && Taxiways.stand(Taxiways.from(v.route))
     val want = if (back) bearing256(-dx, -dy) else bearing256(dx, dy)
     if (kotlin.math.abs(turnTo(v.heading, want)) > 64) { v.speed = 0; steer(v, want, TAXI_TURN); return }
     if (!taxiHoldsRunway(v, a) && v.holding < TAXI_PATIENCE && taxiBlocked(v, a, dx, dy)) { v.speed = 0; v.holding++; return }
@@ -706,14 +717,27 @@ private fun World.taxi(v: Aircraft) {
     if (moveTo(v, to[0], to[1], TAXI_STEP) > 0) return
     v.node = i + 1
     // Out of its stand onto the way out, it gives the stand up.
-    if (i == 0 && Taxiways.stand(v.route / 16)) v.stand = -1
+    if (i == 0 && Taxiways.stand(Taxiways.from(v.route))) v.stand = -1
     if (v.node >= pts.size / 2 - 1) endTaxi(v, a)
 }
 
-/** At the end of its taxi: lined up, off down the runway; at a stand, parked and calling; at the door, into the hangar. */
+/**
+ * At the end of its taxi: lined up, off down the runway (at an exit, turning on the spot to face down it first); at a
+ * stand, parked and calling; at the door, into the hangar.
+ */
 private fun World.endTaxi(v: Aircraft, a: Airport) {
-    val to = v.route % 16
-    val came = v.route / 16
+    val to = Taxiways.to(v.route)
+    val came = Taxiways.from(v.route)
+    if (v.state == Flight.TAXI_OUT && to in Taxiways.EXIT0 until Taxiways.DOOR) {
+        val h = endHeading(a, if (v.route >= Taxiways.FAR_WAY) Taxiways.END1 else Taxiways.END0)
+        v.speed = 0
+        if (v.heading != h) { steer(v, h, TAXI_TURN); return }
+        v.route = -1
+        v.node = 0
+        v.holding = 0
+        v.state = Flight.TAKEOFF
+        return
+    }
     v.route = -1
     v.node = 0
     v.holding = 0
@@ -753,10 +777,39 @@ private fun World.taxiIn(v: Aircraft, a: Airport, end: Int) {
     startTaxi(v, Flight.TAXI_IN, end * 16 + (if (v.stand >= 0) v.stand else Taxiways.DOOR))
 }
 
-/** Off its stand on [a] for the runway end into the wind or towards where it's going. */
+/** Off its stand on [a] for the runway end into the wind or towards where it's going, or a small plane for an exit on the way there. */
 private fun World.taxiOut(v: Aircraft, a: Airport) {
     if (v.heli || v.stand < 0) { v.stand = -1; depart(v, a); return }
-    startTaxi(v, Flight.TAXI_OUT, v.stand * 16 + endFor(a, takeOffHeading(v, a)))
+    val end = endFor(a, takeOffHeading(v, a))
+    val at = lineUpAt(v, a, v.stand, end)
+    startTaxi(v, Flight.TAXI_OUT, v.stand * 16 + at + if (at != end && end == Taxiways.END1) Taxiways.FAR_WAY else 0)
+}
+
+/**
+ * Where [v] at stand [s] of [a] joins the runway to take off the way of runway end [end]: for a strip-class plane, the
+ * exit whose join is nearest the stand's, if nearer than the end's, that is for landings the other way (or either) and
+ * leaves at least [PARTWAY_SPARE] hundredths of its [takeOffRoll] of runway ahead; else the end. Airliners use the end.
+ */
+internal fun World.lineUpAt(v: Aircraft, a: Airport, s: Int, end: Int): Int {
+    if (v.heli || v.info.runway != Runways.STRIP) return end
+    val kind = a.kind
+    val way = if (end == Taxiways.END0) 1 else -1
+    val r = runway(a)
+    val len = (kotlin.math.abs(r[2] - r[0]) + kotlin.math.abs(r[3] - r[1])) / (SHIP_UNIT / 16)
+    val need = takeOffRoll(v, a).toLong() * PARTWAY_SPARE / 100
+    val join = Taxiways.spur(kind, s)[0]
+    var best = end
+    var bestGap = kotlin.math.abs(Taxiways.spur(kind, end)[0] - join)
+    for (k in Taxiways.EXITS[kind].indices) {
+        val e = Taxiways.EXITS[kind][k]
+        if (Taxiways.exitWay(kind, e) == way) continue
+        val on = e[e.size - 2]
+        val run = if (way > 0) len - on else on
+        if (run.toLong() * (SHIP_UNIT / 16) < need) continue
+        val gap = kotlin.math.abs(e[0] - join)
+        if (gap < bestGap) { best = Taxiways.EXIT0 + k; bestGap = gap }
+    }
+    return best
 }
 
 /** From its stand on [a] to the hangar door; a helicopter straight in. */
@@ -1520,6 +1573,8 @@ const val CLIMB_OUT = 3
 val LIFT_OFF = intArrayOf(50, 65, 75, 75)
 val TAKE_OFF_ROLL = intArrayOf(8, 48, 72, 96)
 const val WATER_ROLL = 12
+/** A strip-class plane takes off from an exit partway along with at least this many hundredths of its roll left ahead. */
+const val PARTWAY_SPARE = 300
 /** How far a helicopter turns a tick, in 256ths. */
 const val HELI_TURN = 32
 /** How far aircraft taxi a tick, in 4096ths, quick on the map's scale so taxiing adds a day or two a trip; and the most they turn a tick, as round an eighth of a tile. */

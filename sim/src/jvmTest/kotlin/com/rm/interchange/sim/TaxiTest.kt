@@ -85,7 +85,11 @@ class TaxiTest {
             checkGround()
             for (v in crafts) {
                 if (v.state == Flight.GATE && v.waiting > waiting[v.id]!! && v.holding == 0) calls.getOrPut(v.id) { ArrayList() } += v.at
-                if (v.state == Flight.TAKEOFF && routes[v.id]!! >= 0) ends += v.at to routes[v.id]!! % 16
+                val r = routes[v.id]!!
+                // A take-off from an exit partway counts as from the end it goes the way of.
+                val to = Taxiways.to(r)
+                val end = if (to >= Taxiways.END0) to else if (r >= Taxiways.FAR_WAY) Taxiways.END1 else Taxiways.END0
+                if (v.state == Flight.TAKEOFF && r >= 0) ends += v.at to end
             }
         }
         return calls to ends
