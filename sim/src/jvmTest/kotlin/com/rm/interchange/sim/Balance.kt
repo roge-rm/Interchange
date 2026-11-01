@@ -25,6 +25,7 @@ import kotlin.test.assertTrue
  *   the start only, spread evenly, as a mine or a farm makes (industries' monthly amounts run 40 to 110).
  * - Profit is over the whole run; profit a work year divides that by the work years run, and payback is price over
  *   profit a work year, so it reads the same at any day length. Line payback counts what was built as well.
+ * - Electric engines are picked as their own best and cheapest, on a wired line; the wires are in built.
  * - Bush planes on floats and skis are left out: with the weather off they hold forever in winter, as there's no snow to land skis on.
  * - Full runs use one vehicle (one train). Supply runs use as many as the supply fills, up to 6 (rail has one train).
  */
@@ -138,14 +139,17 @@ class Balance {
             }
         }
         for (year in years) {
-            val engines = onSale(r, year, VehicleKind.ENGINE).filter { it.traction != Traction.ELECTRIC }
+            // Electrics are picked on their own, so the other engines' best and cheapest stay the same; their lines are wired.
+            val all = onSale(r, year, VehicleKind.ENGINE)
+            val trains = extremes(all.filter { it.traction != Traction.ELECTRIC }) { it.power.toLong() } +
+                extremes(all.filter { it.traction == Traction.ELECTRIC }) { it.power.toLong() }
             val wagonsOn = onSale(r, year, VehicleKind.WAGON)
             val coach = wagonsOn.filter { Cargo.PASSENGERS in it.cargoes }.maxByOrNull { it.capacity }
-            if (coach != null) for (e in extremes(engines) { it.power.toLong() }) {
+            if (coach != null) for (e in trains) {
                 add("train-pass", e, coach, wagonsFor(r, e, coach, Cargo.PASSENGERS), year, Cargo.PASSENGERS, rail)
             }
             val freight = freightPrefs.firstNotNullOfOrNull { c -> wagonsOn.filter { c in it.cargoes }.maxByOrNull { it.capacity }?.let { c to it } }
-            if (freight != null) for (e in extremes(engines) { it.power.toLong() }) {
+            if (freight != null) for (e in trains) {
                 add("train-freight", e, freight.second, wagonsFor(r, e, freight.second, freight.first), year, freight.first, rail)
             }
             val roads = onSale(r, year, VehicleKind.ROAD).filter { !it.tram && it.capacity > 0 && it.cargoes.isNotEmpty() }
@@ -193,6 +197,7 @@ class Balance {
                 w.apply(Command.Rail(0, 3, 10, 10 + len + 4, 10, Track.X, remove = false))
                 w.apply(Command.Station(0, 6, 10, 9, 10, Track.X))
                 w.apply(Command.Station(0, 6 + len, 10, 9 + len, 10, Track.X))
+                if (e.traction == Traction.ELECTRIC) w.apply(Command.Wire(0, 2, 10, 10 + len + 4, 10, Track.X, remove = false))
                 before = c.money
                 w.apply(Command.BuyTrain(0, 0, e.id, run.wagon!!.id, run.wagons, run.cargo))
                 if (w.trains.isEmpty()) return null

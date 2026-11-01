@@ -932,7 +932,7 @@ internal object HighSpeed : Recipe() {
             // More than a coach line on the highway carries, for a fast line between the downtowns.
             Goal(Goal.CONNECT, 11_000, END, town = minOf(a, b), town2 = maxOf(a, b)),
             // Value leaves out the chapter's $1,500,000 start money.
-            Goal(Goal.COMPANY_VALUE, 100_000, END),
+            Goal(Goal.COMPANY_VALUE, 1_200_000, END),
         )
     }
 
