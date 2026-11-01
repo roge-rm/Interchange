@@ -242,6 +242,31 @@ class LoopTest {
     }
 
     @Test
+    fun aTrainWaitsInItsDepotWhileOneGoesByOnPlainTrack() {
+        for (collisions in listOf(true, false)) {
+            val w = loop(collisions, signals = false)
+            val orders = intArrayOf(Order.withWait(0, 2), Order.withWait(1, 2))
+            val a = buy(w, orders)
+            // Two more, stopped in the depot.
+            val waiting = (0 until 2).map { buy(w, orders).also { t -> w.apply(Command.TrainOrder(0, t.id, Command.TrainOrder.START_STOP)) } }
+            val junction = w.index(10, 15)
+            var ticks = 0
+            // Once round to its first call, then till its nose comes onto the junction by the depot.
+            while (a.order == 0) { w.step(); assertTrue(ticks++ < Calendar.TICKS_PER_DAY * 60, "never called") }
+            while (stepTile(a.steps.last()) != junction) { w.step(); assertTrue(ticks++ < Calendar.TICKS_PER_DAY * 120, "never came by the depot") }
+            for (t in waiting) w.apply(Command.TrainOrder(0, t.id, Command.TrainOrder.START_STOP))
+            // They stay in while it goes over the junction, then set out, one behind the other.
+            while (a.steps.any { stepTile(it) == junction }) {
+                w.step()
+                assertTrue(waiting.all { it.inDepot }, "set out in front of a train going by, collisions $collisions")
+            }
+            ticks = 0
+            while (waiting.any { it.inDepot }) { w.step(); assertTrue(ticks++ < Calendar.TICKS_PER_DAY * 30, "never set out, collisions $collisions") }
+            assertEquals(0, w.crashes.list.size, "a crash setting out, collisions $collisions")
+        }
+    }
+
+    @Test
     fun trainsOnALoopWithoutSignalsAreOnlyGoneByACrash() {
         for (collisions in listOf(true, false)) {
             val w = loop(collisions, signals = false)

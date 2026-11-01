@@ -411,7 +411,7 @@ private fun World.leaveDepot(t: Train) {
  * door: on a path signal's way it holds the pieces ahead, through to the next signal, and on through more path
  * signals while standing there would leave some of it in the door, as a train coming in would otherwise hold the lead
  * up to the door and wait for it; a block ahead has to be clear. Holds what it needs if it may. Onto unsignalled track
- * it always goes.
+ * it goes once [plainWayClear].
  */
 private fun World.wayOut(t: Train): Boolean {
     val door = t.steps.last()
@@ -450,7 +450,7 @@ private fun World.wayOut(t: Train): Boolean {
             i++
         }
         // Into the first section past no signal, and none ahead: plain track, as before.
-        if (past < 0 && sig < 0 && !path) return true
+        if (past < 0 && sig < 0 && !path) return plainWayClear(t)
         checked = true
         if (path) {
             for (w in section) if (!pieceFree(t, w, occupiedTile = false, reserving = true)) return false
@@ -467,6 +467,50 @@ private fun World.wayOut(t: Train): Boolean {
     if (checked) t.signalled = true
     return true
 }
+
+/**
+ * Whether [t], in its depot's door onto unsignalled track, may set out: no other train on or crossing the way it would
+ * pull onto, through to standing out of the door and its braking reach on, and none with that way inside its own
+ * braking reach, as a train come on past no signal doesn't look out for one ahead. Trains still in a depot have no
+ * steps, and one stopped and standing won't come on.
+ */
+private fun World.plainWayClear(t: Train): Boolean {
+    val door = t.steps.last()
+    val reach = stepLength(door) + t.length + brakeReach(t)
+    val way = ArrayList<Int>()
+    var s = door
+    var i = -1
+    var run = 0
+    while (way.size < MAX_PATH) {
+        if (!pieceFree(t, s, occupiedTile = !inPathArea(s), reserving = true)) return false
+        way += s
+        run += stepLength(s)
+        if (run >= reach) break
+        val n = nextFrom(t, s, i + 1)
+        if (n < 0) break
+        s = n
+        i++
+    }
+    for (u in trains) {
+        if (u == null || u === t || u.inDepot || u.wreckedFor > 0 || !u.running && u.speed == 0) continue
+        val r = brakeReach(u)
+        var cur = u.steps.last()
+        var at = u.routeAt
+        var free = stepLength(cur) - u.nose
+        while (free < r) {
+            val n = nextFrom(u, cur, at)
+            if (n < 0) break
+            for (w in way) if (tileKey(w) == tileKey(n) && (stepPiece(w) == stepPiece(n) || Track.touch(stepPiece(w), stepPiece(n)))) return false
+            free += stepLength(n)
+            cur = n
+            at++
+        }
+    }
+    return true
+}
+
+/** How far ahead [t] looks for what it may have to stop for: its braking distance from its top speed, and a tile. */
+private fun brakeReach(t: Train) = t.maxSpeed.toLong().let { (it * it / (2L * BRAKE) / 16).toInt() } + 16 * FIX
 
 /** Moves every train on a tick: routes first, across the cores, then the moves, in order. */
 internal fun World.moveTrains() {
