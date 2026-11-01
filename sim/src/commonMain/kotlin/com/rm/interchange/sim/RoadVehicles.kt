@@ -62,6 +62,8 @@ interface Carrier {
     /** The work day it was last sent in to be renewed or found its company couldn't pay, and told so since its last renewal. */
     var renewAsked: Int
     var renewFailed: Boolean
+    /** Autorenew off for this vehicle whatever its company has. */
+    var renewOff: Boolean
 }
 
 /** A step of road: [tile], the edge come in at and the edge leaving by. */
@@ -131,6 +133,7 @@ class RoadVehicle(
     var noDepotUntil = 0L
     override var renewAsked = NEVER_ASKED
     override var renewFailed = false
+    override var renewOff = false
     /** Its tires, a [Tires] kind, and whether it changes them at the garage as the seasons turn. */
     var tires = Tires.SUMMER
     var seasonalTires = true
@@ -214,7 +217,7 @@ internal fun World.buyRoadVehicle(company: Company, c: Command.BuyRoadVehicle) {
 internal fun World.roadVehicleCommand(company: Company, c: Command.RoadOrder) {
     val v = roadVehicles.getOrNull(c.vehicle) ?: return
     if (v.owner != company.id || v.wreckedFor > 0) return
-    if (c.what != Command.TrainOrder.REPLACE && c.what != Command.TrainOrder.GROUP) linksDirty = true
+    if (c.what != Command.TrainOrder.REPLACE && c.what != Command.TrainOrder.GROUP && c.what != Command.TrainOrder.AUTORENEW) linksDirty = true
     when (c.what) {
         Command.TrainOrder.GROUP -> setVehicleGroup(company, Command.CopyVehicle.ROAD, v, c.stations.firstOrNull())
         Command.TrainOrder.REPLACE -> replaceRoadVehicle(company, v, c.stations.firstOrNull())
@@ -262,6 +265,7 @@ internal fun World.roadVehicleCommand(company: Company, c: Command.RoadOrder) {
             rememberOrders(company, Command.CopyVehicle.ROAD, v, backup)
         }
         Command.TrainOrder.SERVICE -> v.service = !v.service
+        Command.TrainOrder.AUTORENEW -> v.renewOff = !v.renewOff
         Command.TrainOrder.RENEW -> if (v.inDepot) {
             val cost = price(v.price) - roadValue(v)
             if (company.money < cost) return

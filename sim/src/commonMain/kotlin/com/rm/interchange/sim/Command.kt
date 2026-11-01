@@ -264,6 +264,8 @@ sealed interface Command {
             const val REFIT = 10
             const val REPLACE = 11
             const val GROUP = 12
+            /** Turn autorenew off for this vehicle, or back to following its company. */
+            const val AUTORENEW = 13
         }
     }
 }

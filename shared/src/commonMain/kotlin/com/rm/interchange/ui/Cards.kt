@@ -58,6 +58,7 @@ fun TrainCard(
     addingStops: Boolean,
     onAddStops: () -> Unit,
     send: (Command) -> Unit,
+    onShow: (Float, Float) -> Unit,
     onClose: () -> Unit,
     modifier: Modifier,
 ) {
@@ -95,7 +96,7 @@ fun TrainCard(
             (0 until Cargo.COUNT).filter { t.capacity[it] > 0 }.map { VehicleLoad(it, t.load[it], t.capacity[it]) },
             listOfNotNull(
                 stringResource(Res.string.breakdowns) to t.breakdowns.toString(),
-            ),
+            ) + worthRows(t.value, t.nextService, mine),
             t.dieselSpeed, t.curveKmh,
         )
         // Someone else's shows what it is but none of the controls, and a wreck is cleared away by itself.
@@ -173,6 +174,7 @@ fun TrainCard(
             }
         }
         SwitchRow(stringResource(Res.string.servicing), t.service) { order(Command.TrainOrder.SERVICE) }
+        VehicleMapControls(view.company?.autorenew == true, t.renewOff, t.x, t.y, onShow) { order(Command.TrainOrder.AUTORENEW) }
     }
 }
 

@@ -56,6 +56,9 @@ internal fun World.trainsDay() {
 /** Due a service: set to be serviced and [SERVICE_DAYS] work days since the last. */
 fun World.due(service: Boolean, serviced: Int) = service && workDay - serviced >= SERVICE_DAYS
 
+/** Work days till a vehicle set to be [service]d is due, from its last at [serviced]: 0 if it is now, -1 if it is not serviced. */
+fun World.nextService(service: Boolean, serviced: Int) = if (service) (SERVICE_DAYS - (workDay - serviced)).coerceAtLeast(0) else -1
+
 /** Gone twice as long as [due] without a service, so it goes from wherever it is. */
 fun World.overdue(service: Boolean, serviced: Int) = service && workDay - serviced >= SERVICE_DAYS * 2
 

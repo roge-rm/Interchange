@@ -104,6 +104,24 @@ fun VehicleStats(
     }
 }
 
+/** The value and next service rows for a vehicle's stats; the service line only for its owner. */
+@Composable
+fun worthRows(value: Long, nextService: Int, mine: Boolean): List<Pair<String, String>> = listOfNotNull(
+    stringResource(Res.string.vehicle_value) to money(value),
+    if (!mine) null else stringResource(Res.string.next_service) to when {
+        nextService < 0 -> stringResource(Res.string.servicing_off)
+        nextService == 0 -> stringResource(Res.string.service_due)
+        else -> pluralStringResource(Res.plurals.work_days_n, nextService, nextService)
+    },
+)
+
+/** A vehicle's autorenew switch (on follows the company, shown only while the company renews) and a button to centre the map on it. */
+@Composable
+fun VehicleMapControls(companyRenews: Boolean, renewOff: Boolean, x: Float, y: Float, onShow: (Float, Float) -> Unit, toggleRenew: () -> Unit) {
+    if (companyRenews) SwitchRow(stringResource(Res.string.autorenew), !renewOff) { toggleRenew() }
+    if (x != 0f || y != 0f) ActionButton(stringResource(Res.string.show_on_map), onClick = { onShow(x, y) })
+}
+
 /** The stop a vehicle is working towards, or null if its orders are empty. */
 private fun nextStop(orders: IntArray, order: Int) = if (orders.isEmpty()) null else Order.station(orders[order % orders.size])
 

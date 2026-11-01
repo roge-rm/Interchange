@@ -401,6 +401,15 @@
     <string name="going_for_service">En route pour l'entretien, %1$d km/h</string>
     <string name="renew_for">Renouveler pour %1$s</string>
     <string name="replace">Remplacer</string>
+    <string name="vehicle_value">Valeur</string>
+    <string name="next_service">Prochain entretien</string>
+    <string name="servicing_off">Désactivé</string>
+    <string name="service_due">À faire</string>
+    <plurals name="work_days_n">
+        <item quantity="one">%1$d jour ouvrable</item>
+        <item quantity="other">%1$d jours ouvrables</item>
+    </plurals>
+    <string name="show_on_map">Voir sur la carte</string>
     <string name="servicing">Entretien</string>
     <string name="news_crash">%1$s a eu un accident près de %2$s</string>
     <string name="news_crash_lost">%1$s a eu un accident près de %2$s, %3$d personnes ont péri</string>

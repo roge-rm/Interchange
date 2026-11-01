@@ -111,6 +111,10 @@ class TrainView(
     val dieselSpeed: Int = topSpeed,
     /** The km/h a bend holds it to now, or 0. */
     val curveKmh: Int = 0,
+    /** What it would fetch sold, work days to its next service (-1 when servicing is off), and autorenew off for it. */
+    val value: Long = 0,
+    val nextService: Int = -1,
+    val renewOff: Boolean = false,
 )
 
 /** A bus, truck or streetcar as the screen shows it. */
@@ -155,6 +159,10 @@ class RoadVehicleView(
     val shared: Int = -1,
     val gap: Int = 0,
     val group: Int = -1,
+    /** What it would fetch sold, work days to its next service (-1 when servicing is off), and autorenew off for it. */
+    val value: Long = 0,
+    val nextService: Int = -1,
+    val renewOff: Boolean = false,
 )
 
 /** A ship as the screen shows it. */
@@ -197,6 +205,10 @@ class ShipView(
     val shared: Int = -1,
     val gap: Int = 0,
     val group: Int = -1,
+    /** What it would fetch sold, work days to its next service (-1 when servicing is off), and autorenew off for it. */
+    val value: Long = 0,
+    val nextService: Int = -1,
+    val renewOff: Boolean = false,
 )
 
 /** An aircraft as the screen shows it. */
@@ -242,6 +254,10 @@ class AircraftView(
     val shared: Int = -1,
     val gap: Int = 0,
     val group: Int = -1,
+    /** What it would fetch sold, work days to its next service (-1 when servicing is off), and autorenew off for it. */
+    val value: Long = 0,
+    val nextService: Int = -1,
+    val renewOff: Boolean = false,
 )
 
 /** An airport as the screen shows it. */
@@ -443,7 +459,7 @@ fun World.view(company: Int = 0, withReserved: Boolean = false): WorldView {
             owner = t.owner, wrecked = t.wreckedFor > 0, number = t.number,
             at = if (t.waiting > 0 && !t.inDepot) t.steps.lastOrNull()?.let { stationAt(stepTile(it))?.id } ?: -1 else -1,
             x = tx, y = ty, gap = t.gap, wagonCargo = t.wagonCargo, group = t.group, formation = t.formation.toList(), topSpeed = t.topSpeed, dieselSpeed = t.dieselSpeed,
-            curveKmh = t.curveKmh,
+            curveKmh = t.curveKmh, value = value(t), nextService = nextService(t.service, t.serviced), renewOff = t.renewOff,
         )
     }
     val stationViews = stations.filterNotNull().map { s ->
@@ -492,6 +508,7 @@ fun World.view(company: Int = 0, withReserved: Boolean = false): WorldView {
                 owner = v.owner, wrecked = v.wreckedFor > 0, number = v.number,
                 at = if (v.waiting > 0 && !v.inDepot) roadStops[roadStepTile(v.at)] ?: -1 else -1,
                 x = rx, y = ry, shared = v.shared, gap = v.gap, group = v.group,
+                value = roadValue(v), nextService = nextService(v.service, v.serviced), renewOff = v.renewOff,
             )
         },
         ships.filterNotNull().map { v ->
@@ -508,6 +525,7 @@ fun World.view(company: Int = 0, withReserved: Boolean = false): WorldView {
                 owner = v.owner, number = v.number,
                 at = if (v.waiting > 0 && !v.inDepot) shipTile(v).let { t -> stations.firstOrNull { it != null && !it.waypoint && t in berths(it.id) }?.id } ?: -1 else -1,
                 x = sx, y = sy, shared = v.shared, gap = v.gap, group = v.group,
+                value = craftValue(v.price, v.built, v.info.life), nextService = nextService(v.service, v.serviced), renewOff = v.renewOff,
             )
         },
         aircraft.filterNotNull().map { v ->
@@ -523,6 +541,7 @@ fun World.view(company: Int = 0, withReserved: Boolean = false): WorldView {
                 owner = v.owner, wrecked = v.wreckedFor > 0, number = v.number,
                 at = if (v.state == Flight.GATE && !v.inDepot) airports.getOrNull(v.at)?.station ?: -1 else -1,
                 x = ax, y = ay, shared = v.shared, gap = v.gap, group = v.group,
+                value = if (v.wreckedFor > 0) 0 else craftValue(v.price, v.built, v.info.life), nextService = nextService(v.service, v.serviced), renewOff = v.renewOff,
             )
         },
         airports.filterNotNull().map { AirportView(it.id, it.station, it.kind, it.x, it.y, it.w, it.h, it.axis, it.depot, it.ils, it.deice) },

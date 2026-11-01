@@ -39,11 +39,11 @@ internal fun World.renewDue(owner: Int, built: Int, life: Int): Boolean {
     return c.autorenew && !c.gone && workDay - built >= life * 365 + c.renewMonths * WORK_MONTH
 }
 
-internal fun World.renewDue(t: Train) = t.wreckedFor == 0 && renewDue(t.owner, t.built, t.life) &&
+internal fun World.renewDue(t: Train) = !t.renewOff && t.wreckedFor == 0 && renewDue(t.owner, t.built, t.life) &&
     t.formation.all { onSale(roster[it.model]) }
-internal fun World.renewDue(v: RoadVehicle) = v.wreckedFor == 0 && renewDue(v.owner, v.built, v.info.life) && onSale(v.info)
-internal fun World.renewDue(v: Ship) = renewDue(v.owner, v.built, v.info.life) && onSale(v.info)
-internal fun World.renewDue(v: Aircraft) = v.wreckedFor == 0 && renewDue(v.owner, v.built, v.info.life) && onSale(v.info)
+internal fun World.renewDue(v: RoadVehicle) = !v.renewOff && v.wreckedFor == 0 && renewDue(v.owner, v.built, v.info.life) && onSale(v.info)
+internal fun World.renewDue(v: Ship) = !v.renewOff && renewDue(v.owner, v.built, v.info.life) && onSale(v.info)
+internal fun World.renewDue(v: Aircraft) = !v.renewOff && v.wreckedFor == 0 && renewDue(v.owner, v.built, v.info.life) && onSale(v.info)
 
 /** What renewing costs: the price new less what the old one fetches. */
 internal fun World.renewCost(t: Train) = price(t.price) - value(t)

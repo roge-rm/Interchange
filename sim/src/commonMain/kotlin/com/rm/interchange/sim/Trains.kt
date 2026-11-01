@@ -197,6 +197,7 @@ class Train(
     var noDepotUntil = 0L
     override var renewAsked = NEVER_ASKED
     override var renewFailed = false
+    override var renewOff = false
 
     // The tiles and blocks it's on, as last counted.
     internal var onTiles = IntArray(0)
@@ -278,7 +279,7 @@ internal fun World.trainCommand(company: Company, c: Command.TrainOrder) {
     val t = trains.getOrNull(c.train) ?: return
     if (t.owner != company.id || t.wreckedFor > 0) return
     // Orders and trains make the links passengers find their way by.
-    if (c.what != Command.TrainOrder.REPLACE && c.what != Command.TrainOrder.GROUP) linksDirty = true
+    if (c.what != Command.TrainOrder.REPLACE && c.what != Command.TrainOrder.GROUP && c.what != Command.TrainOrder.AUTORENEW) linksDirty = true
     when (c.what) {
         Command.TrainOrder.GROUP -> setVehicleGroup(company, Command.CopyVehicle.TRAIN, t, c.stations.firstOrNull())
         Command.TrainOrder.REPLACE -> replaceTrain(company, t, c.stations.firstOrNull())
@@ -332,6 +333,7 @@ internal fun World.trainCommand(company: Company, c: Command.TrainOrder) {
                 t.route = null
             }
         }
+        Command.TrainOrder.AUTORENEW -> t.renewOff = !t.renewOff
         Command.TrainOrder.SERVICE -> {
             t.service = !t.service
             if (!t.service && t.servicing) {

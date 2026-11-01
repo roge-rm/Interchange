@@ -418,6 +418,15 @@
     <string name="going_for_service">Going for a service, %1$d km/h</string>
     <string name="renew_for">Renew for %1$s</string>
     <string name="replace">Replace</string>
+    <string name="vehicle_value">Value</string>
+    <string name="next_service">Next service</string>
+    <string name="servicing_off">Off</string>
+    <string name="service_due">Due</string>
+    <plurals name="work_days_n">
+        <item quantity="one">%1$d work day</item>
+        <item quantity="other">%1$d work days</item>
+    </plurals>
+    <string name="show_on_map">Show on map</string>
     <string name="servicing">Servicing</string>
     <string name="news_crash">%1$s crashed near %2$s</string>
     <string name="news_crash_lost">%1$s crashed near %2$s, %3$d people lost</string>

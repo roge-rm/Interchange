@@ -256,6 +256,32 @@ class AutorenewTest {
     }
 
     @Test
+    fun aVehicleTurnedOffIsLeftAloneAndTheSettingIsSaved() {
+        val c = Command.TrainOrder(0, 0, Command.TrainOrder.AUTORENEW)
+        assertEquals(Command.TrainOrder.AUTORENEW, (Codec.decode(Codec.encode(c)) as Command.TrainOrder).what)
+        val w = bus()
+        val v = w.roadVehicles[0]!!
+        w.days(20)
+        v.built = w.workDay - v.info.life * 365
+        assertTrue(w.renewDue(v))
+        w.apply(Command.RoadOrder(0, 0, Command.TrainOrder.AUTORENEW))
+        assertTrue(v.renewOff)
+        assertTrue(!w.renewDue(v), "still due with it off")
+        val mark = v.built
+        w.days(120)
+        assertEquals(mark, v.built, "renewed with it off")
+        val view = w.view(0).roadVehicles[0]
+        assertTrue(view.renewOff)
+        assertEquals(w.roadValue(v), view.value)
+        val back = Save.read(Save.write(w))
+        assertTrue(back.roadVehicles[0]!!.renewOff)
+        assertEquals(w.checksum(), back.checksum())
+        assertTrue(!Save.read(Save.write(w, version = 53)).roadVehicles[0]!!.renewOff)
+        w.apply(Command.RoadOrder(0, 0, Command.TrainOrder.AUTORENEW))
+        assertTrue(w.renewDue(v))
+    }
+
+    @Test
     fun rivalsRenewTheirVehicles() {
         val w = World(NewGame(128, 128, 7, 1930, Region.MIXED, towns = 3, industries = 0, rivals = 2))
         w.days(400)

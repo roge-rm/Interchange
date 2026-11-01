@@ -66,6 +66,7 @@ internal fun World.replaceTrain(company: Company, old: Train, model: Int?) {
     made.noDepotUntil = old.noDepotUntil
     made.renewAsked = old.renewAsked
     made.renewFailed = old.renewFailed
+    made.renewOff = old.renewOff
     made.onTiles = old.onTiles
     made.onPieces = old.onPieces
     made.onBlocks = old.onBlocks
@@ -117,6 +118,7 @@ internal fun World.replaceRoadVehicle(company: Company, old: RoadVehicle, model:
     made.noDepotUntil = old.noDepotUntil
     made.renewAsked = old.renewAsked
     made.renewFailed = old.renewFailed
+    made.renewOff = old.renewOff
     made.tires = old.tires
     made.seasonalTires = old.seasonalTires
     made.slid = old.slid
@@ -149,6 +151,7 @@ internal fun World.replaceShip(company: Company, old: Ship, model: Int?) {
     made.departed = old.departed
     made.renewAsked = old.renewAsked
     made.renewFailed = old.renewFailed
+    made.renewOff = old.renewOff
     made.inDepot = old.inDepot
     made.running = old.running
     made.waiting = old.waiting
@@ -203,6 +206,7 @@ internal fun World.replaceAircraft(company: Company, old: Aircraft, model: Int?)
     made.departed = old.departed
     made.renewAsked = old.renewAsked
     made.renewFailed = old.renewFailed
+    made.renewOff = old.renewOff
     made.inDepot = old.inDepot
     made.running = old.running
     made.waiting = old.waiting

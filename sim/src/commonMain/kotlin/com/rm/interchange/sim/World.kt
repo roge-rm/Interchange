@@ -479,7 +479,7 @@ class World(settings: NewGame, val roster: Roster = Roster.BASE, generate: Boole
         for (r in rivals) { mix(r.thinkOn.toLong()); mix(r.routes.size.toLong()); for (rt in r.routes) for (l in rt.loops) mix(l.toLong()); mix(r.failed.size.toLong()); for (f in r.failed.keys.sorted()) { mix(f); mix(r.failed.getValue(f).toLong()) }; for (k in r.stood.keys.sorted()) { mix(k.toLong()); mix(r.stood.getValue(k).toLong()) }; for (k in r.held.keys.sorted()) { mix(k); mix(r.held.getValue(k).toLong()) } }
         for (c in companies) { mix(c.money); mix(c.loan); mix(c.founded); mix(c.upkeepOwed); mix(c.trackTiles.toLong()); mix(c.roadUpkeep); mix(c.trouble.toLong()); mix(if (c.gone) 1 else 0); for (ch in c.name) mix(ch.code.toLong())
             for (b in c.insignia) mix(b.toLong()); mix(if (c.autorenew) 1L else 0L); mix(c.renewMonths.toLong()); mix(c.renewFloor) }
-        for (list in listOf<List<Carrier?>>(trains, roadVehicles, ships, aircraft)) for (v in list) if (v != null) { mix(v.renewAsked.toLong()); mix(if (v.renewFailed) 1L else 0L) }
+        for (list in listOf<List<Carrier?>>(trains, roadVehicles, ships, aircraft)) for (v in list) if (v != null) { mix(v.renewAsked.toLong()); mix(if (v.renewFailed) 1L else 0L); mix(if (v.renewOff) 1L else 0L) }
         mix(if (upkeepCounted) 1L else 0L)
         mix(if (settings.collisions) 1L else 0L); mix(crashes.first.toLong() + crashes.list.size)
         for (s in subsidies) { mix(s.cargo.toLong()); mix(s.from.toLong()); mix(s.to.toLong()); mix(s.company.toLong()); mix(s.months.toLong()) }

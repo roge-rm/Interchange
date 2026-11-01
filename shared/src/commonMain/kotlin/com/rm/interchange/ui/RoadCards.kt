@@ -72,7 +72,7 @@ fun GarageCard(view: WorldView, roster: Roster, depot: Int, year: Int, funds: Lo
 
 /** A road vehicle: its picture and what it's doing, its numbers, its stops, and buttons to run it. */
 @Composable
-fun RoadVehicleCard(view: WorldView, roster: Roster, v: RoadVehicleView, year: Int, funds: Long, price: (Long) -> Long, addingStops: Boolean, onAddStops: () -> Unit, send: (Command) -> Unit, onClose: () -> Unit, modifier: Modifier) {
+fun RoadVehicleCard(view: WorldView, roster: Roster, v: RoadVehicleView, year: Int, funds: Long, price: (Long) -> Long, addingStops: Boolean, onAddStops: () -> Unit, send: (Command) -> Unit, onShow: (Float, Float) -> Unit, onClose: () -> Unit, modifier: Modifier) {
     val me = LocalCompany.current
     val lang = languageCode()
     fun order(what: Int, stations: IntArray = IntArray(0)) = send(Command.RoadOrder(me, v.id, what, stations))
@@ -91,7 +91,7 @@ fun RoadVehicleCard(view: WorldView, roster: Roster, v: RoadVehicleView, year: I
         VehicleStats(
             v.kmh, e.speed, v.age, false, v.reliability, v.profitThisYear, v.profitLastYear,
             if (v.capacity > 0) listOf(VehicleLoad(v.carries, v.load, v.capacity)) else emptyList(),
-            if (horses) emptyList() else listOf(stringResource(Res.string.tires) to tires.getOrElse(v.tires) { "" }),
+            (if (horses) emptyList() else listOf(stringResource(Res.string.tires) to tires.getOrElse(v.tires) { "" })) + worthRows(v.value, v.nextService, mine),
         )
         // Someone else's shows what it is but none of the controls, and a wreck is cleared away by itself.
         if (!mine || v.wrecked) return@Card
@@ -128,6 +128,7 @@ fun RoadVehicleCard(view: WorldView, roster: Roster, v: RoadVehicleView, year: I
             }
         }
         SwitchRow(stringResource(Res.string.servicing), v.service) { order(Command.TrainOrder.SERVICE) }
+        VehicleMapControls(view.company?.autorenew == true, v.renewOff, v.x, v.y, onShow) { order(Command.TrainOrder.AUTORENEW) }
         if (!horses) SwitchRow(stringResource(Res.string.seasonal_tires), v.seasonalTires) { order(Command.RoadOrder.TIRES) }
     }
 }

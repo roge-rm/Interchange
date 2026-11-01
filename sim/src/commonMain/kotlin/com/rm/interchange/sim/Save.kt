@@ -16,7 +16,7 @@ package com.rm.interchange.sim
  */
 object Save {
     private val MAGIC = "ICHG".encodeToByteArray()
-    const val VERSION = 53
+    const val VERSION = 54
 
     /** A vehicle's [built] day as saved by [version]: work days from 36, calendar days before. */
     private fun World.builtOut(built: Int, version: Int) = if (version >= 36) built else built / settings.dayLength
@@ -232,6 +232,9 @@ object Save {
             if (version >= 40) {
                 for (c in companies) { w.bool(c.autorenew); w.int(c.renewMonths); w.long(c.renewFloor) }
                 for (list in listOf<List<Carrier?>>(trains, roadVehicles, ships, aircraft)) for (v in list) if (v != null) { w.int(v.renewAsked); w.bool(v.renewFailed) }
+            }
+            if (version >= 54) {
+                for (list in listOf<List<Carrier?>>(trains, roadVehicles, ships, aircraft)) for (v in list) if (v != null) w.bool(v.renewOff)
             }
             if (version >= 44) {
                 for (c in companies) for (backup in c.orderBackups) {
@@ -585,6 +588,9 @@ object Save {
             if (version >= 40) {
                 for (c in companies) { c.autorenew = r.bool(); c.renewMonths = r.int().coerceIn(-12, 12); c.renewFloor = r.long().coerceAtLeast(0) }
                 for (list in listOf<List<Carrier?>>(trains, roadVehicles, ships, aircraft)) for (v in list) if (v != null) { v.renewAsked = r.int(); v.renewFailed = r.bool() }
+            }
+            if (version >= 54) {
+                for (list in listOf<List<Carrier?>>(trains, roadVehicles, ships, aircraft)) for (v in list) if (v != null) v.renewOff = r.bool()
             }
             if (version >= 44) {
                 for (c in companies) for (kind in c.orderBackups.indices) {

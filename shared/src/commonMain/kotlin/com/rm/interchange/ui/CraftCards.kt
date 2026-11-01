@@ -180,7 +180,7 @@ private fun CraftActions(running: Boolean, inDepot: Boolean, toDepot: Boolean, r
 
 /** A ship: its picture and what it's doing, its numbers, its stops and buttons to run it. */
 @Composable
-fun ShipCard(view: WorldView, roster: Roster, v: ShipView, year: Int, funds: Long, price: (Long) -> Long, addingStops: Boolean, onAddStops: () -> Unit, send: (Command) -> Unit, onClose: () -> Unit, modifier: Modifier) {
+fun ShipCard(view: WorldView, roster: Roster, v: ShipView, year: Int, funds: Long, price: (Long) -> Long, addingStops: Boolean, onAddStops: () -> Unit, send: (Command) -> Unit, onShow: (Float, Float) -> Unit, onClose: () -> Unit, modifier: Modifier) {
     val me = LocalCompany.current
     val lang = languageCode()
     fun order(what: Int, stations: IntArray = IntArray(0)) = send(Command.CraftOrder(me, false, v.id, what, stations))
@@ -197,6 +197,7 @@ fun ShipCard(view: WorldView, roster: Roster, v: ShipView, year: Int, funds: Lon
         VehicleStats(
             v.kmh, e.speed, v.age, false, v.reliability, v.profitThisYear, v.profitLastYear,
             if (v.capacity > 0) listOf(VehicleLoad(v.carries, v.load, v.capacity)) else emptyList(),
+            worthRows(v.value, v.nextService, mine),
         )
         // Someone else's: what it is, but none of the controls.
         if (!mine) return@Card
@@ -227,13 +228,14 @@ fun ShipCard(view: WorldView, roster: Roster, v: ShipView, year: Int, funds: Lon
             order = { order(it) },
         ) {
             SwitchRow(stringResource(Res.string.servicing), v.service) { order(Command.TrainOrder.SERVICE) }
+            VehicleMapControls(view.company?.autorenew == true, v.renewOff, v.x, v.y, onShow) { order(Command.TrainOrder.AUTORENEW) }
         }
     }
 }
 
 /** An aircraft: its picture and what it's doing (and why, if it's holding), its numbers, its stops, and buttons to run it. */
 @Composable
-fun AircraftCard(view: WorldView, roster: Roster, v: AircraftView, year: Int, funds: Long, price: (Long) -> Long, addingStops: Boolean, onAddStops: () -> Unit, send: (Command) -> Unit, onClose: () -> Unit, modifier: Modifier) {
+fun AircraftCard(view: WorldView, roster: Roster, v: AircraftView, year: Int, funds: Long, price: (Long) -> Long, addingStops: Boolean, onAddStops: () -> Unit, send: (Command) -> Unit, onShow: (Float, Float) -> Unit, onClose: () -> Unit, modifier: Modifier) {
     val me = LocalCompany.current
     val lang = languageCode()
     val e = roster[v.model]
@@ -254,7 +256,7 @@ fun AircraftCard(view: WorldView, roster: Roster, v: AircraftView, year: Int, fu
             listOfNotNull(
                 (stringResource(Res.string.range) to stringResource(Res.string.km, Numbers.grouped(e.range.toLong()))).takeIf { e.range > 0 },
                 (stringResource(Res.string.gear) to gear.getOrElse(v.gear) { "" }).takeIf { e.floats },
-            ),
+            ) + worthRows(v.value, v.nextService, mine),
         )
         // Someone else's shows what it is but none of the controls, and a wreck is cleared away by itself.
         if (!mine || v.wrecked) return@Card
@@ -289,6 +291,7 @@ fun AircraftCard(view: WorldView, roster: Roster, v: AircraftView, year: Int, fu
             order = { order(it) },
         ) {
             SwitchRow(stringResource(Res.string.servicing), v.service) { order(Command.TrainOrder.SERVICE) }
+            VehicleMapControls(view.company?.autorenew == true, v.renewOff, v.x, v.y, onShow) { order(Command.TrainOrder.AUTORENEW) }
             if (e.floats) SwitchRow(stringResource(Res.string.seasonal_gear), v.seasonalGear) { order(Command.CraftOrder.GEAR) }
         }
     }

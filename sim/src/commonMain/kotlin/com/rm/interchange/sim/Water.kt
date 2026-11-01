@@ -40,6 +40,7 @@ class Ship(
     override var departed = 0L
     override var renewAsked = NEVER_ASKED
     override var renewFailed = false
+    override var renewOff = false
     val info get() = roster[model]
     var inDepot = true
     var running = false
@@ -397,7 +398,7 @@ internal fun World.buyShip(company: Company, depot: Depot, e: Engine, cargo: Int
 internal fun World.shipCommand(company: Company, c: Command.CraftOrder) {
     val v = ships.getOrNull(c.vehicle) ?: return
     if (v.owner != company.id) return
-    if (c.what != Command.TrainOrder.REPLACE && c.what != Command.TrainOrder.GROUP) linksDirty = true
+    if (c.what != Command.TrainOrder.REPLACE && c.what != Command.TrainOrder.GROUP && c.what != Command.TrainOrder.AUTORENEW) linksDirty = true
     when (c.what) {
         Command.TrainOrder.GROUP -> setVehicleGroup(company, Command.CopyVehicle.SHIP, v, c.stations.firstOrNull())
         Command.TrainOrder.REPLACE -> replaceShip(company, v, c.stations.firstOrNull())
@@ -444,6 +445,7 @@ internal fun World.shipCommand(company: Company, c: Command.CraftOrder) {
             rememberOrders(company, Command.CopyVehicle.SHIP, v, backup)
         }
         Command.TrainOrder.SERVICE -> v.service = !v.service
+        Command.TrainOrder.AUTORENEW -> v.renewOff = !v.renewOff
         Command.TrainOrder.RENEW -> if (v.inDepot) {
             val cost = price(v.price) - craftValue(v.price, v.built, v.info.life)
             if (company.money < cost) return

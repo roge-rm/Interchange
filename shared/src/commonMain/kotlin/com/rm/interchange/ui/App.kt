@@ -1521,7 +1521,7 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
                     if (t == null || wv == null) { selected = null; addingStops = null }
                     else {
                         if (t.wrecked && addingStops == t.id) addingStops = null
-                        TrainCard(wv, world.roster, t, Calendar.year(world.startYear, day), money, { world.price(it) }, addingStops == t.id, { copyPick.value = null; addingStops = if (addingStops == t.id) null else t.id }, runner::request, { selected = null; addingStops = null }, cardSize)
+                        TrainCard(wv, world.roster, t, Calendar.year(world.startYear, day), money, { world.price(it) }, addingStops == t.id, { copyPick.value = null; addingStops = if (addingStops == t.id) null else t.id }, runner::request, { x, y -> view.focusX = x; view.focusY = y }, { selected = null; addingStops = null }, cardSize)
                     }
                 }
                 is Selection.Depot -> if (wv != null) DepotCard(
@@ -1533,7 +1533,7 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
                     if (v == null || wv == null) { selected = null; addingRoadStops = null }
                     else {
                         if (v.wrecked && addingRoadStops == v.id) addingRoadStops = null
-                        RoadVehicleCard(wv, world.roster, v, Calendar.year(world.startYear, day), money, { world.price(it) }, addingRoadStops == v.id, { copyPick.value = null; addingRoadStops = if (addingRoadStops == v.id) null else v.id }, runner::request, { selected = null; addingRoadStops = null }, cardSize)
+                        RoadVehicleCard(wv, world.roster, v, Calendar.year(world.startYear, day), money, { world.price(it) }, addingRoadStops == v.id, { copyPick.value = null; addingRoadStops = if (addingRoadStops == v.id) null else v.id }, runner::request, { x, y -> view.focusX = x; view.focusY = y }, { selected = null; addingRoadStops = null }, cardSize)
                     }
                 }
                 is Selection.Garage -> if (wv != null) GarageCard(
@@ -1553,7 +1553,7 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
                     val v = wv?.ships?.firstOrNull { it.id == sel.id }
                     if (v == null || wv == null) { selected = null; addingCraftStops = null }
                     else {
-                        ShipCard(wv, world.roster, v, Calendar.year(world.startYear, day), money, { world.price(it) }, addingCraftStops == (false to v.id), { copyPick.value = null; addingCraftStops = if (addingCraftStops == (false to v.id)) null else false to v.id }, runner::request, { selected = null; addingCraftStops = null }, cardSize)
+                        ShipCard(wv, world.roster, v, Calendar.year(world.startYear, day), money, { world.price(it) }, addingCraftStops == (false to v.id), { copyPick.value = null; addingCraftStops = if (addingCraftStops == (false to v.id)) null else false to v.id }, runner::request, { x, y -> view.focusX = x; view.focusY = y }, { selected = null; addingCraftStops = null }, cardSize)
                     }
                 }
                 is Selection.Aircraft -> {
@@ -1561,7 +1561,7 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
                     if (v == null || wv == null) { selected = null; addingCraftStops = null }
                     else {
                         if (v.wrecked && addingCraftStops == (true to v.id)) addingCraftStops = null
-                        AircraftCard(wv, world.roster, v, Calendar.year(world.startYear, day), money, { world.price(it) }, addingCraftStops == (true to v.id), { copyPick.value = null; addingCraftStops = if (addingCraftStops == (true to v.id)) null else true to v.id }, runner::request, { selected = null; addingCraftStops = null }, cardSize)
+                        AircraftCard(wv, world.roster, v, Calendar.year(world.startYear, day), money, { world.price(it) }, addingCraftStops == (true to v.id), { copyPick.value = null; addingCraftStops = if (addingCraftStops == (true to v.id)) null else true to v.id }, runner::request, { x, y -> view.focusX = x; view.focusY = y }, { selected = null; addingCraftStops = null }, cardSize)
                     }
                 }
                 is Selection.Station -> {
