@@ -300,4 +300,45 @@ class AirFlightTest {
         }
         assertTrue(calls >= 2, "$calls calls after loading")
     }
+
+    /**
+     * How far along its runway, in hundredths, [key] first leaves the ground taking off from airport 0 of a world with
+     * airport kinds [from] at (5, 5) and [to] at (30, 30), both along x, and the tick it does.
+     */
+    private fun liftOff(key: String, from: Int, to: Int, year: Int): Pair<Int, Int> {
+        val w = World(NewGame(64, 64, 1, year, Region.MIXED, sea = 0, hills = 0, trees = 0, towns = 0, industries = 0, weather = false, inflation = false, collisions = false))
+        for (y in 0..64) for (x in 0..64) w.corners[w.corner(x, y)] = 1
+        w.landShaped()
+        for (i in w.trees.indices) w.trees[i] = 0
+        w.shoreChanged()
+        w.companies[0].money = 100_000_000
+        w.apply(Command.Airport(0, 5, 5, from, Track.X))
+        w.apply(Command.Airport(0, 30, 30, to, Track.X))
+        assertEquals(2, w.airports.count { it != null }, "built both airports")
+        val v = w.buy(key)
+        v.service = false
+        var t = 0
+        while (!(v.state == Flight.TAKEOFF && v.altitude > 0) && t < 5000) { w.step(); t++ }
+        assertTrue(t < 5000, "$key never took off")
+        val r = w.runway(w.airports[0]!!)
+        val total = abs(r[2] - r[0]) + abs(r[3] - r[1])
+        val start = if (cos256(v.heading) > 0) r[0] else r[2]
+        return abs(v.x - start) * 100 / total to t
+    }
+
+    @Test
+    fun smallPlanesLiftOffSoonerThanAirliners() {
+        val beaver = liftOff("beaver", Airports.STRIP, Airports.STRIP, 1955)
+        val dc3 = liftOff("dc3", Airports.REGIONAL, Airports.REGIONAL, 1955)
+        val jet = liftOff("b737_200", Airports.CITY, Airports.CITY, 1975)
+        val dc8 = liftOff("dc8", Airports.INTERNATIONAL, Airports.INTERNATIONAL, 1965)
+        println("lift-off along the runway: beaver $beaver, dc3 $dc3, b737_200 $jet, dc8 $dc8 (hundredths, tick)")
+        assertTrue(beaver.first < 50, "a bush plane is off the ground in under half a strip, at ${beaver.first}")
+        for ((name, at) in listOf("dc3" to dc3, "b737_200" to jet, "dc8" to dc8)) {
+            assertTrue(at.first > beaver.first, "$name lifts off later than a bush plane, at ${at.first}")
+            assertTrue(at.first in 60..100, "$name lifts off most of the way down its runway, at ${at.first}")
+        }
+        assertEquals(beaver, liftOff("beaver", Airports.STRIP, Airports.STRIP, 1955), "the same each run")
+        assertEquals(jet, liftOff("b737_200", Airports.CITY, Airports.CITY, 1975), "the same each run")
+    }
 }

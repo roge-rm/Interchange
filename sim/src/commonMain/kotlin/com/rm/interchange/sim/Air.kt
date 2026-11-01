@@ -968,7 +968,10 @@ private fun World.cruiseAltitude(v: Aircraft): Int {
     return (maxOf(dest, from) + over) * 16
 }
 
-/** Rolling down the runway the way it faces, off the ground halfway, then climbing straight ahead a little; a helicopter straight up. */
+/**
+ * Rolling down the runway the way it faces, speeding up until it reaches its [liftOffSpeed], then climbing straight
+ * ahead until [CLIMB_OUT] steps up and past the runway's end; off at the end if it hasn't lifted by then. A helicopter goes straight up.
+ */
 private fun World.takeOff(v: Aircraft) {
     val top = cruiseAltitude(v)
     if (v.heli) {
@@ -978,15 +981,32 @@ private fun World.takeOff(v: Aircraft) {
     }
     val from = airports.getOrNull(v.at) ?: run { leaveAirport(v); return }
     val e = runwayEnds(from, v.heading)
-    v.speed = minOf(v.speed + v.maxSpeed / 40 + 16, v.maxSpeed)
+    val lift = liftOffSpeed(v)
+    val roll = takeOffRoll(v, from)
+    // On the ground at [rollAccel], the speed that reaches [lift] in [roll]; up, as fast as in the cruise.
+    val gain = if (v.altitude > 0) maxOf(rollAccel(lift, roll), v.maxSpeed / 40 + 16) else rollAccel(lift, roll)
+    v.speed = minOf(v.speed + gain, v.maxSpeed)
     advance(v, v.speed / 16)
     val total = isqrt((e[2] - e[0]).toLong() * (e[2] - e[0]) + (e[3] - e[1]).toLong() * (e[3] - e[1])).toInt().coerceAtLeast(1)
-    val gone = along(v, e, v.heading)
     val ground = heightAt(from.x, from.y) * 16
-    if (gone > total) v.altitude = maxOf(v.altitude, ground + 24) + CLIMB
-    else if (gone > total / 2) v.altitude = ground + (gone - total / 2) * 48 / total
-    if (gone >= total + CLIMB_OUT * SHIP_UNIT) leaveAirport(v)
+    if (v.altitude == 0) {
+        if (v.speed >= lift || along(v, e, v.heading) >= total) v.altitude = ground + CLIMB
+        return
+    }
+    v.altitude = minOf(top, v.altitude + CLIMB)
+    // It holds the runway until it is past the end, so nothing goes onto the runway under it.
+    if (v.altitude >= minOf(top, ground + CLIMB_OUT * 16) && along(v, e, v.heading) >= total) leaveAirport(v)
 }
+
+/** The speed [v] lifts off at, in its speed's units: [LIFT_OFF] hundredths of its top speed for its runway class. */
+internal fun liftOffSpeed(v: Aircraft) = v.maxSpeed * LIFT_OFF[v.info.runway.coerceIn(0, LIFT_OFF.size - 1)] / 100
+
+/** How far [v] rolls from standing to lifting off at [a], in 4096ths: on floats on water [WATER_ROLL], else [TAKE_OFF_ROLL] for its class. */
+internal fun takeOffRoll(v: Aircraft, a: Airport) =
+    (if (a.kind == Airports.SEAPLANE) WATER_ROLL else TAKE_OFF_ROLL[v.info.runway.coerceIn(0, TAKE_OFF_ROLL.size - 1)]) * SHIP_UNIT / 16
+
+/** The speed gained a tick to reach [lift] from standing in [roll] 4096ths, a tick moving a 16th of the speed. */
+private fun rollAccel(lift: Int, roll: Int) = ((lift.toLong() * lift + 32L * roll - 1) / (32L * roll)).toInt().coerceAtLeast(1)
 
 private fun World.leaveAirport(v: Aircraft) {
     v.state = Flight.CRUISE
@@ -1489,9 +1509,17 @@ const val LOW_CRUISE = 6
 /** How fast aircraft climb and descend, in 16ths of a step a tick, and the most they come down a tick on the glide path. */
 const val CLIMB = 6
 const val GLIDE = 16
-/** How far out aircraft line up to land, and how far past the runway they climb straight ahead before turning, in tiles. */
+/** How far out aircraft line up to land, in tiles; and how high over the airport they climb straight ahead after lifting off before turning, in steps. */
 const val APPROACH = 5
-const val CLIMB_OUT = 1
+const val CLIMB_OUT = 3
+/**
+ * Take-off by the runway class an aircraft needs (strip, regional, city, international): the speed it lifts off at, in
+ * hundredths of its top speed, and how far it rolls from standing to get there, in 16ths of a tile; and on floats on
+ * water. A bush plane is off within a third of a strip, an airliner most of the way down its runway.
+ */
+val LIFT_OFF = intArrayOf(50, 65, 75, 75)
+val TAKE_OFF_ROLL = intArrayOf(8, 48, 72, 96)
+const val WATER_ROLL = 12
 /** How far a helicopter turns a tick, in 256ths. */
 const val HELI_TURN = 32
 /** How far aircraft taxi a tick, in 4096ths, quick on the map's scale so taxiing adds a day or two a trip; and the most they turn a tick, as round an eighth of a tile. */
