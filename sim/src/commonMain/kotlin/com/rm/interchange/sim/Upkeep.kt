@@ -26,8 +26,19 @@ fun World.age(t: Train) = (workDay - t.built).coerceAtLeast(0) / 365
 fun World.bestReliability(t: Train): Int =
     (t.newReliability - maxOf(0, age(t) - t.life) * OLD_AGE_LOSS).coerceAtLeast(LEAST_RELIABLE)
 
-/** What train [t] fetches sold: half its price new, less as it ages, never under a twentieth. */
-fun World.value(t: Train): Long = if (t.wreckedFor > 0) 0 else price(t.price) * maxOf(10, 100 - 100 * age(t) / t.life.coerceAtLeast(1)) / 200
+/**
+ * What a vehicle of [price] fetches sold [days] work days after it was built, with a working life of [life] years:
+ * 90% new, falling in a straight line to 10% at the end of its life, and 10% after that.
+ */
+fun resaleValue(price: Long, days: Int, life: Int): Long {
+    val lifeDays = life.coerceAtLeast(1) * 365L
+    // In hundredths of a percent.
+    val share = 9000 - 8000 * days.coerceIn(0, lifeDays.toInt()) / lifeDays
+    return price * share / 10_000
+}
+
+/** What train [t] fetches sold, by [resaleValue]. */
+fun World.value(t: Train): Long = if (t.wreckedFor > 0) 0 else resaleValue(price(t.price), workDay - t.built, t.life)
 
 /** Each day: wear, breakdowns, trips to the depot for a service, and news of trains grown old. */
 internal fun World.trainsDay() {

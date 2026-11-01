@@ -118,7 +118,7 @@ class TrainFormationTest {
         assertEquals(before - w.price(wagon.cost), w.companies[0].money)
         val bought = w.companies[0].money
         w.edit(t.formation.dropLast(1))
-        assertEquals(bought + w.price(wagon.cost) / 2, w.companies[0].money)
+        assertEquals(bought + w.price(wagon.cost) * 9 / 10, w.companies[0].money)
     }
 
     @Test

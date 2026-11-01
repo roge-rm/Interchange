@@ -44,8 +44,8 @@ fun validTrainFormation(roster: Roster, cars: List<TrainCar>): Boolean {
     return engines in 1..MAX_LOCOMOTIVES && wagons <= MAX_WAGONS
 }
 
-/** Charges only for added stock and credits removed stock at the train's age. Moving or refitting cars is free. */
-fun trainFormationCost(roster: Roster, before: List<TrainCar>, after: List<TrainCar>, age: Int, price: (Long) -> Long): Long {
+/** Charges only for added stock and credits removed stock at the train's age in work [days]. Moving or refitting cars is free. */
+fun trainFormationCost(roster: Roster, before: List<TrainCar>, after: List<TrainCar>, days: Int, price: (Long) -> Long): Long {
     val counts = before.groupingBy { it.model }.eachCount().toMutableMap()
     var bought = 0L
     for (car in after) {
@@ -55,8 +55,7 @@ fun trainFormationCost(roster: Roster, before: List<TrainCar>, after: List<Train
     }
     val sold = counts.entries.sumOf { (id, n) ->
         val model = roster[id]
-        val factor = maxOf(10, 100 - 100 * age / model.life.coerceAtLeast(1))
-        price((model.cost + (roster.getOrNull(model.tender)?.cost ?: 0)) * n) * factor / 200
+        resaleValue(price((model.cost + (roster.getOrNull(model.tender)?.cost ?: 0)) * n), days, model.life)
     }
     return price(bought) - sold
 }
@@ -78,7 +77,7 @@ internal fun World.editTrain(company: Company, c: Command.EditTrain) {
     val draft = Train(roster, train.id, train.owner, train.engine, train.wagon, 0, train.depot, formation = c.cars)
     // Cars may be changed with cargo aboard only when every packet still fits.
     if ((0 until Cargo.COUNT).any { train.load(it) > draft.capacity(it) }) return
-    val cost = trainFormationCost(roster, train.formation, c.cars, age(train), ::price)
+    val cost = trainFormationCost(roster, train.formation, c.cars, workDay - train.built, ::price)
     if (cost > 0 && cost > company.money) return
     if (cost >= 0) spend(company, Books.NEW_TRAINS, cost) else earn(company, Books.TRAINS_SOLD, -cost)
     train.setFormation(c.cars)

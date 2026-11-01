@@ -115,6 +115,8 @@ class TrainView(
     val value: Long = 0,
     val nextService: Int = -1,
     val renewOff: Boolean = false,
+    /** Work days old, for what its cars fetch sold. */
+    val days: Int = 0,
 )
 
 /** A bus, truck or streetcar as the screen shows it. */
@@ -459,7 +461,7 @@ fun World.view(company: Int = 0, withReserved: Boolean = false): WorldView {
             owner = t.owner, wrecked = t.wreckedFor > 0, number = t.number,
             at = if (t.waiting > 0 && !t.inDepot) t.steps.lastOrNull()?.let { stationAt(stepTile(it))?.id } ?: -1 else -1,
             x = tx, y = ty, gap = t.gap, wagonCargo = t.wagonCargo, group = t.group, formation = t.formation.toList(), topSpeed = t.topSpeed, dieselSpeed = t.dieselSpeed,
-            curveKmh = t.curveKmh, value = value(t), nextService = nextService(t.service, t.serviced), renewOff = t.renewOff,
+            curveKmh = t.curveKmh, value = value(t), days = (workDay - t.built).coerceAtLeast(0), nextService = nextService(t.service, t.serviced), renewOff = t.renewOff,
         )
     }
     val stationViews = stations.filterNotNull().map { s ->

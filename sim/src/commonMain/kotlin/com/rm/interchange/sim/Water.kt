@@ -458,10 +458,7 @@ internal fun World.shipCommand(company: Company, c: Command.CraftOrder) {
 }
 
 /** What a ship or aircraft of [price] built on work day [built] with a working life of [life] years fetches sold. */
-fun World.craftValue(price: Long, built: Int, life: Int): Long {
-    val age = (workDay - built).coerceAtLeast(0) / 365
-    return price(price) * maxOf(10, 100 - 100 * age / life.coerceAtLeast(1)) / 200
-}
+fun World.craftValue(price: Long, built: Int, life: Int): Long = resaleValue(price(price), workDay - built, life)
 
 /** Out of the shipyard onto the water in front, if the ice lets it. */
 private fun World.launch(v: Ship) {

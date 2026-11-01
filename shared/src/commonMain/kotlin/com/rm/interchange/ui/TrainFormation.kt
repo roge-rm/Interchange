@@ -112,7 +112,7 @@ internal fun TrainFormationEditor(
     }
     val valid = validTrainFormation(roster, draft)
     val preview = if (valid) Train(roster, t.id, t.owner, t.engine, t.wagon, 0, t.depot, formation = draft) else null
-    val cost = trainFormationCost(roster, t.formation, draft, t.age, price)
+    val cost = trainFormationCost(roster, t.formation, draft, t.days, price)
     val fits = preview != null && (0 until Cargo.COUNT).all { t.load[it] <= preview.capacity(it) }
     if (preview != null) {
         // With a dual-mode engine, its numbers under wires and off them.

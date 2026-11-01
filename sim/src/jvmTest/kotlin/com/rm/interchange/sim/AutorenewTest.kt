@@ -95,7 +95,8 @@ class AutorenewTest {
         var spent = 0L
         var mark = 0
         val done = runTillRenewed(w, 120, {
-            t.built = w.workDay - t.engineInfo.life * 365 + 6 * WORK_MONTH
+            // Past its life, so what it fetches holds at the floor till it reaches the depot.
+            t.built = w.workDay - t.engineInfo.life * 365 - WORK_MONTH
             t.reliability = 3000
             mark = w.workDay
             cost = w.renewCost(t)

@@ -281,8 +281,7 @@ internal fun World.roadVehicleCommand(company: Company, c: Command.RoadOrder) {
 /** What road vehicle [v] fetches sold. */
 fun World.roadValue(v: RoadVehicle): Long {
     if (v.wreckedFor > 0) return 0
-    val age = (workDay - v.built).coerceAtLeast(0) / 365
-    return price(v.price) * maxOf(10, 100 - 100 * age / v.info.life.coerceAtLeast(1)) / 200
+    return resaleValue(price(v.price), workDay - v.built, v.info.life)
 }
 
 /** Out of the garage onto the road at its door, if nobody's in the way. */
