@@ -6,8 +6,9 @@ import java.util.IdentityHashMap
  * A scripted player for balance tests: a normal new game, played by a simple plan through the same commands a
  * player sends. It borrows as it needs, opens a bus line between the biggest towns near its home (the biggest town),
  * a railway between towns or from a mine to its taker once it can pay for one, and truck lines, adds vehicles where
- * people or cargo wait, sells what loses and repays the loan when it's well off. The planning is the rivals' own
- * ([newRoute], [newRailRoute], [newFreightRoute], [growRoute], [sellLosers]), run for company 0.
+ * people or cargo wait, puts up snow fences where drifts stop its trains, sells what loses and repays the loan when
+ * it's well off. The planning is the rivals' own ([newRoute], [newRailRoute], [newFreightRoute], [growRoute],
+ * [sellLosers]), run for company 0.
  *
  * It looks over its business every [thinkDays] work days, so it plays as often against the work done at any day
  * length, as a person playing would.
@@ -53,6 +54,8 @@ class Player(val world: World, val thinkDays: Int = 30, val mostRoutes: Int = 12
     var buses = 0
     var railways = 0
     var trucks = 0
+    /** Snow fences put up. */
+    var fences = 0
     /** The work day of the last new route, so it gives each one a while to pay before the next. */
     private var lastNew = -1_000_000
     private var nextThink = 0
@@ -62,6 +65,8 @@ class Player(val world: World, val thinkDays: Int = 30, val mostRoutes: Int = 12
     /** What it built for goals and when, for the report. */
     val aimLog = ArrayList<String>()
     private val aimFor = HashMap<RivalRoute, Int>()
+    /** The work day each goal railway last got a train or a loop. */
+    private val railGrown = HashMap<RivalRoute, Int>()
     /** By goal: the work day it next tries a route for it, the calendar day of its first route and the work day of its last. */
     private val aimWait = HashMap<Int, Int>()
     private val aimFirst = HashMap<Int, Int>()
@@ -89,8 +94,27 @@ class Player(val world: World, val thinkDays: Int = 30, val mostRoutes: Int = 12
                 think()
             }
             if (w.tick % Calendar.TICKS_PER_DAY == 0L) work()
-            if (w.day != before) daily()
+            if (w.day != before) {
+                unblock()
+                daily()
+            }
             if (w.day != before && Calendar.newYear(w.startYear, w.day) && w.day > 0) years += books()
+        }
+    }
+
+    /**
+     * As a rival does each day, so a railway's trains take turns at its depot; a goal railway's trains it sends in to
+     * be sold are called back, as they're kept even when they lose.
+     */
+    private fun unblock() {
+        val w = world
+        for (route in plan.routes) if (route.rail) w.unblockDepot(company, route)
+        for (route in aims.routes) {
+            if (!route.rail) continue
+            val on = w.trains.filter { it != null && it.owner == 0 && onRoute(it, route) }.map { it!! }
+            val going = on.filter { it.toDepot }.toSet()
+            w.unblockDepot(company, route)
+            for (t in on) if (t.toDepot && !t.servicing && t !in going) w.apply(Command.TrainOrder(0, t.id, Command.TrainOrder.TO_DEPOT))
         }
     }
 
@@ -128,6 +152,7 @@ class Player(val world: World, val thinkDays: Int = 30, val mostRoutes: Int = 12
         val value = forValue()
         if (value && plan.routes.isEmpty()) openRoute()
         if (aim) aimAtGoals()
+        fenceDrifts()
         if (value) sellWorkLosers()
         countPay()
         sellLosers()
@@ -141,6 +166,63 @@ class Player(val world: World, val thinkDays: Int = 30, val mostRoutes: Int = 12
             w.apply(Command.Loan(0, false))
             if (c.loan == was) break
         }
+    }
+
+    /**
+     * Snow fences where drifts stop its trains: with one of its trains up against a drift, fences go up to cover its
+     * track for [DRIFT_AROUND] tiles round every deep drift on it, out of its own money.
+     */
+    private fun fenceDrifts() {
+        val w = world
+        val c = company
+        if (w.trains.none { it != null && it.owner == 0 && it.snowbound }) return
+        val cover = w.fenceCover()
+        val drifts = ArrayList<Int>()
+        for (i in 0 until w.width * w.height) {
+            if (w.track[i].toInt() == 0 || w.owner[i].toInt() != 0 || cover[i]) continue
+            if ((w.weather.snow[i].toInt() and 255) >= Weather.BLOCKING) drifts += i
+        }
+        if (drifts.isEmpty()) return
+        val wanted = LinkedHashSet<Int>()
+        for (d in drifts) {
+            val dx = d % w.width
+            val dy = d / w.width
+            for (y in dy - DRIFT_AROUND..dy + DRIFT_AROUND) for (x in dx - DRIFT_AROUND..dx + DRIFT_AROUND) {
+                if (!w.inside(x, y)) continue
+                val i = w.index(x, y)
+                if (w.track[i].toInt() != 0 && w.owner[i].toInt() == 0 && !cover[i]) wanted += i
+            }
+        }
+        val cost = w.price(FENCE_COST)
+        for (t in wanted) {
+            if (w.fenceCover()[t]) continue
+            if (c.money - c.loan < startMoney / 5 + cost) return
+            // The free tile within reach that covers the most of what's wanted and not yet covered.
+            val tx = t % w.width
+            val ty = t / w.width
+            var best = -1
+            var most = 0
+            val now = w.fenceCover()
+            for (y in ty - FENCE_REACH..ty + FENCE_REACH) for (x in tx - FENCE_REACH..tx + FENCE_REACH) {
+                if (!w.inside(x, y) || !fenceFits(x, y)) continue
+                var n = 0
+                for (yy in y - FENCE_REACH..y + FENCE_REACH) for (xx in x - FENCE_REACH..x + FENCE_REACH) {
+                    if (w.inside(xx, yy) && !now[w.index(xx, yy)] && w.index(xx, yy) in wanted) n++
+                }
+                if (n > most) { most = n; best = w.index(x, y) }
+            }
+            if (best < 0) continue
+            w.apply(Command.SnowWorks(0, best % w.width, best / w.width, shed = false))
+            if (best in w.fences) fences++
+        }
+    }
+
+    /** Whether a snow fence can go up on ([x], [y]), as [snowWorks] lets one, and none is there yet. */
+    private fun fenceFits(x: Int, y: Int): Boolean {
+        val w = world
+        val i = w.index(x, y)
+        return i !in w.fences && w.track[i].toInt() == 0 && !w.isWater(x, y) && w.house[i].toInt() == 0 && w.industryOf[i].toInt() == 0 &&
+            w.road[i].toInt() == 0 && w.owner[i].toInt() == -1 && !w.stationBuildings.containsKey(i)
     }
 
     /** Whether every open goal it can build for has a route or is waiting to try again, so other lines can open. */
@@ -220,6 +302,12 @@ class Player(val world: World, val thinkDays: Int = 30, val mostRoutes: Int = 12
         if (w.workDay - (aimLast[i] ?: 0) < 365 || mine.size >= 4) return false
         val profit = c.lastYear[Books.INCOME] + c.lastYear[Books.RUNNING] + c.lastYear[Books.UPKEEP] + c.lastYear[Books.INTEREST]
         if (c.money - c.loan <= 0 || profit <= 0) return false
+        return g.kind == Goal.TOWN_POP || behind(g, i)
+    }
+
+    /** Whether goal [g], a connection or a delivery, isn't on its way to be met by its deadline at the pace so far. */
+    private fun behind(g: Goal, i: Int): Boolean {
+        val w = world
         // About the calendar day the deadline year ends.
         val end = (g.deadline + 1 - w.startYear) * 36525 / 100
         return when (g.kind) {
@@ -228,7 +316,6 @@ class Player(val world: World, val thinkDays: Int = 30, val mostRoutes: Int = 12
                 val since = (w.day - (aimFirst[i] ?: w.day)).coerceAtLeast(1)
                 g.count[0] + g.count[0] * (end - w.day) / since < g.amount
             }
-            Goal.TOWN_POP -> true
             else -> false
         }
     }
@@ -419,10 +506,10 @@ class Player(val world: World, val thinkDays: Int = 30, val mostRoutes: Int = 12
     private fun legKey(from: Int, to: Int, cargo: Int, way: Int): Long =
         (way.toLong() shl 60) or (cargo.toLong() shl 48) or (from.toLong() shl 24) or to.toLong()
 
-    /** Another vehicle on a goal's road route when a load and a half waits. Railways are single track, one train. */
+    /** Another vehicle on a goal's road route when a load and a half waits, or on its railway as [growAimRail]. */
     private fun growAim(c: Company, route: RivalRoute) {
         val w = world
-        if (route.rail) return
+        if (route.rail) return growAimRail(c, route)
         val a = w.stations.getOrNull(route.a) ?: return
         val b = w.stations.getOrNull(route.b) ?: return
         val on = w.roadVehicles.count { it != null && it.owner == 0 && onRoute(it, route) }
@@ -433,6 +520,31 @@ class Player(val world: World, val thinkDays: Int = 30, val mostRoutes: Int = 12
         // Out of its own money, not borrowed.
         if (c.money - c.loan < w.price(model.cost) * 2) return
         w.buyAndStart(c, route, model)
+    }
+
+    /**
+     * Another train on a goal's railway when the goal is behind, a trainload waits, half one for freight, and its
+     * trains made money, a work year after the last, out of its own money: a passing loop first if the line has no
+     * room for one more, as a rival grows its lines.
+     */
+    private fun growAimRail(c: Company, route: RivalRoute) {
+        val w = world
+        if (w.workDay - (railGrown[route] ?: -1_000_000) < 365) return
+        val i = aimFor[route] ?: return
+        if (!behind(w.goals[i], i)) return
+        val on = w.trains.filter { it != null && it.owner == 0 && onRoute(it, route) }.map { it!! }
+        val first = on.firstOrNull() ?: return
+        if (on.any { it.toDepot || it.inDepot && !it.running }) return
+        val a = w.stations.getOrNull(route.a) ?: return
+        val b = w.stations.getOrNull(route.b) ?: return
+        val waiting = if (route.freight) a.waiting(route.cargo) else maxOf(a.waiting(route.cargo), b.waiting(route.cargo))
+        // Freight waits for a full load, so half a trainload left behind already means the trains can't keep up.
+        if (waiting < first.capacity(route.cargo) / (if (route.freight) 2 else 1)) return
+        if (on.sumOf { it.profitLastYear } <= 0 && on.sumOf { it.profitThisYear } <= 0) return
+        if (c.money - c.loan < w.price(first.price) * 2 + startMoney / 5) return
+        if (w.leadTile(c, route) < 0) return
+        val grown = if (on.size <= route.loops.size) w.addTrain(c, route) else w.addLoop(c, route)
+        if (grown) railGrown[route] = w.workDay
     }
 
     /** As the rivals sell what loses, but never a goal route's vehicles. */
@@ -598,6 +710,8 @@ class Player(val world: World, val thinkDays: Int = 30, val mostRoutes: Int = 12
         private const val VALUE_WAIT = 90
         private const val VALUE_BUS_YEAR = 1940
         private const val AIM_MOST = 10
+        /** How far along its track round a drift it fences, in tiles. */
+        private const val DRIFT_AROUND = 6
         /** How far from a town's middle it looks for room for a terminus. */
         private const val TOWN_RAIL_REACH = 10
         /** The furthest it looks for a town to run a line to, for a bus line, and for what a goal's cargo comes from. */

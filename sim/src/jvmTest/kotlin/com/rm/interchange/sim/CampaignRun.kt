@@ -118,7 +118,7 @@ class CampaignRun {
         private fun routes(p: Player): String {
             val a = p.aims.routes
             return "${if (p.restarts > 0) "went under ${p.restarts} times; " else ""}goal routes ${a.count { it.rail }} rail, ${a.count { !it.rail && !it.freight }} bus, ${a.count { !it.rail && it.freight }} road freight; " +
-                "other ${p.buses} bus, ${p.railways} rail, ${p.trucks} truck; ${p.vehicles()} vehicles"
+                "other ${p.buses} bus, ${p.railways} rail, ${p.trucks} truck; ${p.vehicles()} vehicles${if (p.fences > 0) "; ${p.fences} snow fences" else ""}"
         }
 
         /** Chapter [id] played by the player in [style] (1 to 3), or idle for 0, to its end or till it's won or lost. */

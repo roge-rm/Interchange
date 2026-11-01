@@ -317,7 +317,11 @@ internal fun World.industriesMonth() {
                 ind.level = minOf(MAX_LEVEL, ind.level * 3 / 2)
                 tell(News.PRODUCTION_UP, ind.id)
             } else if (!up) {
-                if (ind.level <= MIN_LEVEL || year >= kind.until) closeIndustry(ind) else {
+                // One an open delivery goal is for doesn't close, at its lowest or past its era, so the goal isn't
+                // lost to chance; it only shrinks.
+                val goal = goalFor(ind)
+                if ((ind.level <= MIN_LEVEL || year >= kind.until) && !goal) closeIndustry(ind)
+                else if (ind.level > MIN_LEVEL) {
                     ind.level = maxOf(MIN_LEVEL, ind.level * 2 / 3)
                     tell(News.PRODUCTION_DOWN, ind.id)
                 }
@@ -343,6 +347,9 @@ internal fun World.industriesMonth() {
     }
     news.removeAll { tick - it.tick > NEWS_TICKS }
 }
+
+/** Whether an open delivery goal is for [ind]. */
+private fun World.goalFor(ind: Industry) = goals.any { it.status == Goal.OPEN && it.kind == Goal.DELIVER && it.industry == ind.id }
 
 /** What funding an industry of [kind] costs before inflation: more for one that's built for sure. */
 fun fundCost(kind: IndustryKind) = if (kind.secondary || kind.accepts != 0) 80_000L else 40_000L

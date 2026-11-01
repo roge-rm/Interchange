@@ -364,16 +364,13 @@ private fun World.pulls(e: Engine, wagon: Engine, n: Int, cargo: Int): Boolean {
  * what comes to it, at the fare for its days on board. That's about [load] a month for freight, and for passengers
  * what [peopleA] and [peopleB] in reach of each end make, each way, at the rating its trains every so often earn.
  */
-private fun World.yearly(c: Company, train: RailTrain, cargo: Int, load: Int, peopleA: Int, peopleB: Int, tiles: Int, from: Int, to: Int, path: IntArray? = null): Long {
+private fun World.yearly(c: Company, train: RailTrain, cargo: Int, load: Int, peopleA: Int, peopleB: Int, tiles: Int, from: Int, to: Int, path: IntArray? = null, giveUp: Boolean = true): Long {
     val capacity = train.wagon.capacity * train.wagons
-    // A tile a day at 40-odd km/h, a fifth more for starting, stopping and servicing, and a few days at each end;
-    // the bends on the way count as the tiles they'd be at top speed.
-    val sixteenths = tiles * 16 + (if (path != null) bendSixteenths(path, train) else 0)
-    val there = sixteenths * KMH_PER_TILE_A_DAY * 6 / (5 * 16 * train.engine.speed(false).coerceAtLeast(1)) + 4
+    val there = oneWay(train, tiles, path)
     val trips = 365 / (there * 2) * capacity
     val every = there * 2
     // A passenger train coming round less often than people wait for one isn't reckoned on: too many go home.
-    if (cargo == Cargo.PASSENGERS && every > GIVE_UP_DAYS) return -price(train.engine.cost)
+    if (giveUp && cargo == Cargo.PASSENGERS && every > GIVE_UP_DAYS) return -price(train.engine.cost)
     fun month(people: Int): Int {
         val first = people * 15 * railRating(every, train.engine.speed(false), 0) / (16 * 255)
         // About half of what gathers between calls is waiting at any time, and a fifth off for the slower running,
@@ -392,6 +389,15 @@ private fun World.yearly(c: Company, train: RailTrain, cargo: Int, load: Int, pe
     // Upkeep on the line and both stations, in tenths of a cent a work day.
     val upkeep = price(tiles.toLong() * Upkeep.TRACK[c.upkeep] * 365 / 1_000)
     return income - running - upkeep
+}
+
+/**
+ * Work days [train] takes one way over [tiles] of track: a tile a day at 40-odd km/h, a fifth more for starting,
+ * stopping and servicing, and a few days at each end; the bends on [path] count as the tiles they'd be at top speed.
+ */
+private fun World.oneWay(train: RailTrain, tiles: Int, path: IntArray?): Int {
+    val sixteenths = tiles * 16 + (if (path != null) bendSixteenths(path, train) else 0)
+    return sixteenths * KMH_PER_TILE_A_DAY * 6 / (5 * 16 * train.engine.speed(false).coerceAtLeast(1)) + 4
 }
 
 /**
@@ -539,7 +545,8 @@ internal fun World.tryRail(
         // Every length the platforms hold, the best picked below.
         val trains = railTrains(cargo, LOOSE_LOAD, minOf(a.n, b.n), loose)
         if (trains.isEmpty()) continue
-        fun made(t: RailTrain, tiles: Int, path: IntArray? = null) = yearly(c, t, cargo, load, pa, pb, tiles, a.platform(this, 1), b.platform(this, 1), path)
+        fun made(t: RailTrain, tiles: Int, path: IntArray? = null, giveUp: Boolean = true) =
+            yearly(c, t, cargo, load, pa, pb, tiles, a.platform(this, 1), b.platform(this, 1), path, giveUp)
         // The line can't be shorter than the way straight there, so a pair that can't pay even then isn't searched.
         val am = a.mouth(this)
         val bm = b.mouth(this)
@@ -586,6 +593,11 @@ internal fun World.tryRail(
         for (t in trains.drop(1)) {
             val v = made(t, tiles, path) * years - trainCost(t)
             if (v > best) { train = t; best = v }
+        }
+        // Loose, on a line too long for any train's passengers to be reckoned on, the one that would do best if
+        // they were.
+        if (loose && passengers && trains.all { oneWay(it, tiles, path) * 2 > GIVE_UP_DAYS }) {
+            train = trains.maxBy { made(it, tiles, path, giveUp = false) * years - trainCost(it) }
         }
         cost += price(Prices.PLATFORM) * (a.n + b.n) + price(Prices.DEPOT) + price(Prices.TRACK) + price(Prices.SIGNAL) + trainCost(train)
         if (payback > 0 && made(train, tiles, path) * payback < cost) continue

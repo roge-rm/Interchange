@@ -605,7 +605,7 @@ internal object TrunkLine : Recipe() {
         return listOf(
             Goal(Goal.CONNECT, 1_000, END, town = minOf(ids[0], middle), town2 = maxOf(ids[0], middle)),
             Goal(Goal.CONNECT, 1_000, END, town = minOf(ids[4], middle), town2 = maxOf(ids[4], middle)),
-            Goal(Goal.TOWN_POP, 700, END, town = middle),
+            Goal(Goal.TOWN_POP, 650, END, town = middle),
         )
     }
 }
