@@ -714,7 +714,7 @@
     </plurals>
     <string name="reliability">Reliability</string>
     <string name="breakdowns">Breakdowns</string>
-    <string name="curve_limit">Slowed for a curve</string>
+    <string name="speed_curve">%1$d km/h, curve %2$d</string>
     <string name="tires">Tires</string>
     <string name="gear">Gear</string>
     <string name="range">Range</string>

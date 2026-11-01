@@ -77,17 +77,17 @@ class VehicleLoad(val cargo: Int, val load: Int, val capacity: Int)
 @Composable
 fun VehicleStats(
     kmh: Int, top: Int, age: Int, old: Boolean, reliability: Int, profitThisYear: Long, profitLastYear: Long, loads: List<VehicleLoad>,
-    extra: List<Pair<String, String>> = emptyList(), dieselTop: Int = top,
+    extra: List<Pair<String, String>> = emptyList(), dieselTop: Int = top, curveKmh: Int = 0,
 ) {
     val c = LocalColors.current
     Head(stringResource(Res.string.head_running))
     StatColumns(
         listOf(
-            stringResource(Res.string.speed) to stringResource(Res.string.kmh, kmh),
+            stringResource(Res.string.speed) to if (curveKmh > 0) stringResource(Res.string.speed_curve, kmh, curveKmh) else stringResource(Res.string.kmh, kmh),
             stringResource(Res.string.top_speed) to if (dieselTop != top) stringResource(Res.string.kmh_dual, top, dieselTop) else stringResource(Res.string.kmh, top),
             stringResource(Res.string.age) to pluralStringResource(Res.plurals.years_n, age, age),
         ),
-        valueColours = listOf(null, null, if (old) c.warn else null),
+        valueColours = listOf(if (curveKmh > 0) c.warn else null, null, if (old) c.warn else null),
     )
     FillBarRow(stringResource(Res.string.reliability), reliability / 100f)
     for ((label, value) in extra) InfoRow(label, value)
