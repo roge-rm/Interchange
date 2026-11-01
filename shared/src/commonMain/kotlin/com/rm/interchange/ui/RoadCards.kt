@@ -128,7 +128,7 @@ fun RoadVehicleCard(view: WorldView, roster: Roster, v: RoadVehicleView, year: I
             }
         }
         SwitchRow(stringResource(Res.string.servicing), v.service) { order(Command.TrainOrder.SERVICE) }
-        VehicleMapControls(view.company?.autorenew == true, v.renewOff, v.x, v.y, onShow) { order(Command.TrainOrder.AUTORENEW) }
         if (!horses) SwitchRow(stringResource(Res.string.seasonal_tires), v.seasonalTires) { order(Command.RoadOrder.TIRES) }
+        VehicleMapControls(view.company?.autorenew == true, v.renewOff, v.x, v.y, onShow) { order(Command.TrainOrder.AUTORENEW) }
     }
 }
