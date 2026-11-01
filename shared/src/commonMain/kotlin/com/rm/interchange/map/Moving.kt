@@ -22,6 +22,7 @@ import com.rm.interchange.sim.keyTile
 import com.rm.interchange.sim.pieceKey
 import com.rm.interchange.sim.closedTile
 import com.rm.interchange.sim.crossing
+import com.rm.interchange.sim.straightRoad
 import com.rm.interchange.sim.trackLimit
 import com.rm.interchange.sim.TileCurve
 import com.rm.interchange.sim.Track
@@ -124,12 +125,53 @@ internal fun DrawScope.drawMoving(world: World, view: View, sheets: Sheets, movi
             if (sign != 0) add(items, world, view, x + 0.2f, y + 0.2f, sign.toFloat(), 0f, BOARD)
         }
     }
-    // Level crossings with a train near: a post with two red lamps on opposite corners, close enough in to make out.
-    if (view.halfWidth >= 8f) for (tile in moving.now.crossings) {
-        val x = tile % world.width
-        val y = tile / world.width
-        add(items, world, view, x + 0.18f, y + 0.18f, 0f, 0f, CROSSING)
-        add(items, world, view, x + 0.82f, y + 0.82f, 1f, 0f, CROSSING)
+    // Level crossings, close enough in to make out: a post with two red lamps and a gate arm on the right of each way in,
+    // lamps flashing and arms down while a train is near.
+    if (view.halfWidth >= 8f) {
+        val lit = moving.now.crossings
+        val now = flicker.elapsedNow().inWholeMilliseconds
+        if (gates.size > 512) gates.clear()
+        forTilesOnScreen(world, view) { x, y ->
+            val i = world.index(x, y)
+            if (!world.crossing(i)) return@forTilesOnScreen
+            // Tracks side by side along the road go down together: any of the run lit.
+            val alongX = world.straightRoad(i) == Track.X
+            var down = false
+            for (dir in intArrayOf(-1, 1)) {
+                var cx = x
+                var cy = y
+                while (!down && world.inside(cx, cy) && world.crossing(world.index(cx, cy))) {
+                    if (lit.binarySearch(world.index(cx, cy)) >= 0) down = true
+                    if (alongX) cx += dir else cy += dir
+                }
+            }
+            val was = gates[i]
+            if (was == null) gates[i] = if (down) -1L else -2L
+            else if ((was == -1L || (was >= 0 && (was and 1L) == 1L)) != down) gates[i] = (now shl 1) or (if (down) 1L else 0L)
+            val g = gates[i]!!
+            // How far down the arms are, 0 up to 1 down, moving over GATE_MS after the lamps change.
+            val lowered = if (g < 0) (if (g == -1L) 1f else 0f) else {
+                val f = ((now - (g shr 1)) / GATE_MS.toFloat()).coerceIn(0f, 1f)
+                if ((g and 1L) == 1L) f else 1f - f
+            }
+            // Keep right: along x the ways in are from x- on y+ and from x+ on y-, along y from y- on x- and y+ on x+.
+            for (k in 0 until 2) {
+                // Several tracks side by side get gates only on the outside.
+                val nx = x + if (alongX) (if (k == 0) -1 else 1) else 0
+                val ny = y + if (alongX) 0 else (if (k == 0) -1 else 1)
+                if (world.inside(nx, ny) && world.crossing(world.index(nx, ny))) continue
+                val px = x + if (k == 0) 0.18f else 0.82f
+                val py = y + if ((k == 0) == alongX) 0.82f else 0.18f
+                // The arm reaches across its lane to just short of the road's middle.
+                val ex = if (alongX) px else x + 0.48f + (if (k == 0) 0f else 0.04f)
+                val ey = if (alongX) y + 0.48f + (if (k == 0) 0.04f else 0f) else py
+                val item = add(items, world, view, px, py, if (down) 1f else 0f, 0f, CROSSING) ?: continue
+                val h = groundHeight(world, px, py)
+                val dx = view.screenX(view.toViewX(ex, ey), view.toViewY(ex, ey), size.width) - item[1]
+                val dy = view.screenY(view.toViewX(ex, ey), view.toViewY(ex, ey), h, size.height) - item[2]
+                items[items.size - 1] = item + floatArrayOf(dx, dy, lowered, ARM_REACH * TILE_UPRIGHT * view.halfWidth, k.toFloat())
+            }
+        }
     }
     // Wires over electrified track, close enough in to make out: straight from mast to mast, with a mast at each corner of a curve.
     if (view.halfWidth >= 12f) forTilesOnScreen(world, view) { x, y ->
@@ -319,7 +361,7 @@ internal fun DrawScope.drawMoving(world: World, view: View, sheets: Sheets, movi
             } else if (model == BUOY) {
                 drawBuoy(it[1], it[2], view.halfWidth)
             } else if (model == CROSSING) {
-                drawCrossingLights(it[1], it[2], view.halfWidth)
+                drawCrossingGate(it, view.halfWidth)
             } else if (model < 0) {
                 spriteAt(it[3].toInt(), it[1], it[2], scale)
             } else {
@@ -540,19 +582,55 @@ private fun DrawScope.drawBuoy(x: Float, y: Float, hw: Float) {
     drawRect(Color(0xff2a2a2a), Offset(x - 1.6f * u, y - 5f * u), Size(3.2f * u, 5f * u), style = Stroke(0.4f * u))
 }
 
-/** A level crossing's post with two red lamps flashing in turn, about once a second. */
-private fun DrawScope.drawCrossingLights(x: Float, y: Float, hw: Float) {
+/**
+ * A level crossing's gate: a post with two red lamps, flashing in turn about once a second while lit (item cell 1), and
+ * a red and white arm pivoted low on it. Item: depth, foot on screen, lit, CROSSING, cut-away, then the lowered arm's
+ * reach on screen as x and y, how far down it is (0 up to 1 down), its length standing up, and which post.
+ */
+private fun DrawScope.drawCrossingGate(it: FloatArray, hw: Float) {
+    val x = it[1]
+    val y = it[2]
     val u = hw / 32f
-    val left = (flicker.elapsedNow().inWholeMilliseconds / 500) % 2 == 0L
+    val lit = it[3] == 1f
+    // The arm swings in the upright plane over its lowered line.
+    val a = (1f - it[10]) * (kotlin.math.PI.toFloat() / 2f)
+    val c = kotlin.math.cos(a)
+    val s = kotlin.math.sin(a)
+    // Pivot about 1 m up and a little out from the post towards the road, so the raised arm stands beside it.
+    val reach = maxOf(kotlin.math.hypot(it[8], it[9]), 0.001f)
+    val pivot = Offset(x + it[8] / reach * 1.8f * u, y + it[9] / reach * 1.8f * u - 2.8f * u)
+    val end = Offset(pivot.x + it[8] * c, pivot.y + it[9] * c - it[11] * s)
+    val wide = maxOf(1.5f * u, 1f)
+    drawLine(Color(0xff2a2a2a), pivot, end, wide + maxOf(0.6f * u, 0.5f), StrokeCap.Round)
+    val n = 6
+    for (k in 0 until n) {
+        val f0 = k / n.toFloat()
+        val f1 = (k + 1) / n.toFloat()
+        drawLine(if (k % 2 == 0) Color(0xfff4f4f0) else Color(0xffd03028), Offset(pivot.x + (end.x - pivot.x) * f0, pivot.y + (end.y - pivot.y) * f0),
+            Offset(pivot.x + (end.x - pivot.x) * f1, pivot.y + (end.y - pivot.y) * f1), wide, StrokeCap.Butt)
+    }
     drawLine(Color(0xff3a3a3a), Offset(x, y), Offset(x, y - 12f * u), 1.2f * u)
     drawLine(Color(0xff2a2a2a), Offset(x - 3.5f * u, y - 12f * u), Offset(x + 3.5f * u, y - 12f * u), 1.6f * u)
+    // The posts across the road flash opposite each other.
+    val left = ((flicker.elapsedNow().inWholeMilliseconds / 500) % 2 == 0L) == (it[12] == 0f)
     for (k in 0 until 2) {
-        val on = (k == 0) == left
-        val c = Offset(x + (if (k == 0) -3f else 3f) * u, y - 12f * u)
-        if (on) drawCircle(Color(0x60ff3020), 3.2f * u, c)
-        drawCircle(if (on) Color(0xffff3a28) else Color(0xff5a1810), 1.5f * u, c)
+        val on = lit && (k == 0) == left
+        val lamp = Offset(x + (if (k == 0) -3f else 3f) * u, y - 12f * u)
+        if (on) drawCircle(Color(0x60ff3020), 3.2f * u, lamp)
+        drawCircle(if (on) Color(0xffff3a28) else Color(0xff5a1810), 1.5f * u, lamp)
     }
 }
+
+/**
+ * Each level crossing's gate on screen, by tile: -1 down and -2 up since first seen, or when it last changed in
+ * [flicker] milliseconds shifted up one, with 1 in the low bit going down. Drawing only, on the UI thread.
+ */
+private val gates = HashMap<Int, Long>()
+/** How long a gate arm takes to go down or up, in milliseconds. */
+private const val GATE_MS = 1200
+/** A gate arm's length, in tiles, and a tile's length stood upright on screen, in half widths (sqrt 2 times cos 30). */
+private const val ARM_REACH = 0.3f
+private const val TILE_UPRIGHT = 1.225f
 
 /** Whether a snow fence on ([x], [y]) runs along x: the way the nearest track does, or across the wind if there's none near. */
 private fun fenceAlongX(world: World, x: Int, y: Int): Boolean {
