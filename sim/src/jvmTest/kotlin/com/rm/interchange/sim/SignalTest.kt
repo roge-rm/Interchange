@@ -188,4 +188,70 @@ class SignalTest {
         Codec.write(w, c)
         assertEquals(c, Codec.read(ByteReader(w.toByteArray())))
     }
+
+    private fun place(w: World, depot: Int, orders: IntArray): Train {
+        w.apply(Command.BuyTrain(0, depot, w.roster.engines.first { it.key == "base:american" }.id, w.roster.engines.first { it.key == "base:coach_wood" }.id, 2))
+        val id = w.trains.size - 1
+        w.apply(Command.TrainOrder(0, id, Command.TrainOrder.ORDERS, orders))
+        w.apply(Command.TrainOrder(0, id, Command.TrainOrder.START_STOP))
+        return w.trains[id]!!
+    }
+
+    @Test
+    fun aTrainLeavingItsDepotForAPlatformDoesntHoldTheTrackPastIt() {
+        // Two depots at x = 2 on y = 10 and 11, each straight into a platform of one station at x = 6 to 8; y = 11 turns
+        // up into y = 10 at x = 10, then a path signal at x = 12 and a second station at x = 26 to 28.
+        val w = World(64, 64, 1, startYear = 1900)
+        for (i in w.corners.indices) w.corners[i] = 3
+        w.companies[0].money = 100_000_000
+        w.apply(Command.Depot(0, 2, 10, Track.XP))
+        w.apply(Command.Depot(0, 2, 11, Track.XP))
+        w.apply(Command.Rail(0, 3, 10, 30, 10, Track.X, remove = false))
+        w.apply(Command.Rail(0, 3, 11, 9, 11, Track.X, remove = false))
+        w.apply(Command.Rail(0, 10, 11, 10, 11, Track.N, remove = false))
+        w.apply(Command.Rail(0, 10, 10, 10, 10, Track.S, remove = false))
+        w.apply(Command.Station(0, 6, 10, 8, 11, Track.X))
+        w.apply(Command.Station(0, 26, 10, 28, 10, Track.X))
+        w.apply(Command.Signal(0, 12, 10, Track.X, Track.XM, Signals.PATH))
+        assertEquals(2, w.stations.size)
+        // The first waits for a full load on its platform; the second, from the other platform's track, gets by it.
+        val a = place(w, 0, intArrayOf(Order.FULL_LOAD or 0, 1))
+        var ticks = 0
+        while (a.waiting == 0) { w.step(); assertTrue(ticks++ < Calendar.TICKS_PER_DAY * 20, "the first never got to its platform") }
+        assertTrue(!a.inDepot && a.waiting > 0 && stepTile(a.steps.last()) == w.index(8, 10), "first at ${a.steps.map { stepTile(it) % w.width to stepTile(it) / w.width }} in ${a.inDepot} waiting ${a.waiting}")
+        val b = place(w, 1, intArrayOf(1, 0))
+        ticks = 0
+        while (b.inDepot || stepTile(b.steps.last()) % w.width < 14) {
+            w.step()
+            assertTrue(ticks++ < Calendar.TICKS_PER_DAY * 20, "the second never got by: in ${b.inDepot}")
+        }
+        assertTrue(a.waiting > 0 && stepTile(a.steps.last()) == w.index(8, 10), "first left its platform")
+    }
+
+    @Test
+    fun aTrainOnAOneWaySignalWithNoWayAheadTurnsRound() {
+        // A line east from a depot at x = 2 through a one-way path signal at x = 15, stations at x = 5 to 7 and 24 to 26.
+        val w = World(64, 64, 1, startYear = 1900)
+        for (i in w.corners.indices) w.corners[i] = 3
+        w.companies[0].money = 100_000_000
+        w.apply(Command.Depot(0, 2, 10, Track.XP))
+        w.apply(Command.Rail(0, 3, 10, 30, 10, Track.X, remove = false))
+        w.apply(Command.Station(0, 5, 10, 7, 10, Track.X))
+        w.apply(Command.Station(0, 24, 10, 26, 10, Track.X))
+        repeat(2) { w.apply(Command.Signal(0, 15, 10, Track.X, Track.XM, Signals.PATH)) }
+        assertEquals(Signals.ONE_WAY_PATH, Signals.kind(w.signals.getValue(pieceKey(w.index(15, 10), Track.X))))
+        val t = place(w, 0, intArrayOf(Order.withWait(1, 2)))
+        val signal = w.index(15, 10)
+        var ticks = 0
+        while (t.inDepot || t.steps.none { stepTile(it) == signal }) { w.step(); assertTrue(ticks++ < Calendar.TICKS_PER_DAY * 30) }
+        // The track ahead taken up and sent back the way it came, with some of it still on the signal's piece.
+        w.apply(Command.Rail(0, 18, 10, 18, 10, Track.X, remove = true))
+        w.apply(Command.TrainOrder(0, t.id, Command.TrainOrder.ORDERS, intArrayOf(Order.withWait(0, 2))))
+        assertTrue(t.steps.any { stepTile(it) == signal })
+        ticks = 0
+        while (!(t.waiting > 0 && w.stationTiles[stepTile(t.steps.last())] == 0)) {
+            w.step()
+            assertTrue(ticks++ < Calendar.TICKS_PER_DAY * 30, "never got back: at ${t.steps.map { stepTile(it) % w.width }} speed ${t.speed}")
+        }
+    }
 }

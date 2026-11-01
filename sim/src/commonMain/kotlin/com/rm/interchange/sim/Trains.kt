@@ -373,8 +373,9 @@ private fun World.leaveDepot(t: Train) {
         t.running = false
         return
     }
-    // With no orders it has nowhere to go: it waits inside, set going, till it gets some.
-    if (trainOnTile(d.tile) || t.target == -2) {
+    // With no orders it has nowhere to go: it waits inside, set going, till it gets some. Held in by [wayOut], it
+    // looks again at its lostUntil.
+    if (trainOnTile(d.tile) || t.target == -2 || tick < t.lostUntil) {
         t.running = true
         return
     }
@@ -388,6 +389,81 @@ private fun World.leaveDepot(t: Train) {
     t.signalled = false
     t.aside = -1
     countOn(t)
+    val p = planRoute(t)
+    if (p != null && !p.behind) {
+        t.route = p.steps
+        t.routeAt = 0
+    }
+    if (!wayOut(t)) {
+        // Its way out isn't clear: back inside to look again shortly.
+        t.inDepot = true
+        t.steps.clear()
+        t.route = null
+        countOn(t)
+        t.lostUntil = tick + HEAD_ON_CHECK
+    }
+}
+
+/**
+ * Whether [t], just put in its depot's door, may set out. Onto signalled track it goes as if past a signal at the
+ * door: on a path signal's way it holds the pieces ahead, through to the next signal, and on through more path
+ * signals while standing there would leave some of it in the door, as a train coming in would otherwise hold the lead
+ * up to the door and wait for it; a block ahead has to be clear. Holds what it needs if it may. Onto unsignalled track
+ * it always goes.
+ */
+private fun World.wayOut(t: Train): Boolean {
+    val door = t.steps.last()
+    // Run from the start of the door step to standing wholly out of it.
+    val need = stepLength(door) + t.length
+    val hold = ArrayList<Int>()
+    var first = door
+    var at = -1
+    var past = -1
+    var run = 0
+    var checked = false
+    while (true) {
+        // The section from [first] to the next signal, or the end of the way.
+        val section = ArrayList<Int>()
+        var s = first
+        var i = at
+        var sig = -1
+        var path = past >= 0 && Signals.path(past)
+        while (section.size < MAX_PATH) {
+            section += s
+            if (inPathArea(s)) path = true
+            // Its way ends at the end of its route, or of the platform it's going to.
+            val r = t.route
+            if (r != null && i + 1 >= r.size) break
+            val n = nextFrom(t, s, i + 1)
+            if (n < 0) break
+            if (t.target >= 0 && stationTiles[stepTile(s)] == t.target && stationTiles[stepTile(n)] != t.target) break
+            sig = signalFor(s, n)
+            if (sig >= 0) {
+                if (Signals.path(sig)) path = true
+                first = n
+                at = i + 1
+                break
+            }
+            s = n
+            i++
+        }
+        // Into the first section past no signal, and none ahead: plain track, as before.
+        if (past < 0 && sig < 0 && !path) return true
+        checked = true
+        if (path) {
+            for (w in section) if (!pieceFree(t, w, occupiedTile = false, reserving = true)) return false
+            hold += section
+        } else {
+            val b = blocks[stepKey(section[0])]
+            if (b != null && !blockClear(t, b, if (past >= 0) Signals.kind(past) else Signals.TWO_WAY, 0)) return false
+        }
+        for (w in section) run += stepLength(w)
+        if (sig < 0 || run >= need) break
+        past = sig
+    }
+    for (w in hold) reserved[stepKey(w)] = t.id
+    if (checked) t.signalled = true
+    return true
 }
 
 /** Moves every train on a tick: routes first, across the cores, then the moves, in order. */
@@ -1241,6 +1317,7 @@ private fun World.backIn(t: Train) {
     t.toDepot = false
     t.steps.clear()
     t.route = null
+    t.lostUntil = 0
     reserved.entries.removeAll { it.value == t.id }
     countOn(t)
     if (t.servicing) {
@@ -1258,6 +1335,7 @@ private fun World.enterDepot(t: Train) {
     t.toDepot = false
     t.steps.clear()
     t.route = null
+    t.lostUntil = 0
     reserved.entries.removeAll { it.value == t.id }
     countOn(t)
     if (t.servicing) {

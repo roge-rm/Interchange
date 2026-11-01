@@ -35,10 +35,13 @@ class LoopTest {
         w.apply(Command.Station(0, 14, 10, 16, 10, Track.X))
         w.apply(Command.Station(0, 24, 20, 26, 20, Track.X))
         if (signals) {
-            for (x in intArrayOf(12, 20, 28)) w.apply(Command.Signal(0, x, 10, Track.X, Track.XM, Signals.ONE_WAY_PATH))
-            for (y in intArrayOf(12, 17)) w.apply(Command.Signal(0, 30, y, Track.Y, Track.YM, Signals.ONE_WAY_PATH))
-            for (x in intArrayOf(28, 20, 12)) w.apply(Command.Signal(0, x, 20, Track.X, Track.XP, Signals.ONE_WAY_PATH))
-            for (y in intArrayOf(18, 12)) w.apply(Command.Signal(0, 10, y, Track.Y, Track.YP, Signals.ONE_WAY_PATH))
+            // A path signal goes one-way on a second tap, as in the game.
+            fun oneWay(x: Int, y: Int, piece: Int, facing: Int) = repeat(2) { w.apply(Command.Signal(0, x, y, piece, facing, Signals.PATH)) }
+            for (x in intArrayOf(12, 20, 28)) oneWay(x, 10, Track.X, Track.XM)
+            for (y in intArrayOf(12, 17)) oneWay(30, y, Track.Y, Track.YM)
+            for (x in intArrayOf(28, 20, 12)) oneWay(x, 20, Track.X, Track.XP)
+            for (y in intArrayOf(18, 12)) oneWay(10, y, Track.Y, Track.YP)
+            assertEquals(10, w.signals.values.count { Signals.kind(it) == Signals.ONE_WAY_PATH })
             // Out of the depot onto the loop through a path signal, so a train setting out holds its way in.
             w.apply(Command.Signal(0, 8, 15, Track.X, Track.XM, Signals.PATH))
         }
@@ -80,7 +83,10 @@ class LoopTest {
                 }
                 if (t.order != order[k]) calls[k]++
                 order[k] = t.order
-                if (t.inDepot) continue
+                if (t.inDepot) {
+                    hidden[k] = 0
+                    continue
+                }
                 for (s in t.steps) assertTrue(w.track[stepTile(s)].toInt() and stepPiece(s) != 0 || stepLevel(s) == 1, "train $id off the track on day $day")
                 hidden[k] = if (id in drawn) 0 else hidden[k] + 1
                 assertTrue(hidden[k] <= 1, "train $id out of its depot but not drawn on day $day: steps ${t.steps.map { "(${stepTile(it) % w.width},${stepTile(it) / w.width}) ${stepPiece(it)}" }} nose ${t.nose} speed ${t.speed} running ${t.running} target ${t.target} broken ${t.brokenFor} toDepot ${t.toDepot}")
@@ -202,11 +208,37 @@ class LoopTest {
             val orders = intArrayOf(Order.withWait(0, 2), Order.withWait(1, 2))
             val ids = (0 until 3).map { buy(w, orders).id }
             val calls = watch(w, ids, 365 * 3)
-            // They lock up on the west side after about 200 days (PLAN F8), so this only checks they ran.
-            assertTrue(calls.all { it >= 5 }, "too few calls: ${calls.toList()}, collisions $collisions")
+            // Unlocked they make 48 to 53 calls each.
+            assertTrue(calls.all { it >= 40 }, "too few calls: ${calls.toList()}, collisions $collisions")
             assertEquals(0, w.crashes.list.size, "a crash on a signalled loop, collisions $collisions: ${w.crashes.list.map { c -> "${c.vehicles.map { it.id }} at (${c.tile % w.width},${c.tile / w.width})" }}")
             assertTrue(ids.all { w.trains[it] != null })
         }
+    }
+
+    @Test
+    fun aTrainWaitsInItsDepotWhileOneComesInAlongTheLead() {
+        val w = loop(collisions = true, signals = true)
+        val a = buy(w, intArrayOf(Order.withWait(0, 2), Order.withWait(1, 2)))
+        repeat(Calendar.TICKS_PER_DAY * 3) { w.step() }
+        w.apply(Command.TrainOrder(0, a.id, Command.TrainOrder.TO_DEPOT))
+        // A second train waits in the depot, stopped, till the first is on the lead coming in.
+        val b = buy(w, intArrayOf(Order.withWait(0, 2), Order.withWait(1, 2)))
+        w.apply(Command.TrainOrder(0, b.id, Command.TrainOrder.START_STOP))
+        val lead = setOf(w.index(8, 15), w.index(9, 15))
+        var ticks = 0
+        assertTrue(a.toDepot)
+        while (!(stepTile(a.steps.last()) in lead && stepEntry(a.steps.last()) == Track.XP)) { w.step(); assertTrue(a.toDepot && ticks++ < Calendar.TICKS_PER_DAY * 120, "never came to the lead") }
+        w.apply(Command.TrainOrder(0, b.id, Command.TrainOrder.START_STOP))
+        // It stays in till the first is in, then sets out.
+        ticks = 0
+        while (!a.inDepot) {
+            w.step()
+            assertTrue(b.inDepot, "set out with a train coming in: a ${a.steps.map { "(${stepTile(it) % w.width},${stepTile(it) / w.width}) ${stepPiece(it)} e${stepEntry(it)}" }} nose ${a.nose} b ${b.steps.map { "(${stepTile(it) % w.width},${stepTile(it) / w.width}) ${stepPiece(it)}" }} ticks $ticks reserved ${w.reserved.map { "(${(it.key / 8) % w.width},${(it.key / 8) / w.width}) ${it.key % 8} ${it.value}" }}")
+            assertTrue(ticks++ < Calendar.TICKS_PER_DAY * 10, "the first never got in")
+        }
+        repeat(Calendar.TICKS_PER_DAY * 20) { w.step() }
+        assertTrue(!b.inDepot && !b.stuck)
+        assertEquals(0, w.crashes.list.size)
     }
 
     @Test

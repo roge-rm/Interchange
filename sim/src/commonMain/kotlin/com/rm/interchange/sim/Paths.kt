@@ -19,20 +19,36 @@ internal fun World.planRoute(t: Train): Plan? {
     val onward = next?.let { railOnwardCosts(t, it) }?.takeIf { it.isNotEmpty() }
     val ahead = search(t.steps.last(), t, onward = onward)
     if (ahead != null && !t.servicing) return Plan(ahead.steps, false)
-    // No way on ahead: try from the last wagon, turned round.
+    // No way on ahead: try from the last wagon, turned round. With a way ahead it only weighs turning where it may;
+    // with none at all it turns whatever, as at a dead end.
     val tail = t.behind(t.length)
     val i = (tail shr 32).toInt()
-    if (i < 0) return ahead?.let { Plan(it.steps, false) }
+    if (i < 0 || ahead != null && !mayTurn(t, i)) return ahead?.let { Plan(it.steps, false) }
     val s = t.steps[i]
     val turned = step(stepTile(s), Track.index(stepPiece(s)), stepExit(s), stepLevel(s))
     val back = search(turned, t, onward = onward)
     return if (ahead != null && (back == null || (ahead.resumes && !back.resumes || ahead.resumes == back.resumes && ahead.cost <= back.cost))) Plan(ahead.steps, false) else back?.let { Plan(it.steps, true) }
 }
 
+/**
+ * Whether [t] may turn round by itself where it stands, its last wagon on step [from], to go round a train or weigh a
+ * way behind against one ahead: not with any of it on a one-way signal's piece, as it would then run back against
+ * the signal.
+ */
+internal fun World.mayTurn(t: Train, from: Int): Boolean {
+    for (k in from until t.steps.size) {
+        val s = t.steps[k]
+        if (stepLevel(s) != 0) continue
+        val sig = signalAt(stepTile(s), stepPiece(s))
+        if (sig >= 0 && Signals.oneWay(sig)) return false
+    }
+    return true
+}
+
 /** A way on from [t]'s last wagon, turned round, that keeps off the pieces in [avoid], or null. */
 internal fun World.wayRound(t: Train, avoid: Set<Int>): IntArray? {
     val i = (t.behind(t.length) shr 32).toInt()
-    if (i < 0) return null
+    if (i < 0 || !mayTurn(t, i)) return null
     val s = t.steps[i]
     val next = if (t.servicing) t.orders.getOrNull(t.order % t.orders.size.coerceAtLeast(1))?.let { Order.station(it) } else null
     val onward = next?.let { railOnwardCosts(t, it) }?.takeIf { it.isNotEmpty() }
@@ -46,7 +62,7 @@ internal fun World.wayRound(t: Train, avoid: Set<Int>): IntArray? {
  */
 internal fun World.wayAside(t: Train, clear: Set<Int>, past: Set<Int>, avoid: Set<Int>): IntArray? {
     val i = (t.behind(t.length) shr 32).toInt()
-    if (i < 0) return null
+    if (i < 0 || !mayTurn(t, i)) return null
     val s = t.steps[i]
     val from = step(stepTile(s), Track.index(stepPiece(s)), stepExit(s), stepLevel(s))
     val exit = stepExit(from)
