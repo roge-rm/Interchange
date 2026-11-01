@@ -129,7 +129,10 @@ internal fun DrawScope.drawMoving(world: World, view: View, sheets: Sheets, movi
     // lamps flashing and arms down while a train is near.
     if (view.halfWidth >= 8f) {
         val lit = moving.now.crossings
-        val now = flicker.elapsedNow().inWholeMilliseconds
+        // Game time in thousandths of a tick, so the arms hold still while paused.
+        val v = moving.now
+        val before = (moving.before?.tick ?: v.tick).toDouble()
+        val now = ((before + (v.tick - before) * moving.between) * 1000.0).toLong()
         if (gates.size > 512) gates.clear()
         forTilesOnScreen(world, view) { x, y ->
             val i = world.index(x, y)
@@ -146,12 +149,14 @@ internal fun DrawScope.drawMoving(world: World, view: View, sheets: Sheets, movi
                 }
             }
             val was = gates[i]
+            // A game loaded from earlier leaves a change time ahead of now.
+            if (was != null && was >= 0 && (was shr 1) > now) gates[i] = (now shl 1) or (was and 1L)
             if (was == null) gates[i] = if (down) -1L else -2L
             else if ((was == -1L || (was >= 0 && (was and 1L) == 1L)) != down) gates[i] = (now shl 1) or (if (down) 1L else 0L)
             val g = gates[i]!!
-            // How far down the arms are, 0 up to 1 down, moving over GATE_MS after the lamps change.
+            // How far down the arms are, 0 up to 1 down, moving over GATE_TICKS after the lamps change.
             val lowered = if (g < 0) (if (g == -1L) 1f else 0f) else {
-                val f = ((now - (g shr 1)) / GATE_MS.toFloat()).coerceIn(0f, 1f)
+                val f = ((now - (g shr 1)) / GATE_TICKS.toFloat()).coerceIn(0f, 1f)
                 if ((g and 1L) == 1L) f else 1f - f
             }
             // Keep right: along x the ways in are from x- on y+ and from x+ on y-, along y from y- on x- and y+ on x+.
@@ -165,11 +170,18 @@ internal fun DrawScope.drawMoving(world: World, view: View, sheets: Sheets, movi
                 // The arm reaches across its lane to just short of the road's middle.
                 val ex = if (alongX) px else x + 0.48f + (if (k == 0) 0f else 0.04f)
                 val ey = if (alongX) y + 0.48f + (if (k == 0) 0.04f else 0f) else py
-                val item = add(items, world, view, px, py, if (down) 1f else 0f, 0f, CROSSING) ?: continue
+                val post = add(items, world, view, px, py, 0f, 0f, CROSSING) ?: continue
+                items.removeAt(items.size - 1)
                 val h = groundHeight(world, px, py)
-                val dx = view.screenX(view.toViewX(ex, ey), view.toViewY(ex, ey), size.width) - item[1]
-                val dy = view.screenY(view.toViewX(ex, ey), view.toViewY(ex, ey), h, size.height) - item[2]
-                items[items.size - 1] = item + floatArrayOf(dx, dy, lowered, ARM_REACH * TILE_UPRIGHT * view.halfWidth, k.toFloat())
+                val dx = view.screenX(view.toViewX(ex, ey), view.toViewY(ex, ey), size.width) - post[1]
+                val dy = view.screenY(view.toViewX(ex, ey), view.toViewY(ex, ey), h, size.height) - post[2]
+                // The post and its lamps go with the arm: on the viewer's side in front of anything on the tile, the other behind it.
+                val centre = view.toViewX(x + 0.5f, y + 0.5f) + view.toViewY(x + 0.5f, y + 0.5f)
+                val mx = (px + ex) / 2
+                val my = (py + ey) / 2
+                val near = view.toViewX(mx, my) + view.toViewY(mx, my) > centre
+                items += floatArrayOf(centre + (if (near) ARM_NEAR else -ARM_NEAR), post[1], post[2], if (down) 1f else 0f, CROSSING_ARM.toFloat(), 0f, -1f, -1f,
+                    dx, dy, lowered, ARM_REACH * TILE_UPRIGHT * view.halfWidth, k.toFloat())
             }
         }
     }
@@ -360,8 +372,9 @@ internal fun DrawScope.drawMoving(world: World, view: View, sheets: Sheets, movi
                 drawMark(model, it[3].toInt(), it[1], it[2], view.halfWidth)
             } else if (model == BUOY) {
                 drawBuoy(it[1], it[2], view.halfWidth)
-            } else if (model == CROSSING) {
+            } else if (model == CROSSING_ARM) {
                 drawCrossingGate(it, view.halfWidth)
+                drawCrossingArm(it, view.halfWidth)
             } else if (model < 0) {
                 spriteAt(it[3].toInt(), it[1], it[2], scale)
             } else {
@@ -387,6 +400,7 @@ private const val FENCE = -7
 private const val BUOY = -8
 private const val LIT = -9
 private const val CROSSING = -10
+private const val CROSSING_ARM = -11
 /** Aircraft in the air go over everything; their shadows fall a little off from under them, by height, as the sun stands. */
 private const val FLYING_DEPTH = 1000f
 private const val SUN_X = 0.06f
@@ -583,15 +597,14 @@ private fun DrawScope.drawBuoy(x: Float, y: Float, hw: Float) {
 }
 
 /**
- * A level crossing's gate: a post with two red lamps, flashing in turn about once a second while lit (item cell 1), and
- * a red and white arm pivoted low on it. Item: depth, foot on screen, lit, CROSSING, cut-away, then the lowered arm's
- * reach on screen as x and y, how far down it is (0 up to 1 down), its length standing up, and which post.
+ * A level crossing's gate arm, red and white, pivoted low on its post. Item: depth, the post's foot on screen, lit, CROSSING_ARM,
+ * cut-away, two unused, the lowered arm's reach on screen as x and y, how far down it is (0 up to 1 down), its length
+ * standing up and which post.
  */
-private fun DrawScope.drawCrossingGate(it: FloatArray, hw: Float) {
+private fun DrawScope.drawCrossingArm(it: FloatArray, hw: Float) {
     val x = it[1]
     val y = it[2]
     val u = hw / 32f
-    val lit = it[3] == 1f
     // The arm swings in the upright plane over its lowered line.
     val a = (1f - it[10]) * (kotlin.math.PI.toFloat() / 2f)
     val c = kotlin.math.cos(a)
@@ -609,6 +622,17 @@ private fun DrawScope.drawCrossingGate(it: FloatArray, hw: Float) {
         drawLine(if (k % 2 == 0) Color(0xfff4f4f0) else Color(0xffd03028), Offset(pivot.x + (end.x - pivot.x) * f0, pivot.y + (end.y - pivot.y) * f0),
             Offset(pivot.x + (end.x - pivot.x) * f1, pivot.y + (end.y - pivot.y) * f1), wide, StrokeCap.Butt)
     }
+}
+
+/**
+ * A level crossing's post with two red lamps, flashing in turn about once a second while lit. Drawn from the arm item: depth,
+ * foot on screen, lit and which post (cells 3 and 12 of the arm item that draws it).
+ */
+private fun DrawScope.drawCrossingGate(it: FloatArray, hw: Float) {
+    val x = it[1]
+    val y = it[2]
+    val u = hw / 32f
+    val lit = it[3] == 1f
     drawLine(Color(0xff3a3a3a), Offset(x, y), Offset(x, y - 12f * u), 1.2f * u)
     drawLine(Color(0xff2a2a2a), Offset(x - 3.5f * u, y - 12f * u), Offset(x + 3.5f * u, y - 12f * u), 1.6f * u)
     // The posts across the road flash opposite each other.
@@ -623,11 +647,13 @@ private fun DrawScope.drawCrossingGate(it: FloatArray, hw: Float) {
 
 /**
  * Each level crossing's gate on screen, by tile: -1 down and -2 up since first seen, or when it last changed in
- * [flicker] milliseconds shifted up one, with 1 in the low bit going down. Drawing only, on the UI thread.
+ * thousandths of a game tick shifted up one, with 1 in the low bit going down. Drawing only, on the UI thread.
  */
 private val gates = HashMap<Int, Long>()
-/** How long a gate arm takes to go down or up, in milliseconds. */
-private const val GATE_MS = 1200
+/** How long a gate arm takes to go down or up, in game ticks (1.2 s at normal speed). */
+private const val GATE_TICKS = 36
+/** How far in front of or behind the tile's middle a gate arm is drawn, in view depth. */
+private const val ARM_NEAR = 0.9f
 /** A gate arm's length, in tiles, and a tile's length stood upright on screen, in half widths (sqrt 2 times cos 30). */
 private const val ARM_REACH = 0.3f
 private const val TILE_UPRIGHT = 1.225f
