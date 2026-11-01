@@ -373,7 +373,8 @@ private fun World.leaveDepot(t: Train) {
         t.running = false
         return
     }
-    if (trainOnTile(d.tile)) {
+    // With no orders it has nowhere to go: it waits inside, set going, till it gets some.
+    if (trainOnTile(d.tile) || t.target == -2) {
         t.running = true
         return
     }
@@ -528,11 +529,26 @@ private fun World.drive(t: Train) {
         t.brokenFor--
         t.speed = (t.speed - BRAKE).coerceAtLeast(0)
         if (t.speed > 0) advance(t, t.speed / 16, freeAhead(t).first)
+        else if (atDoor(t)) {
+            // Stood in its depot's door: back in, with the fitters there.
+            t.brokenFor = 0
+            backIn(t)
+        } else if (inShed(t)) {
+            // Stood wholly in its shed: in, with the fitters there.
+            t.brokenFor = 0
+            enterDepot(t)
+        }
         return
     }
     if (!t.running || t.target == -2) {
         t.speed = (t.speed - BRAKE).coerceAtLeast(0)
         if (t.speed > 0) advance(t, t.speed / 16, freeAhead(t).first)
+        else if (atDoor(t)) backIn(t)
+        else if (inShed(t)) {
+            // Stopped running in: in, and still stopped.
+            enterDepot(t)
+            t.running = false
+        }
         return
     }
     if (t.turnRound) {
@@ -1205,6 +1221,33 @@ private fun World.turnRound(t: Train) {
     t.route = null
     releaseAhead(t)
     countOn(t)
+}
+
+/** Whether some of [t] is still inside the depot it's coming out of, so it stands in the door. */
+private fun World.atDoor(t: Train) =
+    t.steps.isNotEmpty() && depotTiles[stepTile(t.steps[0])] == t.depot && (t.behind(t.length) shr 32) < 0
+
+/** Whether [t], going in, stands wholly inside its depot's shed, out of sight. */
+private fun World.inShed(t: Train) =
+    t.toDepot && t.steps.isNotEmpty() && depotTiles[stepTile(t.steps.last())] == t.depot && freeAhead(t).let { it.second == Stop.DEPOT && it.first <= 0 }
+
+/**
+ * Puts [t], stood in its depot's door, back inside, running or not as it was, so it's listed there and doesn't block
+ * the door. A trip to the depot ends there, serviced if that's what it was for.
+ */
+private fun World.backIn(t: Train) {
+    val running = t.running
+    t.inDepot = true
+    t.toDepot = false
+    t.steps.clear()
+    t.route = null
+    reserved.entries.removeAll { it.value == t.id }
+    countOn(t)
+    if (t.servicing) {
+        autorenew(t)
+        serviced(t)
+    }
+    t.running = running
 }
 
 private fun World.enterDepot(t: Train) {
