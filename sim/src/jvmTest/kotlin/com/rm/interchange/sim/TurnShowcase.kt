@@ -88,9 +88,11 @@ class TurnShowcase {
                 if (a == null) continue
                 val stands = Taxiways.STANDS[a.kind].size / 4
                 val places = (0 until stands) + listOf(Taxiways.DOOR, Taxiways.END0, Taxiways.END1)
-                for (f in places) for (to in places) {
+                // Landings turn off at exits onto the way to a stand or the hangar.
+                val exits = (Taxiways.EXIT0 until Taxiways.EXIT0 + Taxiways.EXITS[a.kind].size).toList()
+                for (f in places + exits) for (to in places) {
                     if (f == to || a.kind == Airports.HELIPORT && f >= Taxiways.END0) continue
-                    if (f < Taxiways.DOOR && to < Taxiways.DOOR) continue
+                    if (Taxiways.stand(f) && Taxiways.stand(to) || f in exits && to >= Taxiways.END0) continue
                     val pts = taxiRoute(a, f * 16 + to)
                     for (i in 0 until pts.size / 2) {
                         val p = taxiPoint(a, pts, i)

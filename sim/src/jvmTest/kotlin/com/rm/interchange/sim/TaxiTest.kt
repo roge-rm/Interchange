@@ -298,4 +298,24 @@ class TaxiTest {
         val (calls, _) = w.run(64 * 100, null, crafts)
         for (v in crafts) assertTrue(calls[v.id].orEmpty().size >= 2, "${v.id} called at ${calls[v.id]}")
     }
+
+    /**
+     * Every route on a strip, regional, city or international airport keeps to what the map draws: the runway's middle
+     * line (8 across), or on a city or international airport the taxiway's line down row 1 (24 across). Only the first
+     * and last legs leave them, onto a stand or into the hangar, and a runway end's or exit's leg between the two lines.
+     */
+    @Test
+    fun routesKeepToTheDrawnLines() {
+        for (kind in listOf(Airports.STRIP, Airports.REGIONAL, Airports.CITY, Airports.INTERNATIONAL)) {
+            val taxiway = kind == Airports.CITY || kind == Airports.INTERNATIONAL
+            val places = (0 until Taxiways.STANDS[kind].size / 4) + (Taxiways.EXIT0 until Taxiways.EXIT0 + Taxiways.EXITS[kind].size) +
+                listOf(Taxiways.DOOR, Taxiways.END0, Taxiways.END1)
+            for (p in places) {
+                val sp = Taxiways.spur(kind, p)
+                assertEquals(if (taxiway) 24 else 8, sp[1], "kind $kind place $p joins off the line")
+                for (i in 1 until sp.size / 2 - 1) assertTrue(sp[i * 2 + 1] == 8 || sp[i * 2 + 1] == 24, "kind $kind place $p point $i")
+                if (p >= Taxiways.END0 || p in Taxiways.EXIT0 until Taxiways.DOOR) assertEquals(8, sp[sp.size - 1], "kind $kind place $p ends off the runway")
+            }
+        }
+    }
 }

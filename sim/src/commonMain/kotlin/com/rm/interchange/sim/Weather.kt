@@ -204,11 +204,12 @@ internal fun World.weatherDay(today: Int = day) {
     }
     if (rng.below(100) < fogChance(region, doy)) newFog()
 
-    // The wind at the middle of the map: the region's own, stronger round a storm, from the south ahead of a low and the north-west behind.
+    // The wind at the middle of the map: spread from calm to twice the region's mean, stronger round a storm. Westerly, from the south-east side ahead of a low and the north-west behind.
     val mx = width / 2
     val my = height / 2
-    var wind = when (region) { Region.PRAIRIES -> 20; Region.MARITIMES -> 18; Region.NORTH -> 16; else -> 12 } + rng.below(8)
-    var from = 0
+    val mean = when (region) { Region.PRAIRIES -> 24; Region.MARITIMES -> 21; Region.NORTH -> 19; else -> 15 }
+    var wind = rng.below(2 * mean + 1)
+    var from = prevailing()
     var most = 0
     for (f in w.fronts) {
         if (f.kind == Front.FOG) continue
@@ -216,14 +217,17 @@ internal fun World.weatherDay(today: Int = day) {
         wind += r * (if (f.kind == Front.STORM) 50 else 15) / 256
         if (r > most) {
             most = r
-            from = if (f.side(mx, my) > 0) 6 else 1
+            from = if (f.side(mx, my) > 0) 5 + rng.below(5) - 2 else 1 + rng.below(3) - 1
         }
     }
     w.wind = wind
-    w.windFrom = from
+    w.windFrom = from and 7
 
     tileWeather(year, doy, today)
 }
+
+/** A wind with no front near: mostly from the west, south-west or north-west, sometimes any way. */
+private fun World.prevailing(): Int = if (rng.below(100) < 65) (intArrayOf(0, 0, 1, 7))[rng.below(4)] else rng.below(8)
 
 /** A new low, storm or patch of showers, by the season. */
 private fun World.newFront(normal: Int, winter: Boolean, target: Int) {

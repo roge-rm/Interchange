@@ -7,6 +7,7 @@ import com.rm.interchange.sim.CORNER_W
 import com.rm.interchange.sim.Track
 import com.rm.interchange.sim.Airport
 import com.rm.interchange.sim.Airports
+import com.rm.interchange.sim.Taxiways
 import com.rm.interchange.sim.Depots
 import com.rm.interchange.sim.PAVED
 import com.rm.interchange.sim.Trees
@@ -641,6 +642,7 @@ internal class ChunkBaker(
         val buried = snowy && (!water || icy || banks != 0) && road == 0 && aero == 0 && minOf(minOf(st, sr), minOf(sb, sl)) >= FULL_SNOW
         val snowBase = Atlas.SNOW * size * size
         var roadHere = false
+        var aeroHere = false
         if (Probe.ON) times!!.add(Probe.BakeTimes.FILL_SETUP, gt)
         val lt0 = if (Probe.ON) times!!.start() else 0L
         var painted = 0
@@ -690,7 +692,12 @@ internal class ChunkBaker(
                     roadHere = when (roadPart) { ROAD_GROUND -> false; ROAD_SHOULDER -> true; else -> got != NOT_ROAD }
                     texel = got
                 }
-                if (aero != 0) texel = airportTexel(u, v, aero, texel)
+                if (aero != 0) {
+                    // Paving always differs from the ground it's laid on, so this saves working it out again for snow.
+                    val got = airportTexel(u, v, aero, texel)
+                    aeroHere = got != texel
+                    texel = got
+                }
                 if (icy) {
                     val ice = iT * (1f - u) * (1f - v) + ir * u * (1f - v) + ib * u * v + il * (1f - u) * v
                     if (ice >= ICE_FROM) texel = mix(texel, mix(ICE, ICE_DARK, rag * 0.6f), (0.5f + ice / 60f).coerceAtMost(0.92f))
@@ -707,7 +714,7 @@ internal class ChunkBaker(
                     val cover = ((depth - (0.5f + patch * 14f)) / 3f).coerceIn(0f, 1f)
                     if (cover > 0f) {
                         // Traffic packs the snow on a road down to a greyer track, so the road still shows through.
-                        val onRoad = (road != 0 && roadHere) || (aero != 0 && airportTexel(u, v, aero, NOT_ROAD) != NOT_ROAD)
+                        val onRoad = (road != 0 && roadHere) || (aero != 0 && aeroHere)
                         texel = mix(texel, sheets.ground[snowBase + ti], if (onRoad) cover * 0.8f else cover)
                         if (onRoad) texel = mix(texel, PACKED_SNOW, cover * 0.45f)
                     }
@@ -825,7 +832,9 @@ internal class ChunkBaker(
     /**
      * How airport [a]'s tile ([wx], [wy]) is paved, packed for [airportTexel]: an [AERO_RUNWAY], [AERO_STRIP],
      * [AERO_TAXI], [AERO_APRON] or [AERO_PAD] in the low bits, [AERO_ALONG_U] if its runway runs along view u, and
-     * the sides of the tile at a runway's ends from bit 8.
+     * the sides of the tile at a runway's ends from bit 8. From bit 12, for [airportTexel] to find where on the airport
+     * a texel is: the view sides world x and y count up toward, two bits each, the tile's place along and across
+     * (4 and 3 bits), the kind (3 bits) and whether the runway runs along y.
      */
     private fun airportGround(a: Airport, wx: Int, wy: Int): Int {
         val lx = if (a.axis == Track.X) wx - a.x else wy - a.y
@@ -846,7 +855,37 @@ internal class ChunkBaker(
             if (lx == 0) ends = ends or (1 shl sideOf(viewEdge(back)))
             if (lx == len - 1) ends = ends or (1 shl sideOf(viewEdge(Track.opposite(back))))
         }
-        return role or (if (alongU) AERO_ALONG_U else 0) or (ends shl 8)
+        val place = sideOf(viewEdge(Track.XP)) or (sideOf(viewEdge(Track.YP)) shl 2) or (lx shl 4) or (ly shl 8) or
+            (a.kind shl 11) or (if (a.axis == Track.X) 0 else 1 shl 14)
+        return role or (if (alongU) AERO_ALONG_U else 0) or (ends shl 8) or (place shl 12)
+    }
+
+    /** How far toward the world edge on view side [side] a texel at ([u], [v]) is, 0 to 1. */
+    private fun toward(side: Int, u: Float, v: Float) = when (side) { 0 -> 1f - v; 1 -> u; 2 -> v; else -> 1f - u }
+
+    /**
+     * Whether ([l], [c]), in tiles along and across airport kind [kind] from its corner, is on one of [TAXI_LEGS]:
+     * [LINK_LINE] on its middle line off the runway's paving, [LINK_PAVED] within a taxiway's width of a leg to the
+     * runway, else 0.
+     */
+    private fun taxiLink(kind: Int, l: Float, c: Float): Int {
+        val legs = TAXI_LEGS[kind]
+        var got = 0
+        var i = 0
+        while (i < legs.size) {
+            val ax = legs[i]; val ay = legs[i + 1]; val bx = legs[i + 2]; val by = legs[i + 3]
+            i += 4
+            if (l < minOf(ax, bx) - TAXI_HALF || l > maxOf(ax, bx) + TAXI_HALF || c < minOf(ay, by) - TAXI_HALF || c > maxOf(ay, by) + TAXI_HALF) continue
+            val dx = bx - ax
+            val dy = by - ay
+            val t = (((l - ax) * dx + (c - ay) * dy) / (dx * dx + dy * dy)).coerceIn(0f, 1f)
+            val ex = l - ax - t * dx
+            val ey = c - ay - t * dy
+            val d2 = ex * ex + ey * ey
+            if (d2 < TAXI_LINE_HALF * TAXI_LINE_HALF && c > RUNWAY_EDGE) return LINK_LINE
+            if (d2 < TAXI_HALF * TAXI_HALF && (ay < 1f || by < 1f)) got = LINK_PAVED
+        }
+        return got
     }
 
     /** What airport paving [aero] shows at ([u], [v]): runway markings, gravel, a taxiway's line, apron slabs or a helipad's H. [ground] is what's there otherwise. */
@@ -856,9 +895,30 @@ internal class ChunkBaker(
         val l = if (along) u else v
         val shade = if (ground == NOT_ROAD) 0f else 0.08f
         fun base(col: Int) = if (shade > 0f) mix(col, ground, shade) else col
+        fun apron(l: Float, across: Float) = if ((l * 2f) % 1f < 0.015f || (across * 2f) % 1f < 0.015f) base(APRON_JOINT) else base(APRON)
+        // Where on the airport it is, in tiles along and across from its corner, for the paving between its rows.
+        val kind = (aero shr 23) and 7
+        var la = 0f
+        var ca = 0f
+        var link = 0
+        if (kind == Airports.REGIONAL || kind == Airports.CITY || kind == Airports.INTERNATIONAL) {
+            val fx = toward((aero shr 12) and 3, u, v)
+            val fy = toward((aero shr 14) and 3, u, v)
+            val alongY = aero and (1 shl 26) != 0
+            la = ((aero shr 16) and 15) + if (alongY) fy else fx
+            ca = ((aero shr 20) and 7) + if (alongY) fx else fy
+            if (kind != Airports.REGIONAL && !(aero and 15 == AERO_RUNWAY && c <= 0.42f)) link = taxiLink(kind, la, ca)
+        }
+        if (link == LINK_LINE) return TAXI_LINE
         return when (aero and 15) {
             AERO_RUNWAY -> {
-                if (c > 0.42f) return ground
+                if (c > 0.42f) return when {
+                    ca < RUNWAY_EDGE -> ground
+                    // A regional airport's apron comes up to the runway; elsewhere the legs to the taxiway are paved.
+                    kind == Airports.REGIONAL -> apron(l, ca)
+                    link == LINK_PAVED -> base(ASPHALT)
+                    else -> ground
+                }
                 val ends = aero shr 8
                 for (k in 0 until 4) {
                     if (ends and (1 shl k) == 0) continue
@@ -873,11 +933,13 @@ internal class ChunkBaker(
             }
             AERO_STRIP -> if (c > 0.3f) ground else base(STRIP_GRAVEL)
             AERO_TAXI -> when {
-                c > 0.28f -> ground
+                // The apron reaches out to the taxiway along its whole length.
+                ca > 1.5f && c > 0.28f -> apron(l, ca)
+                c > 0.28f -> if (link == LINK_PAVED) base(ASPHALT) else ground
                 c < 0.014f -> TAXI_LINE
                 else -> base(ASPHALT)
             }
-            AERO_APRON -> if ((l * 2f) % 1f < 0.015f || ((if (along) v else u) * 2f) % 1f < 0.015f) base(APRON_JOINT) else base(APRON)
+            AERO_APRON -> apron(l, if (along) v else u)
             AERO_PAD -> {
                 val du = u - 0.5f
                 val dv = v - 0.5f
@@ -1655,6 +1717,31 @@ internal class ChunkBaker(
         private const val APRON_JOINT = 0xff96928a.toInt()
         private const val MARKING = 0xffeeeeea.toInt()
         private const val TAXI_LINE = 0xffe8c030.toInt()
+        /** In tiles: half a taxiway's paving and its middle line, as [airportTexel] draws them, and the runway's paving edge. */
+        private const val TAXI_HALF = 0.28f
+        private const val TAXI_LINE_HALF = 0.014f
+        private const val RUNWAY_EDGE = 0.92f
+        private const val LINK_PAVED = 1
+        private const val LINK_LINE = 2
+        /**
+         * Each airport kind's taxi legs that leave the runway's middle line, from [Taxiways] so the map paves and lines
+         * the way aircraft go: along0, across0, along1, across1 in tiles. Only city and international airports have them.
+         */
+        private val TAXI_LEGS: Array<FloatArray> = Array(Airports.LENGTH.size) { kind ->
+            val out = ArrayList<Float>()
+            if (kind == Airports.CITY || kind == Airports.INTERNATIONAL) {
+                val places = (0 until Taxiways.STANDS[kind].size / 4) + (Taxiways.EXIT0 until Taxiways.EXIT0 + Taxiways.EXITS[kind].size) +
+                    listOf(Taxiways.DOOR, Taxiways.END0, Taxiways.END1)
+                for (p in places) {
+                    val sp = Taxiways.spur(kind, p)
+                    for (i in 0 until sp.size / 2 - 1) {
+                        if (sp[i * 2 + 1] == 8 && sp[i * 2 + 3] == 8) continue
+                        for (k in 0 until 4) out += sp[i * 2 + k] / 16f
+                    }
+                }
+            }
+            out.toFloatArray()
+        }
         /** Passed to roadTexel as the ground, to tell where a road shows. */
         private const val NOT_ROAD = 0x00010203
         private const val ROAD_GROUND = 0

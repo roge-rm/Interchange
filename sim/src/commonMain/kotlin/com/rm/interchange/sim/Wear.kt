@@ -156,10 +156,10 @@ internal fun World.trackDay() {
             if (t == 0 && Trees.count(trees[i].toInt()) == 0) continue
             val sky = if (settings.weather) skyAt(settings.region, year, doy, weather.anomaly, fronts, height, x, y, tileHeight(x, y)) else null
             if (sky != null && f == 0 && Trees.count(trees[i].toInt()) > 0 && sky.precipitation == 0 && sky.temperature > FIRE_HEAT && u(weather.wet[i]) < 12) {
-                // Lightning now and then, or sparks from a neighbour on fire, more of them downwind; in 65536ths.
+                // Lightning now and then, or sparks from a neighbour on fire, more of them downwind (a diagonal wind counts for both sides); in 65536ths.
                 var odds = 1
                 for ((nx, ny, from2) in arrayOf(Triple(x - 1, y, 0), Triple(x + 1, y, 4), Triple(x, y - 1, 2), Triple(x, y + 1, 6))) {
-                    if (inside(nx, ny) && u(was[index(nx, ny)]) in 1..FIRE_DAYS) odds += if (from2 == wind) 36_000 else 16_000
+                    if (inside(nx, ny) && u(was[index(nx, ny)]) in 1..FIRE_DAYS) odds += if ((wind - from2 + 1) and 7 <= 2) 36_000 else 16_000
                 }
                 if (cellDice(x, y, salt + 11) * 256 + cellDice(x, y, salt + 12) < odds) found[b] += intArrayOf(EVENT_FIRE, i)
             }

@@ -446,9 +446,10 @@ private fun near(w: Aircraft, p: IntArray, d: Int): Boolean {
  * mirrors it along the runway. An exit is where a landing turns off partway: on a city or international airport an
  * angled one onto the taxiway for landings going one way, elsewhere a point on the runway for either way.
  * Strips, regional airports and seaplane bases taxi on the runway itself, turning round at its ends; city and
- * international airports have a taxiway, held short of where it turns onto the runway.
+ * international airports have a taxiway, held short of where it turns onto the runway. It runs on the line the
+ * map draws down the middle of row 1 (24 across). The map paves and lines the legs off it from these points too.
  */
-internal object Taxiways {
+object Taxiways {
     /** Places on a route: stands are 0 up, then these. */
     const val EXIT0 = 8
     const val DOOR = 13
@@ -461,19 +462,19 @@ internal object Taxiways {
         intArrayOf(4, 8, -4, 4, 4, 8, -4, 12),
         intArrayOf(8, 8, 8, 8),
         intArrayOf(24, 8, 24, 25, 56, 8, 56, 25, 40, 8, 40, 19),
-        IntArray(20) { i -> if (i % 4 == 0 || i % 4 == 2) 24 + i / 4 * 16 else if (i % 4 == 1) 21 else 34 },
+        IntArray(20) { i -> if (i % 4 == 0 || i % 4 == 2) 24 + i / 4 * 16 else if (i % 4 == 1) 24 else 34 },
         IntArray(32) { i -> if (i % 4 == 0 || i % 4 == 2) 8 + i / 4 * 16 else if (i % 4 == 1) 24 else 40 },
     )
     /** The hangar door, the same way, and the hangar's tile along and across. */
     val DOORS = arrayOf(
         intArrayOf(56, 8, 56, 14), intArrayOf(4, 8, -10, 8), intArrayOf(8, 8, 8, 8),
-        intArrayOf(8, 8, 8, 21), intArrayOf(8, 21, 8, 35), intArrayOf(16, 24, 16, 50),
+        intArrayOf(8, 8, 8, 21), intArrayOf(8, 24, 8, 35), intArrayOf(16, 24, 16, 50),
     )
     val HANGAR_TILE = arrayOf(intArrayOf(3, 0), intArrayOf(0, 0), intArrayOf(0, 0), intArrayOf(0, 1), intArrayOf(0, 2), intArrayOf(1, 3))
     /** Runway end 0's spur, from where it joins to where it lines up; a seaplane base's end 1 as well. */
     val ENDS = arrayOf(
         intArrayOf(4, 8, 12, 8), intArrayOf(10, 8), IntArray(0),
-        intArrayOf(4, 8, 12, 8), intArrayOf(4, 21, 2, 8, 14, 8), intArrayOf(4, 24, 2, 8, 16, 8),
+        intArrayOf(4, 8, 12, 8), intArrayOf(4, 24, 2, 8, 14, 8), intArrayOf(4, 24, 2, 8, 16, 8),
     )
     val SEAPLANE_END1 = intArrayOf(44, 8, 36, 8)
     /** Each kind's exits, from where each joins to where it leaves the runway, [EXIT0] up. */
@@ -482,7 +483,7 @@ internal object Taxiways {
         arrayOf(intArrayOf(20, 8), intArrayOf(28, 8)),
         arrayOf(),
         arrayOf(intArrayOf(24, 8), intArrayOf(40, 8), intArrayOf(56, 8)),
-        arrayOf(intArrayOf(48, 21, 32, 8), intArrayOf(72, 21, 56, 8), intArrayOf(48, 21, 64, 8), intArrayOf(24, 21, 40, 8)),
+        arrayOf(intArrayOf(48, 24, 32, 8), intArrayOf(72, 24, 56, 8), intArrayOf(48, 24, 64, 8), intArrayOf(24, 24, 40, 8)),
         arrayOf(intArrayOf(56, 24, 40, 8), intArrayOf(88, 24, 72, 8), intArrayOf(72, 24, 88, 8), intArrayOf(40, 24, 56, 8)),
     )
 

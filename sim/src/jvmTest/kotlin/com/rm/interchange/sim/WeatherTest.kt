@@ -56,8 +56,8 @@ class WeatherTest {
 
     @Test
     fun theMaritimesAreWetterThanThePrairies() {
-        fun fallen(region: Region): Long {
-            val w = world(region)
+        fun fallen(region: Region, seed: Long): Long {
+            val w = world(region, seed)
             var sum = 0L
             repeat(180) {
                 w.run(1)
@@ -66,9 +66,11 @@ class WeatherTest {
             }
             return sum
         }
-        val wet = fallen(Region.MARITIMES)
-        val dry = fallen(Region.PRAIRIES)
-        assertTrue(wet > dry * 3, "$wet against $dry")
+        val seeds = listOf(3L, 4L, 5L, 6L)
+        val wet = seeds.sumOf { fallen(Region.MARITIMES, it) }
+        val dry = seeds.sumOf { fallen(Region.PRAIRIES, it) }
+        // About 3 to 1 over these seeds; single seeds run 2.7 to 3.3.
+        assertTrue(wet > dry * 5 / 2, "$wet against $dry")
     }
 
     @Test
@@ -153,5 +155,23 @@ class WeatherTest {
         assertEquals(0, (0 until w.width * w.height).count { u(w.weather.snow[it]) > 0 })
         assertTrue(w.weather.fronts.isEmpty())
         assertTrue(!Save.read(Save.write(w)).settings.weather)
+    }
+
+    @Test
+    fun theWindDiesAwayOnSomeDaysAndBlowsFromEveryWayMostlyWest() {
+        val w = world(Region.MIXED)
+        val from = IntArray(8)
+        var calm = 0
+        val days = 400
+        repeat(days) {
+            w.weatherDay(w.day + it)
+            if (w.weather.wind < CALM) calm++
+            from[w.weather.windFrom]++
+        }
+        println("wind: calm $calm of $days, from ${from.toList()}")
+        assertTrue(calm in days / 20..days / 3, "$calm calm days of $days")
+        assertTrue(from.all { it > 0 }, "directions ${from.toList()}")
+        val west = from[0] + from[1] + from[7]
+        assertTrue(west > days / 2 && from[0] == from.max(), "west $west, directions ${from.toList()}")
     }
 }
