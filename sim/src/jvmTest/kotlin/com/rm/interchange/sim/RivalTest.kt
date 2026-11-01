@@ -546,6 +546,38 @@ class RivalTest {
 
     private fun keyOfRail(route: RivalRoute) = (1L shl 61) or (route.cargo.toLong() shl 48) or (route.townA.toLong() shl 24) or route.townB.toLong()
 
+    /**
+     * Coal between two flat sites 64 tiles apart, at the least payback that builds anything. With [pocket], town
+     * buildings wall in the east side of the first site's top rows, so the termini that rank best there have to go
+     * the long way round. The first station's top row, or -1 if nothing's built.
+     */
+    private fun coalLine(pocket: Boolean): Int {
+        for (payback in 1..80) {
+            val w = World(96, 64, 1, startYear = 1930)
+            for (i in w.corners.indices) w.corners[i] = 3
+            w.trees.fill(0)
+            if (pocket) {
+                for (y in 6..24) w.house[w.index(19, y)] = 1
+                for (x in 17..18) w.house[w.index(x, 25)] = 1
+            }
+            val c = w.companies[0]
+            c.money = 10_000_000
+            val routes = ArrayList<RivalRoute>()
+            val tried = w.tryRail(c, RailSite(10, 20, 16, 40, 80, 30), RailSite(77, 20, 83, 40, 13, 30), Cargo.COAL, 300, 0, 1, { _, _ -> true }, payback) { routes += it }
+            if (tried == Tried.BUILT) return w.stations[routes.single().a]!!.tiles.minOf { it / w.width }
+        }
+        return -1
+    }
+
+    @Test
+    fun terminiThatDontPayLeaveOthersForTheSameEnds() {
+        // Open ground: the best ranked spot, along the top of the site.
+        assertEquals(20, coalLine(false))
+        // Walled in, those don't pay at that payback, and a spot further down the same site does.
+        val y = coalLine(true)
+        assertTrue(y > 25, "built at row $y")
+    }
+
     @Test
     fun pairsAreTriedAgainAfterAWhile() {
         val w = game()

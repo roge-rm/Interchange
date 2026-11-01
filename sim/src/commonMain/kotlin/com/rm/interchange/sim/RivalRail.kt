@@ -104,7 +104,14 @@ private fun World.sites(c: Company, site: RailSite, depot: Boolean, people: Bool
         found += t to chebyshev(m % width, m / width, site.cx, site.cy) + away - near + houses * HOUSE_TILES
     }
     found.sortWith(compareBy<Pair<Terminus, Int>> { it.second }.thenBy { it.first.y }.thenBy { it.first.x }.thenBy { it.first.out }.thenBy { -it.first.n })
-    return found.take(SITE_TRIES).map { it.first }
+    // The places kept face another way or stand a few tiles apart, so when one pair of ends doesn't pay the next
+    // pairs tried for the same two sites are somewhere else.
+    val picked = ArrayList<Terminus>()
+    for ((t, _) in found) {
+        if (picked.size == SITE_TRIES) break
+        if (picked.none { it.out == t.out && chebyshev(it.x, it.y, t.x, t.y) < SPOT_APART }) picked += t
+    }
+    return picked
 }
 
 /**
@@ -952,6 +959,8 @@ private const val MOST_CLEARED = 4
 private const val CLEAR_MARGIN = 100
 /** Places tried for each terminus. */
 private const val SITE_TRIES = 4
+/** Tiles apart two places tried for a terminus facing the same way are at least. */
+private const val SPOT_APART = 3
 /** Path costs: a tile of new track, more on a slope or a foundation, a level crossing, a curve, a town building. */
 private const val RAIL_MOVE = 8
 private const val RAIL_SLOPE = 4
