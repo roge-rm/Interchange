@@ -698,17 +698,24 @@ private fun DrawScope.levelFor(w0: Int, h0: Int, least: Int = 0): Pair<Int, Floa
     return level to scale
 }
 
-/** The part of [image] at ([x], [y]) sized [w0] by [h0] at level 0, drawn at [level] scaled by [scale] and centred. */
-private fun DrawScope.drawSprite(image: ImageBitmap, x: Int, y: Int, w0: Int, h0: Int, level: Int, scale: Float) {
+/**
+ * Static sprite [sprite], [w0] by [h0] at level 0, drawn from [image] at [level] scaled by [scale] and centred. The
+ * sheet holds it trimmed, moved in from its box as [Atlas.STATIC_LEVEL_RECTS] says.
+ */
+private fun DrawScope.drawSprite(image: ImageBitmap, sprite: Int, w0: Int, h0: Int, level: Int, scale: Float) {
     val shrink = 1 shl level
-    val sw = w0 / shrink
-    val sh = h0 / shrink
+    val lr = (sprite * Atlas.LEVELS + level) * 6
+    val sw = Atlas.STATIC_LEVEL_RECTS[lr + 2]
+    val sh = Atlas.STATIC_LEVEL_RECTS[lr + 3]
     if (sw == 0 || sh == 0) return
     val dw = (w0 * scale).toInt()
     val dh = (h0 * scale).toInt()
+    val f = shrink * scale
+    val left = ((size.width - dw) / 2).toInt() + Atlas.STATIC_LEVEL_RECTS[lr + 4] * f
+    val top = ((size.height - dh) / 2).toInt() + Atlas.STATIC_LEVEL_RECTS[lr + 5] * f
     drawImage(
-        image, IntOffset(x / shrink, y / shrink), IntSize(sw, sh),
-        IntOffset(((size.width - dw) / 2).toInt(), ((size.height - dh) / 2).toInt()), IntSize(dw, dh),
+        image, IntOffset(Atlas.STATIC_LEVEL_RECTS[lr], Atlas.STATIC_LEVEL_RECTS[lr + 1]), IntSize(sw, sh),
+        IntOffset(left.toInt(), top.toInt()), IntSize((sw * f).toInt(), (sh * f).toInt()),
         filterQuality = FilterQuality.Medium,
     )
 }
@@ -761,7 +768,7 @@ fun StaticPicture(sprite: Int, modifier: Modifier) {
         // Level 2 at the sharpest, as Sheets keeps it for pictures.
         val (level, scale) = levelFor(w0, h0, least = 2)
         val image = sheets.staticImage(level) ?: return@Canvas
-        drawSprite(image, Atlas.STATIC_RECTS[r], Atlas.STATIC_RECTS[r + 1], w0, h0, level, scale)
+        drawSprite(image, sprite, w0, h0, level, scale)
     }
 }
 

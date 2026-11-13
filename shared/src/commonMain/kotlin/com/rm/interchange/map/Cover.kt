@@ -73,19 +73,26 @@ internal class Cover(private val world: World, private val view: View, private v
 
     /** For each column of sprite [cell], its first and last solid rows, or -1 for an empty column; kept for each level. */
     private fun columns(cell: Int, w: Int, h: Int): IntArray = COLUMNS[level].getOrPut(cell) {
-        val r = cell * 6
-        val sx = Atlas.STATIC_RECTS[r] / shrink
-        val sy = Atlas.STATIC_RECTS[r + 1] / shrink
+        // The sprite is packed trimmed, dx and dy in from its box of w by h.
+        val lr = (cell * Atlas.LEVELS + level) * 6
+        val sx = Atlas.STATIC_LEVEL_RECTS[lr]
+        val sy = Atlas.STATIC_LEVEL_RECTS[lr + 1]
+        val tw = Atlas.STATIC_LEVEL_RECTS[lr + 2]
+        val th = Atlas.STATIC_LEVEL_RECTS[lr + 3]
+        val dx = Atlas.STATIC_LEVEL_RECTS[lr + 4]
+        val dy = Atlas.STATIC_LEVEL_RECTS[lr + 5]
         val src = sheets.static
         val sw = sheets.staticWidth
         IntArray(w * 2) { k ->
-            val i = k / 2
+            val i = k / 2 - dx
             var first = -1
             var last = -1
-            for (j in 0 until h) {
-                if (src[(sy + j) * sw + sx + i] ushr 24 >= SOLID) {
-                    if (first < 0) first = j
-                    last = j
+            if (i in 0 until tw) {
+                for (j in 0 until minOf(th, h - dy)) {
+                    if (src[(sy + j) * sw + sx + i] ushr 24 >= SOLID) {
+                        if (first < 0) first = j + dy
+                        last = j + dy
+                    }
                 }
             }
             if (k % 2 == 0) first else last

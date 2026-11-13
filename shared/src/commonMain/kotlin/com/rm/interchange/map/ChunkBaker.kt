@@ -1293,12 +1293,14 @@ internal class ChunkBaker(
 
     private fun blitOn(cell: Int, ax: Float, ay: Float, snow: Int) {
         val r = cell * 6
-        val sx = Atlas.STATIC_RECTS[r] / shrink
-        val sy = Atlas.STATIC_RECTS[r + 1] / shrink
-        val w = Atlas.STATIC_RECTS[r + 2] / shrink
-        val h = Atlas.STATIC_RECTS[r + 3] / shrink
-        val left = (ax + Atlas.STATIC_RECTS[r + 4] / shrink).toInt()
-        val top = (ay + Atlas.STATIC_RECTS[r + 5] / shrink).toInt()
+        // The sprite as packed at this level, trimmed in from its box by dx and dy.
+        val lr = (cell * Atlas.LEVELS + level) * 6
+        val sx = Atlas.STATIC_LEVEL_RECTS[lr]
+        val sy = Atlas.STATIC_LEVEL_RECTS[lr + 1]
+        val w = Atlas.STATIC_LEVEL_RECTS[lr + 2]
+        val h = Atlas.STATIC_LEVEL_RECTS[lr + 3]
+        val left = (ax + Atlas.STATIC_RECTS[r + 4] / shrink).toInt() + Atlas.STATIC_LEVEL_RECTS[lr + 4]
+        val top = (ay + Atlas.STATIC_RECTS[r + 5] / shrink).toInt() + Atlas.STATIC_LEVEL_RECTS[lr + 5]
         val src = sheets.static
         val sw = sheets.staticWidth
         for (j in 0 until h) {

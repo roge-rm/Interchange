@@ -482,16 +482,72 @@ def layout_levels(done, sheet_w):
     return out
 
 
+def shrink_down_first(img, f):
+    """As shrink, but down then across, which matches Pillow's shrink of the whole static sheet. L images stay L."""
+    mode = img.mode
+    img = img.convert("RGBa") if mode == "RGBA" else img
+    img = img.resize((img.width, img.height // f), Image.BOX).resize((img.width // f, img.height // f), Image.BOX)
+    return img.convert("RGBA") if mode == "RGBA" else img
+
+
+def layout_static_levels(done, sheet_w):
+    """
+    Packs the static sheet at each level by itself: each sprite's GRID box shrunk to the level, then trimmed to the
+    pixels that show, so the art is the same as a shrink of the whole sheet. Returns the level 0 GRID rects (x and y
+    0) and each level's sheet, snow values and rects: x, y, width and height, then the trim from the GRID box at that
+    level, in that level's pixels.
+    """
+    grid = []
+    for im, (l, t, r, b), _, _ in done:
+        grid += [0, 0, r - l, b - t, l - base.HW, t - base.TOP] if im else [0] * 6
+    levels = []
+    for level in range(LEVELS):
+        f = 1 << level
+        parts = []
+        for im, _, _, up in done:
+            small = None if im is None else im if f == 1 else shrink_down_first(im, f)
+            box = None if small is None else small.getchannel("A").getbbox()
+            if box is None:
+                parts.append(None)
+                continue
+            snow = None if up is None else up if f == 1 else shrink_down_first(up, f)
+            parts.append((small.crop(box), None if snow is None else snow.crop(box), box[0], box[1]))
+        sizes = [(p[0].width, p[0].height) if p else (0, 0) for p in parts]
+        widest = max(w for w, _ in sizes)
+        # The smallest sheet of a few widths round the usual one, by area, under WebP's 16383 pixel height.
+        best = None
+        for w in sorted({max(widest, (sheet_w >> level) * m // 4) for m in range(2, 9)}):
+            pos, height = pack(sizes, w, 1)
+            if height <= 16383 and (best is None or w * height < best[0] * best[2]):
+                best = (w, pos, height)
+        w, pos, height = best
+        sheet = Image.new("RGBA", (w, max(1, height)))
+        ups = Image.new("L", sheet.size)
+        rects = []
+        for p, at in zip(parts, pos):
+            if p:
+                sheet.paste(p[0], at)
+                if p[1]:
+                    ups.paste(p[1], at)
+                rects += [at[0], at[1], p[0].width, p[0].height, p[2], p[3]]
+            else:
+                rects += [0] * 6
+        levels.append((sheet, ups, rects))
+    return grid, levels
+
+
 def write_level(name, level):
     """Writes one zoom level of a laid out sheet."""
     if name.startswith("vehicle_"):
         save_sheet(SHEETS[name][level][0], OUT_PNG / f"{name}_{level}.png")
         return
+    if name == "static":
+        sheet, ups, _ = SHEETS[name][level]
+        save_sheet(with_up(sheet, ups), OUT_PNG / f"{name}_{level}.png")
+        return
     sheet, ups = SHEETS[name]
     f = 1 << level
     out = sheet if f == 1 else shrink(sheet, f)
-    if name == "static":
-        out = with_up(out, ups if f == 1 else ups.resize((ups.width // f, ups.height // f), Image.BOX))
     # Shadows are black, so their sheet keeps only how dark each pixel is, a byte each.
     save_sheet(out.getchannel("A") if name == "shadows" else out, OUT_PNG / f"{name}_{level}.png")
 
@@ -675,8 +731,12 @@ def main():
             SHEETS[name] = layout_levels(done, 1024)
             rects[name] = [r for _, r in SHEETS[name]]
             heights[name] = SHEETS[name][0][0].height
+        elif name == "static":
+            grid, SHEETS[name] = layout_static_levels(done, STATIC_W)
+            rects[name] = {"grid": grid, "levels": [r for _, _, r in SHEETS[name]]}
+            heights[name] = SHEETS[name][0][0].height
         else:
-            sheet, ups, rects[name], heights[name] = layout(done, STATIC_W if name == "static" else SHEET_W if name == "shadows" else 1024)
+            sheet, ups, rects[name], heights[name] = layout(done, SHEET_W if name == "shadows" else 1024)
             SHEETS[name] = (sheet, ups)
         tasks += [("level", name, level) for level in range(LEVELS)]
         if name.startswith("vehicle_"):
@@ -722,7 +782,8 @@ def main():
         ground_state.write_text(json.dumps({"digest": code, "stamp": stamp(ground_files)}))
     for name in names:
         if not name.startswith("vehicle_"):
-            print(f"{name}: {len(rects[name]) // 6} sprites, {heights[name]} high at level 0")
+            count = len(rects[name]["grid"] if name == "static" else rects[name]) // 6
+            print(f"{name}: {count} sprites, {heights[name]} high at level 0")
     biggest = max(len(rects[n][0]) for n in names if n.startswith("vehicle_")) // 6
     print(f"{len([n for n in names if n.startswith('vehicle_')])} vehicle sheets, {biggest} sprites each")
 
@@ -765,8 +826,9 @@ def main():
  * The rects hold six numbers a sprite at level 0: x, y, width and height on its
  * sheet, then where its top left sits from its anchor. The anchor is the tile's
  * top corner at the height the sprite stands on; a vehicle, tree or signal is
- * drawn as if on a tile whose middle is where it stands. Vehicle sheets are
- * packed level by level, so their rects are for each level, in its pixels.
+ * drawn as if on a tile whose middle is where it stands. Vehicle and static
+ * sheets are packed level by level, so their rects are for each level, in its
+ * pixels.
  *
  * Foundation and track shapes are which view corners stand a step up: top,
  * right, bottom and left as bits 1, 2, 4 and 8.
@@ -788,8 +850,17 @@ object Atlas {{
     /** The grey noise that makes the edges between kinds ragged, after the kinds on the ground sheet. */
     const val RAG = {len(kinds)}
 
-    /** Each sprite's place on its sheet and where it sits from its anchor, six numbers each. */
-    val STATIC_RECTS = ints("{",".join(str(x) for x in rects["static"])}")
+    /**
+     * Each static sprite's box at level 0 and where it sits from its anchor, six numbers each, x and y left 0: the
+     * static sheet is packed level by level, in [STATIC_LEVEL_RECTS].
+     */
+    val STATIC_RECTS = ints("{",".join(str(x) for x in rects["static"]["grid"])}")
+
+    /**
+     * Each static sprite at each level, at (sprite * LEVELS + level) * 6: x, y, width and height on that level's
+     * sheet, then where it sits in the sprite's box from [STATIC_RECTS] shrunk to the level, in that level's pixels.
+     */
+    val STATIC_LEVEL_RECTS = ints("{",".join(str(x) for n in range(len(rects["static"]["grid"]) // 6) for lv in range(LEVELS) for x in rects["static"]["levels"][lv][n * 6:n * 6 + 6])}")
 
     /** Shadows, on files/shadows_<level>.webp: how dark, a byte a pixel, to darken what's under them. */
     val SHADOW_RECTS = ints("{",".join(str(x) for x in rects["shadows"])}")
