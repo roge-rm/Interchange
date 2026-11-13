@@ -51,8 +51,21 @@ internal class Renderer(private val world: World, private val sheets: Sheets, pr
      * summed over it, when it went in and was last drawn. [old] is the picture it replaced for the weather, faded out
      * over [WEATHER_FADE_MILLIS] and then let go.
      */
-    private class Entry(val image: ImageBitmap?, val top: Int, val version: Long, val weather: Int, val weatherSum: Long, var baked: Long, var used: Long, val fades: Boolean = false) {
+    private class Entry(val image: ImageBitmap?, val top: Int, val version: Long, val weather: Int, val weatherSum: Long, var baked: Long, var used: Long, val fades: Boolean = false, val part: FloatArray? = null) {
         var old: Entry? = null
+        /**
+         * Whether this coarsest-level picture is right over what shows of chunk [key] of a finer level: all of it, or
+         * [part] holds the chunk's part on [screen], both in the coarsest level's pixels.
+         */
+        fun holds(key: Key, screen: FloatArray): Boolean {
+            val p = part ?: return true
+            val n = (1 shl (COARSE - key.level)).toFloat()
+            val x0 = max(key.cx * CHUNK_PIXELS / n, screen[0])
+            val y0 = max(key.cy * CHUNK_ROWS / n, screen[1])
+            val x1 = min((key.cx + 1) * CHUNK_PIXELS / n, screen[2])
+            val y1 = min((key.cy + 1) * CHUNK_ROWS / n, screen[3])
+            return x0 >= x1 || y0 >= y1 || (x0 >= p[0] && y0 >= p[1] && x1 <= p[2] && y1 <= p[3])
+        }
         val bytes get() = if (image == null) 0L else image.width.toLong() * image.height * 4
     }
 
@@ -97,6 +110,15 @@ internal class Renderer(private val world: World, private val sheets: Sheets, pr
 
     /** How much the map is still hidden behind the page as it first comes up: 1 till it's ready, fading to 0 just after. */
     fun cover(): Float = if (readyAt < 0) 1f else (1f - (clock.elapsedNow().inWholeMilliseconds - readyAt) / FADE_MILLIS.toFloat()).coerceIn(0f, 1f)
+
+    /**
+     * Under the cover: the coarsest chunks to bake only over the first screen, and that part, in the coarsest level's
+     * pixels. [Entry.part] says a chunk's only right there; it's baked whole once the screen's sharp.
+     */
+    private val firstPart = HashSet<Key>()
+    private var firstRect: FloatArray? = null
+    /** The screen this frame in the coarsest level's pixels, left, top, right, bottom. */
+    private val screen = FloatArray(4)
 
     /** Stand-ins for missing chunks baking on the screen lane. */
     private val standInsBaking = HashSet<Key>()
@@ -161,6 +183,12 @@ internal class Renderer(private val world: World, private val sheets: Sheets, pr
     fun DrawScope.draw(view: View) {
         frame++
         if (Probe.ON) Probe.frameStart()
+        run {
+            val scale = view.halfWidth / LEVELS[COARSE]
+            val ox = view.screenX(0f, 0f, size.width)
+            val oy = view.screenY(0f, 0f, 0f, size.height)
+            screen[0] = -ox / scale; screen[1] = -oy / scale; screen[2] = (size.width - ox) / scale; screen[3] = (size.height - oy) / scale
+        }
         // Zooming across a level, the one shown stays on screen, scaled, till every chunk of the next is baked with the
         // weather showing, or for a moment if it can stand in for the rest; then the screen changes over at once.
         val target = levelFor(view.halfWidth)
@@ -177,7 +205,8 @@ internal class Renderer(private val world: World, private val sheets: Sheets, pr
             val waited = now - waitSince
             val current = shown.takeIf { waited < ZOOM_WAIT_MILLIS }
             forEachVisible(view, target) { key, _, _, _, _ ->
-                val entry = cache[key]
+                // A coarsest chunk baked only over the first screen counts as missing where the screen's left that.
+                val entry = cache[key]?.takeIf { it.holds(key, screen) }
                 if (entry == null || (current != null && entry.weatherSum != weatherSum(view, key, current))) {
                     if (entry != null || waited < ZOOM_WAIT_MILLIS || !covers(level, key)) ready = false
                     wanted += key to 1f
@@ -192,16 +221,19 @@ internal class Renderer(private val world: World, private val sheets: Sheets, pr
         // Hidden till every chunk on the first screen has something to draw, its own or a stand-in from another level,
         // then faded in; the sharp chunks fade in over their stand-ins as they bake.
         if (readyAt < 0) {
+            // A coarsest-level pixel or two round it, for rounding.
+            firstRect = floatArrayOf(screen[0] - 2f, screen[1] - 2f, screen[2] + 2f, screen[3] + 2f)
             var all = true
-            forEachVisible(view, level) { key, _, _, _, _ -> if (key !in cache && !hasStandIn(level, key)) all = false }
+            forEachVisible(view, level) { key, _, _, _, _ -> if (cache[key]?.holds(key, screen) != true && !hasStandIn(level, key)) all = false }
             if (all) {
+                firstPart.clear()
                 readyAt = clock.elapsedNow().inWholeMilliseconds
                 if (Probe.ON) Probe.log("ready")
             }
         }
         if (readyAt >= 0 && !sharp) {
             var all = true
-            forEachVisible(view, level) { key, _, _, _, _ -> if (key !in cache) all = false }
+            forEachVisible(view, level) { key, _, _, _, _ -> if (cache[key]?.part != null || key !in cache) all = false }
             if (all) { sharp = true; if (Probe.ON) Probe.log("sharp"); onSharp() }
         }
         // Which way the map's moving, in view tiles a frame, to bake ahead that way first.
@@ -234,7 +266,9 @@ internal class Renderer(private val world: World, private val sheets: Sheets, pr
         val stale = ArrayList<Key>()
         var missing = false
         forEachVisible(view, level) { key, left, top, right, bottom ->
-            val entry = cache[key]
+            val cached = cache[key]
+            // A coarsest chunk baked only over the first screen counts as missing where the screen's left that.
+            val entry = cached?.takeIf { it.holds(key, screen) }
             val version = versionOf(view, level, key.cx, key.cy)
             if (entry != null) {
                 entry.used = frame
@@ -257,6 +291,7 @@ internal class Renderer(private val world: World, private val sheets: Sheets, pr
                     if (entry.weatherSum != weatherSum(view, key, weather)) { if (entry.weather <= weather.id) Probe.staleOld++ else Probe.staleNew++ }
                 }
                 if (entry.version != version) wanted += key to editDistance(view, key)
+                else if (entry.part != null) wanted += key to 1f
                 else if (entry.weatherSum != sum && key !in baking && key !in batchKeys) {
                     // Behind the new copy waiting: baked again with the rest of the screen and shown together. Behind
                     // the copy showing, as when it comes back on screen: baked again alone.
@@ -265,6 +300,16 @@ internal class Renderer(private val world: World, private val sheets: Sheets, pr
                 }
             } else {
                 val other = drawFallback(view, level, key)
+                // What's right of a chunk baked only over the first screen, over whatever stands in for the rest.
+                val part = cached?.part
+                if (cached != null && part != null) {
+                    cached.used = frame
+                    val scale = view.halfWidth / LEVELS[COARSE]
+                    clipRect(max(left, (part[0] - screen[0]) * scale), max(top, (part[1] - screen[1]) * scale),
+                        min(right, (part[2] - screen[0]) * scale), min(bottom, (part[3] - screen[1]) * scale)) {
+                        drawChunk(cached, left, top, right, bottom)
+                    }
+                }
                 if (Probe.ON) when {
                     other < 0 -> Probe.nothing++
                     other < level -> Probe.finer++
@@ -279,9 +324,12 @@ internal class Renderer(private val world: World, private val sheets: Sheets, pr
                     if (other < 0 && level != COARSE) { wanted += outer(key, COARSE) to 0.5f; standIns += outer(key, COARSE) }
                     if ((other < 0 || other - level >= 2) && level + 1 < COARSE) { wanted += outer(key, level + 1) to 0.9f; standIns += outer(key, level + 1) }
                 } else if (other < 0 && level != COARSE) {
-                    // At start, the coarsest first, a few chunks quick to bake, so the cover can lift on them; all at once,
-                    // as the screen is nothing till they're in. Once it's up, only this level's chunks.
-                    wanted += outer(key, COARSE) to 0.5f
+                    // At start, the coarsest first, so the cover can lift on it; all at once, as the screen is nothing till
+                    // they're in. Under the cover, only the part on the first screen, as a whole coarse chunk holds
+                    // thousands of tiles. Once it's up, only this level's chunks.
+                    val coarse = outer(key, COARSE)
+                    if (readyAt < 0) firstPart += coarse
+                    wanted += coarse to 0.5f
                 }
             }
         }
@@ -312,7 +360,7 @@ internal class Renderer(private val world: World, private val sheets: Sheets, pr
             val mx = max(0f, max(left - cx, cx - right))
             val my = max(0f, max(top - cy, cy - bottom))
             val d = kotlin.math.sqrt(mx * mx + my * my) / (size.width + size.height)
-            if (entry == null) { if (sharp) wanted += key to if (near) 1.5f else 2f + d }
+            if (entry == null || entry.part != null) { if (sharp) wanted += key to if (near) 1.5f else 2f + d }
             else if (entry.version != versionOf(view, COARSE, key.cx, key.cy)) wanted += key to 4f + d
             // In step with the weather near the screen; the rest once there's nothing else to bake.
             else if (entry.weatherSum != weatherSum(view, key, weather)) wanted += key to if (d < 1f) 2f + d else 5f + d
@@ -497,7 +545,7 @@ internal class Renderer(private val world: World, private val sheets: Sheets, pr
         if (if (ahead) behind.size >= BACKGROUND else baking.size - behind.size >= BAKERS) return
         // Waits for its level's sheet to be unpacked; asking starts that.
         val sheet = sheets.get(key.level) ?: return
-        bake(key, sheet, ahead = ahead)
+        bake(key, sheet, ahead = ahead, part = if (readyAt < 0 && key in firstPart) firstRect else null)
     }
 
     /** Shows [copy] from now on, and lists the chunks cached off screen that show older weather, to bake again. */
@@ -565,7 +613,7 @@ internal class Renderer(private val world: World, private val sheets: Sheets, pr
     /** Whether [drawStandIn] would draw something for chunk [key] missing at [level]: a coarser chunk over it or every finer one under it. */
     private fun hasStandIn(level: Int, key: Key): Boolean {
         // Coarser first, as the coarsest is nearly always there.
-        for (other in level + 1 until LEVELS.size) if (outer(key, other) in cache) return true
+        for (other in level + 1 until LEVELS.size) if (cache[outer(key, other)]?.holds(key, screen) == true) return true
         for (other in 0 until level) {
             val n = 1 shl (level - other)
             if (allIn(other, key, n)) return true
@@ -581,7 +629,7 @@ internal class Renderer(private val world: World, private val sheets: Sheets, pr
 
     /** Whether [level], a level out or in from chunk [key]'s, has all of [key] baked: the chunk over it or the four under it. */
     private fun covers(level: Int, key: Key): Boolean {
-        if (level > key.level) return outer(key, level) in cache
+        if (level > key.level) return cache[outer(key, level)]?.holds(key, screen) == true
         for (j in 0 until 2) for (i in 0 until 2) if (Key(level, key.turn, key.cx * 2 + i, key.cy * 2 + j) !in cache) return false
         return true
     }
@@ -594,6 +642,7 @@ internal class Renderer(private val world: World, private val sheets: Sheets, pr
                 val n = 1 shl (other - level)
                 val ok = Key(other, key.turn, key.cx.floorDiv(n), key.cy.floorDiv(n))
                 val e = cache[ok] ?: continue
+                if (!e.holds(key, screen)) continue
                 e.used = frame
                 placeChunk(view, other, ok.cx, ok.cy) { l, t, r, b -> drawChunk(e, l, t, r, b) }
                 if (Probe.ON && shown != null && e.weatherSum != weatherSum(view, ok, shown!!)) Probe.standInOtherWeather++
@@ -678,12 +727,16 @@ internal class Renderer(private val world: World, private val sheets: Sheets, pr
     }
 
     /** The range of vx - vy and of vx + vy of the tiles that can reach into chunk ([cx], [cy]) at [level]: a0, a1, b0, b1. */
-    private fun reach(level: Int, cx: Int, cy: Int): IntArray {
+    private fun reach(level: Int, cx: Int, cy: Int): IntArray =
+        reach(level, cx * CHUNK_PIXELS.toFloat(), cy * CHUNK_ROWS.toFloat(), (cx + 1) * CHUNK_PIXELS.toFloat(), (cy + 1) * CHUNK_ROWS.toFloat())
+
+    /** The same for the rectangle [x0], [y0] to [x1], [y1] in [level]'s pixels. */
+    private fun reach(level: Int, x0: Float, y0: Float, x1: Float, y1: Float): IntArray {
         val hw = LEVELS[level]
         val hh = hw / 2
         return intArrayOf(
-            floor(cx * CHUNK_PIXELS / hw).toInt() - 3, ceil((cx + 1) * CHUNK_PIXELS / hw).toInt() + 3,
-            floor(cy * CHUNK_ROWS / hh).toInt() - 4, ceil(((cy + 1) * CHUNK_ROWS + above(hw)) / hh).toInt() + 1,
+            floor(x0 / hw).toInt() - 3, ceil(x1 / hw).toInt() + 3,
+            floor(y0 / hh).toInt() - 4, ceil((y1 + above(hw)) / hh).toInt() + 1,
         )
     }
 
@@ -724,7 +777,7 @@ internal class Renderer(private val world: World, private val sheets: Sheets, pr
      * done. It bakes from the copy of the weather showing, so it matches its neighbours; a weather batch bakes from
      * the next.
      */
-    private fun bake(key: Key, sheet: LevelSheets, hold: Boolean = false, ahead: Boolean = hold, weather: WeatherCopy = shown!!) {
+    private fun bake(key: Key, sheet: LevelSheets, hold: Boolean = false, ahead: Boolean = hold, weather: WeatherCopy = shown!!, part: FloatArray? = null) {
         // The view as it is now, kept apart so turning while this bakes doesn't change it.
         val bakeView = View(world.width, world.height).also { it.turnBy(key.turn) }
         val version = versionOf(bakeView, key.level, key.cx, key.cy)
@@ -743,7 +796,7 @@ internal class Renderer(private val world: World, private val sheets: Sheets, pr
             val (image, top) = withContext(if (ahead) background else bakers) {
                 val t0 = clock.elapsedNow().inWholeMilliseconds
                 if (Probe.ON) started = Probe.micros()
-                bakeChunk(bakeView, key, sheet, o, l, yr, weather).also {
+                bakeChunk(bakeView, key, sheet, o, l, yr, weather, part).also {
                     if (Probe.ON) micros = Probe.micros() - started
                     took = clock.elapsedNow().inWholeMilliseconds - t0
                 }
@@ -752,7 +805,7 @@ internal class Renderer(private val world: World, private val sheets: Sheets, pr
             if (Probe.ON) Probe.bakeDone(key.level, if (hold) "batch" else if (ahead) "ahead" else "screen", micros, started / 1000 - asked, weather.id, key !in cache)
             baking -= key
             behind -= key
-            val entry = Entry(image, top, version, weather.id, sum, clock.elapsedNow().inWholeMilliseconds, frame, fades = key !in cache && !hold)
+            val entry = Entry(image, top, version, weather.id, sum, clock.elapsedNow().inWholeMilliseconds, frame, fades = key !in cache && !hold, part = part)
             if (!hold) {
                 install(key, entry)
                 // Baked from a copy no longer showing: baked again before it shows.
@@ -784,7 +837,7 @@ internal class Renderer(private val world: World, private val sheets: Sheets, pr
             prev.old?.let { bytes -= it.bytes }
             prev.old = null
             // Only on screen, drawn last frame; off screen it's swapped.
-            if (prev.image != null && prev.used >= frame - 1 && prev.version == entry.version && prev.weatherSum != entry.weatherSum) {
+            if (prev.image != null && prev.part == null && prev.used >= frame - 1 && prev.version == entry.version && prev.weatherSum != entry.weatherSum) {
                 // Still counted till it's let go, a second or so on.
                 entry.old = prev
                 crossfading += key
@@ -793,8 +846,12 @@ internal class Renderer(private val world: World, private val sheets: Sheets, pr
         bytes += entry.bytes
     }
 
-    /** Bakes chunk [key]: its picture with the clear rows above whatever's highest on it left off, and how many rows those were; no picture if it's all clear. */
-    private fun bakeChunk(view: View, key: Key, sheet: LevelSheets, overlays: Int, look: Int, year: Int, weather: WeatherCopy): Pair<ImageBitmap?, Int> {
+    /**
+     * Bakes chunk [key]: its picture with the clear rows above whatever's highest on it left off, and how many rows those
+     * were; no picture if it's all clear. With [part], a rectangle in the level's pixels, only the tiles that reach into
+     * it are drawn, so the picture is only right there.
+     */
+    private fun bakeChunk(view: View, key: Key, sheet: LevelSheets, overlays: Int, look: Int, year: Int, weather: WeatherCopy, part: FloatArray? = null): Pair<ImageBitmap?, Int> {
         val buffer = takeBuffer(CHUNK_PIXELS * CHUNK_ROWS)
         val t0 = if (Probe.ON) Probe.nanos() else 0L
         val curves = takeCurves()
@@ -806,7 +863,9 @@ internal class Renderer(private val world: World, private val sheets: Sheets, pr
         // Every tile that reaches in, back to front: ground first, then every shadow over it, then what stands up, so
         // shadows fall across tile edges and chunks join with no seam.
         val t = tileRange(view, key.level, key.cx, key.cy)
-        val r = reach(key.level, key.cx, key.cy)
+        val r = if (part == null) reach(key.level, key.cx, key.cy) else reach(key.level,
+            max(part[0], key.cx * CHUNK_PIXELS.toFloat()), max(part[1], key.cy * CHUNK_ROWS.toFloat()),
+            min(part[2], (key.cx + 1) * CHUNK_PIXELS.toFloat()), min(part[3], (key.cy + 1) * CHUNK_ROWS.toFloat()))
         val tiles = ArrayList<Int>()
         var pt = if (Probe.ON) times!!.start() else 0L
         if (t[0] <= t[2] && t[1] <= t[3]) baker.prepare(t[0], t[1], t[2] + 1, t[3] + 1)
