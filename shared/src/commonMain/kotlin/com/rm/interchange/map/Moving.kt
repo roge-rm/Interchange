@@ -39,6 +39,36 @@ class Moving(val now: WorldView, val before: WorldView?, val between: Float)
 /** For sorting train cars, reused every frame so they allocate nothing once grown. Drawing only, on the UI thread. */
 private val carChain = CarOrder.Chain()
 private val carChainItems = ArrayList<FloatArray>()
+/**
+ * Near crossing gates to put in front of the train cars passing their post, as the gate's item and post x, y, 1 if the
+ * road runs along x, and the run's first and last tile along the road; train cars on the ground, as x, y, half length
+ * and their item; other vehicles on the ground, as x, y and their item. Reused every frame like [carChain].
+ */
+private val gateItems = ArrayList<FloatArray>()
+private val gateSpots = FloatBuffer()
+private val railItems = ArrayList<FloatArray>()
+private val railSpots = FloatBuffer()
+private val roadItems = ArrayList<FloatArray>()
+private val roadSpots = FloatBuffer()
+private val gateCars = FloatBuffer()
+private val gateRoads = FloatBuffer()
+
+/** A list of floats that keeps its array between frames. */
+internal class FloatBuffer {
+    var data = FloatArray(64)
+        private set
+    var size = 0
+        private set
+
+    fun clear() {
+        size = 0
+    }
+
+    fun add(v: Float) {
+        if (size == data.size) data = data.copyOf(size * 2)
+        data[size++] = v
+    }
+}
 /** The angles ships are drawn at, turning toward their sim headings. */
 private val turnEase = TurnEase()
 
@@ -56,12 +86,12 @@ internal fun DrawScope.drawMoving(world: World, view: View, sheets: Sheets, movi
     val scale = view.halfWidth / hw
     // Everything to draw, as depth, x, y, sprite, and which vehicle's sheet it's on (-1 for the signals').
     val items = ArrayList<FloatArray>()
-    // Crossing gates to put past the train cars on their crossing, as gate item, then near, along x, x, y, and the run's
-    // first and last tile along the road; and train cars on the ground, as item, then x, y and half length.
-    val gateItems = ArrayList<FloatArray>()
-    val gateSpots = ArrayList<IntArray>()
-    val railItems = ArrayList<FloatArray>()
-    val railSpots = ArrayList<Float>()
+    gateItems.clear()
+    gateSpots.clear()
+    railItems.clear()
+    railSpots.clear()
+    roadItems.clear()
+    roadSpots.clear()
     val lines = DrawLines.of(world)
     for (s in moving.now.signals) {
         val p = signalPoint(world, s.tile, s.piece, s.facing, lines.lineOf(s.tile % world.width, s.tile / world.width, s.piece))
@@ -192,8 +222,14 @@ internal fun DrawScope.drawMoving(world: World, view: View, sheets: Sheets, movi
                 val near = view.toViewX(mx, my) + view.toViewY(mx, my) > centre
                 items += floatArrayOf(centre + (if (near) ARM_NEAR else -ARM_NEAR), post[1], post[2], if (down) 1f else 0f, CROSSING_ARM.toFloat(), 0f, -1f, -1f,
                     dx, dy, lowered, ARM_REACH * TILE_UPRIGHT * view.halfWidth, k.toFloat())
-                gateItems += items[items.size - 1]
-                gateSpots += intArrayOf(if (near) 1 else 0, if (alongX) 1 else 0, x, y, r0, r1)
+                if (near) {
+                    gateItems += items[items.size - 1]
+                    gateSpots.add(px)
+                    gateSpots.add(py)
+                    gateSpots.add(if (alongX) 1f else 0f)
+                    gateSpots.add(r0.toFloat())
+                    gateSpots.add(r1.toFloat())
+                }
             }
         }
     }
@@ -332,27 +368,40 @@ internal fun DrawScope.drawMoving(world: World, view: View, sheets: Sheets, movi
         if (!joins || key != chainKey + 1 || key / 256 != chainKey / 256) settle()
         if (joins) {
             railItems += item!!
-            railSpots += x
-            railSpots += y
-            railSpots += v.length(i) / 2
+            railSpots.add(x)
+            railSpots.add(y)
+            railSpots.add(v.length(i) / 2)
             chain.add(view.toViewX(x, y), view.toViewY(x, y), viewAngle, v.length(i) / 2, item!![0])
             chainItems += item
             chainKey = key
-        } else chainKey = -2
+        } else {
+            chainKey = -2
+            if (item != null && deck < 0f) {
+                roadItems += item
+                roadSpots.add(x)
+                roadSpots.add(y)
+            }
+        }
     }
     settle()
     turnEase.end()
     if (gateItems.isNotEmpty() && railItems.isNotEmpty()) {
-        val cars = FloatArray(railItems.size * 4)
+        // Sort depths are read after the chains have settled.
+        gateCars.clear()
         for (c in railItems.indices) {
-            cars[c * 4] = railSpots[c * 3]
-            cars[c * 4 + 1] = railSpots[c * 3 + 1]
-            cars[c * 4 + 2] = railSpots[c * 3 + 2]
-            cars[c * 4 + 3] = railItems[c][0]
+            for (k in 0 until 3) gateCars.add(railSpots.data[c * 3 + k])
+            gateCars.add(railItems[c][0])
         }
+        gateRoads.clear()
+        for (c in roadItems.indices) {
+            gateRoads.add(roadSpots.data[c * 2])
+            gateRoads.add(roadSpots.data[c * 2 + 1])
+            gateRoads.add(roadItems[c][0])
+        }
+        val s = gateSpots.data
         for (g in gateItems.indices) {
-            val s = gateSpots[g]
-            gateItems[g][0] = gateDepth(gateItems[g][0], s[0] == 1, s[1] == 1, s[2], s[3], s[4], s[5], cars)
+            gateItems[g][0] = gateDepth(gateItems[g][0], s[g * 5], s[g * 5 + 1], s[g * 5 + 2] == 1f, s[g * 5 + 3].toInt(), s[g * 5 + 4].toInt(),
+                gateCars.data, gateCars.size / 4, gateRoads.data, gateRoads.size / 3)
         }
     }
     // Vehicles' drawings at the levels either side unpacked ahead, so they're there when the view zooms.
@@ -685,21 +734,32 @@ private const val GATE_TICKS = 36
 private const val ARM_NEAR = 0.9f
 
 /**
- * A level crossing gate's [depth], moved past every train car on its crossing: in front of them all if [near], behind
- * them all if not, as the gate stands beside the track. The gate is on tile ([x], [y]) of a run of crossing tiles from
- * [r0] to [r1] along the road, which runs along x if [alongX]. [cars] holds x, y, half length and depth for each car.
- * Road vehicles aren't moved past, as one can wait on the road in front of the near gate.
+ * A near level crossing gate's [depth], moved in front of the train cars whose footprint passes its post at
+ * ([postX], [postY]), as the post stands beside the track on the viewer's side. The road runs along x if [alongX], over
+ * a run of crossing tiles from [r0] to [r1] along it. [cars] holds x, y, half length and depth for [carCount] cars.
+ * It stays behind any other vehicle in [roads] (x, y and depth for [roadCount]) that was already in front of it within
+ * [ROAD_NEAR] tiles of the post, as one can wait on the road in front of the gate; road vehicles sort as before.
  */
-internal fun gateDepth(depth: Float, near: Boolean, alongX: Boolean, x: Int, y: Int, r0: Int, r1: Int, cars: FloatArray): Float {
+internal fun gateDepth(depth: Float, postX: Float, postY: Float, alongX: Boolean, r0: Int, r1: Int, cars: FloatArray, carCount: Int,
+                       roads: FloatArray, roadCount: Int): Float {
     var d = depth
-    for (c in 0 until cars.size / 4) {
+    for (c in 0 until carCount) {
         val across = if (alongX) cars[c * 4] else cars[c * 4 + 1]
-        val along = if (alongX) cars[c * 4 + 1] - (y + 0.5f) else cars[c * 4] - (x + 0.5f)
-        if (across < r0 || across >= r1 + 1 || abs(along) >= 0.5f + cars[c * 4 + 2]) continue
-        d = if (near) maxOf(d, cars[c * 4 + 3] + 0.001f) else minOf(d, cars[c * 4 + 3] - 0.001f)
+        val along = if (alongX) cars[c * 4 + 1] - postY else cars[c * 4] - postX
+        if (across < r0 || across >= r1 + 1 || abs(along) >= cars[c * 4 + 2] + CarOrder.HALF_WIDTH) continue
+        d = maxOf(d, cars[c * 4 + 3] + CarOrder.NUDGE)
     }
-    return d
+    if (d == depth) return d
+    var cap = d
+    for (c in 0 until roadCount) {
+        val dx = roads[c * 3] - postX
+        val dy = roads[c * 3 + 1] - postY
+        if (roads[c * 3 + 2] > depth && dx * dx + dy * dy < ROAD_NEAR * ROAD_NEAR) cap = minOf(cap, roads[c * 3 + 2] - CarOrder.NUDGE)
+    }
+    return maxOf(depth, cap)
 }
+/** How near a gate's post another vehicle keeps the gate behind it, in tiles: a vehicle waiting on the next road tile. */
+private const val ROAD_NEAR = 1.5f
 /** A gate arm's length, in tiles, and a tile's length stood upright on screen, in half widths (sqrt 2 times cos 30). */
 private const val ARM_REACH = 0.3f
 private const val TILE_UPRIGHT = 1.225f
