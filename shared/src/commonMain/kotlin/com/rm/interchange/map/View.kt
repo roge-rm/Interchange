@@ -37,6 +37,23 @@ class View(val mapWidth: Int, val mapHeight: Int) {
         turn = (turn + quarters).mod(4)
     }
 
+    /** Quarter turns asked for with [askTurn] and not made yet, 0 to 3. */
+    var turnsAsked = 0
+        private set
+
+    /** Asks for a turn the map makes with [takeTurns] once it has something to show every part of the screen with. */
+    fun askTurn(quarters: Int) {
+        turnsAsked = (turnsAsked + quarters).mod(4)
+    }
+
+    /** The turn [takeTurns] would make. */
+    val askedTurn get() = (turn + turnsAsked).mod(4)
+
+    fun takeTurns() {
+        turnBy(turnsAsked)
+        turnsAsked = 0
+    }
+
     /** The world x of view tile ([vx], [vy]). */
     fun worldX(vx: Int, vy: Int) = when (turn) {
         0 -> vx

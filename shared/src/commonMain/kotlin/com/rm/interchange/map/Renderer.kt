@@ -120,6 +120,16 @@ internal class Renderer(private val world: World, private val sheets: Sheets, pr
     /** The screen this frame in the coarsest level's pixels, left, top, right, bottom. */
     private val screen = FloatArray(4)
 
+    /**
+     * A turn asked for and not made yet: the turn, since when, the coarsest chunks under its screen to bake only over
+     * it and that part, and the chunks under its screen to bake next, all baked before anything else.
+     */
+    private var turnTo = -1
+    private var turnSince = 0L
+    private val turnPart = HashMap<Key, FloatArray>()
+    private val turnCoarse = ArrayList<Key>()
+    private val turnChunks = ArrayList<Key>()
+
     /** Stand-ins for missing chunks baking on the screen lane. */
     private val standInsBaking = HashSet<Key>()
 
@@ -183,20 +193,18 @@ internal class Renderer(private val world: World, private val sheets: Sheets, pr
     fun DrawScope.draw(view: View) {
         frame++
         if (Probe.ON) Probe.frameStart()
-        run {
-            val scale = view.halfWidth / LEVELS[COARSE]
-            val ox = view.screenX(0f, 0f, size.width)
-            val oy = view.screenY(0f, 0f, 0f, size.height)
-            screen[0] = -ox / scale; screen[1] = -oy / scale; screen[2] = (size.width - ox) / scale; screen[3] = (size.height - oy) / scale
-        }
+        val now = clock.elapsedNow().inWholeMilliseconds
+        val target = levelFor(view.halfWidth)
+        // A turn asked for and then turned back counts as none.
+        if (view.turnsAsked == 0 && turnTo >= 0) { turnTo = -1; turnPart.clear() }
+        val turning = view.turnsAsked != 0 && !turnReady(view, target, now)
+        setScreen(view)
         // Zooming across a level, the one shown stays on screen, scaled, till every chunk of the next is baked with the
         // weather showing, or for a moment if it can stand in for the rest; then the screen changes over at once.
-        val target = levelFor(view.halfWidth)
         var level = if (shownLevel >= 0 && view.turn == shownTurn && kotlin.math.abs(shownLevel - target) == 1) shownLevel else target
         val wanted = ArrayList<Pair<Key, Float>>()
         val standIns = HashSet<Key>()
         var zoomMissing = 0
-        val now = clock.elapsedNow().inWholeMilliseconds
         if (target != waitTarget) { waitTarget = target; waitSince = now }
         if (level != target) {
             var ready = true
@@ -265,8 +273,10 @@ internal class Renderer(private val world: World, private val sheets: Sheets, pr
         val showing = next ?: weather
         val stale = ArrayList<Key>()
         var missing = false
+        var allSharp = true
         forEachVisible(view, level) { key, left, top, right, bottom ->
             val cached = cache[key]
+            if (cached?.part != null || cached == null) allSharp = false
             // A coarsest chunk baked only over the first screen counts as missing where the screen's left that.
             val entry = cached?.takeIf { it.holds(key, screen) }
             val version = versionOf(view, level, key.cx, key.cy)
@@ -463,10 +473,15 @@ internal class Renderer(private val world: World, private val sheets: Sheets, pr
             }
         }
         val sorted = wanted.sortedBy { it.second }
-        // At most one stand-in baking on the screen lane at a time, so the sharp chunks keep coming after a turn or a
-        // fast pan leaves the whole screen without one.
         standInsBaking.retainAll(baking)
-        for ((key, priority) in sorted) if (priority < 2f) {
+        // While a turn waits, only its chunks bake, the stand-ins first.
+        if (turning) {
+            for (key in turnCoarse) want(key, 0f)
+            for (key in turnChunks) want(key, 1f)
+        }
+        // At most one stand-in baking on the screen lane at a time, so the sharp chunks keep coming after a fast pan
+        // leaves the whole screen without one.
+        else for ((key, priority) in sorted) if (priority < 2f) {
             if (priority < 1f && key in standIns) {
                 if (standInsBaking.isNotEmpty() || key in baking) continue
                 want(key, priority)
@@ -474,12 +489,12 @@ internal class Renderer(private val world: World, private val sheets: Sheets, pr
             } else want(key, priority)
         }
         // The weather batch next, on every baker once nothing on screen is missing, or else only in the background.
-        while (batchQueue.isNotEmpty()) {
+        while (!turning && batchQueue.isNotEmpty()) {
             val onScreenLane = !missing && baking.size - behind.size < BAKERS
             if (!onScreenLane && behind.size >= BACKGROUND) break
             bake(batchQueue.removeFirst(), batchSheet!!, hold = true, ahead = !onScreenLane, weather = batchWeather!!)
         }
-        if (sharp) for ((key, priority) in sorted) if (priority >= 2f) want(key, priority)
+        if (sharp && !turning) for ((key, priority) in sorted) if (priority >= 2f) want(key, priority)
         if (crossfading.isNotEmpty()) revision.intValue++
         // The levels either side unpacked ahead, so zooming finds them ready, once this one's in and the screen's sharp.
         if (sharp && sheets.get(target) != null) {
@@ -487,7 +502,57 @@ internal class Renderer(private val world: World, private val sheets: Sheets, pr
             if (target > 0) sheets.get(target - 1)
         }
         trim()
-        if (Probe.ON) Probe.frameEnd()
+        if (Probe.ON) { Probe.turn(view.turn, view.turnsAsked != 0, allSharp); Probe.frameEnd() }
+    }
+
+    /** Sets [screen] to [view]'s, in the coarsest level's pixels. */
+    private fun DrawScope.setScreen(view: View) {
+        val scale = view.halfWidth / LEVELS[COARSE]
+        val ox = view.screenX(0f, 0f, size.width)
+        val oy = view.screenY(0f, 0f, 0f, size.height)
+        screen[0] = -ox / scale; screen[1] = -oy / scale; screen[2] = (size.width - ox) / scale; screen[3] = (size.height - oy) / scale
+    }
+
+    /**
+     * Makes the turn [view] asks for if every chunk of its screen at [level] has something to show, its own or a
+     * stand-in, or it's waited [TURN_WAIT_MILLIS], and says whether it did. Till then the old way stays on screen, and
+     * the coarsest chunks under the new screen are listed to bake only over it, then the chunks themselves.
+     */
+    private fun DrawScope.turnReady(view: View, level: Int, now: Long): Boolean {
+        val to = view.askedTurn
+        // Before the map first shows, the cover hides the turn.
+        if (readyAt < 0 || shown == null) { view.takeTurns(); turnTo = -1; turnPart.clear(); return true }
+        // The wait counts from the first ask, so more taps don't make it longer.
+        if (turnTo < 0) turnSince = now
+        turnTo = to
+        val next = View(world.width, world.height).also {
+            it.turnBy(to); it.focusX = view.focusX; it.focusY = view.focusY; it.halfWidth = view.halfWidth
+        }
+        setScreen(next)
+        var all = true
+        forEachVisible(next, level) { key, _, _, _, _ -> if (cache[key]?.holds(key, screen) != true && !hasStandIn(level, key)) all = false }
+        if (all || now - turnSince > TURN_WAIT_MILLIS) {
+            if (Probe.ON && !all) Probe.log("turnGaveUp")
+            view.takeTurns()
+            turnTo = -1
+            turnPart.clear()
+            return true
+        }
+        // A coarsest-level pixel or two round the screen, for rounding.
+        val rect = floatArrayOf(screen[0] - 2f, screen[1] - 2f, screen[2] + 2f, screen[3] + 2f)
+        turnCoarse.clear()
+        turnChunks.clear()
+        forEachVisible(next, COARSE) { key, _, _, _, _ ->
+            val entry = cache[key]
+            if (entry != null) entry.used = frame
+            if ((entry == null || !entry.holds(key, screen)) && key !in baking) { turnPart[key] = rect; turnCoarse += key }
+        }
+        forEachVisible(next, level) { key, _, _, _, _ ->
+            val entry = cache[key]
+            if (entry != null) entry.used = frame
+            if (entry == null || entry.part != null) turnChunks += key
+        }
+        return false
     }
 
     /**
@@ -545,7 +610,7 @@ internal class Renderer(private val world: World, private val sheets: Sheets, pr
         if (if (ahead) behind.size >= BACKGROUND else baking.size - behind.size >= BAKERS) return
         // Waits for its level's sheet to be unpacked; asking starts that.
         val sheet = sheets.get(key.level) ?: return
-        bake(key, sheet, ahead = ahead, part = if (readyAt < 0 && key in firstPart) firstRect else null)
+        bake(key, sheet, ahead = ahead, part = if (readyAt < 0 && key in firstPart) firstRect else turnPart[key])
     }
 
     /** Shows [copy] from now on, and lists the chunks cached off screen that show older weather, to bake again. */
@@ -1038,6 +1103,8 @@ internal class Renderer(private val world: World, private val sheets: Sheets, pr
         const val ZOOM_WAIT_MILLIS = 400L
         /** How near the screen's scale is to switching to the next level in before that level is baked ahead. */
         const val FINER_FROM = 0.8f
+        /** How long a turn waits at most for the new way's stand-ins, in milliseconds. */
+        const val TURN_WAIT_MILLIS = 4000L
         /** How far round the screen chunks are baked ahead, as a share of its width, and how many frames of drift ahead the nearest are counted from. */
         const val RING = 0.4f
         /** From this level out, the ring goes a screen further, so a slow device has scrolled-to chunks ready. The sharpest level's chunks are too big for it. */

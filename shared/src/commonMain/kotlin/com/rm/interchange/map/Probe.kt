@@ -109,6 +109,35 @@ internal object Probe {
         }
     }
 
+    // Turning: when the turn was asked for, the turn shown last frame, and blank frames since it turned.
+    private var turnFrom = -1L
+    private var turnSeen = -1
+    private var turnStage = 0
+    private var turnBlankFrames = 0
+    private var turnMaxBlank = 0
+
+    /**
+     * Called once a frame after the chunks are drawn, with the turn shown, whether one is asked for and not shown yet,
+     * and whether every chunk on screen is baked at its own level. Logs the time from the ask to the turn showing, to
+     * no blank chunks and to sharp.
+     */
+    fun turn(turn: Int, asked: Boolean, allSharp: Boolean) {
+        val t = now()
+        if (asked && turnFrom < 0) { turnFrom = t; turnStage = 0; log("turnAsk from=$turn") }
+        if (turnSeen >= 0 && turn != turnSeen) {
+            if (turnFrom < 0) turnFrom = t
+            turnStage = 1; turnBlankFrames = 0; turnMaxBlank = 0
+            log("turnShown to=$turn ms=${t - turnFrom} nothing=$nothing")
+        }
+        turnSeen = turn
+        if (turnStage == 1) {
+            if (nothing > 0) { turnBlankFrames++; if (nothing > turnMaxBlank) turnMaxBlank = nothing }
+            else { turnStage = 2; log("turnCovered ms=${t - turnFrom} blankFrames=$turnBlankFrames maxBlank=$turnMaxBlank") }
+        }
+        if (turnStage == 2 && allSharp) { turnStage = 0; log("turnSharp ms=${t - turnFrom}"); turnFrom = -1 }
+        if (turnStage == 0 && !asked) turnFrom = -1
+    }
+
     fun bakeDone(level: Int, kind: String, micros: Long, waitMs: Long, weather: Int, fresh: Boolean) {
         log("bake L=$level kind=$kind ms=${micros / 1000}.${(micros % 1000) / 100} queueMs=$waitMs w=$weather new=$fresh")
     }

@@ -1339,7 +1339,7 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
             settings.grid || settings.heights || settings.snow || settings.condition || settings.reserved, onOverlays,
             if (editor) stringResource(Res.string.editor) else weekdayDate(day, world.startYear),
             money(money), money < 0,
-            { view.turnBy(-1) }, { view.turnBy(1) }, onMap, onFinances,
+            { view.askTurn(-1) }, { view.askTurn(1) }, onMap, onFinances,
             weather, { selected = if (selected == Selection.Weather) null else Selection.Weather },
             compact = layout.compact || layout.narrow,
             twoLines = twoLines,
