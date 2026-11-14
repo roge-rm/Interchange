@@ -60,6 +60,9 @@ class Sheets(private val packed: PackedSheets, private val scope: CoroutineScope
     /** Goes up as each level is unpacked, so whatever waited on it draws again. */
     val revision = mutableIntStateOf(0)
 
+    /** Keeps the sharpest level once unpacked, for the GPU map, which holds every level; one copy for both. */
+    var keepSharpest = false
+
     @OptIn(ExperimentalResourceApi::class)
     fun get(level: Int): LevelSheets? {
         if (level < Renderer.SHARPEST) return null
@@ -80,7 +83,7 @@ class Sheets(private val packed: PackedSheets, private val scope: CoroutineScope
                     "snow=${parts[4]} shadeDecode=${parts[5]} shadeCopy=${parts[6]} signals=${parts[7]}")
                 if (Probe.ON) Probe.log("sheetDecode L=$level ms=${Probe.now() - started} queueMs=${started - asked}")
                 // Every level stays unpacked but the sharpest, some 100 MB, which goes once the screen's well away from it.
-                if (level >= 2 && levels[0] != null) {
+                if (level >= 2 && levels[0] != null && !keepSharpest) {
                     levels[0] = null
                     unpacking[0] = false
                 }

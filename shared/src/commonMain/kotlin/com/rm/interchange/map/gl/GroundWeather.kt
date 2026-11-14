@@ -4,12 +4,13 @@ import com.rm.interchange.map.WeatherCopy
 import com.rm.interchange.sim.World
 
 /**
- * The weather as the GPU map's ground shader reads it: four bytes for each world corner, [width] + 1 by [height] + 1,
+ * The weather as the GPU map's shaders read it: four bytes for each world corner, [width] + 1 by [height] + 1,
  * row by row ([TEXEL] bytes each):
  * - 0: the snow on the four tiles round the corner summed, in cm, up to 255 (the baker's corner snow times 4)
  * - 1: the ice round the corner as the baker counts it, the shore as thick as the thickest ice there, times 4, up to 255
  * - 2: the mud on the tile whose top corner it is (world x and y the corner's), 0 to 255
- * Past 255 the shader can't tell: full snow cover is reached by 18 cm and the thickest ice look by 26 cm.
+ * - 3: the snow on that tile in cm, up to 255, for the snow on sprites standing there
+ * Past 255 the shaders can't tell: full snow cover is reached by 18 cm and the thickest ice look by 26 cm.
  * [rowVersions] holds the [version] each corner row last changed in, so the GL thread uploads only the rows that
  * changed since the copy it last took.
  */
@@ -57,7 +58,7 @@ internal class GroundWeather(val width: Int, val height: Int, val texels: ByteAr
             out[o] = minOf(255, snow).toByte()
             out[o + 1] = minOf(255, ice + shore * most).toByte()
             out[o + 2] = if (cx < world.width && cy < world.height) copy.mud[world.index(cx, cy)] else 0
-            out[o + 3] = 0
+            out[o + 3] = if (cx < world.width && cy < world.height) copy.snow[world.index(cx, cy)] else 0
         }
     }
 }

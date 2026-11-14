@@ -185,11 +185,9 @@ class GroundTest {
 
     @Test
     fun regionsPackAsTheShaderReadsThem() {
-        val pages = AtlasPages(1024, 9136, 400, 8192)
-        val shadows = AtlasPages(512, 3000, 200, 8192)
         for (r in regions(1)) {
             val p0 = r.firstPass
-            val ints = packRegion(r, pages, shadows, littleEndian = true)
+            val ints = packRegion(r)
             assertEquals(p0 * GroundRecord.STRIDE + (r.count - p0) * SPRITE_INTS, ints.size)
             for (i in 0 until p0) {
                 val o = i * SpriteRecorder.STRIDE
@@ -198,19 +196,16 @@ class GroundTest {
                     assertEquals(r.ground.copyOfRange(r.data[o + 1] * GroundRecord.STRIDE, (r.data[o + 1] + 1) * GroundRecord.STRIDE).toList(), ints.copyOfRange(k, k + GroundRecord.STRIDE).toList())
                 } else {
                     assertEquals(GroundRecord.SPRITE, GroundRecord.type(ints, k))
-                    assertEquals(r.data[o + 1].toFloat(), Float.fromBits(ints[k + 6]))
-                    assertEquals(r.data[o + 4].toFloat(), Float.fromBits(ints[k + 9]))
-                    assertEquals(pages.layerOf(r.data[o + 6]).toFloat(), Float.fromBits(ints[k + 12]))
+                    assertEquals(r.data[o + 8], ints[k])
+                    assertEquals(r.data[o + 11], ints[k + 1])
+                    assertEquals(r.data[o + 9], ints[k + 4])
+                    assertEquals(r.data[o + 10], ints[k + 5])
                 }
             }
             for (i in p0 until r.count) {
                 val o = i * SpriteRecorder.STRIDE
                 val k = p0 * GroundRecord.STRIDE + (i - p0) * SPRITE_INTS
-                val pg = if (r.data[o] == SpriteRecorder.SHADOW) shadows else pages
-                assertEquals(r.data[o + 2].toFloat(), Float.fromBits(ints[k + 1]))
-                assertEquals(r.data[o + 5], ints[k + 4] and 0xffff)
-                assertEquals(pg.rowIn(r.data[o + 6]), ints[k + 4] ushr 16)
-                assertEquals(r.data[o + 7], ints[k + 5] ushr 16)
+                assertEquals(listOf(r.data[o + 9], r.data[o + 10], r.data[o + 8], r.data[o + 11]), ints.copyOfRange(k, k + 4).toList())
             }
         }
     }

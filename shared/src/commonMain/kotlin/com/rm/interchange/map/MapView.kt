@@ -70,8 +70,8 @@ fun MapView(
     renderer.overlays = overlays
     renderer.onSharp = onSharp
     val currentInput by rememberUpdatedState(input)
-    // The GPU map in place of the chunks, when the switch asks for it.
-    val gl = remember(world) { if (glMapWanted()) GlScene(world, scope) else null }
+    // The GPU map in place of the chunks, when the switch asks for it, back to the chunks if the GPU can't take the sheets.
+    val gl = remember(world) { if (glMapWanted()) GlScene(world, scope) else null }?.takeUnless { it.failed }
     gl?.onSharp = onSharp
     val touch = Modifier.pointerInput(world, view) {
             awaitEachGesture {

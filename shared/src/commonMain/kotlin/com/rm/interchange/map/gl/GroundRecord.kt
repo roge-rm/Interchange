@@ -1,5 +1,6 @@
 package com.rm.interchange.map.gl
 
+import com.rm.interchange.map.Atlas
 import kotlin.math.roundToInt
 
 /**
@@ -85,7 +86,7 @@ internal object GroundRecord {
 
 /** The side of each square texture on a ground sheet: the ground kinds and the noise, [Atlas.RAG] + 1 of them. */
 internal fun groundSize(ground: IntArray): Int {
-    val layers = com.rm.interchange.map.Atlas.RAG + 1
+    val layers = Atlas.RAG + 1
     var size = 1
     while (size * size * layers < ground.size) size *= 2
     require(size * size * layers == ground.size) { "ground sheet of ${ground.size}" }
@@ -94,16 +95,14 @@ internal fun groundSize(ground: IntArray): Int {
 
 /**
  * Region [r]'s sprites as the GPU buffer holds them, in ints: the first pass as [GroundRecord]s ([GroundRecord.STRIDE]
- * ints each, a sprite there with its rect in 6 to 9 and its sheet x, row, layer and snow in 10 to 13, all as float
- * bits), then the other passes' sprites in six ints each, the rect as float bits and the sheet x, row, layer and
- * snow as shorts, two to an int in the order [littleEndian] says. Sheet rows and layers are from [static] and
- * [shadows]' pages.
+ * ints each, a sprite there with its cell in 0, snow tile in 1 and anchor x and y in 4 and 5), then the other passes'
+ * sprites in [SPRITE_INTS] ints each: anchor x, anchor y, cell, snow tile, as [SpriteRecorder] has them. The shaders
+ * place each sprite at the level drawn from its cell's [cellRects], so the buffer is the same at every level.
  */
-internal fun packRegion(r: RegionSprites, static: AtlasPages, shadows: AtlasPages, littleEndian: Boolean): IntArray {
+internal fun packRegion(r: RegionSprites): IntArray {
     val p0 = r.firstPass
     val out = IntArray(p0 * GroundRecord.STRIDE + (r.count - p0) * SPRITE_INTS)
     val d = r.data
-    fun shorts(a: Int, b: Int) = if (littleEndian) (a and 0xffff) or (b shl 16) else (b and 0xffff) or (a shl 16)
     var k = 0
     for (i in 0 until r.count) {
         val o = i * SpriteRecorder.STRIDE
@@ -112,20 +111,18 @@ internal fun packRegion(r: RegionSprites, static: AtlasPages, shadows: AtlasPage
             k += GroundRecord.STRIDE
             continue
         }
-        val pages = if (d[o] == SpriteRecorder.SHADOW) shadows else static
-        val sheetY = d[o + 6]
         if (i < p0) {
+            out[k] = d[o + 8]
+            out[k + 1] = d[o + 11]
             out[k + 2] = GroundRecord.SPRITE shl 20
-            for (f in 0 until 4) out[k + 6 + f] = d[o + 1 + f].toFloat().toRawBits()
-            out[k + 10] = d[o + 5].toFloat().toRawBits()
-            out[k + 11] = pages.rowIn(sheetY).toFloat().toRawBits()
-            out[k + 12] = pages.layerOf(sheetY).toFloat().toRawBits()
-            out[k + 13] = d[o + 7].toFloat().toRawBits()
+            out[k + 4] = d[o + 9]
+            out[k + 5] = d[o + 10]
             k += GroundRecord.STRIDE
         } else {
-            for (f in 0 until 4) out[k + f] = d[o + 1 + f].toFloat().toRawBits()
-            out[k + 4] = shorts(d[o + 5], pages.rowIn(sheetY))
-            out[k + 5] = shorts(pages.layerOf(sheetY), d[o + 7])
+            out[k] = d[o + 9]
+            out[k + 1] = d[o + 10]
+            out[k + 2] = d[o + 8]
+            out[k + 3] = d[o + 11]
             k += SPRITE_INTS
         }
     }
@@ -133,4 +130,57 @@ internal fun packRegion(r: RegionSprites, static: AtlasPages, shadows: AtlasPage
 }
 
 /** Ints a sprite of the second and third passes takes in a region's buffer. */
-internal const val SPRITE_INTS = 6
+internal const val SPRITE_INTS = 4
+
+/** Ints a cell takes in [cellRects], two RGBA texels of the shaders' cell table. */
+internal const val CELL_INTS = 8
+
+/** Cells a row of a cell table holds, 1024 texels across, as GLES 3.0 only promises textures 2048 wide. */
+internal const val CELLS_ACROSS = 512
+
+/** Rows of a cell table each level of [sheet] takes. */
+internal fun cellRows(sheet: Int) = (cellCount(sheet) + CELLS_ACROSS - 1) / CELLS_ACROSS
+
+/** How many cells [sheet] ([SpriteRecorder.STATIC] or [SpriteRecorder.SHADOW]) has. */
+internal fun cellCount(sheet: Int) = (if (sheet == SpriteRecorder.SHADOW) Atlas.SHADOW_RECTS.size else Atlas.STATIC_RECTS.size) / 6
+
+/**
+ * Every cell of [sheet] at [level] as the sprite shaders read it, [CELL_INTS] ints each: sheet x, row in its page and
+ * layer by [pages], width, height, then where its top left lies from the anchor rounded down to this level, x and y,
+ * and a 0. These are the sums [ChunkBaker]'s blitOn and shadeOn work out at that level.
+ */
+internal fun cellRects(sheet: Int, level: Int, pages: AtlasPages): IntArray {
+    val n = cellCount(sheet)
+    val out = IntArray(n * CELL_INTS)
+    val shrink = 1 shl level
+    for (cell in 0 until n) {
+        val r = cell * 6
+        val o = cell * CELL_INTS
+        val sy: Int
+        if (sheet == SpriteRecorder.SHADOW) {
+            val q = Atlas.SHADOW_RECTS
+            out[o] = q[r] / shrink
+            sy = q[r + 1] / shrink
+            out[o + 3] = q[r + 2] / shrink
+            out[o + 4] = q[r + 3] / shrink
+            out[o + 5] = q[r + 4] / shrink
+            out[o + 6] = q[r + 5] / shrink
+        } else {
+            val lr = (cell * Atlas.LEVELS + level) * 6
+            val q = Atlas.STATIC_LEVEL_RECTS
+            out[o] = q[lr]
+            sy = q[lr + 1]
+            out[o + 3] = q[lr + 2]
+            out[o + 4] = q[lr + 3]
+            out[o + 5] = Atlas.STATIC_RECTS[r + 4] / shrink + q[lr + 4]
+            out[o + 6] = Atlas.STATIC_RECTS[r + 5] / shrink + q[lr + 5]
+        }
+        out[o + 1] = pages.rowIn(sy)
+        out[o + 2] = pages.layerOf(sy)
+    }
+    return out
+}
+
+/** Where a sprite of cell [o] in [rects] anchored at ([ax], [ay]) in level 0 pixels has its top left at [level], as the shaders work it out. */
+internal fun placeAt(rects: IntArray, o: Int, ax: Int, ay: Int, level: Int): Pair<Int, Int> =
+    ((ax shr level) + rects[o + 5]) to ((ay shr level) + rects[o + 6])

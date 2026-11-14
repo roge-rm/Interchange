@@ -1290,7 +1290,6 @@ internal class ChunkBaker(
 
     // ---- sprites -------------------------------------------------------------------------
 
-    /** Blits static sprite [cell] with its anchor at ([ax], [ay]), blending by its alpha. */
     /** Shadow [cell] from the shadows sheet laid at ([ax], [ay]): what's under it darkened by how dark the shadow is there. */
     private fun shade(cell: Int, ax: Float, ay: Float) {
         if (cell < 0) return
@@ -1309,7 +1308,7 @@ internal class ChunkBaker(
         val h = Atlas.SHADOW_RECTS[r + 3] / shrink
         val left = (ax + Atlas.SHADOW_RECTS[r + 4] / shrink).toInt()
         val top = (ay + Atlas.SHADOW_RECTS[r + 5] / shrink).toInt()
-        recorder?.let { it.add(SpriteRecorder.SHADOW, left, top, w, h, sx, sy, 0); return }
+        recorder?.let { it.add(SpriteRecorder.SHADOW, left, top, w, h, sx, sy, 0, cell, anchor(ax - originX), anchor(ay - originY), -1); return }
         val src = sheets.shadows
         val sw = sheets.shadowWidth
         for (j in 0 until h) {
@@ -1329,16 +1328,21 @@ internal class ChunkBaker(
         }
     }
 
-    private fun blit(cell: Int, ax: Float, ay: Float, snow: Int = 0) {
+    /** Blits static sprite [cell] anchored at ([ax], [ay]), with the snow on world tile [snowTile] on what faces the sky (-1 for none). */
+    private fun blit(cell: Int, ax: Float, ay: Float, snowTile: Int = -1) {
         if (cell < 0) return
+        val snow = if (snowTile < 0) 0 else snowCover(snowTile)
         if (Probe.ON) {
             val bt = times!!.start()
-            blitOn(cell, ax, ay, snow)
+            blitOn(cell, ax, ay, snow, snowTile)
             times.add(Probe.BakeTimes.BLIT, bt)
-        } else blitOn(cell, ax, ay, snow)
+        } else blitOn(cell, ax, ay, snow, snowTile)
     }
 
-    private fun blitOn(cell: Int, ax: Float, ay: Float, snow: Int) {
+    /** An anchor [a] pixels from view point 0, 0 at this level as level 0 pixels, rounded down, for [SpriteRecorder]. */
+    private fun anchor(a: Float): Int = kotlin.math.floor(a * shrink).toInt()
+
+    private fun blitOn(cell: Int, ax: Float, ay: Float, snow: Int, snowTile: Int) {
         val r = cell * 6
         // The sprite as packed at this level, trimmed in from its box by dx and dy.
         val lr = (cell * Atlas.LEVELS + level) * 6
@@ -1348,7 +1352,7 @@ internal class ChunkBaker(
         val h = Atlas.STATIC_LEVEL_RECTS[lr + 3]
         val left = (ax + Atlas.STATIC_RECTS[r + 4] / shrink).toInt() + Atlas.STATIC_LEVEL_RECTS[lr + 4]
         val top = (ay + Atlas.STATIC_RECTS[r + 5] / shrink).toInt() + Atlas.STATIC_LEVEL_RECTS[lr + 5]
-        recorder?.let { it.add(SpriteRecorder.STATIC, left, top, w, h, sx, sy, snow); return }
+        recorder?.let { it.add(SpriteRecorder.STATIC, left, top, w, h, sx, sy, snow, cell, anchor(ax - originX), anchor(ay - originY), if (snowTile < 0) -1 else (snowTile % world.width) or (snowTile / world.width shl 16)); return }
         val src = sheets.static
         val sw = sheets.staticWidth
         for (j in 0 until h) {
@@ -1388,7 +1392,7 @@ internal class ChunkBaker(
     /** A static sprite anchored on view tile ([vx], [vy])'s top corner at height [h]. */
     private fun sprite(cell: Int, vx: Int, vy: Int, h: Int, shadow: Boolean = false) =
         if (shadow) shade(cell, x(vx.toFloat(), vy.toFloat()), y(vx.toFloat(), vy.toFloat(), h.toFloat()))
-        else blit(cell, x(vx.toFloat(), vy.toFloat()), y(vx.toFloat(), vy.toFloat(), h.toFloat()), snowCover(world.index(view.worldX(vx, vy), view.worldY(vx, vy))))
+        else blit(cell, x(vx.toFloat(), vy.toFloat()), y(vx.toFloat(), vy.toFloat(), h.toFloat()), world.index(view.worldX(vx, vy), view.worldY(vx, vy)))
 
     /** A sprite standing at world point ([tx], [ty]), drawn as if on a tile whose middle is there. */
     private fun standing(cell: Int, tx: Float, ty: Float, shadow: Boolean = false) {
@@ -1397,7 +1401,7 @@ internal class ChunkBaker(
         val ax = x(vx - 0.5f, vy - 0.5f)
         val ay = y(vx - 0.5f, vy - 0.5f, groundHeight(world, tx, ty))
         if (shadow) shade(cell, ax, ay)
-        else blit(cell, ax, ay, snowCover(world.index(tx.toInt().coerceIn(0, world.width - 1), ty.toInt().coerceIn(0, world.height - 1))))
+        else blit(cell, ax, ay, world.index(tx.toInt().coerceIn(0, world.width - 1), ty.toInt().coerceIn(0, world.height - 1)))
     }
 
     /**
@@ -1430,7 +1434,7 @@ internal class ChunkBaker(
         }
         for (k in first until until) {
             if (shadow) shade(cells[spotCell[k]], spotAx[k], spotAy[k])
-            else blit(cells[spotCell[k]], spotAx[k], spotAy[k], snowCover(spotSnow[k]))
+            else blit(cells[spotCell[k]], spotAx[k], spotAy[k], spotSnow[k])
         }
     }
 

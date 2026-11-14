@@ -3,6 +3,7 @@ package com.rm.interchange.map.gl
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.ImageBitmapConfig
 import androidx.compose.ui.graphics.colorspace.ColorSpaces
+import com.rm.interchange.map.Atlas
 import com.rm.interchange.map.ChunkBaker
 import com.rm.interchange.map.CurveArt
 import com.rm.interchange.map.LevelSheets
@@ -18,12 +19,17 @@ import com.rm.interchange.sim.World
 internal class SpriteRecorder(private val shiftX: Int = 0, private val shiftY: Int = 0) {
     var count = 0
         private set
-    /** [STRIDE] ints a sprite: sheet, left, top, width, height, sheet x, sheet y, snow (0 to 255). */
+    /**
+     * [STRIDE] ints a sprite: sheet, left, top, width, height, sheet x, sheet y, snow cover (0 to 256) at this level,
+     * then the cell, its anchor from view point 0, 0 at height 0 in level 0 pixels rounded down (x, y) and the world
+     * tile whose snow it shows (x | y << 16), -1 for none. The GPU draws from the last four at any level ([cellRects]).
+     */
     var data = IntArray(STRIDE * 1024)
         private set
 
-    fun add(sheet: Int, left: Int, top: Int, w: Int, h: Int, sx: Int, sy: Int, snow: Int) {
-        if (w <= 0 || h <= 0) return
+    fun add(sheet: Int, left: Int, top: Int, w: Int, h: Int, sx: Int, sy: Int, snow: Int, cell: Int, ax: Int, ay: Int, snowTile: Int) {
+        // Kept if it shows at any level, level 0 being the biggest, so every level draws the same list.
+        if ((w <= 0 || h <= 0) && blank(sheet, cell)) return
         if ((count + 1) * STRIDE > data.size) data = data.copyOf(data.size * 2)
         val o = count * STRIDE
         data[o] = sheet
@@ -34,6 +40,10 @@ internal class SpriteRecorder(private val shiftX: Int = 0, private val shiftY: I
         data[o + 5] = sx
         data[o + 6] = sy
         data[o + 7] = snow
+        data[o + 8] = cell
+        data[o + 9] = ax
+        data[o + 10] = ay
+        data[o + 11] = snowTile
         count++
     }
 
@@ -57,7 +67,14 @@ internal class SpriteRecorder(private val shiftX: Int = 0, private val shiftY: I
     }
 
     companion object {
-        const val STRIDE = 8
+        const val STRIDE = 12
+
+        /** Whether [cell] of [sheet] is empty at level 0, and so at every level. */
+        fun blank(sheet: Int, cell: Int): Boolean {
+            val (w, h) = if (sheet == SHADOW) Atlas.SHADOW_RECTS[cell * 6 + 2] to Atlas.SHADOW_RECTS[cell * 6 + 3]
+            else Atlas.STATIC_LEVEL_RECTS[cell * Atlas.LEVELS * 6 + 2] to Atlas.STATIC_LEVEL_RECTS[cell * Atlas.LEVELS * 6 + 3]
+            return w <= 0 || h <= 0
+        }
         const val STATIC = 0
         const val SHADOW = 1
         const val GROUND = 2
@@ -67,7 +84,7 @@ internal class SpriteRecorder(private val shiftX: Int = 0, private val shiftY: I
 /** The baker's three passes, drawn in this order: ground (with foundations and track), shadows, what stands up. */
 internal const val PASSES = 3
 
-/** The zoom level the GPU map's sprites and sheets come from, upload and zoom alike: L1, a half tile width of 64. */
+/** The zoom level regions are recorded in: positions are in its pixels, L1, a half tile width of 64. Each level draws from its own sheets. */
 internal const val SOURCE_LEVEL = 1
 internal val SOURCE_HALF_WIDTH = Renderer.LEVELS[SOURCE_LEVEL]
 
@@ -117,18 +134,19 @@ private object NoImage : ImageBitmap {
 internal val noSheets = LevelSheets(IntArray(0), IntArray(0), 1, ByteArray(0), 1, NoImage)
 
 /**
- * Records region [index] of [world] seen from [turn]: what [ChunkBaker] would draw there at [SOURCE_LEVEL], with
+ * Records region [index] of [world] seen from [turn]: what [ChunkBaker] would draw there at [level], with
  * the season [look], [year] and [weather] it'd bake with. Reads the world as a bake does, off the main thread.
  */
-internal fun recordRegion(world: World, turn: Int, index: Int, look: Int, year: Int, weather: WeatherCopy, curves: CurveArt? = null, version: Long = 0): RegionSprites {
+internal fun recordRegion(world: World, turn: Int, index: Int, look: Int, year: Int, weather: WeatherCopy, curves: CurveArt? = null, version: Long = 0, level: Int = SOURCE_LEVEL): RegionSprites {
     val view = View(world.width, world.height).apply { turnBy(turn) }
     val vw = view.viewWidth
     val row0 = index * REGION_ROWS
     val row1 = minOf(view.viewHeight, row0 + REGION_ROWS)
-    val baker = ChunkBaker(world, view, SOURCE_LEVEL, noSheets, 1, 1, 0, look, IntArray(1), weather, year, curves)
+    val baker = ChunkBaker(world, view, level, noSheets, 1, 1, 0, look, IntArray(1), weather, year, curves)
     // Laid out from a far off origin so every position is positive and rounds down as it does in a chunk, then moved back.
-    val shiftX = ((world.width + world.height + 8) * SOURCE_HALF_WIDTH).toInt()
-    val shiftY = ((World.MAX_HEIGHT + 64) * SOURCE_HALF_WIDTH).toInt()
+    val hw = Renderer.LEVELS[level]
+    val shiftX = ((world.width + world.height + 8) * hw).toInt()
+    val shiftY = ((World.MAX_HEIGHT + 64) * hw).toInt()
     baker.originX = shiftX.toFloat()
     baker.originY = shiftY.toFloat()
     val recorder = SpriteRecorder(shiftX, shiftY)

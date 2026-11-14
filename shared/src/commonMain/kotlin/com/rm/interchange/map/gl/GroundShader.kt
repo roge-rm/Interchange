@@ -7,9 +7,66 @@ private fun rgb(c: Int): String {
 }
 
 /**
+ * GLSL for a sprite's vertex shader: spriteAt places cell c of the sheet bound (cell table uCells, uCellRows rows a
+ * level, CELLS_ACROSS cells a row) at
+ * level uLevel, scaled to source level pixels by uToSource, and snowCover reads the snow on a world tile from
+ * uWeather's fourth byte as ChunkBaker.snowCover does. Needs uPage and uWeather declared before it.
+ */
+internal val SPRITE_PLACE = """
+uniform highp isampler2D uCells;
+uniform int uCellRows;
+uniform int uLevel;
+uniform float uToSource;
+float snowCover(int t) {
+    if (t < 0) return 0.0;
+    uint d = texelFetch(uWeather, ivec2(t & 0xffff, t >> 16), 0).a;
+    if (d == 0u) return 0.0;
+    if (d < 3u) return 90.0;
+    if (d < 10u) return 170.0;
+    if (d < 30u) return 230.0;
+    return 256.0;
+}
+// Cell c anchored at a, in level 0 pixels rounded down, at corner o of its quad: where it lands, with its sheet place
+// and layer in uv and the middles of its edge texels in edge, so nothing next to it on the sheet bleeds in.
+vec2 spriteAt(int c, ivec2 a, vec2 o, out vec3 uv, out vec4 edge) {
+    ivec2 t = ivec2(c % $CELLS_ACROSS * 2, uLevel * uCellRows + c / $CELLS_ACROSS);
+    ivec4 p = texelFetch(uCells, t, 0);
+    ivec4 q = texelFetch(uCells, t + ivec2(1, 0), 0);
+    vec2 size = vec2(float(p.w), float(q.x));
+    vec2 at = vec2(float(p.x), float(p.y));
+    uv = vec3((at + o * size) / uPage, float(p.z));
+    edge = vec4((at + 0.5) / uPage, (at + size - 0.5) / uPage);
+    vec2 lt = vec2(float((a.x >> uLevel) + q.y), float((a.y >> uLevel) + q.z));
+    return (lt + o * size) * uToSource;
+}
+"""
+
+/**
+ * GLSL for a static sprite's fragment shader: staticTexel samples uSheet (premultiplied) inside the sprite's edges,
+ * with snow cover [0, 256] laid on what faces the sky by uUp (how much it faces up, 0 to 3 as 0 to 1), as blitOn does.
+ */
+internal val STATIC_TEXEL = """
+uniform mediump sampler2DArray uUp;
+const vec3 SNOW_TOP = ${rgb(0xf4f7fa)};
+vec4 staticTexel(highp vec3 uv, highp vec4 edge, float snow) {
+    highp vec3 at = vec3(clamp(uv.xy, edge.xy, edge.zw), uv.z);
+    vec4 c = texture(uSheet, at);
+    if (snow > 0.0) {
+        float up = texture(uUp, at).r * 3.0;
+        if (up > 0.0) {
+            // A little greyer where it's steeper.
+            vec3 white = SNOW_TOP - (3.0 - up) * (10.0 / 255.0);
+            c.rgb = mix(c.rgb, white * c.a, snow * up / 768.0);
+        }
+    }
+    return c;
+}
+"""
+
+/**
  * The first pass's vertex shader (GLSL ES 3.00): each instance is a [GroundRecord] or, with type [GroundRecord.SPRITE],
- * a sprite (rect in aC, sheet place in aD). A tile's top is two triangles split along the diagonal the baker splits
- * it by; an earth face is a quad down to height -2. The weather comes from [GroundWeather] by world corner.
+ * a sprite (cell and snow tile in aA, anchor in aB, placed by [SPRITE_PLACE]). A tile's top is two triangles split
+ * along the diagonal the baker splits it by; an earth face is a quad down to height -2. The weather comes from [GroundWeather] by world corner.
  */
 internal val GROUND_VS = """#version 300 es
 precision highp float;
@@ -23,6 +80,7 @@ uniform vec2 uPage;
 // Map width, height and the view's turn.
 uniform ivec3 uMap;
 uniform highp usampler2D uWeather;
+$SPRITE_PLACE
 flat out uvec4 vA;
 flat out ivec2 vB;
 flat out vec4 vRel;
@@ -31,6 +89,8 @@ flat out vec4 vSnow;
 flat out vec4 vIce;
 flat out vec4 vUp;
 flat out float vMud;
+flat out vec4 vEdge;
+flat out float vSpriteSnow;
 out vec3 vUv;
 
 const vec2 OFF[4] = vec2[4](vec2(0.0, 0.0), vec2(1.0, 0.0), vec2(1.0, 1.0), vec2(0.0, 1.0));
@@ -65,13 +125,15 @@ void main() {
     vIce = vec4(0.0);
     vUp = vec4(0.0);
     vMud = 0.0;
+    vEdge = vec4(0.0);
+    vSpriteSnow = 0.0;
     uint type = (aA.z >> 20) & 3u;
     int id = gl_VertexID;
     vec2 p;
     if (type == 3u) {
         vec2 o = vec2(float(id & 1), float(id >> 1));
-        vUv = vec3((aD.xy + o * aC.zw) / uPage, aD.z);
-        p = aC.xy + o * aC.zw;
+        p = spriteAt(int(aA.x), aB, o, vUv, vEdge);
+        vSpriteSnow = snowCover(aA.y == 0xffffffffu ? -1 : int(aA.y));
     } else {
         ivec2 tile = ivec2(int(aA.x & 0xffffu), int(aA.x >> 16));
         vec4 h = vec4(float(aA.y & 255u), float((aA.y >> 8) & 255u), float((aA.y >> 16) & 255u), float(aA.y >> 24));
@@ -124,8 +186,11 @@ flat in vec4 vSnow;
 flat in vec4 vIce;
 flat in vec4 vUp;
 flat in float vMud;
+flat in vec4 vEdge;
+flat in float vSpriteSnow;
 in vec3 vUv;
 out vec4 frag;
+$STATIC_TEXEL
 
 const vec3 FOAM = ${rgb(0xe8f0f4)};
 const vec3 ICE = ${rgb(0xd4e2ea)};
@@ -345,7 +410,7 @@ float side(int e, float u, float v) {
 void main() {
     uint type = (vA.z >> 20) & 3u;
     if (type == 3u) {
-        frag = texture(uSheet, vUv);
+        frag = staticTexel(vUv, vEdge, vSpriteSnow);
         return;
     }
     if (type != 0u) {

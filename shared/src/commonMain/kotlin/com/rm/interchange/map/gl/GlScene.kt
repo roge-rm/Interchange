@@ -2,7 +2,11 @@ package com.rm.interchange.map.gl
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import com.rm.interchange.map.Atlas
 import com.rm.interchange.map.CurveArt
 import com.rm.interchange.map.LevelSheets
 import com.rm.interchange.map.Renderer
@@ -81,7 +85,8 @@ internal interface FarRegions {
  * weather goes to the GL thread as [weather] and the time of year as [look], which the ground shader draws in place.
  * The world is read as a bake reads it.
  *
- * Main thread only, but for [shown], [sheets], [weather], [look] and [requestRender], which the GL thread reads.
+ * Main thread only, but for [shown], [levels], [weather], [look] and [requestRender], which the GL thread reads, and
+ * [uploaded], [lost] and [uploadFailed], which it calls.
  */
 internal class GlScene(private val world: World, private val scope: CoroutineScope) {
     /** [pending] holds the version each region is being recorded at, or -1. */
@@ -97,10 +102,18 @@ internal class GlScene(private val world: World, private val scope: CoroutineSco
     var shown: GlShown? = null
         private set
 
-    /** The sheets at [SOURCE_LEVEL], for the GL thread to upload, once they're unpacked. */
+    /**
+     * Each level's sheets, from [Renderer.SHARPEST] on, once unpacked, for the GL thread to upload; it draws at
+     * [Renderer.levelFor] the zoom, as the chunks do. All are held once in, so a zoom never waits on one. A new
+     * array each time one comes.
+     */
     @Volatile
-    var sheets: LevelSheets? = null
+    var levels: Array<LevelSheets?> = arrayOfNulls(Atlas.LEVELS)
         private set
+
+    /** The [levels] array the GL thread last finished uploading. */
+    @Volatile
+    private var onGpu: Array<LevelSheets?>? = null
 
     /** The weather for the ground shader, once the first copy's made. */
     @Volatile
@@ -141,7 +154,9 @@ internal class GlScene(private val world: World, private val scope: CoroutineSco
      * everything it needs, so the cover over it can lift.
      */
     fun show(view: View, sheets: Sheets, width: Int, height: Int): Boolean {
-        if (this.sheets == null) sheets.get(SOURCE_LEVEL)?.let { this.sheets = it; requestRender() }
+        sheetsSeen = sheets
+        sheets.keepSharpest = true
+        takeLevels(sheets)
         season()
         copyWeather()
         if (lastCheck.elapsedNow().inWholeMilliseconds >= CHECK_MILLIS) {
@@ -169,9 +184,55 @@ internal class GlScene(private val world: World, private val scope: CoroutineSco
             shown = GlShown(frame, regions.copyOf())
             requestRender()
         }
-        val ready = this.sheets != null && weather != null && covers(view.turn, frame)
+        val lv = levels
+        val ready = onGpu === lv && (Renderer.SHARPEST until Atlas.LEVELS).all { lv[it] != null } && weather != null && covers(view.turn, frame)
         if (ready && !sharp) { sharp = true; onSharp() }
         return ready
+    }
+
+    /** From the GL thread: [from] is all on the GPU. Draws again, so the cover can lift. */
+    fun uploaded(from: Array<LevelSheets?>) {
+        onGpu = from
+        scope.launch { revision.intValue++ }
+    }
+
+    /** From the GL thread: a new context, with nothing on the GPU. Draws again, so the cover comes back. */
+    fun lost() {
+        onGpu = null
+        scope.launch { revision.intValue++ }
+    }
+
+    /** From the GL thread: a level wouldn't go on the GPU, so the map goes back to the chunks, which let go of level 0 as usual. */
+    fun uploadFailed() {
+        scope.launch {
+            failed = true
+            levels = arrayOfNulls(Atlas.LEVELS)
+            sheetsSeen?.keepSharpest = false
+        }
+    }
+
+    /** The sheets [show] was last given. */
+    private var sheetsSeen: Sheets? = null
+
+    /** Whether the GPU couldn't take the sheets; the map draws with the chunks instead. */
+    var failed by mutableStateOf(false)
+        private set
+
+    /** Asks [sheets] for every level the GPU map can draw at and takes those unpacked. */
+    private fun takeLevels(sheets: Sheets) {
+        var next: Array<LevelSheets?>? = null
+        for (l in Renderer.SHARPEST until Atlas.LEVELS) {
+            val had = levels[l]
+            val got = had ?: sheets.get(l)
+            if (got !== had) {
+                if (next == null) next = levels.copyOf()
+                next[l] = got
+            }
+        }
+        if (next != null) {
+            levels = next
+            requestRender()
+        }
     }
 
     /** Whether every region with tiles reaching onto [frame]'s screen is recorded for [turn]. */
