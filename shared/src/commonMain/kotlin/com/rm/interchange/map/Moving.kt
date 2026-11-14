@@ -40,8 +40,8 @@ class Moving(val now: WorldView, val before: WorldView?, val between: Float)
 private val carChain = CarOrder.Chain()
 private val carChainItems = ArrayList<FloatArray>()
 /**
- * Near crossing gates to put in front of the train cars passing their post, as the gate's item and post x, y, 1 if the
- * road runs along x, and the run's first and last tile along the road; train cars on the ground, as x, y, half length
+ * Near crossing gates to put in front of the train cars passing their post, as the gate's item and post x, y, view depth,
+ * 1 if the road runs along x, and the run's first and last tile along the road; train cars on the ground, as x, y, half length
  * and their item; other vehicles on the ground, as x, y and their item. Reused every frame like [carChain].
  */
 private val gateItems = ArrayList<FloatArray>()
@@ -51,7 +51,6 @@ private val railSpots = FloatBuffer()
 private val roadItems = ArrayList<FloatArray>()
 private val roadSpots = FloatBuffer()
 private val gateCars = FloatBuffer()
-private val gateRoads = FloatBuffer()
 
 /** A list of floats that keeps its array between frames. */
 internal class FloatBuffer {
@@ -226,6 +225,7 @@ internal fun DrawScope.drawMoving(world: World, view: View, sheets: Sheets, movi
                     gateItems += items[items.size - 1]
                     gateSpots.add(px)
                     gateSpots.add(py)
+                    gateSpots.add(view.toViewX(px, py) + view.toViewY(px, py))
                     gateSpots.add(if (alongX) 1f else 0f)
                     gateSpots.add(r0.toFloat())
                     gateSpots.add(r1.toFloat())
@@ -385,23 +385,27 @@ internal fun DrawScope.drawMoving(world: World, view: View, sheets: Sheets, movi
     }
     settle()
     turnEase.end()
-    if (gateItems.isNotEmpty() && railItems.isNotEmpty()) {
+    if (gateItems.isNotEmpty()) {
         // Sort depths are read after the chains have settled.
         gateCars.clear()
         for (c in railItems.indices) {
             for (k in 0 until 3) gateCars.add(railSpots.data[c * 3 + k])
             gateCars.add(railItems[c][0])
         }
-        gateRoads.clear()
-        for (c in roadItems.indices) {
-            gateRoads.add(roadSpots.data[c * 2])
-            gateRoads.add(roadSpots.data[c * 2 + 1])
-            gateRoads.add(roadItems[c][0])
-        }
         val s = gateSpots.data
-        for (g in gateItems.indices) {
-            gateItems[g][0] = gateDepth(gateItems[g][0], s[g * 5], s[g * 5 + 1], s[g * 5 + 2] == 1f, s[g * 5 + 3].toInt(), s[g * 5 + 4].toInt(),
-                gateCars.data, gateCars.size / 4, gateRoads.data, gateRoads.size / 3)
+        if (railItems.isNotEmpty()) for (g in gateItems.indices) {
+            val o = g * 6
+            gateItems[g][0] = gateDepth(gateItems[g][0], s[o], s[o + 1], s[o + 3] == 1f, s[o + 4].toInt(), s[o + 5].toInt(), gateCars.data, gateCars.size / 4)
+        }
+        // Road vehicles waiting at a near gate go just in front of it, once its depth is set.
+        for (c in roadItems.indices) {
+            val x = roadSpots.data[c * 2]
+            val y = roadSpots.data[c * 2 + 1]
+            for (g in gateItems.indices) {
+                val o = g * 6
+                if (abs(x - s[o]) >= ROAD_NEAR || abs(y - s[o + 1]) >= ROAD_NEAR) continue
+                roadItems[c][0] = waitingDepth(roadItems[c][0], x, y, gateItems[g][0], s[o], s[o + 1], s[o + 2], s[o + 3] == 1f, s[o + 4].toInt(), s[o + 5].toInt())
+            }
         }
     }
     // Vehicles' drawings at the levels either side unpacked ahead, so they're there when the view zooms.
@@ -737,11 +741,8 @@ private const val ARM_NEAR = 0.9f
  * A near level crossing gate's [depth], moved in front of the train cars whose footprint passes its post at
  * ([postX], [postY]), as the post stands beside the track on the viewer's side. The road runs along x if [alongX], over
  * a run of crossing tiles from [r0] to [r1] along it. [cars] holds x, y, half length and depth for [carCount] cars.
- * It stays behind any other vehicle in [roads] (x, y and depth for [roadCount]) that was already in front of it within
- * [ROAD_NEAR] tiles of the post, as one can wait on the road in front of the gate; road vehicles sort as before.
  */
-internal fun gateDepth(depth: Float, postX: Float, postY: Float, alongX: Boolean, r0: Int, r1: Int, cars: FloatArray, carCount: Int,
-                       roads: FloatArray, roadCount: Int): Float {
+internal fun gateDepth(depth: Float, postX: Float, postY: Float, alongX: Boolean, r0: Int, r1: Int, cars: FloatArray, carCount: Int): Float {
     var d = depth
     for (c in 0 until carCount) {
         val across = if (alongX) cars[c * 4] else cars[c * 4 + 1]
@@ -749,17 +750,28 @@ internal fun gateDepth(depth: Float, postX: Float, postY: Float, alongX: Boolean
         if (across < r0 || across >= r1 + 1 || abs(along) >= cars[c * 4 + 2] + CarOrder.HALF_WIDTH) continue
         d = maxOf(d, cars[c * 4 + 3] + CarOrder.NUDGE)
     }
-    if (d == depth) return d
-    var cap = d
-    for (c in 0 until roadCount) {
-        val dx = roads[c * 3] - postX
-        val dy = roads[c * 3 + 1] - postY
-        if (roads[c * 3 + 2] > depth && dx * dx + dy * dy < ROAD_NEAR * ROAD_NEAR) cap = minOf(cap, roads[c * 3 + 2] - CarOrder.NUDGE)
-    }
-    return maxOf(depth, cap)
+    return d
 }
-/** How near a gate's post another vehicle keeps the gate behind it, in tiles: a vehicle waiting on the next road tile. */
+
+/**
+ * The [depth] of a road vehicle at ([x], [y]) next to a near gate at [gate] depth with its post at ([postX], [postY]),
+ * [postDepth] deep, on a crossing run like [gateDepth]'s: just in front of the gate if it's within [ROAD_NEAR] tiles of
+ * the post, off the run on the post's side and with its nearest corner nearer than the post, as one waiting there is.
+ */
+internal fun waitingDepth(depth: Float, x: Float, y: Float, gate: Float, postX: Float, postY: Float, postDepth: Float, alongX: Boolean,
+                          r0: Int, r1: Int): Float {
+    if (depth <= postDepth || (x - postX) * (x - postX) + (y - postY) * (y - postY) >= ROAD_NEAR * ROAD_NEAR) return depth
+    val across = if (alongX) x else y
+    // A waiting vehicle's middle is on the run's edge; one past the post is on the run.
+    // The post is in the high half of its tile at the run's high end, the low half at its low end.
+    val outside = if ((if (alongX) postX else postY) >= r1 + 0.5f) across >= r1 + 1 - EDGE_SLACK else across <= r0 + EDGE_SLACK
+    // Nearer ones stay in front of those ahead of them in the queue.
+    return if (outside) maxOf(depth, gate + CarOrder.NUDGE + (depth - postDepth) * CarOrder.NUDGE) else depth
+}
+/** How near a gate's post a road vehicle is put in front of it, in tiles: one waiting on the next road tile. */
 private const val ROAD_NEAR = 1.5f
+/** How far onto the run a waiting vehicle's middle may be, in tiles, for rounding. */
+private const val EDGE_SLACK = 0.02f
 /** A gate arm's length, in tiles, and a tile's length stood upright on screen, in half widths (sqrt 2 times cos 30). */
 private const val ARM_REACH = 0.3f
 private const val TILE_UPRIGHT = 1.225f
