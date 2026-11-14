@@ -18,6 +18,9 @@ import androidx.compose.ui.graphics.toArgb
 import com.rm.interchange.map.gl.GlMapSurface
 import com.rm.interchange.map.gl.GlScene
 import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.drawscope.translate
+import androidx.compose.ui.graphics.layer.drawLayer
+import androidx.compose.ui.graphics.rememberGraphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.text.rememberTextMeasurer
@@ -40,6 +43,13 @@ interface MapInput {
     fun dragTo(at: Pick) {}
     fun dragEnd() {}
     fun dragCancel() {}
+    /** Goes up with each build or remove command a tap or drag sends, so the map can hold its preview till it's drawn. */
+    val builds: Int get() = 0
+    /**
+     * The world tiles (x0, y0, x1, y1) a tap or drag from [from] to [to] would build on where they reach past the box
+     * of the two, as a diagonal line, an industry or a tunnel's far end do; null for that box. Asked before it's sent.
+     */
+    fun buildArea(from: Pick, to: Pick): IntArray? = null
 }
 
 /**
@@ -92,6 +102,11 @@ fun MapView(
     val clock = remember(world) { TimeSource.Monotonic.markNow() }
     // When the GPU map last had everything for the screen, to fade the cover from; -1 while it waits.
     val glReadyAt = remember(world) { longArrayOf(-1L) }
+    // The tool's drawing over the map is kept in a layer, so the last of a drag can stay on screen as it was till the
+    // GPU map draws what it built. Where it was drawn: the screen place of world point 0, 0, the zoom and the turn.
+    val plan = rememberGraphicsLayer()
+    val planAt = remember(world) { FloatArray(4) }
+    val planHeld = remember(world) { booleanArrayOf(false, false) }
     val touch = Modifier.pointerInput(world, view) {
             awaitEachGesture {
                 val down = awaitFirstDown(requireUnconsumed = false)
@@ -101,6 +116,9 @@ fun MapView(
                 var mode = Mode.Undecided
                 var lastCentre = Offset.Unspecified
                 var lastSpan = 0f
+                // The drag's first and last tiles.
+                var from: Pick? = null
+                var to: Pick? = null
                 while (true) {
                     val event = awaitPointerEvent()
                     val pressed = event.changes.filter { it.pressed }
@@ -128,12 +146,14 @@ fun MapView(
                                 val at = view.pick(world, start.x, start.y, w, h)
                                 if (at != null) {
                                     mode = Mode.Using
+                                    from = at
+                                    to = at
                                     currentInput.dragStart(at)
                                 } else mode = Mode.Moving
                             } else mode = Mode.Moving
                         }
                         when (mode) {
-                            Mode.Using -> view.pick(world, p.position.x, p.position.y, w, h)?.let { gl.lastEdit = it.tileX to it.tileY; currentInput.dragTo(it) }
+                            Mode.Using -> view.pick(world, p.position.x, p.position.y, w, h)?.let { gl.lastEdit = it.tileX to it.tileY; to = it; currentInput.dragTo(it) }
                             Mode.Moving -> p.positionChange().let { view.pan(it.x, it.y) }
                             else -> {}
                         }
@@ -141,8 +161,27 @@ fun MapView(
                     event.changes.forEach { it.consume() }
                 }
                 when (mode) {
-                    Mode.Undecided -> view.pick(world, start.x, start.y, w, h)?.let { gl.lastEdit = it.tileX to it.tileY; currentInput.tap(it) }
-                    Mode.Using -> currentInput.dragEnd()
+                    Mode.Undecided -> view.pick(world, start.x, start.y, w, h)?.let {
+                        gl.lastEdit = it.tileX to it.tileY
+                        planHeld[0] = false
+                        val mark = gl.editMark(view.turn)
+                        val builds = currentInput.builds
+                        val area = editArea(currentInput, it, it)
+                        currentInput.tap(it)
+                        if (currentInput.builds != builds) gl.edited(view.turn, area[0], area[1], area[2], area[3], mark)
+                    }
+                    Mode.Using -> {
+                        val mark = gl.editMark(view.turn)
+                        val builds = currentInput.builds
+                        val drawn = planHeld[1]
+                        val a = from
+                        val b = to
+                        val area = if (a != null && b != null) editArea(currentInput, a, b) else null
+                        currentInput.dragEnd()
+                        // What the drag showed stays till what it built is drawn ([planHeld]: held, drawn last frame).
+                        planHeld[0] = drawn && currentInput.builds != builds && area != null
+                        if (planHeld[0] && area != null) gl.edited(view.turn, area[0], area[1], area[2], area[3], mark)
+                    }
                     else -> {}
                 }
             }
@@ -161,11 +200,27 @@ fun MapView(
         if (!gl.finish()) glReadyAt[0] = -1L
         else if (glReadyAt[0] < 0L) glReadyAt[0] = now
         val cover = if (glReadyAt[0] < 0L) 1f else (1f - (now - glReadyAt[0]) / FADE_MILLIS.toFloat()).coerceIn(0f, 1f)
-        overlay?.let { draw ->
+        val ox = view.screenX(0f, 0f, size.width)
+        val oy = view.screenY(0f, 0f, 0f, size.height)
+        val draw = overlay
+        if (draw != null) {
             val painter = LandPainter(world, view, view.halfWidth)
-            painter.originX = view.screenX(0f, 0f, size.width)
-            painter.originY = view.screenY(0f, 0f, 0f, size.height)
-            draw(painter)
+            painter.originX = ox
+            painter.originY = oy
+            plan.record { draw(painter) }
+            drawLayer(plan)
+            planAt[0] = ox
+            planAt[1] = oy
+            planAt[2] = view.halfWidth
+            planAt[3] = view.turn.toFloat()
+            planHeld[0] = false
+            planHeld[1] = true
+        } else {
+            planHeld[1] = false
+            // Held as it was, moved with a pan; a zoom or turn lets it go.
+            if (planHeld[0] && gl.holdingEdit && planAt[2] == view.halfWidth && planAt[3] == view.turn.toFloat()) {
+                translate(ox - planAt[0], oy - planAt[1]) { drawLayer(plan) }
+            } else planHeld[0] = false
         }
         labels?.invoke(this)
         label?.invoke(this)
@@ -181,6 +236,16 @@ fun MapView(
         GlMapSurface(gl, page.toArgb(), Modifier.matchParentSize())
         Canvas(Modifier.matchParentSize().then(touch), onDraw = paint)
     }
+}
+
+/** The box round [from], [to] and what [input] says it'd build past them, as x0, y0, x1, y1. */
+private fun editArea(input: MapInput, from: Pick, to: Pick): IntArray {
+    val box = intArrayOf(minOf(from.tileX, to.tileX), minOf(from.tileY, to.tileY), maxOf(from.tileX, to.tileX), maxOf(from.tileY, to.tileY))
+    val more = input.buildArea(from, to) ?: return box
+    return intArrayOf(
+        minOf(box[0], more[0], more[2]), minOf(box[1], more[1], more[3]),
+        maxOf(box[2], more[0], more[2]), maxOf(box[3], more[1], more[3]),
+    )
 }
 
 /** The overlays the GPU map draws into the ground, as bits. */

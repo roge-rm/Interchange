@@ -109,6 +109,9 @@ internal class RegionSprites(
     val version: Long = 0,
     /** For a region recorded only in part, each row's first and last column recorded, two ints a row; null when whole. */
     val cols: IntArray? = null,
+    /** The [com.rm.interchange.sim.Climate] look and the year it was recorded with, -1 if not known. */
+    val look: Int = -1,
+    val year: Int = -1,
 ) {
     /** Sprites in the first pass, which come first. */
     val firstPass get() = starts[rows * columns]
@@ -164,7 +167,7 @@ internal fun recordRegion(
     // Cut to what's used, as a few turns of regions are kept.
     val data = recorder.data.copyOf(recorder.count * SpriteRecorder.STRIDE)
     val ground = recorder.ground.copyOf(recorder.groundCount * GroundRecord.STRIDE)
-    return RegionSprites(turn, index, row0, row1, vw, data, recorder.count, starts, ground, version, cols)
+    return RegionSprites(turn, index, row0, row1, vw, data, recorder.count, starts, ground, version, cols, look, year)
 }
 
 /** How many regions a map seen from [turn] has. */
@@ -202,4 +205,45 @@ internal fun regionVersion(world: World, turn: Int, index: Int, look: Int, year:
         else for (y in 0 until down) sum += world.chunkVersions[y * across + k]
     }
     return (sum * 8 + look) * TileRecorder.PART_ERA_COUNT + TileRecorder.partEras(year)
+}
+
+/** The part of a [regionVersion] that counts the world's changes, without the look and eras, so it only goes up. */
+internal fun regionChanges(version: Long): Long = version / TileRecorder.PART_ERA_COUNT / 8
+
+/**
+ * The regions of [world] seen from [turn] whose version ([regionVersion]) moves when world tiles [x0], [y0] to [x1],
+ * [y1] (inclusive, either way round) change: those holding them and those within [REGION_MARGIN] of them.
+ */
+internal fun regionsTouching(world: World, turn: Int, x0: Int, y0: Int, x1: Int, y1: Int): IntRange {
+    val xa = minOf(x0, x1)
+    val xb = maxOf(x0, x1)
+    val ya = minOf(y0, y1)
+    val yb = maxOf(y0, y1)
+    // View rows run along world y for turns 0 and 2, along world x for 1 and 3, the far way round for 2 and 3.
+    val (a, b) = when (turn) {
+        0 -> ya to yb
+        1 -> xa to xb
+        2 -> world.height - 1 - yb to world.height - 1 - ya
+        else -> world.width - 1 - xb to world.width - 1 - xa
+    }
+    // The blocks of World.chunkVersions those rows are in, then each region whose version reads any of them, as
+    // regionVersion picks its blocks.
+    val along = if (turn % 2 == 0) world.height else world.width
+    val flip = turn >= 2
+    fun block(row: Int) = (if (flip) along - 1 - row else row) / World.BLOCK
+    val k0 = minOf(block(a), block(b))
+    val k1 = maxOf(block(a), block(b))
+    var first = -1
+    var last = -1
+    for (i in 0 until regionCount(world, turn)) {
+        val row0 = i * REGION_ROWS
+        val row1 = minOf(along, row0 + REGION_ROWS) - 1
+        val (ra, rb) = if (flip) along - 1 - row1 to along - 1 - row0 else row0 to row1
+        val r0 = maxOf(0, ra - REGION_MARGIN) / World.BLOCK
+        val r1 = minOf(along - 1, rb + REGION_MARGIN) / World.BLOCK
+        if (r1 < k0 || r0 > k1) continue
+        if (first < 0) first = i
+        last = i
+    }
+    return if (first < 0) IntRange.EMPTY else first..last
 }

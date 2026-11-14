@@ -227,3 +227,32 @@ internal fun weatherSame(w: GroundWeather, since: Int, rows: IntArray): Boolean 
     for (r in rows[0]..rows[1]) if (w.rowVersions[r] > since) return false
     return true
 }
+
+/**
+ * The regions to draw for a turn while its look is [shownLook]: each of [regions], but where one has been recorded
+ * again with another look, the one before it in [published] while that has [shownLook], so a change of season shows
+ * all at once. Fills [published] and returns it.
+ */
+internal fun publishRegions(regions: Array<RegionSprites?>, published: Array<RegionSprites?>, shownLook: Int): Array<RegionSprites?> {
+    for (i in regions.indices) {
+        val r = regions[i]
+        val p = published[i]
+        published[i] = if (r == null || r.look == shownLook || p == null || p.look != shownLook) r else p
+    }
+    return published
+}
+
+/**
+ * Whether a square drawn with look [squareLook] from [regions] (the drawn regions from [first] on) can still stand
+ * on screen while it's drawn again for a new look: each of its regions is the one drawn now, or one recorded again
+ * since with another look.
+ */
+internal fun squareRegionsStand(squareLook: Int, regions: Array<RegionSprites?>, first: Int, drawable: Array<RegionSprites?>): Boolean {
+    for (i in regions.indices) {
+        val was = regions[i] ?: return false
+        val now = drawable.getOrNull(first + i) ?: return false
+        if (now === was) continue
+        if (was.look != squareLook || now.look == squareLook) return false
+    }
+    return true
+}

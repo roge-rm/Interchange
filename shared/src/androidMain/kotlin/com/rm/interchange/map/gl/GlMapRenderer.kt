@@ -57,6 +57,8 @@ internal class GlMapRenderer(private val scene: GlScene, private val page: Int) 
     private var wearUp: TrackWear? = null
     /** The overlays drawn this frame: the scene's, but for the condition overlay till its wear is up. */
     private var overlays = 0
+    /** The look of the year drawn this frame, the shown frame's, read once so every pass and square agrees. */
+    private var look = -1
     private var maxTexture = 0
     private var maxLayers = 0
     /** The sheets the GPU wouldn't take, a level a slot, so they aren't tried again. */
@@ -186,6 +188,7 @@ internal class GlMapRenderer(private val scene: GlScene, private val page: Int) 
         }
         val shown = scene.shown ?: return clearScreen()
         val f = shown.frame
+        look = shown.look
         // The screen's level is uploaded before the cover lifts and the zoom's held to levels that are in, so there's
         // never another level to stand in.
         val lv = Zoom.levelFor(f.scale * SOURCE_HALF_WIDTH)
@@ -226,6 +229,7 @@ internal class GlMapRenderer(private val scene: GlScene, private val page: Int) 
         glBindVertexArray(0)
         glBindBuffer(GL_ARRAY_BUFFER, 0)
         glDisable(GL_BLEND)
+        scene.drew(shown.seq)
     }
 
     private fun clearScreen() {
@@ -322,7 +326,7 @@ internal class GlMapRenderer(private val scene: GlScene, private val page: Int) 
 
     /** Whether square [s] was drawn from what's showing now; a new weather with no change in its rows is taken as its own. */
     private fun fresh(s: Square, tex: LevelTextures): Boolean {
-        if (s.from !== tex || s.look != scene.look || s.overlays != overlays) return false
+        if (s.from !== tex || s.look != look || s.overlays != overlays) return false
         if (overlays and MapOverlays.CONDITION != 0 && s.wear !== wearUp) return false
         for (i in s.regions.indices) if (drawable.getOrNull(s.first + i) !== s.regions[i]) return false
         val w = weatherUp ?: return false
@@ -335,9 +339,21 @@ internal class GlMapRenderer(private val scene: GlScene, private val page: Int) 
     }
 
     /**
+     * Whether square [s], drawn for another look of the year, stays on screen till it's drawn again: drawn from what's
+     * there now but for regions recorded again with the new look, so a change of season never leaves it to the
+     * direct passes all at once.
+     */
+    private fun stands(s: Square, tex: LevelTextures): Boolean {
+        if (s.from !== tex || s.look == look || s.overlays != overlays) return false
+        if (overlays and MapOverlays.CONDITION != 0 && s.wear !== wearUp) return false
+        return squareRegionsStand(s.look, s.regions, s.first, drawable)
+    }
+
+    /**
      * Draws ahead the squares [on] (columns then rows, inclusive) of level [lv] that are missing or stale, a few a
      * frame, the nearest the middle of the screen first, then one round the screen if there's time. Returns how many
-     * on screen are still not fresh, which the direct passes draw; asks for another frame while it gets through them.
+     * on screen are still neither fresh nor standing ([stands]), which the direct passes draw; asks for another frame
+     * while it gets through them.
      */
     private fun prepareSquares(f: GlFrame, lv: Int, tex: LevelTextures, on: IntArray): Int {
         val turn = f.turn
@@ -347,8 +363,11 @@ internal class GlMapRenderer(private val scene: GlScene, private val page: Int) 
             s != null && fresh(s, tex)
         }
         var made = 0
-        for (k in todo) if (made < SQUARES_A_FRAME && drawSquare(f, lv, tex, squareX(k), squareY(k))) made++
-        val left = todo.size - made
+        var left = 0
+        for (k in todo) {
+            if (made < SQUARES_A_FRAME && drawSquare(f, lv, tex, squareX(k), squareY(k))) made++
+            else if (squares[squareKey(turn, lv, squareX(k), squareY(k))]?.let { stands(it, tex) } != true) left++
+        }
         if (todo.isEmpty() && !ahead(f, lv, tex, on, true)) {
             // Then the next level out's, a quarter as many, so a zoom out finds them there.
             val out = lv + 1
@@ -357,7 +376,7 @@ internal class GlMapRenderer(private val scene: GlScene, private val page: Int) 
         }
         glBindFramebuffer(GL_FRAMEBUFFER, 0)
         // A still view asks for no frames, so keep going till they're all in; regions not in yet ask when they come.
-        if (made > 0 && left > 0) scene.requestRender()
+        if (made > 0 && todo.size > made) scene.requestRender()
         return left
     }
 
@@ -402,7 +421,7 @@ internal class GlMapRenderer(private val scene: GlScene, private val page: Int) 
         s.from = tex
         s.weather = weatherUp
         s.rows = weatherRows(cols, f.viewHeight, f.turn, weatherUp!!.height)
-        s.look = scene.look
+        s.look = look
         s.overlays = overlays
         s.wear = wearUp
         s.first = r0
@@ -438,7 +457,7 @@ internal class GlMapRenderer(private val scene: GlScene, private val page: Int) 
         squares.clear()
     }
 
-    /** Draws the squares [on] that are drawn ahead and fresh onto the screen; the direct passes draw the rest. */
+    /** Draws the squares [on] that are drawn ahead and fresh or standing onto the screen; the direct passes draw the rest. */
     private fun drawSquares(f: GlFrame, lv: Int, tex: LevelTextures, on: IntArray) {
         glUseProgram(squareProgram)
         glBindVertexArray(squareVao)
@@ -448,7 +467,7 @@ internal class GlMapRenderer(private val scene: GlScene, private val page: Int) 
         val rect = glGetUniformLocation(squareProgram, "uRect")
         for (cy in on[2]..on[3]) for (cx in on[0]..on[1]) {
             val s = squares[squareKey(f.turn, lv, cx, cy)] ?: continue
-            if (!fresh(s, tex)) continue
+            if (!fresh(s, tex) && !stands(s, tex)) continue
             val x0 = squareEdge(f, lv, cx, false)
             val x1 = squareEdge(f, lv, cx + 1, false)
             val y0 = squareEdge(f, lv, cy, true)
@@ -678,7 +697,7 @@ internal class GlMapRenderer(private val scene: GlScene, private val page: Int) 
         glUniform3i(glGetUniformLocation(p, "uMap"), w.width, w.height, f.turn)
         val legs = TileRecorder.TAXI_LEGS
         glUniform1iv(glGetUniformLocation(p, "uLegCount"), legs.size, IntArray(legs.size) { legs[it].size / 4 }, 0)
-        val grades = TileRecorder.GRADES[scene.look]
+        val grades = TileRecorder.GRADES[look]
         val g = FloatArray(4 * GRADE_KINDS)
         for (k in 0 until minOf(GRADE_KINDS, grades.size)) {
             val c = grades[k]

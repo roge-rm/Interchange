@@ -64,6 +64,7 @@ import com.rm.interchange.sim.railCost
 import com.rm.interchange.sim.canalCost
 import com.rm.interchange.sim.bridgeCost
 import com.rm.interchange.sim.bridgeRefusal
+import com.rm.interchange.sim.tunnelFrom
 import com.rm.interchange.sim.airportRefusal
 import com.rm.interchange.sim.Refusal
 import com.rm.interchange.sim.roadCost
@@ -1003,7 +1004,11 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
     /** The height of the corner nearest [at], for levelling to. */
     fun cornerHeight(at: Pick) = world.heightAt(at.x.roundToInt().coerceIn(0, world.width), at.y.roundToInt().coerceIn(0, world.height))
 
+    // Build and remove commands sent from the map, for MapInput.builds.
+    val buildCount = remember { intArrayOf(0) }
+
     fun built() {
+        buildCount[0]++
         // The tray stays as it is, so the next tap lands where its buttons were. It folds only when the player folds it.
         // Once for the gesture. A drag's tiles share the one sound.
         when (tool) {
@@ -1041,6 +1046,13 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
 
     val input = remember(tool, removing, stationAlongX, addingStops, addingRoadStops, addingCraftStops, signalKind, signalSpacing, bridgeStyle, roadSurface, airportKind, runwayAlongX, trackPiece, townSize, industryKind, industryTurn, pick, copyPick.value) {
         object : MapInput {
+            override val builds: Int get() = buildCount[0]
+            override fun buildArea(from: Pick, to: Pick): IntArray? {
+                if (tool == Tool.PlaceIndustry) return industryArea(to.tileX, to.tileY)
+                if (tool == Tool.Tunnel) return world.companies.getOrNull(me)?.let { world.tunnelFrom(it, from.tileX, from.tileY) }?.let { intArrayOf(it.x0, it.y0, it.x1, it.y1) }
+                // A drag's line, which for a diagonal piece ends off the finger.
+                return plan?.let { intArrayOf(it.sx, it.sy, it.ex, it.ey) }
+            }
             var start: Pick? = null
             // The height Level levels to, from where the drag starts.
             var level = 0

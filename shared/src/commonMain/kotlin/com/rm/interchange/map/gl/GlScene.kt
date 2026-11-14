@@ -27,6 +27,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlin.concurrent.Volatile
@@ -40,8 +41,11 @@ import kotlin.time.TimeSource
 @Composable
 internal expect fun GlMapSurface(scene: GlScene, page: Int, modifier: Modifier)
 
-/** What the GPU draws next: the frame, the regions recorded so far for its turn, null where still recording, and what moves. */
-internal class GlShown(val frame: GlFrame, val regions: Array<RegionSprites?>, val live: LiveBatch?)
+/**
+ * What the GPU draws next: the frame, the regions recorded so far for its turn, null where still recording, what moves,
+ * the [Climate] look the regions are drawn with, and a count that goes up with each one made.
+ */
+internal class GlShown(val frame: GlFrame, val regions: Array<RegionSprites?>, val live: LiveBatch?, val look: Int, val seq: Long)
 
 /**
  * Far zooms on big maps (256 tiles and up), where every sprite on screen is more than the GPU can take a frame: a
@@ -58,13 +62,14 @@ internal interface FarRegions {
  * screen first, and the other directions ahead once the one showing is whole, as many as fit ([turnsAhead]). It
  * takes asked for turns once the new direction's regions on screen are in, and hands the GL thread what to draw
  * through [shown]. Regions are recorded again where the world under them changes ([regionVersion]); the
- * weather goes to the GL thread as [weather] and the time of year as [look], which the ground shader draws in place.
+ * weather goes to the GL thread as [weather] and the time of year with each [GlShown], which the ground shader draws
+ * in place. A new time of year shows once the regions on screen are recorded with it.
  * The world is read off the main thread, as [TileRecorder] reads it.
  *
  * What moves goes in [live] each frame and out with the frame in [shown], drawn over the static map.
  *
- * Main thread only, but for [shown], [levels], [weather], [look], [overlays], [wear], [requestRender] and [atlas]'s
- * uploads, which the GL thread reads, and [uploaded], [liveUploaded], [lost] and [uploadFailed], which it calls.
+ * Main thread only, but for [shown], [levels], [weather], [overlays], [wear], [requestRender] and [atlas]'s
+ * uploads, which the GL thread reads, and [uploaded], [liveUploaded], [lost], [uploadFailed] and [drew], which it calls.
  */
 internal class GlScene(private val world: World, parent: CoroutineScope) {
     /** The scene's own jobs under [parent]'s, all cancelled by [close]. */
@@ -72,14 +77,17 @@ internal class GlScene(private val world: World, parent: CoroutineScope) {
 
     /**
      * [pending] holds the version each region is being recorded at, or -1. [due] marks regions found changed while
-     * the turn was hidden, [looks] and [years] what each was recorded with, and [jobs] what's recording for it.
+     * the turn was hidden and [jobs] is what's recording for it. [published] is what's drawn, recorded with the look
+     * [shownLook] where it can be ([publishRegions]); the look moves on once the screen's regions all have the new one.
      */
     private class Turn(val turn: Int, val regions: Array<RegionSprites?>) {
         val pending = LongArray(regions.size) { -1L }
         val due = BooleanArray(regions.size)
-        val looks = IntArray(regions.size) { -1 }
-        val years = IntArray(regions.size) { -1 }
         val jobs = ArrayList<Job>()
+        /** What's recording each region, so one started again lets the last go. */
+        val regionJobs = arrayOfNulls<Job>(regions.size)
+        val published = arrayOfNulls<RegionSprites>(regions.size)
+        var shownLook = -1
     }
 
     private val turns = arrayOfNulls<Turn>(4)
@@ -144,6 +152,58 @@ internal class GlScene(private val world: World, parent: CoroutineScope) {
     /** The tile last tapped or built on, so the region holding it is recorded again first. */
     var lastEdit = -1 to -1
 
+    /** The player's last edit, while it waits to be drawn. */
+    private val edit = EditHold()
+    private var editChanged = false
+    private var editCurrent = false
+    private var editTicker: Job? = null
+
+    /** Whether the player's last edit isn't drawn yet, so its preview should stay on screen. */
+    val holdingEdit get() = edit.holding
+
+    /** The versions of [turn]'s regions now, to hand [edited] for a command sent before it's called; null if none. */
+    fun editMark(turn: Int): LongArray? = turns[turn]?.let { versions(it) }
+
+    /**
+     * The player has just sent a build or remove command touching world tiles [x0], [y0] to [x1], [y1] while the
+     * view's turn is [turn], the regions being at [before] when it went if given. From now till it's drawn the turn
+     * showing is looked at for changes every frame and what's changed is recorded at once.
+     */
+    fun edited(turn: Int, x0: Int, y0: Int, x1: Int, y1: Int, before: LongArray? = null) {
+        val t = turns[turn] ?: return
+        val base = before?.takeIf { it.size == t.regions.size } ?: versions(t)
+        edit.start(nowMillis(), turn, regionsTouching(world, turn, x0, y0, x1, y1), base)
+        if (editTicker?.isActive == true) return
+        // The map may be still, as when paused, so it's drawn again each frame while the edit's held. With no draws,
+        // as in the background, the hold runs out here.
+        editTicker = scope.launch {
+            while (edit.holding) {
+                delay(EDIT_TICK_MILLIS)
+                if (edit.expired(nowMillis())) stopEdit()
+                revision.intValue++
+            }
+        }
+    }
+
+    private fun stopEdit() {
+        edit.stop()
+        drawWanted = 0L
+    }
+
+    /** Each region of [t]'s version now. */
+    private fun versions(t: Turn) = LongArray(t.regions.size) { regionVersion(world, t.turn, it, look, year) }
+
+    private val started = clock.markNow()
+    private fun nowMillis() = started.elapsedNow().inWholeMilliseconds
+
+    /** The [GlShown.seq] of the last one made, and of the last the GL thread drew, set by it through [drew]. */
+    private var seq = 0L
+    @Volatile
+    private var drawnSeq = 0L
+    /** The seq the held edit waits on the GL thread drawing, 0 for none. */
+    @Volatile
+    private var drawWanted = 0L
+
     /** Asks the surface for a frame; set by it, safe from any thread. */
     @Volatile
     var requestRender: () -> Unit = {}
@@ -174,6 +234,7 @@ internal class GlScene(private val world: World, parent: CoroutineScope) {
     /** What [show] worked out, published by [finish] with what moves. */
     private var nextFrame: GlFrame? = null
     private var nextRegions: Array<RegionSprites?>? = null
+    private var nextLook = Climate.SUMMER
     private var staticReady = false
     private var nextLevel = 0
 
@@ -205,6 +266,7 @@ internal class GlScene(private val world: World, parent: CoroutineScope) {
         season()
         copyWeather()
         copyWear()
+        watchEdit(view)
         if (lastCheck.elapsedNow().inWholeMilliseconds >= CHECK_MILLIS) {
             lastCheck = clock.markNow()
             turns[view.turn]?.let { recheck(it) }
@@ -229,6 +291,7 @@ internal class GlScene(private val world: World, parent: CoroutineScope) {
             }
             askedSeen = asked
             want(asked, view, turnedFrame)
+            turns[asked]?.let { publish(it, turnedFrame) }
             if (covers(asked, turnedFrame) && lookShown(asked, turnedFrame)) view.takeTurns()
         }
         if (view.turnsAsked == 0) askedSeen = -1
@@ -244,7 +307,10 @@ internal class GlScene(private val world: World, parent: CoroutineScope) {
         }
         live.reset()
         // Nothing recording till the first weather copy's in.
-        val regions = turns[view.turn]?.regions
+        val shownTurn = turns[view.turn]
+        val regions = shownTurn?.let { publish(it, frame) }
+        shownTurn?.let { measureEdit(it) }
+        nextLook = shownTurn?.shownLook?.takeIf { it >= 0 } ?: look
         nextFrame = frame
         nextRegions = regions
         val lv = levels
@@ -265,9 +331,13 @@ internal class GlScene(private val world: World, parent: CoroutineScope) {
         val last = shown
         // A frame that skipped the moving drawing keeps the last batch, so it doesn't flip to none and back.
         val batch = if (movingWanted) live.batch(last?.live, liveTaken) else last?.live
-        if (last == null || last.frame != frame || !last.regions.contentEquals(regions) || last.live !== batch) {
-            shown = GlShown(frame, regions.copyOf(), batch)
+        if (last == null || last.frame != frame || !last.regions.contentEquals(regions) || last.live !== batch || last.look != nextLook) {
+            shown = GlShown(frame, regions.copyOf(), batch, nextLook, ++seq)
             requestRender()
+        }
+        if (edit.holding) {
+            val holds = edit.step(nowMillis(), editChanged, editCurrent, seq, drawnSeq)
+            drawWanted = if (holds) edit.waitSeq else 0L
         }
         // Sheets go up in the GL thread's frames, which a still view doesn't otherwise ask for.
         if (atlas.uploads.isNotEmpty()) requestRender()
@@ -568,24 +638,28 @@ internal class GlScene(private val world: World, parent: CoroutineScope) {
         for (i in regionOrder(t, view)) if ((t.regions[i] == null || t.regions[i]!!.cols != null) && t.pending[i] < 0L) record(t, i)
     }
 
-    /** Records region [i] of [t] at the world's version now, in the background, and puts it in when it's done; only [cols] of it if given. */
-    private fun record(t: Turn, i: Int, cols: IntArray? = null) {
+    /**
+     * Records region [i] of [t] at the world's version now, in the background, and puts it in when it's done; only
+     * [cols] of it if given. An [urgent] one, for the player's edit, doesn't wait behind the others.
+     */
+    private fun record(t: Turn, i: Int, cols: IntArray? = null, urgent: Boolean = false) {
         val lk = look
         val yr = year
         val version = regionVersion(world, t.turn, i, lk, yr)
         val weather = copy!!
+        // Only an urgent recheck records a region already recording; the old recording's result would be dropped.
+        if (t.pending[i] >= 0L) t.regionJobs[i]?.cancel()
         t.pending[i] = version
         t.due[i] = false
         t.jobs.removeAll { it.isCompleted }
         t.jobs += scope.launch {
-            val r = withContext(lane) { recordRegion(world, t.turn, i, lk, yr, weather, curves(), version, cols = cols) }
+            val r = withContext(if (urgent) Dispatchers.Default else lane) { recordRegion(world, t.turn, i, lk, yr, weather, curves(), version, cols = cols) }
             if (turns[t.turn] !== t || t.pending[i] != version) return@launch
             t.pending[i] = -1L
             t.regions[i] = r
-            t.looks[i] = lk
-            t.years[i] = yr
+            if (t.shownLook < 0) t.shownLook = lk
             revision.intValue++
-        }
+        }.also { t.regionJobs[i] = it }
     }
 
     /** Stops what's recording for [turn] and lets it go. */
@@ -597,34 +671,95 @@ internal class GlScene(private val world: World, parent: CoroutineScope) {
 
     /** Cancels everything the scene has running, once it's no longer shown. */
     fun close() {
+        stopEdit()
         for (t in 0 until 4) drop(t)
         scope.cancel()
     }
 
-    /** Whether the regions on [frame]'s screen for [turn] were recorded with the look and part eras now; after [covers]. */
+    /**
+     * Whether the regions drawn on [frame]'s screen for [turn] all have the look it shows and the part eras now, after
+     * [publish]. A turn kept ahead from before a change of season swaps in with its old look, then takes the new one
+     * as the rest of its regions are recorded again.
+     */
     private fun lookShown(turn: Int, frame: GlFrame): Boolean {
         val t = turns[turn] ?: return false
-        for (i in t.regions.indices) {
-            if (t.looks[i] == look && TileRecorder.partEras(t.years[i]) == TileRecorder.partEras(year)) continue
-            val row0 = i * REGION_ROWS
-            for (vy in row0 until minOf(frame.viewHeight, row0 + REGION_ROWS)) {
-                if (columns[2 * vy] <= columns[2 * vy + 1]) return false
-            }
+        if (columns.size < frame.viewHeight * 2) columns = IntArray(frame.viewHeight * 2)
+        visibleColumns(frame, columns)
+        val eras = TileRecorder.partEras(year)
+        for (i in t.published.indices) {
+            val r = t.published[i]
+            if (r != null && r.look == t.shownLook && TileRecorder.partEras(r.year) == eras) continue
+            if (onScreen(i, frame)) return false
         }
         return true
+    }
+
+    /** Whether region [i] has tiles on [frame]'s screen, from [columns] as [visibleColumns] left them for it. */
+    private fun onScreen(i: Int, frame: GlFrame): Boolean {
+        for (vy in i * REGION_ROWS until minOf(frame.viewHeight, (i + 1) * REGION_ROWS)) {
+            if (columns[2 * vy] <= columns[2 * vy + 1]) return true
+        }
+        return false
+    }
+
+    /**
+     * Works out what's drawn of [t] on [frame]'s screen: its look moves on to the look now once every region on screen
+     * is recorded with it, and till then the regions recorded again with the new look wait. Returns [Turn.published].
+     */
+    private fun publish(t: Turn, frame: GlFrame): Array<RegionSprites?> {
+        if (t.shownLook != look) {
+            if (columns.size < frame.viewHeight * 2) columns = IntArray(frame.viewHeight * 2)
+            visibleColumns(frame, columns)
+            var all = true
+            for (i in t.regions.indices) if (t.regions[i]?.look != look && onScreen(i, frame)) all = false
+            if (all) t.shownLook = look
+        }
+        return publishRegions(t.regions, t.published, t.shownLook)
+    }
+
+    /** While the player's edit is held, looks at the turn showing for changes every frame and records them at once. */
+    private fun watchEdit(view: View) {
+        if (!edit.holding) return
+        val t = turns[view.turn]
+        if (t == null || view.turn != edit.turn) {
+            stopEdit()
+            return
+        }
+        recheck(t, urgent = true)
+    }
+
+    /** After [publish], whether the world under the edit's regions has moved on and what moved is drawn since. */
+    private fun measureEdit(t: Turn) {
+        if (!edit.holding || t.turn != edit.turn) return
+        val v = versions(t)
+        editChanged = edit.changed(v)
+        editCurrent = edit.current(v, LongArray(t.published.size) { t.published[it]?.version ?: Long.MIN_VALUE })
+    }
+
+    /** From the GL thread: it has drawn the [GlShown] with [seq]. Draws again if the held edit was waiting on it. */
+    fun drew(seq: Long) {
+        drawnSeq = seq
+        val wanted = drawWanted
+        if (wanted in 1L..seq) {
+            drawWanted = 0L
+            scope.launch { revision.intValue++ }
+        }
     }
 
     /**
      * Records again the regions of [t] whose world has changed since they were recorded, the one holding [lastEdit]
      * first and then out from it, or the nearest [near]'s focus first if given; the old ones show till then.
      */
-    private fun recheck(t: Turn, near: View? = null) {
+    private fun recheck(t: Turn, near: View? = null, urgent: Boolean = false) {
         if (copy == null) return
         val changed = ArrayList<Int>()
         for (i in t.regions.indices) {
             val r = t.regions[i] ?: continue
-            if (t.pending[i] >= 0L) continue
-            if (regionVersion(world, t.turn, i, look, year) != r.version) changed += i else t.due[i] = false
+            val v = regionVersion(world, t.turn, i, look, year)
+            // An urgent one also starts again a region that began recording before the edit came in, but not one
+            // after, so a region the game keeps changing still comes in.
+            if (t.pending[i] >= 0L && (!urgent || t.pending[i] == v || t.pending[i] != edit.before(i))) continue
+            if (v != r.version) changed += i else t.due[i] = false
         }
         if (changed.isEmpty()) return
         val (ex, ey) = lastEdit
@@ -636,7 +771,7 @@ internal class GlScene(private val world: World, parent: CoroutineScope) {
             val row = (turned.toViewY(ex + 0.5f, ey + 0.5f) / REGION_ROWS).toInt()
             changed.sortBy { abs(it - row) }
         }
-        for (i in changed) record(t, i)
+        for (i in changed) record(t, i, urgent = urgent)
     }
 
     /** Works out [wear] again every [WEAR_MILLIS] while the condition overlay's on, keeping the last if nothing changed. */
@@ -785,8 +920,11 @@ internal class GlScene(private val world: World, parent: CoroutineScope) {
         /** How often the track condition is looked at again while its overlay's on. */
         const val WEAR_MILLIS = 1_000L
 
-        /** How often the world under the regions showing is looked at for changes. */
+        /** How often the world under the regions showing is looked at for changes, but for the player's edits. */
         const val CHECK_MILLIS = 250L
+
+        /** How often the map's drawn again while an edit's held, about a frame. */
+        const val EDIT_TICK_MILLIS = 16L
 
         /**
          * Each part's share of the train's run before the map first shows, adding to 1, from the Fire as installed
