@@ -110,6 +110,8 @@ internal class RegionSprites(
     val ground: IntArray = IntArray(0),
     /** The world's [World.chunkVersions] summed under the region and round it, [regionVersion], when it was recorded. */
     val version: Long = 0,
+    /** For a region recorded only in part, each row's first and last column recorded, two ints a row; null when whole. */
+    val cols: IntArray? = null,
 ) {
     /** Sprites in the first pass, which come first. */
     val firstPass get() = starts[rows * columns]
@@ -117,6 +119,13 @@ internal class RegionSprites(
     val rows get() = row1 - row0
 
     fun start(pass: Int, row: Int, column: Int) = starts[(pass * rows + row - row0) * columns + column]
+
+    /** Whether row [row]'s columns [c0] to [c1] are recorded. */
+    fun holds(row: Int, c0: Int, c1: Int): Boolean {
+        val c = cols ?: return true
+        val k = 2 * (row - row0)
+        return c0 > c1 || (c[k] <= c0 && c1 <= c[k + 1])
+    }
 }
 
 /** Stands in for the signals sheet, which recording never reads, so no platform bitmap is made. */
@@ -136,8 +145,12 @@ internal val noSheets = LevelSheets(IntArray(0), IntArray(0), 1, ByteArray(0), 1
 /**
  * Records region [index] of [world] seen from [turn]: what [ChunkBaker] would draw there at [level], with
  * the season [look], [year] and [weather] it'd bake with. Reads the world as a bake does, off the main thread.
+ * With [cols] (each row's first and last column, two ints a row) only those tiles are recorded; the rest are empty.
  */
-internal fun recordRegion(world: World, turn: Int, index: Int, look: Int, year: Int, weather: WeatherCopy, curves: CurveArt? = null, version: Long = 0, level: Int = SOURCE_LEVEL): RegionSprites {
+internal fun recordRegion(
+    world: World, turn: Int, index: Int, look: Int, year: Int, weather: WeatherCopy, curves: CurveArt? = null, version: Long = 0,
+    level: Int = SOURCE_LEVEL, cols: IntArray? = null,
+): RegionSprites {
     val view = View(world.width, world.height).apply { turnBy(turn) }
     val vw = view.viewWidth
     val row0 = index * REGION_ROWS
@@ -157,6 +170,7 @@ internal fun recordRegion(world: World, turn: Int, index: Int, look: Int, year: 
     var k = 0
     for (pass in 0 until PASSES) for (vy in row0 until row1) for (vx in 0 until vw) {
         starts[k++] = recorder.count
+        if (cols != null && (vx < cols[2 * (vy - row0)] || vx > cols[2 * (vy - row0) + 1])) continue
         when (pass) {
             0 -> baker.ground(vx, vy)
             1 -> baker.shadows(vx, vy)
@@ -164,7 +178,7 @@ internal fun recordRegion(world: World, turn: Int, index: Int, look: Int, year: 
         }
     }
     starts[k] = recorder.count
-    return RegionSprites(turn, index, row0, row1, vw, recorder.data, recorder.count, starts, recorder.ground, version)
+    return RegionSprites(turn, index, row0, row1, vw, recorder.data, recorder.count, starts, recorder.ground, version, cols)
 }
 
 /** How many regions a map seen from [turn] has. */

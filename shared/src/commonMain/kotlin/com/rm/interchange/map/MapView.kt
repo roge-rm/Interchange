@@ -21,7 +21,15 @@ import com.rm.interchange.map.gl.glMapWanted
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChange
+import androidx.compose.ui.text.rememberTextMeasurer
+import com.rm.interchange.res.Res
+import com.rm.interchange.res.loading_drawing
+import com.rm.interchange.res.loading_sending
+import com.rm.interchange.res.loading_trains
+import com.rm.interchange.res.loading_unpacking
 import com.rm.interchange.sim.World
+import org.jetbrains.compose.resources.stringResource
+import kotlin.time.TimeSource
 
 /** What the map does with a finger, for the tool in use. */
 interface MapInput {
@@ -60,6 +68,8 @@ fun MapView(
     label: (DrawScope.() -> Unit)? = null,
     /** What shows while the map first bakes. */
     page: Color = Color.Black,
+    /** The train and step name drawn on the page while the map first bakes; the page alone if null. */
+    loading: LoadingLook? = null,
     /** Called once, when the first screen has all its chunks at its own level. */
     onSharp: () -> Unit = {},
 ) {
@@ -73,6 +83,15 @@ fun MapView(
     // The GPU map in place of the chunks, when the switch asks for it, back to the chunks if the GPU can't take the sheets.
     val gl = remember(world) { if (glMapWanted()) GlScene(world, scope) else null }?.takeUnless { it.failed }
     gl?.onSharp = onSharp
+    val measurer = rememberTextMeasurer()
+    val steps = arrayOf(
+        stringResource(Res.string.loading_unpacking), stringResource(Res.string.loading_drawing),
+        stringResource(Res.string.loading_sending), stringResource(Res.string.loading_trains),
+    )
+    val train = remember(world) { LoadingTrain() }
+    val clock = remember(world) { TimeSource.Monotonic.markNow() }
+    // When the GPU map last had everything for the screen, to fade the cover from; -1 while it waits.
+    val glReadyAt = remember(world) { longArrayOf(-1L) }
     val touch = Modifier.pointerInput(world, view) {
             awaitEachGesture {
                 val down = awaitFirstDown(requireUnconsumed = false)
@@ -140,12 +159,17 @@ fun MapView(
             with(renderer) { draw(view) }
             renderer.cover()
         }
-        moving()?.let {
+        if (gl == null || gl.wantsMoving()) moving()?.let {
             drawMoving(world, view, sheets, it, gl?.live)
             drawSky(world, view, it)
         }
-        // The GPU map takes the frame with what moves in it, so they show together.
-        if (gl != null && gl.finish()) cover = 0f
+        val now = clock.elapsedNow().inWholeMilliseconds
+        // The GPU map takes the frame with what moves in it, so they show together, then the cover fades.
+        if (gl != null) {
+            if (!gl.finish()) glReadyAt[0] = -1L
+            else if (glReadyAt[0] < 0L) glReadyAt[0] = now
+            if (glReadyAt[0] >= 0L) cover = (1f - (now - glReadyAt[0]) / Renderer.FADE_MILLIS.toFloat()).coerceIn(0f, 1f)
+        }
         overlay?.let { draw ->
             val painter = LandPainter(world, view, view.halfWidth)
             painter.originX = view.screenX(0f, 0f, size.width)
@@ -154,7 +178,11 @@ fun MapView(
         }
         labels?.invoke(this)
         label?.invoke(this)
-        if (cover > 0f) drawRect(page.copy(alpha = cover))
+        train.advance(gl?.progress ?: renderer.progress, cover, now)
+        if (cover > 0f) {
+            if (loading != null) drawLoadingCover(cover, page, loading, train, measurer, steps[gl?.step ?: renderer.step], now)
+            else drawRect(page.copy(alpha = cover))
+        }
     }
     if (gl != null) {
         Box(modifier) {

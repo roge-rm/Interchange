@@ -11,6 +11,7 @@ import com.rm.interchange.map.Atlas
 import com.rm.interchange.map.Cover
 import com.rm.interchange.map.CurveArt
 import com.rm.interchange.map.LevelSheets
+import com.rm.interchange.map.LoadStep
 import com.rm.interchange.map.Renderer
 import com.rm.interchange.map.Sheets
 import com.rm.interchange.map.View
@@ -125,7 +126,7 @@ internal class GlScene(private val world: World, private val scope: CoroutineSco
     /** Takes what moves each frame, between [show] and [finish]. */
     val live = LiveBuilder(atlas, object : LiveSource {
         override fun image(source: Int, level: Int, ask: Boolean): ImageBitmap? =
-            if (source == SIGNALS) levels[level]?.signals else sheetsSeen?.vehicle(source, level, ask)
+            if (source == SIGNALS) levels[level]?.signals ?: sheetsSeen?.signals(level) else sheetsSeen?.vehicle(source, level, ask)
 
         override fun rects(source: Int, level: Int): IntArray? =
             if (source == SIGNALS) signalRects[level] else sheetsSeen?.vehicleRects(source, level)
@@ -141,6 +142,13 @@ internal class GlScene(private val world: World, private val scope: CoroutineSco
     private var nextFrame: GlFrame? = null
     private var nextRegions: Array<RegionSprites?>? = null
     private var staticReady = false
+    private var nextLevel = 0
+
+    /** How far the work under the cover has got, 0 to 1, and its [LoadStep]; worked out by [finish] while it's up. */
+    var progress = 0f
+        private set
+    var step = LoadStep.UNPACKING
+        private set
 
     private var columns = IntArray(0)
     private var sharp = false
@@ -153,7 +161,14 @@ internal class GlScene(private val world: World, private val scope: CoroutineSco
     fun show(view: View, sheets: Sheets, width: Int, height: Int) {
         sheetsSeen = sheets
         sheets.keepSharpest = true
+        val gesture = view.movedOnlyByFinger(lastX, lastY, lastHalfWidth)
+        view.gestured = false
         holdZoom(view, width, height)
+        view.gestured = false
+        holdView(view, width, height, gesture)
+        lastX = view.focusX
+        lastY = view.focusY
+        lastHalfWidth = view.halfWidth
         takeLevels(sheets, Renderer.levelFor(view.halfWidth))
         season()
         copyWeather()
@@ -161,20 +176,25 @@ internal class GlScene(private val world: World, private val scope: CoroutineSco
             lastCheck = clock.markNow()
             turns[view.turn]?.let { recheck(it) }
         }
-        want(view.turn, view)
+        want(view.turn, view, GlFrame.of(view, width, height))
         if (view.turnsAsked != 0) {
             val asked = view.askedTurn
-            want(asked, view)
             val turned = View(view.mapWidth, view.mapHeight).also {
                 it.turnBy(asked)
                 it.focusX = view.focusX
                 it.focusY = view.focusY
                 it.halfWidth = view.halfWidth
             }
-            if (covers(asked, GlFrame.of(turned, width, height))) view.takeTurns()
+            val turnedFrame = GlFrame.of(turned, width, height)
+            want(asked, view, turnedFrame)
+            if (covers(asked, turnedFrame)) view.takeTurns()
         }
         for (t in 0 until 4) if (t != view.turn && t != view.askedTurn) drop(t)
         val frame = GlFrame.of(view, width, height)
+        turns[view.turn]?.let { t ->
+            // Once the map shows, or if the parts recorded first don't hold the screen, the rest of each region follows.
+            if (sharp || (t.pending.all { it < 0L } && !covers(view.turn, frame))) fill(t, view)
+        }
         live.reset()
         // Nothing recording till the first weather copy's in.
         val regions = turns[view.turn]?.regions
@@ -183,6 +203,7 @@ internal class GlScene(private val world: World, private val scope: CoroutineSco
         val lv = levels
         val g = onGpu
         val level = Renderer.levelFor(view.halfWidth)
+        nextLevel = level
         staticReady = regions != null && g != null && g[level] != null && g[level] === lv[level] && weather != null && covers(view.turn, frame)
     }
 
@@ -195,7 +216,8 @@ internal class GlScene(private val world: World, private val scope: CoroutineSco
         val frame = nextFrame ?: return false
         val regions = nextRegions ?: return false
         val last = shown
-        val batch = live.batch(last?.live, liveTaken)
+        // A frame that skipped the moving drawing keeps the last batch, so it doesn't flip to none and back.
+        val batch = if (movingWanted) live.batch(last?.live, liveTaken) else last?.live
         if (last == null || last.frame != frame || !last.regions.contentEquals(regions) || last.live !== batch) {
             shown = GlShown(frame, regions.copyOf(), batch)
             requestRender()
@@ -205,8 +227,48 @@ internal class GlScene(private val world: World, private val scope: CoroutineSco
         if (staticReady && !live.missing) atlas.ready = true
         val ready = staticReady && (atlas.ready || !live.begun)
         if (ready && !sharp) { sharp = true; onSharp() }
+        if (ready) progress = 1f else measure(frame)
         return ready
     }
+
+    /**
+     * Works out [progress] and [step] from the work the cover waits on. Before the map first shows the weights follow
+     * the Fire's times for each, so the train keeps an even pace; after, only the regions on screen are waited on.
+     */
+    private fun measure(frame: GlFrame) {
+        val held = regionsHeld(frame.turn, frame)
+        if (sharp) {
+            progress = 0.85f * held + if (staticReady) 0.15f else 0f
+            step = LoadStep.DRAWING
+            return
+        }
+        val l = nextLevel
+        val unpacked = sheetsSeen?.unpacked(l) ?: 0f
+        val lv = levels[l]
+        val up = lv != null && onGpu?.get(l) === lv
+        val weathered = (if (copy != null) 0.5f else 0f) + (if (weather != null) 0.5f else 0f)
+        val moving = if (staticReady) 0.5f else 0f
+        progress = W_UNPACK * unpacked + W_WEATHER * weathered + W_REGIONS * held + W_UPLOAD * (if (up) 1f else 0f) + W_MOVING * moving
+        step = when {
+            unpacked < 1f -> LoadStep.UNPACKING
+            held < 1f || weather == null -> LoadStep.DRAWING
+            !up -> LoadStep.SENDING
+            else -> LoadStep.TRAINS
+        }
+    }
+
+    private var skipped = 0
+
+    /**
+     * Whether the Compose map should put what moves in this frame: always once the static map's ready, else every
+     * fourth frame, enough to ask for the vehicle sheets, as it takes the main thread from the work under the cover.
+     */
+    fun wantsMoving(): Boolean {
+        movingWanted = staticReady || ++skipped % 4 == 0
+        return movingWanted
+    }
+
+    private var movingWanted = true
 
     /** From the GL thread: [done] are on the GPU, so the vehicle sheets they came from can go. */
     fun liveUploaded(done: List<LiveUpload>) {
@@ -306,14 +368,54 @@ internal class GlScene(private val world: World, private val scope: CoroutineSco
         view.halfWidth = held
     }
 
+    /** Where [show] last left the view, to tell a finger's move from a jump. */
+    private var lastX = Float.NaN
+    private var lastY = Float.NaN
+    private var lastHalfWidth = Float.NaN
+
+    /** The last place, zoom and screen size the recorded regions held the screen at, in [heldTurn], or -1 for none. */
+    private var heldTurn = -1
+    private var heldX = 0f
+    private var heldY = 0f
+    private var heldHalfWidth = 0f
+    private var heldWidth = 0
+    private var heldHeight = 0
+
+    /**
+     * Once the map shows, while some of the regions of the turn showing aren't recorded whole, puts a finger's move
+     * ([gesture], from where the last frame left the view) back where they held the screen, so a pan or pinch never
+     * shows a gap or the cover. Any other move, a jump to a vehicle or a new screen size, goes through, and the cover
+     * shows till the regions there are in.
+     */
+    private fun holdView(view: View, width: Int, height: Int, gesture: Boolean) {
+        if (!sharp) return
+        val t = turns[view.turn] ?: return
+        if (t.regions.all { it != null && it.cols == null }) {
+            heldTurn = -1
+            return
+        }
+        if (covers(view.turn, GlFrame.of(view, width, height))) {
+            heldTurn = view.turn
+            heldX = view.focusX
+            heldY = view.focusY
+            heldHalfWidth = view.halfWidth
+            heldWidth = width
+            heldHeight = height
+        } else if (gesture && heldTurn == view.turn && width == heldWidth && height == heldHeight) {
+            view.focusX = heldX
+            view.focusY = heldY
+            view.halfWidth = heldHalfWidth
+        } else heldTurn = -1
+    }
+
     /**
      * Asks [sheets] for every level the GPU map can draw at and takes those unpacked; the screen's level [first] alone
-     * till it's in, so it has the decoders to itself. Sheets let go of for another scene come back unpacked again.
+     * till the map shows, so it has the decoders to itself. Sheets let go of for another scene come back unpacked again.
      */
     private fun takeLevels(sheets: Sheets, first: Int) {
         var next: Array<LevelSheets?>? = null
         for (l in Renderer.SHARPEST until Atlas.LEVELS) {
-            if (l != first && levels[first] == null && sheets.get(first) == null) continue
+            if (l != first && !sharp) continue
             val had = levels[l]
             val got = had ?: sheets.get(l)
             if (got !== had) {
@@ -333,26 +435,85 @@ internal class GlScene(private val world: World, private val scope: CoroutineSco
         if (columns.size < frame.viewHeight * 2) columns = IntArray(frame.viewHeight * 2)
         visibleColumns(frame, columns)
         for (i in t.regions.indices) {
-            if (t.regions[i] != null) continue
+            val r = t.regions[i]
+            if (r != null && r.cols == null) continue
             val row0 = i * REGION_ROWS
-            for (vy in row0 until minOf(frame.viewHeight, row0 + REGION_ROWS)) if (columns[2 * vy] <= columns[2 * vy + 1]) return false
+            for (vy in row0 until minOf(frame.viewHeight, row0 + REGION_ROWS)) {
+                if (columns[2 * vy] > columns[2 * vy + 1]) continue
+                if (r == null || !r.holds(vy, columns[2 * vy], columns[2 * vy + 1])) return false
+            }
         }
         return true
     }
 
-    /** Starts recording [turn]'s regions if they aren't, the nearest [view]'s focus first, once there's weather to record with. */
-    private fun want(turn: Int, view: View) {
+    /** How many of the regions reaching onto [frame]'s screen are recorded there for [turn], 0 to 1. */
+    private fun regionsHeld(turn: Int, frame: GlFrame): Float {
+        val t = turns[turn] ?: return 0f
+        if (columns.size < frame.viewHeight * 2) columns = IntArray(frame.viewHeight * 2)
+        visibleColumns(frame, columns)
+        var need = 0
+        var held = 0
+        for (i in t.regions.indices) {
+            val r = t.regions[i]
+            val row0 = i * REGION_ROWS
+            var on = false
+            var holds = true
+            for (vy in row0 until minOf(frame.viewHeight, row0 + REGION_ROWS)) {
+                if (columns[2 * vy] > columns[2 * vy + 1]) continue
+                on = true
+                if (r == null || !r.holds(vy, columns[2 * vy], columns[2 * vy + 1])) holds = false
+            }
+            if (on) need++
+            if (on && holds) held++
+        }
+        return if (need == 0) 1f else held.toFloat() / need
+    }
+
+    /**
+     * Starts recording [turn]'s regions if they aren't, the nearest [view]'s focus first, once there's weather to record
+     * with. Before the map first shows, only the tiles round [frame] are recorded, so the cover lifts sooner; the rest
+     * of each region follows once it has ([fill]).
+     */
+    private fun want(turn: Int, view: View, frame: GlFrame) {
         if (turns[turn] != null || copy == null) return
         val n = regionCount(world, turn)
         val t = Turn(turn, arrayOfNulls(n), ArrayList())
         turns[turn] = t
-        val turned = View(world.width, world.height).also { it.turnBy(turn) }
-        val focusRow = (turned.toViewY(view.focusX, view.focusY) / REGION_ROWS).toInt()
-        for (i in (0 until n).sortedBy { abs(it - focusRow) }) record(t, i)
+        if (!sharp) {
+            // A quarter of the screen round it, so a small move just after the cover lifts needn't wait.
+            val mx = frame.width / 4f
+            val my = frame.height / 4f
+            val round = GlFrame(frame.turn, frame.originX + mx, frame.originY + my, frame.scale, frame.width + 2 * mx.toInt(), frame.height + 2 * my.toInt(), frame.viewWidth, frame.viewHeight)
+            val shown = visibleColumns(round)
+            for (i in regionOrder(t, view)) {
+                val row0 = i * REGION_ROWS
+                val rows = minOf(frame.viewHeight, row0 + REGION_ROWS) - row0
+                if ((0 until rows).none { shown[2 * (row0 + it)] <= shown[2 * (row0 + it) + 1] }) continue
+                record(t, i, shown.copyOfRange(2 * row0, 2 * (row0 + rows)))
+            }
+            return
+        }
+        for (i in regionOrder(t, view)) record(t, i)
     }
 
-    /** Records region [i] of [t] at the world's version now, in the background, and puts it in when it's done. */
-    private fun record(t: Turn, i: Int) {
+    /** [t]'s regions, the nearest [view]'s focus first. */
+    private fun regionOrder(t: Turn, view: View): List<Int> {
+        val turned = View(world.width, world.height).also { it.turnBy(t.turn) }
+        val focusRow = (turned.toViewY(view.focusX, view.focusY) / REGION_ROWS).toInt()
+        return (0 until t.regions.size).sortedBy { abs(it - focusRow) }
+    }
+
+    /** Records whole the regions of [t] recorded only in part or not at all, and not recording now. */
+    private fun fill(t: Turn, view: View) {
+        if (copy == null) return
+        var any = false
+        for (i in t.regions.indices) if ((t.regions[i] == null || t.regions[i]!!.cols != null) && t.pending[i] < 0L) any = true
+        if (!any) return
+        for (i in regionOrder(t, view)) if ((t.regions[i] == null || t.regions[i]!!.cols != null) && t.pending[i] < 0L) record(t, i)
+    }
+
+    /** Records region [i] of [t] at the world's version now, in the background, and puts it in when it's done; only [cols] of it if given. */
+    private fun record(t: Turn, i: Int, cols: IntArray? = null) {
         val lk = look
         val yr = year
         val version = regionVersion(world, t.turn, i, lk, yr)
@@ -360,7 +521,7 @@ internal class GlScene(private val world: World, private val scope: CoroutineSco
         t.pending[i] = version
         t.jobs.removeAll { it.isCompleted }
         t.jobs += scope.launch {
-            val r = withContext(lane) { recordRegion(world, t.turn, i, lk, yr, weather, curves(), version) }
+            val r = withContext(lane) { recordRegion(world, t.turn, i, lk, yr, weather, curves(), version, cols = cols) }
             if (turns[t.turn] !== t || t.pending[i] != version) return@launch
             t.pending[i] = -1L
             t.regions[i] = r
@@ -407,18 +568,18 @@ internal class GlScene(private val world: World, private val scope: CoroutineSco
         val ground = weather
         scope.launch {
             // Cleared however the job ends, so a failed or cancelled copy doesn't stop later ones.
-            val (c, g) = try {
-                withContext(Dispatchers.Default) {
-                    val c = WeatherCopy.of(world, (last?.id ?: 0) + 1, 0, last)
-                    c to GroundWeather.of(world, c, ground)
-                }
+            try {
+                val c = withContext(Dispatchers.Default) { WeatherCopy.of(world, (last?.id ?: 0) + 1, 0, last) }
+                // Regions can record with the copy while the ground shader's weather is made from it.
+                copy = c
+                revision.intValue++
+                val g = withContext(Dispatchers.Default) { GroundWeather.of(world, c, ground) }
+                weather = g
+                revision.intValue++
+                requestRender()
             } finally {
                 copying = false
             }
-            copy = c
-            weather = g
-            revision.intValue++
-            requestRender()
         }
     }
 
@@ -433,6 +594,17 @@ internal class GlScene(private val world: World, private val scope: CoroutineSco
     private companion object {
         /** How often the world under the regions showing is looked at for changes. */
         const val CHECK_MILLIS = 250L
+
+        /**
+         * Each part's share of the train's run before the map first shows, adding to 1, from the Fire as installed
+         * (lift 3.5 s): the screen's level unpacked by 1.8 s, the regions on screen by 2.5 s, on the GPU by 2.8 s, then
+         * the first frame with what moves. They overlap, so these are rough.
+         */
+        const val W_UNPACK = 0.4f
+        const val W_WEATHER = 0.05f
+        const val W_REGIONS = 0.25f
+        const val W_UPLOAD = 0.15f
+        const val W_MOVING = 0.15f
 
         /** The signals sheet's rects at each level, in that level's pixels, as LandPainter.spriteAt divides them. */
         val signalRects = Array(Atlas.LEVELS) { l -> IntArray(Atlas.SIGNAL_RECTS.size) { Atlas.SIGNAL_RECTS[it] / (1 shl l) } }

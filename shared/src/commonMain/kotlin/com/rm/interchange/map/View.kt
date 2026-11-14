@@ -28,6 +28,27 @@ class View(val mapWidth: Int, val mapHeight: Int) {
     var zoomedX = Float.NaN
     var zoomedY = Float.NaN
 
+    /** Whether a finger moved the view ([pan], [zoomAt]) since this was last cleared, by the GPU map once a frame. */
+    var gestured = false
+    /** Focus x, y and zoom before a finger first moved the view since [gestured] was cleared, and after its last move. */
+    private val fingerFrom = FloatArray(3)
+    private val fingerTo = FloatArray(3)
+
+    internal fun fingerStart() {
+        if (gestured) return
+        gestured = true
+        fingerFrom[0] = focusX; fingerFrom[1] = focusY; fingerFrom[2] = halfWidth
+    }
+
+    internal fun fingerEnd() {
+        fingerTo[0] = focusX; fingerTo[1] = focusY; fingerTo[2] = halfWidth
+    }
+
+    /** Whether only a finger moved the view since [gestured] was cleared, from focus ([x], [y]) at zoom [hw]. */
+    fun movedOnlyByFinger(x: Float, y: Float, hw: Float): Boolean =
+        gestured && fingerFrom[0] == x && fingerFrom[1] == y && fingerFrom[2] == hw &&
+            fingerTo[0] == focusX && fingerTo[1] == focusY && fingerTo[2] == halfWidth
+
     /** Half a tile's width on screen, in pixels. A tile is twice as wide as it is tall. */
     var halfWidth = START_HALF_WIDTH
     val halfHeight get() = halfWidth / 2
@@ -127,12 +148,14 @@ class View(val mapWidth: Int, val mapHeight: Int) {
 
     /** Moves the focus by a drag of ([dx], [dy]) pixels, so the map follows the finger. */
     fun pan(dx: Float, dy: Float) {
+        fingerStart()
         val a = -dx / halfWidth
         val b = -dy / halfHeight
         val vx = focusViewX() + (a + b) / 2
         val vy = focusViewY() + (b - a) / 2
         focusX = toWorldX(vx, vy).coerceIn(0f, mapWidth.toFloat())
         focusY = toWorldY(vx, vy).coerceIn(0f, mapHeight.toFloat())
+        fingerEnd()
     }
 
     fun zoom(by: Float) {
@@ -223,6 +246,7 @@ fun groundHeight(world: World, x: Float, y: Float): Float {
 
 /** Zooms by [by] keeping the point under ([px], [py]) where it is, on a screen [w] by [h]. */
 fun View.zoomAt(by: Float, px: Float, py: Float, w: Float, h: Float) {
+    fingerStart()
     zoomedX = px
     zoomedY = py
     val a0 = (px - w / 2) / halfWidth
@@ -237,4 +261,5 @@ fun View.zoomAt(by: Float, px: Float, py: Float, w: Float, h: Float) {
     val vy = focusViewY() + dvy
     focusX = toWorldX(vx, vy).coerceIn(0f, mapWidth.toFloat())
     focusY = toWorldY(vx, vy).coerceIn(0f, mapHeight.toFloat())
+    fingerEnd()
 }

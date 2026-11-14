@@ -809,4 +809,8 @@
     <string name="formation_apply_credit">Appliquer et recevoir %1$s</string>
     <string name="formation_length">Longueur</string>
     <string name="formation_tiles">%1$d,%2$d cases</string>
+    <string name="loading_unpacking">Décompression des sprites</string>
+    <string name="loading_sending">Envoi au GPU</string>
+    <string name="loading_drawing">Dessin de la carte</string>
+    <string name="loading_trains">Ajout des trains</string>
 </resources>

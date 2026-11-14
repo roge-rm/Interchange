@@ -47,6 +47,7 @@ import com.rm.interchange.map.Sheets
 import com.rm.interchange.map.rememberPackedSheets
 import androidx.compose.runtime.rememberCoroutineScope
 import com.rm.interchange.map.MapView
+import com.rm.interchange.map.LoadingLook
 import com.rm.interchange.map.Pick
 import com.rm.interchange.map.LandPainter
 import androidx.compose.ui.text.rememberTextMeasurer
@@ -1306,6 +1307,7 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
                 },
             label = dragAt?.takeIf { dragText != null }?.let { at -> { drawDragLabel(world, view, measurer, dragText!!, shortOf, at) } },
             page = c.page,
+            loading = remember(c) { LoadingLook(rail = c.textDim, train = c.accent, trim = c.text, text = c.textDim, style = KitType.Dim) },
             onSharp = { mapSharp.value = true },
             overlays = (if (settings.grid) ChunkBaker.GRID else 0) or (if (settings.heights) ChunkBaker.HEIGHTS else 0) or (if (settings.snow) ChunkBaker.SNOW else 0) or (if (settings.condition) ChunkBaker.CONDITION else 0),
             labels = {

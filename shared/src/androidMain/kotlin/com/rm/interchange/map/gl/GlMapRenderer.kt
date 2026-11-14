@@ -155,15 +155,19 @@ internal class GlMapRenderer(private val scene: GlScene, private val page: Int) 
     }
 
     private fun drawFrame() {
+        // Vehicles and weather go up while the screen's level is still unpacking, and sheets before there's anything to
+        // show; vehicles again after a level, as the signals come with it.
+        takeLive()
+        scene.weather?.let { if (it !== weatherUp) upload(it) }
+        if (takeLevels(scene.levels)) {
+            takeLive()
+            scene.requestRender()
+        }
         val shown = scene.shown ?: return clearScreen()
         val f = shown.frame
         // The screen's level is uploaded before the cover lifts and the zoom's held to levels that are in, so there's
         // never another level to stand in.
         val lv = Renderer.levelFor(f.scale * SOURCE_HALF_WIDTH)
-        // Vehicles and weather go up while the screen's level is still unpacking.
-        takeLive()
-        scene.weather?.let { if (it !== weatherUp) upload(it) }
-        if (takeLevels(scene.levels)) scene.requestRender()
         val tex = levels[lv] ?: return clearScreen()
         if (weatherTex == 0) return clearScreen()
         uploadRegions(shown)

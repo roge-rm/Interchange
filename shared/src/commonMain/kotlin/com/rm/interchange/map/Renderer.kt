@@ -120,6 +120,12 @@ internal class Renderer(private val world: World, private val sheets: Sheets, pr
     /** Called once [sharp] turns true. */
     var onSharp: () -> Unit = {}
 
+    /** How far the first screen's work under the cover has got, 0 to 1, and its [LoadStep]. */
+    var progress = 0f
+        private set
+    var step = LoadStep.UNPACKING
+        private set
+
     /** How much the map is still hidden behind the page as it first comes up: 1 till it's ready, fading to 0 just after. */
     fun cover(): Float = if (readyAt < 0) 1f else (1f - (clock.elapsedNow().inWholeMilliseconds - readyAt) / FADE_MILLIS.toFloat()).coerceIn(0f, 1f)
 
@@ -246,10 +252,20 @@ internal class Renderer(private val world: World, private val sheets: Sheets, pr
             // A coarsest-level pixel or two round it, for rounding.
             firstRect = floatArrayOf(screen[0] - 2f, screen[1] - 2f, screen[2] + 2f, screen[3] + 2f)
             var all = true
-            forEachVisible(view, level) { key, _, _, _, _ -> if (cache[key]?.holds(key, screen) != true && !hasStandIn(level, key)) all = false }
+            var have = 0
+            var need = 0
+            forEachVisible(view, level) { key, _, _, _, _ ->
+                need++
+                if (cache[key]?.holds(key, screen) != true && !hasStandIn(level, key)) all = false else have++
+            }
+            // The coarsest sheets first, then the chunks over the screen as they bake.
+            val unpacked = sheets.unpacked(COARSE)
+            progress = 0.4f * unpacked + 0.6f * (if (need == 0) 0f else have.toFloat() / need)
+            step = if (unpacked < 1f) LoadStep.UNPACKING else LoadStep.DRAWING
             if (all) {
                 firstPart.clear()
                 readyAt = clock.elapsedNow().inWholeMilliseconds
+                progress = 1f
                 if (Probe.ON) Probe.log("ready")
             }
         }

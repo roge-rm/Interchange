@@ -81,6 +81,17 @@ class Sheets(private val packed: PackedSheets, private val scope: CoroutineScope
     /** Goes up as each level is unpacked, so whatever waited on it draws again. */
     val revision = mutableIntStateOf(0)
 
+    /** Which of each level's parts are unpacked, [PART_WEIGHTS]' order, for the loading cover. */
+    private val partsIn = Array(Atlas.LEVELS) { BooleanArray(PART_WEIGHTS.size) }
+
+    /** How much of [level]'s sheets are unpacked, 0 to 1, weighted by how long each part takes. */
+    fun unpacked(level: Int): Float {
+        if (levels[level] != null) return 1f
+        var sum = 0f
+        for (i in PART_WEIGHTS.indices) if (partsIn[level][i]) sum += PART_WEIGHTS[i]
+        return sum
+    }
+
     /** Keeps the sharpest level once unpacked, for the GPU map, which holds every level; one copy for both. */
     var keepSharpest = false
 
@@ -100,13 +111,14 @@ class Sheets(private val packed: PackedSheets, private val scope: CoroutineScope
             unpacking[level] = true
             decoding[level] = scope.launch {
                 val asked = if (Probe.ON) Probe.now() else 0L
+                partsIn[level].fill(false)
                 if (level != COARSEST) decoding[COARSEST]?.join()
                 var started = 0L
                 // Wall time of each part, ms; the parts overlap, so they add up to more than the whole.
                 val parts = LongArray(8)
                 levels[level] = withContext(levelDecoder) {
                     if (Probe.ON) started = Probe.now()
-                    coroutineScope { decodeLevel(level, parts) }
+                    coroutineScope { decodeLevel(level, parts, partsIn[level]) }
                 }
                 if (Probe.ON) Probe.log("sheetParts L=$level groundDecode=${parts[0]} groundRead=${parts[1]} staticDecode=${parts[2]} staticRead=${parts[3]} " +
                     "snow=${parts[4]} shadeDecode=${parts[5]} shadeCopy=${parts[6]} signals=${parts[7]}")
@@ -128,7 +140,7 @@ class Sheets(private val packed: PackedSheets, private val scope: CoroutineScope
      * shadows in strips across it. [parts] gets each part's wall time, ms, in the order of the sheetParts probe line.
      */
     @OptIn(ExperimentalResourceApi::class)
-    private suspend fun CoroutineScope.decodeLevel(level: Int, parts: LongArray): LevelSheets {
+    private suspend fun CoroutineScope.decodeLevel(level: Int, parts: LongArray, done: BooleanArray): LevelSheets {
         fun pixels(bytes: ByteArray, part: Int): Pair<IntArray, Int> {
             var t = if (Probe.ON) Probe.now() else 0L
             val image = bytes.decodeToImageBitmap()
@@ -138,14 +150,16 @@ class Sheets(private val packed: PackedSheets, private val scope: CoroutineScope
             if (Probe.ON) parts[part + 1] = Probe.now() - t
             return out to image.width
         }
-        val ground = async { pixels(packed.ground[level], 0).first }
+        val ground = async { pixels(packed.ground[level], 0).first.also { done[0] = true } }
         val static = async {
             val (static, width) = pixels(packed.static[level], 2)
+            done[1] = true
             packed.staticSnow[level]?.let { snow ->
                 val t = if (Probe.ON) Probe.now() else 0L
                 strips(static.size, STRIPS).map { r -> launch { restoreStaticSnow(static, snow, r.first, r.last + 1) } }.joinAll()
                 if (Probe.ON) parts[4] = Probe.now() - t
             }
+            done[2] = true
             static to width
         }
         // Grey, so any one channel is how dark. Read a few rows at a time, as the sharpest is some 70 MB as ints.
@@ -166,15 +180,54 @@ class Sheets(private val packed: PackedSheets, private val scope: CoroutineScope
                 }
             }.joinAll()
             if (Probe.ON) parts[6] = Probe.now() - t
+            done[3] = true
             out to w
         }
         val signals = async {
             val t = if (Probe.ON) Probe.now() else 0L
-            packed.signals[level].decodeToImageBitmap().also { if (Probe.ON) parts[7] = Probe.now() - t }
+            packed.signals[level].decodeToImageBitmap().also { if (Probe.ON) parts[7] = Probe.now() - t; done[4] = true }
         }
         val (staticPixels, staticWidth) = static.await()
         val (shadowBytes, shadowWidth) = shadows.await()
         return LevelSheets(ground.await(), staticPixels, staticWidth, shadowBytes, shadowWidth, signals.await())
+    }
+
+    private val signalsAlone = arrayOfNulls<ImageBitmap>(Atlas.LEVELS)
+    private val signalsAsked = BooleanArray(Atlas.LEVELS)
+    private val signalsFailed = IntArray(Atlas.LEVELS)
+
+    /**
+     * [level]'s signals sheet, or null while it unpacks: the level's own if it's in, else unpacked alone, for the GPU
+     * map, which puts what moves on the GPU at every level before it takes the levels past the screen's.
+     */
+    @OptIn(ExperimentalResourceApi::class)
+    fun signals(level: Int): ImageBitmap? {
+        levels[level]?.let {
+            // The level's own stands in from now on, so the one unpacked alone goes.
+            signalsAlone[level] = null
+            signalsAsked[level] = false
+            signalsFailed[level] = 0
+            return it.signals
+        }
+        signalsAlone[level]?.let { return it }
+        if (level >= Renderer.SHARPEST && !signalsAsked[level] && signalsFailed[level] < 3) {
+            signalsAsked[level] = true
+            scope.launch {
+                // Asked again next time if it fails, up to 3 times, or the level came in meanwhile.
+                val got = try {
+                    withContext(vehicleDecoder) { packed.signals[level].decodeToImageBitmap() }
+                } catch (e: Exception) {
+                    if (e is kotlinx.coroutines.CancellationException) throw e
+                    signalsFailed[level]++
+                    null
+                } finally {
+                    signalsAsked[level] = false
+                }
+                if (got != null && levels[level] == null) signalsAlone[level] = got
+                revision.intValue++
+            }
+        }
+        return null
     }
 
     private var sources: List<VehicleSource?> = emptyList()
@@ -344,6 +397,12 @@ class Sheets(private val packed: PackedSheets, private val scope: CoroutineScope
         const val PICTURE_SHARPEST = 2
         const val VEHICLE_KEEP_S = 5
         const val COARSEST = Atlas.LEVELS - 1
+
+        /**
+         * A level's parts as they count towards [unpacked]: ground, static pixels, static snow, shadows, signals.
+         * From the sharpest level's times on the Fire: static webp and its read some 1.5 s, the snow 0.7 s.
+         */
+        val PART_WEIGHTS = floatArrayOf(0.05f, 0.5f, 0.25f, 0.15f, 0.05f)
     }
 }
 

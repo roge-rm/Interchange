@@ -117,6 +117,42 @@ class GlMapTest {
     }
 
     @Test
+    fun partOfARegionRecordsItsTilesAsTheWholeDoes() {
+        for (turn in 0 until 4) for (r in regions(turn)) {
+            r!!
+            // A band of columns that moves along the rows, empty on some.
+            val cols = IntArray(2 * r.rows) { k -> val row = k / 2; if (row % 5 == 4) (if (k % 2 == 0) 1 else 0) else if (k % 2 == 0) r.columns / 4 + row % 3 else r.columns * 3 / 4 - row % 2 }
+            val part = recordRegion(world, turn, r.index, look, year, weather, cols = cols)
+            assertEquals(r.columns, part.columns)
+            for (pass in 0 until PASSES) for (vy in r.row0 until r.row1) for (vx in 0 until r.columns) {
+                val k = 2 * (vy - r.row0)
+                val inside = vx >= cols[k] && vx <= cols[k + 1]
+                // The tile after the last of a row is the next row's first, so start() gives each tile's end.
+                val n = part.start(pass, vy, vx + 1) - part.start(pass, vy, vx)
+                val whole = r.start(pass, vy, vx + 1) - r.start(pass, vy, vx)
+                if (!inside) { assertEquals(0, n, "turn $turn region ${r.index} tile $vx,$vy pass $pass outside"); continue }
+                assertEquals(whole, n, "turn $turn region ${r.index} tile $vx,$vy pass $pass sprite count")
+                for (j in 0 until n) {
+                    val a = sprite(part.data, part.start(pass, vy, vx) + j)
+                    val b = sprite(r.data, r.start(pass, vy, vx) + j)
+                    if (a[0] == SpriteRecorder.GROUND && b[0] == SpriteRecorder.GROUND) {
+                        val ga = part.ground.copyOfRange(a[1] * GroundRecord.STRIDE, (a[1] + 1) * GroundRecord.STRIDE)
+                        val gb = r.ground.copyOfRange(b[1] * GroundRecord.STRIDE, (b[1] + 1) * GroundRecord.STRIDE)
+                        assertTrue(ga.contentEquals(gb), "turn $turn region ${r.index} tile $vx,$vy ground differs")
+                    } else assertTrue(a.contentEquals(b), "turn $turn region ${r.index} tile $vx,$vy pass $pass sprite $j differs")
+                }
+            }
+            for (vy in r.row0 until r.row1) {
+                val k = 2 * (vy - r.row0)
+                assertTrue(part.holds(vy, cols[k], cols[k + 1]))
+                assertTrue(part.holds(vy, 1, 0))
+                if (cols[k] <= cols[k + 1]) assertTrue(!part.holds(vy, cols[k], cols[k + 1] + 1))
+            }
+            assertTrue(r.holds(r.row0, 0, r.columns - 1))
+        }
+    }
+
+    @Test
     fun eachPassDrawsFromOneSheet() {
         for (turn in 0 until 4) for (r in regions(turn)) {
             r!!
