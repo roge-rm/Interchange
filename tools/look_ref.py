@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Map screenshots for before and after looks, on an emulator.
 
-Loads each save from the Load window, pauses, and takes the map at the default zoom, then pinched in to the
-closest and out to the widest, each pinch about the screen's centre so the view stays put. Saves must already be in
-the app's files/game (see push below). Pinches go straight into the emulator's touch device, so it needs adbd as root
+Loads each save from the Load window, pauses as soon as the game shows, and takes the map at the default zoom, then
+pinched in to the closest and out to the widest, each pinch about the screen's centre so the view stays put. Saves must
+already be in the app's files/game (see push below). Pinches go straight into the emulator's touch device, so it needs adbd as root
 (`adb -s SERIAL root`).
 
   look_ref.py push SERIAL [SAVE_DIR...]        copy every NAME.ichg and NAME.info in the dirs (SAVE_DIRS if none) into files/game;
@@ -116,9 +116,10 @@ def shoot(serial, out, label, names, gl):
         tap_text(serial, lambda t: t == "Load", "Load button")
         time.sleep(1.5)
         tap_text(serial, lambda t: t.startswith(money), f"save {name}")
-        time.sleep(WAIT_LOAD)
+        # Paused as soon as the game shows, so shots of one save in different builds are of the same day.
         tap_text(serial, lambda t: t == "Pause", "Pause button")
-        time.sleep(2)
+        time.sleep(WAIT_LOAD)
+        date = next((t for t, _, _ in ui(serial) if re.match(r"\w{3} \d+ \w{3} \d{4}$", t)), "?")
 
         def cap(zoom):
             png = adb(serial, "exec-out", "screencap", "-p", binary=True)
@@ -135,7 +136,7 @@ def shoot(serial, out, label, names, gl):
             time.sleep(0.5)
         time.sleep(6)
         cap("widest")
-        print(name, "done")
+        print(name, date, "done")
     adb(serial, "shell", "am", "force-stop", PACKAGE)
 
 

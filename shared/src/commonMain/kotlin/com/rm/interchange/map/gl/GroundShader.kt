@@ -185,6 +185,8 @@ precision highp float;
 precision highp int;
 uniform mediump sampler2DArray uSheet;
 uniform mediump sampler2DArray uGround;
+// The same ground sheet sampled nearest, for the noise, so snow and bare patches keep ragged edges.
+uniform mediump sampler2DArray uRag;
 uniform highp sampler2D uLegs;
 // Taxi legs of each airport kind in uLegs' rows, and the grass colour mixed in for each kind at this time of year.
 uniform int uLegCount[6];
@@ -247,7 +249,7 @@ vec3 K(int kind) {
 }
 
 float ragAt(vec2 at) {
-    return textureGrad(uGround, vec3(at, 12.0), gx, gy).b;
+    return textureGrad(uRag, vec3(at, 12.0), gx, gy).b;
 }
 
 // Bits: the view edges XM 1, XP 2, YM 4, YP 8.

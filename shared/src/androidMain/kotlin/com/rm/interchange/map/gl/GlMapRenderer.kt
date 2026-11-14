@@ -120,6 +120,11 @@ internal class GlMapRenderer(private val scene: GlScene, private val page: Int) 
         groundVao = ids[1]
         liveVao = ids[2]
         squareProgram = program(SQUARE_VS, SQUARE_FS)
+        ragSampler = IntArray(1).also { glGenSamplers(1, it, 0) }[0]
+        glSamplerParameteri(ragSampler, GL_TEXTURE_MIN_FILTER, GL_NEAREST_MIPMAP_NEAREST)
+        glSamplerParameteri(ragSampler, GL_TEXTURE_MAG_FILTER, GL_NEAREST)
+        glSamplerParameteri(ragSampler, GL_TEXTURE_WRAP_S, GL_REPEAT)
+        glSamplerParameteri(ragSampler, GL_TEXTURE_WRAP_T, GL_REPEAT)
         convertProgram = program(SQUARE_VS, CONVERT_FS)
         squareVao = IntArray(1).also { glGenVertexArrays(1, it, 0) }[0]
         squareFbo = 0
@@ -293,6 +298,8 @@ internal class GlMapRenderer(private val scene: GlScene, private val page: Int) 
     }
     private val squares = HashMap<Long, Square>()
     private var squareFbo = 0
+    /** Nearest sampling of the ground sheet for its noise, on unit 8. */
+    private var ragSampler = 0
     private var squareProgram = 0
     private var convertProgram = 0
     private var squareVao = 0
@@ -651,6 +658,11 @@ internal class GlMapRenderer(private val scene: GlScene, private val page: Int) 
         glActiveTexture(GL_TEXTURE1)
         glBindTexture(GL_TEXTURE_2D_ARRAY, groundTex)
         glUniform1i(glGetUniformLocation(p, "uGround"), 1)
+        // Unit 8 is past the live pages' units, so its sampler stays bound.
+        glActiveTexture(GL_TEXTURE8)
+        glBindTexture(GL_TEXTURE_2D_ARRAY, groundTex)
+        glBindSampler(8, ragSampler)
+        glUniform1i(glGetUniformLocation(p, "uRag"), 8)
         glActiveTexture(GL_TEXTURE3)
         glBindTexture(GL_TEXTURE_2D, legsTex)
         glUniform1i(glGetUniformLocation(p, "uLegs"), 3)
