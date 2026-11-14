@@ -50,6 +50,7 @@ class GlMapTest {
         val hh = hw / 2
         var checked = 0
         var off = 0
+        var grounds = 0
         for (turn in 0 until 4) {
             val regions = regions(turn)
             val view = view(turn, hw, 0f, 0f)
@@ -85,6 +86,16 @@ class GlMapTest {
                     for (s in region.start(pass, vy, vx) until region.start(pass, vy, vx + 1)) {
                         val want = sprite(recorder.data, k)
                         val got = sprite(region.data, s)
+                        if (want[0] == SpriteRecorder.GROUND) {
+                            // Ground is laid in view tiles, the same wherever the chunk is.
+                            assertEquals(SpriteRecorder.GROUND, got[0], "turn $turn tile $vx,$vy pass $pass")
+                            val a = recorder.ground.copyOfRange(want[1] * GroundRecord.STRIDE, (want[1] + 1) * GroundRecord.STRIDE)
+                            val b = region.ground.copyOfRange(got[1] * GroundRecord.STRIDE, (got[1] + 1) * GroundRecord.STRIDE)
+                            assertEquals(a.toList(), b.toList(), "turn $turn tile $vx,$vy ground")
+                            grounds++
+                            k++
+                            continue
+                        }
                         // Moved into the chunk. A chunk rounds toward 0 off its left and top edges, and float sums at another
                         // origin can land either side of a whole pixel, so a pixel out is allowed for a few.
                         got[1] -= cx * Renderer.CHUNK_PIXELS
@@ -101,6 +112,7 @@ class GlMapTest {
             }
         }
         assertTrue(checked > 1000, "only $checked sprites checked")
+        assertTrue(grounds > 500, "only $grounds grounds checked")
         assertTrue(off * 50 < checked, "$off of $checked a pixel out")
     }
 
@@ -109,7 +121,9 @@ class GlMapTest {
         for (turn in 0 until 4) for (r in regions(turn)) {
             r!!
             for (pass in 0 until PASSES) for (s in r.start(pass, r.row0, 0) until r.start(pass, r.row1 - 1, r.columns)) {
-                assertEquals(if (pass == 1) SpriteRecorder.SHADOW else SpriteRecorder.STATIC, r.data[s * SpriteRecorder.STRIDE], "turn $turn pass $pass")
+                val sheet = r.data[s * SpriteRecorder.STRIDE]
+                if (pass == 0) assertTrue(sheet == SpriteRecorder.STATIC || sheet == SpriteRecorder.GROUND, "turn $turn pass 0 sheet $sheet")
+                else assertEquals(if (pass == 1) SpriteRecorder.SHADOW else SpriteRecorder.STATIC, sheet, "turn $turn pass $pass")
             }
         }
     }
@@ -151,10 +165,27 @@ class GlMapTest {
                 var on = 0
                 for (r in regions) for (s in 0 until r!!.count) {
                     val o = s * SpriteRecorder.STRIDE
-                    val x0 = frame.screenX(r.data[o + 1].toFloat())
-                    val y0 = frame.screenY(r.data[o + 2].toFloat())
-                    val x1 = frame.screenX((r.data[o + 1] + r.data[o + 3]).toFloat())
-                    val y1 = frame.screenY((r.data[o + 2] + r.data[o + 4]).toFloat())
+                    var left = r.data[o + 1].toFloat()
+                    var top = r.data[o + 2].toFloat()
+                    var right = left + r.data[o + 3]
+                    var bottom = top + r.data[o + 4]
+                    if (r.data[o] == SpriteRecorder.GROUND) {
+                        // A tile's diamond from its highest corner down to the foot of an earth face.
+                        val g = r.ground
+                        val go = r.data[o + 1] * GroundRecord.STRIDE
+                        val vx = GroundRecord.vx(g, go)
+                        val vy = GroundRecord.vy(g, go)
+                        val high = (0 until 4).maxOf { GroundRecord.height(g, it, go) }
+                        val hw = SOURCE_HALF_WIDTH
+                        left = (vx - vy - 1) * hw
+                        right = (vx - vy + 1) * hw
+                        top = (vx + vy) * hw / 2 - high * hw / 4
+                        bottom = (vx + vy + 2) * hw / 2 + 2 * hw / 4
+                    }
+                    val x0 = frame.screenX(left)
+                    val y0 = frame.screenY(top)
+                    val x1 = frame.screenX(right)
+                    val y1 = frame.screenY(bottom)
                     if (x1 <= 0f || y1 <= 0f || x0 >= w || y0 >= h) continue
                     on++
                     assertTrue(r.index.toLong() shl 32 or s.toLong() in drawn, "turn $turn zoom $halfWidth focus $fx,$fy region ${r.index} sprite $s at $x0,$y0 left out")

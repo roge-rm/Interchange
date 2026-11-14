@@ -5,6 +5,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.ui.Modifier
 import com.rm.interchange.map.CurveArt
 import com.rm.interchange.map.LevelSheets
+import com.rm.interchange.map.Renderer
 import com.rm.interchange.map.Sheets
 import com.rm.interchange.map.View
 import com.rm.interchange.map.WeatherCopy
@@ -18,6 +19,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlin.concurrent.Volatile
 import kotlin.math.abs
+import kotlin.time.TimeSource
 
 /** Whether the switch asks for the GPU map in place of the chunk map: on Android, the system property debug.interchange.gl set to 1. */
 internal expect fun glMapWanted(): Boolean
@@ -75,12 +77,17 @@ internal interface FarRegions {
 /**
  * The GPU map's side on the main thread: records each view direction's regions in the background, the nearest the
  * screen first, takes asked for turns once the new direction's regions on screen are in, and hands the GL thread
- * what to draw through [shown]. The world is read as a bake reads it.
+ * what to draw through [shown]. Regions are recorded again where the world under them changes ([regionVersion]); the
+ * weather goes to the GL thread as [weather] and the time of year as [look], which the ground shader draws in place.
+ * The world is read as a bake reads it.
  *
- * Main thread only, but for [shown], [sheets] and [requestRender], which the GL thread reads.
+ * Main thread only, but for [shown], [sheets], [weather], [look] and [requestRender], which the GL thread reads.
  */
 internal class GlScene(private val world: World, private val scope: CoroutineScope) {
-    private class Turn(val turn: Int, val regions: Array<RegionSprites?>, val jobs: MutableList<Job>)
+    /** [pending] holds the version each region is being recorded at, or -1. */
+    private class Turn(val turn: Int, val regions: Array<RegionSprites?>, val jobs: MutableList<Job>) {
+        val pending = LongArray(regions.size) { -1L }
+    }
 
     private val turns = arrayOfNulls<Turn>(4)
     /** Two at a time, as the chunk bakers are. */
@@ -94,6 +101,26 @@ internal class GlScene(private val world: World, private val scope: CoroutineSco
     @Volatile
     var sheets: LevelSheets? = null
         private set
+
+    /** The weather for the ground shader, once the first copy's made. */
+    @Volatile
+    var weather: GroundWeather? = null
+        private set
+
+    /** The [Climate] look of the year now, for the ground shader's grass. */
+    @Volatile
+    var look = Climate.SUMMER
+        private set
+    private var year = 0
+    private var lookDay = -1
+
+    /** The weather regions are recorded with, and when and at what versions it was last copied. */
+    private var copy: WeatherCopy? = null
+    private var copying = false
+    private val clock = TimeSource.Monotonic
+    private var lastCopy = clock.markNow()
+    private var copiedAt = Long.MIN_VALUE
+    private var lastCheck = clock.markNow()
 
     /** Asks the surface for a frame; set by it, safe from any thread. */
     @Volatile
@@ -115,6 +142,12 @@ internal class GlScene(private val world: World, private val scope: CoroutineSco
      */
     fun show(view: View, sheets: Sheets, width: Int, height: Int): Boolean {
         if (this.sheets == null) sheets.get(SOURCE_LEVEL)?.let { this.sheets = it; requestRender() }
+        season()
+        copyWeather()
+        if (lastCheck.elapsedNow().inWholeMilliseconds >= CHECK_MILLIS) {
+            lastCheck = clock.markNow()
+            turns[view.turn]?.let { recheck(it) }
+        }
         want(view.turn, view)
         if (view.turnsAsked != 0) {
             val asked = view.askedTurn
@@ -129,13 +162,14 @@ internal class GlScene(private val world: World, private val scope: CoroutineSco
         }
         for (t in 0 until 4) if (t != view.turn && t != view.askedTurn) drop(t)
         val frame = GlFrame.of(view, width, height)
-        val regions = turns[view.turn]!!.regions
+        // Nothing recording till the first weather copy's in.
+        val regions = turns[view.turn]?.regions ?: return false
         val last = shown
         if (last == null || last.frame != frame || !last.regions.contentEquals(regions)) {
             shown = GlShown(frame, regions.copyOf())
             requestRender()
         }
-        val ready = this.sheets != null && covers(view.turn, frame)
+        val ready = this.sheets != null && weather != null && covers(view.turn, frame)
         if (ready && !sharp) { sharp = true; onSharp() }
         return ready
     }
@@ -153,27 +187,85 @@ internal class GlScene(private val world: World, private val scope: CoroutineSco
         return true
     }
 
-    /** Starts recording [turn]'s regions if they aren't, the nearest [view]'s focus first. */
+    /** Starts recording [turn]'s regions if they aren't, the nearest [view]'s focus first, once there's weather to record with. */
     private fun want(turn: Int, view: View) {
-        if (turns[turn] != null) return
+        if (turns[turn] != null || copy == null) return
         val n = regionCount(world, turn)
         val t = Turn(turn, arrayOfNulls(n), ArrayList())
         turns[turn] = t
         val turned = View(world.width, world.height).also { it.turnBy(turn) }
         val focusRow = (turned.toViewY(view.focusX, view.focusY) / REGION_ROWS).toInt()
-        val d = world.day
-        val year = Calendar.year(world.startYear, d)
-        val look = Climate.look(world.settings.region, year, Calendar.dayOfYear(world.startYear, d))
+        for (i in (0 until n).sortedBy { abs(it - focusRow) }) record(t, i)
+    }
+
+    /** Records region [i] of [t] at the world's version now, in the background, and puts it in when it's done. */
+    private fun record(t: Turn, i: Int) {
+        val lk = look
+        val yr = year
+        val version = regionVersion(world, t.turn, i, lk, yr)
+        val weather = copy!!
+        t.pending[i] = version
+        t.jobs.removeAll { it.isCompleted }
         t.jobs += scope.launch {
-            val weather = withContext(Dispatchers.Default) { WeatherCopy.of(world, 0, 0, null) }
-            for (i in (0 until n).sortedBy { abs(it - focusRow) }) {
-                t.jobs += scope.launch {
-                    val r = withContext(lane) { recordRegion(world, turn, i, look, year, weather, curves()) }
-                    if (turns[turn] !== t) return@launch
-                    t.regions[i] = r
-                    revision.intValue++
+            val r = withContext(lane) { recordRegion(world, t.turn, i, lk, yr, weather, curves(), version) }
+            if (turns[t.turn] !== t || t.pending[i] != version) return@launch
+            t.pending[i] = -1L
+            t.regions[i] = r
+            revision.intValue++
+        }
+    }
+
+    /** Records again the regions of [t] whose world has changed since they were recorded; the old ones show till then. */
+    private fun recheck(t: Turn) {
+        if (copy == null) return
+        for (i in t.regions.indices) {
+            val r = t.regions[i] ?: continue
+            if (t.pending[i] >= 0L) continue
+            if (regionVersion(world, t.turn, i, look, year) != r.version) record(t, i)
+        }
+    }
+
+    /** The look of the year and the year, worked out once a day. */
+    private fun season() {
+        val d = world.day
+        if (d == lookDay) return
+        lookDay = d
+        year = Calendar.year(world.startYear, d)
+        val l = Climate.look(world.settings.region, year, Calendar.dayOfYear(world.startYear, d))
+        if (l != look) {
+            look = l
+            requestRender()
+        }
+    }
+
+    /**
+     * Copies the weather the first time, then every [Renderer.WEATHER_MILLIS] if it or the world has changed, as the
+     * chunk renderer does, and makes the ground shader's from it.
+     */
+    private fun copyWeather() {
+        if (copying) return
+        val last = copy
+        if (last != null && lastCopy.elapsedNow().inWholeMilliseconds < Renderer.WEATHER_MILLIS) return
+        val at = world.weatherVersions.fold(0L) { s, v -> s + v } * 31 + world.chunkVersions.fold(0L) { s, v -> s + v }
+        if (last != null && at == copiedAt) return
+        copying = true
+        lastCopy = clock.markNow()
+        copiedAt = at
+        val ground = weather
+        scope.launch {
+            // Cleared however the job ends, so a failed or cancelled copy doesn't stop later ones.
+            val (c, g) = try {
+                withContext(Dispatchers.Default) {
+                    val c = WeatherCopy.of(world, (last?.id ?: 0) + 1, 0, last)
+                    c to GroundWeather.of(world, c, ground)
                 }
+            } finally {
+                copying = false
             }
+            copy = c
+            weather = g
+            revision.intValue++
+            requestRender()
         }
     }
 
@@ -184,4 +276,9 @@ internal class GlScene(private val world: World, private val scope: CoroutineSco
     }
 
     private fun curves(): CurveArt = CurveArt(world).also { it.refresh() }
+
+    private companion object {
+        /** How often the world under the regions showing is looked at for changes. */
+        const val CHECK_MILLIS = 250L
+    }
 }

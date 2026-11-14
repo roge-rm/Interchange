@@ -37,14 +37,34 @@ internal class SpriteRecorder(private val shiftX: Int = 0, private val shiftY: I
         count++
     }
 
+    /** The pieces of ground, [GroundRecord.STRIDE] ints each, laid down in the first pass among its sprites. */
+    var groundCount = 0
+        private set
+    var ground = IntArray(GroundRecord.STRIDE * 256)
+        private set
+
+    /** A piece of ground from [GroundRecord], as a sprite of sheet [GROUND] whose second field is its place in [ground]. */
+    fun addGround(g: IntArray) {
+        if ((count + 1) * STRIDE > data.size) data = data.copyOf(data.size * 2)
+        if ((groundCount + 1) * GroundRecord.STRIDE > ground.size) ground = ground.copyOf(ground.size * 2)
+        g.copyInto(ground, groundCount * GroundRecord.STRIDE)
+        val o = count * STRIDE
+        data.fill(0, o, o + STRIDE)
+        data[o] = GROUND
+        data[o + 1] = groundCount
+        groundCount++
+        count++
+    }
+
     companion object {
         const val STRIDE = 8
         const val STATIC = 0
         const val SHADOW = 1
+        const val GROUND = 2
     }
 }
 
-/** The baker's three passes, drawn in this order: ground (foundations and track), shadows, what stands up. */
+/** The baker's three passes, drawn in this order: ground (with foundations and track), shadows, what stands up. */
 internal const val PASSES = 3
 
 /** The zoom level the GPU map's sprites and sheets come from, upload and zoom alike: L1, a half tile width of 64. */
@@ -69,7 +89,14 @@ internal class RegionSprites(
     val data: IntArray,
     val count: Int,
     val starts: IntArray,
+    /** The ground the first pass's [SpriteRecorder.GROUND] sprites point into. */
+    val ground: IntArray = IntArray(0),
+    /** The world's [World.chunkVersions] summed under the region and round it, [regionVersion], when it was recorded. */
+    val version: Long = 0,
 ) {
+    /** Sprites in the first pass, which come first. */
+    val firstPass get() = starts[rows * columns]
+
     val rows get() = row1 - row0
 
     fun start(pass: Int, row: Int, column: Int) = starts[(pass * rows + row - row0) * columns + column]
@@ -93,7 +120,7 @@ internal val noSheets = LevelSheets(IntArray(0), IntArray(0), 1, ByteArray(0), 1
  * Records region [index] of [world] seen from [turn]: what [ChunkBaker] would draw there at [SOURCE_LEVEL], with
  * the season [look], [year] and [weather] it'd bake with. Reads the world as a bake does, off the main thread.
  */
-internal fun recordRegion(world: World, turn: Int, index: Int, look: Int, year: Int, weather: WeatherCopy, curves: CurveArt? = null): RegionSprites {
+internal fun recordRegion(world: World, turn: Int, index: Int, look: Int, year: Int, weather: WeatherCopy, curves: CurveArt? = null, version: Long = 0): RegionSprites {
     val view = View(world.width, world.height).apply { turnBy(turn) }
     val vw = view.viewWidth
     val row0 = index * REGION_ROWS
@@ -119,11 +146,42 @@ internal fun recordRegion(world: World, turn: Int, index: Int, look: Int, year: 
         }
     }
     starts[k] = recorder.count
-    return RegionSprites(turn, index, row0, row1, vw, recorder.data, recorder.count, starts)
+    return RegionSprites(turn, index, row0, row1, vw, recorder.data, recorder.count, starts, recorder.ground, version)
 }
 
 /** How many regions a map seen from [turn] has. */
 internal fun regionCount(world: World, turn: Int): Int {
     val vh = if (turn % 2 == 0) world.height else world.width
     return (vh + REGION_ROWS - 1) / REGION_ROWS
+}
+
+/** World tiles round a region that what's drawn in it reads: the curved track's reach, and ridges and hollows. */
+internal val REGION_MARGIN = maxOf(Renderer.CURVE_REACH, 5)
+
+/**
+ * How many times the world under region [index] seen from [turn] and within [REGION_MARGIN] tiles of it has changed,
+ * from [World.chunkVersions], with the season [look] and the eras of [year] mixed in, so a region is recorded again
+ * when any of them moves on.
+ */
+internal fun regionVersion(world: World, turn: Int, index: Int, look: Int, year: Int): Long {
+    val vh = if (turn % 2 == 0) world.height else world.width
+    val row0 = index * REGION_ROWS
+    val row1 = minOf(vh, row0 + REGION_ROWS) - 1
+    // View rows run along world y for turns 0 and 2, along world x for 1 and 3, the far way round for 2 and 3.
+    val (a, b) = when (turn) {
+        0, 1 -> row0 to row1
+        2 -> world.height - 1 - row1 to world.height - 1 - row0
+        else -> world.width - 1 - row1 to world.width - 1 - row0
+    }
+    val across = world.width / World.BLOCK
+    val down = world.height / World.BLOCK
+    val r0 = maxOf(0, a - REGION_MARGIN) / World.BLOCK
+    val along = if (turn % 2 == 0) down else across
+    val r1 = minOf(along - 1, minOf((if (turn % 2 == 0) world.height else world.width) - 1, b + REGION_MARGIN) / World.BLOCK)
+    var sum = 0L
+    for (k in r0..r1) {
+        if (turn % 2 == 0) for (x in 0 until across) sum += world.chunkVersions[k * across + x]
+        else for (y in 0 until down) sum += world.chunkVersions[y * across + k]
+    }
+    return (sum * 8 + look) * ChunkBaker.PART_ERA_COUNT + ChunkBaker.partEras(year)
 }

@@ -1,5 +1,6 @@
 package com.rm.interchange.map
 
+import com.rm.interchange.map.gl.GroundRecord
 import com.rm.interchange.map.gl.SpriteRecorder
 import com.rm.interchange.sim.CORNER_E
 import com.rm.interchange.sim.CORNER_N
@@ -554,7 +555,7 @@ internal class ChunkBaker(
      * [soft] for the land's own corners: slopes no lighter than flat take their light from the corners, so it fades across the tile.
      */
     private fun ground(vx: Int, vy: Int, t: Int, r: Int, b: Int, l: Int, kind: Int, edges: IntArray, road: Int = 0, weather: Boolean = false, banks: Int = 0, aero: Int = 0, soft: Boolean = false) {
-        if (recorder != null) return
+        recorder?.let { recordGround(it, vx, vy, t, r, b, l, kind, edges, road, weather, banks, aero, soft); return }
         val gt = if (Probe.ON) times!!.start() else 0L
         // Split along whichever diagonal has its ends level, as the slopes are drawn. Each half is a plane
         // h = h0 + gu * u + gv * v over the tile's own u and v.
@@ -776,6 +777,41 @@ internal class ChunkBaker(
             times!!.add(part, lt0)
             times.pixels[part] += painted
         }
+    }
+
+    /**
+     * What [ground] would paint, for the GPU map to draw: everything that comes from the world, worked out as it
+     * does. The weather and the time of year are left to the GPU's shader.
+     */
+    private fun recordGround(rec: SpriteRecorder, vx: Int, vy: Int, t: Int, r: Int, b: Int, l: Int, kind: Int, edges: IntArray, road: Int, weather: Boolean, banks: Int, aero: Int, soft: Boolean) {
+        val alongRL = r == l
+        val f1 = if (alongRL) planeLight((r - t).toFloat(), (l - t).toFloat()) else planeLight((r - t).toFloat(), (b - r).toFloat())
+        val f2 = if (alongRL) planeLight((b - l).toFloat(), (b - r).toFloat()) else planeLight((b - l).toFloat(), (l - t).toFloat())
+        val water = kind == Atlas.WATER
+        val shaded = soft && !water && (f1 <= 256 || f2 <= 256)
+        val lights = FloatArray(4) { 256f }
+        if (shaded) {
+            lights[0] = cornerLight(vx, vy)
+            lights[1] = cornerLight(vx + 1, vy)
+            lights[2] = cornerLight(vx + 1, vy + 1)
+            lights[3] = cornerLight(vx, vy + 1)
+        }
+        val smooth = shaded && (lights.any { it != 256f } || f1 != 256 || f2 != 256)
+        val reliefs = FloatArray(4)
+        if (!water) {
+            reliefs[0] = relief(vx, vy)
+            reliefs[1] = relief(vx + 1, vy)
+            reliefs[2] = relief(vx + 1, vy + 1)
+            reliefs[3] = relief(vx, vy + 1)
+        }
+        val low = minOf(minOf(t, r), minOf(b, l))
+        val foot = soft && !water && maxOf(maxOf(t, r), maxOf(b, l)) > low
+        val rankHere = rank(kind)
+        val spreads = IntArray(4) { e -> edges[e].let { if (it < 0 || it == kind || rank(it) <= rankHere) -1 else it } }
+        val tile = world.index(view.worldX(vx, vy), view.worldY(vx, vy))
+        val fireAt = world.fire[tile].toInt() and 255
+        val charred = if (fireAt >= BURNT_FROM) 0.25f + (fireAt - BURNT_FROM) / (BURNT - BURNT_FROM).toFloat() * 0.7f else if (fireAt > 0) 0.7f else 0f
+        rec.addGround(GroundRecord.ground(vx, vy, t, r, b, l, kind, spreads, weather, smooth, foot, banks, road, charred, aero, f1, f2, reliefs, lights))
     }
 
     /** The kinds across a tile's edges for [ground], and those that spread in, kept to save making them for every tile. */
@@ -1225,7 +1261,11 @@ internal class ChunkBaker(
 
     /** The earth under the map's front edges, down past sea level. */
     private fun earthFaces(vx: Int, vy: Int, r: Int, b: Int, l: Int) {
-        if (recorder != null) return
+        recorder?.let {
+            if (vx == view.viewWidth - 1) it.addGround(GroundRecord.face(vx, vy, GroundRecord.FACE_RIGHT, r, b, l))
+            if (vy == view.viewHeight - 1) it.addGround(GroundRecord.face(vx, vy, GroundRecord.FACE_LEFT, r, b, l))
+            return
+        }
         val fx = vx.toFloat()
         val fy = vy.toFloat()
         if (vx == view.viewWidth - 1) {
@@ -1737,7 +1777,7 @@ internal class ChunkBaker(
          * Each airport kind's taxi legs that leave the runway's middle line, from [Taxiways] so the map paves and lines
          * the way aircraft go: along0, across0, along1, across1 in tiles. Only city and international airports have them.
          */
-        private val TAXI_LEGS: Array<FloatArray> = Array(Airports.LENGTH.size) { kind ->
+        internal val TAXI_LEGS: Array<FloatArray> = Array(Airports.LENGTH.size) { kind ->
             val out = ArrayList<Float>()
             if (kind == Airports.CITY || kind == Airports.INTERNATIONAL) {
                 val places = (0 until Taxiways.STANDS[kind].size / 4) + (Taxiways.EXIT0 until Taxiways.EXIT0 + Taxiways.EXITS[kind].size) +
@@ -1766,7 +1806,7 @@ internal class ChunkBaker(
          * top byte. Dead grass in early spring, fresh in spring, prairie gold by late summer, red tundra and
          * brown meadows in autumn.
          */
-        private val GRADES = arrayOf(
+        internal val GRADES = arrayOf(
             intArrayOf(0x598a7a58, 0x598a7a58, 0x26705a40, 0, 0x4d8a7a58),
             intArrayOf(0x1a7aa648, 0x1a8ab050, 0, 0, 0x1a7aa648),
             intArrayOf(0, 0, 0, 0, 0),
