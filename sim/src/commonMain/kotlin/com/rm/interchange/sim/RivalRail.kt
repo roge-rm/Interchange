@@ -121,7 +121,7 @@ private fun World.sites(c: Company, site: RailSite, depot: Boolean, people: Bool
  * The search keeps what the tile before did, so a tight bend (a lone diagonal between straights, or two diagonals
  * turning the same way) costs more and a 90 is spread over three diagonals where there's room.
  */
-private fun World.railPath(c: Company, a: Terminus, b: Terminus, clearing: Boolean, bridges: Boolean = false): IntArray? {
+private fun World.railPath(c: Company, a: Terminus, b: Terminus, clearing: Boolean, bridges: Boolean, scratch: RailScratch): IntArray? {
     val start = a.mouth(this)
     val goal = b.mouth(this)
     val gx = goal % width
@@ -131,9 +131,13 @@ private fun World.railPath(c: Company, a: Terminus, b: Terminus, clearing: Boole
     val kept = HashSet<Int>()
     kept += a.tiles(this)
     kept += b.tiles(this)
-    val best = HashMap<Int, Int>()
-    val back = HashMap<Int, Int>()
-    val heap = LongHeap()
+    val keptTiles = kept.toIntArray()
+    // Each search state's cost so far and the state it came from.
+    val best = scratch.best.apply { clear() }
+    val back = scratch.back.apply { clear() }
+    // Each step's cost by tile, edge come in at and edge left by, or -1 where it can't go; the same for the whole search.
+    val steps = scratch.steps.apply { clear() }
+    val heap = scratch.heap.apply { clear() }
     fun h(i: Int) = (kotlin.math.abs(i % width - gx) + kotlin.math.abs(i / width - gy)) * RAIL_MOVE
     // A state is a tile, the edge come in at and what the tile before did: [BEND_STRAIGHT], a lone diagonal after a
     // straight or one in a run of diagonals, each turning one way or the other.
@@ -143,18 +147,25 @@ private fun World.railPath(c: Company, a: Terminus, b: Terminus, clearing: Boole
     best[s0] = 0
     heap.push(h(start).toLong() shl 32 or s0.toLong())
     val limit = (chebyshev(start % width, start / width, gx, gy) + 10).let { it * it * 16 }.coerceAtMost(if (bridges) LOOSE_PATH_LIMIT else RAIL_PATH_LIMIT)
+    // Without bridges, a goal that no track from the start could reach, whatever its bends, isn't searched for.
+    if (!bridges) {
+        val reach = scratch.floods.getOrPut(a to clearing) { railReach(c, a, clearing) }
+        if (reach != null && reach[goal] == IntMap.NONE) return null
+    }
     var expanded = 0
     while (!heap.isEmpty() && expanded < limit) {
         val top = heap.pop()
         val s = (top and 0xffffffffL).toInt()
-        val g = best[s] ?: continue
+        val g = best[s]
+        if (g < 0) continue
         if ((top ushr 32).toInt() - h(tileOf(s)) > g) continue
         expanded++
         val t = tileOf(s)
         val came = (s / 5) % 4
         val bend = s % 5
         // A bridge's far head takes straight track only.
-        val landed = back[s]?.let { !next(tileOf(it), t) } == true
+        val from = back[s]
+        val landed = from >= 0 && !next(tileOf(from), t)
         // A mouth on a road is crossed straight.
         if (t == goal && came != into && (road[t].toInt() == 0 || came == b.out) && (!landed || came == b.out)) {
             val out = ArrayList<Int>()
@@ -164,7 +175,8 @@ private fun World.railPath(c: Company, a: Terminus, b: Terminus, clearing: Boole
                 val atCame = (at / 5) % 4
                 out += tileOf(at) * 16 + atCame * 4 + exit
                 exit = Track.opposite(atCame)
-                at = back[at] ?: break
+                at = back[at]
+                if (at < 0) break
             }
             out.reverse()
             return out.toIntArray()
@@ -181,34 +193,84 @@ private fun World.railPath(c: Company, a: Terminus, b: Terminus, clearing: Boole
             val ny = ty + Track.dy(e)
             if (!inside(nx, ny)) continue
             val n = index(nx, ny)
-            if (n in kept) continue
+            if (keptTiles.contains(n)) continue
             if (bridges && !turn && !landed && blockedAhead(c, tx, ty, e)) {
                 val land = bridgeLanding(c, tx, ty, e, kept)
                 if (land >= 0) {
                     val ns = state(land, Track.opposite(e), BEND_STRAIGHT)
                     val ng = g + chebyshev(tx, ty, land % width, land / width) * RAIL_MOVE * RAIL_BRIDGE + (if (tightAt(bend, came, e)) RAIL_TIGHT else 0)
-                    if (ng < (best[ns] ?: Int.MAX_VALUE)) {
+                    val was = best[ns]
+                    if (was < 0 || ng < was) {
                         best[ns] = ng
                         back[ns] = s
                         heap.push((ng + h(land)).toLong() shl 32 or ns.toLong())
                     }
                 }
             }
-            val step = railStep(c, n, e, clearing) ?: continue
-            if (edgeHeight(tx, ty, Track.pieceOf(came, e), e) != edgeHeight(nx, ny, Track.straight(e), Track.opposite(e))) continue
+            val key = t * 16 + came * 4 + e
+            var step = steps[key]
+            if (step == IntMap.NONE) {
+                step = railStep(c, n, e, clearing)?.takeIf {
+                    edgeHeight(tx, ty, Track.pieceOf(came, e), e) == edgeHeight(nx, ny, Track.straight(e), Track.opposite(e))
+                } ?: -1
+                steps[key] = step
+            }
+            if (step < 0) continue
             val tight = tightAt(bend, came, e)
             val nextBend = bendAfter(bend, came, e)
             val ns = state(n, Track.opposite(e), nextBend)
             // The goal's own piece is laid on the way into the station's straight, so its bend is counted here too.
             val atGoal = n == goal && (tightAt(nextBend, Track.opposite(e), into) || bendAfter(nextBend, Track.opposite(e), into).let { it == BEND_LONE_LEFT || it == BEND_LONE_RIGHT })
             val ng = g + step + (if (turn) RAIL_TURN else 0) + (if (tight) RAIL_TIGHT else 0) + (if (atGoal) RAIL_TIGHT else 0)
-            if (ng >= (best[ns] ?: Int.MAX_VALUE)) continue
+            val was = best[ns]
+            if (was in 0..ng) continue
             best[ns] = ng
             back[ns] = s
             heap.push((ng + h(n)).toLong() shl 32 or ns.toLong())
         }
     }
     return null
+}
+
+/**
+ * The tiles track could reach from [a]'s mouth in [railPath]'s search, each entered by any edge it could leave the
+ * tile before by and only [a]'s own tiles kept clear, so every tile the search could reach is in it. Null if there
+ * are more than [RAIL_PATH_LIMIT].
+ */
+private fun World.railReach(c: Company, a: Terminus, clearing: Boolean): IntMap? {
+    val kept = a.tiles(this).toIntArray()
+    val start = a.mouth(this)
+    val seen = IntMap()
+    var queue = IntArray(1 shl 10)
+    var head = 0
+    var tail = 0
+    seen[start] = 1
+    queue[tail++] = start
+    while (head < tail) {
+        val t = queue[head++]
+        val tx = t % width
+        val ty = t / width
+        val turns = isFlat(tx, ty) && road[t].toInt() == 0
+        for (e in 0 until 4) {
+            val nx = tx + Track.dx(e)
+            val ny = ty + Track.dy(e)
+            if (!inside(nx, ny)) continue
+            val n = index(nx, ny)
+            if (seen[n] != IntMap.NONE || kept.contains(n) || railStep(c, n, e, clearing) == null) continue
+            val there = edgeHeight(nx, ny, Track.straight(e), Track.opposite(e))
+            var fits = false
+            for (came in 0 until 4) {
+                if (came == e || came != Track.opposite(e) && !turns) continue
+                if (edgeHeight(tx, ty, Track.pieceOf(came, e), e) == there) { fits = true; break }
+            }
+            if (!fits) continue
+            if (tail == RAIL_PATH_LIMIT) return null
+            seen[n] = 1
+            if (tail == queue.size) queue = queue.copyOf(tail * 2)
+            queue[tail++] = n
+        }
+    }
+    return seen
 }
 
 /** Which way a tile come in at [came] and left by [e] turns: 0 straight, 1 or -1. */
@@ -523,6 +585,7 @@ internal fun World.tryRail(
     val passengers = cargo == Cargo.PASSENGERS
     val clearing = passengers && !human(c.id)
     val years = if (payback > 0) payback else ANY_PAYBACK
+    val scratch = RailScratch()
     for (a in termini(c, sa, true, passengers, clearing, loose)) for (b in termini(c, sb, false, passengers, clearing, loose)) {
         // A computer company runs feeder buses from the middle of each town its platforms don't reach. Those riding
         // them go to either station by its people and nearness, as passengers choose, and only those for the far
@@ -557,10 +620,10 @@ internal fun World.tryRail(
         // termini' own is looked for again round the buildings.
         fun houses(path: IntArray) = (a.tiles(this) + b.tiles(this) + path.map { it / 16 }).filter { house[it].toInt() != 0 }.distinct()
         fun tooMany(houses: List<Int>) = houses.groupingBy { townOf[it].toInt() }.eachCount().any { (t, n) -> n > mayClear(c, t) }
-        var path = railPath(c, a, b, clearing, loose) ?: continue
+        var path = railPath(c, a, b, clearing, loose, scratch) ?: continue
         var houses = houses(path)
         if (clearing && tooMany(houses)) {
-            path = railPath(c, a, b, false, loose) ?: continue
+            path = railPath(c, a, b, false, loose, scratch) ?: continue
             houses = houses(path)
         }
         if (tooMany(houses)) continue
@@ -998,3 +1061,68 @@ private const val LOOSE_LOAD = 10_000
 internal const val KMH_PER_TILE_A_DAY = 42
 /** Most work years another train on a line may take to pay for itself. */
 private const val TRAIN_PAYBACK = 10
+
+/**
+ * What the rail path searches for one line share: the maps and heap each search uses again, and by terminus and
+ * whether it may pull down buildings, the tiles track could reach from it. The map doesn't change between them.
+ */
+private class RailScratch {
+    val best = IntMap()
+    val back = IntMap()
+    val steps = IntMap()
+    val heap = LongHeap()
+    val floods = HashMap<Pair<Terminus, Boolean>, IntMap?>()
+}
+
+/** A map from keys of 0 and up to ints, [NONE] for a key not in it. Open addressing, cleared in place. */
+private class IntMap {
+    private var keys = IntArray(1 shl 12) { -1 }
+    private var values = IntArray(1 shl 12)
+    private var size = 0
+    private var mask = keys.size - 1
+
+    operator fun get(key: Int): Int {
+        var i = mix(key) and mask
+        while (true) {
+            val k = keys[i]
+            if (k == key) return values[i]
+            if (k < 0) return NONE
+            i = (i + 1) and mask
+        }
+    }
+
+    operator fun set(key: Int, value: Int) {
+        var i = mix(key) and mask
+        while (true) {
+            val k = keys[i]
+            if (k == key) { values[i] = value; return }
+            if (k < 0) break
+            i = (i + 1) and mask
+        }
+        keys[i] = key
+        values[i] = value
+        if (++size * 2 > keys.size) grow()
+    }
+
+    fun clear() {
+        if (size == 0) return
+        keys.fill(-1)
+        size = 0
+    }
+
+    private fun grow() {
+        val oldKeys = keys
+        val oldValues = values
+        keys = IntArray(oldKeys.size * 2) { -1 }
+        values = IntArray(oldKeys.size * 2)
+        mask = keys.size - 1
+        size = 0
+        for (j in oldKeys.indices) if (oldKeys[j] >= 0) set(oldKeys[j], oldValues[j])
+    }
+
+    private fun mix(key: Int) = (key * -0x61c88647) xor (key ushr 16)
+
+    companion object {
+        const val NONE = Int.MIN_VALUE
+    }
+}

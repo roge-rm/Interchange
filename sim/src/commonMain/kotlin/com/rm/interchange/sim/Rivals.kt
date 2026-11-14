@@ -1336,6 +1336,9 @@ internal class LongHeap {
     private var a = LongArray(256)
     private var size = 0
     fun isEmpty() = size == 0
+    fun clear() {
+        size = 0
+    }
     fun push(v: Long) {
         if (size == a.size) a = a.copyOf(size * 2)
         var i = size++
