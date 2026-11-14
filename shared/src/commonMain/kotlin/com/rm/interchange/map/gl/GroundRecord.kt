@@ -98,10 +98,12 @@ internal fun groundSize(ground: IntArray): Int {
  * ints each, a sprite there with its cell in 0, snow tile in 1 and anchor x and y in 4 and 5), then the other passes'
  * sprites in [SPRITE_INTS] ints each: anchor x, anchor y, cell, snow tile, as [SpriteRecorder] has them. The shaders
  * place each sprite at the level drawn from its cell's [cellRects], so the buffer is the same at every level.
+ * Written into [into] if it's big enough, so it can be used again; [packedInts] says how much of it is used.
  */
-internal fun packRegion(r: RegionSprites): IntArray {
+internal fun packRegion(r: RegionSprites, into: IntArray? = null): IntArray {
     val p0 = r.firstPass
-    val out = IntArray(p0 * GroundRecord.STRIDE + (r.count - p0) * SPRITE_INTS)
+    val size = packedInts(r)
+    val out = if (into != null && into.size >= size) into else IntArray(size)
     val d = r.data
     var k = 0
     for (i in 0 until r.count) {
@@ -112,6 +114,7 @@ internal fun packRegion(r: RegionSprites): IntArray {
             continue
         }
         if (i < p0) {
+            if (out === into) out.fill(0, k, k + GroundRecord.STRIDE)
             out[k] = d[o + 8]
             out[k + 1] = d[o + 11]
             out[k + 2] = GroundRecord.SPRITE shl 20
@@ -128,6 +131,9 @@ internal fun packRegion(r: RegionSprites): IntArray {
     }
     return out
 }
+
+/** How many ints [packRegion] writes for [r]. */
+internal fun packedInts(r: RegionSprites) = r.firstPass * GroundRecord.STRIDE + (r.count - r.firstPass) * SPRITE_INTS
 
 /** Ints a sprite of the second and third passes takes in a region's buffer. */
 internal const val SPRITE_INTS = 4

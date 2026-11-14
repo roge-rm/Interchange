@@ -14,6 +14,8 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import org.jetbrains.compose.resources.ExperimentalResourceApi
 import org.jetbrains.compose.resources.decodeToImageBitmap
@@ -119,6 +121,7 @@ class Sheets(private val packed: PackedSheets, private val scope: CoroutineScope
      */
     @OptIn(ExperimentalResourceApi::class)
     private suspend fun CoroutineScope.decodeLevel(level: Int, done: BooleanArray): LevelSheets {
+        warmWebp(packed.ground[Atlas.LEVELS - 1])
         fun pixels(bytes: ByteArray): Pair<IntArray, Int> {
             val image = bytes.decodeToImageBitmap()
             val out = IntArray(image.width * image.height)
@@ -182,7 +185,7 @@ class Sheets(private val packed: PackedSheets, private val scope: CoroutineScope
             scope.launch {
                 // Asked again next time if it fails, up to 3 times, or the level came in meanwhile.
                 val got = try {
-                    withContext(vehicleDecoder) { packed.signals[level].decodeToImageBitmap() }
+                    withContext(vehicleDecoder) { warmWebp(packed.ground[Atlas.LEVELS - 1]); packed.signals[level].decodeToImageBitmap() }
                 } catch (e: Exception) {
                     if (e is kotlinx.coroutines.CancellationException) throw e
                     signalsFailed[level]++
@@ -291,7 +294,10 @@ class Sheets(private val packed: PackedSheets, private val scope: CoroutineScope
         if (vehiclesUnpacking.add(key)) {
             val mine = generation
             scope.launch {
-                val image = withContext(vehicleDecoder) { source.sheet(level)?.decodeToImageBitmap() } ?: return@launch
+                val image = withContext(vehicleDecoder) {
+                    warmWebp(packed.ground[Atlas.LEVELS - 1])
+                    source.sheet(level)?.decodeToImageBitmap()
+                } ?: return@launch
                 if (mine != generation) return@launch
                 vehicles[key] = image
                 vehicleUsed[key] = nanos()
@@ -331,7 +337,7 @@ class Sheets(private val packed: PackedSheets, private val scope: CoroutineScope
         if (!staticsUnpacking[at]) {
             staticsUnpacking[at] = true
             scope.launch {
-                statics[at] = withContext(levelDecoder) { packed.static[at].decodeToImageBitmap() }
+                statics[at] = withContext(levelDecoder) { warmWebp(packed.ground[Atlas.LEVELS - 1]); packed.static[at].decodeToImageBitmap() }
                 revision.intValue++
             }
         }
@@ -365,6 +371,28 @@ class Sheets(private val packed: PackedSheets, private val scope: CoroutineScope
          * From the sharpest level's times on the Fire: static webp and its read some 1.5 s, the snow 0.7 s.
          */
         val PART_WEIGHTS = floatArrayOf(0.05f, 0.5f, 0.25f, 0.15f, 0.05f)
+    }
+}
+
+private val webpLock = Mutex()
+@Volatile
+private var webpWarmed = false
+
+/**
+ * Decodes [lossy], a small lossy webp, once and alone before any other sheet. The Fire's webp decoder (Android 7)
+ * crashed in its lossy colour conversion when the first lossy decodes ran side by side, as if it sets that up on first use.
+ */
+@OptIn(ExperimentalResourceApi::class)
+private suspend fun warmWebp(lossy: ByteArray) {
+    if (webpWarmed) return
+    webpLock.withLock {
+        if (webpWarmed) return
+        try {
+            lossy.decodeToImageBitmap()
+        } catch (e: Exception) {
+            if (e is kotlinx.coroutines.CancellationException) throw e
+        }
+        webpWarmed = true
     }
 }
 

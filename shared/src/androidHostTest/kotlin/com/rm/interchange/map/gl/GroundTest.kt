@@ -211,6 +211,21 @@ class GroundTest {
     }
 
     @Test
+    fun aRegionPackedIntoAKeptArrayIsTheSame() {
+        var into = IntArray(1)
+        for (r in regions(1)) {
+            val fresh = packRegion(r)
+            assertEquals(fresh.size, packedInts(r))
+            if (into.size < fresh.size) into = IntArray(fresh.size * 2) { -7 }
+            val kept = packRegion(r, into)
+            assertTrue(kept === into, "region ${r.index} packed into a new array")
+            assertEquals(fresh.toList(), kept.copyOf(fresh.size).toList(), "region ${r.index}")
+            // Recorded arrays are cut to what's used.
+            assertEquals(r.count * SpriteRecorder.STRIDE, r.data.size, "region ${r.index} data")
+        }
+    }
+
+    @Test
     fun aRegionsVersionMovesWithTheWorldUnderIt() {
         for (turn in 0 until 4) {
             val n = regionCount(world, turn)

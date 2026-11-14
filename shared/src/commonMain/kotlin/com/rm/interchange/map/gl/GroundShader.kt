@@ -163,7 +163,9 @@ void main() {
             float low = min(min(h.x, h.y), min(h.z, h.w));
             float rise = max(max(h.x, h.y), max(h.z, h.w)) - low;
             if (rise > 0.0) vUp = (h - low) / rise;
+#ifdef OVERLAYS
             if ((uOverlay & $CONDITION) != 0) vWear = int(texelFetch(uWear, worldTile(tile), 0).r);
+#endif
         } else {
             // Right face from the right corner to the bottom, left from the left; tops, then down to -2.
             int c = (id & 1) == 0 ? (type == 1u ? 1 : 3) : 2;
@@ -513,9 +515,10 @@ void main() {
             }
         }
     }
+    float contour = 1.0;
+#ifdef OVERLAYS
     // Overlays, as the tile recorder painted them at each level's own size, hw the half tile there.
     float hw = 128.0 / float(1 << uLevel);
-    float contour = 1.0;
     if (vWear > 0) texel = mix(texel, WEAR[vWear - 1], 0.6);
     if ((uOverlay & $SNOW) != 0) {
         float depth = dot(vSnow, bw);
@@ -530,6 +533,7 @@ void main() {
         // A contour where a slope crosses a band's edge, about a pixel wide.
         if (sloped && mod(at, 2.0) < 1.4 / hw) contour = 0.55;
     }
+#endif
     float rel = dot(vRel, bw);
     bool soft = ((vA.z >> 23) & 1u) != 0u;
     float sun = soft && f <= 256.0 ? min(256.0, dot(vLight, bw)) : f;
@@ -544,11 +548,19 @@ void main() {
     }
     shade *= contour;
     vec3 col = min(texel * floor(shade) / 256.0, vec3(1.0));
+#ifdef OVERLAYS
     // Grid lines light on dark ground and dark on light, so they show on both.
     if ((uOverlay & $GRID) != 0 && hw >= 16.0 && (u < 1.0 / hw || v < 1.0 / hw)) {
         col = floor(col * 255.0) / 255.0;
         col = col.r + col.g + col.b > 380.0 / 255.0 ? floor(col * 255.0 * 150.0 / 256.0) / 255.0 : mix(col, GRID_LIGHT, 0.4);
     }
+#endif
     frag = vec4(col, 1.0);
 }
 """
+
+/**
+ * [source] with the overlays' code in. It's left out of the ground program drawn with none on, as it cost the Fire
+ * about 8 fps in a pinch sweep even with every overlay off.
+ */
+internal fun withOverlays(source: String) = source.replaceFirst("#version 300 es\n", "#version 300 es\n#define OVERLAYS\n")

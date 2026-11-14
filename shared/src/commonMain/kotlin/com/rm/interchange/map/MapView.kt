@@ -79,6 +79,7 @@ fun MapView(
     DisposableEffect(world) { onDispose { DrawLines.drop(world) } }
     val currentInput by rememberUpdatedState(input)
     val gl = remember(world) { GlScene(world, scope) }
+    DisposableEffect(gl) { onDispose { gl.close() } }
     gl.onSharp = onSharp
     gl.overlays = overlays
     val measurer = rememberTextMeasurer()

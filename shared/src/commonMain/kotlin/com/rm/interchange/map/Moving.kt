@@ -76,10 +76,11 @@ private val turnEase = TurnEase()
  * they were on the last two ticks, so they glide.
  */
 internal fun DrawScope.drawMoving(world: World, view: View, sheets: Sheets, moving: Moving, live: LiveBuilder) {
-    // The level's sheet, or the nearest one unpacked while it isn't yet.
+    // The level's sheet, or the nearest one unpacked while it isn't yet, or the level itself while none is: what moves
+    // then goes in uncut, under the loading cover, so the vehicle sheets go up alongside the static ones.
     val start = Zoom.levelFor(view.halfWidth)
     moving.now.vehicles.let { sheets.askVehicles(it, start, view.focusX, view.focusY) }
-    val level = sheets.nearest(start) ?: return
+    val level = sheets.nearest(start) ?: start
     val hw = Zoom.LEVELS[level]
     val painter = LandPainter(world, view, hw)
     val scale = view.halfWidth / hw
@@ -410,11 +411,11 @@ internal fun DrawScope.drawMoving(world: World, view: View, sheets: Sheets, movi
     }
     val lit = if (view.halfWidth >= LIT_FROM) litPieces(world, view, moving, items) else emptyList()
     items.sortBy { it[0] }
-    val cover = Cover(world, view, level, sheets.get(level) ?: return)
+    val cover = sheets.get(level)?.let { Cover(world, view, level, it) }
     live.begin(level, hw, scale, depthSpan(view.viewWidth, view.viewHeight))
     val w = size.width
     val h = size.height
-    liveItems(items, lit, view.halfWidth, live) { vx, vy, l, t, r, b -> cover.rects(vx, vy, l, t, r, b, w, h, live::takeCover, live::cover) }
+    liveItems(items, lit, view.halfWidth, live) { vx, vy, l, t, r, b -> cover?.rects(vx, vy, l, t, r, b, w, h, live::takeCover, live::cover) }
 }
 
 /** Draws [it] if it's one of the items drawn as shapes, and returns whether it was. */

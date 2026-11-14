@@ -13,7 +13,9 @@ import com.rm.interchange.map.MapOverlays
 import com.rm.interchange.map.Zoom
 import com.rm.interchange.map.Sheets
 import com.rm.interchange.map.View
+import com.rm.interchange.map.TileRecorder
 import com.rm.interchange.map.WeatherCopy
+import com.rm.interchange.map.heapBytes
 import com.rm.interchange.map.zoomAt
 import com.rm.interchange.sim.Calendar
 import com.rm.interchange.sim.Climate
@@ -23,6 +25,8 @@ import com.rm.interchange.sim.World
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlin.concurrent.Volatile
@@ -51,8 +55,9 @@ internal interface FarRegions {
 
 /**
  * The GPU map's side on the main thread: records each view direction's regions in the background, the nearest the
- * screen first, takes asked for turns once the new direction's regions on screen are in, and hands the GL thread
- * what to draw through [shown]. Regions are recorded again where the world under them changes ([regionVersion]); the
+ * screen first, and the other directions ahead once the one showing is whole, as many as fit ([turnsAhead]). It
+ * takes asked for turns once the new direction's regions on screen are in, and hands the GL thread what to draw
+ * through [shown]. Regions are recorded again where the world under them changes ([regionVersion]); the
  * weather goes to the GL thread as [weather] and the time of year as [look], which the ground shader draws in place.
  * The world is read off the main thread, as [TileRecorder] reads it.
  *
@@ -61,10 +66,20 @@ internal interface FarRegions {
  * Main thread only, but for [shown], [levels], [weather], [look], [overlays], [wear], [requestRender] and [atlas]'s
  * uploads, which the GL thread reads, and [uploaded], [liveUploaded], [lost] and [uploadFailed], which it calls.
  */
-internal class GlScene(private val world: World, private val scope: CoroutineScope) {
-    /** [pending] holds the version each region is being recorded at, or -1. */
-    private class Turn(val turn: Int, val regions: Array<RegionSprites?>, val jobs: MutableList<Job>) {
+internal class GlScene(private val world: World, parent: CoroutineScope) {
+    /** The scene's own jobs under [parent]'s, all cancelled by [close]. */
+    private val scope = CoroutineScope(parent.coroutineContext + SupervisorJob(parent.coroutineContext[Job]))
+
+    /**
+     * [pending] holds the version each region is being recorded at, or -1. [due] marks regions found changed while
+     * the turn was hidden, [looks] and [years] what each was recorded with, and [jobs] what's recording for it.
+     */
+    private class Turn(val turn: Int, val regions: Array<RegionSprites?>) {
         val pending = LongArray(regions.size) { -1L }
+        val due = BooleanArray(regions.size)
+        val looks = IntArray(regions.size) { -1 }
+        val years = IntArray(regions.size) { -1 }
+        val jobs = ArrayList<Job>()
     }
 
     private val turns = arrayOfNulls<Turn>(4)
@@ -193,6 +208,8 @@ internal class GlScene(private val world: World, private val scope: CoroutineSco
         if (lastCheck.elapsedNow().inWholeMilliseconds >= CHECK_MILLIS) {
             lastCheck = clock.markNow()
             turns[view.turn]?.let { recheck(it) }
+            if (view.turnsAsked != 0) turns[view.askedTurn]?.let { recheck(it, view) }
+            checkHidden(view)
         }
         want(view.turn, view, GlFrame.of(view, width, height))
         if (view.turnsAsked != 0) {
@@ -204,14 +221,26 @@ internal class GlScene(private val world: World, private val scope: CoroutineSco
                 it.halfWidth = view.halfWidth
             }
             val turnedFrame = GlFrame.of(turned, width, height)
+            // A turn recorded ahead swaps at once; what changed in it since shows a moment later, but for a new
+            // look of the year on screen, which it waits for.
+            turns[asked]?.let {
+                if (askedSeen != asked) recheck(it, view)
+                if (sharp) fill(it, view)
+            }
+            askedSeen = asked
             want(asked, view, turnedFrame)
-            if (covers(asked, turnedFrame)) view.takeTurns()
+            if (covers(asked, turnedFrame) && lookShown(asked, turnedFrame)) view.takeTurns()
         }
-        for (t in 0 until 4) if (t != view.turn && t != view.askedTurn) drop(t)
+        if (view.turnsAsked == 0) askedSeen = -1
+        for (t in 0 until 4) if (t != view.turn && t != view.askedTurn && !keptAhead(t, view.turn)) drop(t)
         val frame = GlFrame.of(view, width, height)
         turns[view.turn]?.let { t ->
             // Once the map shows, or if the parts recorded first don't hold the screen, the rest of each region follows.
             if (sharp || (t.pending.all { it < 0L } && !covers(view.turn, frame))) fill(t, view)
+            if (sharp && whole(t)) {
+                aheadCount = turnsAhead(t)
+                ahead(view)
+            }
         }
         live.reset()
         // Nothing recording till the first weather copy's in.
@@ -504,7 +533,7 @@ internal class GlScene(private val world: World, private val scope: CoroutineSco
     private fun want(turn: Int, view: View, frame: GlFrame) {
         if (turns[turn] != null || copy == null) return
         val n = regionCount(world, turn)
-        val t = Turn(turn, arrayOfNulls(n), ArrayList())
+        val t = Turn(turn, arrayOfNulls(n))
         turns[turn] = t
         if (!sharp) {
             // A quarter of the screen round it, so a small move just after the cover lifts needn't wait.
@@ -546,31 +575,63 @@ internal class GlScene(private val world: World, private val scope: CoroutineSco
         val version = regionVersion(world, t.turn, i, lk, yr)
         val weather = copy!!
         t.pending[i] = version
+        t.due[i] = false
         t.jobs.removeAll { it.isCompleted }
         t.jobs += scope.launch {
             val r = withContext(lane) { recordRegion(world, t.turn, i, lk, yr, weather, curves(), version, cols = cols) }
             if (turns[t.turn] !== t || t.pending[i] != version) return@launch
             t.pending[i] = -1L
             t.regions[i] = r
+            t.looks[i] = lk
+            t.years[i] = yr
             revision.intValue++
         }
     }
 
+    /** Stops what's recording for [turn] and lets it go. */
+    private fun drop(turn: Int) {
+        val t = turns[turn] ?: return
+        for (j in t.jobs) j.cancel()
+        turns[turn] = null
+    }
+
+    /** Cancels everything the scene has running, once it's no longer shown. */
+    fun close() {
+        for (t in 0 until 4) drop(t)
+        scope.cancel()
+    }
+
+    /** Whether the regions on [frame]'s screen for [turn] were recorded with the look and part eras now; after [covers]. */
+    private fun lookShown(turn: Int, frame: GlFrame): Boolean {
+        val t = turns[turn] ?: return false
+        for (i in t.regions.indices) {
+            if (t.looks[i] == look && TileRecorder.partEras(t.years[i]) == TileRecorder.partEras(year)) continue
+            val row0 = i * REGION_ROWS
+            for (vy in row0 until minOf(frame.viewHeight, row0 + REGION_ROWS)) {
+                if (columns[2 * vy] <= columns[2 * vy + 1]) return false
+            }
+        }
+        return true
+    }
+
     /**
      * Records again the regions of [t] whose world has changed since they were recorded, the one holding [lastEdit]
-     * first and then out from it; the old ones show till then.
+     * first and then out from it, or the nearest [near]'s focus first if given; the old ones show till then.
      */
-    private fun recheck(t: Turn) {
+    private fun recheck(t: Turn, near: View? = null) {
         if (copy == null) return
         val changed = ArrayList<Int>()
         for (i in t.regions.indices) {
             val r = t.regions[i] ?: continue
             if (t.pending[i] >= 0L) continue
-            if (regionVersion(world, t.turn, i, look, year) != r.version) changed += i
+            if (regionVersion(world, t.turn, i, look, year) != r.version) changed += i else t.due[i] = false
         }
         if (changed.isEmpty()) return
         val (ex, ey) = lastEdit
-        if (ex in 0 until world.width && ey in 0 until world.height) {
+        if (near != null) {
+            val order = regionOrder(t, near)
+            changed.sortBy { order.indexOf(it) }
+        } else if (ex in 0 until world.width && ey in 0 until world.height) {
             val turned = View(world.width, world.height).also { it.turnBy(t.turn) }
             val row = (turned.toViewY(ex + 0.5f, ey + 0.5f) / REGION_ROWS).toInt()
             changed.sortBy { abs(it - row) }
@@ -637,15 +698,87 @@ internal class GlScene(private val world: World, private val scope: CoroutineSco
         }
     }
 
-    private fun drop(turn: Int) {
-        val t = turns[turn] ?: return
-        for (j in t.jobs) j.cancel()
-        turns[turn] = null
+    /** Whether every region of [t] is recorded whole and none is recording. */
+    private fun whole(t: Turn) = t.pending.all { it < 0L } && t.regions.all { it != null && it.cols == null }
+
+    /** The turn asked for that was last looked at for changes, or -1. */
+    private var askedSeen = -1
+
+    /** How many other turns are recorded ahead and kept, from [AHEAD_ORDER]; set once the turn showing is whole. */
+    private var aheadCount = 0
+
+    /** How many other turns as big as [t] fit in a fifth of the heap with it: all three on a 128 map, about 8 MB each. */
+    private fun turnsAhead(t: Turn): Int {
+        var bytes = 0L
+        for (r in t.regions) if (r != null) bytes += (r.data.size + r.ground.size + r.starts.size) * 4L
+        if (bytes == 0L) return 3
+        return (heapBytes() / 5 / bytes - 1).toInt().coerceIn(0, 3)
+    }
+
+    /** Whether [turn] is one of those kept ahead while [shownTurn] shows. */
+    private fun keptAhead(turn: Int, shownTurn: Int): Boolean {
+        for (k in 0 until aheadCount) if ((shownTurn + AHEAD_ORDER[k]) % 4 == turn) return true
+        return false
+    }
+
+    /** Whether [t] is whole with nothing changed waiting. */
+    private fun done(t: Turn) = whole(t) && t.due.none { it }
+
+    /**
+     * Once the turn showing is whole, records the turns kept ahead, the next quarter turn either way first, so a turn
+     * to one of them swaps at once. Only [AHEAD_JOBS] regions at a time and only while the turns showing and asked
+     * for have nothing recording, so theirs never wait behind more than those.
+     */
+    private fun ahead(view: View) {
+        if (copy == null) return
+        val asked = if (view.turnsAsked != 0) view.askedTurn else -1
+        var free = AHEAD_JOBS
+        for (t in 0 until 4) {
+            val turn = turns[t] ?: continue
+            val recording = turn.pending.count { it >= 0L }
+            if (recording > 0 && (t == view.turn || t == asked)) return
+            if (t != view.turn && t != asked) free -= recording
+        }
+        for (k in 0 until aheadCount) {
+            if (free <= 0) return
+            val turn = (view.turn + AHEAD_ORDER[k]) % 4
+            if (turn == asked) continue
+            val t = turns[turn] ?: Turn(turn, arrayOfNulls(regionCount(world, turn))).also { turns[turn] = it }
+            if (done(t)) continue
+            for (i in regionOrder(t, view)) {
+                if (free <= 0) return
+                if (t.pending[i] >= 0L) continue
+                val r = t.regions[i]
+                if (r != null && r.cols == null && !t.due[i]) continue
+                record(t, i)
+                free--
+            }
+            if (!done(t)) return
+        }
+    }
+
+    private var hiddenCheck = 0
+
+    /** Marks what's changed in one of the turns not showing, for [ahead] to record again. */
+    private fun checkHidden(view: View) {
+        hiddenCheck = (hiddenCheck + 1) % 4
+        if (hiddenCheck == view.turn) return
+        val t = turns[hiddenCheck] ?: return
+        for (i in t.regions.indices) {
+            val r = t.regions[i] ?: continue
+            if (t.pending[i] < 0L && regionVersion(world, t.turn, i, look, year) != r.version) t.due[i] = true
+        }
     }
 
     private fun curves(): CurveArt = CurveArt(world).also { it.refresh() }
 
     private companion object {
+        /** The turns recorded ahead, in quarter turns from the one showing, nearest first. */
+        val AHEAD_ORDER = intArrayOf(1, 3, 2)
+
+        /** How many regions of the turns kept ahead record at once, at most. */
+        const val AHEAD_JOBS = 2
+
         /** How often the weather is copied again, at most, in milliseconds. */
         const val WEATHER_MILLIS = 15_000L
 

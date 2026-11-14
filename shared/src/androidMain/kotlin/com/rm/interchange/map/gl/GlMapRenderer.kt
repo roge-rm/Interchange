@@ -45,6 +45,8 @@ internal class GlMapRenderer(private val scene: GlScene, private val page: Int) 
     private var spriteProgram = 0
     private var shadowProgram = 0
     private var groundProgram = 0
+    /** The ground program with the overlays' code, made the first time an overlay's on. */
+    private var overlayProgram = 0
     private var vao = 0
     private var groundVao = 0
     private var weatherTex = 0
@@ -113,6 +115,7 @@ internal class GlMapRenderer(private val scene: GlScene, private val page: Int) 
         spriteProgram = program(SPRITE_VS, SPRITE_FS)
         shadowProgram = program(SPRITE_VS, SHADOW_FS)
         groundProgram = program(GROUND_VS, GROUND_FS)
+        overlayProgram = 0
         liveProgram = program(LIVE_VS, LIVE_FS)
         val ids = IntArray(3)
         glGenVertexArrays(3, ids, 0)
@@ -188,9 +191,9 @@ internal class GlMapRenderer(private val scene: GlScene, private val page: Int) 
         val lv = Zoom.levelFor(f.scale * SOURCE_HALF_WIDTH)
         val tex = levels[lv] ?: return clearScreen()
         if (weatherTex == 0) return clearScreen()
-        uploadRegions(shown)
         if (columns.size < f.viewHeight * 2) columns = IntArray(f.viewHeight * 2)
         visibleColumns(f, columns)
+        uploadRegions(shown, columns)
         val far = scene.far
         for (i in drawable.indices) {
             val r = drawable[i]
@@ -237,7 +240,7 @@ internal class GlMapRenderer(private val scene: GlScene, private val page: Int) 
     private fun drawPass(pass: Int, runs: DrawRuns, xf: FloatArray, f: GlFrame, lv: Int, tex: LevelTextures) {
         val shadow = pass == 1
         val ground = pass == 0
-        val prog = if (ground) groundProgram else if (shadow) shadowProgram else spriteProgram
+        val prog = if (ground) groundFor() else if (shadow) shadowProgram else spriteProgram
         val sheet = if (shadow) tex.shadows else tex.static
         glUseProgram(prog)
         glBindVertexArray(if (ground) groundVao else vao)
@@ -654,7 +657,7 @@ internal class GlMapRenderer(private val scene: GlScene, private val page: Int) 
 
     /** The ground shader's textures and uniforms for frame [f]. */
     private fun groundUniforms(f: GlFrame, groundTex: Int) {
-        val p = groundProgram
+        val p = groundFor()
         glActiveTexture(GL_TEXTURE1)
         glBindTexture(GL_TEXTURE_2D_ARRAY, groundTex)
         glUniform1i(glGetUniformLocation(p, "uGround"), 1)
@@ -769,7 +772,7 @@ internal class GlMapRenderer(private val scene: GlScene, private val page: Int) 
     }
 
     /** Uploads [shown]'s regions not yet in a buffer, lets go of other turns', and lists those ready to draw in [drawable]. */
-    private fun uploadRegions(shown: GlShown) {
+    private fun uploadRegions(shown: GlShown, columns: IntArray) {
         val turn = shown.frame.turn
         if (turn != bufferTurn || buffers.size != shown.regions.size) {
             freeBuffers()
@@ -777,26 +780,46 @@ internal class GlMapRenderer(private val scene: GlScene, private val page: Int) 
             bufferTurn = turn
         }
         if (drawable.size != shown.regions.size) drawable = arrayOfNulls(shown.regions.size)
+        var off = 0
+        var waiting = false
         for (i in shown.regions.indices) {
             val r = shown.regions[i]
             val b = buffers[i]
             if (r != null && b?.region !== r) {
-                if (b != null) glDeleteBuffers(1, intArrayOf(b.id), 0)
-                buffers[i] = Buffer(r, upload(r))
+                // Those on screen at once, the rest a few a frame, so a turn's first frame isn't held up by them all.
+                if (onScreen(i, shown.frame.viewHeight, columns) || off++ < REGIONS_A_FRAME) {
+                    if (b != null) glDeleteBuffers(1, intArrayOf(b.id), 0)
+                    buffers[i] = Buffer(r, upload(r))
+                } else waiting = true
             }
-            drawable[i] = if (r != null && buffers[i]?.region === r) r else null
+            // One waiting its turn to go up draws as it was till then.
+            drawable[i] = if (r != null) buffers[i]?.region else null
         }
+        if (waiting) scene.requestRender()
     }
 
+    /** Whether region [i] has tiles in [columns], the view rows' ranges on screen. */
+    private fun onScreen(i: Int, viewHeight: Int, columns: IntArray): Boolean {
+        for (vy in i * REGION_ROWS until minOf(viewHeight, (i + 1) * REGION_ROWS)) if (columns[2 * vy] <= columns[2 * vy + 1]) return true
+        return false
+    }
+
+    /** Where a region's ints are packed and sent from, kept and grown, so an upload allocates nothing. */
+    private var packInts = IntArray(0)
+    private var packBytes = ByteBuffer.allocateDirect(0)
+
     private fun upload(r: RegionSprites): Int {
-        val ints = packRegion(r)
-        val bytes = ByteBuffer.allocateDirect(maxOf(1, ints.size) * 4).order(ByteOrder.nativeOrder())
-        bytes.asIntBuffer().put(ints)
-        bytes.position(0)
+        val n = packedInts(r)
+        if (packInts.size < n) packInts = IntArray(n + n / 4)
+        packRegion(r, packInts)
+        if (packBytes.capacity() < maxOf(1, n) * 4) packBytes = ByteBuffer.allocateDirect(packInts.size * 4 + 4).order(ByteOrder.nativeOrder())
+        packBytes.clear()
+        packBytes.asIntBuffer().put(packInts, 0, n)
+        packBytes.limit(maxOf(1, n) * 4)
         val ids = IntArray(1)
         glGenBuffers(1, ids, 0)
         glBindBuffer(GL_ARRAY_BUFFER, ids[0])
-        glBufferData(GL_ARRAY_BUFFER, bytes.capacity(), bytes, GL_STATIC_DRAW)
+        glBufferData(GL_ARRAY_BUFFER, maxOf(1, n) * 4, packBytes, GL_STATIC_DRAW)
         glBindBuffer(GL_ARRAY_BUFFER, 0)
         return ids[0]
     }
@@ -1105,7 +1128,7 @@ internal class GlMapRenderer(private val scene: GlScene, private val page: Int) 
         weatherUp = null
         legsTex = 0
         for (a in intArrayOf(vao, groundVao, liveVao)) if (a != 0) glDeleteVertexArrays(1, intArrayOf(a), 0)
-        for (p in intArrayOf(spriteProgram, shadowProgram, groundProgram, liveProgram)) if (p != 0) glDeleteProgram(p)
+        for (p in intArrayOf(spriteProgram, shadowProgram, groundProgram, overlayProgram, liveProgram)) if (p != 0) glDeleteProgram(p)
         vao = 0
         groundVao = 0
         liveVao = 0
@@ -1113,6 +1136,14 @@ internal class GlMapRenderer(private val scene: GlScene, private val page: Int) 
         spriteProgram = 0
         shadowProgram = 0
         groundProgram = 0
+        overlayProgram = 0
+    }
+
+    /** The ground program for this frame's [overlays]. */
+    private fun groundFor(): Int {
+        if (overlays == 0) return groundProgram
+        if (overlayProgram == 0) overlayProgram = program(withOverlays(GROUND_VS), withOverlays(GROUND_FS))
+        return overlayProgram
     }
 
     private fun program(vs: String, fs: String): Int {
@@ -1148,6 +1179,9 @@ internal class GlMapRenderer(private val scene: GlScene, private val page: Int) 
         const val LIVE_UNITS = 8
         /** Squares drawn ahead a frame while some on screen are missing, each a quarter of a screen's pixels at its level. */
         const val SQUARES_A_FRAME = 2
+
+        /** Region buffers off screen uploaded a frame, at most. */
+        const val REGIONS_A_FRAME = 2
     }
 }
 

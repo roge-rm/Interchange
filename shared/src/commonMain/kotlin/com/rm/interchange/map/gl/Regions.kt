@@ -161,7 +161,10 @@ internal fun recordRegion(
         }
     }
     starts[k] = recorder.count
-    return RegionSprites(turn, index, row0, row1, vw, recorder.data, recorder.count, starts, recorder.ground, version, cols)
+    // Cut to what's used, as a few turns of regions are kept.
+    val data = recorder.data.copyOf(recorder.count * SpriteRecorder.STRIDE)
+    val ground = recorder.ground.copyOf(recorder.groundCount * GroundRecord.STRIDE)
+    return RegionSprites(turn, index, row0, row1, vw, data, recorder.count, starts, ground, version, cols)
 }
 
 /** How many regions a map seen from [turn] has. */
