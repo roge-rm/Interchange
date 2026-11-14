@@ -97,6 +97,18 @@ internal class Renderer(private val world: World, private val sheets: Sheets, pr
     private val background = Dispatchers.Default.limitedParallelism(BACKGROUND)
     /** What's baking in the background lane. */
     private val behind = HashSet<Key>()
+    /**
+     * Coarsest chunks baking whole in the background lane while only part of them is cached or baking, apart from
+     * [baking] so the part can bake beside it.
+     */
+    private val wholeBaking = HashSet<Key>()
+    /**
+     * The view's zoom the last frame the coarsest level had a picture under all of its screen, since when a zoom out
+     * past that's been held back, and when it last was.
+     */
+    private var zoomFloor = 0f
+    private var zoomHeldSince = -1L
+    private var zoomHeldAt = -1L
     private val clock = kotlin.time.TimeSource.Monotonic.markNow()
     /** When every chunk on the first screen had something to show, its own level or a stand-in, or -1 till then. */
     private var readyAt = -1L
@@ -113,7 +125,8 @@ internal class Renderer(private val world: World, private val sheets: Sheets, pr
 
     /**
      * Under the cover: the coarsest chunks to bake only over the first screen, and that part, in the coarsest level's
-     * pixels. [Entry.part] says a chunk's only right there; it's baked whole once the screen's sharp.
+     * pixels. [Entry.part] says a chunk's only right there; it's baked whole once the screen's sharp, or at once in
+     * the background lane if a zoom out needs it first ([holdZoom]).
      */
     private val firstPart = HashSet<Key>()
     private var firstRect: FloatArray? = null
@@ -194,6 +207,7 @@ internal class Renderer(private val world: World, private val sheets: Sheets, pr
         frame++
         if (Probe.ON) Probe.frameStart()
         val now = clock.elapsedNow().inWholeMilliseconds
+        holdZoom(view, now)
         val target = levelFor(view.halfWidth)
         // A turn asked for and then turned back counts as none.
         if (view.turnsAsked == 0 && turnTo >= 0) { turnTo = -1; turnPart.clear() }
@@ -491,7 +505,7 @@ internal class Renderer(private val world: World, private val sheets: Sheets, pr
         // The weather batch next, on every baker once nothing on screen is missing, or else only in the background.
         while (!turning && batchQueue.isNotEmpty()) {
             val onScreenLane = !missing && baking.size - behind.size < BAKERS
-            if (!onScreenLane && behind.size >= BACKGROUND) break
+            if (!onScreenLane && behind.size + wholeBaking.size >= BACKGROUND) break
             bake(batchQueue.removeFirst(), batchSheet!!, hold = true, ahead = !onScreenLane, weather = batchWeather!!)
         }
         if (sharp && !turning) for ((key, priority) in sorted) if (priority >= 2f) want(key, priority)
@@ -503,6 +517,36 @@ internal class Renderer(private val world: World, private val sheets: Sheets, pr
         }
         trim()
         if (Probe.ON) { Probe.turn(view.turn, view.turnsAsked != 0, allSharp); Probe.frameEnd() }
+    }
+
+    /**
+     * Holds a zoom out back where the coarsest level stops having a picture under the whole screen, as when the screen
+     * leaves the part baked under the cover, and while it's held bakes the chunks it needs whole in the background
+     * lane, beside the screen's. Only the zoom is held, so a pinch keeps its pan. Let go after [ZOOM_HOLD_MILLIS] in
+     * case they never come.
+     */
+    private fun DrawScope.holdZoom(view: View, now: Long) {
+        if (readyAt < 0 || shown == null) return
+        setScreen(view)
+        var all = true
+        forEachVisible(view, COARSE) { key, _, _, _, _ ->
+            val entry = cache[key]
+            if (entry == null || !entry.holds(key, screen)) all = false
+        }
+        if (all) { zoomFloor = view.halfWidth; return }
+        // Panning or zooming in onto chunks to come is left to the stand-ins.
+        if (view.halfWidth >= zoomFloor) return
+        // A pinch held frame after frame is one hold; one a while after the last is a new one.
+        if (now - zoomHeldAt > ZOOM_HOLD_GAP_MILLIS) { zoomHeldSince = now; if (Probe.ON) Probe.log("zoomHeld") }
+        zoomHeldAt = now
+        if (Probe.ON) Probe.log("zoomHolding")
+        if (now - zoomHeldSince > ZOOM_HOLD_MILLIS) { if (Probe.ON) Probe.log("zoomHoldGaveUp"); return }
+        forEachVisible(view, COARSE) { key, _, _, _, _ ->
+            val entry = cache[key]
+            if ((entry == null || !entry.holds(key, screen)) && key !in baking && key !in wholeBaking &&
+                behind.size + wholeBaking.size < BACKGROUND) sheets.get(COARSE)?.let { bake(key, it, ahead = true, whole = true) }
+        }
+        view.halfWidth = zoomFloor
     }
 
     /** Sets [screen] to [view]'s, in the coarsest level's pixels. */
@@ -606,11 +650,14 @@ internal class Renderer(private val world: World, private val sheets: Sheets, pr
         if (key in baking) return
         // Building on a chunk in the weather batch waits till the batch is in, so the batch always ends.
         if (key in batchKeys) return
+        val part = if (readyAt < 0 && key in firstPart) firstRect else turnPart[key]
+        // Only a part can bake beside the whole one.
+        if (part == null && key in wholeBaking) return
         val ahead = priority >= 2f
-        if (if (ahead) behind.size >= BACKGROUND else baking.size - behind.size >= BAKERS) return
+        if (if (ahead) behind.size + wholeBaking.size >= BACKGROUND else baking.size - behind.size >= BAKERS) return
         // Waits for its level's sheet to be unpacked; asking starts that.
         val sheet = sheets.get(key.level) ?: return
-        bake(key, sheet, ahead = ahead, part = if (readyAt < 0 && key in firstPart) firstRect else turnPart[key])
+        bake(key, sheet, ahead = ahead, part = part)
     }
 
     /** Shows [copy] from now on, and lists the chunks cached off screen that show older weather, to bake again. */
@@ -840,15 +887,18 @@ internal class Renderer(private val world: World, private val sheets: Sheets, pr
     /**
      * Bakes [key] off the main thread and puts it in the cache, or with [hold] keeps it till the rest of its batch is
      * done. It bakes from the copy of the weather showing, so it matches its neighbours; a weather batch bakes from
-     * the next.
+     * the next. With [whole] it's a coarsest chunk baking whole beside a part of it, counted in [wholeBaking].
      */
-    private fun bake(key: Key, sheet: LevelSheets, hold: Boolean = false, ahead: Boolean = hold, weather: WeatherCopy = shown!!, part: FloatArray? = null) {
+    private fun bake(key: Key, sheet: LevelSheets, hold: Boolean = false, ahead: Boolean = hold, weather: WeatherCopy = shown!!, part: FloatArray? = null, whole: Boolean = false) {
         // The view as it is now, kept apart so turning while this bakes doesn't change it.
         val bakeView = View(world.width, world.height).also { it.turnBy(key.turn) }
         val version = versionOf(bakeView, key.level, key.cx, key.cy)
         val sum = weatherSum(bakeView, key, weather)
-        baking += key
-        if (ahead) behind += key
+        if (whole) wholeBaking += key
+        else {
+            baking += key
+            if (ahead) behind += key
+        }
         // The scope is the composition's, on the main thread; only the baking goes off it.
         scope.launch {
             val o = overlays
@@ -867,10 +917,16 @@ internal class Renderer(private val world: World, private val sheets: Sheets, pr
                 }
             }
             bakeMillis[key.level] += (took - bakeMillis[key.level]) * 0.2f
-            if (Probe.ON) Probe.bakeDone(key.level, if (hold) "batch" else if (ahead) "ahead" else "screen", micros, started / 1000 - asked, weather.id, key !in cache)
-            baking -= key
-            behind -= key
+            if (Probe.ON) Probe.bakeDone(key.level, if (whole) "whole" else if (hold) "batch" else if (ahead) "ahead" else "screen", micros, started / 1000 - asked, weather.id, key !in cache)
+            if (whole) wholeBaking -= key
+            else {
+                baking -= key
+                behind -= key
+            }
             val entry = Entry(image, top, version, weather.id, sum, clock.elapsedNow().inWholeMilliseconds, frame, fades = key !in cache && !hold, part = part)
+            // A part done after the whole chunk came in is let go.
+            val have = cache[key]
+            if (part != null && have != null && have.part == null && have.version == version) { revision.intValue++; return@launch }
             if (!hold) {
                 install(key, entry)
                 // Baked from a copy no longer showing: baked again before it shows.
@@ -1101,6 +1157,10 @@ internal class Renderer(private val world: World, private val sheets: Sheets, pr
         const val COARSE_BUDGET = BUDGET / 8
         /** How long a zoom waits for the next level's chunks the level shown can stand in for, and for those of older weather, in milliseconds. */
         const val ZOOM_WAIT_MILLIS = 400L
+        /** At most how long [holdZoom] holds a zoom out back, a whole coarsest level baking on a slow device. */
+        const val ZOOM_HOLD_MILLIS = 30_000L
+        /** How long after the last held frame a zoom out counts as a new hold. */
+        const val ZOOM_HOLD_GAP_MILLIS = 1000L
         /** How near the screen's scale is to switching to the next level in before that level is baked ahead. */
         const val FINER_FROM = 0.8f
         /** How long a turn waits at most for the new way's stand-ins, in milliseconds. */
