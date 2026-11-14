@@ -2,14 +2,18 @@ package com.rm.interchange.map
 
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.ClipOp
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.clipPath
-import androidx.compose.ui.graphics.drawscope.Stroke
+import com.rm.interchange.map.gl.LIVE_PLAIN
+import com.rm.interchange.map.gl.LIVE_SHADOW
+import com.rm.interchange.map.gl.LIVE_WRECK
+import com.rm.interchange.map.gl.LiveBuilder
+import com.rm.interchange.map.gl.SIGNALS
+import com.rm.interchange.map.gl.depthSpan
 import com.rm.interchange.sim.CarOrder
 import com.rm.interchange.sim.Calendar
 import com.rm.interchange.sim.Signals
@@ -73,9 +77,10 @@ private val turnEase = TurnEase()
 
 /**
  * Draws signals and trains over the map, nearest last. Trains are placed
- * between where they were on the last two ticks, so they glide.
+ * between where they were on the last two ticks, so they glide. With [live]
+ * (the GPU map), it all goes there in the same order and nothing's drawn here.
  */
-internal fun DrawScope.drawMoving(world: World, view: View, sheets: Sheets, moving: Moving) {
+internal fun DrawScope.drawMoving(world: World, view: View, sheets: Sheets, moving: Moving, live: LiveBuilder? = null) {
     // The level's sheet, or the nearest one unpacked while it isn't yet.
     val start = Renderer.levelFor(view.halfWidth)
     moving.now.vehicles.let { sheets.askVehicles(it, start, view.focusX, view.focusY) }
@@ -408,8 +413,8 @@ internal fun DrawScope.drawMoving(world: World, view: View, sheets: Sheets, movi
             }
         }
     }
-    // Vehicles' drawings at the levels either side unpacked ahead, so they're there when the view zooms.
-    for (i in 0 until v.count) {
+    // Vehicles' drawings at the levels either side unpacked ahead, so they're there when the view zooms. The GPU map asks for every level itself.
+    if (live == null) for (i in 0 until v.count) {
         val model = v.sprite(i)
         if (level > Renderer.SHARPEST) sheets.vehicle(model, level - 1)
         if (level + 1 < Renderer.LEVELS.size) sheets.vehicle(model, level + 1)
@@ -417,6 +422,14 @@ internal fun DrawScope.drawMoving(world: World, view: View, sheets: Sheets, movi
     val lit = if (view.halfWidth >= LIT_FROM) litPieces(world, view, moving, items) else emptyList()
     items.sortBy { it[0] }
     val cover = Cover(world, view, level, sheets.get(level) ?: return)
+    if (live != null) {
+        live.begin(level, hw, scale, depthSpan(view.viewWidth, view.viewHeight))
+        val w = size.width
+        val h = size.height
+        liveItems(items, lit, view.halfWidth, live) { vx, vy, l, t, r, b -> cover.rects(vx, vy, l, t, r, b, w, h, live::takeCover, live::cover) }
+        return
+    }
+    val pen = CanvasPen(this)
     // Reserved track on the ground goes under everything else, cut away behind buildings; edges first so the lines join.
     if (lit.isNotEmpty()) {
         val pad = view.halfWidth
@@ -430,34 +443,17 @@ internal fun DrawScope.drawMoving(world: World, view: View, sheets: Sheets, movi
             if (h == null) bare += l else groups.getOrPut(set[0]) { h to ArrayList() }.second += l
         }
         for (edge in booleanArrayOf(true, false)) {
-            for (l in bare) drawLit(l[2], l[3], l[4], l[5], view.halfWidth, edge, StrokeCap.Round)
+            for (l in bare) pen.drawLit(l[2], l[3], l[4], l[5], view.halfWidth, edge, StrokeCap.Round)
             for ((path, pieces) in groups.values) clipPath(path, ClipOp.Difference) {
-                for (l in pieces) drawLit(l[2], l[3], l[4], l[5], view.halfWidth, edge, StrokeCap.Round)
+                for (l in pieces) pen.drawLit(l[2], l[3], l[4], l[5], view.halfWidth, edge, StrokeCap.Round)
             }
         }
     }
     with(painter) {
         for (it in items) {
             val model = it[4].toInt()
-            if (model == WIRE) {
-                drawWire(it, view.halfWidth)
-            } else if (model == LIT) {
-                drawLit(it[1], it[2], it[5], it[6], view.halfWidth, true, StrokeCap.Butt)
-                drawLit(it[1], it[2], it[5], it[6], view.halfWidth, false, StrokeCap.Butt)
-            } else if (model == FENCE) {
-                drawFence(it)
-            } else if (model == FIRE) {
-                drawFire(it[3].toInt(), it[1], it[2], view.halfWidth)
-            } else if (model == BOARD) {
-                drawBoard(it[3].toInt(), it[1], it[2], view.halfWidth)
-            } else if (model == MARK || model == WAYPOINT) {
-                drawMark(model, it[3].toInt(), it[1], it[2], view.halfWidth)
-            } else if (model == BUOY) {
-                drawBuoy(it[1], it[2], view.halfWidth)
-            } else if (model == CROSSING_ARM) {
-                drawCrossingGate(it, view.halfWidth)
-                drawCrossingArm(it, view.halfWidth)
-            } else if (model < 0) {
+            if (pen.drawShape(it, view.halfWidth)) continue
+            if (model < 0) {
                 spriteAt(it[3].toInt(), it[1], it[2], scale)
             } else {
                 // Its own sheet at this level, unpacked the first time it's on screen; it shows a frame or two later.
@@ -471,6 +467,57 @@ internal fun DrawScope.drawMoving(world: World, view: View, sheets: Sheets, movi
         }
     }
 }
+
+/** Draws [it] if it's one of the items drawn as shapes, and returns whether it was. */
+private fun Pen.drawShape(it: FloatArray, hw: Float): Boolean {
+    when (val model = it[4].toInt()) {
+        WIRE -> drawWire(it, hw)
+        LIT -> {
+            drawLit(it[1], it[2], it[5], it[6], hw, true, StrokeCap.Butt)
+            drawLit(it[1], it[2], it[5], it[6], hw, false, StrokeCap.Butt)
+        }
+        FENCE -> drawFence(it)
+        FIRE -> drawFire(it[3].toInt(), it[1], it[2], hw)
+        BOARD -> drawBoard(it[3].toInt(), it[1], it[2], hw)
+        MARK, WAYPOINT -> drawMark(model, it[3].toInt(), it[1], it[2], hw)
+        BUOY -> drawBuoy(it[1], it[2], hw)
+        CROSSING_ARM -> {
+            drawCrossingGate(it, hw)
+            drawCrossingArm(it, hw)
+        }
+        else -> return false
+    }
+    return true
+}
+
+/**
+ * The sorted [items] and the reserved track on the ground, [lit], into [live] in the order the canvas draws them:
+ * the track first, edges then lights, then the items. Vehicles on the ground and the track are cut by the buildings
+ * [cut] puts in front of their view point, near enough to the rect given (left, top, right, bottom) to matter, as
+ * the canvas clips them.
+ */
+internal fun liveItems(items: List<FloatArray>, lit: List<FloatArray>, hw: Float, live: LiveBuilder, cut: (Float, Float, Float, Float, Float, Float) -> Unit) {
+    for (l in lit) cut(l[0], l[1], minOf(l[2], l[4]) - hw, minOf(l[3], l[5]) - hw, maxOf(l[2], l[4]) + hw, maxOf(l[3], l[5]) + hw)
+    for (edge in EDGE_FIRST) for (l in lit) {
+        live.z = live.cut(l[0], l[1])
+        live.drawLit(l[2], l[3], l[4], l[5], hw, edge, StrokeCap.Round)
+    }
+    live.z = 1f
+    for (it in items) {
+        if (live.drawShape(it, hw)) continue
+        val model = it[4].toInt()
+        if (model < 0) {
+            live.sprite(SIGNALS, it[3].toInt(), it[1], it[2])
+            continue
+        }
+        val low = it[6] >= 0f
+        if (low) cut(it[6], it[7], it[1] - hw * 1.5f, it[2] - hw * 2f, it[1] + hw * 1.5f, it[2] + hw)
+        val mode = if (it[5] == 1f) LIVE_SHADOW else if (it[5] == 2f) LIVE_WRECK else LIVE_PLAIN
+        live.sprite(model, it[3].toInt(), it[1], it[2], mode, if (low) it[6] else -1f, if (low) it[7] else -1f)
+    }
+}
+
+private val EDGE_FIRST = booleanArrayOf(true, false)
 
 /** Items that aren't sprites: a signal's kind plate, a waypoint's post, and wires over a piece of track. */
 private const val MARK = -2
@@ -658,10 +705,10 @@ private fun DrawScope.litPieces(world: World, view: View, moving: Moving, items:
 }
 
 /** A lit line along a reserved piece from ([x1], [y1]) to ([x2], [y2]) on screen: its dark [edge], or the light over it. */
-private fun DrawScope.drawLit(x1: Float, y1: Float, x2: Float, y2: Float, hw: Float, edge: Boolean, cap: StrokeCap) {
+private fun Pen.drawLit(x1: Float, y1: Float, x2: Float, y2: Float, hw: Float, edge: Boolean, cap: StrokeCap) {
     val w = maxOf(1.2f, hw * 0.06f)
-    if (edge) drawLine(LIT_EDGE, Offset(x1, y1), Offset(x2, y2), w * 2.2f, cap)
-    else drawLine(LIT_LIGHT, Offset(x1, y1), Offset(x2, y2), w, cap)
+    if (edge) line(LIT_EDGE, x1, y1, x2, y2, w * 2.2f, cap)
+    else line(LIT_LIGHT, x1, y1, x2, y2, w, cap)
 }
 
 /** Reserved track's light, warm white to read on grass and in the dark, and its edge, to read on snow. */
@@ -671,11 +718,11 @@ private val LIT_EDGE = Color(0xa0302010)
 private const val RAIL_TOP = 0.15f
 
 /** A buoy: a red can on the water, with a white band. */
-private fun DrawScope.drawBuoy(x: Float, y: Float, hw: Float) {
+private fun Pen.drawBuoy(x: Float, y: Float, hw: Float) {
     val u = hw / 16f
-    drawRect(Color(0xffc8302a), Offset(x - 1.6f * u, y - 5f * u), Size(3.2f * u, 5f * u))
-    drawRect(Color(0xfff4f4f0), Offset(x - 1.6f * u, y - 3.4f * u), Size(3.2f * u, 1f * u))
-    drawRect(Color(0xff2a2a2a), Offset(x - 1.6f * u, y - 5f * u), Size(3.2f * u, 5f * u), style = Stroke(0.4f * u))
+    rect(Color(0xffc8302a), x - 1.6f * u, y - 5f * u, 3.2f * u, 5f * u)
+    rect(Color(0xfff4f4f0), x - 1.6f * u, y - 3.4f * u, 3.2f * u, 1f * u)
+    rectEdge(Color(0xff2a2a2a), x - 1.6f * u, y - 5f * u, 3.2f * u, 5f * u, 0.4f * u)
 }
 
 /**
@@ -683,7 +730,7 @@ private fun DrawScope.drawBuoy(x: Float, y: Float, hw: Float) {
  * cut-away, two unused, the lowered arm's reach on screen as x and y, how far down it is (0 up to 1 down), its length
  * standing up and which post.
  */
-private fun DrawScope.drawCrossingArm(it: FloatArray, hw: Float) {
+private fun Pen.drawCrossingArm(it: FloatArray, hw: Float) {
     val x = it[1]
     val y = it[2]
     val u = hw / 32f
@@ -696,13 +743,13 @@ private fun DrawScope.drawCrossingArm(it: FloatArray, hw: Float) {
     val pivot = Offset(x + it[8] / reach * 1.8f * u, y + it[9] / reach * 1.8f * u - 2.8f * u)
     val end = Offset(pivot.x + it[8] * c, pivot.y + it[9] * c - it[11] * s)
     val wide = maxOf(1.5f * u, 1f)
-    drawLine(Color(0xff2a2a2a), pivot, end, wide + maxOf(0.6f * u, 0.5f), StrokeCap.Round)
+    line(Color(0xff2a2a2a), pivot.x, pivot.y, end.x, end.y, wide + maxOf(0.6f * u, 0.5f), StrokeCap.Round)
     val n = 6
     for (k in 0 until n) {
         val f0 = k / n.toFloat()
         val f1 = (k + 1) / n.toFloat()
-        drawLine(if (k % 2 == 0) Color(0xfff4f4f0) else Color(0xffd03028), Offset(pivot.x + (end.x - pivot.x) * f0, pivot.y + (end.y - pivot.y) * f0),
-            Offset(pivot.x + (end.x - pivot.x) * f1, pivot.y + (end.y - pivot.y) * f1), wide, StrokeCap.Butt)
+        line(if (k % 2 == 0) Color(0xfff4f4f0) else Color(0xffd03028), pivot.x + (end.x - pivot.x) * f0, pivot.y + (end.y - pivot.y) * f0,
+            pivot.x + (end.x - pivot.x) * f1, pivot.y + (end.y - pivot.y) * f1, wide, StrokeCap.Butt)
     }
 }
 
@@ -710,20 +757,21 @@ private fun DrawScope.drawCrossingArm(it: FloatArray, hw: Float) {
  * A level crossing's post with two red lamps, flashing in turn about once a second while lit. Drawn from the arm item: depth,
  * foot on screen, lit and which post (cells 3 and 12 of the arm item that draws it).
  */
-private fun DrawScope.drawCrossingGate(it: FloatArray, hw: Float) {
+private fun Pen.drawCrossingGate(it: FloatArray, hw: Float) {
     val x = it[1]
     val y = it[2]
     val u = hw / 32f
     val lit = it[3] == 1f
-    drawLine(Color(0xff3a3a3a), Offset(x, y), Offset(x, y - 12f * u), 1.2f * u)
-    drawLine(Color(0xff2a2a2a), Offset(x - 3.5f * u, y - 12f * u), Offset(x + 3.5f * u, y - 12f * u), 1.6f * u)
+    line(Color(0xff3a3a3a), x, y, x, y - 12f * u, 1.2f * u)
+    line(Color(0xff2a2a2a), x - 3.5f * u, y - 12f * u, x + 3.5f * u, y - 12f * u, 1.6f * u)
     // The posts across the road flash opposite each other.
     val left = ((flicker.elapsedNow().inWholeMilliseconds / 500) % 2 == 0L) == (it[12] == 0f)
     for (k in 0 until 2) {
         val on = lit && (k == 0) == left
-        val lamp = Offset(x + (if (k == 0) -3f else 3f) * u, y - 12f * u)
-        if (on) drawCircle(Color(0x60ff3020), 3.2f * u, lamp)
-        drawCircle(if (on) Color(0xffff3a28) else Color(0xff5a1810), 1.5f * u, lamp)
+        val lx = x + (if (k == 0) -3f else 3f) * u
+        val ly = y - 12f * u
+        if (on) circle(Color(0x60ff3020), 3.2f * u, lx, ly)
+        circle(if (on) Color(0xffff3a28) else Color(0xff5a1810), 1.5f * u, lx, ly)
     }
 }
 
@@ -788,7 +836,7 @@ private fun fenceAlongX(world: World, x: Int, y: Int): Boolean {
 }
 
 /** A fence item: two rails between its ends, slats along them, 0.6 step high (about 2 m). */
-private fun DrawScope.drawFence(it: FloatArray) {
+private fun Pen.drawFence(it: FloatArray) {
     val step = it[7]
     val tall = step * 0.6f
     val wood = Color(0xff6a5038)
@@ -797,41 +845,45 @@ private fun DrawScope.drawFence(it: FloatArray) {
         val t = k / n.toFloat()
         val x = it[1] + (it[5] - it[1]) * t
         val y = it[2] + (it[6] - it[2]) * t
-        drawLine(wood, Offset(x, y), Offset(x, y - tall), step / 6f)
+        line(wood, x, y, x, y - tall, step / 6f)
     }
-    for (f in floatArrayOf(0.3f, 0.8f)) drawLine(Color(0xff4a3828), Offset(it[1], it[2] - tall * f), Offset(it[5], it[6] - tall * f), step / 10f)
+    for (f in floatArrayOf(0.3f, 0.8f)) line(Color(0xff4a3828), it[1], it[2] - tall * f, it[5], it[6] - tall * f, step / 10f)
 }
 
 /** Flames licking up from a burning tile, flickering, and smoke rising off it; [seed] keeps tiles from flickering together. */
-private fun DrawScope.drawFire(seed: Int, x: Float, y: Float, hw: Float) {
+private fun Pen.drawFire(seed: Int, x: Float, y: Float, hw: Float) {
     val u = hw / 16f
     val t = (flicker.elapsedNow().inWholeMilliseconds % 100_000) / 1000f
     for (k in 0 until 5) {
         val r = ((seed * 31 + k * 17) and 255) / 255f
         val fx = x + (r - 0.5f) * 12f * u
         val tall = (4f + 3f * kotlin.math.sin(t * 9f + k * 1.7f + seed)) * u
-        val p = Path().apply { moveTo(fx - 1.6f * u, y); lineTo(fx, y - tall); lineTo(fx + 1.6f * u, y); close() }
-        drawPath(p, if (k % 2 == 0) Color(0xe0f06a1a) else Color(0xd0f8c030))
+        corners[0] = fx - 1.6f * u; corners[1] = y
+        corners[2] = fx; corners[3] = y - tall
+        corners[4] = fx + 1.6f * u; corners[5] = y
+        shape(if (k % 2 == 0) Color(0xe0f06a1a) else Color(0xd0f8c030), corners, 3)
     }
     for (k in 0 until 3) {
         val rise = ((t * 0.6f + k / 3f + (seed and 7) / 8f) % 1f)
-        drawCircle(Color(0x50606060).copy(alpha = 0.35f * (1f - rise)), (2f + rise * 6f) * u, Offset(x + rise * 6f * u, y - 6f * u - rise * 22f * u))
+        circle(Color(0x50606060).copy(alpha = 0.35f * (1f - rise)), (2f + rise * 6f) * u, x + rise * 6f * u, y - 6f * u - rise * 22f * u)
     }
 }
 
 /** A board beside the track: yellow for a slow order, red and white across it for a closure. */
-private fun DrawScope.drawBoard(kind: Int, x: Float, y: Float, hw: Float) {
+private fun Pen.drawBoard(kind: Int, x: Float, y: Float, hw: Float) {
     val u = hw / 32f
-    drawLine(Color(0xff3a3a3a), Offset(x, y), Offset(x, y - 9f * u), 1.2f * u)
+    line(Color(0xff3a3a3a), x, y, x, y - 9f * u, 1.2f * u)
     if (kind == 1) {
-        drawRect(Color(0xfff0c030), Offset(x - 3f * u, y - 13f * u), Size(6f * u, 5f * u))
-        drawRect(Color(0xff2a2a2a), Offset(x - 3f * u, y - 13f * u), Size(6f * u, 5f * u), style = Stroke(0.6f * u))
+        rect(Color(0xfff0c030), x - 3f * u, y - 13f * u, 6f * u, 5f * u)
+        rectEdge(Color(0xff2a2a2a), x - 3f * u, y - 13f * u, 6f * u, 5f * u, 0.6f * u)
     } else {
-        for (k in 0 until 4) drawRect(if (k % 2 == 0) Color(0xffd03a2a) else Color(0xfff4f4f0), Offset(x - 8f * u + k * 4f * u, y - 9f * u), Size(4f * u, 2.5f * u))
+        for (k in 0 until 4) rect(if (k % 2 == 0) Color(0xffd03a2a) else Color(0xfff4f4f0), x - 8f * u + k * 4f * u, y - 9f * u, 4f * u, 2.5f * u)
     }
 }
 
 private val flicker = kotlin.time.TimeSource.Monotonic.markNow()
+/** Corners of a flame or a waypoint's diamond, reused; drawing only, on the UI thread. */
+private val corners = FloatArray(8)
 /** How high the contact wire hangs over the rails, in steps: on top of a raised pantograph (2.26-2.27). */
 private const val WIRE_HEIGHT = 2.28f
 
@@ -1040,31 +1092,34 @@ private fun segments(c: TileCurve): Int {
 }
 
 /** Draws a wire item: the mast from the ground up, its arm out to the wire, and the wire. */
-private fun DrawScope.drawWire(it: FloatArray, hw: Float) {
+private fun Pen.drawWire(it: FloatArray, hw: Float) {
     val u = hw / 40f
     val mast = Color(0xff4a4e52)
     val masts = it[5].toInt()
     for (m in 0 until masts) {
         val o = 7 + 5 * m
-        drawLine(mast, Offset(it[o], it[o + 1]), Offset(it[o], it[o + 2]), 2.2f * u)
-        drawLine(mast, Offset(it[o], it[o + 2]), Offset(it[o + 3], it[o + 4]), 1.2f * u)
+        line(mast, it[o], it[o + 1], it[o], it[o + 2], 2.2f * u)
+        line(mast, it[o], it[o + 2], it[o + 3], it[o + 4], 1.2f * u)
     }
     val wire = Color(0xff2a2c2e)
     var k = 7 + 5 * masts
     while (k + 3 < it.size) {
-        drawLine(wire, Offset(it[k], it[k + 1]), Offset(it[k + 2], it[k + 3]), 1f * u)
+        line(wire, it[k], it[k + 1], it[k + 2], it[k + 3], 1f * u)
         k += 2
     }
 }
 
 /** A signal kind's plate at the foot of its mast, or a waypoint's post with a diamond on top, standing at ([x], [y]) on screen. */
-private fun DrawScope.drawMark(what: Int, kind: Int, x: Float, y: Float, hw: Float) {
+private fun Pen.drawMark(what: Int, kind: Int, x: Float, y: Float, hw: Float) {
     val u = hw / 16f
     if (what == WAYPOINT) {
-        drawLine(Color(0xff3a3a3a), Offset(x, y), Offset(x, y - 7 * u), 1.2f * u)
-        val d = Path().apply { moveTo(x, y - 11 * u); lineTo(x + 2.5f * u, y - 8.5f * u); lineTo(x, y - 6 * u); lineTo(x - 2.5f * u, y - 8.5f * u); close() }
-        drawPath(d, Color(0xfff0c030))
-        drawPath(d, Color(0xff3a3a3a), style = Stroke(0.6f * u))
+        line(Color(0xff3a3a3a), x, y, x, y - 7 * u, 1.2f * u)
+        corners[0] = x; corners[1] = y - 11 * u
+        corners[2] = x + 2.5f * u; corners[3] = y - 8.5f * u
+        corners[4] = x; corners[5] = y - 6 * u
+        corners[6] = x - 2.5f * u; corners[7] = y - 8.5f * u
+        shape(Color(0xfff0c030), corners, 4)
+        shape(Color(0xff3a3a3a), corners, 4, 0.6f * u)
         return
     }
     val colour = when (kind) {
@@ -1074,8 +1129,8 @@ private fun DrawScope.drawMark(what: Int, kind: Int, x: Float, y: Float, hw: Flo
         else -> Color(0xfff4f4f0)
     }
     val r = 1.6f * u
-    drawRect(colour, Offset(x - r, y - r * 1.6f), Size(2 * r, 1.6f * r))
-    drawRect(Color(0xff2a2a2a), Offset(x - r, y - r * 1.6f), Size(2 * r, 1.6f * r), style = Stroke(0.5f * u))
+    rect(colour, x - r, y - r * 1.6f, 2 * r, 1.6f * r)
+    rectEdge(Color(0xff2a2a2a), x - r, y - r * 1.6f, 2 * r, 1.6f * r, 0.5f * u)
 }
 
 /** A sprite from the signals sheet anchored on tile ([x], [y])'s top corner at height [h], at [depth] in front of the tile's middle. */

@@ -212,11 +212,30 @@ class Sheets(private val packed: PackedSheets, private val scope: CoroutineScope
     /** Vehicle drawing [model]'s rects at [level], in that level's pixels, or null if it has none. */
     fun vehicleRects(model: Int, level: Int): IntArray? = sources.getOrNull(model)?.rectsAt(level)
 
-    /** Vehicle drawing [model]'s sheet at [level], unpacked the first time it's asked for; null until then. */
+    /** Whether the unpacked vehicle sheets are under their budget, once those long unused are let go. */
+    fun vehicleRoom(): Boolean {
+        trimVehicles()
+        return vehicleBytes < vehicleBudget
+    }
+
+    /** Lets go of vehicle drawing [model]'s sheet at [level], once the GPU map has it on its own pages. */
+    fun dropVehicle(model: Int, level: Int) {
+        val key = model * Atlas.LEVELS + level
+        val image = vehicles.remove(key) ?: return
+        vehicleBytes -= image.width.toLong() * image.height * 4
+        vehicleUsed.remove(key)
+        vehiclesUnpacking.remove(key)
+    }
+
+    /**
+     * Vehicle drawing [model]'s sheet at [level], unpacked the first time it's asked for if [ask] is set; null until
+     * then.
+     */
     @OptIn(ExperimentalResourceApi::class)
-    fun vehicle(model: Int, level: Int): ImageBitmap? {
+    fun vehicle(model: Int, level: Int, ask: Boolean = true): ImageBitmap? {
         val key = model * Atlas.LEVELS + level
         vehicles[key]?.let { vehicleUsed[key] = probeNanos(); return it }
+        if (!ask) return null
         val source = sources.getOrNull(model) ?: return null
         if (vehiclesUnpacking.add(key)) {
             val mine = generation

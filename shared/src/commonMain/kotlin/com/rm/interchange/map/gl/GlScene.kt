@@ -6,6 +6,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.ImageBitmap
 import com.rm.interchange.map.Atlas
 import com.rm.interchange.map.CurveArt
 import com.rm.interchange.map.LevelSheets
@@ -30,43 +31,13 @@ internal expect fun glMapWanted(): Boolean
 
 /**
  * The GPU map's surface, drawing [scene] with [page] (ARGB) round the map. It goes under the Compose map, which
- * still draws vehicles, overlays, labels and selection over it.
+ * draws overlays, labels and selection over it.
  */
 @Composable
 internal expect fun GlMapSurface(scene: GlScene, page: Int, modifier: Modifier)
 
-/** What the GPU draws next: the frame and the regions recorded so far for its turn, null where still recording. */
-internal class GlShown(val frame: GlFrame, val regions: Array<RegionSprites?>)
-
-/**
- * Sprites that move every frame (vehicles, gates, signals, for G4), to merge into the static order. Each goes in
- * with the pass, view row and column it draws with, and the batcher splits the static runs there, so no sort of the
- * static sprites is needed. Unused so far.
- */
-internal interface LiveSprites {
-    fun collect(frame: GlFrame, into: LiveSpriteList)
-}
-
-/** One frame's [LiveSprites], kept in the order they're added, which is drawing order within a tile. */
-internal class LiveSpriteList {
-    var count = 0
-        private set
-    /** Pass, row, column, then the [SpriteRecorder] fields from sheet on: [STRIDE] ints a sprite. */
-    var data = IntArray(STRIDE * 64)
-        private set
-
-    fun clear() { count = 0 }
-
-    fun add(pass: Int, row: Int, column: Int, sheet: Int, left: Int, top: Int, w: Int, h: Int, sx: Int, sy: Int) {
-        if ((count + 1) * STRIDE > data.size) data = data.copyOf(data.size * 2)
-        val o = count * STRIDE
-        data[o] = pass; data[o + 1] = row; data[o + 2] = column; data[o + 3] = sheet
-        data[o + 4] = left; data[o + 5] = top; data[o + 6] = w; data[o + 7] = h; data[o + 8] = sx; data[o + 9] = sy
-        count++
-    }
-
-    companion object { const val STRIDE = 10 }
-}
+/** What the GPU draws next: the frame, the regions recorded so far for its turn, null where still recording, and what moves. */
+internal class GlShown(val frame: GlFrame, val regions: Array<RegionSprites?>, val live: LiveBatch?)
 
 /**
  * Far zooms on big maps (256 tiles and up), where every sprite on screen is more than the GPU can take a frame: a
@@ -85,8 +56,10 @@ internal interface FarRegions {
  * weather goes to the GL thread as [weather] and the time of year as [look], which the ground shader draws in place.
  * The world is read as a bake reads it.
  *
- * Main thread only, but for [shown], [levels], [weather], [look] and [requestRender], which the GL thread reads, and
- * [uploaded], [lost] and [uploadFailed], which it calls.
+ * What moves goes in [live] each frame and out with the frame in [shown], drawn over the static map.
+ *
+ * Main thread only, but for [shown], [levels], [weather], [look], [requestRender] and [atlas]'s uploads, which the GL
+ * thread reads, and [uploaded], [liveUploaded], [lost] and [uploadFailed], which it calls.
  */
 internal class GlScene(private val world: World, private val scope: CoroutineScope) {
     /** [pending] holds the version each region is being recorded at, or -1. */
@@ -142,18 +115,40 @@ internal class GlScene(private val world: World, private val scope: CoroutineSco
     /** Goes up as each region's recorded, so the Compose map draws again and hands it on. */
     val revision = mutableIntStateOf(0)
 
-    var live: LiveSprites? = null
     var far: FarRegions? = null
+
+    /** Where the live sprites go on the GPU, for the GL thread through [LiveAtlas.uploads] and [liveUploaded]. */
+    val atlas = LiveAtlas()
+
+    /** Takes what moves each frame, between [show] and [finish]. */
+    val live = LiveBuilder(atlas, object : LiveSource {
+        override fun image(source: Int, level: Int, ask: Boolean): ImageBitmap? =
+            if (source == SIGNALS) levels[level]?.signals else sheetsSeen?.vehicle(source, level, ask)
+
+        override fun rects(source: Int, level: Int): IntArray? =
+            if (source == SIGNALS) signalRects[level] else sheetsSeen?.vehicleRects(source, level)
+
+        override fun room() = sheetsSeen?.vehicleRoom() ?: false
+    })
+
+    /** The [LiveBatch.seq] of the last batch the GL thread copied out, set by it. */
+    @Volatile
+    var liveTaken = 0L
+
+    /** What [show] worked out, published by [finish] with what moves. */
+    private var nextFrame: GlFrame? = null
+    private var nextRegions: Array<RegionSprites?>? = null
+    private var staticReady = false
 
     private var columns = IntArray(0)
     private var sharp = false
     var onSharp: () -> Unit = {}
 
     /**
-     * Shows [view] on a screen [width] by [height], from the Compose map's draw. Returns whether the screen has
-     * everything it needs, so the cover over it can lift.
+     * Shows [view] on a screen [width] by [height], from the Compose map's draw, which then puts what moves into
+     * [live] and calls [finish].
      */
-    fun show(view: View, sheets: Sheets, width: Int, height: Int): Boolean {
+    fun show(view: View, sheets: Sheets, width: Int, height: Int) {
         sheetsSeen = sheets
         sheets.keepSharpest = true
         takeLevels(sheets)
@@ -177,17 +172,44 @@ internal class GlScene(private val world: World, private val scope: CoroutineSco
         }
         for (t in 0 until 4) if (t != view.turn && t != view.askedTurn) drop(t)
         val frame = GlFrame.of(view, width, height)
+        live.reset()
         // Nothing recording till the first weather copy's in.
-        val regions = turns[view.turn]?.regions ?: return false
+        val regions = turns[view.turn]?.regions
+        nextFrame = frame
+        nextRegions = regions
+        val lv = levels
+        staticReady = regions != null && onGpu === lv && (Renderer.SHARPEST until Atlas.LEVELS).all { lv[it] != null } && weather != null && covers(view.turn, frame)
+    }
+
+    /**
+     * Hands the GL thread the frame [show] worked out with what [live] took since, together so they never part.
+     * Returns whether the screen has everything it needs, so the cover over it can lift: the first time, that's every
+     * sheet showing on the GPU at every level, vehicles' too; after that a sheet new to the screen shows once it's up.
+     */
+    fun finish(): Boolean {
+        val frame = nextFrame ?: return false
+        val regions = nextRegions ?: return false
         val last = shown
-        if (last == null || last.frame != frame || !last.regions.contentEquals(regions)) {
-            shown = GlShown(frame, regions.copyOf())
+        val batch = live.batch(last?.live, liveTaken)
+        if (last == null || last.frame != frame || !last.regions.contentEquals(regions) || last.live !== batch) {
+            shown = GlShown(frame, regions.copyOf(), batch)
             requestRender()
         }
-        val lv = levels
-        val ready = onGpu === lv && (Renderer.SHARPEST until Atlas.LEVELS).all { lv[it] != null } && weather != null && covers(view.turn, frame)
+        // Sheets go up in the GL thread's frames, which a still view doesn't otherwise ask for.
+        if (atlas.uploads.isNotEmpty()) requestRender()
+        if (staticReady && !live.missing) atlas.ready = true
+        val ready = staticReady && (atlas.ready || !live.begun)
         if (ready && !sharp) { sharp = true; onSharp() }
         return ready
+    }
+
+    /** From the GL thread: [done] are on the GPU, so the vehicle sheets they came from can go. */
+    fun liveUploaded(done: List<LiveUpload>) {
+        scope.launch {
+            atlas.uploaded(done)
+            for (u in done) if (u.source != SIGNALS && u.generation == atlas.generation) sheetsSeen?.dropVehicle(u.source, u.level)
+            revision.intValue++
+        }
     }
 
     /** From the GL thread: [from] is all on the GPU. Draws again, so the cover can lift. */
@@ -196,10 +218,13 @@ internal class GlScene(private val world: World, private val scope: CoroutineSco
         scope.launch { revision.intValue++ }
     }
 
-    /** From the GL thread: a new context, with nothing on the GPU. Draws again, so the cover comes back. */
-    fun lost() {
+    /** From the GL thread: new context [context], with nothing on the GPU. Draws again, so the cover comes back. */
+    fun lost(context: Int) {
         onGpu = null
-        scope.launch { revision.intValue++ }
+        scope.launch {
+            atlas.reset(context)
+            revision.intValue++
+        }
     }
 
     /** From the GL thread: a level wouldn't go on the GPU, so the map goes back to the chunks, which let go of level 0 as usual. */
@@ -341,5 +366,8 @@ internal class GlScene(private val world: World, private val scope: CoroutineSco
     private companion object {
         /** How often the world under the regions showing is looked at for changes. */
         const val CHECK_MILLIS = 250L
+
+        /** The signals sheet's rects at each level, in that level's pixels, as LandPainter.spriteAt divides them. */
+        val signalRects = Array(Atlas.LEVELS) { l -> IntArray(Atlas.SIGNAL_RECTS.size) { Atlas.SIGNAL_RECTS[it] / (1 shl l) } }
     }
 }

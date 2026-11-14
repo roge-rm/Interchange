@@ -132,17 +132,20 @@ fun MapView(
         renderer.revision.intValue
         sheets.revision.intValue
         frame()
-        val cover = if (gl != null) {
+        var cover = if (gl != null) {
             gl.revision.intValue
-            if (gl.show(view, sheets, size.width.toInt(), size.height.toInt())) 0f else 1f
+            gl.show(view, sheets, size.width.toInt(), size.height.toInt())
+            1f
         } else {
             with(renderer) { draw(view) }
             renderer.cover()
         }
         moving()?.let {
-            drawMoving(world, view, sheets, it)
+            drawMoving(world, view, sheets, it, gl?.live)
             drawSky(world, view, it)
         }
+        // The GPU map takes the frame with what moves in it, so they show together.
+        if (gl != null && gl.finish()) cover = 0f
         overlay?.let { draw ->
             val painter = LandPainter(world, view, view.halfWidth)
             painter.originX = view.screenX(0f, 0f, size.width)

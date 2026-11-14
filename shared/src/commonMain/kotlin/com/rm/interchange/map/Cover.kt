@@ -29,10 +29,28 @@ internal class Cover(private val world: World, private val view: View, private v
      * of their columns; null if none do. [near] is how far round the point on screen to look, in pixels.
      */
     fun DrawScope.covering(vx: Float, vy: Float, near: Rect, set: LongArray? = null): Path? {
+        var path: Path? = null
+        each(vx, vy, near.left, near.top, near.right, near.bottom, size.width, size.height, { tile ->
+            // [set] gets a number for which buildings these are, to tell pieces with the same cover.
+            if (set != null) set[0] = set[0] * 31 + (tile + 1)
+            if (path == null) path = Path()
+            true
+        }) { l, t, r, b, _ -> path!!.addRect(Rect(l, t, r, b)) }
+        return path
+    }
+
+    /**
+     * The same buildings' columns as rectangles on a screen [width] by [height], for the GPU map: [take] is asked
+     * for each building's view tile (y * view width + x) first and its rectangles are skipped if it says no; [add]
+     * gets each as left, top, right, bottom and the building tile's view depth (x + y).
+     */
+    fun rects(vx: Float, vy: Float, nl: Float, nt: Float, nr: Float, nb: Float, width: Float, height: Float, take: (Int) -> Boolean, add: (Float, Float, Float, Float, Int) -> Unit) =
+        each(vx, vy, nl, nt, nr, nb, width, height, take, add)
+
+    private inline fun each(vx: Float, vy: Float, nl: Float, nt: Float, nr: Float, nb: Float, width: Float, height: Float, take: (Int) -> Boolean, add: (Float, Float, Float, Float, Int) -> Unit) {
         val tx = floor(vx).toInt()
         val ty = floor(vy).toInt()
         val scale = view.halfWidth / hw
-        var path: Path? = null
         for ((dx, dy) in FRONT) {
             val bx = tx + dx
             val by = ty + dy
@@ -46,13 +64,11 @@ internal class Cover(private val world: World, private val view: View, private v
             val h = Atlas.STATIC_RECTS[r + 3] / shrink
             if (w == 0 || h == 0) continue
             // As the baker blits it: from the tile's top corner at its height.
-            val left = view.screenX(bx.toFloat(), by.toFloat(), size.width) + Atlas.STATIC_RECTS[r + 4] / shrink * scale
-            val top = view.screenY(bx.toFloat(), by.toFloat(), base.toFloat(), size.height) + Atlas.STATIC_RECTS[r + 5] / shrink * scale
-            if (left > near.right || left + w * scale < near.left || top > near.bottom || top + h * scale < near.top) continue
-            // [set] gets a number for which buildings these are, to tell pieces with the same cover.
-            if (set != null) set[0] = set[0] * 31 + (by * view.viewWidth + bx + 1)
+            val left = view.screenX(bx.toFloat(), by.toFloat(), width) + Atlas.STATIC_RECTS[r + 4] / shrink * scale
+            val top = view.screenY(bx.toFloat(), by.toFloat(), base.toFloat(), height) + Atlas.STATIC_RECTS[r + 5] / shrink * scale
+            if (left > nr || left + w * scale < nl || top > nb || top + h * scale < nt) continue
+            if (!take(by * view.viewWidth + bx)) continue
             val columns = columns(cell, w, h)
-            val p = path ?: Path().also { path = it }
             var i = 0
             while (i < w) {
                 val from = columns[i * 2]
@@ -64,11 +80,10 @@ internal class Cover(private val world: World, private val view: View, private v
                 val to = columns[i * 2 + 1]
                 var j = i + 1
                 while (j < w && j - i < RUN && columns[j * 2] >= 0 && kotlin.math.abs(columns[j * 2] - from) <= 1 && kotlin.math.abs(columns[j * 2 + 1] - to) <= 1) j++
-                p.addRect(Rect(left + i * scale, top + from * scale, left + j * scale, top + (to + 1) * scale))
+                add(left + i * scale, top + from * scale, left + j * scale, top + (to + 1) * scale, bx + by)
                 i = j
             }
         }
-        return path
     }
 
     /** For each column of sprite [cell], its first and last solid rows, or -1 for an empty column; kept for each level. */

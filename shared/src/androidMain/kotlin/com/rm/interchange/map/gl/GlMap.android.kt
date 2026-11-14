@@ -35,7 +35,8 @@ internal actual fun GlMapSurface(scene: GlScene, page: Int, modifier: Modifier) 
         factory = { context ->
             GLSurfaceView(context).apply {
                 setEGLContextClientVersion(3)
-                setEGLConfigChooser(8, 8, 8, 8, 0, 0)
+                // A depth buffer for cutting what moves where buildings in front stand.
+                setEGLConfigChooser(8, 8, 8, 8, 16, 0)
                 preserveEGLContextOnPause = true
                 val renderer = GlMapRenderer(scene, page)
                 setRenderer(renderer)

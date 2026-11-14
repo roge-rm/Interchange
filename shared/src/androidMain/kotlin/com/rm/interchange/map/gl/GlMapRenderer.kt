@@ -66,6 +66,22 @@ internal class GlMapRenderer(private val scene: GlScene, private val page: Int) 
     private var columns = IntArray(0)
     private val runs = DrawRuns()
 
+    private var liveProgram = 0
+    private var liveVao = 0
+    private var liveBuffer = 0
+    /** Each level's live pages, as textures. */
+    private val livePages = Array(Atlas.LEVELS) { ArrayList<Int>() }
+    /** The uploads taken into this context's pages that the main thread hasn't answered yet. */
+    private val liveDone = HashSet<LiveUpload>()
+    /** Counts contexts, so batches and uploads placed for an earlier one's pages are left alone. */
+    private var context = 0
+    /** The batch in [liveBuffer], and its draws: first instance, count and the pages bound to its units. */
+    private var liveUp: LiveBatch? = null
+    private var liveDraws = IntArray(0)
+    private var liveDrawCount = 0
+    private var liveBytes = ByteBuffer.allocateDirect(0)
+    private var liveFloats = FloatArray(0)
+
     override fun onSurfaceCreated(gl: GL10?, config: EGLConfig?) {
         // A new context: whatever was made in the last went with it.
         levels.fill(null)
@@ -74,17 +90,33 @@ internal class GlMapRenderer(private val scene: GlScene, private val page: Int) 
         legsTex = 0
         buffers = arrayOfNulls(0)
         bufferTurn = -1
+        for (p in livePages) p.clear()
+        liveDone.clear()
+        liveUp = null
         maxTexture = IntArray(1).also { glGetIntegerv(GL_MAX_TEXTURE_SIZE, it, 0) }[0]
         maxLayers = IntArray(1).also { glGetIntegerv(GL_MAX_ARRAY_TEXTURE_LAYERS, it, 0) }[0]
         // Nothing's on the GPU in a new context: the cover stays up till every level's in again.
-        scene.lost()
+        context++
+        scene.lost(context)
         spriteProgram = program(SPRITE_VS, SPRITE_FS)
         shadowProgram = program(SPRITE_VS, SHADOW_FS)
         groundProgram = program(GROUND_VS, GROUND_FS)
-        val ids = IntArray(2)
-        glGenVertexArrays(2, ids, 0)
+        liveProgram = program(LIVE_VS, LIVE_FS)
+        val ids = IntArray(3)
+        glGenVertexArrays(3, ids, 0)
         vao = ids[0]
         groundVao = ids[1]
+        liveVao = ids[2]
+        glGenBuffers(1, ids, 0)
+        liveBuffer = ids[0]
+        glBindVertexArray(liveVao)
+        glBindBuffer(GL_ARRAY_BUFFER, liveBuffer)
+        for (a in 0 until 4) {
+            glEnableVertexAttribArray(a)
+            glVertexAttribDivisor(a, 1)
+            glVertexAttribPointer(a, 4, GL_FLOAT, false, LIVE_FLOATS * 4, a * 16)
+        }
+        glBindBuffer(GL_ARRAY_BUFFER, 0)
         glBindVertexArray(vao)
         for (a in 0 until 1) {
             glEnableVertexAttribArray(a)
@@ -111,7 +143,8 @@ internal class GlMapRenderer(private val scene: GlScene, private val page: Int) 
 
     override fun onDrawFrame(gl: GL10?) {
         glClearColor(((page shr 16) and 255) / 255f, ((page shr 8) and 255) / 255f, (page and 255) / 255f, 1f)
-        glClear(GL_COLOR_BUFFER_BIT)
+        glClearDepthf(0f)
+        glClear(GL_COLOR_BUFFER_BIT or GL_DEPTH_BUFFER_BIT)
         val shown = scene.shown ?: return
         val f = shown.frame
         // Clip space from source level pixels: screen = origin + p * scale, then to -1..1 with y up.
@@ -134,6 +167,7 @@ internal class GlMapRenderer(private val scene: GlScene, private val page: Int) 
         scene.weather?.let { if (it !== weatherUp) upload(it) }
         if (weatherTex == 0) return
         uploadRegions(shown)
+        takeLive()
         if (columns.size < f.viewHeight * 2) columns = IntArray(f.viewHeight * 2)
         visibleColumns(f, columns)
         val far = scene.far
@@ -187,9 +221,194 @@ internal class GlMapRenderer(private val scene: GlScene, private val page: Int) 
                 glDrawArraysInstanced(GL_TRIANGLE_STRIP, 0, 4, runs.count(k))
             }
         }
+        shown.live?.let { drawLive(it) }
         glBindVertexArray(0)
         glBindBuffer(GL_ARRAY_BUFFER, 0)
         glDisable(GL_BLEND)
+    }
+
+    /**
+     * Draws what moves over the static map, in its order: the buildings' columns into the depth buffer only, keeping
+     * the nearest at each pixel, then the instances, a cut one showing only where it's nearer than what's there.
+     */
+    private fun drawLive(b: LiveBatch) {
+        if (b.generation != context) return
+        if (b !== liveUp) {
+            uploadLive(b)
+            scene.liveTaken = b.seq
+        }
+        if (b.covers + b.count == 0) return
+        val p = liveProgram
+        glUseProgram(p)
+        glBindVertexArray(liveVao)
+        glUniform2f(glGetUniformLocation(p, "uScreen"), width.toFloat(), height.toFloat())
+        glUniform1f(glGetUniformLocation(p, "uSide"), livePageSide(b.level).toFloat())
+        for (u in 0 until LIVE_UNITS) glUniform1i(glGetUniformLocation(p, "uP$u"), u)
+        glEnable(GL_DEPTH_TEST)
+        glDepthFunc(GL_GREATER)
+        if (b.covers > 0) {
+            livePointers(0)
+            glColorMask(false, false, false, false)
+            glDepthMask(true)
+            glDrawArraysInstanced(GL_TRIANGLE_STRIP, 0, 4, b.covers)
+            glColorMask(true, true, true, true)
+        }
+        glDepthMask(false)
+        glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA)
+        val pages = livePages[b.level]
+        for (d in 0 until liveDrawCount) {
+            val o = d * (2 + LIVE_UNITS)
+            for (u in 0 until LIVE_UNITS) {
+                glActiveTexture(GL_TEXTURE0 + u)
+                glBindTexture(GL_TEXTURE_2D, pages.getOrNull(liveDraws[o + 2 + u]) ?: 0)
+            }
+            livePointers(liveDraws[o])
+            glDrawArraysInstanced(GL_TRIANGLE_STRIP, 0, 4, liveDraws[o + 1])
+        }
+        glActiveTexture(GL_TEXTURE0)
+        glDepthMask(true)
+        glDisable(GL_DEPTH_TEST)
+    }
+
+    /** Points the live attributes at instance [first] on. */
+    private fun livePointers(first: Int) {
+        glBindBuffer(GL_ARRAY_BUFFER, liveBuffer)
+        for (a in 0 until 4) glVertexAttribPointer(a, 4, GL_FLOAT, false, LIVE_FLOATS * 4, first * LIVE_FLOATS * 4 + a * 16)
+    }
+
+    /**
+     * Streams [b] into the live buffer, its sprites' pages swapped for the texture units they're bound to, split into
+     * draws of up to [LIVE_UNITS] pages each; the building columns are the first draw's, before its instances.
+     */
+    private fun uploadLive(b: LiveBatch) {
+        liveUp = b
+        val total = b.covers + b.count
+        if (liveFloats.size < total * LIVE_FLOATS) liveFloats = FloatArray(total * LIVE_FLOATS * 2)
+        val f = liveFloats
+        b.data.copyInto(f, 0, 0, total * LIVE_FLOATS)
+        liveDrawCount = 0
+        val bound = IntArray(LIVE_UNITS) { -1 }
+        var start = b.covers
+        var used = 0
+        fun close(end: Int) {
+            if (end <= start) return
+            val o = liveDrawCount * (2 + LIVE_UNITS)
+            if (liveDraws.size < o + 2 + LIVE_UNITS) liveDraws = liveDraws.copyOf(maxOf(64, liveDraws.size * 2))
+            liveDraws[o] = start
+            liveDraws[o + 1] = end - start
+            bound.copyInto(liveDraws, o + 2)
+            liveDrawCount++
+            start = end
+        }
+        for (i in b.covers until total) {
+            val o = i * LIVE_FLOATS
+            if (f[o].toInt() != LIVE_SPRITE) continue
+            val page = f[o + 1].toInt()
+            var unit = -1
+            for (u in 0 until used) if (bound[u] == page) unit = u
+            if (unit < 0) {
+                if (used == LIVE_UNITS) {
+                    close(i)
+                    bound.fill(-1)
+                    used = 0
+                }
+                unit = used++
+                bound[unit] = page
+            }
+            f[o + 1] = unit.toFloat()
+        }
+        close(total)
+        val bytes = total * LIVE_FLOATS * 4
+        if (liveBytes.capacity() < bytes) liveBytes = ByteBuffer.allocateDirect(bytes * 2).order(ByteOrder.nativeOrder())
+        liveBytes.clear()
+        liveBytes.asFloatBuffer().put(f, 0, total * LIVE_FLOATS)
+        liveBytes.position(0)
+        glBindBuffer(GL_ARRAY_BUFFER, liveBuffer)
+        // A new store each time, so the GPU needn't wait for the last frame's to be done with.
+        glBufferData(GL_ARRAY_BUFFER, maxOf(bytes, 16), if (bytes > 0) liveBytes else null, GL_STREAM_DRAW)
+        glBindBuffer(GL_ARRAY_BUFFER, 0)
+    }
+
+    /** Copies the sheets [scene] has placed and not yet sent up onto their pages, and tells it they're in. */
+    private fun takeLive() {
+        val ups = scene.atlas.uploads
+        // Answered ones are out of the list; letting go of them here lets go of their images.
+        if (liveDone.isNotEmpty()) liveDone.retainAll(ups)
+        if (ups.isEmpty()) return
+        var done: ArrayList<LiveUpload>? = null
+        val t0 = System.nanoTime()
+        for (u in ups) {
+            if (u.generation != context || u in liveDone) continue
+            uploadSprites(u)
+            liveDone += u
+            (done ?: ArrayList<LiveUpload>().also { done = it }) += u
+        }
+        val d = done ?: return
+        scene.liveUploaded(d)
+        val side = IntArray(Atlas.LEVELS) { livePageSide(it) }
+        val mb = livePages.indices.sumOf { livePages[it].size.toLong() * side[it] * side[it] * 4 } / 1_000_000
+        Log.i(TAG, "gl live sheets up=${d.size} pages=${livePages.joinToString(",") { it.size.toString() }} MB=$mb ms=${(System.nanoTime() - t0) / 1_000_000}")
+    }
+
+    /** One sheet's sprites onto their pages at its level, making pages, cleared, as they're first needed. */
+    private fun uploadSprites(u: LiveUpload) {
+        val pages = livePages[u.level]
+        val side = livePageSide(u.level)
+        val c = u.cells
+        glPixelStorei(GL_UNPACK_ALIGNMENT, 1)
+        for (k in 0 until c.size / LiveAtlas.UP) {
+            val o = k * LiveAtlas.UP
+            val page = c[o + 4]
+            if (page < 0) continue
+            while (pages.size <= page) pages += livePage(side)
+            val w = c[o + 2]
+            val h = c[o + 3]
+            if (spritePixels.size < w * h) spritePixels = IntArray(w * h)
+            u.image.readPixels(spritePixels, c[o], c[o + 1], w, h)
+            if (strip.size < w * h * 4) strip = ByteArray(w * h * 4)
+            val out = strip
+            for (i in 0 until w * h) {
+                val q = spritePixels[i]
+                val a = q ushr 24
+                out[i * 4] = (((q shr 16) and 255) * a / 255).toByte()
+                out[i * 4 + 1] = (((q shr 8) and 255) * a / 255).toByte()
+                out[i * 4 + 2] = ((q and 255) * a / 255).toByte()
+                out[i * 4 + 3] = a.toByte()
+            }
+            if (spriteBytes.capacity() < w * h * 4) spriteBytes = ByteBuffer.allocateDirect(w * h * 8)
+            spriteBytes.clear()
+            spriteBytes.put(out, 0, w * h * 4).flip()
+            glBindTexture(GL_TEXTURE_2D, pages[page])
+            glTexSubImage2D(GL_TEXTURE_2D, 0, c[o + 5], c[o + 6], w, h, GL_RGBA, GL_UNSIGNED_BYTE, spriteBytes)
+        }
+        glBindTexture(GL_TEXTURE_2D, 0)
+    }
+
+    private var spritePixels = IntArray(0)
+    private var spriteBytes = ByteBuffer.allocateDirect(0)
+
+    /** A clear page [side] square, filtered as the sheets are. */
+    private fun livePage(side: Int): Int {
+        val ids = IntArray(1)
+        glGenTextures(1, ids, 0)
+        glBindTexture(GL_TEXTURE_2D, ids[0])
+        glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, side, side)
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR)
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR)
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE)
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE)
+        val fb = IntArray(1)
+        glGenFramebuffers(1, fb, 0)
+        glBindFramebuffer(GL_FRAMEBUFFER, fb[0])
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, ids[0], 0)
+        glViewport(0, 0, side, side)
+        glClearColor(0f, 0f, 0f, 0f)
+        glClear(GL_COLOR_BUFFER_BIT)
+        glBindFramebuffer(GL_FRAMEBUFFER, 0)
+        glDeleteFramebuffers(1, fb, 0)
+        glViewport(0, 0, width, height)
+        glBindTexture(GL_TEXTURE_2D, ids[0])
+        return ids[0]
     }
 
     /** The ground shader's textures and uniforms for frame [f]. */
@@ -502,6 +721,14 @@ internal class GlMapRenderer(private val scene: GlScene, private val page: Int) 
     /** Frees every texture, buffer and program, as the surface goes. */
     fun release() {
         freeBuffers()
+        for (p in livePages) {
+            if (p.isNotEmpty()) glDeleteTextures(p.size, p.toIntArray(), 0)
+            p.clear()
+        }
+        liveDone.clear()
+        liveUp = null
+        if (liveBuffer != 0) glDeleteBuffers(1, intArrayOf(liveBuffer), 0)
+        liveBuffer = 0
         for (l in levels) if (l != null) glDeleteTextures(4, l.textures, 0)
         levels.fill(null)
         for (t in intArrayOf(weatherTex, legsTex, staticCells, shadowCells)) if (t != 0) glDeleteTextures(1, intArrayOf(t), 0)
@@ -510,10 +737,12 @@ internal class GlMapRenderer(private val scene: GlScene, private val page: Int) 
         weatherTex = 0
         weatherUp = null
         legsTex = 0
-        for (a in intArrayOf(vao, groundVao)) if (a != 0) glDeleteVertexArrays(1, intArrayOf(a), 0)
-        for (p in intArrayOf(spriteProgram, shadowProgram, groundProgram)) if (p != 0) glDeleteProgram(p)
+        for (a in intArrayOf(vao, groundVao, liveVao)) if (a != 0) glDeleteVertexArrays(1, intArrayOf(a), 0)
+        for (p in intArrayOf(spriteProgram, shadowProgram, groundProgram, liveProgram)) if (p != 0) glDeleteProgram(p)
         vao = 0
         groundVao = 0
+        liveVao = 0
+        liveProgram = 0
         spriteProgram = 0
         shadowProgram = 0
         groundProgram = 0
@@ -548,6 +777,8 @@ internal class GlMapRenderer(private val scene: GlScene, private val page: Int) 
         const val STRIP_ROWS = 256
         /** Ground kinds with a grass colour through the year, and some to spare: the shader's uGrade. */
         const val GRADE_KINDS = 8
+        /** Live pages bound at once, each to its own texture unit. */
+        const val LIVE_UNITS = 8
     }
 }
 
@@ -593,5 +824,139 @@ flat in highp vec4 vEdge;
 out vec4 frag;
 void main() {
     frag = vec4(0.0, 0.0, 0.0, texture(uSheet, vec3(clamp(vUv.xy, vEdge.xy, vEdge.zw), vUv.z)).r);
+}
+"""
+
+/**
+ * What moves, an instance a quad: a sprite's screen rect, a line's or shape's box round it with a pixel to spare for
+ * smoothing, or a building's column. Positions are screen pixels, y down; depth is the instance's own.
+ */
+private const val LIVE_VS = """#version 300 es
+precision highp float;
+layout(location = 0) in vec4 aK;
+layout(location = 1) in vec4 aA;
+layout(location = 2) in vec4 aB;
+layout(location = 3) in vec4 aC;
+uniform vec2 uScreen;
+uniform float uSide;
+out vec2 vPos;
+out vec2 vUv;
+flat out int vKind;
+flat out int vUnit;
+flat out float vShadow;
+flat out vec4 vA;
+flat out vec4 vB;
+flat out vec4 vC;
+flat out vec4 vEdge;
+void main() {
+    vec2 o = vec2(float(gl_VertexID & 1), float(gl_VertexID >> 1));
+    int kind = int(aK.x + 0.5);
+    vec2 p;
+    vUv = vec2(0.0);
+    vEdge = vec4(0.0);
+    if (kind == 0 || kind == 3) {
+        p = mix(aA.xy, aA.zw, o);
+        vUv = mix(aB.xy, aB.zw, o) / uSide;
+        // Half a texel in, so smoothing never reaches past the sprite.
+        vEdge = vec4(aB.xy + 0.5, aB.zw - 0.5) / uSide;
+    } else if (kind == 1) {
+        vec2 d = aA.zw - aA.xy;
+        float l = length(d);
+        vec2 u = l > 0.0001 ? d / l : vec2(1.0, 0.0);
+        vec2 n = vec2(-u.y, u.x);
+        float hw = max(aB.x, 0.5);
+        float ext = (aB.y > 0.5 ? hw : 0.0) + 1.0;
+        p = mix(aA.xy - u * ext, aA.zw + u * ext, o.x) + n * (hw + 1.0) * (o.y * 2.0 - 1.0);
+    } else {
+        vec2 lo = min(min(aA.xy, aA.zw), min(aB.xy, aB.zw)) - 1.0;
+        vec2 hi = max(max(aA.xy, aA.zw), max(aB.xy, aB.zw)) + 1.0;
+        p = mix(lo, hi, o);
+    }
+    vPos = p;
+    vKind = kind;
+    vUnit = int(aK.y + 0.5);
+    vShadow = aK.w;
+    vA = aA;
+    vB = aB;
+    vC = aC;
+    gl_Position = vec4(p.x / uScreen.x * 2.0 - 1.0, 1.0 - p.y / uScreen.y * 2.0, aK.z * 2.0 - 1.0, 1.0);
+}
+"""
+
+/** A sprite from its page, tinted or as a shadow; a line or convex shape smoothed over a pixel at its edges. */
+private const val LIVE_FS = """#version 300 es
+precision highp float;
+uniform mediump sampler2D uP0;
+uniform mediump sampler2D uP1;
+uniform mediump sampler2D uP2;
+uniform mediump sampler2D uP3;
+uniform mediump sampler2D uP4;
+uniform mediump sampler2D uP5;
+uniform mediump sampler2D uP6;
+uniform mediump sampler2D uP7;
+in vec2 vPos;
+in vec2 vUv;
+flat in int vKind;
+flat in int vUnit;
+flat in float vShadow;
+flat in vec4 vA;
+flat in vec4 vB;
+flat in vec4 vC;
+flat in vec4 vEdge;
+out vec4 frag;
+vec4 page(int u, vec2 uv) {
+    if (u == 0) return textureLod(uP0, uv, 0.0);
+    if (u == 1) return textureLod(uP1, uv, 0.0);
+    if (u == 2) return textureLod(uP2, uv, 0.0);
+    if (u == 3) return textureLod(uP3, uv, 0.0);
+    if (u == 4) return textureLod(uP4, uv, 0.0);
+    if (u == 5) return textureLod(uP5, uv, 0.0);
+    if (u == 6) return textureLod(uP6, uv, 0.0);
+    return textureLod(uP7, uv, 0.0);
+}
+// How far inside the edge from a to b the point is, for corners going round either way ([turn] the sign).
+float inside(vec2 a, vec2 b, float turn) {
+    vec2 d = b - a;
+    float l = length(d);
+    if (l < 0.0001) return 1e6;
+    return turn * (d.x * (vPos.y - a.y) - d.y * (vPos.x - a.x)) / l;
+}
+void main() {
+    if (vKind == 3) {
+        frag = vec4(0.0);
+        return;
+    }
+    if (vKind == 0) {
+        vec4 t = page(vUnit, clamp(vUv, vEdge.xy, vEdge.zw));
+        frag = vShadow > 0.5 ? vec4(0.0, 0.0, 0.0, t.a * vC.a) : t * vC;
+        return;
+    }
+    float cover;
+    if (vKind == 1) {
+        vec2 d = vA.zw - vA.xy;
+        float l = length(d);
+        vec2 u = l > 0.0001 ? d / l : vec2(1.0, 0.0);
+        vec2 q = vPos - vA.xy;
+        float t = dot(q, u);
+        // Lines under a pixel wide are drawn a pixel wide and fainter.
+        float hw = max(vB.x, 0.5);
+        if (vB.y > 0.5) {
+            cover = clamp(hw + 0.5 - length(q - u * clamp(t, 0.0, l)), 0.0, 1.0);
+        } else {
+            float s = abs(u.x * q.y - u.y * q.x);
+            cover = clamp(hw + 0.5 - s, 0.0, 1.0) * clamp(t + 0.5, 0.0, 1.0) * clamp(l - t + 0.5, 0.0, 1.0);
+        }
+        cover *= min(1.0, vB.x * 2.0);
+    } else {
+        vec2 p0 = vA.xy;
+        vec2 p1 = vA.zw;
+        vec2 p2 = vB.xy;
+        vec2 p3 = vB.zw;
+        float area = (p1.x - p0.x) * (p2.y - p0.y) - (p1.y - p0.y) * (p2.x - p0.x) + (p2.x - p0.x) * (p3.y - p0.y) - (p2.y - p0.y) * (p3.x - p0.x);
+        float turn = area >= 0.0 ? 1.0 : -1.0;
+        float m = min(min(inside(p0, p1, turn), inside(p1, p2, turn)), min(inside(p2, p3, turn), inside(p3, p0, turn)));
+        cover = clamp(m + 0.5, 0.0, 1.0);
+    }
+    frag = vC * cover;
 }
 """
