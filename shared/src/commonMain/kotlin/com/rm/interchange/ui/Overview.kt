@@ -61,7 +61,7 @@ internal class OverviewCamera {
 }
 
 /** Filters and camera kept between visits while this game screen is open. */
-/** One thread for the map pictures, so they never take more than a core from the bakers. */
+/** One thread for the map pictures, so they never take more than a core from the map. */
 internal val overviewDispatcher = Dispatchers.Default.limitedParallelism(1)
 
 internal class OverviewOptions {

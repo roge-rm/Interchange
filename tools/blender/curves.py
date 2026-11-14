@@ -577,7 +577,7 @@ def masks_to_layout(masks):
 
 def span_of(masks, flags, tile, piece, mode="back"):
     """The eased span [piece] in [tile] is drawn on, or None for its plain shape. Reads only the 5 by 5 round
-    [tile], as ChunkBaker would; a part in a straight tile has [piece] as its sim piece."""
+    [tile], as TileRecorder would; a part in a straight tile has [piece] as its sim piece."""
     window = {(tile[0] + du, tile[1] + dv): masks.get((tile[0] + du, tile[1] + dv), 0)
               for du in range(-2, 3) for dv in range(-2, 3)}
     for sp in eased_spans(masks_to_layout(window), flags, mode):

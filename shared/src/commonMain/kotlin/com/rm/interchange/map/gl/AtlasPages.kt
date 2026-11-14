@@ -46,7 +46,7 @@ internal class AtlasPages(val width: Int, val height: Int, val tallest: Int, max
             return m
         }
 
-        /** The tallest shadow at [level], as the baker shrinks them. */
+        /** The tallest shadow at [level], as the tile recorder shrinks them. */
         fun tallestShadow(level: Int): Int {
             var m = 0
             for (cell in 0 until Atlas.SHADOW_RECTS.size / 6) m = maxOf(m, Atlas.SHADOW_RECTS[cell * 6 + 3] / (1 shl level))

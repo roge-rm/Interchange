@@ -10,18 +10,6 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 
-// SystemProperties by reflection, so the first map frame doesn't wait on a getprop process.
-private val wanted by lazy {
-    try {
-        Class.forName("android.os.SystemProperties").getMethod("get", String::class.java)
-            .invoke(null, "debug.interchange.gl") == "1"
-    } catch (e: Exception) {
-        false
-    }
-}
-
-internal actual fun glMapWanted(): Boolean = wanted
-
 /**
  * A GLSurfaceView: its own surface behind the window, which the compositor takes as it is, where a TextureView would
  * be drawn once more into the window, a full screen of fill the Fire can't spare. Compose draws over it through the

@@ -15,7 +15,7 @@ import kotlin.test.assertTrue
 class GroundTest {
     private companion object {
         val world by lazy { World(NewGame(64, 32, 7, 1930, Region.MIXED, towns = 2, industries = 2, rivals = 0)) }
-        val weather by lazy { WeatherCopy.of(world, 0, 0, null) }
+        val weather by lazy { WeatherCopy.of(world, 0) }
         val year by lazy { Calendar.year(world.startYear, world.day) }
         val look by lazy { Climate.look(world.settings.region, year, Calendar.dayOfYear(world.startYear, world.day)) }
 
@@ -130,14 +130,14 @@ class GroundTest {
         val snow = ByteArray(n) { (it * 37 % 90).toByte() }
         val ice = ByteArray(n) { (it * 53 % 70).toByte() }
         val mud = ByteArray(n) { (it * 11 % 256).toByte() }
-        val copy = WeatherCopy(1, 0, snow, ice, mud)
+        val copy = WeatherCopy(1, snow, ice, mud)
         val gw = GroundWeather.of(world, copy, null)
         val w = world.width + 1
         var water = 0
         for (turn in 0 until 4) {
             val view = View(world.width, world.height).also { it.turnBy(turn) }
             for (vy in 0..view.viewHeight) for (vx in 0..view.viewWidth) {
-                // As ChunkBaker.cornerSnow and cornerIce work them out, in view tiles.
+                // A corner's snow and ice: the mean of the four tiles round it, the shore as thick as the thickest ice, in view tiles.
                 var snowSum = 0
                 var iceSum = 0
                 var most = 0
@@ -171,15 +171,15 @@ class GroundTest {
     @Test
     fun onlyTheRowsWhoseWeatherChangedMoveOn() {
         val n = world.width * world.height
-        val first = GroundWeather.of(world, WeatherCopy(1, 0, ByteArray(n), ByteArray(n), ByteArray(n)), null)
+        val first = GroundWeather.of(world, WeatherCopy(1, ByteArray(n), ByteArray(n), ByteArray(n)), null)
         assertEquals(0, first.version)
         val snow = ByteArray(n)
         snow[world.index(10, 12)] = 20
-        val second = GroundWeather.of(world, WeatherCopy(2, 0, snow, ByteArray(n), ByteArray(n)), first)
+        val second = GroundWeather.of(world, WeatherCopy(2, snow, ByteArray(n), ByteArray(n)), first)
         assertEquals(1, second.version)
         // Tile 10, 12 touches corner rows 12 and 13.
         for (cy in 0..world.height) assertEquals(if (cy == 12 || cy == 13) 1 else 0, second.rowVersions[cy], "row $cy")
-        val third = GroundWeather.of(world, WeatherCopy(3, 0, snow, ByteArray(n), ByteArray(n)), second)
+        val third = GroundWeather.of(world, WeatherCopy(3, snow, ByteArray(n), ByteArray(n)), second)
         for (cy in 0..world.height) assertEquals(second.rowVersions[cy], third.rowVersions[cy], "row $cy unchanged")
     }
 

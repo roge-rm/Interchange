@@ -39,8 +39,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.graphics.ImageBitmap
 import com.rm.interchange.map.MapInput
+import com.rm.interchange.map.MapOverlays
 import com.rm.interchange.map.Moving
-import com.rm.interchange.map.Probe
 import com.rm.interchange.map.vehicleAt
 import com.rm.interchange.map.NO_VEHICLE
 import com.rm.interchange.map.Sheets
@@ -71,7 +71,7 @@ import com.rm.interchange.sim.clearCost
 import com.rm.interchange.sim.removeCost
 import com.rm.interchange.sim.levelCost
 import com.rm.interchange.sim.plantCost
-import com.rm.interchange.map.Renderer
+import com.rm.interchange.map.Zoom
 import com.rm.interchange.map.View
 import com.rm.interchange.map.buildingAt
 import com.rm.interchange.platform.logLine
@@ -84,7 +84,6 @@ import com.rm.interchange.server.Remote
 import com.rm.interchange.map.VehicleSource
 import com.rm.interchange.platform.cameraCutouts
 import com.rm.interchange.platform.picker
-import com.rm.interchange.map.ChunkBaker
 import androidx.compose.ui.platform.LocalDensity
 import com.rm.interchange.sim.BadData
 import com.rm.interchange.sim.BadPack
@@ -428,11 +427,8 @@ private fun Root(settings: Settings) {
     /** Reads a save off the main thread, with the packs it needs, and plays it, or says why it can't. */
     fun load(entry: SavedGames.Entry) {
         scope.launch {
-            if (Probe.ON) Probe.log("loadStart ${entry.name}")
-            // The level the game opens at decodes alongside the save's read, after the coarsest, which is tiny and stands
-            // in for it till its chunks are baked.
-            sheets?.get(Renderer.COARSE)
-            sheets?.get(Renderer.levelFor(View.START_HALF_WIDTH))
+            // The level the game opens at decodes alongside the save's read.
+            sheets?.get(Zoom.levelFor(View.START_HALF_WIDTH))
             val world = withContext(Dispatchers.Default) {
                 try {
                     val w = Save.read(SavedGames.read(entry.name) ?: throw BadData("missing"), InstalledPacks::find)
@@ -442,12 +438,10 @@ private fun Root(settings: Settings) {
                     Result.failure(e)
                 }
             }
-            if (Probe.ON) Probe.log("loadRead")
             world.onSuccess { w -> loadError = null; play({ w }) }.onFailure {
                 loadError = if (it is MissingPacks) needsPacks.replace("%s", it.packs.joinToString { p -> "${p.id} ${p.version}" })
                 else cantLoad.replace("%s", it.message ?: "")
             }
-            if (Probe.ON) Probe.log("loadEnd")
         }
     }
 
@@ -1309,7 +1303,8 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
             page = c.page,
             loading = remember(c) { LoadingLook(rail = c.textDim, train = c.accent, trim = c.text, text = c.textDim, style = KitType.Dim) },
             onSharp = { mapSharp.value = true },
-            overlays = (if (settings.grid) ChunkBaker.GRID else 0) or (if (settings.heights) ChunkBaker.HEIGHTS else 0) or (if (settings.snow) ChunkBaker.SNOW else 0) or (if (settings.condition) ChunkBaker.CONDITION else 0),
+            overlays = (if (settings.grid) MapOverlays.GRID else 0) or (if (settings.heights) MapOverlays.HEIGHTS else 0) or
+                (if (settings.snow) MapOverlays.SNOW else 0) or (if (settings.condition) MapOverlays.CONDITION else 0),
             labels = {
                 val wv = worldView.value
                 with(townLabels) {

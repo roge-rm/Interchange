@@ -4,15 +4,15 @@ import com.rm.interchange.map.Atlas
 import kotlin.math.roundToInt
 
 /**
- * A piece of ground as [com.rm.interchange.map.ChunkBaker] lays it down for the GPU map: a tile's top, or the earth
+ * A piece of ground as [com.rm.interchange.map.TileRecorder] lays it down for the GPU map: a tile's top, or the earth
  * face under the map's front edge, in [STRIDE] ints. The GPU takes them as they are, as the first pass's instances
  * ([GROUND_VS]), so the layout here and the shader's must agree:
  * - 0: view x, view y << 16
  * - 1: corner heights top, right << 8, bottom << 16, left << 24, in steps
  * - 2: kind, the kinds spreading in across the up, right, down and left sides from bit 4 (4 bits each, [NONE] for
  *   none), [type] << 20, weather << 22, smooth light << 23, foot shade << 24, canal banks << 25 (by side)
- * - 3: road bits as the baker passes them (16 bits), how burnt in 255ths << 16
- * - 4: airport paving, as the baker packs it
+ * - 3: road bits as the tile recorder passes them (16 bits), how burnt in 255ths << 16
+ * - 4: airport paving, as the tile recorder packs it
  * - 5: the light of each half's plane, first | second << 16, in 256ths
  * - 6 to 9: ridges and hollows at each corner (top, right, bottom, left), as float bits
  * - 10 to 13: the light at each corner, as float bits
@@ -147,7 +147,7 @@ internal fun cellCount(sheet: Int) = (if (sheet == SpriteRecorder.SHADOW) Atlas.
 /**
  * Every cell of [sheet] at [level] as the sprite shaders read it, [CELL_INTS] ints each: sheet x, row in its page and
  * layer by [pages], width, height, then where its top left lies from the anchor rounded down to this level, x and y,
- * and a 0. These are the sums [ChunkBaker]'s blitOn and shadeOn work out at that level.
+ * and a 0. These are the sums [TileRecorder]'s blitOn and shadeOn work out at that level.
  */
 internal fun cellRects(sheet: Int, level: Int, pages: AtlasPages): IntArray {
     val n = cellCount(sheet)

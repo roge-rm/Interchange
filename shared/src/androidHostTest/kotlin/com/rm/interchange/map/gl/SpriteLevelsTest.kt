@@ -23,7 +23,7 @@ class SpriteLevelsTest {
             val n = world.width * world.height
             val rnd = Random(5)
             val depths = intArrayOf(0, 1, 2, 5, 12, 40, 200)
-            WeatherCopy(1, 0, ByteArray(n) { depths[rnd.nextInt(depths.size)].toByte() }, ByteArray(n), ByteArray(n))
+            WeatherCopy(1, ByteArray(n) { depths[rnd.nextInt(depths.size)].toByte() }, ByteArray(n), ByteArray(n))
         }
 
         /** Pages that hold a whole sheet in one layer, so a row in its page is its sheet row. */

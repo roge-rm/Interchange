@@ -1,6 +1,6 @@
 package com.rm.interchange.map.gl
 
-import com.rm.interchange.map.Renderer
+import com.rm.interchange.map.Zoom
 import com.rm.interchange.map.View
 import kotlin.math.ceil
 import kotlin.math.floor
@@ -9,9 +9,8 @@ import kotlin.math.min
 import kotlin.math.roundToInt
 
 /**
- * Where the GPU map puts things this frame, worked out from [View] as the chunk renderer places its chunks: a
- * [SOURCE_LEVEL] pixel p lands on screen at origin + p * [scale]. [originX] and [originY] are where view point 0, 0
- * at height 0 lands, rounded to whole pixels as chunks are. Screen sizes are in surface pixels.
+ * Where the GPU map puts things this frame, worked out from [View]: a [SOURCE_LEVEL] pixel p lands on screen at
+ * origin + p * [scale]. [originX] and [originY] are where view point 0, 0 at height 0 lands, rounded to whole pixels. Screen sizes are in surface pixels.
  */
 internal class GlFrame(
     val turn: Int,
@@ -45,8 +44,8 @@ internal class GlFrame(
 
 /**
  * The view tiles whose sprites can reach onto the screen, as a column range for each view row: columns[2 * vy] to
- * columns[2 * vy + 1], inclusive, empty when the first is the greater. The same reach the chunk renderer bakes a
- * chunk's tiles by: three half widths either side, the highest land and tallest sprite above, the earth below.
+ * columns[2 * vy + 1], inclusive, empty when the first is the greater. A tile reaches three half widths either
+ * side, the highest land and tallest sprite above, the earth below.
  */
 internal fun visibleColumns(frame: GlFrame, into: IntArray = IntArray(frame.viewHeight * 2)): IntArray {
     val hw = SOURCE_HALF_WIDTH
@@ -59,7 +58,7 @@ internal fun visibleColumns(frame: GlFrame, into: IntArray = IntArray(frame.view
     val a0 = floor(x0 / hw).toInt() - 3
     val a1 = ceil(x1 / hw).toInt() + 3
     val b0 = floor(y0 / hh).toInt() - 4
-    val b1 = ceil((y1 + Renderer.above(hw)) / hh).toInt() + 1
+    val b1 = ceil((y1 + Zoom.above(hw)) / hh).toInt() + 1
     for (vy in 0 until frame.viewHeight) {
         into[2 * vy] = max(0, max(a0 + vy, b0 - vy))
         into[2 * vy + 1] = min(frame.viewWidth - 1, min(a1 + vy, b1 - vy))
@@ -132,7 +131,7 @@ internal class DrawRuns {
 internal const val SQUARE_SIDE = 512
 
 /** Level [level]'s pixels to [SOURCE_LEVEL]'s. */
-internal fun toSource(level: Int) = SOURCE_HALF_WIDTH / Renderer.LEVELS[level]
+internal fun toSource(level: Int) = SOURCE_HALF_WIDTH / Zoom.LEVELS[level]
 
 /**
  * The frame that draws square [cx], [cy] of level [level]'s grid for [f]'s turn: [SQUARE_SIDE] level pixels a side,

@@ -1,4 +1,4 @@
-"""The curved track sprites the game draws (docs/CURVES_PLAN.md, C2), by the keys ChunkBaker works out for each tile.
+"""The curved track sprites the game draws (docs/CURVES_PLAN.md, C2), by the keys TileRecorder works out for each tile.
 
     python3 tools/blender/curve_art.py          rewrites tools/blender/curve_keys.txt
     python3 tools/blender/curve_art.py --check  says whether it is up to date

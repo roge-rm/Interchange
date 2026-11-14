@@ -24,12 +24,13 @@ import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.sin
 
-/** The steps the loading cover names, in the order they usually come. */
+/** The steps the loading cover names, in the order they usually come, then [FAILED] if the GPU can't take the map. */
 object LoadStep {
     const val UNPACKING = 0
     const val DRAWING = 1
     const val SENDING = 2
     const val TRAINS = 3
+    const val FAILED = 4
 }
 
 /** The loading cover's colours, from the kit: [rail] dim, [train] the accent, [trim] the text colour, and the step's [text] and [style]. */

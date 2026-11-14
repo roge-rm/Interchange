@@ -1,7 +1,6 @@
 package com.rm.interchange.map.gl
 
-import com.rm.interchange.map.ChunkBaker
-import com.rm.interchange.map.Renderer
+import com.rm.interchange.map.Zoom
 import com.rm.interchange.map.View
 import com.rm.interchange.map.WeatherCopy
 import com.rm.interchange.sim.Calendar
@@ -9,11 +8,7 @@ import com.rm.interchange.sim.Climate
 import com.rm.interchange.sim.NewGame
 import com.rm.interchange.sim.Region
 import com.rm.interchange.sim.World
-import kotlin.math.abs
-import kotlin.math.ceil
-import kotlin.math.floor
 import kotlin.math.max
-import kotlin.math.min
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -22,7 +17,7 @@ class GlMapTest {
     private companion object {
         // Not square, so the turns that swap the view's width and height show up.
         val world by lazy { World(NewGame(64, 32, 7, 1930, Region.MIXED, towns = 2, industries = 2, rivals = 0)) }
-        val weather by lazy { WeatherCopy.of(world, 0, 0, null) }
+        val weather by lazy { WeatherCopy.of(world, 0) }
         val year by lazy { Calendar.year(world.startYear, world.day) }
         val look by lazy { Climate.look(world.settings.region, year, Calendar.dayOfYear(world.startYear, world.day)) }
         val scenes = HashMap<Int, Array<RegionSprites?>>()
@@ -41,80 +36,6 @@ class GlMapTest {
 
     /** One sprite's fields as recorded, sheet first. */
     private fun sprite(data: IntArray, i: Int) = IntArray(SpriteRecorder.STRIDE) { data[i * SpriteRecorder.STRIDE + it] }
-
-    @Test
-    fun regionsKeepTheChunkBakersOrder() {
-        // Bakes chunks at level 1 the way Renderer.bakeChunk does, recording instead of painting, and checks each
-        // chunk's sprites come in the same order and places as the regions hold them for its tiles.
-        val hw = Renderer.LEVELS[SOURCE_LEVEL]
-        val hh = hw / 2
-        var checked = 0
-        var off = 0
-        var grounds = 0
-        for (turn in 0 until 4) {
-            val regions = regions(turn)
-            val view = view(turn, hw, 0f, 0f)
-            for ((cx, cy) in listOf(0 to 2, -1 to 3, 1 to 5, 0 to 7)) {
-                val recorder = SpriteRecorder()
-                val baker = ChunkBaker(world, view, SOURCE_LEVEL, noSheets, Renderer.CHUNK_PIXELS, Renderer.CHUNK_ROWS, 0, look, IntArray(1), weather, year)
-                baker.recorder = recorder
-                baker.originX = -cx * Renderer.CHUNK_PIXELS.toFloat()
-                baker.originY = -cy * Renderer.CHUNK_ROWS.toFloat()
-                // Renderer.reach and tileRange for this chunk.
-                val r = intArrayOf(
-                    floor(cx * Renderer.CHUNK_PIXELS / hw).toInt() - 3, ceil((cx + 1) * Renderer.CHUNK_PIXELS / hw).toInt() + 3,
-                    floor(cy * Renderer.CHUNK_ROWS / hh).toInt() - 4, ceil(((cy + 1) * Renderer.CHUNK_ROWS + Renderer.above(hw)) / hh).toInt() + 1,
-                )
-                val t = intArrayOf(
-                    max(0, (r[0] + r[2]) / 2 - 1), max(0, (r[2] - r[1]) / 2 - 1),
-                    min(view.viewWidth - 1, (r[1] + r[3]) / 2 + 1), min(view.viewHeight - 1, (r[3] - r[0]) / 2 + 1),
-                )
-                if (t[0] > t[2] || t[1] > t[3]) continue
-                baker.prepare(t[0], t[1], t[2] + 1, t[3] + 1)
-                val tiles = ArrayList<Int>()
-                for (vy in t[1]..t[3]) for (vx in t[0]..t[2]) {
-                    if (vx - vy in r[0]..r[1] && vx + vy in r[2]..r[3] && baker.reaches(vx, vy)) tiles += vy * view.viewWidth + vx
-                }
-                for (i in tiles) baker.ground(i % view.viewWidth, i / view.viewWidth)
-                for (i in tiles) baker.shadows(i % view.viewWidth, i / view.viewWidth)
-                for (i in tiles) baker.objects(i % view.viewWidth, i / view.viewWidth)
-                var k = 0
-                for (pass in 0 until PASSES) for (i in tiles) {
-                    val vx = i % view.viewWidth
-                    val vy = i / view.viewWidth
-                    val region = regions[vy / REGION_ROWS]!!
-                    for (s in region.start(pass, vy, vx) until region.start(pass, vy, vx + 1)) {
-                        val want = sprite(recorder.data, k)
-                        val got = sprite(region.data, s)
-                        if (want[0] == SpriteRecorder.GROUND) {
-                            // Ground is laid in view tiles, the same wherever the chunk is.
-                            assertEquals(SpriteRecorder.GROUND, got[0], "turn $turn tile $vx,$vy pass $pass")
-                            val a = recorder.ground.copyOfRange(want[1] * GroundRecord.STRIDE, (want[1] + 1) * GroundRecord.STRIDE)
-                            val b = region.ground.copyOfRange(got[1] * GroundRecord.STRIDE, (got[1] + 1) * GroundRecord.STRIDE)
-                            assertEquals(a.toList(), b.toList(), "turn $turn tile $vx,$vy ground")
-                            grounds++
-                            k++
-                            continue
-                        }
-                        // Moved into the chunk. A chunk rounds toward 0 off its left and top edges, and float sums at another
-                        // origin can land either side of a whole pixel, so a pixel out is allowed for a few.
-                        got[1] -= cx * Renderer.CHUNK_PIXELS
-                        got[2] -= cy * Renderer.CHUNK_ROWS
-                        val msg = "turn $turn chunk $cx,$cy sprite $k tile $vx,$vy pass $pass: ${want.toList()} vs ${got.toList()}"
-                        assertTrue(abs(want[1] - got[1]) <= 1 && abs(want[2] - got[2]) <= 1, msg)
-                        if (want[1] > 0 && want[2] > 0 && (want[1] != got[1] || want[2] != got[2])) off++
-                        for (f in intArrayOf(0, 3, 4, 5, 6, 7)) assertEquals(want[f], got[f], msg)
-                        k++
-                    }
-                }
-                assertEquals(recorder.count, k, "turn $turn chunk $cx,$cy")
-                checked += k
-            }
-        }
-        assertTrue(checked > 1000, "only $checked sprites checked")
-        assertTrue(grounds > 500, "only $grounds grounds checked")
-        assertTrue(off * 50 < checked, "$off of $checked a pixel out")
-    }
 
     @Test
     fun partOfARegionRecordsItsTilesAsTheWholeDoes() {
@@ -187,8 +108,8 @@ class GlMapTest {
 
     @Test
     fun squaresCoverTheScreenAndPlaceAsTheScreenDoes() {
-        for (lv in Renderer.SHARPEST until Renderer.LEVELS.size) for (halfWidth in floatArrayOf(96f, 64f, 40f, 17f, 6f, 3f)) {
-            if (Renderer.levelFor(halfWidth) != lv) continue
+        for (lv in Zoom.SHARPEST until Zoom.LEVELS.size) for (halfWidth in floatArrayOf(96f, 64f, 40f, 17f, 6f, 3f)) {
+            if (Zoom.levelFor(halfWidth) != lv) continue
             for ((fx, fy) in listOf(32f to 16f, 5f to 28f, 0f to 0f)) {
                 val f = GlFrame.of(view(1, halfWidth, fx, fy), 800, 1280)
                 val on = squaresOn(f, lv)
@@ -230,8 +151,8 @@ class GlMapTest {
             val budget = squareBudget(w, h)
             // The most any zoom shows, from the frames themselves.
             var most = 0
-            for (lv in Renderer.SHARPEST until Renderer.LEVELS.size) for (halfWidth in floatArrayOf(192f, 128f, 96f, 64f, 40f, 33f, 17f, 9f, 6f, 4.1f, 3f)) {
-                if (Renderer.levelFor(halfWidth) != lv) continue
+            for (lv in Zoom.SHARPEST until Zoom.LEVELS.size) for (halfWidth in floatArrayOf(192f, 128f, 96f, 64f, 40f, 33f, 17f, 9f, 6f, 4.1f, 3f)) {
+                if (Zoom.levelFor(halfWidth) != lv) continue
                 for ((fx, fy) in listOf(32f to 16f, 5.3f to 28.7f, 0f to 0f)) {
                     val on = squaresOn(GlFrame.of(view(0, halfWidth, fx, fy), w, h), lv)
                     most = max(most, (on[1] - on[0] + 1) * (on[3] - on[2] + 1))
@@ -251,7 +172,7 @@ class GlMapTest {
         for (turn in 0 until 4) {
             val v = View(world.width, world.height).also { it.turnBy(turn) }
             val f = GlFrame.of(view(turn, 64f, 20f, 10f), 800, 1280)
-            val lv = Renderer.levelFor(64f)
+            val lv = Zoom.levelFor(64f)
             val on = squaresOn(f, lv)
             for (cy in on[2]..on[3]) for (cx in on[0]..on[1]) {
                 val cols = visibleColumns(squareFrame(f, lv, cx, cy))
@@ -333,7 +254,7 @@ class GlMapTest {
                 // A view point at height ht in source level pixels from view point 0, 0, as the baker lays it out.
                 val px = (vx - vy) * SOURCE_HALF_WIDTH
                 val py = (vx + vy) * SOURCE_HALF_WIDTH / 2 - ht * SOURCE_HALF_WIDTH / 4
-                // Within the half pixel the origin's rounded by, as a chunk's corner is.
+                // Within the half pixel the origin's rounded by.
                 assertEquals(view.screenX(vx, vy, w), frame.screenX(px), 0.51f, "turn $turn x")
                 assertEquals(view.screenY(vx, vy, ht, h), frame.screenY(py), 0.51f, "turn $turn y")
             }

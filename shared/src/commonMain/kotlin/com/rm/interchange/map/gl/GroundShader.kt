@@ -1,6 +1,11 @@
 package com.rm.interchange.map.gl
 
-/** A colour as written in [com.rm.interchange.map.ChunkBaker] (RRGGBB) as a GLSL vec3. */
+import com.rm.interchange.map.MapOverlays.CONDITION
+import com.rm.interchange.map.MapOverlays.GRID
+import com.rm.interchange.map.MapOverlays.HEIGHTS
+import com.rm.interchange.map.MapOverlays.SNOW
+
+/** A colour written RRGGBB as a GLSL vec3. */
 private fun rgb(c: Int): String {
     fun ch(shift: Int) = (((c shr shift) and 255) / 255f).toString()
     return "vec3(${ch(16)}, ${ch(8)}, ${ch(0)})"
@@ -10,7 +15,7 @@ private fun rgb(c: Int): String {
  * GLSL for a sprite's vertex shader: spriteAt places cell c of the sheet bound (cell table uCells, uCellRows rows a
  * level, CELLS_ACROSS cells a row) at
  * level uLevel, scaled to source level pixels by uToSource, and snowCover reads the snow on a world tile from
- * uWeather's fourth byte as ChunkBaker.snowCover does. Needs uPage and uWeather declared before it.
+ * uWeather's fourth byte as TileRecorder.snowCover does. Needs uPage and uWeather declared before it.
  */
 internal val SPRITE_PLACE = """
 uniform highp isampler2D uCells;
@@ -66,7 +71,7 @@ vec4 staticTexel(highp vec3 uv, highp vec4 edge, float snow) {
 /**
  * The first pass's vertex shader (GLSL ES 3.00): each instance is a [GroundRecord] or, with type [GroundRecord.SPRITE],
  * a sprite (cell and snow tile in aA, anchor in aB, placed by [SPRITE_PLACE]). A tile's top is two triangles split
- * along the diagonal the baker splits it by; an earth face is a quad down to height -2. The weather comes from [GroundWeather] by world corner.
+ * along the diagonal the tile recorder splits it by; an earth face is a quad down to height -2. The weather comes from [GroundWeather] by world corner.
  */
 internal val GROUND_VS = """#version 300 es
 precision highp float;
@@ -80,6 +85,9 @@ uniform vec2 uPage;
 // Map width, height and the view's turn.
 uniform ivec3 uMap;
 uniform highp usampler2D uWeather;
+// Overlays as MapOverlays bits, and the track wear by world tile for the condition one.
+uniform int uOverlay;
+uniform highp usampler2D uWear;
 $SPRITE_PLACE
 flat out uvec4 vA;
 flat out ivec2 vB;
@@ -91,6 +99,7 @@ flat out vec4 vUp;
 flat out float vMud;
 flat out vec4 vEdge;
 flat out float vSpriteSnow;
+flat out int vWear;
 out vec3 vUv;
 
 const vec2 OFF[4] = vec2[4](vec2(0.0, 0.0), vec2(1.0, 0.0), vec2(1.0, 1.0), vec2(0.0, 1.0));
@@ -127,6 +136,7 @@ void main() {
     vMud = 0.0;
     vEdge = vec4(0.0);
     vSpriteSnow = 0.0;
+    vWear = 0;
     uint type = (aA.z >> 20) & 3u;
     int id = gl_VertexID;
     vec2 p;
@@ -153,6 +163,7 @@ void main() {
             float low = min(min(h.x, h.y), min(h.z, h.w));
             float rise = max(max(h.x, h.y), max(h.z, h.w)) - low;
             if (rise > 0.0) vUp = (h - low) / rise;
+            if ((uOverlay & $CONDITION) != 0) vWear = int(texelFetch(uWear, worldTile(tile), 0).r);
         } else {
             // Right face from the right corner to the bottom, left from the left; tops, then down to -2.
             int c = (id & 1) == 0 ? (type == 1u ? 1 : 3) : 2;
@@ -166,8 +177,8 @@ void main() {
 
 /**
  * The first pass's fragment shader: a sprite from the static sheet, an earth face, or a tile's ground worked out as
- * ChunkBaker.ground paints it, texel by texel, from the ground sheet ([uGround], the kinds then the noise in layer
- * 12's blue) laid in view coordinates every 4 tiles. Colours and limits are the baker's.
+ * [GroundRecord] describes it, texel by texel, from the ground sheet ([uGround], the kinds then the noise in layer
+ * 12's blue) laid in view coordinates every 4 tiles.
  */
 internal val GROUND_FS = """#version 300 es
 precision highp float;
@@ -178,6 +189,8 @@ uniform highp sampler2D uLegs;
 // Taxi legs of each airport kind in uLegs' rows, and the grass colour mixed in for each kind at this time of year.
 uniform int uLegCount[6];
 uniform vec4 uGrade[8];
+uniform int uOverlay;
+uniform int uLevel;
 flat in uvec4 vA;
 flat in ivec2 vB;
 flat in vec4 vRel;
@@ -188,6 +201,7 @@ flat in vec4 vUp;
 flat in float vMud;
 flat in vec4 vEdge;
 flat in float vSpriteSnow;
+flat in int vWear;
 in vec3 vUv;
 out vec4 frag;
 $STATIC_TEXEL
@@ -213,6 +227,16 @@ const vec3 APRON_JOINT = ${rgb(0x96928a)};
 const vec3 MARKING = ${rgb(0xeeeeea)};
 const vec3 TAXI_LINE = ${rgb(0xe8c030)};
 const float PI = 3.14159265;
+const vec3 GRID_LIGHT = ${rgb(0xf2efe6)};
+const vec3 WEAR[3] = vec3[3](${rgb(0xd03a2a)}, ${rgb(0xe8b030)}, ${rgb(0x3aa048)});
+// The snow overlay's bands: under 10 cm, under 30, under 60, deeper; then ice on the water.
+const vec3 SNOW_BAND[4] = vec3[4](${rgb(0x9fd0f0)}, ${rgb(0x5a9ae0)}, ${rgb(0x3a52c8)}, ${rgb(0x6a2ab0)});
+const vec3 ICE_BAND = ${rgb(0x40e0e0)};
+// The heights overlay's bands, each 2 steps, from sea level up.
+const vec3 HEIGHT[12] = vec3[12](
+    ${rgb(0x2f7a3a)}, ${rgb(0x4f9440)}, ${rgb(0x7fac4a)}, ${rgb(0xb0bc58)}, ${rgb(0xd4c062)}, ${rgb(0xd8a456)},
+    ${rgb(0xc8844a)}, ${rgb(0xa86a44)}, ${rgb(0x8a5a46)}, ${rgb(0x9a8478)}, ${rgb(0xc8c0bc)}, ${rgb(0xf2f2f6)}
+);
 
 vec2 tc;
 vec2 gx;
@@ -338,7 +362,7 @@ vec3 apron(float l, float across, vec3 ground) {
     return (fract(l * 2.0) < 0.015 || fract(across * 2.0) < 0.015) ? base(APRON_JOINT, ground) : base(APRON, ground);
 }
 
-// Airport paving as the baker packs it; paved is whether something other than the ground came back.
+// Airport paving as the tile recorder packs it; paved is whether something other than the ground came back.
 vec3 airportTexel(float u, float v, int aero, vec3 ground, out bool paved) {
     bool along = (aero & 16) != 0;
     float c = abs((along ? v : u) - 0.5);
@@ -487,6 +511,23 @@ void main() {
             }
         }
     }
+    // Overlays, as the tile recorder painted them at each level's own size, hw the half tile there.
+    float hw = 128.0 / float(1 << uLevel);
+    float contour = 1.0;
+    if (vWear > 0) texel = mix(texel, WEAR[vWear - 1], 0.6);
+    if ((uOverlay & $SNOW) != 0) {
+        float depth = dot(vSnow, bw);
+        if (icy) texel = mix(texel, ICE_BAND, 0.6);
+        else if (!water && depth >= 1.0) texel = mix(texel, SNOW_BAND[depth < 10.0 ? 0 : (depth < 30.0 ? 1 : (depth < 60.0 ? 2 : 3))], 0.6);
+    }
+    if ((uOverlay & $HEIGHTS) != 0 && !water) {
+        vec2 g = second ? g2 : g1;
+        float p0 = second && alongRL ? h.y + h.w - h.z : h.x;
+        float at = p0 + g.x * u + g.y * v;
+        texel = mix(texel, HEIGHT[clamp(int(at / 2.0), 0, 11)], 0.55);
+        // A contour where a slope crosses a band's edge, about a pixel wide.
+        if (sloped && mod(at, 2.0) < 1.4 / hw) contour = 0.55;
+    }
     float rel = dot(vRel, bw);
     bool soft = ((vA.z >> 23) & 1u) != 0u;
     float sun = soft && f <= 256.0 ? min(256.0, dot(vLight, bw)) : f;
@@ -499,6 +540,13 @@ void main() {
             shade *= 1.0 - 0.1 * s * s;
         }
     }
-    frag = vec4(min(texel * floor(shade) / 256.0, vec3(1.0)), 1.0);
+    shade *= contour;
+    vec3 col = min(texel * floor(shade) / 256.0, vec3(1.0));
+    // Grid lines light on dark ground and dark on light, so they show on both.
+    if ((uOverlay & $GRID) != 0 && hw >= 16.0 && (u < 1.0 / hw || v < 1.0 / hw)) {
+        col = floor(col * 255.0) / 255.0;
+        col = col.r + col.g + col.b > 380.0 / 255.0 ? floor(col * 255.0 * 150.0 / 256.0) / 255.0 : mix(col, GRID_LIGHT, 0.4);
+    }
+    frag = vec4(col, 1.0);
 }
 """

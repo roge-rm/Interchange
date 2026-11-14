@@ -7,10 +7,10 @@ import com.rm.interchange.sim.World
 
 /**
  * The curved track sprites of a rail tile (docs/CURVES_PLAN.md) at each turn of the view, by [CurveKeys] over
- * [CurveTiles]. Each tile's cells are kept between bakes and dropped when track near them changes ([refresh]).
+ * [CurveTiles]. Each tile's cells are kept between recordings and dropped when track near them changes ([refresh]).
  *
- * Reads the world as it is, from a baking thread, like [ChunkBaker]. Not thread safe: [Renderer] lends one to each
- * bake at a time.
+ * Reads the world as it is, from a recording thread, like [TileRecorder]. Not thread safe: one recording uses it at
+ * a time.
  */
 internal class CurveArt(private val world: World) {
     private val tiles = CurveTiles(keepTurns = true) { world }
@@ -22,7 +22,7 @@ internal class CurveArt(private val world: World) {
     /** Each tile's [CurveTiles.curved], the same at every turn. */
     private val curved = HashMap<Int, Boolean>()
 
-    /** Drops the cells of tiles near any that changed since the last call. Call before each bake. */
+    /** Drops the cells of tiles near any that changed since the last call. Call before each recording. */
     fun refresh() {
         install()
         if (CurveKeys.known !== known) {

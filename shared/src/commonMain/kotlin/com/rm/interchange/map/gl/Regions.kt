@@ -1,19 +1,16 @@
 package com.rm.interchange.map.gl
 
-import androidx.compose.ui.graphics.ImageBitmap
-import androidx.compose.ui.graphics.ImageBitmapConfig
-import androidx.compose.ui.graphics.colorspace.ColorSpaces
 import com.rm.interchange.map.Atlas
-import com.rm.interchange.map.ChunkBaker
+import com.rm.interchange.map.TileRecorder
 import com.rm.interchange.map.CurveArt
-import com.rm.interchange.map.LevelSheets
-import com.rm.interchange.map.Renderer
+import com.rm.interchange.map.Zoom
 import com.rm.interchange.map.View
 import com.rm.interchange.map.WeatherCopy
+import com.rm.interchange.sim.CurveTiles
 import com.rm.interchange.sim.World
 
 /**
- * The sprites and shadows [ChunkBaker] lays down, recorded in its order instead of painted. Positions are in the
+ * The sprites and shadows [TileRecorder] lays down, recorded in its order instead of painted. Positions are in the
  * pixels of [SOURCE_LEVEL] from view point 0, 0 at height 0; sheet places are in that level's sheets.
  */
 internal class SpriteRecorder(private val shiftX: Int = 0, private val shiftY: Int = 0) {
@@ -81,19 +78,19 @@ internal class SpriteRecorder(private val shiftX: Int = 0, private val shiftY: I
     }
 }
 
-/** The baker's three passes, drawn in this order: ground (with foundations and track), shadows, what stands up. */
+/** The tile recorder's three passes, drawn in this order: ground (with foundations and track), shadows, what stands up. */
 internal const val PASSES = 3
 
 /** The zoom level regions are recorded in: positions are in its pixels, L1, a half tile width of 64. Each level draws from its own sheets. */
 internal const val SOURCE_LEVEL = 1
-internal val SOURCE_HALF_WIDTH = Renderer.LEVELS[SOURCE_LEVEL]
+internal val SOURCE_HALF_WIDTH = Zoom.LEVELS[SOURCE_LEVEL]
 
 /** View rows in a region. A region is the unit that's recorded, kept in a GPU buffer and culled. */
 internal const val REGION_ROWS = 16
 
 /**
  * One region's static sprites for view direction [turn]: view rows [row0] until [row1], every column, in drawing
- * order (pass, row, column), as [ChunkBaker] lays them down. [starts] holds the first sprite of each tile, indexed
+ * order (pass, row, column), as [TileRecorder] lays them down. [starts] holds the first sprite of each tile, indexed
  * (pass * rows + row - row0) * columns + column, with [count] at the end, so a run of tiles along a row is a run of
  * sprites and the end of one tile is the start of the next index.
  */
@@ -128,23 +125,9 @@ internal class RegionSprites(
     }
 }
 
-/** Stands in for the signals sheet, which recording never reads, so no platform bitmap is made. */
-private object NoImage : ImageBitmap {
-    override val width get() = 1
-    override val height get() = 1
-    override val colorSpace get() = ColorSpaces.Srgb
-    override val hasAlpha get() = true
-    override val config get() = ImageBitmapConfig.Argb8888
-    override fun readPixels(buffer: IntArray, startX: Int, startY: Int, width: Int, height: Int, bufferOffset: Int, stride: Int) {}
-    override fun prepareToDraw() {}
-}
-
-/** Sheets for a baker that only records: it never reads them. */
-internal val noSheets = LevelSheets(IntArray(0), IntArray(0), 1, ByteArray(0), 1, NoImage)
-
 /**
- * Records region [index] of [world] seen from [turn]: what [ChunkBaker] would draw there at [level], with
- * the season [look], [year] and [weather] it'd bake with. Reads the world as a bake does, off the main thread.
+ * Records region [index] of [world] seen from [turn]: what [TileRecorder] lays down there at [level], with
+ * the season [look], [year] and [weather]. Reads the world off the main thread.
  * With [cols] (each row's first and last column, two ints a row) only those tiles are recorded; the rest are empty.
  */
 internal fun recordRegion(
@@ -155,26 +138,26 @@ internal fun recordRegion(
     val vw = view.viewWidth
     val row0 = index * REGION_ROWS
     val row1 = minOf(view.viewHeight, row0 + REGION_ROWS)
-    val baker = ChunkBaker(world, view, level, noSheets, 1, 1, 0, look, IntArray(1), weather, year, curves)
-    // Laid out from a far off origin so every position is positive and rounds down as it does in a chunk, then moved back.
-    val hw = Renderer.LEVELS[level]
+    val tiles = TileRecorder(world, view, level, look, weather, year, curves)
+    // Laid out from a far off origin so every position is positive and rounds down the same way, then moved back.
+    val hw = Zoom.LEVELS[level]
     val shiftX = ((world.width + world.height + 8) * hw).toInt()
     val shiftY = ((World.MAX_HEIGHT + 64) * hw).toInt()
-    baker.originX = shiftX.toFloat()
-    baker.originY = shiftY.toFloat()
+    tiles.originX = shiftX.toFloat()
+    tiles.originY = shiftY.toFloat()
     val recorder = SpriteRecorder(shiftX, shiftY)
-    baker.recorder = recorder
+    tiles.recorder = recorder
     val rows = row1 - row0
     val starts = IntArray(PASSES * rows * vw + 1)
-    if (rows > 0) baker.prepare(0, row0, vw, row1)
+    if (rows > 0) tiles.prepare(0, row0, vw, row1)
     var k = 0
     for (pass in 0 until PASSES) for (vy in row0 until row1) for (vx in 0 until vw) {
         starts[k++] = recorder.count
         if (cols != null && (vx < cols[2 * (vy - row0)] || vx > cols[2 * (vy - row0) + 1])) continue
         when (pass) {
-            0 -> baker.ground(vx, vy)
-            1 -> baker.shadows(vx, vy)
-            else -> baker.objects(vx, vy)
+            0 -> tiles.ground(vx, vy)
+            1 -> tiles.shadows(vx, vy)
+            else -> tiles.objects(vx, vy)
         }
     }
     starts[k] = recorder.count
@@ -188,7 +171,7 @@ internal fun regionCount(world: World, turn: Int): Int {
 }
 
 /** World tiles round a region that what's drawn in it reads: the curved track's reach, and ridges and hollows. */
-internal val REGION_MARGIN = maxOf(Renderer.CURVE_REACH, 5)
+internal val REGION_MARGIN = maxOf(CurveTiles.REACH, 5)
 
 /**
  * How many times the world under region [index] seen from [turn] and within [REGION_MARGIN] tiles of it has changed,
@@ -215,5 +198,5 @@ internal fun regionVersion(world: World, turn: Int, index: Int, look: Int, year:
         if (turn % 2 == 0) for (x in 0 until across) sum += world.chunkVersions[k * across + x]
         else for (y in 0 until down) sum += world.chunkVersions[y * across + k]
     }
-    return (sum * 8 + look) * ChunkBaker.PART_ERA_COUNT + ChunkBaker.partEras(year)
+    return (sum * 8 + look) * TileRecorder.PART_ERA_COUNT + TileRecorder.partEras(year)
 }

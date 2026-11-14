@@ -413,7 +413,7 @@ def _leaf(m, xa, xb, y, h, paint, frame, glass, brace):
     m.box(xa + 0.01, xb - 0.01, y - 0.007, y + 0.007, 0.0, 0.03, material("door rollers", "#2a2a2c", metal=0.5, rough=0.5))
 
 
-# Hangars by the year their airport went up (ChunkBaker.hangarEra): the small one a wooden flying club hangar to 1950,
+# Hangars by the year their airport went up (TileRecorder.hangarEra): the small one a wooden flying club hangar to 1950,
 # then a Butler steel arch; the big one a wartime RCAF hangar to 1970, then a clad steel hangar.
 HANGAR_ERAS = 2
 
@@ -764,7 +764,7 @@ TERMINAL_FRONT = {"small": 0.25, "mid": 0.35, "big": 0.42}
 def terminal(m, size, era, cab=False):
     """A terminal its airside front to +y, in the look of [era]. The small one stands alone; mid and big ones take two
     and three tiles, so run the whole tile across and join up. cab puts the 1940s control cab on a mid or big one's roof,
-    for one of its tiles (ChunkBaker picks which)."""
+    for one of its tiles (TileRecorder picks which)."""
     tall, y1 = TERMINAL_TALL[size], TERMINAL_FRONT[size]
     ends = size == "small"
     x0, x1 = (-0.44, 0.44) if ends else (-0.5, 0.5)
@@ -1051,7 +1051,7 @@ def _terminal_hall(m, size, tall, x0, x1, y0, y1, ends):
         _jet_bridge(m, 0.12, y1 + lean)
 
 
-# Towers by the year their airport went up (ChunkBaker.towerEra): 0 a 1940s wooden tower to 1960, 1 a Transport Canada tower.
+# Towers by the year their airport went up (TileRecorder.towerEra): 0 a 1940s wooden tower to 1960, 1 a Transport Canada tower.
 TOWER_ERAS = 2
 
 
@@ -1213,7 +1213,7 @@ def _tower_concrete(m):
 
 # Locks: 0 a Rideau lock in stone with timber gates and a stone keeper's house, 1 a Seaway lock in concrete.
 LOCK_ERAS = 2
-# A lock's place in a flight of lock tiles (ChunkBaker.lockPlace): 0 one on its own, 1 the low end, 2 a middle tile,
+# A lock's place in a flight of lock tiles (TileRecorder.lockPlace): 0 one on its own, 1 the low end, 2 a middle tile,
 # 3 the high end. Every tile lifts a step at its middle gates; only the flight's ends have end gates, the low end the house.
 LOCK_PLACES = 4
 LOCK_GATES = {0: (-0.46, 0.0, 0.42), 1: (-0.46, 0.0), 2: (0.0,), 3: (0.0, 0.42)}

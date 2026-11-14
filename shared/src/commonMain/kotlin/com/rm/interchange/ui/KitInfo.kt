@@ -52,7 +52,7 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.rm.interchange.map.Atlas
-import com.rm.interchange.map.Renderer
+import com.rm.interchange.map.Zoom
 import com.rm.interchange.map.Sheets
 import com.rm.interchange.res.Res
 import com.rm.interchange.res.cargoes
@@ -735,7 +735,7 @@ fun VehiclePicture(e: Engine, modifier: Modifier, turned: Boolean = false) {
         val w0 = rects[r + 2]
         val h0 = rects[r + 3]
         if (w0 == 0 || h0 == 0) return@Canvas
-        val (level, scale) = levelFor(w0, h0, Renderer.SHARPEST)
+        val (level, scale) = levelFor(w0, h0, Zoom.SHARPEST)
         val image = sheets.vehicle(e.sprite, level)?.also { held[level] = it } ?: held[level] ?: return@Canvas
         val at = sheets.vehicleRects(e.sprite, level) ?: return@Canvas
         // The level's own rect, placed where it sits in level 0's, which is centred.

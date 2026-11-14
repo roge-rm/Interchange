@@ -8,7 +8,7 @@ import com.rm.interchange.sim.World
 
 /*
  * The lines the map draws track along, for the things drawn over it live (wires, signals, reserved track): the same
- * curves ChunkBaker draws, from TrackCurves, kept per world for the draw thread. A tile [CurveTiles] keeps on the old
+ * curves TileRecorder draws, from TrackCurves, kept per world for the draw thread. A tile [CurveTiles] keeps on the old
  * straight art has no list: its pieces run edge to edge.
  */
 internal class DrawLines(private val world: World) {

@@ -146,7 +146,7 @@ for layer, ck in CURVE_KEYS:
     JOBS.append(("static", ("curve", layer, ck), lambda layer=layer, ck=ck: scenery(f"curve_{layer}_{ck}.png", base.cell), None))
     UP[("curve", layer, ck)] = f"curve_{layer}_{ck}.png"
 # Platforms and the engine house over their track, each with its shadow apart so the game can lay shadows first.
-# Platform canopies by era (ChunkBaker.canopyEra): wooden, steel butterfly, modern.
+# Platform canopies by era (TileRecorder.canopyEra): wooden, steel butterfly, modern.
 CANOPY_ERAS = 3
 for era in range(CANOPY_ERAS):
     for a in (0, 1):
@@ -172,7 +172,7 @@ for name in WATERSIDE:
         JOBS.append(("static", (name, e), lambda name=name, edge=edge: scenery(f"{name}_{edge}.png", base.cell), None))
         JOBS.append(("shadows", (name + "_shadow", e), lambda name=name, edge=edge: scenery(f"{name}_{edge}_shadow.png", base.cell), None))
         UP[(name, e)] = f"{name}_{edge}.png"
-# Locks, hangars and terminals by era as well, <name>_<era>_<edge>: locks at ChunkBaker.lockEra * 4 + lockPlace, hangars
+# Locks, hangars and terminals by era as well, <name>_<era>_<edge>: locks at TileRecorder.lockEra * 4 + lockPlace, hangars
 # by hangarEra, terminals by terminalEra with 3 the first era again with the control cab on its roof.
 WATERSIDE_ERAS = {"lock": 8, "hangar_small": 2, "hangar": 2, "terminal_small": 3, "terminal_mid": 4, "terminal_big": 4}
 TOWER_ERAS = 2
@@ -195,7 +195,7 @@ for a in (0, 1):
     JOBS.append(("static", ("road_stop", a), lambda a=a: scenery(f"road_stop_{a}.png", base.cell), None))
     JOBS.append(("shadows", ("road_stop_shadow", a), lambda a=a: scenery(f"road_stop_{a}_shadow.png", base.cell), None))
     UP[("road_stop", a)] = f"road_stop_{a}.png"
-# Engine houses by era (ChunkBaker.depotEra): wooden, brick, diesel shop.
+# Engine houses by era (TileRecorder.depotEra): wooden, brick, diesel shop.
 DEPOT_ERAS = 3
 for era in range(DEPOT_ERAS):
     for e, edge in enumerate(EDGES):
@@ -249,7 +249,7 @@ for ind in json.loads((ROOT / "packs/base/industries.json").read_text())["indust
         for key in row.split():
             if key not in PARTS:
                 PARTS.append(key)
-# Other looks of a piece by era, which the map picks by year (ChunkBaker.PART_ERAS).
+# Other looks of a piece by era, which the map picks by year (TileRecorder.PART_ERAS).
 PARTS += ["mill_yard_team", "headframe_wood", "headframe_steel", "stacks_open_hearth", "factory_yard_box", "factory_yard_tractor", "superstack_brick",
           "open_pit_steam", "open_pit_far_rail", "open_pit_far_euclid", "sand_pit_far_early", "sand_pit_corner_early",
           "sand_pit_bucketwheel", "sand_pit_far_bucketwheel", "sand_pit_corner_dragline"]

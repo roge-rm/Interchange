@@ -4,7 +4,7 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.ImageBitmapConfig
 import androidx.compose.ui.graphics.colorspace.ColorSpaces
 import com.rm.interchange.map.Atlas
-import com.rm.interchange.map.Renderer
+import com.rm.interchange.map.Zoom
 import com.rm.interchange.map.gateDepth
 import com.rm.interchange.map.liveItems
 import com.rm.interchange.map.waitingDepth
@@ -38,7 +38,7 @@ class LiveTest {
     private fun builder(): Pair<LiveAtlas, LiveBuilder> {
         val atlas = LiveAtlas()
         val b = LiveBuilder(atlas, source)
-        b.begin(Renderer.SHARPEST, Renderer.LEVELS[Renderer.SHARPEST], 1f)
+        b.begin(Zoom.SHARPEST, Zoom.LEVELS[Zoom.SHARPEST], 1f)
         b.sprite(0, 0, 0f, 0f)
         atlas.uploaded(atlas.uploads)
         return atlas to b
@@ -71,15 +71,15 @@ class LiveTest {
     fun spritesWaitTillTheirSheetsAreUpAtEveryLevel() {
         val atlas = LiveAtlas()
         val b = LiveBuilder(atlas, source)
-        b.begin(Renderer.SHARPEST, Renderer.LEVELS[Renderer.SHARPEST], 1f)
+        b.begin(Zoom.SHARPEST, Zoom.LEVELS[Zoom.SHARPEST], 1f)
         b.sprite(0, 0, 100f, 100f)
         assertTrue(b.missing)
         assertEquals(0, b.batch()!!.count)
         // The signals and the model, at every level the map draws at.
-        assertEquals(2 * (Atlas.LEVELS - Renderer.SHARPEST), atlas.uploads.size)
+        assertEquals(2 * (Atlas.LEVELS - Zoom.SHARPEST), atlas.uploads.size)
         atlas.uploaded(atlas.uploads)
         assertTrue(atlas.uploads.isEmpty())
-        b.begin(Renderer.SHARPEST, Renderer.LEVELS[Renderer.SHARPEST], 1f)
+        b.begin(Zoom.SHARPEST, Zoom.LEVELS[Zoom.SHARPEST], 1f)
         b.sprite(0, 0, 100f, 100f)
         assertFalse(b.missing)
         assertEquals(1, b.batch()!!.count)
@@ -88,8 +88,8 @@ class LiveTest {
     @Test
     fun spritesStandWhereTheCanvasPutsThem() {
         val (_, b) = builder()
-        val hw = Renderer.LEVELS[Renderer.SHARPEST]
-        b.begin(Renderer.SHARPEST, hw, 1.5f)
+        val hw = Zoom.LEVELS[Zoom.SHARPEST]
+        b.begin(Zoom.SHARPEST, hw, 1.5f)
         b.sprite(0, 1, 100.3f, 200.6f)
         val d = b.batch()!!.data
         // As LandPainter.spriteAt: left = x + dx * scale, top = y - half height * scale + dy * scale, rounded down.
@@ -103,7 +103,7 @@ class LiveTest {
         assertEquals(50f, d[11] - d[9])
         // Uncut, and a shadow is black at 0.3.
         assertEquals(1f, d[2])
-        b.begin(Renderer.SHARPEST, hw, 1f)
+        b.begin(Zoom.SHARPEST, hw, 1f)
         b.sprite(0, 1, 0f, 0f, LIVE_SHADOW)
         assertEquals(1f, b.batch()!!.data[3])
         assertEquals(0.3f, b.batch()!!.data[15])
@@ -138,7 +138,7 @@ class LiveTest {
         )
         items.sortBy { it[0] }
         val (_, b) = builder()
-        b.begin(Renderer.SHARPEST, Renderer.LEVELS[Renderer.SHARPEST], 1f)
+        b.begin(Zoom.SHARPEST, Zoom.LEVELS[Zoom.SHARPEST], 1f)
         val cuts = ArrayList<Pair<Float, Float>>()
         liveItems(items, emptyList(), 64f, b) { vx, vy, _, _, _, _ -> cuts += vx to vy }
         val k = kinds(b.batch()!!)
@@ -155,7 +155,7 @@ class LiveTest {
     @Test
     fun aircraftAndShadowsAreNotCutAndBuildingsGoInOnce() {
         val (_, b) = builder()
-        b.begin(Renderer.SHARPEST, Renderer.LEVELS[Renderer.SHARPEST], 1f)
+        b.begin(Zoom.SHARPEST, Zoom.LEVELS[Zoom.SHARPEST], 1f)
         val items = arrayListOf(floatArrayOf(3f, 10f, 10f, 0f, 0f, 1f, -1f, -1f), floatArrayOf(1000f, 10f, 10f, 0f, 0f, 0f, -1f, -1f))
         var cuts = 0
         liveItems(items, emptyList(), 64f, b) { _, _, _, _, _, _ -> cuts++ }
@@ -175,39 +175,39 @@ class LiveTest {
     fun aLostContextPlacesEverythingAgain() {
         val atlas = LiveAtlas()
         val b = LiveBuilder(atlas, source)
-        b.begin(Renderer.SHARPEST, Renderer.LEVELS[Renderer.SHARPEST], 1f)
+        b.begin(Zoom.SHARPEST, Zoom.LEVELS[Zoom.SHARPEST], 1f)
         b.sprite(0, 0, 0f, 0f)
         atlas.ready = true
         val old = atlas.uploads
         atlas.reset()
         assertFalse(atlas.ready)
-        assertNull(atlas.get(0, Renderer.SHARPEST))
+        assertNull(atlas.get(0, Zoom.SHARPEST))
         // Answers for the last lot are let go.
         atlas.uploaded(old)
-        b.begin(Renderer.SHARPEST, Renderer.LEVELS[Renderer.SHARPEST], 1f)
+        b.begin(Zoom.SHARPEST, Zoom.LEVELS[Zoom.SHARPEST], 1f)
         b.sprite(0, 0, 0f, 0f)
         assertTrue(b.missing)
-        assertFalse(atlas.get(0, Renderer.SHARPEST)!!.onGpu)
-        assertEquals(2 * (Atlas.LEVELS - Renderer.SHARPEST), atlas.uploads.size)
+        assertFalse(atlas.get(0, Zoom.SHARPEST)!!.onGpu)
+        assertEquals(2 * (Atlas.LEVELS - Zoom.SHARPEST), atlas.uploads.size)
     }
 
     @Test
     fun batchesAreFilledAgainOnlyOnceTheGlThreadIsPastThem() {
         val (_, b) = builder()
-        b.begin(Renderer.SHARPEST, Renderer.LEVELS[Renderer.SHARPEST], 1f)
+        b.begin(Zoom.SHARPEST, Zoom.LEVELS[Zoom.SHARPEST], 1f)
         b.sprite(0, 0, 10f, 10f)
         val first = b.batch(null, 0L)!!
         // The same again is the same batch.
-        b.begin(Renderer.SHARPEST, Renderer.LEVELS[Renderer.SHARPEST], 1f)
+        b.begin(Zoom.SHARPEST, Zoom.LEVELS[Zoom.SHARPEST], 1f)
         b.sprite(0, 0, 10f, 10f)
         assertSame(first, b.batch(first, 0L))
         // Moved: the GL thread hasn't copied the first out, so a new one.
-        b.begin(Renderer.SHARPEST, Renderer.LEVELS[Renderer.SHARPEST], 1f)
+        b.begin(Zoom.SHARPEST, Zoom.LEVELS[Zoom.SHARPEST], 1f)
         b.sprite(0, 0, 20f, 20f)
         val second = b.batch(first, 0L)!!
         assertNotSame(first, second)
         // It has now, and the second is shown: the first is filled again.
-        b.begin(Renderer.SHARPEST, Renderer.LEVELS[Renderer.SHARPEST], 1f)
+        b.begin(Zoom.SHARPEST, Zoom.LEVELS[Zoom.SHARPEST], 1f)
         b.sprite(0, 0, 30f, 30f)
         val third = b.batch(second, second.seq)!!
         assertSame(first, third)
@@ -226,7 +226,7 @@ class LiveTest {
             override fun rects(source: Int, level: Int) = this@LiveTest.source.rects(source, level)
             override fun room() = false
         })
-        b.begin(3, Renderer.LEVELS[3], 1f)
+        b.begin(3, Zoom.LEVELS[3], 1f)
         b.sprite(0, 0, 0f, 0f)
         assertEquals(listOf(3), asked)
         assertTrue(b.missing)

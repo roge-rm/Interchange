@@ -94,7 +94,7 @@ private fun planCurvesOf(world: World, rail: Command.Rail, line: IntArray, joins
     return tiles
 }
 
-/** The curve to draw [piece] of tile [i] in [tiles], or null to run edge to edge: tiles that keep the old straight art, as when baked. */
+/** The curve to draw [piece] of tile [i] in [tiles], or null to run edge to edge: tiles that keep the old straight art, as the map draws them. */
 private fun planLine(world: World, tiles: CurveTiles, i: Int, piece: Int): TileCurve? {
     val x = i % world.width
     val y = i / world.width

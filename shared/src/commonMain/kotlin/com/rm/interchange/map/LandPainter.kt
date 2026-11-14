@@ -1,33 +1,25 @@
 package com.rm.interchange.map
 
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.ColorFilter
-import androidx.compose.ui.graphics.FilterQuality
-import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.DrawScope
-import androidx.compose.ui.unit.IntOffset
-import androidx.compose.ui.unit.IntSize
 import com.rm.interchange.sim.TileCurve
 import com.rm.interchange.sim.Track
 import com.rm.interchange.sim.World
 
 /**
- * Draws on the screen at any zoom: vehicles and signals standing where they
- * are, and plain track shapes for previews while dragging. The map itself is
- * baked by [ChunkBaker].
+ * Places things on the screen at any zoom, for what moves and for plain track
+ * shapes for previews while dragging. The map itself is recorded by
+ * [TileRecorder] and drawn on the GPU.
  *
- * [sheet] is one level's signals sheet, [halfWidth] that level's; [x] and [y]
- * place view points on the screen once [originX] and [originY] are set.
+ * [halfWidth] is the zoom's; [x] and [y] place view points on the screen once
+ * [originX] and [originY] are set.
  */
-class LandPainter(private val world: World, private val view: View, private val halfWidth: Float, private val sheet: ImageBitmap? = null) {
+class LandPainter(private val world: World, private val view: View, private val halfWidth: Float) {
     private val halfHeight = halfWidth / 2
     private val step = halfWidth / 4
     private val path = Path()
-    // How many times smaller than level 0 the sheet is.
-    private val shrink = (Atlas.HALF_WIDTH / halfWidth).toInt().coerceAtLeast(1)
 
     /** Where view point 0, 0 at height 0 lands. */
     var originX = 0f
@@ -35,42 +27,6 @@ class LandPainter(private val world: World, private val view: View, private val 
 
     fun x(vx: Float, vy: Float) = originX + (vx - vy) * halfWidth
     fun y(vx: Float, vy: Float, h: Float) = originY + (vx + vy) * halfHeight - h * step
-
-    /**
-     * Draws a signal's [cell], standing at screen point ([px], [py]), as many times bigger than this level as
-     * [scale]. Things are drawn as if on a tile whose middle is where they stand.
-     */
-    fun DrawScope.spriteAt(cell: Int, px: Float, py: Float, scale: Float) {
-        spriteAt(sheet ?: return, Atlas.SIGNAL_RECTS, cell, px, py, scale)
-    }
-
-    /**
-     * Draws sprite [cell] of [image], whose rects are [rects], standing at screen point ([px], [py]). The rects are
-     * level 0's, divided by [shrink] for this level; pass 1 for rects already in this level's pixels.
-     */
-    fun DrawScope.spriteAt(image: ImageBitmap, rects: IntArray, cell: Int, px: Float, py: Float, scale: Float, shadow: Boolean = false, wreck: Boolean = false, shrink: Int = this@LandPainter.shrink) {
-        if (cell < 0) return
-        val r = cell * 6
-        val f = shrink
-        val sx = rects[r] / f
-        val sy = rects[r + 1] / f
-        val w = rects[r + 2] / f
-        val h = rects[r + 3] / f
-        if (w == 0 || h == 0) return
-        val ax = px
-        val ay = py - halfHeight * scale
-        val left = ax + rects[r + 4] / f * scale
-        val top = ay + rects[r + 5] / f * scale
-        val l = left.toInt()
-        val t = top.toInt()
-        drawImage(
-            image, IntOffset(sx, sy), IntSize(w, h), IntOffset(l, t),
-            IntSize((left + w * scale).toInt() - l, (top + h * scale).toInt() - t),
-            alpha = if (shadow) SHADOW_ALPHA else 1f,
-            colorFilter = if (shadow) SHADOW_TINT else if (wreck) WRECK_TINT else null,
-            filterQuality = if (scale == 1f) FilterQuality.None else FilterQuality.Low,
-        )
-    }
 
     /** Where a world tile edge shows in this view. */
     fun viewEdge(edge: Int): Int = when (view.turn) {
@@ -171,9 +127,3 @@ class LandPainter(private val world: World, private val view: View, private val 
         }
     }
 }
-
-/** An aircraft's shadow on the ground: its own shape, darkened. */
-private const val SHADOW_ALPHA = 0.3f
-private val SHADOW_TINT = ColorFilter.tint(Color.Black, BlendMode.SrcIn)
-/** A wreck: its own drawing, darkened and browned as if burnt. */
-private val WRECK_TINT = ColorFilter.tint(Color(0xFF4A4038), BlendMode.Modulate)

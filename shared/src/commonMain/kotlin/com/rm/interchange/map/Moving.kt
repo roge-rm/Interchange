@@ -1,13 +1,9 @@
 package com.rm.interchange.map
 
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Rect
-import androidx.compose.ui.graphics.ClipOp
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.DrawScope
-import androidx.compose.ui.graphics.drawscope.clipPath
 import com.rm.interchange.map.gl.LIVE_PLAIN
 import com.rm.interchange.map.gl.LIVE_SHADOW
 import com.rm.interchange.map.gl.LIVE_WRECK
@@ -76,17 +72,16 @@ internal class FloatBuffer {
 private val turnEase = TurnEase()
 
 /**
- * Draws signals and trains over the map, nearest last. Trains are placed
- * between where they were on the last two ticks, so they glide. With [live]
- * (the GPU map), it all goes there in the same order and nothing's drawn here.
+ * Puts signals and trains into [live], the GPU map's moving layer, nearest last. Trains are placed between where
+ * they were on the last two ticks, so they glide.
  */
-internal fun DrawScope.drawMoving(world: World, view: View, sheets: Sheets, moving: Moving, live: LiveBuilder? = null) {
+internal fun DrawScope.drawMoving(world: World, view: View, sheets: Sheets, moving: Moving, live: LiveBuilder) {
     // The level's sheet, or the nearest one unpacked while it isn't yet.
-    val start = Renderer.levelFor(view.halfWidth)
+    val start = Zoom.levelFor(view.halfWidth)
     moving.now.vehicles.let { sheets.askVehicles(it, start, view.focusX, view.focusY) }
-    val level = sheets.nearest(start, live != null) ?: return
-    val hw = Renderer.LEVELS[level]
-    val painter = LandPainter(world, view, hw, sheets.get(level, live != null)?.signals)
+    val level = sheets.nearest(start) ?: return
+    val hw = Zoom.LEVELS[level]
+    val painter = LandPainter(world, view, hw)
     val scale = view.halfWidth / hw
     // Everything to draw, as depth, x, y, sprite, and which vehicle's sheet it's on (-1 for the signals').
     val items = ArrayList<FloatArray>()
@@ -292,7 +287,7 @@ internal fun DrawScope.drawMoving(world: World, view: View, sheets: Sheets, movi
         val sy = view.screenY(vx - 0.5f, vy - 0.5f, base, size.height) + view.halfHeight
         val margin = view.halfWidth * 3
         if (sx < -margin || sx > size.width + margin || sy < -margin || sy > size.height + margin * 2) continue
-        items += floatArrayOf(vx + vy + DEPOT_DEPTH, sx, sy, Atlas.DEPOT_OVER[ChunkBaker.depotEra(d.built.takeIf { it > 0 } ?: year) * 4 + painter.viewEdge(d.edge)].toFloat(), -1f)
+        items += floatArrayOf(vx + vy + DEPOT_DEPTH, sx, sy, Atlas.DEPOT_OVER[TileRecorder.depotEra(d.built.takeIf { it > 0 } ?: year) * 4 + painter.viewEdge(d.edge)].toFloat(), -1f)
     }
     val v = moving.now.vehicles
     val before = moving.before?.vehicles
@@ -413,59 +408,13 @@ internal fun DrawScope.drawMoving(world: World, view: View, sheets: Sheets, movi
             }
         }
     }
-    // Vehicles' drawings at the levels either side unpacked ahead, so they're there when the view zooms. The GPU map asks for every level itself.
-    if (live == null) for (i in 0 until v.count) {
-        val model = v.sprite(i)
-        if (level > Renderer.SHARPEST) sheets.vehicle(model, level - 1)
-        if (level + 1 < Renderer.LEVELS.size) sheets.vehicle(model, level + 1)
-    }
     val lit = if (view.halfWidth >= LIT_FROM) litPieces(world, view, moving, items) else emptyList()
     items.sortBy { it[0] }
-    val cover = Cover(world, view, level, sheets.get(level, live != null) ?: return)
-    if (live != null) {
-        live.begin(level, hw, scale, depthSpan(view.viewWidth, view.viewHeight))
-        val w = size.width
-        val h = size.height
-        liveItems(items, lit, view.halfWidth, live) { vx, vy, l, t, r, b -> cover.rects(vx, vy, l, t, r, b, w, h, live::takeCover, live::cover) }
-        return
-    }
-    val pen = CanvasPen(this)
-    // Reserved track on the ground goes under everything else, cut away behind buildings; edges first so the lines join.
-    if (lit.isNotEmpty()) {
-        val pad = view.halfWidth
-        // Pieces with the same buildings in front of them are cut together; each is cut only by its own.
-        val groups = HashMap<Long, Pair<Path, ArrayList<FloatArray>>>()
-        val bare = ArrayList<FloatArray>()
-        val set = LongArray(1)
-        for (l in lit) {
-            set[0] = 0
-            val h = with(cover) { covering(l[0], l[1], Rect(minOf(l[2], l[4]) - pad, minOf(l[3], l[5]) - pad, maxOf(l[2], l[4]) + pad, maxOf(l[3], l[5]) + pad), set) }
-            if (h == null) bare += l else groups.getOrPut(set[0]) { h to ArrayList() }.second += l
-        }
-        for (edge in booleanArrayOf(true, false)) {
-            for (l in bare) pen.drawLit(l[2], l[3], l[4], l[5], view.halfWidth, edge, StrokeCap.Round)
-            for ((path, pieces) in groups.values) clipPath(path, ClipOp.Difference) {
-                for (l in pieces) pen.drawLit(l[2], l[3], l[4], l[5], view.halfWidth, edge, StrokeCap.Round)
-            }
-        }
-    }
-    with(painter) {
-        for (it in items) {
-            val model = it[4].toInt()
-            if (pen.drawShape(it, view.halfWidth)) continue
-            if (model < 0) {
-                spriteAt(it[3].toInt(), it[1], it[2], scale)
-            } else {
-                // Its own sheet at this level, unpacked the first time it's on screen; it shows a frame or two later.
-                val sheet = sheets.vehicle(model, level) ?: run { if (Probe.ON) Probe.vehiclesSkipped++; null } ?: continue
-                val rects = sheets.vehicleRects(model, level) ?: continue
-                // Behind a building in front of it, cut away where the building stands.
-                val hidden = if (it[6] >= 0f) with(cover) { covering(it[6], it[7], Rect(it[1] - view.halfWidth * 1.5f, it[2] - view.halfWidth * 2f, it[1] + view.halfWidth * 1.5f, it[2] + view.halfWidth)) } else null
-                if (hidden != null) clipPath(hidden, ClipOp.Difference) { spriteAt(sheet, rects, it[3].toInt(), it[1], it[2], scale, shadow = it[5] == 1f, wreck = it[5] == 2f, shrink = 1) }
-                else spriteAt(sheet, rects, it[3].toInt(), it[1], it[2], scale, shadow = it[5] == 1f, wreck = it[5] == 2f, shrink = 1)
-            }
-        }
-    }
+    val cover = Cover(world, view, level, sheets.get(level) ?: return)
+    live.begin(level, hw, scale, depthSpan(view.viewWidth, view.viewHeight))
+    val w = size.width
+    val h = size.height
+    liveItems(items, lit, view.halfWidth, live) { vx, vy, l, t, r, b -> cover.rects(vx, vy, l, t, r, b, w, h, live::takeCover, live::cover) }
 }
 
 /** Draws [it] if it's one of the items drawn as shapes, and returns whether it was. */

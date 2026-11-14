@@ -6,8 +6,8 @@ import com.rm.interchange.sim.World
 /**
  * The weather as the GPU map's shaders read it: four bytes for each world corner, [width] + 1 by [height] + 1,
  * row by row ([TEXEL] bytes each):
- * - 0: the snow on the four tiles round the corner summed, in cm, up to 255 (the baker's corner snow times 4)
- * - 1: the ice round the corner as the baker counts it, the shore as thick as the thickest ice there, times 4, up to 255
+ * - 0: the snow on the four tiles round the corner summed, in cm, up to 255 (the tile recorder's corner snow times 4)
+ * - 1: the ice round the corner as the tile recorder counts it, the shore as thick as the thickest ice there, times 4, up to 255
  * - 2: the mud on the tile whose top corner it is (world x and y the corner's), 0 to 255
  * - 3: the snow on that tile in cm, up to 255, for the snow on sprites standing there
  * Past 255 the shaders can't tell: full snow cover is reached by 18 cm and the thickest ice look by 26 cm.

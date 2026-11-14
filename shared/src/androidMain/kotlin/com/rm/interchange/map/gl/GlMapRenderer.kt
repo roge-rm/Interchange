@@ -6,10 +6,11 @@ import android.opengl.GLSurfaceView
 import android.opengl.GLUtils
 import androidx.compose.ui.graphics.asAndroidBitmap
 import android.util.Log
+import com.rm.interchange.map.MapOverlays
 import com.rm.interchange.map.Atlas
-import com.rm.interchange.map.ChunkBaker
+import com.rm.interchange.map.TileRecorder
 import com.rm.interchange.map.LevelSheets
-import com.rm.interchange.map.Renderer
+import com.rm.interchange.map.Zoom
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import javax.microedition.khronos.egl.EGLConfig
@@ -34,8 +35,8 @@ private class LevelTextures(val from: LevelSheets, val static: Paged, val up: In
 /**
  * Draws the GPU map on the GL thread (OpenGL ES 3.0): the page colour, then [scene]'s regions in drawing order, each
  * pass a few instanced draws of the runs on screen. The first pass draws the ground ([GROUND_FS]) among the track
- * and foundations, as the baker lays them down. Sprites come from the sheets of the level the chunks would bake at
- * for the zoom, placed by cell tables (a row a level), so region buffers are the same at every level; they're
+ * and foundations, as [com.rm.interchange.map.TileRecorder] lays them down. Sprites come from the sheets of the
+ * level [com.rm.interchange.map.Zoom.levelFor] the zoom, placed by cell tables (a row a level), so region buffers are the same at every level; they're
  * uploaded once each and kept while their turn shows. The weather texture takes only the rows that changed.
  *
  * GL thread only, but for [scene]'s shared fields, which it only reads.
@@ -49,10 +50,15 @@ internal class GlMapRenderer(private val scene: GlScene, private val page: Int) 
     private var weatherTex = 0
     private var weatherUp: GroundWeather? = null
     private var legsTex = 0
+    /** The track wear for the condition overlay, as an R8UI texture by world tile, and the copy it holds. */
+    private var wearTex = 0
+    private var wearUp: TrackWear? = null
+    /** The overlays drawn this frame: the scene's, but for the condition overlay till its wear is up. */
+    private var overlays = 0
     private var maxTexture = 0
     private var maxLayers = 0
-    /** Set once a level wouldn't go on the GPU; the map's gone back to the chunks. */
-    private var failed = false
+    /** The sheets the GPU wouldn't take, a level a slot, so they aren't tried again. */
+    private val refused = arrayOfNulls<LevelSheets>(Atlas.LEVELS)
     private val levels = arrayOfNulls<LevelTextures>(Atlas.LEVELS)
     private var staticCells = 0
     private var shadowCells = 0
@@ -88,9 +94,12 @@ internal class GlMapRenderer(private val scene: GlScene, private val page: Int) 
     override fun onSurfaceCreated(gl: GL10?, config: EGLConfig?) {
         // A new context: whatever was made in the last went with it.
         levels.fill(null)
+        refused.fill(null)
         weatherTex = 0
         weatherUp = null
         legsTex = 0
+        wearTex = 0
+        wearUp = null
         buffers = arrayOfNulls(0)
         bufferTurn = -1
         for (p in livePages) p.clear()
@@ -159,6 +168,10 @@ internal class GlMapRenderer(private val scene: GlScene, private val page: Int) 
         // show; vehicles again after a level, as the signals come with it.
         takeLive()
         scene.weather?.let { if (it !== weatherUp) upload(it) }
+        val wanted = scene.overlays
+        val wear = scene.wear
+        if (wanted and MapOverlays.CONDITION != 0 && wear != null && wear !== wearUp) upload(wear)
+        overlays = if (wearUp == null || wear == null) wanted and MapOverlays.CONDITION.inv() else wanted
         if (takeLevels(scene.levels)) {
             takeLive()
             scene.requestRender()
@@ -167,7 +180,7 @@ internal class GlMapRenderer(private val scene: GlScene, private val page: Int) 
         val f = shown.frame
         // The screen's level is uploaded before the cover lifts and the zoom's held to levels that are in, so there's
         // never another level to stand in.
-        val lv = Renderer.levelFor(f.scale * SOURCE_HALF_WIDTH)
+        val lv = Zoom.levelFor(f.scale * SOURCE_HALF_WIDTH)
         val tex = levels[lv] ?: return clearScreen()
         if (weatherTex == 0) return clearScreen()
         uploadRegions(shown)
@@ -269,6 +282,8 @@ internal class GlMapRenderer(private val scene: GlScene, private val page: Int) 
      */
     private class Square(val tex: Int) {
         var from: LevelTextures? = null
+        var overlays = 0
+        var wear: TrackWear? = null
         var weather: GroundWeather? = null
         var rows = IntArray(2)
         var look = -1
@@ -297,7 +312,8 @@ internal class GlMapRenderer(private val scene: GlScene, private val page: Int) 
 
     /** Whether square [s] was drawn from what's showing now; a new weather with no change in its rows is taken as its own. */
     private fun fresh(s: Square, tex: LevelTextures): Boolean {
-        if (s.from !== tex || s.look != scene.look) return false
+        if (s.from !== tex || s.look != scene.look || s.overlays != overlays) return false
+        if (overlays and MapOverlays.CONDITION != 0 && s.wear !== wearUp) return false
         for (i in s.regions.indices) if (drawable.getOrNull(s.first + i) !== s.regions[i]) return false
         val w = weatherUp ?: return false
         if (s.weather !== w) {
@@ -377,6 +393,8 @@ internal class GlMapRenderer(private val scene: GlScene, private val page: Int) 
         s.weather = weatherUp
         s.rows = weatherRows(cols, f.viewHeight, f.turn, weatherUp!!.height)
         s.look = scene.look
+        s.overlays = overlays
+        s.wear = wearUp
         s.first = r0
         s.regions = Array(maxOf(0, r1 - r0 + 1)) { drawable[r0 + it] }
         return true
@@ -636,12 +654,16 @@ internal class GlMapRenderer(private val scene: GlScene, private val page: Int) 
         glActiveTexture(GL_TEXTURE3)
         glBindTexture(GL_TEXTURE_2D, legsTex)
         glUniform1i(glGetUniformLocation(p, "uLegs"), 3)
+        glActiveTexture(GL_TEXTURE6)
+        glBindTexture(GL_TEXTURE_2D, if (overlays and MapOverlays.CONDITION != 0) wearTex else 0)
+        glUniform1i(glGetUniformLocation(p, "uWear"), 6)
+        glUniform1i(glGetUniformLocation(p, "uOverlay"), overlays)
         glActiveTexture(GL_TEXTURE0)
         val w = weatherUp!!
         glUniform3i(glGetUniformLocation(p, "uMap"), w.width, w.height, f.turn)
-        val legs = ChunkBaker.TAXI_LEGS
+        val legs = TileRecorder.TAXI_LEGS
         glUniform1iv(glGetUniformLocation(p, "uLegCount"), legs.size, IntArray(legs.size) { legs[it].size / 4 }, 0)
-        val grades = ChunkBaker.GRADES[scene.look]
+        val grades = TileRecorder.GRADES[scene.look]
         val g = FloatArray(4 * GRADE_KINDS)
         for (k in 0 until minOf(GRADE_KINDS, grades.size)) {
             val c = grades[k]
@@ -655,7 +677,7 @@ internal class GlMapRenderer(private val scene: GlScene, private val page: Int) 
 
     /** Every airport kind's taxi legs as a float texture, a row a kind, a texel a leg. */
     private fun legsTexture(): Int {
-        val legs = ChunkBaker.TAXI_LEGS
+        val legs = TileRecorder.TAXI_LEGS
         val w = maxOf(1, legs.maxOf { it.size / 4 })
         val data = FloatArray(w * legs.size * 4)
         for (k in legs.indices) legs[k].copyInto(data, k * w * 4)
@@ -707,6 +729,26 @@ internal class GlMapRenderer(private val scene: GlScene, private val page: Int) 
         Log.i(TAG, "gl weather v${w.version} rows=$rows of $ch")
     }
 
+    /** Takes [w] into the wear texture, made again at a new map size. */
+    private fun upload(w: TrackWear) {
+        val whole = wearTex == 0 || wearUp?.let { it.width != w.width || it.height != w.height } != false
+        if (whole) {
+            if (wearTex != 0) glDeleteTextures(1, intArrayOf(wearTex), 0)
+            val ids = IntArray(1)
+            glGenTextures(1, ids, 0)
+            wearTex = ids[0]
+            glBindTexture(GL_TEXTURE_2D, wearTex)
+            glTexStorage2D(GL_TEXTURE_2D, 1, GL_R8UI, w.width, w.height)
+            nearest(GL_TEXTURE_2D)
+        } else glBindTexture(GL_TEXTURE_2D, wearTex)
+        glPixelStorei(GL_UNPACK_ALIGNMENT, 1)
+        val buf = ByteBuffer.allocateDirect(w.bands.size)
+        buf.put(w.bands).flip()
+        glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, w.width, w.height, GL_RED_INTEGER, GL_UNSIGNED_BYTE, buf)
+        glBindTexture(GL_TEXTURE_2D, 0)
+        wearUp = w
+    }
+
     private fun nearest(target: Int) {
         glTexParameteri(target, GL_TEXTURE_MIN_FILTER, GL_NEAREST)
         glTexParameteri(target, GL_TEXTURE_MAG_FILTER, GL_NEAREST)
@@ -752,13 +794,13 @@ internal class GlMapRenderer(private val scene: GlScene, private val page: Int) 
      * are in, or that they wouldn't go. Returns whether anything changed.
      */
     private fun takeLevels(from: Array<LevelSheets?>): Boolean {
-        if (failed) return false
         var changed = false
         while (glGetError() != GL_NO_ERROR) Unit
         for (l in levels.indices) {
             val want = from.getOrNull(l)
             val have = levels[l]
             if (have?.from === want) continue
+            if (want != null && refused[l] === want) continue
             // Let go of after an upload to a context since lost; the scene unpacks them again.
             if (want != null && want.released) continue
             changed = true
@@ -767,15 +809,26 @@ internal class GlMapRenderer(private val scene: GlScene, private val page: Int) 
                 levels[l] = null
             }
             if (want != null) {
-                val t = try { upload(l, want) } catch (e: IllegalArgumentException) { Log.e(TAG, "gl level $l won't fit: ${e.message}"); null }
+                // Too big for the GPU's textures, or out of memory for the buffers: the scene drops the level, or if it's
+                // the screen's own, shows the cover that says the map can't be drawn.
+                val t = try {
+                    upload(l, want)
+                } catch (e: RuntimeException) {
+                    Log.e(TAG, "gl level $l won't fit: ${e.message}")
+                    null
+                } catch (e: OutOfMemoryError) {
+                    Log.e(TAG, "gl level $l out of memory")
+                    null
+                }
                 val error = glGetError()
                 if (t == null && error == GL_NO_ERROR && (want.released || want.static.isEmpty())) continue
                 if (t == null || error != GL_NO_ERROR) {
                     if (error != GL_NO_ERROR) Log.e(TAG, "gl level $l upload failed, GL error 0x${error.toString(16)}")
                     if (t != null) glDeleteTextures(4, t.textures, 0)
-                    failed = true
-                    scene.uploadFailed()
-                    return true
+                    while (glGetError() != GL_NO_ERROR) Unit
+                    refused[l] = want
+                    scene.uploadFailed(l)
+                    continue
                 }
                 levels[l] = t
             }
@@ -789,9 +842,33 @@ internal class GlMapRenderer(private val scene: GlScene, private val page: Int) 
     /**
      * Level [level]'s static sheet and shadows as texture arrays split to the GPU's largest texture, the static
      * sheet's sky-facing bits (the low two of blue) taken out into a texture of their own, its ground and its rows of
-     * the cell tables. No mipmaps on the sprites: each level is drawn from half to twice its size, as a chunk is.
+     * the cell tables. No mipmaps on the sprites: each level is drawn from half to twice its size.
      */
     private fun upload(level: Int, sheets: LevelSheets): LevelTextures? {
+        building.clear()
+        buildingFbo = 0
+        try {
+            return build(level, sheets).also { building.clear() }
+        } catch (e: Throwable) {
+            // Half-made: let go of what was made and put the bindings back for the frames that follow.
+            if (building.isNotEmpty()) glDeleteTextures(building.size, building.toIntArray(), 0)
+            if (buildingFbo != 0) glDeleteFramebuffers(1, intArrayOf(buildingFbo), 0)
+            building.clear()
+            buildingFbo = 0
+            throw e
+        } finally {
+            glBindFramebuffer(GL_FRAMEBUFFER, 0)
+            glUseProgram(0)
+            glBindVertexArray(0)
+            glViewport(0, 0, width, height)
+        }
+    }
+
+    /** The textures and the framebuffer [upload] has made so far for the level it's on. */
+    private val building = ArrayList<Int>()
+    private var buildingFbo = 0
+
+    private fun build(level: Int, sheets: LevelSheets): LevelTextures? {
         val t0 = System.nanoTime()
         // Taken before the released flag's read; the main thread may let go of them once they're up in a context since lost.
         val staticPixels = sheets.static
@@ -843,6 +920,7 @@ internal class GlMapRenderer(private val scene: GlScene, private val page: Int) 
         val layers = ground.size / (size * size)
         val ids = IntArray(1)
         glGenTextures(1, ids, 0)
+        building += ids[0]
         glBindTexture(GL_TEXTURE_2D_ARRAY, ids[0])
         val levels = 1 + (31 - Integer.numberOfLeadingZeros(size))
         glTexStorage3D(GL_TEXTURE_2D_ARRAY, levels, GL_RGBA8, size, size, layers)
@@ -873,6 +951,7 @@ internal class GlMapRenderer(private val scene: GlScene, private val page: Int) 
         val texel = if (format == GL_R8) 1 else 4
         val ids = IntArray(1)
         glGenTextures(1, ids, 0)
+        building += ids[0]
         glBindTexture(GL_TEXTURE_2D_ARRAY, ids[0])
         glTexStorage3D(GL_TEXTURE_2D_ARRAY, 1, format, pages.width, pages.pageHeight, pages.layers)
         glPixelStorei(GL_UNPACK_ALIGNMENT, 1)
@@ -910,6 +989,7 @@ internal class GlMapRenderer(private val scene: GlScene, private val page: Int) 
         val w = pages.width
         val ids = IntArray(4)
         glGenTextures(3, ids, 0)
+        for (i in 0 until 3) building += ids[i]
         val colour = ids[0]
         val up = ids[1]
         val raw = ids[2]
@@ -924,6 +1004,7 @@ internal class GlMapRenderer(private val scene: GlScene, private val page: Int) 
         glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8UI, w, STRIP_ROWS)
         nearest(GL_TEXTURE_2D)
         glGenFramebuffers(1, ids, 3)
+        buildingFbo = ids[3]
         glBindFramebuffer(GL_FRAMEBUFFER, ids[3])
         glDrawBuffers(2, intArrayOf(GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1), 0)
         glDisable(GL_BLEND)
@@ -961,6 +1042,7 @@ internal class GlMapRenderer(private val scene: GlScene, private val page: Int) 
         }
         glBindFramebuffer(GL_FRAMEBUFFER, 0)
         glDeleteFramebuffers(1, ids, 3)
+        buildingFbo = 0
         glBindTexture(GL_TEXTURE_2D, 0)
         glDeleteTextures(1, ids, 2)
         glBindVertexArray(0)
@@ -1002,7 +1084,9 @@ internal class GlMapRenderer(private val scene: GlScene, private val page: Int) 
         liveBuffer = 0
         for (l in levels) if (l != null) glDeleteTextures(4, l.textures, 0)
         levels.fill(null)
-        for (t in intArrayOf(weatherTex, legsTex, staticCells, shadowCells)) if (t != 0) glDeleteTextures(1, intArrayOf(t), 0)
+        for (t in intArrayOf(weatherTex, legsTex, staticCells, shadowCells, wearTex)) if (t != 0) glDeleteTextures(1, intArrayOf(t), 0)
+        wearTex = 0
+        wearUp = null
         staticCells = 0
         shadowCells = 0
         weatherTex = 0

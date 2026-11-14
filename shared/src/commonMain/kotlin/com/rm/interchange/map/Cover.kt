@@ -1,46 +1,29 @@
 package com.rm.interchange.map
 
-import androidx.compose.ui.geometry.Rect
-import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.drawscope.DrawScope
 import com.rm.interchange.sim.Calendar
 import com.rm.interchange.sim.World
 import kotlin.math.floor
 
 /**
- * Where the buildings baked into the map stand in front of something moving, so it can be drawn with those parts cut
- * away: the buildings are in the map's chunks, under everything that moves, and would otherwise be drawn over by a
+ * Where the buildings in the static map stand in front of something moving, so it can be drawn with those parts cut
+ * away: the buildings are drawn under everything that moves, and would otherwise be drawn over by a
  * bus going behind them. Made for one frame at [level], whose sheets are [sheets].
  *
  * A building's shape is its sprite's columns, each from its first solid pixel down to its last.
  */
 internal class Cover(private val world: World, private val view: View, private val level: Int, private val sheets: LevelSheets) {
-    private val hw = Renderer.LEVELS[level]
+    private val hw = Zoom.LEVELS[level]
     private val shrink = 1 shl level
-    private val picker = ChunkBaker(world, view, level, sheets, 1, 1, shown = EMPTY_WEATHER, year = Calendar.year(world.startYear, world.day))
+    private val picker = TileRecorder(world, view, level, shown = EMPTY_WEATHER, year = Calendar.year(world.startYear, world.day))
 
-    /** Each view tile's building as [ChunkBaker.building] gives it, worked out the first time a frame asks. */
+    /** Each view tile's building as [TileRecorder.building] gives it, worked out the first time a frame asks. */
     private val buildings = HashMap<Int, Long>()
 
     private fun buildingAt(vx: Int, vy: Int): Long = buildings.getOrPut(vy * view.viewWidth + vx) { picker.building(vx, vy) }
 
     /**
-     * What of the screen the buildings in front of view point ([vx], [vy]) cover, near enough to it to matter, as a path
-     * of their columns; null if none do. [near] is how far round the point on screen to look, in pixels.
-     */
-    fun DrawScope.covering(vx: Float, vy: Float, near: Rect, set: LongArray? = null): Path? {
-        var path: Path? = null
-        each(vx, vy, near.left, near.top, near.right, near.bottom, size.width, size.height, { tile ->
-            // [set] gets a number for which buildings these are, to tell pieces with the same cover.
-            if (set != null) set[0] = set[0] * 31 + (tile + 1)
-            if (path == null) path = Path()
-            true
-        }) { l, t, r, b, _ -> path!!.addRect(Rect(l, t, r, b)) }
-        return path
-    }
-
-    /**
-     * The same buildings' columns as rectangles on a screen [width] by [height], for the GPU map: [take] is asked
+     * The columns of the buildings in front of view point ([vx], [vy]), within [nl], [nt], [nr], [nb] on screen, as
+     * rectangles on a screen [width] by [height], for the GPU map: [take] is asked
      * for each building's view tile (y * view width + x) first and its rectangles are skipped if it says no; [add]
      * gets each as left, top, right, bottom and the building tile's view depth (x + y).
      */
@@ -63,7 +46,7 @@ internal class Cover(private val world: World, private val view: View, private v
             val w = Atlas.STATIC_RECTS[r + 2] / shrink
             val h = Atlas.STATIC_RECTS[r + 3] / shrink
             if (w == 0 || h == 0) continue
-            // As the baker blits it: from the tile's top corner at its height.
+            // As the tile recorder lays it: from the tile's top corner at its height.
             val left = view.screenX(bx.toFloat(), by.toFloat(), width) + Atlas.STATIC_RECTS[r + 4] / shrink * scale
             val top = view.screenY(bx.toFloat(), by.toFloat(), base.toFloat(), height) + Atlas.STATIC_RECTS[r + 5] / shrink * scale
             if (left > nr || left + w * scale < nl || top > nb || top + h * scale < nt) continue
@@ -138,7 +121,7 @@ internal class Cover(private val world: World, private val view: View, private v
         private const val SOLID = 160
         /** The most columns put in one rectangle. */
         private const val RUN = 6
-        private val COLUMNS = Array(Renderer.LEVELS.size) { HashMap<Int, IntArray>() }
-        private val EMPTY_WEATHER = WeatherCopy(0, 0L, ByteArray(0), ByteArray(0), ByteArray(0))
+        private val COLUMNS = Array(Zoom.LEVELS.size) { HashMap<Int, IntArray>() }
+        private val EMPTY_WEATHER = WeatherCopy(0, ByteArray(0), ByteArray(0), ByteArray(0))
     }
 }

@@ -830,4 +830,5 @@
     <string name="loading_sending">Sending to the GPU</string>
     <string name="loading_drawing">Drawing the map</string>
     <string name="loading_trains">Adding trains</string>
+    <string name="loading_failed">The map can't be drawn on this device</string>
 </resources>

@@ -5,14 +5,14 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.StrokeCap
 import com.rm.interchange.map.Atlas
 import com.rm.interchange.map.Pen
-import com.rm.interchange.map.Renderer
+import com.rm.interchange.map.Zoom
 import kotlin.concurrent.Volatile
 import kotlin.math.floor
 
 /*
  * What moves, for the GPU map: everything drawMoving draws, as a list of instances made on the main thread each frame
- * in its drawing order and drawn over the static map, as the chunk map draws it over its chunks. Vehicles and lit
- * track are cut away where a building in front stands, as the chunk map clips them, through the depth buffer: the
+ * in its drawing order and drawn over the static map. Vehicles and lit track are cut away where a building in front
+ * stands, through the depth buffer: the
  * buildings' columns go in first at their tile's view depth, and a cut item only shows where no building nearer than
  * its own tile stands.
  */
@@ -349,7 +349,7 @@ internal class LiveBuilder(private val atlas: LiveAtlas, private val source: Liv
 
     /**
      * Sprite [cell] of [src] standing at screen point ([px], [py]), drawn as [mode] says, cut by the buildings in front
-     * of view point ([cutX], [cutY]) unless cutX is below 0. Placed as LandPainter.spriteAt places it.
+     * of view point ([cutX], [cutY]) unless cutX is below 0. Placed as if on a tile whose middle is where it stands.
      */
     fun sprite(src: Int, cell: Int, px: Float, py: Float, mode: Int = LIVE_PLAIN, cutX: Float = -1f, cutY: Float = -1f) {
         if (cell < 0) return
@@ -384,7 +384,7 @@ internal class LiveBuilder(private val atlas: LiveAtlas, private val source: Liv
         if (i >= seen.size) seen = seen.copyOf(maxOf(i + 1, seen.size * 2))
         if (seen[i] == frame) return
         seen[i] = frame
-        for (l in Renderer.SHARPEST until Atlas.LEVELS) {
+        for (l in Zoom.SHARPEST until Atlas.LEVELS) {
             val p = atlas.get(src, l)
             if (p != null) {
                 if (!p.onGpu) missing = true
@@ -449,7 +449,7 @@ internal class LiveBuilder(private val atlas: LiveAtlas, private val source: Liv
     }
 
     private companion object {
-        /** As LandPainter's: a shadow is the sprite's shape in black at 0.3, a wreck its colours times 4A4038. */
+        /** A shadow is the sprite's shape in black at 0.3, a wreck its colours times 4A4038. */
         const val SHADOW_ALPHA = 0.3f
         const val WRECK_R = 0x4a / 255f
         const val WRECK_G = 0x40 / 255f

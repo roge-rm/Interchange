@@ -813,4 +813,5 @@
     <string name="loading_sending">Envoi au GPU</string>
     <string name="loading_drawing">Dessin de la carte</string>
     <string name="loading_trains">Ajout des trains</string>
+    <string name="loading_failed">La carte ne peut pas être dessinée sur cet appareil</string>
 </resources>

@@ -2,9 +2,6 @@ package com.rm.interchange.map.gl
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.ImageBitmap
 import com.rm.interchange.map.Atlas
@@ -12,13 +9,16 @@ import com.rm.interchange.map.Cover
 import com.rm.interchange.map.CurveArt
 import com.rm.interchange.map.LevelSheets
 import com.rm.interchange.map.LoadStep
-import com.rm.interchange.map.Renderer
+import com.rm.interchange.map.MapOverlays
+import com.rm.interchange.map.Zoom
 import com.rm.interchange.map.Sheets
 import com.rm.interchange.map.View
 import com.rm.interchange.map.WeatherCopy
 import com.rm.interchange.map.zoomAt
 import com.rm.interchange.sim.Calendar
 import com.rm.interchange.sim.Climate
+import com.rm.interchange.sim.VERY_WORN
+import com.rm.interchange.sim.WORN
 import com.rm.interchange.sim.World
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -28,9 +28,6 @@ import kotlinx.coroutines.withContext
 import kotlin.concurrent.Volatile
 import kotlin.math.abs
 import kotlin.time.TimeSource
-
-/** Whether the switch asks for the GPU map in place of the chunk map: on Android, the system property debug.interchange.gl set to 1. */
-internal expect fun glMapWanted(): Boolean
 
 /**
  * The GPU map's surface, drawing [scene] with [page] (ARGB) round the map. It goes under the Compose map, which
@@ -57,12 +54,12 @@ internal interface FarRegions {
  * screen first, takes asked for turns once the new direction's regions on screen are in, and hands the GL thread
  * what to draw through [shown]. Regions are recorded again where the world under them changes ([regionVersion]); the
  * weather goes to the GL thread as [weather] and the time of year as [look], which the ground shader draws in place.
- * The world is read as a bake reads it.
+ * The world is read off the main thread, as [TileRecorder] reads it.
  *
  * What moves goes in [live] each frame and out with the frame in [shown], drawn over the static map.
  *
- * Main thread only, but for [shown], [levels], [weather], [look], [requestRender] and [atlas]'s uploads, which the GL
- * thread reads, and [uploaded], [liveUploaded], [lost] and [uploadFailed], which it calls.
+ * Main thread only, but for [shown], [levels], [weather], [look], [overlays], [wear], [requestRender] and [atlas]'s
+ * uploads, which the GL thread reads, and [uploaded], [liveUploaded], [lost] and [uploadFailed], which it calls.
  */
 internal class GlScene(private val world: World, private val scope: CoroutineScope) {
     /** [pending] holds the version each region is being recorded at, or -1. */
@@ -71,7 +68,7 @@ internal class GlScene(private val world: World, private val scope: CoroutineSco
     }
 
     private val turns = arrayOfNulls<Turn>(4)
-    /** Two at a time, as the chunk bakers are. */
+    /** Two at a time, leaving cores for the screen and the game. */
     private val lane = Dispatchers.Default.limitedParallelism(2)
 
     @Volatile
@@ -79,8 +76,8 @@ internal class GlScene(private val world: World, private val scope: CoroutineSco
         private set
 
     /**
-     * Each level's sheets, from [Renderer.SHARPEST] on, once unpacked, for the GL thread to upload; it draws at
-     * [Renderer.levelFor] the zoom, as the chunks do. All are held once in, so a zoom never waits on one. A new
+     * Each level's sheets, from [Zoom.SHARPEST] on, once unpacked, for the GL thread to upload; it draws at
+     * [Zoom.levelFor] the zoom. All are held once in, so a zoom never waits on one. A new
      * array each time one comes.
      */
     @Volatile
@@ -110,6 +107,27 @@ internal class GlScene(private val world: World, private val scope: CoroutineSco
     private var lastCopy = clock.markNow()
     private var copiedAt = Long.MIN_VALUE
     private var lastCheck = clock.markNow()
+
+    /** The overlays drawn into the ground, as [MapOverlays] bits; a change draws again at once. */
+    @Volatile
+    var overlays = 0
+        set(value) {
+            if (field == value) return
+            field = value
+            if (value and MapOverlays.CONDITION == 0) wear = null
+            requestRender()
+        }
+
+    /** How worn each track tile is, for the condition overlay, while it's on. */
+    @Volatile
+    var wear: TrackWear? = null
+        private set
+    private var lastWear = clock.markNow()
+    /** Where [TrackWear.of] works the bands out, so a second with no change allocates nothing. */
+    private var wearScratch: ByteArray? = null
+
+    /** The tile last tapped or built on, so the region holding it is recorded again first. */
+    var lastEdit = -1 to -1
 
     /** Asks the surface for a frame; set by it, safe from any thread. */
     @Volatile
@@ -160,7 +178,6 @@ internal class GlScene(private val world: World, private val scope: CoroutineSco
      */
     fun show(view: View, sheets: Sheets, width: Int, height: Int) {
         sheetsSeen = sheets
-        sheets.keepSharpest = true
         val gesture = view.movedOnlyByFinger(lastX, lastY, lastHalfWidth)
         view.gestured = false
         holdZoom(view, width, height)
@@ -169,9 +186,10 @@ internal class GlScene(private val world: World, private val scope: CoroutineSco
         lastX = view.focusX
         lastY = view.focusY
         lastHalfWidth = view.halfWidth
-        takeLevels(sheets, Renderer.levelFor(view.halfWidth))
+        takeLevels(sheets, Zoom.levelFor(view.halfWidth))
         season()
         copyWeather()
+        copyWear()
         if (lastCheck.elapsedNow().inWholeMilliseconds >= CHECK_MILLIS) {
             lastCheck = clock.markNow()
             turns[view.turn]?.let { recheck(it) }
@@ -202,7 +220,7 @@ internal class GlScene(private val world: World, private val scope: CoroutineSco
         nextRegions = regions
         val lv = levels
         val g = onGpu
-        val level = Renderer.levelFor(view.halfWidth)
+        val level = Zoom.levelFor(view.halfWidth)
         nextLevel = level
         staticReady = regions != null && g != null && g[level] != null && g[level] === lv[level] && weather != null && covers(view.turn, frame)
     }
@@ -224,6 +242,10 @@ internal class GlScene(private val world: World, private val scope: CoroutineSco
         }
         // Sheets go up in the GL thread's frames, which a still view doesn't otherwise ask for.
         if (atlas.uploads.isNotEmpty()) requestRender()
+        if (failed) {
+            step = LoadStep.FAILED
+            return false
+        }
         if (staticReady && !live.missing) atlas.ready = true
         val ready = staticReady && (atlas.ready || !live.begun)
         if (ready && !sharp) { sharp = true; onSharp() }
@@ -328,28 +350,38 @@ internal class GlScene(private val world: World, private val scope: CoroutineSco
     fun lost(context: Int) {
         onGpu = null
         scope.launch {
+            dropped.fill(false)
             atlas.reset(context)
             unpackReleased()
             revision.intValue++
         }
     }
 
-    /** From the GL thread: a level wouldn't go on the GPU, so the map goes back to the chunks, which let go of level 0 as usual. */
-    fun uploadFailed() {
+    /**
+     * From the GL thread: level [level] wouldn't go on the GPU. If it's the one the screen needs, the map can't draw
+     * and the cover says so; any other is dropped, and the zoom stays off it.
+     */
+    fun uploadFailed(level: Int) {
         scope.launch {
-            failed = true
-            unpackReleased()
-            levels = arrayOfNulls(Atlas.LEVELS)
-            sheetsSeen?.keepSharpest = false
+            if (level == nextLevel) failed = true
+            else {
+                dropped[level] = true
+                if (levels[level] != null) levels = levels.copyOf().also { it[level] = null }
+                sheetsSeen?.forget(level)
+            }
+            revision.intValue++
+            requestRender()
         }
     }
+
+    /** The levels the GPU wouldn't take that the screen doesn't need, which aren't asked for again. */
+    private val dropped = BooleanArray(Atlas.LEVELS)
 
     /** The sheets [show] was last given. */
     private var sheetsSeen: Sheets? = null
 
-    /** Whether the GPU couldn't take the sheets; the map draws with the chunks instead. */
-    var failed by mutableStateOf(false)
-        private set
+    /** Whether the GPU couldn't take the sheets; their pixels are kept from then on. */
+    private var failed = false
 
     /**
      * Once the map shows, holds the zoom to the levels on the GPU, at the edge of the nearest, so a zoom never shows
@@ -358,11 +390,11 @@ internal class GlScene(private val world: World, private val scope: CoroutineSco
     private fun holdZoom(view: View, width: Int, height: Int) {
         val g = onGpu ?: return
         if (!sharp) return
-        val want = Renderer.levelFor(view.halfWidth)
+        val want = Zoom.levelFor(view.halfWidth)
         if (g[want] != null) return
-        val near = (Renderer.SHARPEST until Atlas.LEVELS).filter { g[it] != null }.minByOrNull { abs(it - want) } ?: return
+        val near = (Zoom.SHARPEST until Atlas.LEVELS).filter { g[it] != null }.minByOrNull { abs(it - want) } ?: return
         // Zooming in, the nearest is coarser: its sharpest zoom. Zooming out: just past the next one's.
-        val held = if (near > want) Renderer.LEVELS[near] else Renderer.LEVELS[near + 1] * 1.001f
+        val held = if (near > want) Zoom.LEVELS[near] else Zoom.LEVELS[near + 1] * 1.001f
         // About the pinch's centre, so the point under the fingers stays put.
         if (!view.zoomedX.isNaN()) view.zoomAt(held / view.halfWidth, view.zoomedX, view.zoomedY, width.toFloat(), height.toFloat())
         view.halfWidth = held
@@ -413,20 +445,15 @@ internal class GlScene(private val world: World, private val scope: CoroutineSco
      * till the map shows, so it has the decoders to itself. Sheets let go of for another scene come back unpacked again.
      */
     private fun takeLevels(sheets: Sheets, first: Int) {
-        var next: Array<LevelSheets?>? = null
-        for (l in Renderer.SHARPEST until Atlas.LEVELS) {
-            if (l != first && !sharp) continue
-            val had = levels[l]
-            val got = had ?: sheets.get(l)
-            if (got !== had) {
-                if (next == null) next = levels.copyOf()
-                next[l] = got
-            }
+        // A sheet let go of before it went up is unpacked again; one on the GPU keeps its slot.
+        for (l in levels.indices) {
+            if (levels[l]?.released != true || onGpu?.getOrNull(l) === levels[l]) continue
+            levels = levels.copyOf().also { it[l] = null }
+            sheets.forget(l)
         }
-        if (next != null) {
-            levels = next
-            requestRender()
-        }
+        val next = takeLevels(levels, first, sharp, sheets::get, sheets::forget, dropped) ?: return
+        levels = next
+        requestRender()
     }
 
     /** Whether every region with tiles reaching onto [frame]'s screen is recorded for [turn]. */
@@ -529,13 +556,40 @@ internal class GlScene(private val world: World, private val scope: CoroutineSco
         }
     }
 
-    /** Records again the regions of [t] whose world has changed since they were recorded; the old ones show till then. */
+    /**
+     * Records again the regions of [t] whose world has changed since they were recorded, the one holding [lastEdit]
+     * first and then out from it; the old ones show till then.
+     */
     private fun recheck(t: Turn) {
         if (copy == null) return
+        val changed = ArrayList<Int>()
         for (i in t.regions.indices) {
             val r = t.regions[i] ?: continue
             if (t.pending[i] >= 0L) continue
-            if (regionVersion(world, t.turn, i, look, year) != r.version) record(t, i)
+            if (regionVersion(world, t.turn, i, look, year) != r.version) changed += i
+        }
+        if (changed.isEmpty()) return
+        val (ex, ey) = lastEdit
+        if (ex in 0 until world.width && ey in 0 until world.height) {
+            val turned = View(world.width, world.height).also { it.turnBy(t.turn) }
+            val row = (turned.toViewY(ex + 0.5f, ey + 0.5f) / REGION_ROWS).toInt()
+            changed.sortBy { abs(it - row) }
+        }
+        for (i in changed) record(t, i)
+    }
+
+    /** Works out [wear] again every [WEAR_MILLIS] while the condition overlay's on, keeping the last if nothing changed. */
+    private fun copyWear() {
+        if (overlays and MapOverlays.CONDITION == 0) return
+        val last = wear
+        if (last != null && lastWear.elapsedNow().inWholeMilliseconds < WEAR_MILLIS) return
+        lastWear = clock.markNow()
+        val scratch = wearScratch?.takeIf { it.size == world.width * world.height } ?: ByteArray(world.width * world.height)
+        wearScratch = scratch
+        val next = TrackWear.of(world, last, scratch)
+        if (next !== last) {
+            wear = next
+            requestRender()
         }
     }
 
@@ -553,13 +607,13 @@ internal class GlScene(private val world: World, private val scope: CoroutineSco
     }
 
     /**
-     * Copies the weather the first time, then every [Renderer.WEATHER_MILLIS] if it or the world has changed, as the
-     * chunk renderer does, and makes the ground shader's from it.
+     * Copies the weather the first time, then every [WEATHER_MILLIS] if it or the world has changed, and makes
+     * the ground shader's from it.
      */
     private fun copyWeather() {
         if (copying) return
         val last = copy
-        if (last != null && lastCopy.elapsedNow().inWholeMilliseconds < Renderer.WEATHER_MILLIS) return
+        if (last != null && lastCopy.elapsedNow().inWholeMilliseconds < WEATHER_MILLIS) return
         val at = world.weatherVersions.fold(0L) { s, v -> s + v } * 31 + world.chunkVersions.fold(0L) { s, v -> s + v }
         if (last != null && at == copiedAt) return
         copying = true
@@ -569,7 +623,7 @@ internal class GlScene(private val world: World, private val scope: CoroutineSco
         scope.launch {
             // Cleared however the job ends, so a failed or cancelled copy doesn't stop later ones.
             try {
-                val c = withContext(Dispatchers.Default) { WeatherCopy.of(world, (last?.id ?: 0) + 1, 0, last) }
+                val c = withContext(Dispatchers.Default) { WeatherCopy.of(world, (last?.id ?: 0) + 1) }
                 // Regions can record with the copy while the ground shader's weather is made from it.
                 copy = c
                 revision.intValue++
@@ -592,6 +646,12 @@ internal class GlScene(private val world: World, private val scope: CoroutineSco
     private fun curves(): CurveArt = CurveArt(world).also { it.refresh() }
 
     private companion object {
+        /** How often the weather is copied again, at most, in milliseconds. */
+        const val WEATHER_MILLIS = 15_000L
+
+        /** How often the track condition is looked at again while its overlay's on. */
+        const val WEAR_MILLIS = 1_000L
+
         /** How often the world under the regions showing is looked at for changes. */
         const val CHECK_MILLIS = 250L
 
@@ -606,7 +666,53 @@ internal class GlScene(private val world: World, private val scope: CoroutineSco
         const val W_UPLOAD = 0.15f
         const val W_MOVING = 0.15f
 
-        /** The signals sheet's rects at each level, in that level's pixels, as LandPainter.spriteAt divides them. */
+        /** The signals sheet's rects at each level, in that level's pixels: level 0's halved for each level. */
         val signalRects = Array(Atlas.LEVELS) { l -> IntArray(Atlas.SIGNAL_RECTS.size) { Atlas.SIGNAL_RECTS[it] / (1 shl l) } }
+    }
+}
+
+/**
+ * The levels the GPU map takes next from [levels], from [Zoom.SHARPEST] on: each it hasn't got yet that [get] has
+ * unpacked, only [first] unless [all]. Sheets whose pixels another scene let go of are [forget]ten and asked for
+ * again, so they're unpacked once more. Returns the new array, or null if nothing changed.
+ */
+internal fun takeLevels(levels: Array<LevelSheets?>, first: Int, all: Boolean, get: (Int) -> LevelSheets?, forget: (Int) -> Unit, skip: BooleanArray? = null): Array<LevelSheets?>? {
+    var next: Array<LevelSheets?>? = null
+    for (l in Zoom.SHARPEST until Atlas.LEVELS) {
+        if (l != first && !all) continue
+        if (skip != null && skip[l]) continue
+        val had = levels[l]
+        var got = had ?: get(l)
+        if (had == null && got != null && got.released) {
+            forget(l)
+            got = get(l)?.takeUnless { it.released }
+        }
+        if (got !== had) {
+            if (next == null) next = levels.copyOf()
+            next[l] = got
+        }
+    }
+    return next
+}
+
+/**
+ * How worn each world tile's track is, for the condition overlay: a byte a tile, 0 for no track, then 1 very worn,
+ * 2 worn and 3 fine, as the tile recorder's colours go. [version] goes up with each change.
+ */
+internal class TrackWear(val width: Int, val height: Int, val bands: ByteArray, val version: Int) {
+    companion object {
+        /** [world]'s wear now, or [last] if it's the same. */
+        fun of(world: World, last: TrackWear?, scratch: ByteArray? = null): TrackWear {
+            val size = world.width * world.height
+            val bands = if (scratch != null && scratch.size == size) scratch.also { it.fill(0) } else ByteArray(size)
+            for (i in bands.indices) {
+                if (world.track[i].toInt() == 0) continue
+                val c = world.condition[i].toInt() and 255
+                bands[i] = (if (c < VERY_WORN) 1 else if (c < WORN) 2 else 3).toByte()
+            }
+            if (last != null && last.width == world.width && last.height == world.height && last.bands.contentEquals(bands)) return last
+            // The GL thread reads a kept one, so a changed one is a copy.
+            return TrackWear(world.width, world.height, if (bands === scratch) bands.copyOf() else bands, (last?.version ?: 0) + 1)
+        }
     }
 }
