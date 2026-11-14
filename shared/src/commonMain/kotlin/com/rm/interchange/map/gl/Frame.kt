@@ -127,3 +127,104 @@ internal class DrawRuns {
         const val GAP_SPRITES = 64
     }
 }
+
+/** The side of a square of the static map drawn ahead, in the pixels of the level it's drawn at. */
+internal const val SQUARE_SIDE = 512
+
+/** Level [level]'s pixels to [SOURCE_LEVEL]'s. */
+internal fun toSource(level: Int) = SOURCE_HALF_WIDTH / Renderer.LEVELS[level]
+
+/**
+ * The frame that draws square [cx], [cy] of level [level]'s grid for [f]'s turn: [SQUARE_SIDE] level pixels a side,
+ * square 0, 0 having view point 0, 0 at height 0 at its top left corner.
+ */
+internal fun squareFrame(f: GlFrame, level: Int, cx: Int, cy: Int) =
+    GlFrame(f.turn, (-cx * SQUARE_SIDE).toFloat(), (-cy * SQUARE_SIDE).toFloat(), 1f / toSource(level), SQUARE_SIDE, SQUARE_SIDE, f.viewWidth, f.viewHeight)
+
+/** Where square [c] of level [level]'s grid starts on [f]'s screen along x ([y] false) or y, in screen pixels. */
+internal fun squareEdge(f: GlFrame, level: Int, c: Int, y: Boolean) =
+    (if (y) f.originY else f.originX) + c * SQUARE_SIDE * toSource(level) * f.scale
+
+/** The squares of level [level]'s grid [f]'s screen shows: first and last column, then first and last row, inclusive. */
+internal fun squaresOn(f: GlFrame, level: Int): IntArray {
+    val side = SQUARE_SIDE * toSource(level) * f.scale
+    return intArrayOf(
+        floor((0f - f.originX) / side).toInt(), ceil((f.width - f.originX) / side).toInt() - 1,
+        floor((0f - f.originY) / side).toInt(), ceil((f.height - f.originY) / side).toInt() - 1,
+    )
+}
+
+/** Square [cx], [cy] packed into a long, for [squareX] and [squareY]. */
+internal fun packSquare(cx: Int, cy: Int) = (cx.toLong() shl 32) or (cy.toLong() and 0xffffffffL)
+internal fun squareX(k: Long) = (k shr 32).toInt()
+internal fun squareY(k: Long) = k.toInt()
+
+/**
+ * The squares [on] (from [squaresOn]) to draw ahead, packed by [packSquare], the nearest the middle of the screen
+ * first: every one [fresh] says isn't drawn ahead from what shows now, missing and stale alike.
+ */
+internal fun squaresToDraw(on: IntArray, fresh: (cx: Int, cy: Int) -> Boolean): LongArray {
+    val mx = (on[0] + on[1]) / 2f
+    val my = (on[2] + on[3]) / 2f
+    var out = LongArray(0)
+    var n = 0
+    for (cy in on[2]..on[3]) for (cx in on[0]..on[1]) {
+        if (fresh(cx, cy)) continue
+        if (n == out.size) out = out.copyOf(maxOf(8, n * 2))
+        out[n++] = packSquare(cx, cy)
+    }
+    fun near(k: Long): Float { val dx = squareX(k) - mx; val dy = squareY(k) - my; return dx * dx + dy * dy }
+    return out.copyOf(n).sortedBy { near(it) }.toLongArray()
+}
+
+/** GPU memory the squares drawn ahead may take at most, in bytes. */
+internal const val SQUARE_MEMORY = 96L * 1024 * 1024
+
+/**
+ * How many squares to keep drawn ahead on a [width] by [height] screen: the most it shows at any zoom, the ring
+ * round them and the next level out's, up to [SQUARE_MEMORY], but never fewer than the screen shows. A square is
+ * from half its side to its side on screen at its own level, and twice that at the next level out.
+ */
+internal fun squareBudget(width: Int, height: Int): Int {
+    fun fit(px: Int, side: Int) = (px + side - 1) / side + 1
+    val small = SQUARE_SIDE / 2
+    val across = fit(width, small)
+    val down = fit(height, small)
+    val on = across * down
+    val ring = 2 * (across + down) + 4
+    val out = fit(width, SQUARE_SIDE) * fit(height, SQUARE_SIDE)
+    val cap = (SQUARE_MEMORY / (SQUARE_SIDE * SQUARE_SIDE * 4)).toInt()
+    return maxOf(on, minOf(on + ring + out, cap))
+}
+
+/**
+ * The weather corner rows the view tiles [cols] (from [visibleColumns], [viewHeight] rows) read, seen from [turn] on
+ * a map [mapHeight] tiles tall: first and last, with a row to spare each way; the first is the greater if none.
+ */
+internal fun weatherRows(cols: IntArray, viewHeight: Int, turn: Int, mapHeight: Int): IntArray {
+    var vx0 = Int.MAX_VALUE
+    var vx1 = -1
+    var vy0 = Int.MAX_VALUE
+    var vy1 = -1
+    for (vy in 0 until viewHeight) if (cols[2 * vy] <= cols[2 * vy + 1]) {
+        vx0 = min(vx0, cols[2 * vy])
+        vx1 = max(vx1, cols[2 * vy + 1])
+        if (vy0 == Int.MAX_VALUE) vy0 = vy
+        vy1 = vy
+    }
+    if (vy1 < 0) return intArrayOf(1, 0)
+    // The world rows of those tiles: view y runs along world y for turns 0 and 2, view x for 1 and 3.
+    val (t0, t1) = when (turn) {
+        0 -> vy0 to vy1
+        1 -> mapHeight - 1 - vx1 to mapHeight - 1 - vx0
+        2 -> mapHeight - 1 - vy1 to mapHeight - 1 - vy0
+        else -> vx0 to vx1
+    }
+    return intArrayOf(max(0, t0 - 1), min(mapHeight, t1 + 2))
+}
+
+/** Whether no row of [rows] (from [weatherRows]) of [w] changed after its version [since]. */
+internal fun weatherSame(w: GroundWeather, since: Int, rows: IntArray): Boolean {
+    for (r in rows[0]..rows[1]) if (w.rowVersions[r] > since) return false
+    return true
+}

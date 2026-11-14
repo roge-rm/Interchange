@@ -87,34 +87,51 @@ internal class Cover(private val world: World, private val view: View, private v
     }
 
     /** For each column of sprite [cell], its first and last solid rows, or -1 for an empty column; kept for each level. */
-    private fun columns(cell: Int, w: Int, h: Int): IntArray = COLUMNS[level].getOrPut(cell) {
-        // The sprite is packed trimmed, dx and dy in from its box of w by h.
-        val lr = (cell * Atlas.LEVELS + level) * 6
-        val sx = Atlas.STATIC_LEVEL_RECTS[lr]
-        val sy = Atlas.STATIC_LEVEL_RECTS[lr + 1]
-        val tw = Atlas.STATIC_LEVEL_RECTS[lr + 2]
-        val th = Atlas.STATIC_LEVEL_RECTS[lr + 3]
-        val dx = Atlas.STATIC_LEVEL_RECTS[lr + 4]
-        val dy = Atlas.STATIC_LEVEL_RECTS[lr + 5]
-        val src = sheets.static
-        val sw = sheets.staticWidth
-        IntArray(w * 2) { k ->
-            val i = k / 2 - dx
-            var first = -1
-            var last = -1
-            if (i in 0 until tw) {
-                for (j in 0 until minOf(th, h - dy)) {
-                    if (src[(sy + j) * sw + sx + i] ushr 24 >= SOLID) {
-                        if (first < 0) first = j + dy
-                        last = j + dy
-                    }
-                }
-            }
-            if (k % 2 == 0) first else last
-        }
-    }
+    private fun columns(cell: Int, w: Int, h: Int): IntArray = COLUMNS[level].getOrPut(cell) { columnsOf(level, sheets, cell, w, h) }
 
     companion object {
+        /** Every static cell's columns at [level] from [sheets], worked out ahead off the main thread, for [takeColumns]. */
+        internal fun columnsAhead(level: Int, sheets: LevelSheets): HashMap<Int, IntArray> {
+            val out = HashMap<Int, IntArray>()
+            val shrink = 1 shl level
+            for (cell in 0 until Atlas.STATIC_RECTS.size / 6) {
+                val w = Atlas.STATIC_RECTS[cell * 6 + 2] / shrink
+                val h = Atlas.STATIC_RECTS[cell * 6 + 3] / shrink
+                if (w > 0 && h > 0) out[cell] = columnsOf(level, sheets, cell, w, h)
+            }
+            return out
+        }
+
+        /** Keeps [columns] from [columnsAhead], so [level]'s sheet pixels needn't be read again. Main thread. */
+        internal fun takeColumns(level: Int, columns: Map<Int, IntArray>) = COLUMNS[level].putAll(columns)
+
+        private fun columnsOf(level: Int, sheets: LevelSheets, cell: Int, w: Int, h: Int): IntArray {
+            // The sprite is packed trimmed, dx and dy in from its box of w by h.
+            val lr = (cell * Atlas.LEVELS + level) * 6
+            val sx = Atlas.STATIC_LEVEL_RECTS[lr]
+            val sy = Atlas.STATIC_LEVEL_RECTS[lr + 1]
+            val tw = Atlas.STATIC_LEVEL_RECTS[lr + 2]
+            val th = Atlas.STATIC_LEVEL_RECTS[lr + 3]
+            val dx = Atlas.STATIC_LEVEL_RECTS[lr + 4]
+            val dy = Atlas.STATIC_LEVEL_RECTS[lr + 5]
+            val src = sheets.static
+            val sw = sheets.staticWidth
+            return IntArray(w * 2) { k ->
+                val i = k / 2 - dx
+                var first = -1
+                var last = -1
+                if (i in 0 until tw) {
+                    for (j in 0 until minOf(th, h - dy)) {
+                        if (src[(sy + j) * sw + sx + i] ushr 24 >= SOLID) {
+                            if (first < 0) first = j + dy
+                            last = j + dy
+                        }
+                    }
+                }
+                if (k % 2 == 0) first else last
+            }
+        }
+
         /** The view tiles in front of a point's that can stand over it: nearer the camera, below it on screen. */
         private val FRONT = listOf(1 to 0, 0 to 1, 1 to 1, 2 to 1, 1 to 2, 2 to 2, 2 to 0, 0 to 2, 3 to 2, 2 to 3, 3 to 3)
         /** How opaque a pixel has to be to hide what's behind it. */

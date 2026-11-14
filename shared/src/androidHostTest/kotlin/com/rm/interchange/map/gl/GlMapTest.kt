@@ -150,6 +150,93 @@ class GlMapTest {
     }
 
     @Test
+    fun squaresCoverTheScreenAndPlaceAsTheScreenDoes() {
+        for (lv in Renderer.SHARPEST until Renderer.LEVELS.size) for (halfWidth in floatArrayOf(96f, 64f, 40f, 17f, 6f, 3f)) {
+            if (Renderer.levelFor(halfWidth) != lv) continue
+            for ((fx, fy) in listOf(32f to 16f, 5f to 28f, 0f to 0f)) {
+                val f = GlFrame.of(view(1, halfWidth, fx, fy), 800, 1280)
+                val on = squaresOn(f, lv)
+                // The first and last squares each way reach the screen's edges, and no further square does.
+                assertTrue(squareEdge(f, lv, on[0], false) <= 0f && squareEdge(f, lv, on[0] + 1, false) > 0f, "lv $lv hw $halfWidth x0")
+                assertTrue(squareEdge(f, lv, on[1] + 1, false) >= f.width && squareEdge(f, lv, on[1], false) < f.width, "lv $lv hw $halfWidth x1")
+                assertTrue(squareEdge(f, lv, on[2], true) <= 0f && squareEdge(f, lv, on[2] + 1, true) > 0f, "lv $lv hw $halfWidth y0")
+                assertTrue(squareEdge(f, lv, on[3] + 1, true) >= f.height && squareEdge(f, lv, on[3], true) < f.height, "lv $lv hw $halfWidth y1")
+                // A source pixel lands in a square where the screen puts it, scaled to the level.
+                val cx = on[0] + 1
+                val cy = on[2]
+                val sf = squareFrame(f, lv, cx, cy)
+                for (p in floatArrayOf(-700f, 0f, 1234.5f)) {
+                    val k = SQUARE_SIDE * toSource(lv) * f.scale
+                    assertEquals(f.screenX(p), squareEdge(f, lv, cx, false) + sf.screenX(p) / SQUARE_SIDE * k, 0.01f, "lv $lv x $p")
+                    assertEquals(f.screenY(p), squareEdge(f, lv, cy, true) + sf.screenY(p) / SQUARE_SIDE * k, 0.01f, "lv $lv y $p")
+                }
+            }
+        }
+    }
+
+    @Test
+    fun staleSquaresAreDrawnAgainAsMissingOnesAre() {
+        val on = intArrayOf(-1, 2, 0, 2)
+        // Fresh: every other one. Missing and stale both come back as not fresh.
+        val todo = squaresToDraw(on) { cx, cy -> (cx + cy) % 2 == 0 }
+        val want = (0..2).flatMap { cy -> (-1..2).map { cx -> cx to cy } }.filter { (cx, cy) -> (cx + cy) % 2 != 0 }
+        assertEquals(want.toSet(), todo.map { squareX(it) to squareY(it) }.toSet())
+        // The nearest the middle first.
+        val d = todo.map { val dx = squareX(it) - 0.5f; val dy = squareY(it) - 1f; dx * dx + dy * dy }
+        assertEquals(d.sorted(), d)
+        assertEquals(0, squaresToDraw(on) { _, _ -> true }.size)
+        assertEquals(12, squaresToDraw(on) { _, _ -> false }.size)
+    }
+
+    @Test
+    fun squareBudgetHoldsTheScreenAndItsRing() {
+        for ((w, h) in listOf(800 to 1280, 1280 to 800, 1080 to 2400, 1440 to 3200, 320 to 480)) {
+            val budget = squareBudget(w, h)
+            // The most any zoom shows, from the frames themselves.
+            var most = 0
+            for (lv in Renderer.SHARPEST until Renderer.LEVELS.size) for (halfWidth in floatArrayOf(192f, 128f, 96f, 64f, 40f, 33f, 17f, 9f, 6f, 4.1f, 3f)) {
+                if (Renderer.levelFor(halfWidth) != lv) continue
+                for ((fx, fy) in listOf(32f to 16f, 5.3f to 28.7f, 0f to 0f)) {
+                    val on = squaresOn(GlFrame.of(view(0, halfWidth, fx, fy), w, h), lv)
+                    most = max(most, (on[1] - on[0] + 1) * (on[3] - on[2] + 1))
+                }
+            }
+            assertTrue(budget >= most, "${w}x$h budget $budget, screen $most")
+            // Past the memory cap only for a screen that shows about that many.
+            val cap = (SQUARE_MEMORY / (SQUARE_SIDE * SQUARE_SIDE * 4)).toInt()
+            assertTrue(budget <= cap || budget <= most * 3 / 2, "${w}x$h budget $budget over memory")
+        }
+        // A phone screen keeps its ring and the next level out too.
+        assertTrue(squareBudget(800, 1280) >= 30 + 26 + 12)
+    }
+
+    @Test
+    fun squaresReadTheWeatherRowsOfTheirTiles() {
+        for (turn in 0 until 4) {
+            val v = View(world.width, world.height).also { it.turnBy(turn) }
+            val f = GlFrame.of(view(turn, 64f, 20f, 10f), 800, 1280)
+            val lv = Renderer.levelFor(64f)
+            val on = squaresOn(f, lv)
+            for (cy in on[2]..on[3]) for (cx in on[0]..on[1]) {
+                val cols = visibleColumns(squareFrame(f, lv, cx, cy))
+                val rows = weatherRows(cols, f.viewHeight, turn, world.height)
+                for (vy in 0 until f.viewHeight) for (vx in cols[2 * vy]..cols[2 * vy + 1]) {
+                    val y = v.worldY(vx, vy)
+                    assertTrue(y >= rows[0] && y + 1 <= rows[1], "turn $turn square $cx,$cy tile $vx,$vy row $y outside ${rows[0]}..${rows[1]}")
+                }
+                assertTrue(rows[0] >= 0 && rows[1] <= world.height)
+            }
+        }
+        val w = GroundWeather(4, 6, ByteArray(5 * 7 * GroundWeather.TEXEL), 5, intArrayOf(0, 0, 5, 3, 0, 0, 0))
+        assertTrue(weatherSame(w, 5, intArrayOf(0, 6)))
+        assertTrue(weatherSame(w, 4, intArrayOf(3, 6)))
+        assertTrue(!weatherSame(w, 4, intArrayOf(0, 2)))
+        assertTrue(!weatherSame(w, 2, intArrayOf(3, 3)))
+        // None read: nothing to change.
+        assertTrue(weatherSame(w, 0, intArrayOf(1, 0)))
+    }
+
+    @Test
     fun cullingKeepsEverySpriteOnScreen() {
         val w = 1280
         val h = 800

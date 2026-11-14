@@ -1,7 +1,10 @@
 package com.rm.interchange.map.gl
 
 import android.opengl.GLES30.*
+import android.graphics.Bitmap
 import android.opengl.GLSurfaceView
+import android.opengl.GLUtils
+import androidx.compose.ui.graphics.asAndroidBitmap
 import android.util.Log
 import com.rm.interchange.map.Atlas
 import com.rm.interchange.map.ChunkBaker
@@ -107,6 +110,11 @@ internal class GlMapRenderer(private val scene: GlScene, private val page: Int) 
         vao = ids[0]
         groundVao = ids[1]
         liveVao = ids[2]
+        squareProgram = program(SQUARE_VS, SQUARE_FS)
+        convertProgram = program(SQUARE_VS, CONVERT_FS)
+        squareVao = IntArray(1).also { glGenVertexArrays(1, it, 0) }[0]
+        squareFbo = 0
+        squares.clear()
         glGenBuffers(1, ids, 0)
         liveBuffer = ids[0]
         glBindVertexArray(liveVao)
@@ -138,36 +146,27 @@ internal class GlMapRenderer(private val scene: GlScene, private val page: Int) 
     override fun onSurfaceChanged(gl: GL10?, width: Int, height: Int) {
         this.width = width
         this.height = height
+        maxSquares = squareBudget(width, height)
         glViewport(0, 0, width, height)
     }
 
     override fun onDrawFrame(gl: GL10?) {
-        glClearColor(((page shr 16) and 255) / 255f, ((page shr 8) and 255) / 255f, (page and 255) / 255f, 1f)
-        glClearDepthf(0f)
-        glClear(GL_COLOR_BUFFER_BIT or GL_DEPTH_BUFFER_BIT)
-        val shown = scene.shown ?: return
+        drawFrame()
+    }
+
+    private fun drawFrame() {
+        val shown = scene.shown ?: return clearScreen()
         val f = shown.frame
-        // Clip space from source level pixels: screen = origin + p * scale, then to -1..1 with y up.
-        val sx = 2f * f.scale / width
-        val sy = -2f * f.scale / height
-        val tx = 2f * f.originX / width - 1f
-        val ty = 1f - 2f * f.originY / height
-        // Every level's uploaded before the cover lifts, so there's never another level to stand in. A frame that
-        // uploads draws nothing, under the cover, and asks for the next.
-        if (takeLevels(scene.levels)) {
-            scene.requestRender()
-            return
-        }
+        // The screen's level is uploaded before the cover lifts and the zoom's held to levels that are in, so there's
+        // never another level to stand in.
         val lv = Renderer.levelFor(f.scale * SOURCE_HALF_WIDTH)
-        val tex = levels[lv] ?: return
-        val st = tex.static
-        val sh = tex.shadows
-        // Level lv pixels to source level pixels.
-        val toSource = SOURCE_HALF_WIDTH / Renderer.LEVELS[lv]
-        scene.weather?.let { if (it !== weatherUp) upload(it) }
-        if (weatherTex == 0) return
-        uploadRegions(shown)
+        // Vehicles and weather go up while the screen's level is still unpacking.
         takeLive()
+        scene.weather?.let { if (it !== weatherUp) upload(it) }
+        if (takeLevels(scene.levels)) scene.requestRender()
+        val tex = levels[lv] ?: return clearScreen()
+        if (weatherTex == 0) return clearScreen()
+        uploadRegions(shown)
         if (columns.size < f.viewHeight * 2) columns = IntArray(f.viewHeight * 2)
         visibleColumns(f, columns)
         val far = scene.far
@@ -176,55 +175,257 @@ internal class GlMapRenderer(private val scene: GlScene, private val page: Int) 
             if (r != null && far != null && far.covers(r, f)) drawable[i] = null
         }
         runs.build(drawable, columns)
+        // Squares are drawn ahead before the screen, as a tiler pays to come back to a framebuffer it's left.
+        frameNo++
+        val on = squaresOn(f, lv)
+        val left = prepareSquares(f, lv, tex, on)
+        clearScreen()
+        // Clip space from source level pixels: screen = origin + p * scale, then to -1..1 with y up.
+        val xf = floatArrayOf(2f * f.scale / width, -2f * f.scale / height, 2f * f.originX / width - 1f, 1f - 2f * f.originY / height)
         glEnable(GL_BLEND)
-        for (pass in 0 until PASSES) {
-            val shadow = pass == 1
-            val ground = pass == 0
-            val prog = if (ground) groundProgram else if (shadow) shadowProgram else spriteProgram
-            val sheet = if (shadow) sh else st
-            glUseProgram(prog)
-            glBindVertexArray(if (ground) groundVao else vao)
-            // Sprites are premultiplied and the ground is opaque; a shadow darkens what's under it by how dark it is.
-            if (shadow) glBlendFunc(GL_ZERO, GL_ONE_MINUS_SRC_ALPHA) else glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA)
-            glUniform4f(glGetUniformLocation(prog, "uXf"), sx, sy, tx, ty)
-            glUniform2f(glGetUniformLocation(prog, "uPage"), sheet.pages.width.toFloat(), sheet.pages.pageHeight.toFloat())
-            glActiveTexture(GL_TEXTURE0)
-            glBindTexture(GL_TEXTURE_2D_ARRAY, sheet.tex)
-            glUniform1i(glGetUniformLocation(prog, "uSheet"), 0)
-            glActiveTexture(GL_TEXTURE2)
-            glBindTexture(GL_TEXTURE_2D, weatherTex)
-            glUniform1i(glGetUniformLocation(prog, "uWeather"), 2)
-            glActiveTexture(GL_TEXTURE4)
-            glBindTexture(GL_TEXTURE_2D_ARRAY, if (shadow) 0 else tex.up)
-            glUniform1i(glGetUniformLocation(prog, "uUp"), 4)
-            glActiveTexture(GL_TEXTURE5)
-            glBindTexture(GL_TEXTURE_2D, if (shadow) shadowCells else staticCells)
-            glUniform1i(glGetUniformLocation(prog, "uCells"), 5)
-            glUniform1i(glGetUniformLocation(prog, "uCellRows"), cellRows(if (shadow) SpriteRecorder.SHADOW else SpriteRecorder.STATIC))
-            glActiveTexture(GL_TEXTURE0)
-            glUniform1i(glGetUniformLocation(prog, "uLevel"), lv)
-            glUniform1f(glGetUniformLocation(prog, "uToSource"), toSource)
-            if (ground) groundUniforms(f, tex.ground)
-            for (k in runs.passStart[pass] until runs.passStart[pass + 1]) {
-                val b = buffers[runs.region(k)] ?: continue
-                glBindBuffer(GL_ARRAY_BUFFER, b.id)
-                if (ground) {
-                    val at = runs.first(k) * GROUND_BYTES
-                    glVertexAttribIPointer(0, 4, GL_UNSIGNED_INT, GROUND_BYTES, at)
-                    glVertexAttribIPointer(1, 2, GL_INT, GROUND_BYTES, at + 16)
-                    glVertexAttribPointer(2, 4, GL_FLOAT, false, GROUND_BYTES, at + 24)
-                    glVertexAttribPointer(3, 4, GL_FLOAT, false, GROUND_BYTES, at + 40)
-                } else {
-                    val at = b.secondAt + (runs.first(k) - b.region.firstPass) * SPRITE_BYTES
-                    glVertexAttribIPointer(0, 4, GL_INT, SPRITE_BYTES, at)
-                }
-                glDrawArraysInstanced(GL_TRIANGLE_STRIP, 0, 4, runs.count(k))
-            }
+        // The fresh squares mark the depth buffer, so where the rest are the static map is drawn here as it'd have
+        // been, the depth test turning away its pixels elsewhere before they're shaded.
+        glEnable(GL_DEPTH_TEST)
+        glDepthFunc(GL_ALWAYS)
+        drawSquares(f, lv, tex, on)
+        if (left > 0) {
+            glDepthFunc(GL_GREATER)
+            glDepthMask(false)
+            for (pass in 0 until PASSES) drawPass(pass, runs, xf, f, lv, tex)
+            glDepthMask(true)
         }
+        glDisable(GL_DEPTH_TEST)
+        // Back to clear for what moves, which cuts by depth.
+        glClear(GL_DEPTH_BUFFER_BIT)
         shown.live?.let { drawLive(it) }
         glBindVertexArray(0)
         glBindBuffer(GL_ARRAY_BUFFER, 0)
         glDisable(GL_BLEND)
+    }
+
+    private fun clearScreen() {
+        glBindFramebuffer(GL_FRAMEBUFFER, 0)
+        glViewport(0, 0, width, height)
+        glClearColor(((page shr 16) and 255) / 255f, ((page shr 8) and 255) / 255f, (page and 255) / 255f, 1f)
+        glClearDepthf(0f)
+        glClear(GL_COLOR_BUFFER_BIT or GL_DEPTH_BUFFER_BIT)
+    }
+
+    /** Draws pass [pass] of [runs] with clip transform [xf] (scale x, y, then offset x, y from source level pixels) for frame [f] at level [lv]. */
+    private fun drawPass(pass: Int, runs: DrawRuns, xf: FloatArray, f: GlFrame, lv: Int, tex: LevelTextures) {
+        val shadow = pass == 1
+        val ground = pass == 0
+        val prog = if (ground) groundProgram else if (shadow) shadowProgram else spriteProgram
+        val sheet = if (shadow) tex.shadows else tex.static
+        glUseProgram(prog)
+        glBindVertexArray(if (ground) groundVao else vao)
+        // Sprites are premultiplied and the ground is opaque; a shadow darkens what's under it by how dark it is and
+        // keeps its alpha, so a square's stays as the sprites and ground left it.
+        if (shadow) glBlendFuncSeparate(GL_ZERO, GL_ONE_MINUS_SRC_ALPHA, GL_ZERO, GL_ONE) else glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA)
+        glUniform4f(glGetUniformLocation(prog, "uXf"), xf[0], xf[1], xf[2], xf[3])
+        glUniform2f(glGetUniformLocation(prog, "uPage"), sheet.pages.width.toFloat(), sheet.pages.pageHeight.toFloat())
+        glActiveTexture(GL_TEXTURE0)
+        glBindTexture(GL_TEXTURE_2D_ARRAY, sheet.tex)
+        glUniform1i(glGetUniformLocation(prog, "uSheet"), 0)
+        glActiveTexture(GL_TEXTURE2)
+        glBindTexture(GL_TEXTURE_2D, weatherTex)
+        glUniform1i(glGetUniformLocation(prog, "uWeather"), 2)
+        glActiveTexture(GL_TEXTURE4)
+        glBindTexture(GL_TEXTURE_2D_ARRAY, if (shadow) 0 else tex.up)
+        glUniform1i(glGetUniformLocation(prog, "uUp"), 4)
+        glActiveTexture(GL_TEXTURE5)
+        glBindTexture(GL_TEXTURE_2D, if (shadow) shadowCells else staticCells)
+        glUniform1i(glGetUniformLocation(prog, "uCells"), 5)
+        glUniform1i(glGetUniformLocation(prog, "uCellRows"), cellRows(if (shadow) SpriteRecorder.SHADOW else SpriteRecorder.STATIC))
+        glActiveTexture(GL_TEXTURE0)
+        glUniform1i(glGetUniformLocation(prog, "uLevel"), lv)
+        glUniform1f(glGetUniformLocation(prog, "uToSource"), toSource(lv))
+        if (ground) groundUniforms(f, tex.ground)
+        for (k in runs.passStart[pass] until runs.passStart[pass + 1]) {
+            val b = buffers[runs.region(k)] ?: continue
+            glBindBuffer(GL_ARRAY_BUFFER, b.id)
+            if (ground) {
+                val at = runs.first(k) * GROUND_BYTES
+                glVertexAttribIPointer(0, 4, GL_UNSIGNED_INT, GROUND_BYTES, at)
+                glVertexAttribIPointer(1, 2, GL_INT, GROUND_BYTES, at + 16)
+                glVertexAttribPointer(2, 4, GL_FLOAT, false, GROUND_BYTES, at + 24)
+                glVertexAttribPointer(3, 4, GL_FLOAT, false, GROUND_BYTES, at + 40)
+            } else {
+                val at = b.secondAt + (runs.first(k) - b.region.firstPass) * SPRITE_BYTES
+                glVertexAttribIPointer(0, 4, GL_INT, SPRITE_BYTES, at)
+            }
+            glDrawArraysInstanced(GL_TRIANGLE_STRIP, 0, 4, runs.count(k))
+        }
+    }
+
+    /**
+     * A square of the static map drawn ahead into a texture at its level, and what it was drawn from: the level's
+     * textures, the weather, the look and the regions it reaches, [first] on. It's drawn again once any of them change,
+     * the weather only in the corner [rows] it reads.
+     */
+    private class Square(val tex: Int) {
+        var from: LevelTextures? = null
+        var weather: GroundWeather? = null
+        var rows = IntArray(2)
+        var look = -1
+        var first = 0
+        var regions = arrayOfNulls<RegionSprites>(0)
+        var used = 0L
+    }
+    private val squares = HashMap<Long, Square>()
+    private var squareFbo = 0
+    private var squareProgram = 0
+    private var convertProgram = 0
+    private var squareVao = 0
+    private var frameNo = 0L
+    private var squareCols = IntArray(0)
+    private val squareRuns = DrawRuns()
+    /** Squares kept, from [squareBudget] for the screen. */
+    private var maxSquares = squareBudget(1, 1)
+
+    private fun squareKey(turn: Int, lv: Int, cx: Int, cy: Int) =
+        ((turn.toLong() * 8 + lv) shl 48) or ((cx + 0x800000L) shl 24) or (cy + 0x800000L)
+
+    private fun squareColumns(f: GlFrame): IntArray {
+        if (squareCols.size < f.viewHeight * 2) squareCols = IntArray(f.viewHeight * 2)
+        return squareCols
+    }
+
+    /** Whether square [s] was drawn from what's showing now; a new weather with no change in its rows is taken as its own. */
+    private fun fresh(s: Square, tex: LevelTextures): Boolean {
+        if (s.from !== tex || s.look != scene.look) return false
+        for (i in s.regions.indices) if (drawable.getOrNull(s.first + i) !== s.regions[i]) return false
+        val w = weatherUp ?: return false
+        if (s.weather !== w) {
+            val was = s.weather ?: return false
+            if (was.width != w.width || was.height != w.height || w.version < was.version || !weatherSame(w, was.version, s.rows)) return false
+            s.weather = w
+        }
+        return true
+    }
+
+    /**
+     * Draws ahead the squares [on] (columns then rows, inclusive) of level [lv] that are missing or stale, a few a
+     * frame, the nearest the middle of the screen first, then one round the screen if there's time. Returns how many
+     * on screen are still not fresh, which the direct passes draw; asks for another frame while it gets through them.
+     */
+    private fun prepareSquares(f: GlFrame, lv: Int, tex: LevelTextures, on: IntArray): Int {
+        val turn = f.turn
+        val todo = squaresToDraw(on) { cx, cy ->
+            val s = squares[squareKey(turn, lv, cx, cy)]
+            s?.used = frameNo
+            s != null && fresh(s, tex)
+        }
+        var made = 0
+        for (k in todo) if (made < SQUARES_A_FRAME && drawSquare(f, lv, tex, squareX(k), squareY(k))) made++
+        val left = todo.size - made
+        if (todo.isEmpty() && !ahead(f, lv, tex, on, true)) {
+            // Then the next level out's, a quarter as many, so a zoom out finds them there.
+            val out = lv + 1
+            val outTex = levels.getOrNull(out)
+            if (outTex != null) ahead(f, out, outTex, squaresOn(f, out), false)
+        }
+        glBindFramebuffer(GL_FRAMEBUFFER, 0)
+        // A still view asks for no frames, so keep going till they're all in; regions not in yet ask when they come.
+        if (made > 0 && left > 0) scene.requestRender()
+        return left
+    }
+
+    /** Draws ahead one square of level [lv] not drawn yet: round [on] if [ring], else on it. Returns whether it drew one. */
+    private fun ahead(f: GlFrame, lv: Int, tex: LevelTextures, on: IntArray, ring: Boolean): Boolean {
+        val m = if (ring) 1 else 0
+        for (cy in on[2] - m..on[3] + m) for (cx in on[0] - m..on[1] + m) {
+            if (ring && cx in on[0]..on[1] && cy in on[2]..on[3]) continue
+            if (squares[squareKey(f.turn, lv, cx, cy)] != null) continue
+            if (drawSquare(f, lv, tex, cx, cy)) return true
+        }
+        return false
+    }
+
+    /** Draws square [cx], [cy] of level [lv] ahead; false if a region it reaches isn't ready, so it can't be yet. */
+    private fun drawSquare(f: GlFrame, lv: Int, tex: LevelTextures, cx: Int, cy: Int): Boolean {
+        val sf = squareFrame(f, lv, cx, cy)
+        val cols = squareColumns(f)
+        visibleColumns(sf, cols)
+        var r0 = Int.MAX_VALUE
+        var r1 = -1
+        for (vy in 0 until f.viewHeight) if (cols[2 * vy] <= cols[2 * vy + 1]) {
+            r0 = minOf(r0, vy / REGION_ROWS)
+            r1 = vy / REGION_ROWS
+        }
+        if (r1 < 0) { r0 = 0; r1 = -1 }
+        for (i in r0..r1) if (drawable.getOrNull(i) == null) return false
+        val key = squareKey(f.turn, lv, cx, cy)
+        val s = squares[key] ?: Square(squareTexture()).also { evictSquares(); squares[key] = it }
+        s.used = frameNo
+        if (squareFbo == 0) squareFbo = IntArray(1).also { glGenFramebuffers(1, it, 0) }[0]
+        glBindFramebuffer(GL_FRAMEBUFFER, squareFbo)
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, s.tex, 0)
+        glViewport(0, 0, SQUARE_SIDE, SQUARE_SIDE)
+        glClearColor(0f, 0f, 0f, 0f)
+        glClear(GL_COLOR_BUFFER_BIT)
+        glEnable(GL_BLEND)
+        squareRuns.build(drawable, cols)
+        val xf = floatArrayOf(2f * sf.scale / SQUARE_SIDE, -2f * sf.scale / SQUARE_SIDE, 2f * sf.originX / SQUARE_SIDE - 1f, 1f - 2f * sf.originY / SQUARE_SIDE)
+        for (pass in 0 until PASSES) drawPass(pass, squareRuns, xf, f, lv, tex)
+        glDisable(GL_BLEND)
+        s.from = tex
+        s.weather = weatherUp
+        s.rows = weatherRows(cols, f.viewHeight, f.turn, weatherUp!!.height)
+        s.look = scene.look
+        s.first = r0
+        s.regions = Array(maxOf(0, r1 - r0 + 1)) { drawable[r0 + it] }
+        return true
+    }
+
+    private fun squareTexture(): Int {
+        val ids = IntArray(1)
+        glGenTextures(1, ids, 0)
+        glBindTexture(GL_TEXTURE_2D, ids[0])
+        glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, SQUARE_SIDE, SQUARE_SIDE)
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR)
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR)
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE)
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE)
+        glBindTexture(GL_TEXTURE_2D, 0)
+        return ids[0]
+    }
+
+    /** Lets go of the squares longest unused while there are [maxSquares] or more, but none used this frame. */
+    private fun evictSquares() {
+        if (squares.size < maxSquares) return
+        val old = squares.entries.filter { it.value.used < frameNo }.sortedBy { it.value.used }
+        for (e in old.take(squares.size - maxSquares + 1)) {
+            glDeleteTextures(1, intArrayOf(e.value.tex), 0)
+            squares.remove(e.key)
+        }
+    }
+
+    private fun freeSquares() {
+        for (s in squares.values) glDeleteTextures(1, intArrayOf(s.tex), 0)
+        squares.clear()
+    }
+
+    /** Draws the squares [on] that are drawn ahead and fresh onto the screen; the direct passes draw the rest. */
+    private fun drawSquares(f: GlFrame, lv: Int, tex: LevelTextures, on: IntArray) {
+        glUseProgram(squareProgram)
+        glBindVertexArray(squareVao)
+        glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA)
+        glActiveTexture(GL_TEXTURE0)
+        glUniform1i(glGetUniformLocation(squareProgram, "uTex"), 0)
+        val rect = glGetUniformLocation(squareProgram, "uRect")
+        for (cy in on[2]..on[3]) for (cx in on[0]..on[1]) {
+            val s = squares[squareKey(f.turn, lv, cx, cy)] ?: continue
+            if (!fresh(s, tex)) continue
+            val x0 = squareEdge(f, lv, cx, false)
+            val x1 = squareEdge(f, lv, cx + 1, false)
+            val y0 = squareEdge(f, lv, cy, true)
+            val y1 = squareEdge(f, lv, cy + 1, true)
+            glBindTexture(GL_TEXTURE_2D, s.tex)
+            glUniform4f(rect, 2f * x0 / width - 1f, 1f - 2f * y0 / height, 2f * x1 / width - 1f, 1f - 2f * y1 / height)
+            glDrawArrays(GL_TRIANGLE_STRIP, 0, 4)
+        }
+        glBindTexture(GL_TEXTURE_2D, 0)
     }
 
     /**
@@ -356,6 +557,8 @@ internal class GlMapRenderer(private val scene: GlScene, private val page: Int) 
         val side = livePageSide(u.level)
         val c = u.cells
         glPixelStorei(GL_UNPACK_ALIGNMENT, 1)
+        // A premultiplied bitmap goes up a sprite at a time as it's held, with no sums on the CPU.
+        val bitmap = u.image.asAndroidBitmap().takeIf { it.config == Bitmap.Config.ARGB_8888 && it.isPremultiplied }
         for (k in 0 until c.size / LiveAtlas.UP) {
             val o = k * LiveAtlas.UP
             val page = c[o + 4]
@@ -363,6 +566,14 @@ internal class GlMapRenderer(private val scene: GlScene, private val page: Int) 
             while (pages.size <= page) pages += livePage(side)
             val w = c[o + 2]
             val h = c[o + 3]
+            if (bitmap != null) {
+                if (w <= 0 || h <= 0) continue
+                val one = Bitmap.createBitmap(bitmap, c[o], c[o + 1], w, h)
+                glBindTexture(GL_TEXTURE_2D, pages[page])
+                GLUtils.texSubImage2D(GL_TEXTURE_2D, 0, c[o + 5], c[o + 6], one)
+                if (one !== bitmap) one.recycle()
+                continue
+            }
             if (spritePixels.size < w * h) spritePixels = IntArray(w * h)
             u.image.readPixels(spritePixels, c[o], c[o + 1], w, h)
             if (strip.size < w * h * 4) strip = ByteArray(w * h * 4)
@@ -385,6 +596,7 @@ internal class GlMapRenderer(private val scene: GlScene, private val page: Int) 
     }
 
     private var spritePixels = IntArray(0)
+    private var strip = ByteArray(0)
     private var spriteBytes = ByteBuffer.allocateDirect(0)
 
     /** A clear page [side] square, filtered as the sheets are. */
@@ -532,8 +744,8 @@ internal class GlMapRenderer(private val scene: GlScene, private val page: Int) 
     }
 
     /**
-     * Uploads the levels [from] has that aren't on the GPU yet, lets go of those it's dropped and tells [scene] they're
-     * in, or that they wouldn't go. Returns whether anything changed.
+     * Uploads the levels [from] has that aren't on the GPU yet, lets go of those it's dropped and tells [scene] which
+     * are in, or that they wouldn't go. Returns whether anything changed.
      */
     private fun takeLevels(from: Array<LevelSheets?>): Boolean {
         if (failed) return false
@@ -543,6 +755,8 @@ internal class GlMapRenderer(private val scene: GlScene, private val page: Int) 
             val want = from.getOrNull(l)
             val have = levels[l]
             if (have?.from === want) continue
+            // Let go of after an upload to a context since lost; the scene unpacks them again.
+            if (want != null && want.released) continue
             changed = true
             if (have != null) {
                 glDeleteTextures(4, have.textures, 0)
@@ -551,6 +765,7 @@ internal class GlMapRenderer(private val scene: GlScene, private val page: Int) 
             if (want != null) {
                 val t = try { upload(l, want) } catch (e: IllegalArgumentException) { Log.e(TAG, "gl level $l won't fit: ${e.message}"); null }
                 val error = glGetError()
+                if (t == null && error == GL_NO_ERROR && (want.released || want.static.isEmpty())) continue
                 if (t == null || error != GL_NO_ERROR) {
                     if (error != GL_NO_ERROR) Log.e(TAG, "gl level $l upload failed, GL error 0x${error.toString(16)}")
                     if (t != null) glDeleteTextures(4, t.textures, 0)
@@ -562,7 +777,8 @@ internal class GlMapRenderer(private val scene: GlScene, private val page: Int) 
             }
             Log.i(TAG, "gl level $l ${if (want != null) "up" else "dropped"}, level textures ${levels.sumOf { it?.bytes ?: 0L } / 1_000_000} MB")
         }
-        if (changed) scene.uploaded(from)
+        // What's really up, leaving out levels skipped, so the scene counts only those.
+        if (changed) scene.uploaded(Array(levels.size) { levels[it]?.from })
         return changed
     }
 
@@ -571,19 +787,24 @@ internal class GlMapRenderer(private val scene: GlScene, private val page: Int) 
      * sheet's sky-facing bits (the low two of blue) taken out into a texture of their own, its ground and its rows of
      * the cell tables. No mipmaps on the sprites: each level is drawn from half to twice its size, as a chunk is.
      */
-    private fun upload(level: Int, sheets: LevelSheets): LevelTextures {
+    private fun upload(level: Int, sheets: LevelSheets): LevelTextures? {
         val t0 = System.nanoTime()
-        val sp = AtlasPages(sheets.staticWidth, sheets.static.size / sheets.staticWidth, AtlasPages.tallestStatic(level), maxTexture)
-        val hp = AtlasPages(sheets.shadowWidth, sheets.shadows.size / sheets.shadowWidth, AtlasPages.tallestShadow(level), maxTexture)
+        // Taken before the released flag's read; the main thread may let go of them once they're up in a context since lost.
+        val staticPixels = sheets.static
+        val shadowPixels = sheets.shadows
+        val groundPixels = sheets.ground
+        if (sheets.released || staticPixels.isEmpty() || shadowPixels.isEmpty() || groundPixels.isEmpty()) return null
+        val sp = AtlasPages(sheets.staticWidth, staticPixels.size / sheets.staticWidth, AtlasPages.tallestStatic(level), maxTexture)
+        val hp = AtlasPages(sheets.shadowWidth, shadowPixels.size / sheets.shadowWidth, AtlasPages.tallestShadow(level), maxTexture)
         require(sp.layers <= maxLayers && hp.layers <= maxLayers) { "${maxOf(sp.layers, hp.layers)} layers, up to $maxLayers" }
-        val static = Paged(pagedTexture(sp, GL_RGBA8) { y0, rows, buf -> premultiplied(sheets.static, sheets.staticWidth, y0, rows, buf) }, sp)
-        val up = pagedTexture(sp, GL_R8) { y0, rows, buf -> skyBits(sheets.static, sheets.staticWidth, y0, rows, buf) }
-        val shadows = Paged(pagedTexture(hp, GL_R8) { y0, rows, buf -> buf.put(sheets.shadows, y0 * sheets.shadowWidth, rows * sheets.shadowWidth) }, hp)
+        val (staticTex, up) = staticTextures(sp, staticPixels)
+        val static = Paged(staticTex, sp)
+        val shadows = Paged(pagedTexture(hp, GL_R8) { y0, rows, buf -> buf.put(shadowPixels, y0 * sheets.shadowWidth, rows * sheets.shadowWidth) }, hp)
         cellRow(staticCells, SpriteRecorder.STATIC, level, sp)
         cellRow(shadowCells, SpriteRecorder.SHADOW, level, hp)
-        val ground = groundTexture(sheets.ground)
+        val ground = groundTexture(groundPixels)
         // The ground with its mipmaps, a third again.
-        val bytes = sp.width.toLong() * sp.pageHeight * sp.layers * 5 + hp.width.toLong() * hp.pageHeight * hp.layers + sheets.ground.size * 16L / 3
+        val bytes = sp.width.toLong() * sp.pageHeight * sp.layers * 5 + hp.width.toLong() * hp.pageHeight * hp.layers + groundPixels.size * 16L / 3
         Log.i(TAG, "gl sheets L$level static ${sp.width}x${sp.pageHeight}x${sp.layers} shadows ${hp.width}x${hp.pageHeight}x${hp.layers} " +
             "MB=${bytes / 1_000_000} maxTex=$maxTexture ms=${(System.nanoTime() - t0) / 1_000_000}")
         return LevelTextures(sheets, static, up, shadows, ground, bytes)
@@ -621,23 +842,19 @@ internal class GlMapRenderer(private val scene: GlScene, private val page: Int) 
         glBindTexture(GL_TEXTURE_2D_ARRAY, ids[0])
         val levels = 1 + (31 - Integer.numberOfLeadingZeros(size))
         glTexStorage3D(GL_TEXTURE_2D_ARRAY, levels, GL_RGBA8, size, size, layers)
-        glPixelStorei(GL_UNPACK_ALIGNMENT, 1)
-        val out = ByteArray(size * size * 4)
-        val buf = ByteBuffer.allocateDirect(out.size)
+        glPixelStorei(GL_UNPACK_ALIGNMENT, 4)
+        // The ARGB ints go up as they are, blue byte first, and the swizzle reads them back as RGB, opaque.
+        val buf = ByteBuffer.allocateDirect(size * size * 4).order(ByteOrder.nativeOrder())
+        val ints = buf.asIntBuffer()
         for (layer in 0 until layers) {
-            var k = 0
-            for (i in layer * size * size until (layer + 1) * size * size) {
-                val p = ground[i]
-                out[k] = (p shr 16).toByte()
-                out[k + 1] = (p shr 8).toByte()
-                out[k + 2] = p.toByte()
-                out[k + 3] = -1
-                k += 4
-            }
-            buf.clear()
-            buf.put(out).flip()
+            ints.clear()
+            ints.put(ground, layer * size * size, size * size)
+            buf.position(0)
             glTexSubImage3D(GL_TEXTURE_2D_ARRAY, 0, 0, 0, layer, size, size, 1, GL_RGBA, GL_UNSIGNED_BYTE, buf)
         }
+        glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_SWIZZLE_R, GL_BLUE)
+        glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_SWIZZLE_B, GL_RED)
+        glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_SWIZZLE_A, GL_ONE)
         glGenerateMipmap(GL_TEXTURE_2D_ARRAY)
         glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR)
         glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAG_FILTER, GL_LINEAR)
@@ -680,38 +897,79 @@ internal class GlMapRenderer(private val scene: GlScene, private val page: Int) 
         return ids[0]
     }
 
-    /** Rows [y0] until y0 + [rows] of an ARGB sheet [w] wide into [buf] as premultiplied RGBA bytes, the sky-facing bits taken out of blue. */
-    private fun premultiplied(src: IntArray, w: Int, y0: Int, rows: Int, buf: ByteBuffer) {
-        val n = rows * w
-        if (strip.size < n * 4) strip = ByteArray(n * 4)
-        val out = strip
-        var k = 0
-        for (i in y0 * w until y0 * w + n) {
-            val p = src[i]
-            val a = p ushr 24
-            out[k] = (((p shr 16) and 255) * a / 255).toByte()
-            out[k + 1] = (((p shr 8) and 255) * a / 255).toByte()
-            out[k + 2] = ((p and 252) * a / 255).toByte()
-            out[k + 3] = a.toByte()
-            k += 4
+    /**
+     * The static sheet [src] (ARGB) as texture arrays cut as [pages] says: premultiplied RGBA with the sky-facing bits
+     * (the low two of blue) taken out, and those bits on their own as 0 to 255. The ints go up as they are, a strip of
+     * rows at a time, and [CONVERT_FS] works both out on the GPU, the same sums the CPU would do.
+     */
+    private fun staticTextures(pages: AtlasPages, src: IntArray): Pair<Int, Int> {
+        val w = pages.width
+        val ids = IntArray(4)
+        glGenTextures(3, ids, 0)
+        val colour = ids[0]
+        val up = ids[1]
+        val raw = ids[2]
+        glBindTexture(GL_TEXTURE_2D_ARRAY, colour)
+        glTexStorage3D(GL_TEXTURE_2D_ARRAY, 1, GL_RGBA8, w, pages.pageHeight, pages.layers)
+        linear(GL_TEXTURE_2D_ARRAY)
+        glBindTexture(GL_TEXTURE_2D_ARRAY, up)
+        glTexStorage3D(GL_TEXTURE_2D_ARRAY, 1, GL_R8, w, pages.pageHeight, pages.layers)
+        linear(GL_TEXTURE_2D_ARRAY)
+        glBindTexture(GL_TEXTURE_2D_ARRAY, 0)
+        glBindTexture(GL_TEXTURE_2D, raw)
+        glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8UI, w, STRIP_ROWS)
+        nearest(GL_TEXTURE_2D)
+        glGenFramebuffers(1, ids, 3)
+        glBindFramebuffer(GL_FRAMEBUFFER, ids[3])
+        glDrawBuffers(2, intArrayOf(GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1), 0)
+        glDisable(GL_BLEND)
+        glUseProgram(convertProgram)
+        glBindVertexArray(squareVao)
+        // The whole viewport, a strip of a layer each draw.
+        glUniform4f(glGetUniformLocation(convertProgram, "uRect"), -1f, -1f, 1f, 1f)
+        glActiveTexture(GL_TEXTURE0)
+        glUniform1i(glGetUniformLocation(convertProgram, "uRaw"), 0)
+        val y0At = glGetUniformLocation(convertProgram, "uY0")
+        glPixelStorei(GL_UNPACK_ALIGNMENT, 4)
+        val bytes = ByteBuffer.allocateDirect(w * STRIP_ROWS * 4).order(ByteOrder.nativeOrder())
+        val ints = bytes.asIntBuffer()
+        val zeros = IntArray(w * STRIP_ROWS)
+        for (layer in 0 until pages.layers) {
+            glFramebufferTextureLayer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, colour, 0, layer)
+            glFramebufferTextureLayer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT1, up, 0, layer)
+            val (first, rows) = pages.rowsOf(layer)
+            var y = 0
+            while (y < pages.pageHeight) {
+                val n = minOf(STRIP_ROWS, pages.pageHeight - y)
+                val real = (rows - y).coerceIn(0, n)
+                ints.clear()
+                if (real > 0) ints.put(src, (first + y) * w, real * w)
+                // Rows past the sheet's end are clear.
+                if (real < n) ints.put(zeros, 0, (n - real) * w)
+                bytes.position(0)
+                glBindTexture(GL_TEXTURE_2D, raw)
+                glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, w, n, GL_RGBA_INTEGER, GL_UNSIGNED_BYTE, bytes)
+                glViewport(0, y, w, n)
+                glUniform1i(y0At, y)
+                glDrawArrays(GL_TRIANGLE_STRIP, 0, 4)
+                y += n
+            }
         }
-        buf.put(out, 0, n * 4)
+        glBindFramebuffer(GL_FRAMEBUFFER, 0)
+        glDeleteFramebuffers(1, ids, 3)
+        glBindTexture(GL_TEXTURE_2D, 0)
+        glDeleteTextures(1, ids, 2)
+        glBindVertexArray(0)
+        glViewport(0, 0, width, height)
+        return colour to up
     }
 
-    /** The same rows' sky-facing bits (0 to 3) as bytes 0 to 255, for blending as the sheet is. */
-    private fun skyBits(src: IntArray, w: Int, y0: Int, rows: Int, buf: ByteBuffer) {
-        val n = rows * w
-        if (strip.size < n) strip = ByteArray(n)
-        val out = strip
-        var k = 0
-        for (i in y0 * w until y0 * w + n) {
-            val p = src[i]
-            out[k++] = (if (p ushr 24 == 0) 0 else (p and 3) * 85).toByte()
-        }
-        buf.put(out, 0, n)
+    private fun linear(target: Int) {
+        glTexParameteri(target, GL_TEXTURE_MIN_FILTER, GL_LINEAR)
+        glTexParameteri(target, GL_TEXTURE_MAG_FILTER, GL_LINEAR)
+        glTexParameteri(target, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE)
+        glTexParameteri(target, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE)
     }
-
-    private var strip = ByteArray(0)
 
     private fun freeBuffers() {
         for (b in buffers) if (b != null) glDeleteBuffers(1, intArrayOf(b.id), 0)
@@ -721,6 +979,15 @@ internal class GlMapRenderer(private val scene: GlScene, private val page: Int) 
     /** Frees every texture, buffer and program, as the surface goes. */
     fun release() {
         freeBuffers()
+        freeSquares()
+        if (squareFbo != 0) glDeleteFramebuffers(1, intArrayOf(squareFbo), 0)
+        squareFbo = 0
+        if (squareVao != 0) glDeleteVertexArrays(1, intArrayOf(squareVao), 0)
+        squareVao = 0
+        if (squareProgram != 0) glDeleteProgram(squareProgram)
+        squareProgram = 0
+        if (convertProgram != 0) glDeleteProgram(convertProgram)
+        convertProgram = 0
         for (p in livePages) {
             if (p.isNotEmpty()) glDeleteTextures(p.size, p.toIntArray(), 0)
             p.clear()
@@ -779,8 +1046,53 @@ internal class GlMapRenderer(private val scene: GlScene, private val page: Int) 
         const val GRADE_KINDS = 8
         /** Live pages bound at once, each to its own texture unit. */
         const val LIVE_UNITS = 8
+        /** Squares drawn ahead a frame while some on screen are missing, each a quarter of a screen's pixels at its level. */
+        const val SQUARES_A_FRAME = 2
     }
 }
+
+/** A square of the static map drawn ahead, onto its place on screen (clip space left, top, right, bottom). */
+private const val SQUARE_VS = """#version 300 es
+precision highp float;
+uniform vec4 uRect;
+out vec2 vUv;
+void main() {
+    vec2 o = vec2(float(gl_VertexID & 1), float(gl_VertexID >> 1));
+    // Its top row was drawn at the texture's top.
+    vUv = vec2(o.x, 1.0 - o.y);
+    // At the far depth, to keep the first pass drawn after it off.
+    gl_Position = vec4(mix(uRect.xy, uRect.zw, o), 1.0, 1.0);
+}
+"""
+
+private const val SQUARE_FS = """#version 300 es
+precision mediump float;
+uniform sampler2D uTex;
+in highp vec2 vUv;
+out vec4 frag;
+void main() {
+    frag = texture(uTex, vUv);
+}
+"""
+
+/**
+ * Converts a strip of the static sheet, its ARGB ints read as RGBA8UI (blue byte first), into the sheet's texture
+ * (premultiplied, the sky-facing bits out of blue) and the sky-facing bits' own, as the CPU did with integer sums.
+ */
+private const val CONVERT_FS = """#version 300 es
+precision highp float;
+precision highp int;
+uniform highp usampler2D uRaw;
+uniform int uY0;
+layout(location = 0) out vec4 oColour;
+layout(location = 1) out vec4 oUp;
+void main() {
+    uvec4 t = texelFetch(uRaw, ivec2(int(gl_FragCoord.x), int(gl_FragCoord.y) - uY0), 0);
+    uint a = t.a;
+    oColour = vec4(float(t.b * a / 255u), float(t.g * a / 255u), float((t.r & 252u) * a / 255u), float(a)) / 255.0;
+    oUp = vec4(a == 0u ? 0.0 : float((t.r & 3u) * 85u) / 255.0, 0.0, 0.0, 0.0);
+}
+"""
 
 /** The second and third passes' sprites: anchor x and y, cell and snow tile, placed by [SPRITE_PLACE]. */
 private val SPRITE_VS = """#version 300 es

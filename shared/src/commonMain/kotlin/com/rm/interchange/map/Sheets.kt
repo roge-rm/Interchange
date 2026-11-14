@@ -17,12 +17,33 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.jetbrains.compose.resources.ExperimentalResourceApi
 import org.jetbrains.compose.resources.decodeToImageBitmap
+import kotlin.concurrent.Volatile
 
 /**
  * One zoom level's sheets: the ground textures and the static sprites as pixels for baking, the shadows as a byte a
  * pixel of how dark, and the signals as a bitmap for drawing.
  */
-class LevelSheets(val ground: IntArray, val static: IntArray, val staticWidth: Int, val shadows: ByteArray, val shadowWidth: Int, val signals: ImageBitmap)
+class LevelSheets(ground: IntArray, static: IntArray, val staticWidth: Int, shadows: ByteArray, val shadowWidth: Int, val signals: ImageBitmap) {
+    var ground = ground
+        private set
+    var static = static
+        private set
+    var shadows = shadows
+        private set
+
+    /** Set once the pixels are let go of, before they go; a reader on another thread takes them, then checks this and that none is empty. */
+    @Volatile
+    var released = false
+        private set
+
+    /** Lets go of the pixels, for the GPU map once they're on the GPU; the signals stay. */
+    fun release() {
+        released = true
+        ground = IntArray(0)
+        static = IntArray(0)
+        shadows = ByteArray(0)
+    }
+}
 
 /**
  * A vehicle drawing: its level 0 rects, as [Atlas.VEHICLE_RECTS] has them for one vehicle (32 sprites, or the 16 of a
@@ -63,10 +84,18 @@ class Sheets(private val packed: PackedSheets, private val scope: CoroutineScope
     /** Keeps the sharpest level once unpacked, for the GPU map, which holds every level; one copy for both. */
     var keepSharpest = false
 
+    /**
+     * [level]'s sheets, or null while they unpack. Sheets whose pixels the GPU map let go of come back only with
+     * [orReleased], for what draws over the GPU map; anyone else gets them unpacked again.
+     */
     @OptIn(ExperimentalResourceApi::class)
-    fun get(level: Int): LevelSheets? {
+    fun get(level: Int, orReleased: Boolean = false): LevelSheets? {
         if (level < Renderer.SHARPEST) return null
-        levels[level]?.let { return it }
+        levels[level]?.let {
+            if (orReleased || !it.released) return it
+            levels[level] = null
+            unpacking[level] = false
+        }
         if (!unpacking[level]) {
             unpacking[level] = true
             decoding[level] = scope.launch {
@@ -293,10 +322,17 @@ class Sheets(private val packed: PackedSheets, private val scope: CoroutineScope
         return null
     }
 
+    /** Forgets [level]'s sheets, so the next [get] unpacks them again: for the GPU map's, once it's let go of their pixels and needs them back. */
+    fun forget(level: Int) {
+        if (decoding[level] != null) return
+        levels[level] = null
+        unpacking[level] = false
+    }
+
     /** The level nearest [level] that's unpacked, for drawing scaled until it is. */
-    fun nearest(level: Int): Int? {
-        get(level)?.let { return level }
-        return levels.indices.filter { levels[it] != null }.minByOrNull { kotlin.math.abs(it - level) }
+    fun nearest(level: Int, orReleased: Boolean = false): Int? {
+        get(level, orReleased)?.let { return level }
+        return levels.indices.filter { levels[it]?.let { s -> orReleased || !s.released } == true }.minByOrNull { kotlin.math.abs(it - level) }
     }
 
     private companion object {

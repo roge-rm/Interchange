@@ -84,9 +84,9 @@ internal fun DrawScope.drawMoving(world: World, view: View, sheets: Sheets, movi
     // The level's sheet, or the nearest one unpacked while it isn't yet.
     val start = Renderer.levelFor(view.halfWidth)
     moving.now.vehicles.let { sheets.askVehicles(it, start, view.focusX, view.focusY) }
-    val level = sheets.nearest(start) ?: return
+    val level = sheets.nearest(start, live != null) ?: return
     val hw = Renderer.LEVELS[level]
-    val painter = LandPainter(world, view, hw, sheets.get(level)?.signals)
+    val painter = LandPainter(world, view, hw, sheets.get(level, live != null)?.signals)
     val scale = view.halfWidth / hw
     // Everything to draw, as depth, x, y, sprite, and which vehicle's sheet it's on (-1 for the signals').
     val items = ArrayList<FloatArray>()
@@ -421,7 +421,7 @@ internal fun DrawScope.drawMoving(world: World, view: View, sheets: Sheets, movi
     }
     val lit = if (view.halfWidth >= LIT_FROM) litPieces(world, view, moving, items) else emptyList()
     items.sortBy { it[0] }
-    val cover = Cover(world, view, level, sheets.get(level) ?: return)
+    val cover = Cover(world, view, level, sheets.get(level, live != null) ?: return)
     if (live != null) {
         live.begin(level, hw, scale, depthSpan(view.viewWidth, view.viewHeight))
         val w = size.width

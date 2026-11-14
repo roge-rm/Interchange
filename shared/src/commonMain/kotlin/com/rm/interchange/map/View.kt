@@ -24,6 +24,10 @@ class View(val mapWidth: Int, val mapHeight: Int) {
     var focusX = mapWidth / 2f
     var focusY = mapHeight / 2f
 
+    /** The screen point the last [zoomAt] zoomed about, in pixels; NaN before any. */
+    var zoomedX = Float.NaN
+    var zoomedY = Float.NaN
+
     /** Half a tile's width on screen, in pixels. A tile is twice as wide as it is tall. */
     var halfWidth = START_HALF_WIDTH
     val halfHeight get() = halfWidth / 2
@@ -219,6 +223,8 @@ fun groundHeight(world: World, x: Float, y: Float): Float {
 
 /** Zooms by [by] keeping the point under ([px], [py]) where it is, on a screen [w] by [h]. */
 fun View.zoomAt(by: Float, px: Float, py: Float, w: Float, h: Float) {
+    zoomedX = px
+    zoomedY = py
     val a0 = (px - w / 2) / halfWidth
     val b0 = (py - h / 2) / halfHeight
     zoom(by)

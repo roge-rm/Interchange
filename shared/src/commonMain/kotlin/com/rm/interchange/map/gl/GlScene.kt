@@ -8,12 +8,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.ImageBitmap
 import com.rm.interchange.map.Atlas
+import com.rm.interchange.map.Cover
 import com.rm.interchange.map.CurveArt
 import com.rm.interchange.map.LevelSheets
 import com.rm.interchange.map.Renderer
 import com.rm.interchange.map.Sheets
 import com.rm.interchange.map.View
 import com.rm.interchange.map.WeatherCopy
+import com.rm.interchange.map.zoomAt
 import com.rm.interchange.sim.Calendar
 import com.rm.interchange.sim.Climate
 import com.rm.interchange.sim.World
@@ -151,7 +153,8 @@ internal class GlScene(private val world: World, private val scope: CoroutineSco
     fun show(view: View, sheets: Sheets, width: Int, height: Int) {
         sheetsSeen = sheets
         sheets.keepSharpest = true
-        takeLevels(sheets)
+        holdZoom(view, width, height)
+        takeLevels(sheets, Renderer.levelFor(view.halfWidth))
         season()
         copyWeather()
         if (lastCheck.elapsedNow().inWholeMilliseconds >= CHECK_MILLIS) {
@@ -178,7 +181,9 @@ internal class GlScene(private val world: World, private val scope: CoroutineSco
         nextFrame = frame
         nextRegions = regions
         val lv = levels
-        staticReady = regions != null && onGpu === lv && (Renderer.SHARPEST until Atlas.LEVELS).all { lv[it] != null } && weather != null && covers(view.turn, frame)
+        val g = onGpu
+        val level = Renderer.levelFor(view.halfWidth)
+        staticReady = regions != null && g != null && g[level] != null && g[level] === lv[level] && weather != null && covers(view.turn, frame)
     }
 
     /**
@@ -212,10 +217,49 @@ internal class GlScene(private val world: World, private val scope: CoroutineSco
         }
     }
 
-    /** From the GL thread: [from] is all on the GPU. Draws again, so the cover can lift. */
+    /** From the GL thread: [from] is what's on the GPU, a level a slot. Draws again, so the cover can lift. */
     fun uploaded(from: Array<LevelSheets?>) {
         onGpu = from
-        scope.launch { revision.intValue++ }
+        scope.launch {
+            revision.intValue++
+            releasePixels(from)
+        }
+    }
+
+    private val releasing = HashSet<LevelSheets>()
+
+    /**
+     * Lets go of the pixels of the levels in [from], which are on the GPU, once the building columns that cut what
+     * moves are worked out from them, off the main thread. Only the signals stay on the heap; a lost context unpacks
+     * the levels again.
+     */
+    private fun releasePixels(from: Array<LevelSheets?>) {
+        for (l in from.indices) {
+            val s = from[l] ?: continue
+            if (s.released || !releasing.add(s)) continue
+            scope.launch {
+                val columns = try {
+                    withContext(Dispatchers.Default) { Cover.columnsAhead(l, s) }
+                } finally {
+                    releasing.remove(s)
+                }
+                if (failed || onGpu?.getOrNull(l) !== s) return@launch
+                Cover.takeColumns(l, columns)
+                s.release()
+            }
+        }
+    }
+
+    /** Forgets the levels whose pixels were let go of, so they're unpacked again. */
+    private fun unpackReleased() {
+        var next: Array<LevelSheets?>? = null
+        for (l in levels.indices) {
+            if (levels[l]?.released != true) continue
+            if (next == null) next = levels.copyOf()
+            next[l] = null
+            sheetsSeen?.forget(l)
+        }
+        if (next != null) levels = next
     }
 
     /** From the GL thread: new context [context], with nothing on the GPU. Draws again, so the cover comes back. */
@@ -223,6 +267,7 @@ internal class GlScene(private val world: World, private val scope: CoroutineSco
         onGpu = null
         scope.launch {
             atlas.reset(context)
+            unpackReleased()
             revision.intValue++
         }
     }
@@ -231,6 +276,7 @@ internal class GlScene(private val world: World, private val scope: CoroutineSco
     fun uploadFailed() {
         scope.launch {
             failed = true
+            unpackReleased()
             levels = arrayOfNulls(Atlas.LEVELS)
             sheetsSeen?.keepSharpest = false
         }
@@ -243,10 +289,31 @@ internal class GlScene(private val world: World, private val scope: CoroutineSco
     var failed by mutableStateOf(false)
         private set
 
-    /** Asks [sheets] for every level the GPU map can draw at and takes those unpacked. */
-    private fun takeLevels(sheets: Sheets) {
+    /**
+     * Once the map shows, holds the zoom to the levels on the GPU, at the edge of the nearest, so a zoom never shows
+     * another level standing in or nothing; the rest go up a moment after the screen's own.
+     */
+    private fun holdZoom(view: View, width: Int, height: Int) {
+        val g = onGpu ?: return
+        if (!sharp) return
+        val want = Renderer.levelFor(view.halfWidth)
+        if (g[want] != null) return
+        val near = (Renderer.SHARPEST until Atlas.LEVELS).filter { g[it] != null }.minByOrNull { abs(it - want) } ?: return
+        // Zooming in, the nearest is coarser: its sharpest zoom. Zooming out: just past the next one's.
+        val held = if (near > want) Renderer.LEVELS[near] else Renderer.LEVELS[near + 1] * 1.001f
+        // About the pinch's centre, so the point under the fingers stays put.
+        if (!view.zoomedX.isNaN()) view.zoomAt(held / view.halfWidth, view.zoomedX, view.zoomedY, width.toFloat(), height.toFloat())
+        view.halfWidth = held
+    }
+
+    /**
+     * Asks [sheets] for every level the GPU map can draw at and takes those unpacked; the screen's level [first] alone
+     * till it's in, so it has the decoders to itself. Sheets let go of for another scene come back unpacked again.
+     */
+    private fun takeLevels(sheets: Sheets, first: Int) {
         var next: Array<LevelSheets?>? = null
         for (l in Renderer.SHARPEST until Atlas.LEVELS) {
+            if (l != first && levels[first] == null && sheets.get(first) == null) continue
             val had = levels[l]
             val got = had ?: sheets.get(l)
             if (got !== had) {
