@@ -1,5 +1,6 @@
 package com.rm.interchange.map
 
+import com.rm.interchange.map.gl.SpriteRecorder
 import com.rm.interchange.sim.CORNER_E
 import com.rm.interchange.sim.CORNER_N
 import com.rm.interchange.sim.CORNER_S
@@ -99,6 +100,9 @@ internal class ChunkBaker(
     fun y(vx: Float, vy: Float, h: Float) = originY + (vx + vy) * hh - h * step
 
     fun finish(): IntArray = pixels
+
+    /** For the GPU map: when set, sprites and shadows are recorded here in drawing order instead of painted, and the ground isn't painted. */
+    var recorder: SpriteRecorder? = null
 
     private fun cornerHeight(vx: Int, vy: Int): Int {
         val gx = vx - gx0
@@ -550,6 +554,7 @@ internal class ChunkBaker(
      * [soft] for the land's own corners: slopes no lighter than flat take their light from the corners, so it fades across the tile.
      */
     private fun ground(vx: Int, vy: Int, t: Int, r: Int, b: Int, l: Int, kind: Int, edges: IntArray, road: Int = 0, weather: Boolean = false, banks: Int = 0, aero: Int = 0, soft: Boolean = false) {
+        if (recorder != null) return
         val gt = if (Probe.ON) times!!.start() else 0L
         // Split along whichever diagonal has its ends level, as the slopes are drawn. Each half is a plane
         // h = h0 + gu * u + gv * v over the tile's own u and v.
@@ -1220,6 +1225,7 @@ internal class ChunkBaker(
 
     /** The earth under the map's front edges, down past sea level. */
     private fun earthFaces(vx: Int, vy: Int, r: Int, b: Int, l: Int) {
+        if (recorder != null) return
         val fx = vx.toFloat()
         val fy = vy.toFloat()
         if (vx == view.viewWidth - 1) {
@@ -1263,6 +1269,7 @@ internal class ChunkBaker(
         val h = Atlas.SHADOW_RECTS[r + 3] / shrink
         val left = (ax + Atlas.SHADOW_RECTS[r + 4] / shrink).toInt()
         val top = (ay + Atlas.SHADOW_RECTS[r + 5] / shrink).toInt()
+        recorder?.let { it.add(SpriteRecorder.SHADOW, left, top, w, h, sx, sy, 0); return }
         val src = sheets.shadows
         val sw = sheets.shadowWidth
         for (j in 0 until h) {
@@ -1301,6 +1308,7 @@ internal class ChunkBaker(
         val h = Atlas.STATIC_LEVEL_RECTS[lr + 3]
         val left = (ax + Atlas.STATIC_RECTS[r + 4] / shrink).toInt() + Atlas.STATIC_LEVEL_RECTS[lr + 4]
         val top = (ay + Atlas.STATIC_RECTS[r + 5] / shrink).toInt() + Atlas.STATIC_LEVEL_RECTS[lr + 5]
+        recorder?.let { it.add(SpriteRecorder.STATIC, left, top, w, h, sx, sy, snow); return }
         val src = sheets.static
         val sw = sheets.staticWidth
         for (j in 0 until h) {

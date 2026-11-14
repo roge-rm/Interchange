@@ -1,6 +1,7 @@
 package com.rm.interchange.map
 
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.runtime.Composable
@@ -13,6 +14,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.toArgb
+import com.rm.interchange.map.gl.GlMapSurface
+import com.rm.interchange.map.gl.GlScene
+import com.rm.interchange.map.gl.glMapWanted
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChange
@@ -65,8 +70,10 @@ fun MapView(
     renderer.overlays = overlays
     renderer.onSharp = onSharp
     val currentInput by rememberUpdatedState(input)
-    Canvas(
-        modifier.pointerInput(world, view) {
+    // The GPU map in place of the chunks, when the switch asks for it.
+    val gl = remember(world) { if (glMapWanted()) GlScene(world, scope) else null }
+    gl?.onSharp = onSharp
+    val touch = Modifier.pointerInput(world, view) {
             awaitEachGesture {
                 val down = awaitFirstDown(requireUnconsumed = false)
                 val start = down.position
@@ -120,12 +127,18 @@ fun MapView(
                     else -> {}
                 }
             }
-        },
-    ) {
+        }
+    val paint: DrawScope.() -> Unit = {
         renderer.revision.intValue
         sheets.revision.intValue
         frame()
-        with(renderer) { draw(view) }
+        val cover = if (gl != null) {
+            gl.revision.intValue
+            if (gl.show(view, sheets, size.width.toInt(), size.height.toInt())) 0f else 1f
+        } else {
+            with(renderer) { draw(view) }
+            renderer.cover()
+        }
         moving()?.let {
             drawMoving(world, view, sheets, it)
             drawSky(world, view, it)
@@ -138,8 +151,14 @@ fun MapView(
         }
         labels?.invoke(this)
         label?.invoke(this)
-        renderer.cover().let { if (it > 0f) drawRect(page.copy(alpha = it)) }
+        if (cover > 0f) drawRect(page.copy(alpha = cover))
     }
+    if (gl != null) {
+        Box(modifier) {
+            GlMapSurface(gl, page.toArgb(), Modifier.matchParentSize())
+            Canvas(Modifier.matchParentSize().then(touch), onDraw = paint)
+        }
+    } else Canvas(modifier.then(touch), onDraw = paint)
 }
 
 private enum class Mode { Undecided, Using, Moving, Two }
