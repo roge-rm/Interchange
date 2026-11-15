@@ -33,6 +33,7 @@ class StationLayoutRun {
         "split" to ::split,
         "terminus" to ::terminus,
         "queueDepot" to ::queueDepot,
+        "sameTwice" to ::sameTwice,
         "drivethru" to ::driveThru,
         "bays" to ::bays,
         "double" to ::doubleEntrance,
@@ -55,6 +56,8 @@ class StationLayoutRun {
         val w = World(NewGame(width, height, 1, 1900, towns = 0, industries = 0, weather = false, collisions = true))
         val problems = ArrayList<String>()
         val axis = HashMap<Int, Int>()
+        /** Calls a train made at the station it called at last without its front having been off it between. */
+        var inPlace = 0
         val engine = w.roster.engines.first { it.key == "base:american" }.id
         val wagon = w.roster.engines.first { it.key == "base:coach_wood" }.id
 
@@ -210,6 +213,8 @@ class StationLayoutRun {
             val wasWaiting = HashMap<Int, Boolean>()
             val wasIn = HashMap<Int, Boolean>()
             val lastFront = HashMap<Int, Int>()
+            val lastCall = HashMap<Int, Int>()
+            val offSince = HashMap<Int, Boolean>()
             var mostCalling = 0
             val ticks = days * Calendar.TICKS_PER_DAY
             for (tick in 0 until ticks) {
@@ -219,9 +224,13 @@ class StationLayoutRun {
                     if (w.trains.getOrNull(t.id) !== t) continue
                     val f = front(t)
                     val waiting = t.waiting > 0 && !t.inDepot
+                    if (f < 0 || t.inDepot || w.stationTiles[f] != lastCall[t.id]) offSince[t.id] = true
                     if (waiting && wasWaiting[t.id] != true) {
                         val st = w.stationTiles[f]
                         if (st != null) {
+                            if (lastCall[t.id] == st && offSince[t.id] != true) inPlace++
+                            lastCall[t.id] = st
+                            offSince[t.id] = false
                             val label = if (axis[st] == Y) "x${f % w.width}" else "y${f / w.width}"
                             calls.getOrPut(st) { java.util.TreeMap() }.merge(label, 1, Int::plus)
                             callsBy.merge(t.id, 1, Int::plus)
@@ -417,6 +426,41 @@ class StationLayoutRun {
                 "turns in the queue depot ${o.depotIn[d] ?: 0} >= 8" to ((o.depotIn[d] ?: 0) >= 8),
                 "calls ${o.calls} >= 16" to (o.calls >= 16),
                 "nothing standing over 30 days (${"%.1f".format(o.worstDays)})" to (o.worstDays <= 30.0),
+                "no crashes (${o.crashes})" to (o.crashes == 0),
+            ))
+        }
+    }
+
+    /**
+     * The same station twice in a row: a clockwise loop, x = 10 to 40 and y = 10 to 24, with one-way path signals
+     * round it, through station A on its top row and terminus T on a spur south off its bottom row at x = 25. Each
+     * train calls at A twice and then T twice, so it runs round the loop between the two calls at each.
+     */
+    private fun sameTwice() {
+        with(Lab("sameTwice")) {
+            rail(11, 10, 39, 10, X); rail(11, 24, 39, 24, X)
+            rail(10, 11, 10, 23, Y); rail(40, 11, 40, 23, Y)
+            piece(10, 10, S); piece(40, 10, W); piece(40, 24, N); piece(10, 24, E)
+            val d = depot(5, 17, XP)
+            rail(6, 17, 9, 17, X); piece(10, 17, N); piece(10, 17, W)
+            piece(25, 24, W); piece(25, 24, S); rail(25, 25, 25, 30, Y)
+            val a = station(16, 10, 21, 10, X)
+            val t = station(25, 26, 25, 30, Y)
+            sig(8, 17, X, XM, Signals.PATH)
+            for (x in intArrayOf(13, 24, 33)) sig(x, 10, X, XM, Signals.PATH, true)
+            for (y in intArrayOf(14, 20)) sig(40, y, Y, YM, Signals.PATH, true)
+            for (x in intArrayOf(35, 28, 18)) sig(x, 24, X, XP, Signals.PATH, true)
+            for (y in intArrayOf(21, 13)) sig(10, y, Y, YP, Signals.PATH, true)
+            dump(4, 9, 41, 31)
+            val ts = (0 until 3).map { train(d, Order.withWait(a, 4), Order.withWait(a, 4), Order.withWait(t, 4), Order.withWait(t, 4)) }
+            val o = run(ts, 200)
+            say("$name: calls without leaving first $inPlace")
+            verdict(listOf(
+                "calls ${o.calls} >= 8" to (o.calls >= 8),
+                "calls at T ${o.byPlatform["x25"] ?: 0} >= 3" to ((o.byPlatform["x25"] ?: 0) >= 3),
+                "every repeat call after leaving ($inPlace in place)" to (inPlace == 0),
+                "longest standing ${"%.1f".format(o.worstDays)} < 30 days" to (o.worstDays < 30.0),
+                "none still standing (${o.stuckNow})" to (o.stuckNow == 0),
                 "no crashes (${o.crashes})" to (o.crashes == 0),
             ))
         }

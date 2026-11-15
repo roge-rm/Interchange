@@ -505,7 +505,7 @@ class World(settings: NewGame, val roster: Roster = Roster.BASE, generate: Boole
         for (k in fences.sorted()) mix(k.toLong())
         for (k in roadStops.keys.sorted()) mix(k.toLong() * 31 + roadStops.getValue(k))
         for (k in saltDepots.sorted()) mix(k.toLong() * 7)
-        for (v in roadVehicles) if (v != null) { mix(v.depot.toLong()); mix(v.noDepotUntil); mix(v.wreckedFor.toLong()) }
+        for (v in roadVehicles) if (v != null) { mix(v.depot.toLong()); mix(v.noDepotUntil); mix(v.wreckedFor.toLong()); mix(v.leave.toLong()) }
         for (v in ships) if (v != null) { mix(v.depot.toLong()); mix(v.noDepotUntil) }
         for (v in aircraft) if (v != null) { mix(v.depot.toLong()); mix(v.wreckedFor.toLong()) }
         for (v in roadVehicles) if (v != null) { mix(v.id.toLong()); mix(v.at.toLong()); mix(v.along.toLong()); mix(v.speed.toLong()); for (c in v.cargo) for (p in c) mix(p.count.toLong()) }
@@ -528,7 +528,7 @@ class World(settings: NewGame, val roster: Roster = Roster.BASE, generate: Boole
             for (c in t.cargo) for (p in c) { mix(p.dest.toLong()); mix(p.count.toLong()) }
             mix(t.profitThisYear); mix(t.reliability.toLong()); mix(t.brokenFor.toLong()); mix(t.depot.toLong()); mix(t.noDepotUntil)
             mix(t.headOn.toLong()); mix(if (t.stuck) 1L else 0L); mix(if (t.held) 1L else 0L); mix(t.aside.toLong()); mix(t.asideTicks.toLong())
-            mix(t.turnIn.toLong())
+            mix(t.turnIn.toLong()); mix(t.leave.toLong())
             mix(t.wreckedFor.toLong()); mix(if (t.signalled) 1L else 0L)
             for (st in t.steps) mix(st.toLong())
         }

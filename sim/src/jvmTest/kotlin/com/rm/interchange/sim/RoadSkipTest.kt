@@ -78,4 +78,27 @@ class RoadSkipTest {
         assertEquals(0, v.waiting)
         assertEquals(1, v.target)
     }
+
+    @Test
+    fun aStopOrderedTwiceInARowIsLeftAndComeBackTo() {
+        val (w, v) = standing(flags = 0)
+        v.orders[0] = 1
+        v.order = 0
+        v.waiting = 0
+        v.at = roadStep(w.index(20, 20), Track.XM, Track.XP)
+        val stop = w.index(23, 20)
+        val calls = ArrayList<Boolean>()
+        var off = true
+        var was = 0
+        repeat(80 * Calendar.TICKS_PER_DAY) {
+            w.step()
+            if (roadStepTile(v.at) != stop) off = true
+            if (was == 0 && v.waiting > 0) {
+                calls += off
+                off = false
+            }
+            was = v.waiting
+        }
+        assertTrue(calls.size >= 4 && calls.all { it }, "calls, each after leaving: $calls")
+    }
 }

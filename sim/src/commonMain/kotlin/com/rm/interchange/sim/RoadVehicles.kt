@@ -122,6 +122,11 @@ class RoadVehicle(
     var route: IntArray? = null
     var routeAt = 0
     var lostUntil = 0L
+    /**
+     * The station it has just called at when its next call is there again, or -1: it won't stop there till it has
+     * been off its stops and come back. Cleared once it's off them.
+     */
+    var leave = -1
     var built = 0
     var serviced = 0
     var reliability = 8500
@@ -329,12 +334,18 @@ internal fun World.moveRoadVehicles() {
     for (v in list) if (v.inDepot && v.running) leaveGarage(v)
     // An order to be serviced when it isn't due is skipped, as when its orders were set.
     for (v in list) if (!v.inDepot && v.wreckedFor == 0 && skipService(v)) v.route = null
+    for (v in list) if (v.leave >= 0 && (v.inDepot || roadStops[roadStepTile(v.at)] != v.leave)) v.leave = -1
     val planning = list.filter { !it.inDepot && it.wreckedFor == 0 && it.running && it.route == null && tick >= it.lostUntil && it.target != -2 && it.waiting == 0 }
     val routes = arrayOfNulls<IntArray>(planning.size)
     Workers.run(planning.size) { i -> routes[i] = planRoadRoute(planning[i]) }
     for ((i, v) in planning.withIndex()) {
         val r = routes[i]
-        if (r == null) {
+        if (r == null && v.leave >= 0 && v.leave == v.target) {
+            // No way off the stop and back to call again: on past the repeat to plan afresh.
+            repeat(v.orders.size) { if (v.target == v.leave) nextRoadOrder(v) }
+            v.leave = -1
+            v.lostUntil = 0
+        } else if (r == null) {
             // No garage it can reach for its service: straight back to its orders, to try again after NO_DEPOT_RETRY.
             if (v.toDepot && v.servicing) {
                 v.toDepot = false
@@ -446,6 +457,9 @@ private fun World.driveRoadVehicle(v: RoadVehicle, on: HashMap<Int, ArrayList<Ro
             if (waitForGap(v, due)) return
             nextRoadOrder(v)
             v.route = null
+            // Called here again next: off the stop and back first.
+            val here = Order.station(o)
+            v.leave = if (here >= 0 && v.target == here && !v.toDepot && v.current?.let { Order.has(it, Order.VIA) } == false) here else -1
             // Due a service or a change of tires: choose a garage on the way to its next order, unless that's a garage.
             if (due && v.current?.let { Order.isDepot(it) } != true) {
                 v.toDepot = true
@@ -509,7 +523,7 @@ private fun World.arrive(v: RoadVehicle) {
     val half = roadStepLength(v.at) / 2
     if (v.along < half) return
     val target = v.target
-    if (target >= 0 && roadStops[tile] == target && v.along <= half + MIDDLE_SLACK) {
+    if (target >= 0 && target != v.leave && roadStops[tile] == target && v.along <= half + MIDDLE_SLACK) {
         val s = stations.getOrNull(target) ?: return
         v.speed = 0
         v.along = half
@@ -579,7 +593,7 @@ internal fun World.roadFreeAhead(v: RoadVehicle, on: HashMap<Int, ArrayList<Road
     }
     if (free < len - v.along) return free.coerceAtLeast(0)
     // Its stop's middle, if this is its stop.
-    if (v.target >= 0 && roadStops[tile] == v.target && v.along < len / 2) return len / 2 - v.along
+    if (v.target >= 0 && v.target != v.leave && roadStops[tile] == v.target && v.along < len / 2) return len / 2 - v.along
     val n = roadAcross(tile, roadStepExit(v.at))
     if (n < 0) return free
     // Trains have the crossing.
@@ -738,10 +752,14 @@ internal fun World.planRoadRoute(v: RoadVehicle): IntArray? {
     val tram = v.info.tram
     val nextStop = if (v.servicing && target == -1) v.current?.let { Order.station(it) }?.takeIf { it >= 0 } else null
     val onward = nextStop?.let { garageOnwardCosts(v, it) }?.takeIf { it.isNotEmpty() }
+    // Leaving the station it's going to, a step has [ROAD_OFF] added once the way has been off its stops, and only
+    // then are they a goal.
+    val leaving = target >= 0 && v.leave == target
+    fun off(s: Int) = if (leaving && roadStops[roadStepTile(s)] != target) ROAD_OFF else 0
     val dist = HashMap<Int, Int>()
     val prev = HashMap<Int, Int>()
     val heap = RoadHeap()
-    for (s in roadNext(v.at, tram)) { dist[s] = 0; heap.push(0, s) }
+    for (s in roadNext(v.at, tram)) { val k = s or off(s); dist[k] = 0; heap.push(0, k) }
     var looked = 0
     var nearest = -1
     var best = -1
@@ -750,7 +768,7 @@ internal fun World.planRoadRoute(v: RoadVehicle): IntArray? {
         val back = ArrayList<Int>()
         var k = goal
         while (true) {
-            back += k
+            back += k and ROAD_OFF.inv()
             k = prev[k] ?: break
         }
         back.reverse()
@@ -759,15 +777,17 @@ internal fun World.planRoadRoute(v: RoadVehicle): IntArray? {
     while (heap.size > 0) {
         val top = heap.pop()
         val cost = (top ushr 32).toInt()
-        val s = top.toInt()
-        if (cost > (dist[s] ?: Int.MAX_VALUE)) continue
+        val k = top.toInt()
+        if (cost > (dist[k] ?: Int.MAX_VALUE)) continue
+        val s = k and ROAD_OFF.inv()
+        val wasOff = k and ROAD_OFF
         val tile = roadStepTile(s)
         if (cost >= bestCost) break
-        if ((target >= 0 && roadStops[tile] == target) || target == -1 && isGarage(tile)) {
-            if (onward == null) return path(s)
-            if (nearest < 0) nearest = s
+        if ((target >= 0 && roadStops[tile] == target && (!leaving || wasOff != 0)) || target == -1 && isGarage(tile)) {
+            if (onward == null) return path(k)
+            if (nearest < 0) nearest = k
             onward[s]?.let { after ->
-                if (cost + after < bestCost) { best = s; bestCost = cost + after }
+                if (cost + after < bestCost) { best = k; bestCost = cost + after }
             }
             continue
         }
@@ -777,15 +797,19 @@ internal fun World.planRoadRoute(v: RoadVehicle): IntArray? {
             // Garages only as the end of the way; other companies' stops are just road.
             if (depotTiles.containsKey(nt) && !(target == -1 && isGarage(nt))) continue
             val c = cost + roadRouteCost(n)
-            if (c < (dist[n] ?: Int.MAX_VALUE)) {
-                dist[n] = c
-                prev[n] = s
-                heap.push(c, n)
+            val nk = n or wasOff or off(n)
+            if (c < (dist[nk] ?: Int.MAX_VALUE)) {
+                dist[nk] = c
+                prev[nk] = k
+                heap.push(c, nk)
             }
         }
     }
     return if (nearest >= 0) path(if (best >= 0) best else nearest) else null
 }
+
+/** Set in a road search step once the way has been off the stops of the station a vehicle is leaving to call again. */
+private const val ROAD_OFF = 1 shl 28
 
 private fun World.roadRouteCost(s: Int) = roadStepLength(s) / FIX * 110 / Surface.SPEED[surfaceAt(roadStepTile(s))] +
     if (roadStepEntry(s) == roadStepExit(s)) U_TURN else 0

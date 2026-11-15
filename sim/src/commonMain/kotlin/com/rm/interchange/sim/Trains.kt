@@ -163,6 +163,11 @@ class Train(
      * afresh. While it's in there, the depot it's in.
      */
     var turnIn = -1
+    /**
+     * The station it has just called at when its next call is there again, or -1: it won't stop there till it has
+     * been out and come back in. Cleared once no part of it is on the station.
+     */
+    var leave = -1
     /** No way to where it's going; it tries again at this tick. */
     var lostUntil = 0L
     /** Stuck in a drift, so the news is told once. */
@@ -550,7 +555,10 @@ internal fun World.moveTrains() {
     Workers.run(planning.size) { i -> routes[i] = planRoute(planning[i]) }
     for ((i, t) in planning.withIndex()) {
         val p = routes[i]
-        if (p == null) {
+        if (p == null && t.leave >= 0 && t.leave == t.target) {
+            // No way out of the station and back in to call again: on past the repeat to plan afresh.
+            skipRepeat(t)
+        } else if (p == null) {
             // No depot it can reach for its service: straight back to its orders, to try again after its next call.
             if (t.toDepot && t.servicing) noDepot(t) else t.lostUntil = tick + LOST_RETRY
         } else {
@@ -562,7 +570,24 @@ internal fun World.moveTrains() {
             if (p.behind) t.turnRound = true
         }
     }
-    for (t in list) if (!t.inDepot) moveTrain(t)
+    for (t in list) {
+        if (t.leave >= 0 && t.onTiles.none { it >= 0 && stationTiles[it] == t.leave }) t.leave = -1
+        if (!t.inDepot) moveTrain(t)
+    }
+}
+
+/** Whether [t]'s order now is one to stop at a station. */
+private fun World.stops(t: Train): Boolean {
+    val o = t.current ?: return false
+    val id = Order.station(o)
+    return id >= 0 && !Order.has(o, Order.VIA) && stations.getOrNull(id)?.waypoint != true
+}
+
+/** On past the orders that would call again at the station [t] is leaving, as it has no way out and back in. */
+private fun World.skipRepeat(t: Train) {
+    repeat(t.orders.size) { if (t.target == t.leave) nextOrder(t) }
+    t.leave = -1
+    t.lostUntil = 0
 }
 
 private fun World.moveTrain(t: Train) {
@@ -670,6 +695,9 @@ private fun World.drive(t: Train) {
             if (waitForGap(t, due)) return
             nextOrder(t)
             t.route = null
+            // Called here again next: out and back in first.
+            val here = Order.station(o)
+            t.leave = if (here >= 0 && t.target == here && stops(t)) here else -1
             // Due a service: choose a depot on the way to its next order, unless that's a depot.
             if (due && t.current?.let { Order.isDepot(it) } != true) forService(t)
         }
@@ -1006,10 +1034,13 @@ private fun World.walkAhead(t: Train, brake: Int, bends: CurveScan?): Pair<Int, 
     val target = t.target
     var stop = Stop.NONE
     var stand = 0
+    // Leaving a station to call there again, it doesn't stop till it has been off it.
+    var left = target < 0 || t.leave != target
     while (stop == Stop.NONE && free < reach) {
         val tile = stepTile(cur)
         stand = free
-        if (target >= 0 && stationTiles[tile] == target && !Order.has(t.orders.getOrNull(t.order % t.orders.size.coerceAtLeast(1)) ?: 0, Order.VIA) && stations.getOrNull(target)?.waypoint != true) {
+        if (!left && (stepLevel(cur) != 0 || stationTiles[tile] != target)) left = true
+        if (left && target >= 0 && stationTiles[tile] == target && !Order.has(t.orders.getOrNull(t.order % t.orders.size.coerceAtLeast(1)) ?: 0, Order.VIA) && stations.getOrNull(target)?.waypoint != true) {
             val nx = nextFrom(t, cur, at)
             if (nx < 0 || stationTiles[stepTile(nx)] != target) { stop = Stop.STATION; break }
         }

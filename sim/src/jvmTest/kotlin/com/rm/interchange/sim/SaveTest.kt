@@ -317,6 +317,33 @@ class SaveTest {
         assertTrue(inside > 0 && onWay > 0, "copies with a train inside $inside, on its way in $onWay")
     }
 
+    /** A train calling at one station twice in a row goes round a loop between; copies taken as it leaves carry on the same. */
+    @Test
+    fun aCopyTakenWithATrainLeavingToCallAgainCarriesOnTheSame() {
+        val a = World(NewGame(48, 32, 1, 1900, towns = 0, industries = 0, weather = false, collisions = true))
+        for (i in a.corners.indices) a.corners[i] = 3
+        a.companies[0].money = 1_000_000_000
+        fun rail(sx: Int, sy: Int, ex: Int, ey: Int, p: Int) = a.apply(Command.Rail(0, sx, sy, ex, ey, p, remove = false))
+        rail(11, 10, 29, 10, Track.X); rail(11, 20, 29, 20, Track.X); rail(10, 11, 10, 19, Track.Y); rail(30, 11, 30, 19, Track.Y)
+        rail(10, 10, 10, 10, Track.S); rail(30, 10, 30, 10, Track.W); rail(30, 20, 30, 20, Track.N); rail(10, 20, 10, 20, Track.E)
+        a.apply(Command.Depot(0, 7, 15, Track.XP))
+        rail(8, 15, 9, 15, Track.X); rail(10, 15, 10, 15, Track.N); rail(10, 15, 10, 15, Track.W)
+        a.apply(Command.Station(0, 14, 10, 18, 10, Track.X))
+        a.apply(Command.BuyTrain(0, 0, a.roster.engines.first { it.key == "base:american" }.id, a.roster.engines.first { it.key == "base:coach_wood" }.id, 2))
+        val t = a.trains[0]!!
+        a.apply(Command.TrainOrder(0, 0, Command.TrainOrder.ORDERS, intArrayOf(Order.withWait(0, 4), Order.withWait(0, 4))))
+        a.apply(Command.TrainOrder(0, 0, Command.TrainOrder.START_STOP))
+        var copies = 0
+        repeat(200 * a.dayTicks) {
+            a.step()
+            if (t.leave >= 0 && it % 7 == 0 && copies < 6) {
+                copies++
+                sameFor(a, Save.read(Save.write(a)), 1)
+            }
+        }
+        assertTrue(copies > 0, "copies taken with the train leaving")
+    }
+
     /** Runs [a] and its copy [b] on [days] days and checks they're still the same, by checksum and by save. */
     private fun sameFor(a: World, b: World, days: Int) {
         val from = a.day

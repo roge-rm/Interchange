@@ -16,7 +16,7 @@ package com.rm.interchange.sim
  */
 object Save {
     private val MAGIC = "ICHG".encodeToByteArray()
-    const val VERSION = 56
+    const val VERSION = 57
 
     /** A vehicle's [built] day as saved by [version]: work days from 36, calendar days before. */
     private fun World.builtOut(built: Int, version: Int) = if (version >= 36) built else built / settings.dayLength
@@ -100,6 +100,7 @@ object Save {
                 if (version >= 46) writeFormation(w, t.formation)
                 if (version >= 49) { w.int(t.aside); w.int(t.asideTicks) }
                 if (version >= 56) w.int(t.turnIn)
+                if (version >= 57) w.int(t.leave)
             }
             w.uvar(towns.size.toLong())
             for (t in towns) { w.string(t.name); w.int(t.x); w.int(t.y); w.int(t.grid); w.bool(t.french); w.int(t.population); w.int(t.houses); w.int(t.growIn); w.int(t.servedThisMonth); w.int(t.servedLastMonth); w.ints(t.approval)
@@ -148,6 +149,7 @@ object Save {
                 w.int(v.routeAt); w.long(v.lostUntil); w.int(builtOut(v.built, version)); w.int(v.serviced); w.int(v.reliability); w.int(v.breakdowns); w.int(v.brokenFor)
                 w.bool(v.servicing); w.bool(v.service); w.int(v.tires); w.bool(v.seasonalTires); w.bool(v.slid)
                 if (version >= 39) w.int(v.wreckedFor)
+                if (version >= 57) w.int(v.leave)
             }
             val held = reserved.keys.sorted()
             w.uvar(held.size.toLong())
@@ -402,6 +404,7 @@ object Save {
                         }
                         if (version >= 49) { t.aside = r.int(); t.asideTicks = r.int() }
                         if (version >= 56) t.turnIn = r.int()
+                        if (version >= 57) t.leave = r.int()
                     } else {
                         t.built = (tick / Calendar.TICKS_PER_DAY).toInt()
                         t.serviced = t.built
@@ -501,6 +504,7 @@ object Save {
                     v.routeAt = r.int(); v.lostUntil = r.long(); v.built = r.int(); v.serviced = r.int(); v.reliability = r.int(); v.breakdowns = r.int(); v.brokenFor = r.int()
                     v.servicing = r.bool(); v.service = r.bool(); v.tires = r.int(); v.seasonalTires = r.bool(); v.slid = r.bool()
                     if (version >= 39) v.wreckedFor = r.int()
+                    if (version >= 57) v.leave = r.int()
                     roadVehicles += v
                 }
                 if (version < 41) giveFleetNumbers(roadVehicles, { it.owner }, { it.number }) { v, n -> v.number = n }

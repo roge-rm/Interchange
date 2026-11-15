@@ -47,6 +47,7 @@ internal fun World.replaceTrain(company: Company, old: Train, model: Int?) {
     made.routeAt = old.routeAt
     made.turnRound = old.turnRound
     made.turnIn = old.turnIn
+    made.leave = old.leave
     made.lostUntil = old.lostUntil
     made.snowbound = old.snowbound
     made.headOn = old.headOn
@@ -101,6 +102,7 @@ internal fun World.replaceRoadVehicle(company: Company, old: RoadVehicle, model:
     made.waiting = old.waiting
     made.at = old.at
     made.along = old.along
+    made.leave = old.leave
     made.speed = old.speed
     made.profitThisYear = old.profitThisYear
     made.profitLastYear = old.profitLastYear

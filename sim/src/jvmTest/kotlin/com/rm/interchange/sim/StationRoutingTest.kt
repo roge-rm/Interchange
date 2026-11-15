@@ -446,4 +446,85 @@ class StationRoutingTest {
         assertEquals(one.checksum(), two.checksum())
         assertTrue(one.trains.filterNotNull().any { !it.inDepot }, "trains running")
     }
+
+    /**
+     * The calls [t] makes over [days] days, each the station and whether its nose had been off the station since the
+     * call before.
+     */
+    private fun World.calls(t: Train, days: Int): List<Pair<Int, Boolean>> {
+        val out = ArrayList<Pair<Int, Boolean>>()
+        var off = true
+        var was = t.waiting
+        repeat(days * Calendar.TICKS_PER_DAY) {
+            step()
+            val at = if (t.inDepot) null else stationTiles[stepTile(t.steps.last())]
+            if (at == null) off = true
+            if (was == 0 && t.waiting > 0 && at != null) {
+                out += at to off
+                off = false
+            }
+            was = t.waiting
+        }
+        return out
+    }
+
+    /** A loop from x = 10 to 30 and y = 10 to 20 with cut corners and a depot at (7, 15) joined to its west side. */
+    private fun World.loop() {
+        rail(11, 10, 29, 10, X)
+        rail(11, 20, 29, 20, X)
+        rail(10, 11, 10, 19, Y)
+        rail(30, 11, 30, 19, Y)
+        piece(10, 10, S)
+        piece(30, 10, W)
+        piece(30, 20, N)
+        piece(10, 20, E)
+        apply(Command.Depot(0, 7, 15, XP))
+        rail(8, 15, 9, 15, X)
+        piece(10, 15, N)
+        piece(10, 15, W)
+    }
+
+    @Test
+    fun calledAtTheSameThroughStationTwiceATrainGoesRoundAndComesBack() {
+        val w = world()
+        w.loop()
+        w.apply(Command.Station(0, 14, 10, 18, 10, X))
+        val t = w.train(0, Order.withWait(0, 4), Order.withWait(0, 4))
+        val calls = w.calls(t, 200)
+        assertTrue(calls.size >= 4, "calls $calls")
+        assertTrue(calls.all { it.first == 0 && it.second }, "each call after going round: $calls")
+        assertEquals(-1, t.leave)
+    }
+
+    @Test
+    fun calledAtTheSameTerminusTwiceATrainRunsRoundTheLoopAndComesBack() {
+        // A terminus on a spur north of the loop's top, from (20, 10) both ways round, its platforms y = 3 to 8.
+        val w = world()
+        w.loop()
+        w.piece(20, 10, N)
+        w.piece(20, 10, E)
+        w.rail(20, 3, 20, 9, Y)
+        w.apply(Command.Station(0, 20, 3, 20, 8, Y))
+        val t = w.train(0, Order.withWait(0, 4), Order.withWait(0, 4))
+        val calls = w.calls(t, 200)
+        assertTrue(calls.size >= 4, "calls $calls")
+        assertTrue(calls.all { it.first == 0 && it.second }, "each call after going round: $calls")
+    }
+
+    @Test
+    fun calledAtTheSameDeadEndTwiceWithNoWayRoundATrainSkipsTheRepeat() {
+        // A depot at x = 2 onto a line east, one-way out past x = 4, with B at x = 8 to 10 and A, a terminus, at
+        // x = 14 to 19.
+        val w = world()
+        w.apply(Command.Depot(0, 2, 10, XP))
+        w.rail(3, 10, 19, 10, X)
+        w.apply(Command.Station(0, 14, 10, 19, 10, X))
+        w.apply(Command.Station(0, 8, 10, 10, 10, X))
+        w.path(4, 10, X, XM, oneWay = true)
+        val t = w.train(0, Order.withWait(0, 4), Order.withWait(0, 4), Order.withWait(1, 4))
+        val calls = w.calls(t, 60).map { it.first }
+        assertTrue(calls.size >= 4, "calls $calls")
+        assertTrue(calls.zipWithNext().all { (a, b) -> a != b }, "no station twice in a row: $calls")
+        assertEquals(-1, t.leave)
+    }
 }
