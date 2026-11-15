@@ -177,6 +177,7 @@ fun roadStatus(view: WorldView, v: RoadVehicleView): String {
         v.toDepot -> stringResource(Res.string.going_to_garage, v.kmh)
         v.waiting && target != null -> stringResource(Res.string.at_station, stationName(view, target))
         v.lost -> stringResource(Res.string.lost)
+        toDepotOrder(v.orders, v.order) -> stringResource(Res.string.going_to_garage, v.kmh)
         target != null -> stringResource(Res.string.heading_for, stationName(view, target), v.kmh)
         else -> stringResource(Res.string.no_stops)
     }

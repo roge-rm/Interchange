@@ -148,12 +148,18 @@ class RoadVehicle(
     val maxSpeed get() = info.speed * 4096 * 16 / 2700
     val price get() = info.cost
 
-    /** Where it's heading: a station id, -1 for its garage, or -2 for nowhere. */
+    /** Where it's heading: a station id, -1 for a garage, [goalDepot], or -2 for nowhere. */
     val target: Int get() = when {
         toDepot -> -1
         orders.isEmpty() -> -2
         else -> Order.station(orders[order % orders.size])
     }
+
+    /** The order it's on, or null with none. */
+    val current: Int? get() = if (orders.isEmpty()) null else orders[order % orders.size]
+
+    /** The garage it's heading for when [target] is -1: the one a depot order names, else its own. */
+    val goalDepot: Int get() = if (toDepot) depot else current?.let { Order.depot(it) }?.takeIf { it >= 0 } ?: depot
 }
 
 /** Tires on a road vehicle: summer ones slide on ice and snow, winter ones grip better, chains best but slow. */
@@ -230,9 +236,11 @@ internal fun World.roadVehicleCommand(company: Company, c: Command.RoadOrder) {
         Command.TrainOrder.START_STOP -> if (v.inDepot) { if (v.running) v.running = false else leaveGarage(v) } else v.running = !v.running
         Command.TrainOrder.ORDERS -> {
             val group = roadVehicles.filterNotNull().filter { v.shared >= 0 && it.shared == v.shared }.ifEmpty { listOf(v) }
+            // A depot order has to be to one of the company's garages.
+            val orders = c.stations.toList().mapNotNull { allowedOrder(it, company.id, Depots.ROAD) }
             for (g in group) {
                 g.orders.clear()
-                for (o in c.stations) if (stations.getOrNull(Order.station(o))?.owner == company.id) g.orders += o
+                g.orders += orders
                 g.order = 0
                 g.route = null
             }
@@ -288,6 +296,9 @@ fun World.roadValue(v: RoadVehicle): Long {
 private fun World.leaveGarage(v: RoadVehicle) {
     val d = depots.getOrNull(v.depot) ?: return
     v.running = true
+    // An order to this garage it's done by being in it, and one to be serviced when it isn't due is skipped.
+    v.current?.let { o -> if (Order.depot(o) == d.id && !v.toDepot) nextRoadOrder(v) }
+    skipService(v)
     val out = roadAcross(d.tile, d.edge)
     if (out < 0) return
     if (roadVehicles.any { it != null && it !== v && !it.inDepot && roadStepTile(it.at) == d.tile }) return
@@ -316,6 +327,8 @@ internal fun World.moveRoadVehicles() {
     if (roadNetDirty) roadNetDirty = false
     val list = roadVehicles.filterNotNull()
     for (v in list) if (v.inDepot && v.running) leaveGarage(v)
+    // An order to be serviced when it isn't due is skipped, as when its orders were set.
+    for (v in list) if (!v.inDepot && v.wreckedFor == 0 && skipService(v)) v.route = null
     val planning = list.filter { !it.inDepot && it.wreckedFor == 0 && it.running && it.route == null && tick >= it.lostUntil && it.target != -2 && it.waiting == 0 }
     val routes = arrayOfNulls<IntArray>(planning.size)
     Workers.run(planning.size) { i -> routes[i] = planRoadRoute(planning[i]) }
@@ -433,8 +446,8 @@ private fun World.driveRoadVehicle(v: RoadVehicle, on: HashMap<Int, ArrayList<Ro
             if (waitForGap(v, due)) return
             nextRoadOrder(v)
             v.route = null
-            // Due a service or a change of tires: choose a garage on the way to its next order.
-            if (due) {
+            // Due a service or a change of tires: choose a garage on the way to its next order, unless that's a garage.
+            if (due && v.current?.let { Order.isDepot(it) } != true) {
                 v.toDepot = true
                 v.servicing = true
             }
@@ -503,12 +516,15 @@ private fun World.arrive(v: RoadVehicle) {
         val o = v.orders.getOrNull(v.order % v.orders.size.coerceAtLeast(1)) ?: 0
         v.waiting = maxOf(Calendar.TICKS_PER_DAY, Calendar.TICKS_PER_DAY * Order.waitDays(o))
         callAt(v, s, o)
-    } else if (target == -1 && depotTiles[tile] == v.depot) {
+    } else if (target == -1 && depotTiles[tile] == v.goalDepot) {
+        // On a depot order it's serviced and goes on to its next order, set going again unless told to stop there.
+        val o = if (v.toDepot) null else v.current?.takeIf { Order.depot(it) == depotTiles[tile] }
+        v.depot = v.goalDepot
         v.inDepot = true
         v.running = false
         v.toDepot = false
         v.route = null
-        if (v.servicing) {
+        if (v.servicing || o != null) {
             autorenew(v)
             v.reliability = v.info.reliability * 100
             v.serviced = workDay
@@ -516,7 +532,23 @@ private fun World.arrive(v: RoadVehicle) {
             v.running = true
             fitTires(v)
         }
+        if (o != null) {
+            if (Order.depotKind(o) == Order.DEPOT_STOP) v.running = false
+            nextRoadOrder(v)
+        }
     }
+}
+
+/** Whether [v] is due a garage, for a service or a change of tires. Renewing isn't asked, as that sends news. */
+private fun World.wantsGarage(v: RoadVehicle) = due(v.service, v.serviced) || needsTires(v)
+
+/** Skips [v]'s order if it's to be serviced at a garage and isn't due; true if it did. */
+private fun World.skipService(v: RoadVehicle): Boolean {
+    val o = v.current ?: return false
+    if (!Order.isDepot(o) || Order.depotKind(o) != Order.DEPOT_SERVICE || wantsGarage(v)) return false
+    val was = v.order
+    nextRoadOrder(v)
+    return v.order != was
 }
 
 /** The step after the one [v] is on: its route's, or the only way on, or round at a dead end. */
@@ -619,14 +651,16 @@ private fun World.roadWearBy(tile: Int, v: RoadVehicle) {
     if (rng.below(ROAD_WEAR_ODDS) < v.info.weight) condition[tile] = ((condition[tile].toInt() and 255) - 1).coerceAtLeast(0).toByte()
 }
 
-/** On to [v]'s next order, skipping those it has nothing to do at, as trains do. */
+/** On to [v]'s next order, skipping those it has nothing to do at and depot orders to be serviced when not due, as trains do. */
 private fun World.nextRoadOrder(v: RoadVehicle) {
     val n = v.orders.size
     if (n == 0) return
     repeat(n) {
         v.order = (v.order + 1) % n
         val o = v.orders[v.order]
-        if (!Order.has(o, Order.SKIP_IF_NOTHING) || somethingAt(v, Order.station(o))) return
+        if (Order.isDepot(o)) {
+            if (Order.depotKind(o) != Order.DEPOT_SERVICE || wantsGarage(v)) return
+        } else if (!Order.has(o, Order.SKIP_IF_NOTHING) || somethingAt(v, Order.station(o))) return
     }
 }
 
@@ -696,12 +730,13 @@ internal fun World.roadVehiclesDay() {
 internal fun World.planRoadRoute(v: RoadVehicle): IntArray? {
     val target = v.target
     if (target == -2) return null
-    // Off for a service, or with its home gone, it ends at any garage of its company's; sent in, only at its own.
+    // Off for a service, or with its home gone, it ends at any garage of its company's; sent in, only at its own, and
+    // on a depot order only at that one.
     val anyGarage = anyGarage(v)
-    val garage = if (target == -1 && !anyGarage) depots.getOrNull(v.depot)?.tile ?: return null else -1
+    val garage = if (target == -1 && !anyGarage) depots.getOrNull(v.goalDepot)?.tile ?: return null else -1
     fun isGarage(tile: Int) = if (anyGarage) depotAt(tile)?.let { it.owner == v.owner && it.kind == Depots.ROAD } == true else tile == garage
     val tram = v.info.tram
-    val nextStop = if (v.servicing && target == -1) v.orders.getOrNull(v.order % v.orders.size.coerceAtLeast(1))?.let { Order.station(it) } else null
+    val nextStop = if (v.servicing && target == -1) v.current?.let { Order.station(it) }?.takeIf { it >= 0 } else null
     val onward = nextStop?.let { garageOnwardCosts(v, it) }?.takeIf { it.isNotEmpty() }
     val dist = HashMap<Int, Int>()
     val prev = HashMap<Int, Int>()

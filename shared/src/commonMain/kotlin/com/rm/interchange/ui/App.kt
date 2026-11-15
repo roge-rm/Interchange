@@ -1120,7 +1120,9 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
                     return
                 }
                 addingRoadStops?.let { id ->
+                    // A station, or one of the player's garages to go via.
                     val station = world.roadStops[tile] ?: world.stationTiles[tile] ?: world.stationBuildings[tile]
+                        ?: world.depotTiles[tile]?.takeIf { world.depots.getOrNull(it)?.let { d -> d.owner == me && d.kind == Depots.ROAD } == true }?.let { Order.toDepot(it) }
                     val v = worldView.value?.roadVehicles?.firstOrNull { it.id == id }
                     if (station != null && v != null) runner.request(Command.RoadOrder(me, id, Command.TrainOrder.ORDERS, v.orders + station))
                     return
