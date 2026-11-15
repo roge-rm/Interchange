@@ -260,7 +260,7 @@ class StationLayoutRun {
             if (watch.isNotEmpty()) say("$name: fronts onto ${watch.joinToString { "${xy(it)} ${watched[it] ?: 0}" }}")
             for ((g, ts) in groups) say("$name: $g visited stations ${ts.map { visits[it.id]?.sorted() ?: emptyList() }}")
             say("$name: longest standing still ${"%.1f".format(worst.toDouble() / Calendar.TICKS_PER_DAY)} days ($worstAt); still over 30 days at the end: $stuckNow; crashes ${w.crashes.list.size}; trains left ${trains.count { w.trains.getOrNull(it.id) === it }}/${trains.size}")
-            return Outcome(calls.values.flatMap { it.entries }.associate { it.key to it.value }, callsBy.values.sum(), worst.toDouble() / Calendar.TICKS_PER_DAY, stuckNow, unheldFired, crashes, watch.associateWith { watched[it] ?: 0 })
+            return Outcome(calls.values.flatMap { it.entries }.associate { it.key to it.value }, callsBy.values.sum(), worst.toDouble() / Calendar.TICKS_PER_DAY, stuckNow, unheldFired, crashes, watch.associateWith { watched[it] ?: 0 }, mostCalling)
         }
 
         /** Says PASS or FAIL for the layout, with the checks that failed. */
@@ -282,7 +282,7 @@ class StationLayoutRun {
     }
 
     /** What a run gave: calls by platform label, calls in all, the longest standing still in days and the rest. */
-    private class Outcome(val byPlatform: Map<String, Int>, val calls: Int, val worstDays: Double, val stuckNow: Int, val unheld: Boolean, val crashes: Int, val watched: Map<Int, Int>)
+    private class Outcome(val byPlatform: Map<String, Int>, val calls: Int, val worstDays: Double, val stuckNow: Int, val unheld: Boolean, val crashes: Int, val watched: Map<Int, Int>, val mostCalling: Int)
 
     /** Six through platforms fed by a diagonal ladder off one eastbound line and merged out by another. */
     private fun ladder(presignals: Boolean, dense: Boolean = true) {
@@ -312,8 +312,9 @@ class StationLayoutRun {
             val o = run(ts, 200)
             when {
                 presignals -> say("$name: no S1 criteria")
+                // Trains take the nearest free platform, as in OpenTTD, so as many are used as are ever needed at once.
                 dense -> verdict(listOf(
-                    "every platform y10 to y15 called at ${o.byPlatform}" to (10..15).all { (o.byPlatform["y$it"] ?: 0) > 0 },
+                    "platforms used ${o.byPlatform.size} >= most calling at once ${o.mostCalling}" to (o.byPlatform.size >= o.mostCalling),
                     "nothing standing over 30 days (${"%.1f".format(o.worstDays)})" to (o.worstDays <= 30.0),
                 ))
                 else -> verdict(listOf(
@@ -377,6 +378,7 @@ class StationLayoutRun {
             dump(3, 7, 28, 16)
             val ts = (0 until 6).map { train(d, Order.withWait(a, 12), wp) }
             noWorse(run(ts, 200), 11, 73.0)
+            say("$name: the longest wait has its own goal in S5, with the escape depot")
         }
     }
 

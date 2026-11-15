@@ -988,7 +988,7 @@ private fun World.walkAhead(t: Train, brake: Int, bends: CurveScan?): Pair<Int, 
             stepLevel(next) == 0 && !mayPass(nt, stepPiece(next), stepEntry(next)) -> Stop.END
             t.electric && !wired(next) -> Stop.END
             stepLevel(next) == 0 && closedTile(nt) -> Stop.END
-            signalFor(cur, next).let { it >= 0 && !signalLets(t, it, next, at) } -> Stop.SIGNAL
+            signalFor(cur, next).let { it >= 0 && !signalLets(t, it, next, at, first = t.speed > 0 && free + t.speed / 16 >= reach) } -> Stop.SIGNAL
             stepLevel(next) == 0 && t.plow != Plows.ROTARY && (weather.snow[nt].toInt() and 255) >= (if (t.plow == Plows.WEDGE) WEDGE_STOPS else Weather.BLOCKING) -> Stop.SNOW
             // On tiles in a path signal's area other trains can be on pieces that don't cross; elsewhere a train anywhere on the tile holds it.
             !pieceFree(t, next, occupiedTile = !inPathArea(next)) -> Stop.TRAIN
@@ -1202,12 +1202,12 @@ internal fun World.signalFor(cur: Int, next: Int): Int {
  * way through to the next signal is clear and can be held; a block signal if the block ahead is clear,
  * and for an entry or combo signal a way out of it too.
  */
-private fun World.signalLets(t: Train, signal: Int, next: Int, at: Int): Boolean {
+private fun World.signalLets(t: Train, signal: Int, next: Int, at: Int, first: Boolean = false): Boolean {
     if (Signals.path(signal)) {
         if (reserved[stepKey(next)] == t.id) return true
-        // Near its goal it chooses a way it can hold now as it comes up to the signal, and while it stands there looks
-        // again every CHOOSE_RETRY ticks, trying the way it has in between.
-        if ((t.speed > 0 || (tick + t.id) % CHOOSE_RETRY == 0L) && wayLeft(t, next, at) >= 0) chooseFrom(t, next, at)
+        // Near its goal it chooses a way it can hold now on the tick the signal comes into reach ([first]), then
+        // every CHOOSE_RETRY ticks, trying the way it has in between.
+        if ((first || (tick + t.id) % CHOOSE_RETRY == 0L) && wayLeft(t, next, at) >= 0) chooseFrom(t, next, at)
         return reserveThrough(t, next, at)
     }
     val b = blocks[stepKey(next)] ?: return true
