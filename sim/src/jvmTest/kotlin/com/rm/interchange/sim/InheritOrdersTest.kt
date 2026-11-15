@@ -439,7 +439,7 @@ class InheritOrdersTest {
 
     @Test
     fun saleAndPurchaseCanBeSeparatedBySaving() {
-        assertEquals(56, Save.VERSION)
+        assertEquals(57, Save.VERSION)
         for (kind in kinds) for (shared in listOf(false, true)) {
             val f = fleet(kind)
             if (shared) f.copy()
