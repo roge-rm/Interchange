@@ -275,6 +275,48 @@ class SaveTest {
         sameFor(a, Save.read(Save.write(a)), 1)
     }
 
+    /**
+     * Two full platforms past a path signal and an escape depot on a spur before them: a third train turns in the
+     * depot and waits there. Copies taken on its way in and while it's inside carry on the same.
+     */
+    @Test
+    fun aCopyTakenWithATrainTurningInADepotCarriesOnTheSame() {
+        val a = World(NewGame(64, 48, 1, 1900, towns = 0, industries = 0, weather = false, collisions = true))
+        for (i in a.corners.indices) a.corners[i] = 3
+        a.companies[0].money = 1_000_000_000
+        fun rail(sx: Int, sy: Int, ex: Int, ey: Int, p: Int) = a.apply(Command.Rail(0, sx, sy, ex, ey, p, remove = false))
+        a.apply(Command.Depot(0, 2, 10, Track.XP))
+        rail(3, 10, 50, 10, Track.X)
+        rail(17, 10, 17, 10, Track.N); rail(17, 10, 17, 10, Track.E); rail(17, 9, 17, 9, Track.Y)
+        a.apply(Command.Depot(0, 17, 8, Track.YP))
+        rail(20, 10, 20, 10, Track.W); rail(20, 11, 20, 11, Track.E); rail(21, 11, 30, 11, Track.X)
+        rail(31, 11, 31, 11, Track.N); rail(31, 10, 31, 10, Track.S)
+        a.apply(Command.Station(0, 24, 10, 29, 11, Track.X))
+        a.apply(Command.Station(0, 44, 10, 47, 10, Track.X))
+        a.apply(Command.Signal(0, 15, 10, Track.X, Track.XM, Signals.PATH))
+        val engine = a.roster.engines.first { it.key == "base:american" }.id
+        val coach = a.roster.engines.first { it.key == "base:coach_wood" }.id
+        for (orders in listOf(intArrayOf(Order.withWait(0, 60)), intArrayOf(Order.withWait(0, 40), Order.withWait(1, 30)), intArrayOf(Order.withWait(0, 20), Order.withWait(1, 20)))) {
+            a.apply(Command.BuyTrain(0, 0, engine, coach, 2))
+            val id = a.trains.indexOfLast { it != null }
+            a.apply(Command.TrainOrder(0, id, Command.TrainOrder.ORDERS, orders))
+            a.apply(Command.TrainOrder(0, id, Command.TrainOrder.START_STOP))
+            repeat(12 * Calendar.TICKS_PER_DAY) { a.step() }
+        }
+        val escape = a.depotTiles.getValue(a.index(17, 8))
+        var inside = 0
+        var onWay = 0
+        repeat(120) {
+            val t = a.trains.firstOrNull { it != null && it.turnIn == escape }
+            if (t != null) {
+                if (t.inDepot) inside++ else onWay++
+                sameFor(a, Save.read(Save.write(a)), 1)
+            }
+            repeat(a.dayTicks / 2 + 5) { a.step() }
+        }
+        assertTrue(inside > 0 && onWay > 0, "copies with a train inside $inside, on its way in $onWay")
+    }
+
     /** Runs [a] and its copy [b] on [days] days and checks they're still the same, by checksum and by save. */
     private fun sameFor(a: World, b: World, days: Int) {
         val from = a.day

@@ -46,6 +46,7 @@ internal fun World.replaceTrain(company: Company, old: Train, model: Int?) {
     made.route = old.route
     made.routeAt = old.routeAt
     made.turnRound = old.turnRound
+    made.turnIn = old.turnIn
     made.lostUntil = old.lostUntil
     made.snowbound = old.snowbound
     made.headOn = old.headOn

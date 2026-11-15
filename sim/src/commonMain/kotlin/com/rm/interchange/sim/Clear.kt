@@ -159,7 +159,7 @@ private fun World.saleOf(company: Int, i: Int, spansGone: MutableSet<Int>, airpo
     spanHeads[i]?.let { if (it in spansGone) return Sale(cleared = true, trackGone = true) }
     airportTiles[i]?.let { if (it in airportsGone) return Sale(cleared = true) }
     if (!owns(company, i) || trainOnTile(i)) return Sale()
-    depotAt(i)?.let { d -> if (trains.any { it != null && it.depot == d.id && it.inDepot }) return Sale() }
+    depotAt(i)?.let { d -> if (trains.any { it != null && it.shedIn == d.id && it.inDepot }) return Sale() }
     // The owner's station building comes down for nothing and leaves any track alone.
     if (stationBuildings.containsKey(i)) return Sale(cleared = true)
     if (roadStops.containsKey(i)) {

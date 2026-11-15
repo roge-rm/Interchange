@@ -107,7 +107,10 @@ internal fun World.depotGone(d: Depot) {
     fun nearest(owner: Int, fits: (Depot) -> Boolean = { true }): Int =
         depots.filter { it != null && it.id != d.id && it.owner == owner && it.kind == d.kind && fits(it) }.minByOrNull { dist(it!!) }?.id ?: -1
     when (d.kind) {
-        Depots.RAIL -> for (t in trains) if (t != null && t.depot == d.id) { t.depot = nearest(t.owner); if (t.toDepot) t.route = null }
+        Depots.RAIL -> for (t in trains) if (t != null) {
+            if (t.depot == d.id) { t.depot = nearest(t.owner); if (t.toDepot) t.route = null }
+            if (t.turnIn == d.id && !t.inDepot) { t.turnIn = -1; t.route = null }
+        }
         Depots.ROAD -> for (v in roadVehicles) if (v != null && v.depot == d.id) { v.depot = nearest(v.owner); if (v.toDepot) v.route = null }
         Depots.SHIPYARD -> for (v in ships) if (v != null && v.depot == d.id) { v.depot = nearest(v.owner); if (v.toDepot) v.route = null }
         Depots.HANGAR -> for (v in aircraft) if (v != null && v.depot == d.id) {

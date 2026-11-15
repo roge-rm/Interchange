@@ -499,7 +499,7 @@ internal fun World.clearTile(company: Company, c: Command.Clear) {
         if (s.owner == company.id) dropStationBuilding(s)
         return
     }
-    depotAt(i)?.let { d -> if (trains.any { it != null && it.depot == d.id && it.inDepot }) return }
+    depotAt(i)?.let { d -> if (trains.any { it != null && it.shedIn == d.id && it.inDepot }) return }
     // A road stop comes off its road; a garage goes, with its bit of road.
     roadStops[i]?.let { id ->
         if (roadVehicleOn(i)) return

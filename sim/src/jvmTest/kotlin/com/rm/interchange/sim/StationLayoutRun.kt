@@ -32,6 +32,7 @@ class StationLayoutRun {
         "ladderPre" to { ladder(presignals = true) },
         "split" to ::split,
         "terminus" to ::terminus,
+        "queueDepot" to ::queueDepot,
         "drivethru" to ::driveThru,
         "bays" to ::bays,
         "double" to ::doubleEntrance,
@@ -227,7 +228,7 @@ class StationLayoutRun {
                         }
                     }
                     wasWaiting[t.id] = waiting
-                    if (t.inDepot && wasIn[t.id] == false) depotIn.merge(t.depot, 1, Int::plus)
+                    if (t.inDepot && wasIn[t.id] == false) depotIn.merge(t.shedIn, 1, Int::plus)
                     wasIn[t.id] = t.inDepot
                     if (!t.inDepot && t.held && t.speed == 0) held.merge(f, 1, Int::plus)
                     if (f >= 0 && f in watch && lastFront[t.id] != f) watched.merge(f, 1, Int::plus)
@@ -260,7 +261,7 @@ class StationLayoutRun {
             if (watch.isNotEmpty()) say("$name: fronts onto ${watch.joinToString { "${xy(it)} ${watched[it] ?: 0}" }}")
             for ((g, ts) in groups) say("$name: $g visited stations ${ts.map { visits[it.id]?.sorted() ?: emptyList() }}")
             say("$name: longest standing still ${"%.1f".format(worst.toDouble() / Calendar.TICKS_PER_DAY)} days ($worstAt); still over 30 days at the end: $stuckNow; crashes ${w.crashes.list.size}; trains left ${trains.count { w.trains.getOrNull(it.id) === it }}/${trains.size}")
-            return Outcome(calls.values.flatMap { it.entries }.associate { it.key to it.value }, callsBy.values.sum(), worst.toDouble() / Calendar.TICKS_PER_DAY, stuckNow, unheldFired, crashes, watch.associateWith { watched[it] ?: 0 }, mostCalling)
+            return Outcome(calls.values.flatMap { it.entries }.associate { it.key to it.value }, callsBy.values.sum(), worst.toDouble() / Calendar.TICKS_PER_DAY, stuckNow, unheldFired, crashes, watch.associateWith { watched[it] ?: 0 }, mostCalling, depotIn)
         }
 
         /** Says PASS or FAIL for the layout, with the checks that failed. */
@@ -282,7 +283,7 @@ class StationLayoutRun {
     }
 
     /** What a run gave: calls by platform label, calls in all, the longest standing still in days and the rest. */
-    private class Outcome(val byPlatform: Map<String, Int>, val calls: Int, val worstDays: Double, val stuckNow: Int, val unheld: Boolean, val crashes: Int, val watched: Map<Int, Int>, val mostCalling: Int)
+    private class Outcome(val byPlatform: Map<String, Int>, val calls: Int, val worstDays: Double, val stuckNow: Int, val unheld: Boolean, val crashes: Int, val watched: Map<Int, Int>, val mostCalling: Int, val depotIn: Map<Int, Int>)
 
     /** Six through platforms fed by a diagonal ladder off one eastbound line and merged out by another. */
     private fun ladder(presignals: Boolean, dense: Boolean = true) {
@@ -380,8 +381,44 @@ class StationLayoutRun {
             say("$name: escape depot $escape, spur tile (11,10) holds ${w.trackAt(11, 10)}")
             dump(3, 7, 28, 16)
             val ts = (0 until 6).map { train(d, Order.withWait(a, 12), wp) }
-            noWorse(run(ts, 200), 11, 73.0)
-            say("$name: the longest wait has its own goal in S5, with the escape depot")
+            val o = run(ts, 200)
+            verdict(listOf(
+                "calls ${o.calls} >= 11" to (o.calls >= 11),
+                "escape depot entries ${o.depotIn[escape] ?: 0} > 0" to ((o.depotIn[escape] ?: 0) > 0),
+                "longest standing ${"%.1f".format(o.worstDays)} < 30 days" to (o.worstDays < 30.0),
+                "none still standing (${o.stuckNow})" to (o.stuckNow == 0),
+                "no crashes (${o.crashes})" to (o.crashes == 0),
+            ))
+        }
+    }
+
+    /**
+     * A queue depot: east along row 10 past station A to a depot at the end of the line, the only way to turn. Out
+     * of it trains turn south at (20,10), west along row 14 past station B and up column 4 onto row 10 again, with
+     * one-way path signals all round, so the spur to the depot takes one train at a time.
+     */
+    private fun queueDepot() {
+        with(Lab("queueDepot")) {
+            rail(5, 10, 29, 10, X)
+            val d = depot(30, 10, XM)
+            piece(20, 10, S); rail(20, 11, 20, 13, Y); piece(20, 14, N)
+            rail(5, 14, 19, 14, X)
+            piece(4, 14, E); rail(4, 11, 4, 13, Y); piece(4, 10, S)
+            val a = station(8, 10, 12, 10, X)
+            val b = station(8, 14, 12, 14, X)
+            sig(6, 10, X, XM, Signals.PATH, true)
+            sig(15, 10, X, XM, Signals.PATH, true)
+            sig(16, 14, X, XP, Signals.PATH, true)
+            sig(4, 12, Y, YP, Signals.PATH, true)
+            dump(3, 9, 31, 15)
+            val ts = (0 until 4).map { train(d, Order.withWait(a, 4), Order.withWait(b, 4)) }
+            val o = run(ts, 200)
+            verdict(listOf(
+                "turns in the queue depot ${o.depotIn[d] ?: 0} >= 8" to ((o.depotIn[d] ?: 0) >= 8),
+                "calls ${o.calls} >= 16" to (o.calls >= 16),
+                "nothing standing over 30 days (${"%.1f".format(o.worstDays)})" to (o.worstDays <= 30.0),
+                "no crashes (${o.crashes})" to (o.crashes == 0),
+            ))
         }
     }
 

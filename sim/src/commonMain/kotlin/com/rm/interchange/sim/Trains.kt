@@ -158,6 +158,11 @@ class Train(
     var routeAt = 0
     /** Turn round before going on: the way ahead lies behind. */
     var turnRound = false
+    /**
+     * The depot its route ends in to turn round, or -1: it goes in, is serviced if due and comes out again to plan
+     * afresh. While it's in there, the depot it's in.
+     */
+    var turnIn = -1
     /** No way to where it's going; it tries again at this tick. */
     var lostUntil = 0L
     /** Stuck in a drift, so the news is told once. */
@@ -230,6 +235,12 @@ class Train(
 
     /** The depot it's heading for when [target] is -1: the one a depot order names, else its own. */
     val goalDepot: Int get() = if (toDepot) depot else current?.let { Order.depot(it) }?.takeIf { it >= 0 } ?: depot
+
+    /** The depot its route runs into: the one it turns in, else [goalDepot] when it's going to a depot, else -1. */
+    val shedGoal: Int get() = if (turnIn >= 0) turnIn else if (target == -1) goalDepot else -1
+
+    /** The depot it's in when [inDepot]. */
+    val shedIn: Int get() = if (turnIn >= 0) turnIn else depot
 
     /**
      * The step and how far along it the point [d] behind the nose is. A step
@@ -378,7 +389,8 @@ internal fun World.trainCommand(company: Company, c: Command.TrainOrder) {
 
 /** Puts a train in its depot onto the track at the depot's door, nose first, if the tile's clear. */
 private fun World.leaveDepot(t: Train) {
-    val d = depots.getOrNull(t.depot) ?: return
+    if (t.turnIn >= 0 && depots.getOrNull(t.turnIn) == null) t.turnIn = -1
+    val d = depots.getOrNull(t.shedIn) ?: return
     // Its wires taken down since: it stays in, stopped.
     if (t.electric && !depotWired(d)) {
         t.running = false
@@ -402,17 +414,20 @@ private fun World.leaveDepot(t: Train) {
     t.route = null
     t.signalled = false
     t.aside = -1
+    t.turnIn = -1
     countOn(t)
     val p = planRoute(t)
     if (p != null && !p.behind) {
         t.route = p.steps
         t.routeAt = 0
+        t.turnIn = p.turnIn
     }
     if (!wayOut(t)) {
         // Its way out isn't clear: back inside to look again shortly.
         t.inDepot = true
         t.steps.clear()
         t.route = null
+        t.turnIn = if (d.id == t.depot) -1 else d.id
         countOn(t)
         t.lostUntil = tick + HEAD_ON_CHECK
     }
@@ -543,6 +558,7 @@ internal fun World.moveTrains() {
             if (anyDepot(t)) depotTiles[stepTile(p.steps.last())]?.let { t.depot = it }
             t.route = p.steps
             t.routeAt = 0
+            t.turnIn = p.turnIn
             if (p.behind) t.turnRound = true
         }
     }
@@ -826,6 +842,7 @@ private fun World.headOnWait(t: Train): Boolean {
     turnRound(t)
     t.route = way
     t.routeAt = 0
+    t.turnIn = -1
     t.lostUntil = 0
     t.aside = aside
     t.asideTicks = 0
@@ -997,7 +1014,7 @@ private fun World.walkAhead(t: Train, brake: Int, bends: CurveScan?): Pair<Int, 
             if (nx < 0 || stationTiles[stepTile(nx)] != target) { stop = Stop.STATION; break }
         }
         // Into the depot: it runs on in past the end of the tile until its last car is inside.
-        if (target == -1 && depotTiles[tile] == t.goalDepot) { stand = free + t.length; stop = Stop.DEPOT; break }
+        if (depotTiles[tile] == t.shedGoal) { stand = free + t.length; stop = Stop.DEPOT; break }
         val next = nextFrom(t, cur, at)
         val nt = if (next >= 0) stepTile(next) else -1
         stop = when {
@@ -1330,7 +1347,7 @@ private fun World.advance(t: Train, move: Int, free: Int) {
     t.nose += minOf(move, free)
     while (t.nose > stepLength(t.steps.last())) {
         // Running into its depot, the nose goes on past the end of the tile, into the shed.
-        if (t.target == -1 && depotTiles[stepTile(t.steps.last())] == t.goalDepot) break
+        if (depotTiles[stepTile(t.steps.last())] == t.shedGoal) break
         val next = nextFrom(t, t.steps.last(), t.routeAt)
         if (next < 0) {
             t.nose = stepLength(t.steps.last())
@@ -1379,17 +1396,18 @@ private fun World.turnRound(t: Train) {
     t.steps += kept
     t.nose = stepLength(t.steps.last()) - along
     t.route = null
+    t.turnIn = -1
     releaseAhead(t)
     countOn(t)
 }
 
-/** Whether some of [t] is still inside the depot it's coming out of, so it stands in the door. */
+/** Whether some of [t] is still inside the depot it's coming out of, its own or one it turned in, so it stands in the door. */
 private fun World.atDoor(t: Train) =
-    t.steps.isNotEmpty() && depotTiles[stepTile(t.steps[0])] == t.depot && (t.behind(t.length) shr 32) < 0
+    t.steps.isNotEmpty() && stepLevel(t.steps[0]) == 0 && depotTiles.containsKey(stepTile(t.steps[0])) && (t.behind(t.length) shr 32) < 0
 
-/** Whether [t], going in, stands wholly inside its depot's shed, out of sight. */
+/** Whether [t], going in, stands wholly inside the shed of the depot it's going to or turning in, out of sight. */
 private fun World.inShed(t: Train) =
-    t.target == -1 && t.steps.isNotEmpty() && depotTiles[stepTile(t.steps.last())] == t.goalDepot && freeAhead(t).let { it.second == Stop.DEPOT && it.first <= 0 }
+    t.steps.isNotEmpty() && depotTiles[stepTile(t.steps.last())] == t.shedGoal && freeAhead(t).let { it.second == Stop.DEPOT && it.first <= 0 }
 
 /**
  * Puts [t], stood in its depot's door, back inside, running or not as it was, so it's listed there and doesn't block
@@ -1397,6 +1415,9 @@ private fun World.inShed(t: Train) =
  */
 private fun World.backIn(t: Train) {
     val running = t.running
+    // Back into a depot it turned in, it comes out of that one again.
+    val left = depotTiles[stepTile(t.steps[0])]
+    t.turnIn = if (left == null || left == t.depot) -1 else left
     t.inDepot = true
     t.toDepot = false
     t.steps.clear()
@@ -1417,6 +1438,10 @@ private fun World.backIn(t: Train) {
  * set going again unless told to stop there.
  */
 private fun World.enterDepot(t: Train) {
+    if (t.turnIn >= 0) {
+        turnInDepot(t)
+        return
+    }
     val d = depots.getOrNull(t.goalDepot)
     if (d == null || depotTiles[stepTile(t.steps.last())] != d.id) return
     val o = if (t.toDepot) null else t.current?.takeIf { Order.depot(it) == d.id }
@@ -1436,6 +1461,25 @@ private fun World.enterDepot(t: Train) {
     if (o != null) {
         if (Order.depotKind(o) == Order.DEPOT_STOP) t.running = false
         nextOrder(t)
+    }
+}
+
+/**
+ * Puts [t], stood wholly in the shed of the depot it turns in, inside, still running, serviced if it's due. It comes
+ * out again by [leaveDepot], planning afresh.
+ */
+private fun World.turnInDepot(t: Train) {
+    val d = depots.getOrNull(t.turnIn)
+    if (d == null || depotTiles[stepTile(t.steps.last())] != d.id) return
+    t.inDepot = true
+    t.steps.clear()
+    t.route = null
+    t.lostUntil = 0
+    reserved.entries.removeAll { it.value == t.id }
+    countOn(t)
+    if (t.servicing || due(t.service, t.serviced)) {
+        autorenew(t)
+        serviced(t)
     }
 }
 

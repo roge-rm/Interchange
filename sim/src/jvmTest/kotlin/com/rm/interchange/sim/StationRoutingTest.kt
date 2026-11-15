@@ -279,6 +279,128 @@ class StationRoutingTest {
         assertEquals(3, rows.values.toSet().size, "rows $rows")
     }
 
+    @Test
+    fun aTrainTurnsInADepotAtADeadEndWithNoOtherWay() {
+        // Out of a depot at x = 10 west along y = 10 to a second depot at x = 2. The station is on a line south off
+        // (8, 10) that only a train going east can turn onto.
+        val w = world()
+        w.apply(Command.Depot(0, 10, 10, XM))
+        w.apply(Command.Depot(0, 2, 10, XP))
+        w.rail(3, 10, 9, 10, X)
+        w.piece(8, 10, W)
+        w.rail(8, 11, 8, 16, Y)
+        w.apply(Command.Station(0, 8, 12, 8, 15, Y))
+        val far = w.depotTiles.getValue(w.index(2, 10))
+        val t = w.train(0, Order.withWait(0, 20))
+        var turned = false
+        w.runUntil(30, "the train at the station") {
+            if (t.inDepot && t.turnIn == far) turned = true
+            w.atStation(t)
+        }
+        assertTrue(turned, "turned in the depot at the end")
+        assertEquals(-1, t.turnIn)
+    }
+
+    @Test
+    fun withEveryPlatformFullATrainTurnsInTheEscapeDepotAndComesOutToTheFirstToFree() {
+        // As the test above with every platform full, with an escape depot at (17, 8) on a spur off (17, 10) past the
+        // signal, run into from the west and out again to the east.
+        val w = world()
+        w.apply(Command.Depot(0, 2, 10, XP))
+        w.rail(3, 10, 50, 10, X)
+        w.piece(17, 10, N); w.piece(17, 10, E)
+        w.piece(17, 9, Y)
+        w.apply(Command.Depot(0, 17, 8, YP))
+        w.piece(20, 10, W)
+        w.piece(20, 11, E)
+        w.rail(21, 11, 30, 11, X)
+        w.piece(31, 11, N)
+        w.piece(31, 10, S)
+        w.apply(Command.Station(0, 24, 10, 29, 11, X))
+        w.apply(Command.Station(0, 44, 10, 47, 10, X))
+        w.path(15, 10, X, XM)
+        val escape = w.depotTiles.getValue(w.index(17, 8))
+        val a1 = w.train(0, Order.withWait(0, 100))
+        w.runUntil(20, "a1 at its platform") { w.atStation(a1) }
+        val a2 = w.train(0, Order.withWait(0, 16), Order.withWait(1, 100))
+        w.runUntil(20, "a2 at its platform") { w.atStation(a2) }
+        val b = w.train(0, Order.withWait(0, 20))
+        var inside = 0
+        w.runUntil(30, "b at a platform") {
+            if (b.inDepot && b.turnIn == escape) inside++
+            w.atStation(b)
+        }
+        assertTrue(inside > Calendar.TICKS_PER_DAY, "b waited in the escape depot, $inside ticks")
+        assertEquals(11, w.row(b), "b on the platform a2 left")
+        assertEquals(10, w.row(a1))
+    }
+
+    @Test
+    fun throughAQueueDepotTrainsPassOneAtATime() {
+        // East along y = 10 past station A to a depot at x = 30, the end of the line. Out of it a train turns south at
+        // (20, 10), west along y = 14 past station B, and up x = 4 onto y = 10 again. One-way path signals all round.
+        val w = world()
+        w.rail(5, 10, 29, 10, X)
+        w.apply(Command.Depot(0, 30, 10, XM))
+        w.piece(20, 10, S); w.rail(20, 11, 20, 13, Y); w.piece(20, 14, N)
+        w.rail(5, 14, 19, 14, X)
+        w.piece(4, 14, E); w.rail(4, 11, 4, 13, Y); w.piece(4, 10, S)
+        w.apply(Command.Station(0, 8, 10, 12, 10, X))
+        w.apply(Command.Station(0, 8, 14, 12, 14, X))
+        w.path(6, 10, X, XM, oneWay = true)
+        w.path(15, 10, X, XM, oneWay = true)
+        w.path(16, 14, X, XP, oneWay = true)
+        w.path(4, 12, Y, YP, oneWay = true)
+        val a = w.stationTiles.getValue(w.index(8, 10))
+        val b = w.stationTiles.getValue(w.index(8, 14))
+        val ts = (0 until 3).map { w.train(0, Order.withWait(a, 4), Order.withWait(b, 4)) }
+        val spur = (21..29).map { w.index(it, 10) }.toSet()
+        val entries = IntArray(ts.size)
+        val wasIn = BooleanArray(ts.size) { true }
+        var most = 0
+        repeat(150 * Calendar.TICKS_PER_DAY) {
+            w.step()
+            most = maxOf(most, ts.count { t -> !t.inDepot && t.onTiles.any { it in spur } })
+            for ((i, t) in ts.withIndex()) {
+                if (t.inDepot && !wasIn[i]) entries[i]++
+                wasIn[i] = t.inDepot
+            }
+        }
+        assertEquals(1, most, "trains on the spur at once")
+        assertTrue(entries.all { it >= 2 }, "turns in the depot by train ${entries.toList()}")
+        assertEquals(0, w.crashes.list.size)
+    }
+
+    @Test
+    fun aTrainGoesViaTheDepotBehindATakenPlatformWithoutLockingHeadOn() {
+        // b's depot order is to the depot at the end of row 10, which a stands on, with a second station to the west.
+        val w = twoPlatforms()
+        w.apply(Command.Station(0, 5, 10, 8, 10, X))
+        val a = w.train(0, Order.withWait(0, 30), Order.withWait(1, 6))
+        w.runUntil(20, "a at its platform") { w.atStation(a) }
+        val b = w.train(0, Order.withWait(0, 6), Order.toDepot(1), Order.withWait(1, 6))
+        val ts = listOf(a, b)
+        val still = IntArray(2)
+        val last = arrayOfNulls<String>(2)
+        var worst = 0
+        val ins = IntArray(2)
+        val was = BooleanArray(2) { true }
+        repeat(150 * Calendar.TICKS_PER_DAY) {
+            w.step()
+            for ((i, t) in ts.withIndex()) {
+                val here = "${t.steps.lastOrNull()}:${t.nose}"
+                if (t.waiting > 0 || t.inDepot || here != last[i]) still[i] = 0 else still[i]++
+                last[i] = here
+                worst = maxOf(worst, still[i])
+                if (t.inDepot && !was[i]) ins[i]++
+                was[i] = t.inDepot
+            }
+        }
+        assertTrue(ins[1] >= 2, "b in the depot ${ins[1]} times")
+        assertTrue(worst < 45 * Calendar.TICKS_PER_DAY, "longest standing ${worst / Calendar.TICKS_PER_DAY} days")
+        assertTrue(ts.none { it.stuck }, "none stuck")
+    }
+
     /** The ladder of StationLayoutRun: six platforms off one line, with a ring back round past a depot and a waypoint. */
     private fun ladder(): World {
         val w = world()
