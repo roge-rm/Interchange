@@ -69,6 +69,9 @@
     <string name="hide_tools">Hide tools</string>
     <string name="remove_track">Remove track</string>
     <string name="platforms_other_way">Platforms the other way</string>
+    <string name="pick_station_to_join">Pick the station to join</string>
+    <string name="join_station">Join %1$s</string>
+    <string name="new_station">New station</string>
 
     <!-- What a tool costs, on the tray's line. -->
     <string name="cost_track">%1$s a piece, %2$s more on a slope</string>

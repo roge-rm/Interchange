@@ -286,4 +286,41 @@ class StationBuildingTest {
         assertEquals(Track.XP, s.buildingFacing)
         assertEquals(mapOf(w.index(9, 10) to s.id), w.stationBuildings.toMap())
     }
+
+    @Test
+    fun platformsARowApartJoinTheStationNamed() {
+        val w = land()
+        w.apply(Command.Station(0, 10, 10, 13, 10, Track.X))
+        val s = w.station(10, 10)
+        val building = s.building
+        w.apply(Command.Station(0, 10, 12, 13, 12, Track.X, join = s.id))
+        assertEquals(s.id, w.station(10, 12).id)
+        assertEquals(8, s.tiles.size)
+        assertEquals(building, s.building)
+        assertEquals(listOf(s.id), w.stationsToJoin(0, 10..13, 14..14).map { it.id })
+    }
+
+    @Test
+    fun joiningOutOfSpreadIsRefused() {
+        val w = land()
+        w.apply(Command.Station(0, 10, 10, 13, 10, Track.X))
+        val s = w.station(10, 10)
+        w.apply(Command.Station(0, 20, 10, 23, 10, Track.X, join = s.id))
+        assertEquals(null, w.stationAt(w.index(20, 10)))
+        assertEquals(4, s.tiles.size)
+        // Nor can it join another company's station.
+        w.apply(Command.Station(1, 10, 12, 13, 12, Track.X, join = s.id))
+        assertEquals(null, w.stationAt(w.index(10, 12)))
+        assertTrue(w.stationsToJoin(0, 20..23, 10..10).isEmpty())
+    }
+
+    @Test
+    fun aNewStationNextToOneStaysApart() {
+        val w = land()
+        w.apply(Command.Station(0, 10, 10, 13, 10, Track.X))
+        val s = w.station(10, 10)
+        w.apply(Command.Station(0, 14, 10, 15, 10, Track.X, join = Command.Station.NEW))
+        assertNotEquals(s.id, w.station(14, 10).id)
+        assertEquals(4, s.tiles.size)
+    }
 }

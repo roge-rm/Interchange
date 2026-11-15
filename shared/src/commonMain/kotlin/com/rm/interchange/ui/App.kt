@@ -64,6 +64,10 @@ import com.rm.interchange.sim.railCost
 import com.rm.interchange.sim.canalCost
 import com.rm.interchange.sim.bridgeCost
 import com.rm.interchange.sim.bridgeRefusal
+import com.rm.interchange.sim.stationsToJoin
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.layout.Row
 import com.rm.interchange.sim.tunnelFrom
 import com.rm.interchange.sim.airportRefusal
 import com.rm.interchange.sim.Refusal
@@ -858,6 +862,9 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
     var folded by remember { mutableStateOf(false) }
     var plan by remember { mutableStateOf<Command.Rail?>(null) }
     var stationPlan by remember { mutableStateOf<Command.Station?>(null) }
+    // With picking on, platforms with stations of ours in reach wait here, with those stations' ids and names, for which to join.
+    var stationPicking by remember { mutableStateOf(false) }
+    var stationHeld by remember { mutableStateOf<Pair<Command.Station, List<Pair<Int, String>>>?>(null) }
     var selected by remember { mutableStateOf<Selection?>(null) }
     // The train having stops added by tapping stations, if any.
     var addingStops by remember { mutableStateOf<Int?>(null) }
@@ -1044,7 +1051,15 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
         if (trackPiece == 0 || tool != Tool.Track) trackLine(me, start, end, removing)
         else pieceLine(world, me, start, end, worldPiece(LandPainter(world, view, view.halfWidth), trackPiece), removing)
 
-    val input = remember(tool, removing, stationAlongX, addingStops, addingRoadStops, addingCraftStops, signalKind, signalSpacing, bridgeStyle, roadSurface, airportKind, runwayAlongX, trackPiece, townSize, industryKind, industryTurn, pick, copyPick.value) {
+    val stationNumber = stringResource(Res.string.station_n, "%d")
+    // Sends platforms at once, or holds them for a choice when picking is on and stations of ours are in reach.
+    fun buildStation(p: Command.Station) {
+        val near = if (stationPicking) world.stationsToJoin(me, minOf(p.x0, p.x1)..maxOf(p.x0, p.x1), minOf(p.y0, p.y1)..maxOf(p.y0, p.y1)) else emptyList()
+        if (near.isEmpty()) { stationHeld = null; runner.request(p); built(); return }
+        stationHeld = p to near.map { it.id to it.name.ifEmpty { stationNumber.replace("%d", (it.id + 1).toString()) } }
+    }
+
+    val input = remember(tool, removing, stationAlongX, stationPicking, addingStops, addingRoadStops, addingCraftStops, signalKind, signalSpacing, bridgeStyle, roadSurface, airportKind, runwayAlongX, trackPiece, townSize, industryKind, industryTurn, pick, copyPick.value) {
         object : MapInput {
             override val builds: Int get() = buildCount[0]
             override fun buildArea(from: Pick, to: Pick): IntArray? {
@@ -1167,7 +1182,7 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
                     Tool.Waypoint -> { runner.request(Command.Waypoint(me, at.tileX, at.tileY)); built() }
                     Tool.Tunnel -> { runner.request(Command.Tunnel(me, at.tileX, at.tileY)); built() }
                     Tool.SnowShed, Tool.SnowFence -> { runner.request(Command.SnowWorks(me, at.tileX, at.tileY, shed = tool == Tool.SnowShed)); built() }
-                    Tool.Station -> { runner.request(stationPlan(me, at, at, stationAlongX)); built() }
+                    Tool.Station -> buildStation(stationPlan(me, at, at, stationAlongX))
                     Tool.Depot -> {
                         runner.request(depotAt(world, me, at))
                         built()
@@ -1204,7 +1219,7 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
                 when (tool) {
                     Tool.Road -> roadPlan = roadLine(me, s, at, roadSurface, removing)
                     Tool.TramRails -> roadPlan = roadLine(me, s, at, roadSurface, removing, tram = true)
-                    Tool.Station -> stationPlan = stationPlan(me, s, at, stationAlongX)
+                    Tool.Station -> { stationHeld = null; stationPlan = stationPlan(me, s, at, stationAlongX) }
                     Tool.Bridge -> bridgePlan = bridgePlan(me, s, at, bridgeStyle)
                     Tool.Canal -> canalPlan = roadLine(me, s, at, 0, removing).let { Command.Canal(me, it.sx, it.sy, it.ex, it.ey, removing) }
                     Tool.Clear -> clearPlan = Command.ClearArea(me, s.tileX, s.tileY, at.tileX, at.tileY)
@@ -1222,7 +1237,7 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
                     c?.let { edit(it); built() }
                 }
                 plan?.let { runner.request(if (tool == Tool.Wires) Command.Wire(me, it.sx, it.sy, it.ex, it.ey, it.first, it.remove) else it); built() }
-                stationPlan?.let { runner.request(it); built() }
+                stationPlan?.let { buildStation(it) }
                 bridgePlan?.let { b ->
                     val why = world.companies.getOrNull(me)?.let { world.bridgeRefusal(it, b) } ?: Refusal.NONE
                     // A drag that stays on one tile goes nowhere and says nothing.
@@ -1283,7 +1298,6 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
     val measurer = rememberTextMeasurer()
     // Money as the language writes it, for drawing over the map outside composition.
     val moneyPattern = stringResource(Res.string.money, "%s")
-    val stationNumber = stringResource(Res.string.station_n, "%d")
     BoxWithConstraints(Modifier.fillMaxSize().background(c.page)) {
         val layout = screenLayout(maxWidth, maxHeight)
         // A buying list takes up to a good share of an upright screen; on a short one, whatever its card has left.
@@ -1296,7 +1310,7 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
         MapView(
             world, sheets, view, { frame.value }, input, { moving(runner) }, Modifier.fillMaxSize(),
             overlay = plan?.let { p -> { painter -> drawTrackPlan(world, painter, p) } }
-                ?: stationPlan?.let { p -> { painter -> drawStationPlan(world, painter, p) } }
+                ?: (stationPlan ?: stationHeld?.first)?.let { p -> { painter -> drawStationPlan(world, painter, p) } }
                 ?: bridgePlan?.let { p -> { painter -> drawBridgePlan(world, painter, p) } }
                 ?: roadPlan?.let { p -> { painter -> drawRoadPlan(world, painter, p) } }
                 ?: canalPlan?.let { p -> { painter -> drawCanalPlan(world, painter, p) } }
@@ -1449,6 +1463,7 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
             copyPick.value = null
             plan = null
             stationPlan = null
+            stationHeld = null
             levelPlan = null
             treePlan = null
             folded = false
@@ -1651,6 +1666,14 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
                     Tool.Bridge -> trackOptions += {
                         for (s in 0 until 3) if (year >= Spans.FROM[s] || s == bridgeStyle) OptionButton(BRIDGE_GLYPHS[s], bridgeStyles.getOrElse(s) { "" }, bridgeStyle == s) { bridgeStyle = s }
                     }
+                    Tool.Station -> stationHeld?.let { (p, near) ->
+                        trackOptions += {
+                            Row(Modifier.weight(1f).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                for ((id, name) in near) ActionButton(stringResource(Res.string.join_station, name)) { stationHeld = null; runner.request(p.copy(join = id)); built() }
+                                ActionButton(stringResource(Res.string.new_station)) { stationHeld = null; runner.request(p.copy(join = Command.Station.NEW)); built() }
+                            }
+                        }
+                    }
                     Tool.Signals -> if (!removing) {
                         val kinds: @Composable RowScope.() -> Unit = {
                             for (k in Signals.PLACED.indices) OptionButton(SIGNAL_GLYPHS[k], signalKinds.getOrElse(k) { "" }, signalKind == k) { signalKind = k }
@@ -1667,7 +1690,7 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
                     }
                     else -> {}
                 }
-                ToolTray(tool, { tool = it; refusal = Refusal.NONE; plan = null; stationPlan = null; signalPlan = null; levelPlan = null; treePlan = null; removing = false }, trayDetail, folded, { folded = it }, layout.compact, trayWidth, options = trackOptions, editor = editor, warning = editor && refused || !editor && refusedHere) {
+                ToolTray(tool, { tool = it; refusal = Refusal.NONE; plan = null; stationPlan = null; stationHeld = null; signalPlan = null; levelPlan = null; treePlan = null; removing = false }, trayDetail, folded, { folded = it }, layout.compact, trayWidth, options = trackOptions, editor = editor, warning = editor && refused || !editor && refusedHere) {
                     if (tool == Tool.PlaceIndustry) TrayToggle(Glyph.TurnRight, stringResource(Res.string.turn_industry), industryTurn != 0) { industryTurn = (industryTurn + 1) % 4 }
                     if (tool == Tool.Track || tool == Tool.Wires || tool == Tool.Signals || tool == Tool.Road || tool == Tool.TramRails || tool == Tool.Canal) TrayToggle(Glyph.Lift, stringResource(Res.string.remove_track), removing) { removing = !removing }
                     if (tool == Tool.Airport && airportKind != Airports.SEAPLANE && airportKind != Airports.HELIPORT) TrayToggle(Glyph.TurnRight, stringResource(Res.string.runway_other_way), !runwayAlongX) { runwayAlongX = !runwayAlongX }
@@ -1675,6 +1698,7 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
                         // PieceX runs down-right, world X while the map is unturned, and the two swap on a quarter turn.
                         val glyph = if ((view.turn % 2 == 0) == stationAlongX) Glyph.PieceX else Glyph.PieceY
                         TrayToggle(glyph, stringResource(Res.string.platforms_other_way), false) { stationAlongX = !stationAlongX }
+                        TrayToggle(Glyph.Station, stringResource(Res.string.pick_station_to_join), stationPicking) { stationPicking = !stationPicking; stationHeld = null }
                     }
                 }
             }

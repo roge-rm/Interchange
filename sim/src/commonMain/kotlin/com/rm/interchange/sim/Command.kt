@@ -43,8 +43,16 @@ sealed interface Command {
         }
     }
 
-    /** Lays platforms over a rectangle, running along [axis]. */
-    data class Station(override val company: Int, val x0: Int, val y0: Int, val x1: Int, val y1: Int, val axis: Int) : Command
+    /**
+     * Lays platforms over a rectangle, running along [axis]. [join] is [NEXT_TO] to join the station next to it, [NEW]
+     * for a new station, or a station's id to join that one when it's within [STATION_SPREAD].
+     */
+    data class Station(override val company: Int, val x0: Int, val y0: Int, val x1: Int, val y1: Int, val axis: Int, val join: Int = NEXT_TO) : Command {
+        companion object {
+            const val NEXT_TO = -1
+            const val NEW = -2
+        }
+    }
 
     /** Builds a depot open at [edge]. */
     data class Depot(override val company: Int, val x: Int, val y: Int, val edge: Int) : Command

@@ -59,6 +59,9 @@
     <string name="hide_tools">Masquer les outils</string>
     <string name="remove_track">Enlever la voie</string>
     <string name="platforms_other_way">Quais dans l'autre sens</string>
+    <string name="pick_station_to_join">Choisir la gare à rejoindre</string>
+    <string name="join_station">Rejoindre %1$s</string>
+    <string name="new_station">Nouvelle gare</string>
 
     <string name="cost_track">%1$s le tronçon, %2$s de plus en pente</string>
     <string name="cost_lift">%1$s pour enlever un tronçon</string>

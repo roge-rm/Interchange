@@ -112,8 +112,9 @@ fun World.signalFits(x: Int, y: Int, piece: Int): Boolean {
 /**
  * Lays platforms over the rectangle from ([x0], [y0]) to ([x1], [y1]), each
  * running along [axis] ([Track.X] or [Track.Y]). Each tile has to be flat and
- * dry, and empty or already straight track along [axis]. Joins the station
- * next to it if there's one of this company's, or makes a new one. A rectangle
+ * dry, and empty or already straight track along [axis]. Joins as [Command.Station.join]
+ * says: the station of this company's next to it, else a new one; always a new
+ * one; or the station with that id, refused if it isn't in reach. A rectangle
  * of one station's platforms turns that whole station onto [axis], for nothing.
  */
 internal fun World.buildStation(company: Company, c: Command.Station) {
@@ -145,10 +146,16 @@ internal fun World.buildStation(company: Company, c: Command.Station) {
     }
     for (i in tiles) stationTiles.remove(i)
     if (!fits) return
-    // A station of this company's touching the rectangle, or within a tile of it.
     var station: Station? = null
-    for (y in ys.first - 1..ys.last + 1) for (x in xs.first - 1..xs.last + 1) {
-        if (station == null && inside(x, y)) station = stationAt(index(x, y))?.takeIf { it.owner == company.id }
+    when (c.join) {
+        Command.Station.NEXT_TO -> {
+            // A station of this company's touching the rectangle, or within a tile of it.
+            for (y in ys.first - 1..ys.last + 1) for (x in xs.first - 1..xs.last + 1) {
+                if (station == null && inside(x, y)) station = stationAt(index(x, y))?.takeIf { it.owner == company.id }
+            }
+        }
+        Command.Station.NEW -> {}
+        else -> station = stations.getOrNull(c.join)?.takeIf { it.owner == company.id && joinsWithin(it, xs, ys) } ?: return
     }
     val s = station ?: Station(stations.size, company.id, stationName(xs.first, ys.first), xs.first, ys.first).also { stations += it }
     spend(company, Books.CONSTRUCTION, cost)
@@ -165,6 +172,20 @@ internal fun World.buildStation(company: Company, c: Command.Station) {
     placeStationBuilding(s, c.axis)
     networkChanged()
 }
+
+/** Whether [s] is a station, not a waypoint, with tiles whose box together with [xs] by [ys] fits in [STATION_SPREAD] each way. */
+fun World.joinsWithin(s: Station, xs: IntRange, ys: IntRange): Boolean {
+    if (s.waypoint || s.empty) return false
+    var x0 = xs.first; var y0 = ys.first; var x1 = xs.last; var y1 = ys.last
+    for (t in s.places) {
+        x0 = minOf(x0, t % width); y0 = minOf(y0, t / width); x1 = maxOf(x1, t % width); y1 = maxOf(y1, t / width)
+    }
+    return x1 - x0 < STATION_SPREAD && y1 - y0 < STATION_SPREAD
+}
+
+/** [company]'s stations that platforms over [xs] by [ys] could join, by id. */
+fun World.stationsToJoin(company: Int, xs: IntRange, ys: IntRange): List<Station> =
+    stations.filter { it != null && it.owner == company && joinsWithin(it, xs, ys) }.map { it!! }
 
 /** The station whose building stands on tile [i], or null. */
 fun World.stationBuildingAt(i: Int): Station? = stationBuildings[i]?.let { stations.getOrNull(it) }
@@ -567,6 +588,9 @@ private const val NAMING_REACH = 20
 
 /** The most tiles a station's rectangle spans either way in one go. */
 const val MAX_STATION = 16
+
+/** The most tiles a station's tiles span either way, when platforms join it from apart. */
+const val STATION_SPREAD = 12
 
 /** Takes station [id] off the map and out of every order. */
 internal fun World.dropStation(id: Int) {

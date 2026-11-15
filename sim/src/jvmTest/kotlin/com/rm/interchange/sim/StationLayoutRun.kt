@@ -447,8 +447,12 @@ class StationLayoutRun {
             rail(19, 11, 35, 11, X)
             rail(15, 13, 33, 13, X)
             rail(19, 14, 32, 14, X)
-            // Built apart the groups come out as two stations, so one rect over both, with an unused platform on row 12, makes one.
-            with(Lab("doubleApart")) { say("$name: groups built apart are separate stations: ${station(22, 10, 26, 11, X) != station(22, 13, 26, 14, X)}") }
+            // Built apart, the second group joins the first by its id.
+            with(Lab("doubleApart")) {
+                val first = station(22, 10, 26, 11, X)
+                w.apply(Command.Station(0, 22, 13, 26, 14, X, join = first))
+                say("$name: groups built apart are one station: ${w.stationTiles[w.index(22, 13)] == first}")
+            }
             val a = station(22, 10, 26, 14, X)
             sig(8, 10, X, XM, Signals.ENTRY)
             sig(16, 10, X, XM, Signals.COMBO); sig(16, 13, X, XM, Signals.COMBO)

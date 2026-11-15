@@ -72,6 +72,8 @@ object Codec {
     private const val EDIT_TRAIN = 62
     /** Track laid with junctions where it meets other track. */
     private const val RAIL_JOIN = 63
+    /** Platforms with the station they join. */
+    private const val STATION_JOIN = 64
 
     /** The most goals a [Command.SetGoals] may carry. */
     const val MOST_GOALS = 100
@@ -84,7 +86,11 @@ object Codec {
                 w.int(c.company); w.int(c.sx); w.int(c.sy); w.int(c.ex); w.int(c.ey); w.int(c.first); w.bool(c.remove)
                 if (c.join != 0) w.int(c.join)
             }
-            is Command.Station -> { w.byte(STATION); w.int(c.company); w.int(c.x0); w.int(c.y0); w.int(c.x1); w.int(c.y1); w.int(c.axis) }
+            is Command.Station -> {
+                w.byte(if (c.join == Command.Station.NEXT_TO) STATION else STATION_JOIN)
+                w.int(c.company); w.int(c.x0); w.int(c.y0); w.int(c.x1); w.int(c.y1); w.int(c.axis)
+                if (c.join != Command.Station.NEXT_TO) w.int(c.join)
+            }
             is Command.Depot -> { w.byte(DEPOT); w.int(c.company); w.int(c.x); w.int(c.y); w.int(c.edge) }
             is Command.Signal -> { w.byte(SIGNAL_KIND); w.int(c.company); w.int(c.x); w.int(c.y); w.int(c.piece); w.int(c.facing); w.int(c.kind) }
             is Command.SignalRun -> { w.byte(SIGNAL_RUN); w.int(c.company); w.int(c.sx); w.int(c.sy); w.int(c.ex); w.int(c.ey); w.int(c.first); w.int(c.kind); w.int(c.spacing); w.bool(c.remove) }
@@ -150,6 +156,7 @@ object Codec {
         RAIL -> Command.Rail(r.int(), r.int(), r.int(), r.int(), r.int(), r.int(), r.bool())
         RAIL_JOIN -> Command.Rail(r.int(), r.int(), r.int(), r.int(), r.int(), r.int(), r.bool(), r.int())
         STATION -> Command.Station(r.int(), r.int(), r.int(), r.int(), r.int(), r.int())
+        STATION_JOIN -> Command.Station(r.int(), r.int(), r.int(), r.int(), r.int(), r.int(), r.int())
         DEPOT -> Command.Depot(r.int(), r.int(), r.int(), r.int())
         SIGNAL -> Command.Signal(r.int(), r.int(), r.int(), r.int(), r.int())
         CLEAR -> Command.Clear(r.int(), r.int(), r.int())

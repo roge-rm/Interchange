@@ -117,6 +117,8 @@ class SaveTest {
             Command.Terraform(0, 3, -4, true),
             Command.Rail(0, 1, 2, 30, 2, Track.X, remove = true),
             Command.Station(0, 5, 5, 8, 6, Track.Y),
+            Command.Station(0, 5, 5, 8, 6, Track.Y, join = 3),
+            Command.Station(0, 5, 5, 8, 6, Track.Y, join = Command.Station.NEW),
             Command.Depot(0, 9, 9, Track.YP),
             Command.Signal(0, 4, 4, Track.N, Track.YM),
             Command.Clear(0, 1, 1),
