@@ -171,8 +171,8 @@ internal class Cover(private val world: World, private val view: View, private v
 /**
  * The static sprites standing on view tiles, as [TileRecorder.objects] lays them, kept from frame to frame: three
  * floats each, cell and anchor x, y from view point 0, 0 at height 0. A tile is worked out again once its chunk's
- * [World.chunkVersions] moves on; the lot goes when the world, view, level, look or year does, or it grows past
- * [LIMIT]. Main thread only.
+ * [World.chunkVersions] or a neighbouring one moves on; the lot goes when the world, view, level, look or year does,
+ * or it grows past [LIMIT]. Main thread only.
  */
 internal class StandingCache private constructor(val world: World, val view: View, val level: Int, val look: Int, val year: Int, val turn: Int) {
     private val picker = TileRecorder(world, view, level, look = look, shown = Cover.EMPTY_WEATHER, year = year).also {
@@ -183,7 +183,7 @@ internal class StandingCache private constructor(val world: World, val view: Vie
         private set
     private var size = 0
 
-    // Open addressing on view tile: the tile (-1 for a free slot), where its sprites start, how many and its chunk's version.
+    // Open addressing on view tile: the tile (-1 for a free slot), where its sprites start, how many and its chunks' version.
     private var keys = IntArray(1024) { -1 }
     private var starts = IntArray(1024)
     private var counts = IntArray(1024)
@@ -198,10 +198,19 @@ internal class StandingCache private constructor(val world: World, val view: Vie
         size += 3
     }
 
+    /**
+     * The versions of the chunk under view tile ([vx], [vy]) and the eight round it summed, as what stands on a tile
+     * can hang on its neighbours (a station building behind a platform, a lock's place in a flight). They only go up,
+     * so the sum moves on with any of them.
+     */
     private fun chunkVersion(vx: Int, vy: Int): Int {
-        val wx = view.worldX(vx, vy)
-        val wy = view.worldY(vx, vy)
-        return world.chunkVersions[(wy / World.BLOCK) * (world.width / World.BLOCK) + wx / World.BLOCK]
+        val across = world.width / World.BLOCK
+        val down = world.height / World.BLOCK
+        val cx = view.worldX(vx, vy) / World.BLOCK
+        val cy = view.worldY(vx, vy) / World.BLOCK
+        var sum = 0
+        for (y in maxOf(0, cy - 1)..minOf(down - 1, cy + 1)) for (x in maxOf(0, cx - 1)..minOf(across - 1, cx + 1)) sum += world.chunkVersions[y * across + x]
+        return sum
     }
 
     /** The slot holding view tile ([vx], [vy])'s sprites, worked out now if they aren't kept or are out of date. */

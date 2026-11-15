@@ -8,6 +8,7 @@ import com.rm.interchange.map.Pen
 import com.rm.interchange.map.Zoom
 import kotlin.concurrent.Volatile
 import kotlin.math.floor
+import kotlin.math.round
 
 /*
  * What moves, for the GPU map: everything drawMoving draws, as a list of instances made on the main thread each frame
@@ -17,11 +18,16 @@ import kotlin.math.floor
  * its own tile stands.
  */
 
-/** Kinds of live instance: a sprite from the live pages, a line, a filled convex shape, a building's column for cutting. */
+/**
+ * Kinds of live instance: a sprite from the live pages, a line, a filled convex shape, a building's column for
+ * cutting, and a piece of a sprite cut on the CPU, untinted, its whole sprite's page rect in place of the tint so it
+ * samples no further in than the whole sprite does.
+ */
 internal const val LIVE_SPRITE = 0
 internal const val LIVE_LINE = 1
 internal const val LIVE_SHAPE = 2
 internal const val LIVE_COVER = 3
+internal const val LIVE_PIECE = 4
 
 /**
  * Floats an instance takes: kind, page, depth, shadow; then four of where (a sprite's screen rect, a line's ends, a
@@ -384,8 +390,11 @@ internal class LiveBuilder(private val atlas: LiveAtlas, private val source: Liv
         // The page rect follows the screen rect across, for each piece left showing.
         val tx = w / (sr - sl).coerceAtLeast(1e-3f)
         val ty = h / (sb - st).coerceAtLeast(1e-3f)
+        val plain = mode == LIVE_PLAIN
         showing(sl, st, sr, sb) { a, b, c, d ->
-            put(LIVE_SPRITE, page, depth, shadow, a, b, c, d, x0 + (a - sl) * tx, y0 + (b - st) * ty, x0 + (c - sl) * tx, y0 + (d - st) * ty, cr, cg, cb, ca)
+            val whole = a == sl && b == st && c == sr && d == sb
+            if (whole || !plain) put(LIVE_SPRITE, page, depth, shadow, a, b, c, d, x0 + (a - sl) * tx, y0 + (b - st) * ty, x0 + (c - sl) * tx, y0 + (d - st) * ty, cr, cg, cb, ca)
+            else put(LIVE_PIECE, page, depth, 0f, a, b, c, d, x0 + (a - sl) * tx, y0 + (b - st) * ty, x0 + (c - sl) * tx, y0 + (d - st) * ty, x0, y0, x0 + w, y0 + h)
         }
         return true
     }
@@ -395,12 +404,18 @@ internal class LiveBuilder(private val atlas: LiveAtlas, private val source: Liv
     private var hiddenCount = 0
     private var xs = FloatArray(32)
     private var spans = FloatArray(32)
+    private var runs = FloatArray(32)
+    private var lastRuns = FloatArray(32)
 
-    /** Hides the rect [l], [t], [r], [b] on screen from the sprites and rects that go in till [clearHidden]. */
+    /**
+     * Hides the rect [l], [t], [r], [b] on screen from the sprites and rects that go in till [clearHidden]. Snapped to
+     * whole pixels, so the pieces left meet on pixel edges, where a shape's smoothing leaves no seam.
+     */
     fun hide(l: Float, t: Float, r: Float, b: Float) {
         if ((hiddenCount + 1) * 4 > hidden.size) hidden = hidden.copyOf(hidden.size * 2)
         val o = hiddenCount * 4
-        hidden[o] = l; hidden[o + 1] = t; hidden[o + 2] = r; hidden[o + 3] = b
+        hidden[o] = round(l); hidden[o + 1] = round(t); hidden[o + 2] = round(r); hidden[o + 3] = round(b)
+        if (hidden[o] >= hidden[o + 2] || hidden[o + 1] >= hidden[o + 3]) return
         hiddenCount++
     }
 
@@ -410,7 +425,8 @@ internal class LiveBuilder(private val atlas: LiveAtlas, private val source: Liv
 
     /**
      * The parts of [l], [t], [r], [b] on screen the [hide] rects leave showing, into [piece] as rects: in strips
-     * across between the hiding rects' sides, each strip's gaps down between them.
+     * across between the sides of the hiding rects that reach into it, each strip's gaps down between them, side by
+     * side strips with the same gaps going in as one.
      */
     private inline fun showing(l: Float, t: Float, r: Float, b: Float, piece: (Float, Float, Float, Float) -> Unit) {
         var near = 0
@@ -420,6 +436,11 @@ internal class LiveBuilder(private val atlas: LiveAtlas, private val source: Liv
             return
         }
         if (xs.size < near * 2 + 2) xs = FloatArray(near * 4 + 4)
+        if (spans.size < near * 2) spans = FloatArray(near * 4)
+        if (runs.size < near * 2 + 2) {
+            runs = FloatArray(near * 4 + 4)
+            lastRuns = FloatArray(near * 4 + 4)
+        }
         var n = 0
         xs[n++] = l
         xs[n++] = r
@@ -431,7 +452,9 @@ internal class LiveBuilder(private val atlas: LiveAtlas, private val source: Liv
             if (hr > l && hr < r) xs[n++] = hr
         }
         xs.sort(0, n)
-        if (spans.size < near * 2) spans = FloatArray(near * 4)
+        var lastFrom = l
+        var lastTo = l
+        var lastCount = -1
         for (i in 0 until n - 1) {
             val xa = xs[i]
             val xb = xs[i + 1]
@@ -444,7 +467,7 @@ internal class LiveBuilder(private val atlas: LiveAtlas, private val source: Liv
                 spans[m * 2 + 1] = minOf(b, hidden[k * 4 + 3])
                 m++
             }
-            // By top, then down past each one.
+            // By top, then down past each one, into runs of what shows.
             for (p in 1 until m) {
                 val a0 = spans[p * 2]
                 val a1 = spans[p * 2 + 1]
@@ -457,13 +480,37 @@ internal class LiveBuilder(private val atlas: LiveAtlas, private val source: Liv
                 spans[(q + 1) * 2] = a0
                 spans[(q + 1) * 2 + 1] = a1
             }
+            var count = 0
             var y = t
             for (p in 0 until m) {
-                if (spans[p * 2] > y) piece(xa, y, xb, spans[p * 2])
+                if (spans[p * 2] > y) {
+                    runs[count * 2] = y
+                    runs[count * 2 + 1] = spans[p * 2]
+                    count++
+                }
                 y = maxOf(y, spans[p * 2 + 1])
             }
-            if (y < b) piece(xa, y, xb, b)
+            if (y < b) {
+                runs[count * 2] = y
+                runs[count * 2 + 1] = b
+                count++
+            }
+            if (count == lastCount && sameRuns(count)) {
+                lastTo = xb
+                continue
+            }
+            for (p in 0 until lastCount) piece(lastFrom, lastRuns[p * 2], lastTo, lastRuns[p * 2 + 1])
+            runs.copyInto(lastRuns, 0, 0, count * 2)
+            lastCount = count
+            lastFrom = xa
+            lastTo = xb
         }
+        for (p in 0 until lastCount) piece(lastFrom, lastRuns[p * 2], lastTo, lastRuns[p * 2 + 1])
+    }
+
+    private fun sameRuns(count: Int): Boolean {
+        for (p in 0 until count * 2) if (runs[p] != lastRuns[p]) return false
+        return true
     }
 
     private fun overlaps(k: Int, l: Float, t: Float, r: Float, b: Float): Boolean {

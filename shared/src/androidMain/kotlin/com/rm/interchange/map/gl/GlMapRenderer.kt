@@ -554,7 +554,7 @@ internal class GlMapRenderer(private val scene: GlScene, private val page: Int) 
         }
         for (i in b.covers until total) {
             val o = i * LIVE_FLOATS
-            if (f[o].toInt() != LIVE_SPRITE) continue
+            if (f[o].toInt() != LIVE_SPRITE && f[o].toInt() != LIVE_PIECE) continue
             val page = f[o + 1].toInt()
             var unit = -1
             for (u in 0 until used) if (bound[u] == page) unit = u
@@ -1319,11 +1319,12 @@ void main() {
     vec2 p;
     vUv = vec2(0.0);
     vEdge = vec4(0.0);
-    if (kind == 0 || kind == 3) {
+    if (kind == 0 || kind == 3 || kind == 4) {
         p = mix(aA.xy, aA.zw, o);
         vUv = mix(aB.xy, aB.zw, o) / uSide;
-        // Half a texel in, so smoothing never reaches past the sprite.
-        vEdge = vec4(aB.xy + 0.5, aB.zw - 0.5) / uSide;
+        // Half a texel in, so smoothing never reaches past the sprite; a piece's whole sprite's rect is in aC.
+        vec4 e = kind == 4 ? aC : aB;
+        vEdge = vec4(e.xy + 0.5, e.zw - 0.5) / uSide;
     } else if (kind == 1) {
         vec2 d = aA.zw - aA.xy;
         float l = length(d);
@@ -1391,9 +1392,9 @@ void main() {
         frag = vec4(0.0);
         return;
     }
-    if (vKind == 0) {
+    if (vKind == 0 || vKind == 4) {
         vec4 t = page(vUnit, clamp(vUv, vEdge.xy, vEdge.zw));
-        frag = vShadow > 0.5 ? vec4(0.0, 0.0, 0.0, t.a * vC.a) : t * vC;
+        frag = vKind == 4 ? t : vShadow > 0.5 ? vec4(0.0, 0.0, 0.0, t.a * vC.a) : t * vC;
         return;
     }
     float cover;

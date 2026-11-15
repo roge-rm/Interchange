@@ -188,26 +188,33 @@ class LiveTest {
         val t = whole[5]
         val r = whole[6]
         val bottom = whole[7]
-        // A rect over the middle of the sprite's height, from its left to two thirds across.
+        // A rect over the middle of the sprite's height, from its left to two thirds across, snapped to whole pixels;
+        // a second within it splits nothing more, as the strips either side of its edge show the same.
         val hx = l + (r - l) * 2f / 3f
-        val ht = t + (bottom - t) / 3f
-        val hb = t + (bottom - t) * 2f / 3f
-        b.hide(l - 5f, ht, hx, hb)
+        val ht = kotlin.math.round(t + (bottom - t) / 3f)
+        val hb = kotlin.math.round(t + (bottom - t) * 2f / 3f)
+        b.hide(l - 5f, t + (bottom - t) / 3f, hx, t + (bottom - t) * 2f / 3f)
+        b.hide(l + 5f, ht, hx, hb)
         b.sprite(0, 1, 0f, 0f)
+        b.rect(androidx.compose.ui.graphics.Color.Red, l, t, r - l, bottom - t)
         b.clearHidden()
         b.rect(androidx.compose.ui.graphics.Color.Red, l, t, r - l, bottom - t)
         val batch = b.batch()!!
-        // Above and below it on the left, and the right strip whole; then the rect after uncut.
-        assertEquals(listOf(LIVE_SPRITE, LIVE_SPRITE, LIVE_SPRITE, LIVE_SHAPE), kinds(batch))
+        // Above and below it on the left, and the right strip whole, as pieces; the rect cut the same, then after uncut.
+        assertEquals(listOf(LIVE_PIECE, LIVE_PIECE, LIVE_PIECE, LIVE_SHAPE, LIVE_SHAPE, LIVE_SHAPE, LIVE_SHAPE), kinds(batch))
         val d = batch.data
-        val pieces = (0 until 3).map { k -> (0 until 8).map { d[k * LIVE_FLOATS + 4 + it] } }
+        val pieces = (0 until 3).map { k -> (0 until 12).map { d[k * LIVE_FLOATS + 4 + it] } }
         assertEquals(listOf(l, t, hx, ht), pieces[0].subList(0, 4))
         assertEquals(listOf(l, hb, hx, bottom), pieces[1].subList(0, 4))
         assertEquals(listOf(hx, t, r, bottom), pieces[2].subList(0, 4))
         // The page rect follows: the right strip ends where the sprite did, and starts two thirds across.
         assertEquals(whole[10], pieces[2][6], 1e-3f)
         assertEquals(whole[8] + (whole[10] - whole[8]) * 2f / 3f, pieces[2][4], 1e-3f)
-        assertEquals(whole[9] + (whole[11] - whole[9]) / 3f, pieces[0][7], 1e-3f)
+        assertEquals(whole[9] + (whole[11] - whole[9]) * (ht - t) / (bottom - t), pieces[0][7], 1e-3f)
+        // Each piece samples no further in than the whole sprite: its page rect rides in place of the tint.
+        for (p in pieces) assertEquals(whole.slice(8 until 12), p.subList(8, 12))
+        // The cut rect's pieces meet on whole pixels.
+        for (k in 3 until 6) for (i in 4 until 12) assertEquals(kotlin.math.round(d[k * LIVE_FLOATS + i]), d[k * LIVE_FLOATS + i])
     }
 
     @Test
