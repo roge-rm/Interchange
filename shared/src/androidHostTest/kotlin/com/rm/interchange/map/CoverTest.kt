@@ -1,0 +1,92 @@
+package com.rm.interchange.map
+
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.ImageBitmapConfig
+import androidx.compose.ui.graphics.colorspace.ColorSpaces
+import com.rm.interchange.sim.Calendar
+import com.rm.interchange.sim.NewGame
+import com.rm.interchange.sim.Region
+import com.rm.interchange.sim.Trees
+import com.rm.interchange.sim.World
+import kotlin.test.Test
+import kotlin.test.assertTrue
+
+class CoverTest {
+    private object Blank : ImageBitmap {
+        override val width = 1
+        override val height = 1
+        override val colorSpace = ColorSpaces.Srgb
+        override val hasAlpha = true
+        override val config = ImageBitmapConfig.Argb8888
+        override fun readPixels(buffer: IntArray, startX: Int, startY: Int, width: Int, height: Int, bufferOffset: Int, stride: Int) {}
+        override fun prepareToDraw() {}
+    }
+
+    private val world by lazy { World(NewGame(64, 64, 7, 1930, Region.MIXED, towns = 2, industries = 2, rivals = 0)) }
+    private val view by lazy { View(world.width, world.height).also { it.halfWidth = Zoom.LEVELS[LEVEL] } }
+    private val picker by lazy { TileRecorder(world, view, LEVEL, shown = WeatherCopy(0, ByteArray(0), ByteArray(0), ByteArray(0)), year = Calendar.year(world.startYear, world.day)) }
+
+    private fun cover(): Cover {
+        // Every column solid top to bottom, so the sheet's pixels aren't needed.
+        val full = HashMap<Int, IntArray>()
+        val shrink = 1 shl LEVEL
+        for (cell in 0 until Atlas.STATIC_RECTS.size / 6) {
+            val w = Atlas.STATIC_RECTS[cell * 6 + 2] / shrink
+            val h = Atlas.STATIC_RECTS[cell * 6 + 3] / shrink
+            if (w > 0 && h > 0) full[cell] = IntArray(w * 2) { if (it % 2 == 0) 0 else h - 1 }
+        }
+        Cover.takeColumns(LEVEL, full)
+        return Cover(world, view, LEVEL, LevelSheets(IntArray(4), IntArray(4), 2, ByteArray(4), 2, Blank))
+    }
+
+    private fun firstTile(test: (Int, Int) -> Boolean): Pair<Int, Int> {
+        for (vy in 4 until view.viewHeight - 4) for (vx in 4 until view.viewWidth - 4) if (test(vx, vy)) return vx to vy
+        error("no such tile")
+    }
+
+    private fun wooded(vx: Int, vy: Int): Boolean {
+        val wx = view.worldX(vx, vy)
+        val wy = view.worldY(vx, vy)
+        val i = world.index(wx, wy)
+        return Trees.count(world.trees[i].toInt()) > 0 && world.trackAt(wx, wy) == 0 && world.road[i].toInt() == 0 && picker.building(vx, vy) == TileRecorder.NOTHING
+    }
+
+    @Test
+    fun aSignalIsCutByTheTreesInFrontOfItOnly() {
+        val (tx, ty) = firstTile { vx, vy -> wooded(vx, vy) }
+        val c = cover()
+        val all = -1e6f to 1e6f
+        val taken = HashSet<Int>()
+        val depths = ArrayList<Int>()
+        // Standing on the tile behind, across the diagonal: the trees are in front of it.
+        c.standing(tx - 0.5f, ty - 0.5f, all.first, all.first, all.second, all.second, 800f, 600f, { taken.add(it) }) { _, _, _, _, d -> depths += d }
+        assertTrue(depths.isNotEmpty())
+        assertTrue(tx + ty in depths)
+        // The buildings alone leave them out.
+        val buildings = ArrayList<Int>()
+        c.rects(tx - 0.5f, ty - 0.5f, all.first, all.first, all.second, all.second, 800f, 600f, { true }) { _, _, _, _, d -> buildings += d }
+        assertTrue(tx + ty !in buildings)
+        // Standing in front of them, they don't go in.
+        val behind = ArrayList<Int>()
+        c.standing(tx + 1.5f, ty + 1.5f, all.first, all.first, all.second, all.second, 800f, 600f, { true }) { _, _, _, _, d -> behind += d }
+        assertTrue(behind.none { it <= tx + ty })
+    }
+
+    @Test
+    fun aBuildingCutsASignalWhereItCutsAVehicle() {
+        val (bx, by) = firstTile { vx, vy -> world.trackAt(view.worldX(vx, vy), view.worldY(vx, vy)) == 0 && picker.building(vx, vy) >= 0 }
+        val c = cover()
+        val all = -1e6f to 1e6f
+        val vehicle = ArrayList<List<Float>>()
+        val signal = ArrayList<List<Float>>()
+        c.rects(bx - 0.5f, by - 0.5f, all.first, all.first, all.second, all.second, 800f, 600f, { true }) { l, t, r, b, d -> if (d == bx + by) vehicle += listOf(l, t, r, b).map { kotlin.math.round(it * 100f) } }
+        c.standing(bx - 0.5f, by - 0.5f, all.first, all.first, all.second, all.second, 800f, 600f, { true }) { l, t, r, b, d -> if (d == bx + by) signal += listOf(l, t, r, b).map { kotlin.math.round(it * 100f) } }
+        assertTrue(vehicle.isNotEmpty())
+        // Trees on the other tiles as deep may come too.
+        assertTrue(signal.containsAll(vehicle))
+    }
+
+    private companion object {
+        const val LEVEL = 2
+    }
+}

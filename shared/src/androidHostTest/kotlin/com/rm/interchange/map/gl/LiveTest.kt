@@ -141,7 +141,7 @@ class LiveTest {
         val (_, b) = builder()
         b.begin(Zoom.SHARPEST, Zoom.LEVELS[Zoom.SHARPEST], 1f)
         val cuts = ArrayList<Pair<Float, Float>>()
-        liveItems(items, emptyList(), 64f, b) { vx, vy, _, _, _, _ -> cuts += vx to vy }
+        liveItems(items, emptyList(), 64f, b) { vx, vy, _, _, _, _, _ -> cuts += vx to vy }
         val k = kinds(b.batch()!!)
         // The coach, the post and arm's lines and lamps, then the bus.
         assertEquals(LIVE_SPRITE, k.first())
@@ -164,13 +164,18 @@ class LiveTest {
             floatArrayOf(2.5f, 55f, 10f, 5f, -1f, Signals.EXIT + 1f, 2f, 2f),
             floatArrayOf(3f, 70f, 10f, 0f, 0f, 0f, -1f, -1f),
         )
-        liveItems(items, emptyList(), 128f, b) { _, _, _, _, _, _ -> }
+        val signalCuts = ArrayList<Triple<Float, Float, Boolean>>()
+        liveItems(items, emptyList(), 128f, b) { vx, vy, _, _, _, _, all -> signalCuts += Triple(vx, vy, all) }
         val batch = b.batch()!!
         assertEquals(listOf(LIVE_SPRITE, LIVE_SPRITE, LIVE_SHAPE, LIVE_SHAPE, LIVE_SPRITE), kinds(batch))
-        // On the mast, 4 sharpest pixels wide on the stand point, at the depth the signal drew at.
+        // On the mast, 4 sharpest pixels wide on the stand point, at the depth the signal drew at, cut like it.
         val o = (batch.covers + 2) * LIVE_FLOATS
         assertEquals(38f, batch.data[o + 4])
         assertEquals(batch.data[(batch.covers + 1) * LIVE_FLOATS + 2], batch.data[o + 2])
+        assertTrue(batch.data[o + 2] < 1f)
+        assertEquals(1f, batch.data[(batch.covers + 4) * LIVE_FLOATS + 2], "what follows the band is uncut again")
+        // Each signal on the ground is cut by all that stands in front of it.
+        assertEquals(listOf(Triple(1f, 1f, true), Triple(2f, 2f, true), Triple(2f, 2f, true)), signalCuts)
     }
 
     @Test
@@ -179,7 +184,7 @@ class LiveTest {
         b.begin(Zoom.SHARPEST, Zoom.LEVELS[Zoom.SHARPEST], 1f)
         val items = arrayListOf(floatArrayOf(3f, 10f, 10f, 0f, 0f, 1f, -1f, -1f), floatArrayOf(1000f, 10f, 10f, 0f, 0f, 0f, -1f, -1f))
         var cuts = 0
-        liveItems(items, emptyList(), 64f, b) { _, _, _, _, _, _ -> cuts++ }
+        liveItems(items, emptyList(), 64f, b) { _, _, _, _, _, _, _ -> cuts++ }
         assertEquals(0, cuts)
         val d = b.batch()!!.data
         assertEquals(1f, d[2])

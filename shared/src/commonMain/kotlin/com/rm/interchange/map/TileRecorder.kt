@@ -78,6 +78,9 @@ internal class TileRecorder(
     /** Where the passes lay what they draw, in drawing order; nothing is laid down while it's null, for [building] alone. */
     var recorder: SpriteRecorder? = null
 
+    /** Given each static sprite [objects] lays, as its cell and anchor, in place of recording it; for [Cover]. */
+    var onStatic: ((cell: Int, ax: Float, ay: Float) -> Unit)? = null
+
     private fun cornerHeight(vx: Int, vy: Int): Int {
         val gx = vx - gx0
         val gy = vy - gy0
@@ -700,6 +703,7 @@ internal class TileRecorder(
     /** Blits static sprite [cell] anchored at ([ax], [ay]), with the snow on world tile [snowTile] on what faces the sky (-1 for none). */
     private fun blit(cell: Int, ax: Float, ay: Float, snowTile: Int = -1) {
         if (cell < 0) return
+        onStatic?.let { it(cell, ax, ay); return }
         blitOn(cell, ax, ay, if (snowTile < 0) 0 else snowCover(snowTile), snowTile)
     }
 

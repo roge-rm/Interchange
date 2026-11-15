@@ -243,6 +243,9 @@ internal class GlScene(private val world: World, parent: CoroutineScope) {
     private var nextFrame: GlFrame? = null
     private var nextRegions: Array<RegionSprites?>? = null
     private var nextLook = Climate.SUMMER
+
+    /** The look the frame [show] worked out draws its regions with, for what moves to be cut by its trees. */
+    val showingLook get() = nextLook
     private var staticReady = false
     private var nextLevel = 0
 
