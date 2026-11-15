@@ -1331,7 +1331,7 @@ private fun World.stepCost(i: Int, e: Int): Int? {
     return MOVE_NEW + (if (flat) 0 else SLOPE) + Trees.count(trees[i].toInt())
 }
 
-/** A binary heap of longs, smallest first, for the path search: its order is the same everywhere. */
+/** A four-way heap of longs, smallest first, for the path search: its order is the same everywhere. */
 internal class LongHeap {
     private var a = LongArray(256)
     private var size = 0
@@ -1342,28 +1342,29 @@ internal class LongHeap {
     fun push(v: Long) {
         if (size == a.size) a = a.copyOf(size * 2)
         var i = size++
-        a[i] = v
         while (i > 0) {
-            val p = (i - 1) / 2
-            if (a[p] <= a[i]) break
-            val t = a[p]; a[p] = a[i]; a[i] = t
+            val p = (i - 1) / 4
+            if (a[p] <= v) break
+            a[i] = a[p]
             i = p
         }
+        a[i] = v
     }
     fun pop(): Long {
         val top = a[0]
-        a[0] = a[--size]
+        val v = a[--size]
         var i = 0
         while (true) {
-            val l = i * 2 + 1
-            val r = l + 1
-            var m = i
-            if (l < size && a[l] < a[m]) m = l
-            if (r < size && a[r] < a[m]) m = r
-            if (m == i) break
-            val t = a[m]; a[m] = a[i]; a[i] = t
+            val first = i * 4 + 1
+            if (first >= size) break
+            var m = first
+            val end = minOf(first + 4, size)
+            for (k in first + 1 until end) if (a[k] < a[m]) m = k
+            if (a[m] >= v) break
+            a[i] = a[m]
             i = m
         }
+        a[i] = v
         return top
     }
 }

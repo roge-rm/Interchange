@@ -132,11 +132,10 @@ private fun World.railPath(c: Company, a: Terminus, b: Terminus, clearing: Boole
     kept += a.tiles(this)
     kept += b.tiles(this)
     val keptTiles = kept.toIntArray()
-    // Each search state's cost so far and the state it came from.
-    val best = scratch.best.apply { clear() }
-    val back = scratch.back.apply { clear() }
-    // Each step's cost by tile, edge come in at and edge left by, or -1 where it can't go; the same for the whole search.
-    val steps = scratch.steps.apply { clear() }
+    val states = scratch.states.apply { clear() }
+    // Each step's cost by tile, edge come in at and edge left by, or -1 where it can't go. Kept for every search of one
+    // line, as the map doesn't change between them.
+    val steps = if (clearing) scratch.steps else scratch.plainSteps
     val heap = scratch.heap.apply { clear() }
     fun h(i: Int) = (kotlin.math.abs(i % width - gx) + kotlin.math.abs(i / width - gy)) * RAIL_MOVE
     // A state is a tile, the edge come in at and what the tile before did: [BEND_STRAIGHT], a lone diagonal after a
@@ -144,7 +143,7 @@ private fun World.railPath(c: Company, a: Terminus, b: Terminus, clearing: Boole
     fun state(tile: Int, came: Int, bend: Int) = (tile * 4 + came) * 5 + bend
     fun tileOf(s: Int) = s / 20
     val s0 = state(start, Track.opposite(a.out), BEND_STRAIGHT)
-    best[s0] = 0
+    states.put(s0, 0, IntMap.NONE)
     heap.push(h(start).toLong() shl 32 or s0.toLong())
     val limit = (chebyshev(start % width, start / width, gx, gy) + 10).let { it * it * 16 }.coerceAtMost(if (bridges) LOOSE_PATH_LIMIT else RAIL_PATH_LIMIT)
     // Without bridges, a goal that no track from the start could reach, whatever its bends, isn't searched for.
@@ -156,7 +155,7 @@ private fun World.railPath(c: Company, a: Terminus, b: Terminus, clearing: Boole
     while (!heap.isEmpty() && expanded < limit) {
         val top = heap.pop()
         val s = (top and 0xffffffffL).toInt()
-        val g = best[s]
+        val g = states.cost(s)
         if (g < 0) continue
         if ((top ushr 32).toInt() - h(tileOf(s)) > g) continue
         expanded++
@@ -164,7 +163,7 @@ private fun World.railPath(c: Company, a: Terminus, b: Terminus, clearing: Boole
         val came = (s / 5) % 4
         val bend = s % 5
         // A bridge's far head takes straight track only.
-        val from = back[s]
+        val from = states.from(s)
         val landed = from >= 0 && !next(tileOf(from), t)
         // A mouth on a road is crossed straight.
         if (t == goal && came != into && (road[t].toInt() == 0 || came == b.out) && (!landed || came == b.out)) {
@@ -175,7 +174,7 @@ private fun World.railPath(c: Company, a: Terminus, b: Terminus, clearing: Boole
                 val atCame = (at / 5) % 4
                 out += tileOf(at) * 16 + atCame * 4 + exit
                 exit = Track.opposite(atCame)
-                at = back[at]
+                at = states.from(at)
                 if (at < 0) break
             }
             out.reverse()
@@ -199,10 +198,9 @@ private fun World.railPath(c: Company, a: Terminus, b: Terminus, clearing: Boole
                 if (land >= 0) {
                     val ns = state(land, Track.opposite(e), BEND_STRAIGHT)
                     val ng = g + chebyshev(tx, ty, land % width, land / width) * RAIL_MOVE * RAIL_BRIDGE + (if (tightAt(bend, came, e)) RAIL_TIGHT else 0)
-                    val was = best[ns]
+                    val was = states.cost(ns)
                     if (was < 0 || ng < was) {
-                        best[ns] = ng
-                        back[ns] = s
+                        states.put(ns, ng, s)
                         heap.push((ng + h(land)).toLong() shl 32 or ns.toLong())
                     }
                 }
@@ -222,10 +220,9 @@ private fun World.railPath(c: Company, a: Terminus, b: Terminus, clearing: Boole
             // The goal's own piece is laid on the way into the station's straight, so its bend is counted here too.
             val atGoal = n == goal && (tightAt(nextBend, Track.opposite(e), into) || bendAfter(nextBend, Track.opposite(e), into).let { it == BEND_LONE_LEFT || it == BEND_LONE_RIGHT })
             val ng = g + step + (if (turn) RAIL_TURN else 0) + (if (tight) RAIL_TIGHT else 0) + (if (atGoal) RAIL_TIGHT else 0)
-            val was = best[ns]
+            val was = states.cost(ns)
             if (was in 0..ng) continue
-            best[ns] = ng
-            back[ns] = s
+            states.put(ns, ng, s)
             heap.push((ng + h(n)).toLong() shl 32 or ns.toLong())
         }
     }
@@ -585,7 +582,7 @@ internal fun World.tryRail(
     val passengers = cargo == Cargo.PASSENGERS
     val clearing = passengers && !human(c.id)
     val years = if (payback > 0) payback else ANY_PAYBACK
-    val scratch = RailScratch()
+    val scratch = RailScratch(width * height)
     for (a in termini(c, sa, true, passengers, clearing, loose)) for (b in termini(c, sb, false, passengers, clearing, loose)) {
         // A computer company runs feeder buses from the middle of each town its platforms don't reach. Those riding
         // them go to either station by its people and nearness, as passengers choose, and only those for the far
@@ -1054,6 +1051,8 @@ private const val RAIL_HOUSE = 40
 /** A bridge tile costs the search this many times a tile of track on the ground. */
 private const val RAIL_BRIDGE = 4
 private const val RAIL_PATH_LIMIT = 120_000
+/** Maps up to this many tiles keep the path search's states in plain arrays. */
+private const val FLAT_TILES = 256 * 256
 /** For the scripted test player: the most steps searched, and a load big enough to fill the platforms. */
 private const val LOOSE_PATH_LIMIT = 600_000
 private const val LOOSE_LOAD = 10_000
@@ -1063,25 +1062,64 @@ internal const val KMH_PER_TILE_A_DAY = 42
 private const val TRAIN_PAYBACK = 10
 
 /**
- * What the rail path searches for one line share: the maps and heap each search uses again, and by terminus and
- * whether it may pull down buildings, the tiles track could reach from it. The map doesn't change between them.
+ * What the rail path searches for one line share: the maps and heap each search uses again, the step costs with and
+ * without pulling down buildings and, by terminus and that, the tiles track could reach from it. The map doesn't
+ * change between them.
  */
-private class RailScratch {
-    val best = IntMap()
-    val back = IntMap()
-    val steps = IntMap()
+private class RailScratch(tiles: Int) {
+    private val flat = tiles <= FLAT_TILES
+    val states by lazy { SearchStates(if (flat) tiles * 20 else 0) }
+    val steps by lazy { IntMap(if (flat) tiles * 16 else 0) }
+    val plainSteps by lazy { IntMap(if (flat) tiles * 16 else 0) }
     val heap = LongHeap()
     val floods = HashMap<Pair<Terminus, Boolean>, IntMap?>()
 }
 
-/** A map from keys of 0 and up to ints, [NONE] for a key not in it. Open addressing, cleared in place. */
-private class IntMap {
-    private var keys = IntArray(1 shl 12) { -1 }
-    private var values = IntArray(1 shl 12)
+/**
+ * Each path search state's cost so far and the state it came from, [IntMap.NONE] for one not reached. With [flat], states
+ * below it sit in one array, a stamp, the cost and where from side by side; otherwise in maps.
+ */
+private class SearchStates(flat: Int) {
+    private val a = if (flat > 0) IntArray(flat * 3) else null
+    private var gen = 1
+    private val costs = if (flat > 0) null else IntMap()
+    private val froms = if (flat > 0) null else IntMap()
+
+    fun cost(s: Int): Int = if (a != null) (if (a[s * 3] == gen) a[s * 3 + 1] else IntMap.NONE) else costs!![s]
+
+    fun from(s: Int): Int = if (a != null) (if (a[s * 3] == gen) a[s * 3 + 2] else IntMap.NONE) else froms!![s]
+
+    fun put(s: Int, cost: Int, from: Int) {
+        if (a != null) {
+            a[s * 3] = gen
+            a[s * 3 + 1] = cost
+            a[s * 3 + 2] = from
+        } else {
+            costs!![s] = cost
+            froms!![s] = from
+        }
+    }
+
+    fun clear() {
+        gen++
+        costs?.clear()
+        froms?.clear()
+    }
+}
+
+/**
+ * A map from keys of 0 and up to ints, [NONE] for a key not in it. Open addressing, cleared in place, or with [flatSize]
+ * a plain array for keys below it.
+ */
+private class IntMap(flatSize: Int = 0) {
+    private val flat = flatSize > 0
+    private var keys = IntArray(if (flat) 0 else 1 shl 12) { -1 }
+    private var values = if (flat) IntArray(flatSize) { NONE } else IntArray(1 shl 12)
     private var size = 0
     private var mask = keys.size - 1
 
     operator fun get(key: Int): Int {
+        if (flat) return values[key]
         var i = mix(key) and mask
         while (true) {
             val k = keys[i]
@@ -1092,6 +1130,10 @@ private class IntMap {
     }
 
     operator fun set(key: Int, value: Int) {
+        if (flat) {
+            values[key] = value
+            return
+        }
         var i = mix(key) and mask
         while (true) {
             val k = keys[i]
@@ -1105,6 +1147,10 @@ private class IntMap {
     }
 
     fun clear() {
+        if (flat) {
+            values.fill(NONE)
+            return
+        }
         if (size == 0) return
         keys.fill(-1)
         size = 0
