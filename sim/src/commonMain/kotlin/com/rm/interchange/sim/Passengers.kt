@@ -111,10 +111,12 @@ internal fun World.workOutLinks() {
     linksDirty = false
     val links = HashMap<Int, MutableList<Int>>()
     for (t in carriers()) {
-        if (t.orders.size < 2) continue
-        for (k in t.orders.indices) {
-            val a = Order.station(t.orders[k])
-            val b = Order.station(t.orders[(k + 1) % t.orders.size])
+        // Depot orders are left out: a stop links to the next station on.
+        val stops = t.orders.filter { !Order.isDepot(it) }
+        if (stops.size < 2) continue
+        for (k in stops.indices) {
+            val a = Order.station(stops[k])
+            val b = Order.station(stops[(k + 1) % stops.size])
             if (a == b || stations.getOrNull(a) == null || stations.getOrNull(b) == null) continue
             val out = links.getOrPut(a) { ArrayList() }
             if (b !in out) out += b
@@ -359,8 +361,11 @@ const val HEAVY = 1500
 const val RESORT_HEIGHT = 12
 const val RESORT_REACH = 4
 
-/** The station train [t] calls at after the one it's at now, or -1. */
-private fun nextStop(t: Carrier): Int = if (t.orders.size < 2) -1 else Order.station(t.orders[(t.order + 1) % t.orders.size])
+/** The station train [t] calls at after the one it's at now, past any depot orders, or -1. */
+private fun nextStop(t: Carrier): Int {
+    if (t.orders.count { !Order.isDepot(it) } < 2) return -1
+    return Order.nextStation(t.orders, t.order + 1)
+}
 
 /**
  * Train [t] standing at station [s] on order [o]: those who've arrived get

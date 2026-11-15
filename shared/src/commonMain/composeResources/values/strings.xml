@@ -382,6 +382,9 @@
     <!-- More orders, and funding industries -->
     <string name="go_via">Go via</string>
     <string name="skip_if_nothing">Skip if nothing to do</string>
+    <string name="depot_near">Depot near %1$s</string>
+    <string name="service_if_due">Service if due</string>
+    <string name="stop_inside">Stop inside</string>
     <string name="share_orders">Share orders with</string>
     <string name="stop_sharing">Stop sharing</string>
     <string name="fund_industry">Fund a new industry</string>

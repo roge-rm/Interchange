@@ -87,8 +87,9 @@ fun World.overviewInfo(): OverviewInfo {
     data class Leg(val from: Int, val to: Int, val owner: Int, val cargo: Int)
     val counts = linkedMapOf<Leg, Long>()
     for (v in carriers()) {
-        val order = v.orders.getOrNull(v.order % v.orders.size.coerceAtLeast(1)) ?: continue
-        val to = Order.station(order)
+        if (v.orders.isEmpty()) continue
+        // Bound for a depot, its load is on its way to the next station after.
+        val to = Order.nextStation(v.orders, v.order % v.orders.size)
         if (stations.getOrNull(to) == null) continue
         for (c in 0 until Cargo.COUNT) for (p in v.cargo[c]) {
             val from = if (p.boarded >= 0) p.boarded else p.origin

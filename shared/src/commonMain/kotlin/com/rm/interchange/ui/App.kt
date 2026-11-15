@@ -132,6 +132,7 @@ import com.rm.interchange.sim.Surface
 import com.rm.interchange.sim.saltDepotCost
 import com.rm.interchange.sim.Airports
 import com.rm.interchange.sim.Depots
+import com.rm.interchange.sim.Order
 import com.rm.interchange.sim.VehicleView
 import com.rm.interchange.sim.CANAL_COST
 import com.rm.interchange.sim.LOCK_DOLLARS
@@ -1111,7 +1112,9 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
                         world.docks.containsKey(it) || world.airportTiles.containsKey(it) || world.buoys.containsKey(it)
                 } ?: ground
                 addingStops?.let { id ->
+                    // A station, or one of the player's rail depots to go via.
                     val station = world.stationTiles[tile] ?: world.stationBuildings[tile]
+                        ?: world.depotTiles[tile]?.takeIf { world.depots.getOrNull(it)?.let { d -> d.owner == me && d.kind == Depots.RAIL } == true }?.let { Order.toDepot(it) }
                     val t = worldView.value?.trains?.firstOrNull { it.id == id }
                     if (station != null && t != null) runner.request(Command.TrainOrder(me, id, Command.TrainOrder.ORDERS, t.orders + station))
                     return

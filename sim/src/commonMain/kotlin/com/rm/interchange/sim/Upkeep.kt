@@ -96,9 +96,13 @@ internal fun World.noDepot(t: Train) {
 
 /**
  * Depot [d] is gone: each vehicle based there takes the nearest of its company's depots of that kind as home,
- * or none, and one on its way there looks for its way afresh.
+ * or none, and one on its way there looks for its way afresh. Orders to it are taken out.
  */
 internal fun World.depotGone(d: Depot) {
+    for (v in carriers()) if (v.orders.removeAll { Order.depot(it) == d.id }) {
+        if (v is Train) v.route = null
+        if (v is RoadVehicle) v.route = null
+    }
     fun dist(e: Depot) = kotlin.math.abs(e.tile % width - d.tile % width) + kotlin.math.abs(e.tile / width - d.tile / width)
     fun nearest(owner: Int, fits: (Depot) -> Boolean = { true }): Int =
         depots.filter { it != null && it.id != d.id && it.owner == owner && it.kind == d.kind && fits(it) }.minByOrNull { dist(it!!) }?.id ?: -1

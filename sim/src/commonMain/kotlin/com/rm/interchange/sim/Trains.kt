@@ -218,12 +218,18 @@ class Train(
     /** What it cost new: the engine, its tender and its wagons. */
     val price get() = carEngines.sumOf { roster[it].cost }
 
-    /** Where it's heading: a station id, -1 for its depot, or -2 for nowhere. */
+    /** Where it's heading: a station id, -1 for a depot, [goalDepot], or -2 for nowhere. */
     val target: Int get() = when {
         toDepot -> -1
         orders.isEmpty() -> -2
         else -> Order.station(orders[order % orders.size])
     }
+
+    /** The order it's on, or null with none. */
+    val current: Int? get() = if (orders.isEmpty()) null else orders[order % orders.size]
+
+    /** The depot it's heading for when [target] is -1: the one a depot order names, else its own. */
+    val goalDepot: Int get() = if (toDepot) depot else current?.let { Order.depot(it) }?.takeIf { it >= 0 } ?: depot
 
     /**
      * The step and how far along it the point [d] behind the nose is. A step
@@ -297,10 +303,13 @@ internal fun World.trainCommand(company: Company, c: Command.TrainOrder) {
         Command.TrainOrder.ORDERS -> {
             // Every train sharing its orders gets the same.
             val group = trains.filter { it != null && t.shared >= 0 && it.shared == t.shared }.ifEmpty { listOf(t) }
+            // A depot order has to be to one of the company's rail depots, wired if any of the trains is electric.
+            val electric = group.any { it!!.electric }
+            val orders = c.stations.toList().mapNotNull { allowedOrder(it, company.id, Depots.RAIL, electric) }
             for (g in group) {
                 releaseAhead(g!!)
                 g.orders.clear()
-                for (o in c.stations) if (stations.getOrNull(Order.station(o))?.owner == company.id) g.orders += o
+                g.orders += orders
                 g.order = 0
                 g.route = null
                 g.aside = -1
@@ -375,6 +384,9 @@ private fun World.leaveDepot(t: Train) {
         t.running = false
         return
     }
+    // An order to this depot it's done by being in it, and one to be serviced when it isn't due is skipped.
+    t.current?.let { o -> if (Order.depot(o) == d.id && !t.toDepot) nextOrder(t) }
+    skipService(t)
     // With no orders it has nowhere to go: it waits inside, set going, till it gets some. Held in by [wayOut], it
     // looks again at its lostUntil.
     if (trainOnTile(d.tile) || t.target == -2 || tick < t.lostUntil) {
@@ -642,8 +654,8 @@ private fun World.drive(t: Train) {
             if (waitForGap(t, due)) return
             nextOrder(t)
             t.route = null
-            // Due a service: choose a depot on the way to its next order.
-            if (due) forService(t)
+            // Due a service: choose a depot on the way to its next order, unless that's a depot.
+            if (due && t.current?.let { Order.isDepot(it) } != true) forService(t)
         }
         return
     }
@@ -691,6 +703,11 @@ private fun World.drive(t: Train) {
             t.lostUntil = 0
         }
         return
+    }
+    // An order to be serviced when it isn't due is skipped, as when its orders were set.
+    if (skipService(t)) {
+        t.route = null
+        t.aside = -1
     }
     // Going via a station: once the nose is in it, on to the next order without stopping.
     val o = t.orders.getOrNull(t.order % t.orders.size.coerceAtLeast(1)) ?: 0
@@ -980,7 +997,7 @@ private fun World.walkAhead(t: Train, brake: Int, bends: CurveScan?): Pair<Int, 
             if (nx < 0 || stationTiles[stepTile(nx)] != target) { stop = Stop.STATION; break }
         }
         // Into the depot: it runs on in past the end of the tile until its last car is inside.
-        if (target == -1 && depotTiles[tile] == t.depot) { stand = free + t.length; stop = Stop.DEPOT; break }
+        if (target == -1 && depotTiles[tile] == t.goalDepot) { stand = free + t.length; stop = Stop.DEPOT; break }
         val next = nextFrom(t, cur, at)
         val nt = if (next >= 0) stepTile(next) else -1
         stop = when {
@@ -1313,7 +1330,7 @@ private fun World.advance(t: Train, move: Int, free: Int) {
     t.nose += minOf(move, free)
     while (t.nose > stepLength(t.steps.last())) {
         // Running into its depot, the nose goes on past the end of the tile, into the shed.
-        if (t.toDepot && depotTiles[stepTile(t.steps.last())] == t.depot) break
+        if (t.target == -1 && depotTiles[stepTile(t.steps.last())] == t.goalDepot) break
         val next = nextFrom(t, t.steps.last(), t.routeAt)
         if (next < 0) {
             t.nose = stepLength(t.steps.last())
@@ -1372,7 +1389,7 @@ private fun World.atDoor(t: Train) =
 
 /** Whether [t], going in, stands wholly inside its depot's shed, out of sight. */
 private fun World.inShed(t: Train) =
-    t.toDepot && t.steps.isNotEmpty() && depotTiles[stepTile(t.steps.last())] == t.depot && freeAhead(t).let { it.second == Stop.DEPOT && it.first <= 0 }
+    t.target == -1 && t.steps.isNotEmpty() && depotTiles[stepTile(t.steps.last())] == t.goalDepot && freeAhead(t).let { it.second == Stop.DEPOT && it.first <= 0 }
 
 /**
  * Puts [t], stood in its depot's door, back inside, running or not as it was, so it's listed there and doesn't block
@@ -1394,9 +1411,16 @@ private fun World.backIn(t: Train) {
     t.running = running
 }
 
+/**
+ * Puts [t], stood wholly in the shed of the depot it was going to, inside, where it lives after. Sent in or off for a
+ * service it stops there, a service then sending it on. On a depot order it's serviced and goes on to its next order,
+ * set going again unless told to stop there.
+ */
 private fun World.enterDepot(t: Train) {
-    val d = depots.getOrNull(t.depot)
+    val d = depots.getOrNull(t.goalDepot)
     if (d == null || depotTiles[stepTile(t.steps.last())] != d.id) return
+    val o = if (t.toDepot) null else t.current?.takeIf { Order.depot(it) == d.id }
+    t.depot = d.id
     t.inDepot = true
     t.running = false
     t.toDepot = false
@@ -1405,10 +1429,23 @@ private fun World.enterDepot(t: Train) {
     t.lostUntil = 0
     reserved.entries.removeAll { it.value == t.id }
     countOn(t)
-    if (t.servicing) {
+    if (t.servicing || o != null) {
         autorenew(t)
         serviced(t)
     }
+    if (o != null) {
+        if (Order.depotKind(o) == Order.DEPOT_STOP) t.running = false
+        nextOrder(t)
+    }
+}
+
+/** Skips [t]'s order if it's to be serviced at a depot and isn't due; true if it did. */
+private fun World.skipService(t: Train): Boolean {
+    val o = t.current ?: return false
+    if (!Order.isDepot(o) || Order.depotKind(o) != Order.DEPOT_SERVICE || due(t.service, t.serviced)) return false
+    val was = t.order
+    nextOrder(t)
+    return t.order != was
 }
 
 /** Counts the train afresh on the tiles and blocks it's on. */
@@ -1453,14 +1490,19 @@ internal fun isqrt(n: Long): Long {
     return x
 }
 
-/** On to the train's next order, leaving out those to skip when there's nothing to do there. */
+/**
+ * On to the train's next order, leaving out those to skip when there's nothing to do there, and depot orders to be
+ * serviced when it isn't due.
+ */
 internal fun World.nextOrder(t: Train) {
     val n = t.orders.size
     if (n == 0) return
     repeat(n) {
         t.order = (t.order + 1) % n
         val o = t.orders[t.order]
-        if (!Order.has(o, Order.SKIP_IF_NOTHING) || somethingAt(t, Order.station(o))) return
+        if (Order.isDepot(o)) {
+            if (Order.depotKind(o) != Order.DEPOT_SERVICE || due(t.service, t.serviced)) return
+        } else if (!Order.has(o, Order.SKIP_IF_NOTHING) || somethingAt(t, Order.station(o))) return
     }
 }
 

@@ -353,6 +353,8 @@ class WorldView(
     val groups: List<List<List<VehicleGroup>>> = emptyList(),
     /** The year each of [sheds] went up, 0 for one from an older save. */
     val shedYears: IntArray = IntArray(0),
+    /** The town nearest each of the player's rail depots and garages, by depot id, to name them in orders. */
+    val depotTowns: Map<Int, Int> = emptyMap(),
 )
 
 /**
@@ -553,6 +555,7 @@ fun World.view(company: Int = 0, withReserved: Boolean = false): WorldView {
         litCrossings(),
         companies.map { c -> c.groups.map { it.toList() } },
         sheds.map { shedYears[it] ?: 0 }.toIntArray(),
+        depots.filter { it != null && it.owner == company && (it.kind == Depots.RAIL || it.kind == Depots.ROAD) }.associate { it!!.id to nearestTown(it.tile) },
     )
 }
 

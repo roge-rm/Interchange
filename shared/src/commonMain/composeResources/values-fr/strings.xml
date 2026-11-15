@@ -365,6 +365,9 @@
     <!-- Autres ordres, et financer des industries -->
     <string name="go_via">Passer par</string>
     <string name="skip_if_nothing">Sauter si rien à faire</string>
+    <string name="depot_near">Dépôt près de %1$s</string>
+    <string name="service_if_due">Entretien si dû</string>
+    <string name="stop_inside">S'arrêter dedans</string>
     <string name="share_orders">Partager les ordres avec</string>
     <string name="stop_sharing">Ne plus partager</string>
     <string name="fund_industry">Financer une industrie</string>

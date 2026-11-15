@@ -18,7 +18,7 @@ package com.rm.interchange.sim
 class Plan(val steps: IntArray, val behind: Boolean)
 
 internal fun World.planRoute(t: Train): Plan? {
-    val next = if (t.servicing && t.target == -1) t.orders.getOrNull(t.order % t.orders.size.coerceAtLeast(1))?.let { Order.station(it) } else null
+    val next = if (t.servicing && t.target == -1) t.current?.let { Order.station(it) }?.takeIf { it >= 0 } else null
     val onward = next?.let { railOnwardCosts(t, it) }?.takeIf { it.isNotEmpty() }
     val ahead = search(t.steps.last(), t, onward = onward)
     if (ahead != null && !t.servicing) return Plan(ahead.steps, false)
@@ -53,7 +53,7 @@ internal fun World.wayRound(t: Train, avoid: Set<Int>): IntArray? {
     val i = (t.behind(t.length) shr 32).toInt()
     if (i < 0 || !mayTurn(t, i)) return null
     val s = t.steps[i]
-    val next = if (t.servicing) t.orders.getOrNull(t.order % t.orders.size.coerceAtLeast(1))?.let { Order.station(it) } else null
+    val next = if (t.servicing) t.current?.let { Order.station(it) }?.takeIf { it >= 0 } else null
     val onward = next?.let { railOnwardCosts(t, it) }?.takeIf { it.isNotEmpty() }
     return search(step(stepTile(s), Track.index(stepPiece(s)), stepExit(s), stepLevel(s)), t, avoid, onward)?.steps
 }
@@ -174,9 +174,10 @@ private class RailPath(val steps: IntArray, val cost: Int, val resumes: Boolean 
 private fun World.search(from: Int, t: Train, avoid: Set<Int>? = null, onward: Map<Int, Int>? = null, reserving: Boolean = false, shortest: Int = 0, blocking: Boolean = false): RailPath? {
     val target = t.target
     if (target == -2) return null
-    // Off for a service, or with its home gone, it ends at any depot of its company's it can get into; sent in, only at its own.
+    // Off for a service, or with its home gone, it ends at any depot of its company's it can get into; sent in, only at
+    // its own, and on a depot order only at that one.
     val anyDepot = anyDepot(t)
-    val depotTile = if (target == -1 && !anyDepot) depots.getOrNull(t.depot)?.tile ?: return null else -1
+    val depotTile = if (target == -1 && !anyDepot) depots.getOrNull(t.goalDepot)?.tile ?: return null else -1
     val electric = t.electric
     fun depotGoal(tile: Int, entry: Int): Boolean {
         val d = depotAt(tile) ?: return false

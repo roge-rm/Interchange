@@ -122,8 +122,21 @@ fun VehicleMapControls(companyRenews: Boolean, renewOff: Boolean, x: Float, y: F
     if (x != 0f || y != 0f) ActionButton(stringResource(Res.string.show_on_map), onClick = { onShow(x, y) })
 }
 
-/** The stop a vehicle is working towards, or null if its orders are empty. */
-private fun nextStop(orders: IntArray, order: Int) = if (orders.isEmpty()) null else Order.station(orders[order % orders.size])
+/** The stop a vehicle is working towards, or null if its orders are empty or it's on a depot order. */
+private fun nextStop(orders: IntArray, order: Int) = if (orders.isEmpty()) null else Order.station(orders[order % orders.size]).takeIf { it >= 0 }
+
+/** Whether a vehicle's order now is to a depot. */
+private fun toDepotOrder(orders: IntArray, order: Int) = orders.isNotEmpty() && Order.isDepot(orders[order % orders.size])
+
+/** A depot in a vehicle's orders, by the town it's nearest. */
+@Composable
+fun depotName(view: WorldView, id: Int): String =
+    view.depotTowns[id]?.let { town -> view.towns.firstOrNull { it.id == town } }?.let { stringResource(Res.string.depot_near, it.name) }
+        ?: stringResource(Res.string.depot)
+
+/** An order's name in a line of stops: its station's, or its depot's. */
+@Composable
+fun orderName(view: WorldView, o: Int): String = if (Order.isDepot(o)) depotName(view, Order.depot(o)) else stationName(view, Order.station(o))
 
 /** What a train is doing, the same line its card shows. */
 @Composable
@@ -140,6 +153,7 @@ fun trainStatus(view: WorldView, t: TrainView): String {
         t.toDepot -> stringResource(Res.string.going_to_depot, t.kmh)
         t.waiting && target != null -> stringResource(Res.string.at_station, stationName(view, target))
         t.lost -> stringResource(Res.string.lost)
+        toDepotOrder(t.orders, t.order) -> stringResource(Res.string.going_to_depot, t.kmh)
         target != null -> stringResource(Res.string.heading_for, stationName(view, target), t.kmh)
         else -> stringResource(Res.string.no_stops)
     }
@@ -234,9 +248,18 @@ fun statusColour(wrecked: Boolean, trouble: Boolean): Color {
 /** Which of an order's flags a kind of vehicle can be given. */
 enum class OrderFlags { TRAIN, ROAD, CRAFT }
 
+/** What a depot order does, by its [Order.depotKind]. */
+@Composable
+private fun depotKindName(kind: Int) = when (kind) {
+    Order.DEPOT_SERVICE -> stringResource(Res.string.service_if_due)
+    Order.DEPOT_STOP -> stringResource(Res.string.stop_inside)
+    else -> stringResource(Res.string.go_via)
+}
+
 /** What an order says to do besides stopping, as one short line, or null if nothing. */
 @Composable
 private fun orderLine(o: Int): String? {
+    if (Order.isDepot(o)) return depotKindName(Order.depotKind(o))
     val parts = ArrayList<String>()
     if (Order.has(o, Order.VIA)) parts += stringResource(Res.string.go_via)
     if (Order.has(o, Order.FULL_LOAD)) parts += stringResource(Res.string.full_load)
@@ -296,21 +319,27 @@ private fun OrderRow(number: Int, name: String, line: String?, glyph: Glyph, cur
     }
 }
 
-/** Which stop is open: the [nth] time [station] comes in the orders, so it stays open as stops move or the orders change. */
-private data class OpenStop(val station: Int, val nth: Int)
+/**
+ * Which stop is open: the [nth] time [place] comes in the orders, so it stays open as stops move or the orders change.
+ * A place is a station id, or -2 less a depot's id.
+ */
+private data class OpenStop(val place: Int, val nth: Int)
+
+/** Where order [o] goes, as an [OpenStop] place. */
+private fun placeOf(o: Int) = if (Order.isDepot(o)) -2 - Order.depot(o) else Order.station(o)
 
 /** Where [stop] is in [orders] now, or -1 if it's gone. */
 private fun place(orders: IntArray, stop: OpenStop?): Int {
     if (stop == null) return -1
     var seen = 0
-    for ((i, o) in orders.withIndex()) if (Order.station(o) == stop.station && seen++ == stop.nth) return i
+    for ((i, o) in orders.withIndex()) if (placeOf(o) == stop.place && seen++ == stop.nth) return i
     return -1
 }
 
 /** The stop at [i] in [orders], as an [OpenStop]. */
 private fun stopAt(orders: IntArray, i: Int): OpenStop {
-    val station = Order.station(orders[i])
-    return OpenStop(station, (0 until i).count { Order.station(orders[it]) == station })
+    val p = placeOf(orders[i])
+    return OpenStop(p, (0 until i).count { placeOf(orders[it]) == p })
 }
 
 /** How long an edit to the orders waits to come back from the game before more edits are let through anyway. */
@@ -366,9 +395,10 @@ fun OrdersList(view: WorldView, vehicle: Int, orders: IntArray, order: Int, flag
     val at = place(orders, open)
     for ((i, o) in orders.withIndex()) {
         val s = stations[Order.station(o)]
+        val depot = Order.isDepot(o)
         OrderRow(
-            i + 1, s?.name?.takeIf { it.isNotEmpty() } ?: stringResource(Res.string.station_n, Order.station(o) + 1), orderLine(o),
-            if (s?.waypoint == true) Glyph.Waypoint else stopGlyph,
+            i + 1, if (depot) depotName(view, Order.depot(o)) else s?.name?.takeIf { it.isNotEmpty() } ?: stringResource(Res.string.station_n, Order.station(o) + 1), orderLine(o),
+            if (depot) Glyph.Depot else if (s?.waypoint == true) Glyph.Waypoint else stopGlyph,
             current = i == order % orders.size, open = i == at, onClick = { open = if (at == i) null else stopAt(orders, i) },
         ) {
             OrderEditor(o, flags, i, orders.size, change = { new -> send(orders.copyOf().also { a -> a[i] = new }, open) }, move = { to ->
@@ -392,6 +422,18 @@ private val UNLOADING = listOf(0, Order.UNLOAD, Order.TRANSFER)
 @Composable
 private fun OrderEditor(o: Int, flags: OrderFlags, at: Int, count: Int, change: (Int) -> Unit, move: (Int) -> Unit, remove: () -> Unit) {
     val c = LocalColors.current
+    if (Order.isDepot(o)) {
+        val kinds = Order.DEPOT_KINDS.toList()
+        val names = kinds.map { depotKindName(it) }
+        SegmentedChoice(kinds, Order.depotKind(o), { names[kinds.indexOf(it)] }, perRow = 3) { change(Order.toDepot(Order.depot(o), it)) }
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(KitSpace.Gap)) {
+            Box(Modifier.weight(1f))
+            SquareButton(Glyph.Up, stringResource(Res.string.move_up), 32.dp, enabled = at > 0) { move(at - 1) }
+            SquareButton(Glyph.Down, stringResource(Res.string.move_down), 32.dp, enabled = at < count - 1) { move(at + 1) }
+            SquareButton(Glyph.Remove, stringResource(Res.string.remove_stop), 32.dp, onClick = remove)
+        }
+        return
+    }
     if (flags != OrderFlags.CRAFT) {
         val loading = LOADING.firstOrNull { it != 0 && Order.has(o, it) } ?: 0
         val names = listOf(stringResource(Res.string.load_as_usual), stringResource(Res.string.full_load), stringResource(Res.string.full_load_any), stringResource(Res.string.no_loading))

@@ -4,6 +4,9 @@ package com.rm.interchange.sim
  * An order is a station and what to do there, packed in an int: the station
  * id in the low 16 bits, then what to do as bits, the least days to stand
  * there in the next eight, then three more bits of what to do.
+ *
+ * With [DEPOT] set it's an order to a depot instead: the depot id in the low
+ * 16 bits and its [depotKind] in the two above, the rest unused.
  */
 object Order {
     /** Wait until full of everything the train can carry. */
@@ -22,7 +25,29 @@ object Order {
     const val FULL_LOAD_ANY = 1 shl 30
     const val MAX_WAIT_DAYS = 255
 
-    fun station(o: Int) = o and 0xffff
+    /** An order to a depot, not a station. */
+    const val DEPOT = 1 shl 31
+    /** What a depot order does: in and straight out again, the same only when due a service, or in to stop there. */
+    const val DEPOT_VIA = 0
+    const val DEPOT_SERVICE = 1
+    const val DEPOT_STOP = 2
+    val DEPOT_KINDS = intArrayOf(DEPOT_VIA, DEPOT_SERVICE, DEPOT_STOP)
+
+    /** The station order [o] goes to, or -1 for a depot order. */
+    fun station(o: Int) = if (o and DEPOT != 0) -1 else o and 0xffff
+    fun isDepot(o: Int) = o and DEPOT != 0
+    /** The depot order [o] goes to, or -1 for a station order. */
+    fun depot(o: Int) = if (o and DEPOT != 0) o and 0xffff else -1
+    fun depotKind(o: Int) = (o ushr 16) and 3
+    /** An order to depot [id] of [kind]. */
+    fun toDepot(id: Int, kind: Int = DEPOT_VIA) = DEPOT or ((kind and 3) shl 16) or (id and 0xffff)
+
+    /** The station of the first station order in [orders] from [from] on, round to the start, or -1 with none. */
+    fun nextStation(orders: List<Int>, from: Int): Int {
+        val n = orders.size
+        for (k in 0 until n) Order.station(orders[(from + k).mod(n)]).let { if (it >= 0) return it }
+        return -1
+    }
     fun has(o: Int, flag: Int) = o and flag != 0
     fun waitDays(o: Int) = (o ushr 20) and 0xff
     fun withWait(o: Int, days: Int) = (o and (0xff shl 20).inv()) or (days.coerceIn(0, MAX_WAIT_DAYS) shl 20)
@@ -77,4 +102,17 @@ internal fun World.waitForLoad(v: Carrier, o: Int): Boolean {
     if (loaded()) return false
     v.waiting = FULL_LOAD_RETRY
     return true
+}
+
+/**
+ * Order [o] as [company] may give it, stray bits cleared, or null if it may not: a station of its own, or one of its
+ * depots of [kind], with wires over it for an [electric] train.
+ */
+internal fun World.allowedOrder(o: Int, company: Int, kind: Int, electric: Boolean = false): Int? {
+    if (!Order.isDepot(o)) return o.takeIf { stations.getOrNull(Order.station(o))?.owner == company }
+    val d = depots.getOrNull(Order.depot(o)) ?: return null
+    val k = Order.depotKind(o)
+    if (d.owner != company || d.kind != kind || k !in Order.DEPOT_KINDS) return null
+    if (electric && !depotWired(d)) return null
+    return Order.toDepot(d.id, k)
 }
