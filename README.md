@@ -28,6 +28,9 @@ Dan
     <td align="center" width="33%"><img src="screenshots/early.jpg" width="100%" alt="A steam train with wooden coaches below Port Albert in 1861, horse wagons on Church Street and a flour mill by the line"></td>
     <td align="center" width="33%"><img src="screenshots/snow-station.jpg" width="100%" alt="A diesel passenger train leaving a snowed-in station on the Canadian Shield"></td>
   </tr>
+  <tr>
+    <td align="center" width="33%"><img src="screenshots/water.jpg" width="100%" alt="Car ferries, lakers and hovercraft on the harbour at Port Albert in 1969, the docks and the town on the shore"></td>
+  </tr>
 </table>
 
 ---
