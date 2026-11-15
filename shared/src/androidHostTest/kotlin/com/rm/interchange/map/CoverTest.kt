@@ -51,39 +51,46 @@ class CoverTest {
         return Trees.count(world.trees[i].toInt()) > 0 && world.trackAt(wx, wy) == 0 && world.road[i].toInt() == 0 && picker.building(vx, vy) == TileRecorder.NOTHING
     }
 
-    @Test
-    fun aSignalIsCutByTheTreesInFrontOfItOnly() {
+    /** The rects standing in front of view point ([vx], [vy]) give, rounded to hundredths. */
+    private fun standing(c: Cover, vx: Float, vy: Float): List<List<Float>> {
+        val out = ArrayList<List<Float>>()
+        c.standing(vx, vy, -1e6f, -1e6f, 1e6f, 1e6f, 800f, 600f) { l, t, r, b -> out += listOf(l, t, r, b).map { kotlin.math.round(it * 100f) } }
+        return out
+    }
+
+    private fun treesCutWhatsBehindOnly() {
         val (tx, ty) = firstTile { vx, vy -> wooded(vx, vy) }
         val c = cover()
-        val all = -1e6f to 1e6f
-        val taken = HashSet<Int>()
-        val depths = ArrayList<Int>()
-        // Standing on the tile behind, across the diagonal: the trees are in front of it.
-        c.standing(tx - 0.5f, ty - 0.5f, all.first, all.first, all.second, all.second, 800f, 600f, { taken.add(it) }) { _, _, _, _, d -> depths += d }
-        assertTrue(depths.isNotEmpty())
-        assertTrue(tx + ty in depths)
-        // The buildings alone leave them out.
+        // Standing on the tile behind, across the diagonal: the trees are in front of it. In front of them, they aren't.
+        val behind = standing(c, tx - 0.5f, ty - 0.5f)
+        assertTrue(behind.isNotEmpty())
         val buildings = ArrayList<Int>()
-        c.rects(tx - 0.5f, ty - 0.5f, all.first, all.first, all.second, all.second, 800f, 600f, { true }) { _, _, _, _, d -> buildings += d }
-        assertTrue(tx + ty !in buildings)
-        // Standing in front of them, they don't go in.
-        val behind = ArrayList<Int>()
-        c.standing(tx + 1.5f, ty + 1.5f, all.first, all.first, all.second, all.second, 800f, 600f, { true }) { _, _, _, _, d -> behind += d }
-        assertTrue(behind.none { it <= tx + ty })
+        c.rects(tx - 0.5f, ty - 0.5f, -1e6f, -1e6f, 1e6f, 1e6f, 800f, 600f, { true }) { _, _, _, _, d -> buildings += d }
+        assertTrue(tx + ty !in buildings, "the buildings alone leave them out")
+        val ahead = standing(c, tx + 1.5f, ty + 1.5f)
+        assertTrue(behind.any { it !in ahead })
+        // Kept from frame to frame: a new frame's cover gives the same.
+        assertTrue(standing(cover(), tx - 0.5f, ty - 0.5f) == behind)
+    }
+
+    @Test
+    fun aSignalIsCutByTheTreesInFrontOfItOnly() = treesCutWhatsBehindOnly()
+
+    @Test
+    fun aSignalIsCutByTheTreesInFrontOfItTurned() {
+        view.turnBy(1)
+        try { treesCutWhatsBehindOnly() } finally { view.turnBy(-1) }
     }
 
     @Test
     fun aBuildingCutsASignalWhereItCutsAVehicle() {
         val (bx, by) = firstTile { vx, vy -> world.trackAt(view.worldX(vx, vy), view.worldY(vx, vy)) == 0 && picker.building(vx, vy) >= 0 }
         val c = cover()
-        val all = -1e6f to 1e6f
         val vehicle = ArrayList<List<Float>>()
-        val signal = ArrayList<List<Float>>()
-        c.rects(bx - 0.5f, by - 0.5f, all.first, all.first, all.second, all.second, 800f, 600f, { true }) { l, t, r, b, d -> if (d == bx + by) vehicle += listOf(l, t, r, b).map { kotlin.math.round(it * 100f) } }
-        c.standing(bx - 0.5f, by - 0.5f, all.first, all.first, all.second, all.second, 800f, 600f, { true }) { l, t, r, b, d -> if (d == bx + by) signal += listOf(l, t, r, b).map { kotlin.math.round(it * 100f) } }
+        c.rects(bx - 0.5f, by - 0.5f, -1e6f, -1e6f, 1e6f, 1e6f, 800f, 600f, { true }) { l, t, r, b, _ -> vehicle += listOf(l, t, r, b).map { kotlin.math.round(it * 100f) } }
         assertTrue(vehicle.isNotEmpty())
-        // Trees on the other tiles as deep may come too.
-        assertTrue(signal.containsAll(vehicle))
+        // Trees on the other tiles in front may come too.
+        assertTrue(standing(c, bx - 0.5f, by - 0.5f).containsAll(vehicle))
     }
 
     private companion object {

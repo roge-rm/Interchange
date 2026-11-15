@@ -9,74 +9,53 @@ import kotlin.math.floor
  * Where the buildings in the static map stand in front of something moving, so it can be drawn with those parts cut
  * away: the buildings are drawn under everything that moves, and would otherwise be drawn over by a
  * bus going behind them. Made for one frame at [level], whose sheets are [sheets], with the map showing [look].
- * Signals are cut by everything standing in front, trees too ([standing]).
+ * Signals are cut by everything standing in front, trees too ([standing]), on the CPU.
  *
  * A building's shape is its sprite's columns, each from its first solid pixel down to its last.
  */
-internal class Cover(private val world: World, private val view: View, private val level: Int, private val sheets: LevelSheets, look: Int = Climate.SUMMER) {
+internal class Cover(private val world: World, private val view: View, private val level: Int, private val sheets: LevelSheets, private val look: Int = Climate.SUMMER) {
     private val hw = Zoom.LEVELS[level]
     private val shrink = 1 shl level
-    private val picker = TileRecorder(world, view, level, look = look, shown = EMPTY_WEATHER, year = Calendar.year(world.startYear, world.day))
+    private val year = Calendar.year(world.startYear, world.day)
+    private val picker = TileRecorder(world, view, level, shown = EMPTY_WEATHER, year = year)
 
     /** Each view tile's building as [TileRecorder.building] gives it, worked out the first time a frame asks. */
     private val buildings = HashMap<Int, Long>()
 
     private fun buildingAt(vx: Int, vy: Int): Long = buildings.getOrPut(vy * view.viewWidth + vx) { picker.building(vx, vy) }
 
-    /** Each view tile's static sprites as [TileRecorder.objects] lays them, three floats each: cell and anchor x, y. */
-    private val stood = HashMap<Int, FloatArray>()
-    private val laid = ArrayList<Float>()
-
-    private fun standingAt(vx: Int, vy: Int): FloatArray = stood.getOrPut(vy * view.viewWidth + vx) {
-        laid.clear()
-        picker.onStatic = { cell, ax, ay -> laid += cell.toFloat(); laid += ax; laid += ay }
-        picker.objects(vx, vy)
-        picker.onStatic = null
-        laid.toFloatArray()
-    }
-
     /**
-     * As [rects], for everything that stands on the tiles in front: buildings, trees, depots, platforms, etc. [take]
-     * is asked with the view tile plus the view's tile count, so these go in apart from [rects]' buildings.
+     * As [rects], for everything that stands on the tiles in front: buildings, trees, depots, platforms, etc., all
+     * nearer than the point, into [add] as left, top, right, bottom on screen. For cutting signals on the CPU, apart
+     * from the depth buffer the vehicles are cut by.
      */
-    fun standing(vx: Float, vy: Float, nl: Float, nt: Float, nr: Float, nb: Float, width: Float, height: Float, take: (Int) -> Boolean, add: (Float, Float, Float, Float, Int) -> Unit) {
+    fun standing(vx: Float, vy: Float, nl: Float, nt: Float, nr: Float, nb: Float, width: Float, height: Float, add: (Float, Float, Float, Float) -> Unit) {
         val tx = floor(vx).toInt()
         val ty = floor(vy).toInt()
         val scale = view.halfWidth / hw
         val ox = view.screenX(0f, 0f, width)
         val oy = view.screenY(0f, 0f, 0f, height)
+        val cache = StandingCache.of(world, view, level, look, year)
         for ((dx, dy) in FRONT) {
             val bx = tx + dx
             val by = ty + dy
             if (bx < 0 || by < 0 || bx >= view.viewWidth || by >= view.viewHeight) continue
-            val sprites = standingAt(bx, by)
-            // The tile's sprites go in all together once any of them is near, as later items look for them too.
-            var near = false
-            for (k in 0 until sprites.size / 3) if (standingRect(sprites, k, ox, oy, scale, nl, nt, nr, nb)) near = true
-            if (!near || !take(view.viewWidth * view.viewHeight + by * view.viewWidth + bx)) continue
-            for (k in 0 until sprites.size / 3) {
-                val cell = sprites[k * 3].toInt()
+            val at = cache.find(bx, by)
+            val first = cache.first(at)
+            val sprites = cache.data
+            for (k in first until first + cache.count(at) * 3 step 3) {
+                val cell = sprites[k].toInt()
                 val r = cell * 6
                 val w = Atlas.STATIC_RECTS[r + 2] / shrink
                 val h = Atlas.STATIC_RECTS[r + 3] / shrink
                 if (w == 0 || h == 0) continue
                 // As the tile recorder lays it, from its anchor, the recorder's view point 0, 0 being the screen's.
-                val left = ox + (sprites[k * 3 + 1] + Atlas.STATIC_RECTS[r + 4] / shrink) * scale
-                val top = oy + (sprites[k * 3 + 2] + Atlas.STATIC_RECTS[r + 5] / shrink) * scale
-                columnRects(cell, w, h, left, top, scale, bx + by, add)
+                val left = ox + (sprites[k + 1] + Atlas.STATIC_RECTS[r + 4] / shrink) * scale
+                val top = oy + (sprites[k + 2] + Atlas.STATIC_RECTS[r + 5] / shrink) * scale
+                if (left > nr || left + w * scale < nl || top > nb || top + h * scale < nt) continue
+                columnRects(cell, w, h, left, top, scale, 0) { l, t, rr, bb, _ -> add(l, t, rr, bb) }
             }
         }
-    }
-
-    /** Whether sprite [k] of [sprites] reaches into [nl], [nt], [nr], [nb] on screen. */
-    private fun standingRect(sprites: FloatArray, k: Int, ox: Float, oy: Float, scale: Float, nl: Float, nt: Float, nr: Float, nb: Float): Boolean {
-        val r = sprites[k * 3].toInt() * 6
-        val w = Atlas.STATIC_RECTS[r + 2] / shrink
-        val h = Atlas.STATIC_RECTS[r + 3] / shrink
-        if (w == 0 || h == 0) return false
-        val left = ox + (sprites[k * 3 + 1] + Atlas.STATIC_RECTS[r + 4] / shrink) * scale
-        val top = oy + (sprites[k * 3 + 2] + Atlas.STATIC_RECTS[r + 5] / shrink) * scale
-        return !(left > nr || left + w * scale < nl || top > nb || top + h * scale < nt)
     }
 
     /**
@@ -185,6 +164,102 @@ internal class Cover(private val world: World, private val view: View, private v
         /** The most columns put in one rectangle. */
         private const val RUN = 6
         private val COLUMNS = Array(Zoom.LEVELS.size) { HashMap<Int, IntArray>() }
-        private val EMPTY_WEATHER = WeatherCopy(0, ByteArray(0), ByteArray(0), ByteArray(0))
+        internal val EMPTY_WEATHER = WeatherCopy(0, ByteArray(0), ByteArray(0), ByteArray(0))
+    }
+}
+
+/**
+ * The static sprites standing on view tiles, as [TileRecorder.objects] lays them, kept from frame to frame: three
+ * floats each, cell and anchor x, y from view point 0, 0 at height 0. A tile is worked out again once its chunk's
+ * [World.chunkVersions] moves on; the lot goes when the world, view, level, look or year does, or it grows past
+ * [LIMIT]. Main thread only.
+ */
+internal class StandingCache private constructor(val world: World, val view: View, val level: Int, val look: Int, val year: Int, val turn: Int) {
+    private val picker = TileRecorder(world, view, level, look = look, shown = Cover.EMPTY_WEATHER, year = year).also {
+        it.onStatic = ::lay
+    }
+
+    var data = FloatArray(1024)
+        private set
+    private var size = 0
+
+    // Open addressing on view tile: the tile (-1 for a free slot), where its sprites start, how many and its chunk's version.
+    private var keys = IntArray(1024) { -1 }
+    private var starts = IntArray(1024)
+    private var counts = IntArray(1024)
+    private var versions = IntArray(1024)
+    private var used = 0
+
+    private fun lay(cell: Int, ax: Float, ay: Float) {
+        if (size + 3 > data.size) data = data.copyOf(data.size * 2)
+        data[size] = cell.toFloat()
+        data[size + 1] = ax
+        data[size + 2] = ay
+        size += 3
+    }
+
+    private fun chunkVersion(vx: Int, vy: Int): Int {
+        val wx = view.worldX(vx, vy)
+        val wy = view.worldY(vx, vy)
+        return world.chunkVersions[(wy / World.BLOCK) * (world.width / World.BLOCK) + wx / World.BLOCK]
+    }
+
+    /** The slot holding view tile ([vx], [vy])'s sprites, worked out now if they aren't kept or are out of date. */
+    fun find(vx: Int, vy: Int): Int {
+        val tile = vy * view.viewWidth + vx
+        var i = (tile * -0x61c88647 ushr 8) and (keys.size - 1)
+        while (keys[i] != -1 && keys[i] != tile) i = (i + 1) and (keys.size - 1)
+        val version = chunkVersion(vx, vy)
+        if (keys[i] == tile && versions[i] == version) return i
+        if (keys[i] != tile) used++
+        keys[i] = tile
+        versions[i] = version
+        starts[i] = size
+        picker.objects(vx, vy)
+        counts[i] = (size - starts[i]) / 3
+        if (used * 2 <= keys.size) return i
+        grow()
+        return slotOf(tile)
+    }
+
+    fun first(slot: Int) = starts[slot]
+    fun count(slot: Int) = counts[slot]
+
+    private fun slotOf(tile: Int): Int {
+        var i = (tile * -0x61c88647 ushr 8) and (keys.size - 1)
+        while (keys[i] != tile) i = (i + 1) and (keys.size - 1)
+        return i
+    }
+
+    private fun grow() {
+        val k = keys
+        val s = starts
+        val c = counts
+        val v = versions
+        keys = IntArray(k.size * 2) { -1 }
+        starts = IntArray(k.size * 2)
+        counts = IntArray(k.size * 2)
+        versions = IntArray(k.size * 2)
+        for (j in k.indices) {
+            if (k[j] == -1) continue
+            var i = (k[j] * -0x61c88647 ushr 8) and (keys.size - 1)
+            while (keys[i] != -1) i = (i + 1) and (keys.size - 1)
+            keys[i] = k[j]
+            starts[i] = s[j]
+            counts[i] = c[j]
+            versions[i] = v[j]
+        }
+    }
+
+    companion object {
+        /** The most floats kept before starting again. */
+        private const val LIMIT = 1 shl 20
+        private var last: StandingCache? = null
+
+        fun of(world: World, view: View, level: Int, look: Int, year: Int): StandingCache {
+            val c = last
+            if (c != null && c.world === world && c.view === view && c.level == level && c.look == look && c.year == year && c.turn == view.turn && c.size < LIMIT) return c
+            return StandingCache(world, view, level, look, year, view.turn).also { last = it }
+        }
     }
 }

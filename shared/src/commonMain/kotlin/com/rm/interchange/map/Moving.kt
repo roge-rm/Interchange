@@ -430,10 +430,9 @@ internal fun DrawScope.drawMoving(world: World, view: View, sheets: Sheets, movi
     live.begin(level, hw, scale, depthSpan(view.viewWidth, view.viewHeight))
     val w = size.width
     val h = size.height
-    liveItems(items, lit, view.halfWidth, live) { vx, vy, l, t, r, b, all ->
-        if (all) cover?.standing(vx, vy, l, t, r, b, w, h, live::takeCover, live::cover)
-        else cover?.rects(vx, vy, l, t, r, b, w, h, live::takeCover, live::cover)
-    }
+    val hidden = live::hide
+    val hide = { vx: Float, vy: Float, l: Float, t: Float, r: Float, b: Float -> cover?.standing(vx, vy, l, t, r, b, w, h, hidden); Unit }
+    liveItems(items, lit, view.halfWidth, live, hide) { vx, vy, l, t, r, b -> cover?.rects(vx, vy, l, t, r, b, w, h, live::takeCover, live::cover) }
 }
 
 /** Draws [it] if it's one of the items drawn as shapes, and returns whether it was. */
@@ -462,10 +461,15 @@ private fun Pen.drawShape(it: FloatArray, hw: Float): Boolean {
  * The sorted [items] and the reserved track on the ground, [lit], into [live] in the order the canvas draws them:
  * the track first, edges then lights, then the items. Vehicles on the ground and the track are cut by the buildings
  * [cut] puts in front of their view point, near enough to the rect given (left, top, right, bottom) to matter, as
- * the canvas clips them; signals on the ground by everything standing there, when the last argument is true.
+ * the canvas clips them. Signals on the ground are cut by the rects [hide] gives [LiveBuilder.hide], everything
+ * standing in front of their view point.
  */
-internal fun liveItems(items: List<FloatArray>, lit: List<FloatArray>, hw: Float, live: LiveBuilder, cut: (Float, Float, Float, Float, Float, Float, Boolean) -> Unit) {
-    for (l in lit) cut(l[0], l[1], minOf(l[2], l[4]) - hw, minOf(l[3], l[5]) - hw, maxOf(l[2], l[4]) + hw, maxOf(l[3], l[5]) + hw, false)
+internal fun liveItems(
+    items: List<FloatArray>, lit: List<FloatArray>, hw: Float, live: LiveBuilder,
+    hide: (Float, Float, Float, Float, Float, Float) -> Unit = { _, _, _, _, _, _ -> },
+    cut: (Float, Float, Float, Float, Float, Float) -> Unit,
+) {
+    for (l in lit) cut(l[0], l[1], minOf(l[2], l[4]) - hw, minOf(l[3], l[5]) - hw, maxOf(l[2], l[4]) + hw, maxOf(l[3], l[5]) + hw)
     for (edge in EDGE_FIRST) for (l in lit) {
         live.z = live.cut(l[0], l[1])
         live.drawLit(l[2], l[3], l[4], l[5], hw, edge, StrokeCap.Round)
@@ -475,20 +479,17 @@ internal fun liveItems(items: List<FloatArray>, lit: List<FloatArray>, hw: Float
         if (live.drawShape(it, hw)) continue
         val model = it[4].toInt()
         if (model < 0) {
-            // A signal on the ground is cut by whatever stands in front, its band with it, close enough in to make out;
-            // the rest of the sheet isn't.
+            // A signal on the ground, close enough in to make out, and its band are cut on the CPU by whatever stands
+            // in front, so the trees that cut it don't cut the vehicles; the rest of the sheet isn't cut.
             val low = it.size > 7 && it[6] >= 0f && hw >= SIGNAL_CUT_FROM
-            if (low) cut(it[6], it[7], it[1] - hw, it[2] - hw * 3f, it[1] + hw, it[2] + hw * 0.5f, true)
-            val drawn = live.sprite(SIGNALS, it[3].toInt(), it[1], it[2], cutX = if (low) it[6] else -1f, cutY = if (low) it[7] else -1f)
-            if (drawn && it.size > 5 && it[5] > 0f) {
-                if (low) live.z = live.cut(it[6], it[7])
-                live.drawBand(it[5].toInt() - 1, it[3].toInt(), it[1], it[2], hw)
-                live.z = 1f
-            }
+            if (low) hide(it[6], it[7], it[1] - hw, it[2] - hw * 3f, it[1] + hw, it[2] + hw * 0.5f)
+            val drawn = live.sprite(SIGNALS, it[3].toInt(), it[1], it[2])
+            if (drawn && it.size > 5 && it[5] > 0f) live.drawBand(it[5].toInt() - 1, it[3].toInt(), it[1], it[2], hw)
+            live.clearHidden()
             continue
         }
         val low = it[6] >= 0f
-        if (low) cut(it[6], it[7], it[1] - hw * 1.5f, it[2] - hw * 2f, it[1] + hw * 1.5f, it[2] + hw, false)
+        if (low) cut(it[6], it[7], it[1] - hw * 1.5f, it[2] - hw * 2f, it[1] + hw * 1.5f, it[2] + hw)
         val mode = if (it[5] == 1f) LIVE_SHADOW else if (it[5] == 2f) LIVE_WRECK else LIVE_PLAIN
         live.sprite(model, it[3].toInt(), it[1], it[2], mode, if (low) it[6] else -1f, if (low) it[7] else -1f)
     }

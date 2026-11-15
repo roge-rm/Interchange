@@ -286,6 +286,7 @@ internal class LiveBuilder(private val atlas: LiveAtlas, private val source: Liv
         z = 1f
         missing = false
         coverTiles.clear()
+        hiddenCount = 0
         frame++
     }
 
@@ -370,11 +371,104 @@ internal class LiveBuilder(private val atlas: LiveAtlas, private val source: Liv
         val x0 = c[o + 1].toFloat()
         val y0 = c[o + 2].toFloat()
         val wreck = mode == LIVE_WRECK
-        put(LIVE_SPRITE, page, if (cutX >= 0f) cut(cutX, cutY) else 1f, if (mode == LIVE_SHADOW) 1f else 0f,
-            l.toFloat(), t.toFloat(), (left + w * scale).toInt().toFloat(), (top + h * scale).toInt().toFloat(),
-            x0, y0, x0 + w, y0 + h,
-            if (wreck) WRECK_R else 1f, if (wreck) WRECK_G else 1f, if (wreck) WRECK_B else 1f, if (mode == LIVE_SHADOW) SHADOW_ALPHA else 1f)
+        val depth = if (cutX >= 0f) cut(cutX, cutY) else 1f
+        val shadow = if (mode == LIVE_SHADOW) 1f else 0f
+        val sl = l.toFloat()
+        val st = t.toFloat()
+        val sr = (left + w * scale).toInt().toFloat()
+        val sb = (top + h * scale).toInt().toFloat()
+        val cr = if (wreck) WRECK_R else 1f
+        val cg = if (wreck) WRECK_G else 1f
+        val cb = if (wreck) WRECK_B else 1f
+        val ca = if (mode == LIVE_SHADOW) SHADOW_ALPHA else 1f
+        // The page rect follows the screen rect across, for each piece left showing.
+        val tx = w / (sr - sl).coerceAtLeast(1e-3f)
+        val ty = h / (sb - st).coerceAtLeast(1e-3f)
+        showing(sl, st, sr, sb) { a, b, c, d ->
+            put(LIVE_SPRITE, page, depth, shadow, a, b, c, d, x0 + (a - sl) * tx, y0 + (b - st) * ty, x0 + (c - sl) * tx, y0 + (d - st) * ty, cr, cg, cb, ca)
+        }
         return true
+    }
+
+    // Rects that hide what goes in till [clearHidden], as left, top, right, bottom on screen, and scratch for [showing].
+    private var hidden = FloatArray(64)
+    private var hiddenCount = 0
+    private var xs = FloatArray(32)
+    private var spans = FloatArray(32)
+
+    /** Hides the rect [l], [t], [r], [b] on screen from the sprites and rects that go in till [clearHidden]. */
+    fun hide(l: Float, t: Float, r: Float, b: Float) {
+        if ((hiddenCount + 1) * 4 > hidden.size) hidden = hidden.copyOf(hidden.size * 2)
+        val o = hiddenCount * 4
+        hidden[o] = l; hidden[o + 1] = t; hidden[o + 2] = r; hidden[o + 3] = b
+        hiddenCount++
+    }
+
+    fun clearHidden() {
+        hiddenCount = 0
+    }
+
+    /**
+     * The parts of [l], [t], [r], [b] on screen the [hide] rects leave showing, into [piece] as rects: in strips
+     * across between the hiding rects' sides, each strip's gaps down between them.
+     */
+    private inline fun showing(l: Float, t: Float, r: Float, b: Float, piece: (Float, Float, Float, Float) -> Unit) {
+        var near = 0
+        for (k in 0 until hiddenCount) if (overlaps(k, l, t, r, b)) near++
+        if (near == 0) {
+            piece(l, t, r, b)
+            return
+        }
+        if (xs.size < near * 2 + 2) xs = FloatArray(near * 4 + 4)
+        var n = 0
+        xs[n++] = l
+        xs[n++] = r
+        for (k in 0 until hiddenCount) {
+            if (!overlaps(k, l, t, r, b)) continue
+            val hl = hidden[k * 4]
+            val hr = hidden[k * 4 + 2]
+            if (hl > l && hl < r) xs[n++] = hl
+            if (hr > l && hr < r) xs[n++] = hr
+        }
+        xs.sort(0, n)
+        if (spans.size < near * 2) spans = FloatArray(near * 4)
+        for (i in 0 until n - 1) {
+            val xa = xs[i]
+            val xb = xs[i + 1]
+            if (xb <= xa) continue
+            val mid = (xa + xb) / 2
+            var m = 0
+            for (k in 0 until hiddenCount) {
+                if (!overlaps(k, l, t, r, b) || hidden[k * 4] > mid || hidden[k * 4 + 2] < mid) continue
+                spans[m * 2] = maxOf(t, hidden[k * 4 + 1])
+                spans[m * 2 + 1] = minOf(b, hidden[k * 4 + 3])
+                m++
+            }
+            // By top, then down past each one.
+            for (p in 1 until m) {
+                val a0 = spans[p * 2]
+                val a1 = spans[p * 2 + 1]
+                var q = p - 1
+                while (q >= 0 && spans[q * 2] > a0) {
+                    spans[(q + 1) * 2] = spans[q * 2]
+                    spans[(q + 1) * 2 + 1] = spans[q * 2 + 1]
+                    q--
+                }
+                spans[(q + 1) * 2] = a0
+                spans[(q + 1) * 2 + 1] = a1
+            }
+            var y = t
+            for (p in 0 until m) {
+                if (spans[p * 2] > y) piece(xa, y, xb, spans[p * 2])
+                y = maxOf(y, spans[p * 2 + 1])
+            }
+            if (y < b) piece(xa, y, xb, b)
+        }
+    }
+
+    private fun overlaps(k: Int, l: Float, t: Float, r: Float, b: Float): Boolean {
+        val o = k * 4
+        return hidden[o] < r && hidden[o + 2] > l && hidden[o + 1] < b && hidden[o + 3] > t
     }
 
     /** The depth a cut item at view point ([vx], [vy]) goes at this frame. */
@@ -408,7 +502,7 @@ internal class LiveBuilder(private val atlas: LiveAtlas, private val source: Liv
         put(color, LIVE_LINE, x1, y1, x2, y2, width / 2, if (cap == StrokeCap.Round) 1f else 0f, 0f, 0f)
 
     override fun rect(color: Color, x: Float, y: Float, w: Float, h: Float) =
-        put(color, LIVE_SHAPE, x, y, x + w, y, x + w, y + h, x, y + h)
+        showing(x, y, x + w, y + h) { l, t, r, b -> put(color, LIVE_SHAPE, l, t, r, t, r, b, l, b) }
 
     override fun rectEdge(color: Color, x: Float, y: Float, w: Float, h: Float, width: Float) {
         // Top and bottom run on over the corners, as a stroke's square joins do.
