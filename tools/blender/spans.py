@@ -3,7 +3,8 @@ on the middle of the tile.
 
 A deck is one tile of bridge with its rails on top at z 0, so a train at the deck's height runs on it. A pier
 is one step of what holds the deck up, from z 0 to 1, stacked from the ground to under the deck; the top step
-is drawn on its own with the cap the deck sits on. A portal is a tunnel's mouth in the hillside, its track at z 0.
+is drawn on its own with the cap the deck sits on. A ramp is a head tile on flat ground climbing a step to the
+deck, on an abutment of the bridge's kind. A portal is a tunnel's mouth in the hillside, its track at z 0.
 
 Through trusses run two tiles between piers on every other tile. Each tile is one of TRUSS_KINDS: "mid" the
 middle of a span, "pier" two spans' sloped ends meeting over a pier, "start" and "end" a pier tile at the first
@@ -405,6 +406,201 @@ def pier(m, style, along_u, top=False, foot=False, level=1):
         _masonry_pier(m, along_u, top)
     else:
         _concrete_pier(m, along_u, top, foot, level)
+
+
+# ---- Ramp heads ----------------------------------------------------------------------------------------------
+# A bridge's head on flat ground: the track climbs a step across the tile to the deck, on an abutment of the bridge's
+# own kind. Its inner end, where the deck sits, is towards view edge [edge]; the track there is at z 1.
+
+
+def _loft(m, along_u, d, x0, x1, y0, y1, zb, zt, mat, lift_b=True, lift_t=True):
+    """A box from x0 to x1 across and y0 to y1 along, its bottom zb and top zt steps above the ground, or above the
+    ramp's track bed where lift_b or lift_t: that climbs from 0 at the outer end (y -0.5 d) to 1 at the inner end."""
+    def lift(y, on):
+        return d * y + 0.5 if on else 0.0
+    # Walls from the ground stop a hair short of the inner end, so the seat's face there shows clean.
+    if not lift_b:
+        y0, y1 = [min(y, 0.496) if d > 0 else max(y, -0.496) for y in (y0, y1)]
+    bot = [(x0, y0, zb + lift(y0, lift_b)), (x1, y0, zb + lift(y0, lift_b)), (x1, y1, zb + lift(y1, lift_b)), (x0, y1, zb + lift(y1, lift_b))]
+    top = [(x0, y0, zt + lift(y0, lift_t)), (x1, y0, zt + lift(y0, lift_t)), (x1, y1, zt + lift(y1, lift_t)), (x0, y1, zt + lift(y1, lift_t))]
+    return m.wedge([_swap(along_u, p) for p in bot], [_swap(along_u, p) for p in top], mat)
+
+
+def _ramp_profile(m, along_u, d, profile, mat, y0=-0.5, y1=0.5):
+    """A solid from a closed outline of (x, z in steps above the bed) run along the ramp from y0 to y1, climbing with it."""
+    def at(y):
+        return [_swap(along_u, (x, y, z + d * y + 0.5)) for x, z in profile]
+    return m.wedge(at(y0), at(y1), mat)
+
+
+def _ramp_track(m, along_u, d, tie_mat, tie_half=0.17, bed=True):
+    """Ballast, ties and rails climbing the ramp, as track on a slope has them, so they meet the track beyond."""
+    rail = material("rail", "#6a6662", metal=0.9, rough=0.45)
+    head = material("rail head", "#d8d4cc", metal=1.0, rough=0.2)
+    if bed:
+        import scenery
+        _ramp_profile(m, along_u, d, [(-0.23, 0.0), (0.23, 0.0), (0.17, 0.14), (-0.17, 0.14)], scenery.gravel())
+    for i in range(9):
+        y = -0.5 + (i + 0.5) / 9
+        _loft(m, along_u, d, -tie_half, tie_half, y - 0.024, y + 0.024, 0.12, 0.2, tie_mat)
+    for side in (-1, 1):
+        _loft(m, along_u, d, side * 0.095 - 0.012, side * 0.095 + 0.012, -0.5, 0.5, 0.2, 0.36, rail)
+        _loft(m, along_u, d, side * 0.095 - 0.009, side * 0.095 + 0.009, -0.5, 0.5, 0.36, 0.42, head)
+
+
+def _crib_wall(m, along_u, d, side, timber, seam):
+    """A timber crib along side [side]: squared timbers laid in courses, each a little shorter than the one under it so
+    the top follows the ramp, with header ends showing at intervals."""
+    x0, x1 = sorted((side * 0.235, side * 0.31))
+    course = 0.16
+    k = 0
+    while True:
+        z0 = k * course
+        z1 = z0 + course - 0.02
+        if z0 > 1.12:
+            break
+        # The course runs in from the inner end as far as the ramp's bed is above its top.
+        t = max(0.0, min(1.0, z1 - 0.08))
+        ya = d * (t - 0.5)
+        y0, y1 = sorted((ya, d * 0.5))
+        if y1 - y0 > 0.02:
+            _loft(m, along_u, d, x0, x1, y0, y1, z0, z1, timber if k % 2 == 0 else seam, lift_b=False, lift_t=False)
+            # Header ties showing their ends across the face, every other course.
+            if k % 2 == 1:
+                n = int((y1 - y0) / 0.16)
+                for j in range(n):
+                    yy = y1 - 0.06 - j * 0.16 if d > 0 else y0 + 0.06 + j * 0.16
+                    hx0, hx1 = sorted((side * 0.225, side * 0.322))
+                    _loft(m, along_u, d, hx0, hx1, yy - 0.025, yy + 0.025, z0 - 0.005, z1 + 0.005, timber, lift_b=False, lift_t=False)
+        k += 1
+
+
+def _trestle_ramp(m, along_u, d):
+    b = _boxer(m, along_u)
+    tie = material("tie", "#4e3626", rough=0.9)
+    timber = material("trestle timber", "#7a5a3e", rough=0.9)
+    seam = material("trestle brace", "#6c4e34", rough=0.9)
+    fill = material("ramp fill", "#6a5a46", rough=1.0)
+    # Earth fill between the cribs, topped with the track.
+    _loft(m, along_u, d, -0.24, 0.24, *sorted((d * -0.5, d * 0.44)), -0.02, 0.0, fill, lift_b=False)
+    for side in (-1, 1):
+        _crib_wall(m, along_u, d, side, timber, seam)
+    _ramp_track(m, along_u, d, tie, tie_half=0.2)
+    # Guard timbers along the tie ends, as on the deck.
+    for side in (-1, 1):
+        _loft(m, along_u, d, side * 0.2 - 0.02, side * 0.2 + 0.02, -0.5, 0.5, 0.12, 0.24, timber)
+    # The bulkhead the stringers land on: planks across at the inner end and a sill timber on top.
+    yi = d * 0.5
+    # A plank backwall up to the track behind the bulkhead, holding the fill.
+    b(-0.31, 0.31, *sorted((yi - d * 0.04, yi - d * 0.09)), 0.0, 1.0, seam)
+    y0, y1 = sorted((yi, yi - d * 0.05))
+    for j in range(7):
+        x = -0.3 + j * 0.1
+        b(x - 0.045, x + 0.045, y0, y1, 0.0, 0.62, timber if j % 2 == 0 else seam, 0.003)
+    y0, y1 = sorted((yi - d * 0.02, yi - d * 0.11))
+    b(-0.33, 0.33, y0, y1, 0.55, 0.66, timber, 0.003)
+    # Bolts through the crib corners at the inner end.
+    for side in (-1, 1):
+        for z in (0.2, 0.5, 0.8):
+            ya, yb = sorted((yi - d * 0.03, yi - d * 0.06))
+            xa, xb = sorted((side * 0.31, side * 0.322))
+            b(xa, xb, ya, yb, z, z + 0.04, seam)
+
+
+def _stone_courses(m, along_u, d, x0, x1, top_off, stone, stone2, joint, course=0.2):
+    """A coursed stone wall from the ground up to top_off over the ramp's bed, from the inner end out to where it runs
+    out, each course a shade apart with a joint under it."""
+    _loft(m, along_u, d, x0, x1, -0.5, 0.5, 0.0, top_off - 0.01, joint, lift_b=False)
+    k = 0
+    while True:
+        z0 = k * course + 0.01
+        z1 = (k + 1) * course
+        if z0 > 1.0 + top_off:
+            break
+        t = max(0.0, min(1.0, z1 - top_off + 0.02))
+        y0, y1 = sorted((d * (t - 0.5), d * 0.5))
+        if y1 - y0 > 0.02:
+            _loft(m, along_u, d, x0 - 0.003, x1 + 0.003, y0, y1, z0, z1, stone if k % 2 == 0 else stone2, lift_b=False, lift_t=False)
+        k += 1
+
+
+def _stone_ramp(m, along_u, d):
+    b = _boxer(m, along_u)
+    tie = material("tie", "#4e3626", rough=0.9)
+    stone = material("pier stone", "#8a8478", rough=0.9)
+    stone2 = material("pier stone light", "#9a9384", rough=0.9)
+    joint = material("pier joints", "#5e5a52", rough=1.0)
+    cap = material("pier coping", "#a29c90", rough=0.85)
+    shoe = material("truss steel", "#3e4a52", metal=0.7, rough=0.5)
+    fill = material("ramp fill", "#6a5a46", rough=1.0)
+    _loft(m, along_u, d, -0.25, 0.25, *sorted((d * -0.5, d * 0.44)), -0.02, 0.0, fill, lift_b=False)
+    # Wing walls each side, coursed, coped a little above the ballast.
+    for side in (-1, 1):
+        x0, x1 = sorted((side * 0.25, side * 0.33))
+        _stone_courses(m, along_u, d, x0, x1, 0.06, stone, stone2, joint)
+        x0, x1 = sorted((side * 0.24, side * 0.345))
+        _loft(m, along_u, d, x0, x1, -0.5, 0.5, 0.06, 0.16, cap)
+    _ramp_track(m, along_u, d, tie)
+    # The bridge seat: the abutment's face at the inner end, coursed, with a coping the girders' shoes stand on, and
+    # the backwall rising behind them to the track.
+    yi = d * 0.5
+    y0, y1 = sorted((yi, yi - d * 0.16))
+    b(-0.34, 0.34, min(y0, y1) + 0.003, max(y0, y1) - 0.003, 0.0, 0.6, joint)
+    for k in range(3):
+        z0, z1 = k * 0.2 + 0.01, (k + 1) * 0.2
+        b(-0.345, 0.345, min(y0, y1), max(y0, y1), z0, z1, stone if k % 2 == 0 else stone2)
+    b(-0.36, 0.36, *sorted((yi + d * 0.01, yi - d * 0.17)), 0.6, 0.66, cap, 0.003)
+    for side in (-1, 1):
+        x = side * 0.25
+        b(x - 0.04, x + 0.04, *sorted((yi, yi - d * 0.06)), 0.66, 0.72, shoe)
+        x = side * TRUSS_X
+        b(x - 0.04, x + 0.04, *sorted((yi, yi - d * 0.06)), 0.66, 0.72, shoe)
+    b(-0.25, 0.25, *sorted((yi - d * 0.1, yi - d * 0.17)), 0.66, 1.1, stone2)
+    # Stepped pilasters at the face's corners.
+    for side in (-1, 1):
+        x0, x1 = sorted((side * 0.33, side * 0.37))
+        b(x0, x1, *sorted((yi + d * 0.01, yi - d * 0.2)), 0.0, 0.62, stone, 0.003)
+
+
+def _concrete_ramp(m, along_u, d):
+    b = _boxer(m, along_u)
+    tie = material("tie", "#4e3626", rough=0.9)
+    concrete = material("bridge concrete", "#a8a49c", rough=0.85)
+    lift = material("pier lift line", "#8e8a82", rough=0.9)
+    drip = material("deck drip edge", "#8e8a82", rough=0.9)
+    fill = material("ramp fill", "#6a5a46", rough=1.0)
+    _loft(m, along_u, d, -0.22, 0.22, *sorted((d * -0.5, d * 0.38)), -0.02, 0.0, fill, lift_b=False)
+    # Wing walls up to the bed, the deck's parapet running down them to a low end short of the outer edge.
+    for side in (-1, 1):
+        _loft(m, along_u, d, *sorted((side * 0.22, side * 0.28)), -0.5, 0.5, -0.02, 0.0, concrete, lift_b=False)
+        x0, x1 = sorted((side * 0.26 - 0.035, side * 0.26))
+        _loft(m, along_u, d, x0, x1, *sorted((d * -0.38, d * 0.5)), 0.0, 0.45, concrete)
+        _loft(m, along_u, d, x0, x1, *sorted((d * -0.5, d * -0.38)), 0.0, 0.22, concrete)
+        # A lift line along the wall's face and the drip edge under the parapet.
+        _loft(m, along_u, d, *sorted((side * 0.28, side * 0.284)), *sorted((d * -0.18, d * 0.5)), -0.3, -0.27, lift)
+        _loft(m, along_u, d, *sorted((side * 0.26, side * 0.268)), *sorted((d * -0.38, d * 0.5)), 0.0, 0.04, drip)
+    # Ballast in the trough, then the track.
+    _loft(m, along_u, d, -0.21, 0.21, -0.5, 0.5, 0.0, 0.08, material("deck ballast", "#6e6a64", rough=1.0))
+    _ramp_track(m, along_u, d, tie, bed=False)
+    # The seat at the inner end: a plain wall across with a ledge the box girder sits on, flared at its foot.
+    yi = d * 0.5
+    b(-0.3, 0.3, *sorted((yi, yi - d * 0.14)), 0.0, 0.3, concrete)
+    b(-0.27, 0.27, *sorted((yi - d * 0.03, yi - d * 0.11)), 0.3, 0.95, concrete)
+    b(-0.32, 0.32, *sorted((yi + d * 0.02, yi - d * 0.16)), 0.0, 0.08, concrete)
+    b(-0.3, 0.3, *sorted((yi - d * 0.02, yi - d * 0.12)), 0.26, 0.3, lift)
+    b(-0.2, 0.2, *sorted((yi - d * 0.08, yi - d * 0.14)), 0.3, 0.95, concrete)
+
+
+def ramp(m, style, edge):
+    """A bridge's ramp head on flat ground, its inner end towards view edge [edge]."""
+    along_u = edge in ("XM", "XP")
+    d = 1 if edge in ("XP", "YP") else -1
+    if style == "trestle":
+        _trestle_ramp(m, along_u, d)
+    elif style == "truss":
+        _stone_ramp(m, along_u, d)
+    else:
+        _concrete_ramp(m, along_u, d)
 
 
 # ---- Portal --------------------------------------------------------------------------------------------------

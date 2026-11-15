@@ -25,6 +25,7 @@ import com.rm.interchange.sim.stationBuildingAt
 import com.rm.interchange.sim.stationAt
 import com.rm.interchange.sim.stationEra
 import com.rm.interchange.sim.hasFoundation
+import com.rm.interchange.sim.rampEdge
 import com.rm.interchange.sim.surfaceHeight
 import com.rm.interchange.sim.Climate
 import com.rm.interchange.sim.isPlatform
@@ -285,6 +286,8 @@ internal class TileRecorder(
             sprite(Atlas.RAILS[viewPieceIndex(Track.index(pieces)) * 16], vx, vy, base)
             return
         }
+        // A bridge's ramp head brings its own track, drawn with the bridge.
+        if (world.spanHeads.containsKey(tile) && world.rampEdge(wx, wy) >= 0) return
         val st = world.surfaceHeight(wx, wy, pieces, worldCorner(wx, wy, vx, vy))
         val sr = world.surfaceHeight(wx, wy, pieces, worldCorner(wx, wy, vx + 1, vy))
         val sb = world.surfaceHeight(wx, wy, pieces, worldCorner(wx, wy, vx + 1, vy + 1))

@@ -582,9 +582,11 @@ class StationLayoutRun {
             val c = Command.Bridge(0, 14, 20, 26, 20, Spans.TRUSS)
             val cost = w.bridgeCost(w.companies[0], c)
             w.apply(c)
-            say("$name: flat-land bridge over track: cost $cost, spans ${w.spans.count { it != null }}, deck tiles ${w.deck.size}")
+            val spans = w.spans.count { it != null }
+            say("$name: flat-land bridge over track: cost $cost, spans $spans, deck tiles ${w.deck.size}")
             for (p in problems) say("$name: REFUSED $p")
-            say("$name: no S1 criteria")
+            val ok = cost > 0 && spans == 1 && w.deck.size == 11 && problems.isEmpty()
+            say("$name: ${if (ok) "PASS" else "FAIL"} cost $cost > 0, 1 span ($spans), 11 deck tiles (${w.deck.size})")
         }
     }
 }

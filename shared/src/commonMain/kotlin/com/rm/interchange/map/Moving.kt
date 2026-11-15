@@ -17,6 +17,7 @@ import com.rm.interchange.sim.Signals
 import com.rm.interchange.sim.SpanView
 import com.rm.interchange.sim.Spans
 import com.rm.interchange.sim.edgeHeight
+import com.rm.interchange.sim.rampEdge
 import com.rm.interchange.sim.burning
 import com.rm.interchange.sim.keyLevel
 import com.rm.interchange.sim.keyPiece
@@ -106,7 +107,7 @@ internal fun DrawScope.drawMoving(world: World, view: View, sheets: Sheets, movi
     for (s in moving.now.signals) {
         val p = signalPoint(world, s.tile, s.piece, s.facing, lines.lineOf(s.tile % world.width, s.tile / world.width, s.piece))
         val heads = if ((moving.now.weather?.year ?: 0) >= Atlas.SIGNAL_LIGHTS_FROM) Atlas.SIGNAL_LIGHT else Atlas.SIGNAL
-        val item = add(items, world, view, p.first, p.second, (if (s.red) heads[1] else heads[0]).toFloat())
+        val item = add(items, world, view, p.first, p.second, (if (s.red) heads[1] else heads[0]).toFloat(), if (onRamp(world, p.first, p.second)) ON_DECK else 0f)
         // The kind's band, painted on the mast as the signal's drawn: kind + 1, as 0 is the plain sprite.
         if (item != null && s.kind != Signals.TWO_WAY && s.kind != Signals.ONE_WAY) item[5] = s.kind + 1f
     }
@@ -126,6 +127,11 @@ internal fun DrawScope.drawMoving(world: World, view: View, sheets: Sheets, movi
                 tileItem(items, view, hx, hy, s.height.toFloat(), DEPOT_DEPTH, Atlas.PORTAL[painter.viewEdge(out)])
             }
             continue
+        }
+        // A head on flat ground is a ramp up a step to the deck, on an abutment of the bridge's kind.
+        for ((hx, hy, inward) in listOf(Triple(s.x0, s.y0, edgeOf(dx, dy)), Triple(s.x1, s.y1, edgeOf(-dx, -dy)))) {
+            if (world.rampEdge(hx, hy) < 0) continue
+            tileItem(items, view, hx, hy, (s.height - 1).toFloat(), DECK_DEPTH, Atlas.SPAN_RAMP[s.style * 4 + painter.viewEdge(inward)])
         }
         val along = if (painter.viewEdge(if (dx != 0) Track.XP else Track.YP) <= Track.XP) 0 else 1
         val len = maxOf(kotlin.math.abs(s.x1 - s.x0), kotlin.math.abs(s.y1 - s.y0)) - 1
@@ -377,7 +383,7 @@ internal fun DrawScope.drawMoving(world: World, view: View, sheets: Sheets, movi
         }
         // On a bridge, at its deck's height and in front of the deck.
         val deck = v.deck(i)
-        if (deck >= 0f) reach += ON_DECK
+        if (deck >= 0f || onRamp(world, x, y)) reach += ON_DECK
         val item = add(items, world, view, x, y, cell.toFloat(), reach, v.sprite(i), deck, wreck = v.wrecked(i))
         // Train cars on the ground in a row join the chain; anything else ends it.
         val joins = item != null && key >= 0 && deck < 0f && !inShed
@@ -1145,6 +1151,13 @@ private fun DrawScope.tileItem(items: ArrayList<FloatArray>, view: View, x: Int,
     val margin = view.halfWidth * 3
     if (sx < -margin || sx > size.width + margin || sy < -margin || sy > size.height + margin * 2) return
     items += floatArrayOf(vx + vy + depth, sx, sy, cell.toFloat(), -1f)
+}
+
+/** Whether world point ([x], [y]) is on a bridge's ramp head, drawn in front of the ramp as on a deck. */
+private fun onRamp(world: World, x: Float, y: Float): Boolean {
+    val tx = x.toInt()
+    val ty = y.toInt()
+    return world.inside(tx, ty) && world.spanHeads.containsKey(world.index(tx, ty)) && world.rampEdge(tx, ty) >= 0
 }
 
 /** The edge a step of ([dx], [dy]) goes out through. */

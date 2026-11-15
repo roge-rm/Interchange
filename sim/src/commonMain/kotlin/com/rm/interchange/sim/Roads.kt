@@ -146,7 +146,7 @@ internal fun World.buildRoad(company: Company, c: Command.Road) {
             continue
         }
         if (isWater(x, y) && !iceRoadFits(i)) continue
-        if (house[i].toInt() != 0 || industryOf[i].toInt() != 0 || stationTiles.containsKey(i) || depotTiles.containsKey(i) || deck.containsKey(i) || spanHeads.containsKey(i)) continue
+        if (house[i].toInt() != 0 || industryOf[i].toInt() != 0 || stationTiles.containsKey(i) || depotTiles.containsKey(i) || !roomUnder(i) || spanHeads.containsKey(i)) continue
         if (othersBuilding(company.id, i)) continue
         val joined = (has and 15) or bits
         if (!roadJoinsLevel(x, y, joined)) continue

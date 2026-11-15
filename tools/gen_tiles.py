@@ -277,6 +277,10 @@ TRUSS_KINDS = ["mid", "pier", "start", "end", "girder"]
 for t, kind in enumerate(TRUSS_KINDS[1:], 1):
     for a in (0, 1):
         JOBS.append(("signals", ("truss", t, a), lambda kind=kind, a=a: scenery(f"span_truss_{kind}_{a}.png", base.cell), None))
+# A head on flat ground climbing a step to the deck at view edge XM, XP, YM or YP, for each style.
+for st, style in enumerate(SPAN_STYLES):
+    for e, edge in enumerate(EDGES):
+        JOBS.append(("signals", ("span_ramp", st, e), lambda style=style, edge=edge: scenery(f"span_ramp_{style}_{edge}.png", base.cell), None))
 for e, edge in enumerate(EDGES):
     JOBS.append(("signals", ("portal", e), lambda edge=edge: scenery(f"span_portal_{edge}.png", base.cell), None))
 for a in (0, 1):
@@ -970,6 +974,8 @@ object Atlas {{
     val SPAN_DECK = intArrayOf({", ".join(str(index[("span_deck", st, a)]) for st in range(len(SPAN_STYLES)) for a in (0, 1))})
     val SPAN_PIER = intArrayOf({", ".join(str(index[("span_pier", st, a)] if st != 2 else index[("pier_taper", 1, a)]) for st in range(len(SPAN_STYLES)) for a in (0, 1))})
     val PORTAL = intArrayOf({", ".join(str(index[("portal", e)]) for e in range(4))})
+    /** A bridge's head on flat ground as a ramp up a step to its deck, at style * 4 + the view edge the deck is at. On the signals sheet. */
+    val SPAN_RAMP = intArrayOf({", ".join(str(index[("span_ramp", st, e)]) for st in range(len(SPAN_STYLES)) for e in range(4))})
     /** A pier's top step with the cap the deck sits on, at style * 2 + along. On the signals sheet. */
     val SPAN_PIER_TOP = intArrayOf({", ".join(str(index[("span_pier_top", st, a)]) for st in range(len(SPAN_STYLES)) for a in (0, 1))})
     /** A pier's step on the ground, at style * 2 + along: a footing for concrete, the plain step for the others. On the signals sheet. */

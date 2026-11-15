@@ -8,7 +8,9 @@ package com.rm.interchange.sim
  * says which level it's on, and so do piece keys.
  *
  * A bridge's deck is level with where its heads meet it, over land no higher,
- * some of it lower. A tunnel runs level from a portal at the foot of a slope
+ * some of it lower. Between flat heads over land no lower, the deck is a step
+ * up instead and each head is a ramp up to it, told apart by the deck being
+ * above the head's ground. A tunnel runs level from a portal at the foot of a slope
  * into the hill, out of the first slope beyond at the same height going down,
  * with land above it all the way.
  */
@@ -125,20 +127,64 @@ private fun World.bridgeSurvey(company: Company, c: Command.Bridge): Long {
     val dx = Track.dx(toward)
     val dy = Track.dy(toward)
     var cost = 0L
-    var lowest = h
     for (k in 1..len) {
         val x = c.x0 + dx * k
         val y = c.y0 + dy * k
         val i = index(x, y)
         // Over the land, nowhere above the deck, and nothing in the way.
-        if (maxOf(maxOf(heightAt(x, y), heightAt(x + 1, y)), maxOf(heightAt(x + 1, y + 1), heightAt(x, y + 1))) > h) return -Refusal.HILL.toLong()
-        lowest = minOf(lowest, minOf(minOf(heightAt(x, y), heightAt(x + 1, y)), minOf(heightAt(x + 1, y + 1), heightAt(x, y + 1))))
+        if (topCorner(x, y) > h) return -Refusal.HILL.toLong()
         if (deck.containsKey(i) || spanHeads.containsKey(i) || stationTiles.containsKey(i) || depotTiles.containsKey(i) || house[i].toInt() != 0 || industryOf[i].toInt() != 0 ||
             stationBuildings.containsKey(i)) return -Refusal.IN_THE_WAY.toLong()
         cost += price(Spans.COST[c.style])
     }
-    if (lowest >= h) return -Refusal.NOTHING_TO_SPAN.toLong()
+    val top = deckHeight(c, toward, len, h)
+    if (top < 0) return -Refusal.NOTHING_TO_SPAN.toLong()
+    // Track or a road under it needs a step of room.
+    for (k in 1..len) {
+        val x = c.x0 + dx * k
+        val y = c.y0 + dy * k
+        val i = index(x, y)
+        if ((track[i].toInt() != 0 || road[i].toInt() != 0) && top <= topCorner(x, y)) return -Refusal.IN_THE_WAY.toLong()
+    }
     return cost + 2 * price(Prices.TRACK) + treeCost(index(c.x0, c.y0)) + treeCost(index(c.x1, c.y1))
+}
+
+/** The highest corner of tile ([x], [y]), in steps. */
+private fun World.topCorner(x: Int, y: Int) = maxOf(maxOf(heightAt(x, y), heightAt(x + 1, y)), maxOf(heightAt(x + 1, y + 1), heightAt(x, y + 1)))
+
+/**
+ * The height of bridge [c]'s deck, its heads meeting it at [h] and [len] tiles between going [toward], none higher than
+ * [h]: level with the heads over land some of it lower, a step up between flat heads at [h] over land no lower; -1 for neither.
+ */
+private fun World.deckHeight(c: Command.Bridge, toward: Int, len: Int, h: Int): Int {
+    for (k in 1..len) {
+        val x = c.x0 + Track.dx(toward) * k
+        val y = c.y0 + Track.dy(toward) * k
+        if (minOf(minOf(heightAt(x, y), heightAt(x + 1, y)), minOf(heightAt(x + 1, y + 1), heightAt(x, y + 1))) < h) return h
+    }
+    val flat = isFlat(c.x0, c.y0) && isFlat(c.x1, c.y1) && heightAt(c.x0, c.y0) == h && heightAt(c.x1, c.y1) == h
+    return if (flat) h + 1 else -1
+}
+
+/** The edge head tile ([x], [y]) meets its bridge's deck by if it's a ramp up to a deck above its ground; -1 if not. */
+fun World.rampEdge(x: Int, y: Int): Int {
+    val s = spanHeads[index(x, y)]?.let { spans.getOrNull(it) } ?: return -1
+    if (s.tunnel || s.height <= topCorner(x, y)) return -1
+    val dx = (s.x1 - s.x0).coerceIn(-1, 1)
+    val dy = (s.y1 - s.y0).coerceIn(-1, 1)
+    val out = if (x == s.x0 && y == s.y0) 1 else -1
+    return when {
+        dx * out > 0 -> Track.XP
+        dx * out < 0 -> Track.XM
+        dy * out > 0 -> Track.YP
+        else -> Track.YM
+    }
+}
+
+/** Whether track or a road can go on the ground of tile [i]: no bridge over it, or a step of room under its deck. */
+fun World.roomUnder(i: Int): Boolean {
+    val s = deck[i]?.let { spans.getOrNull(it) } ?: return true
+    return s.tunnel || s.height > topCorner(i % width, i / width)
 }
 
 internal fun World.buildBridge(company: Company, c: Command.Bridge) {
@@ -147,7 +193,8 @@ internal fun World.buildBridge(company: Company, c: Command.Bridge) {
     spend(company, Books.CONSTRUCTION, cost)
     val axis = if (c.y0 == c.y1) Track.X else Track.Y
     val toward = if (axis == Track.X) (if (c.x1 > c.x0) Track.XP else Track.XM) else (if (c.y1 > c.y0) Track.YP else Track.YM)
-    open(company, Span(spans.size, company.id, false, c.style, c.x0, c.y0, c.x1, c.y1, headHeight(c.x0, c.y0, axis, toward)))
+    val len = maxOf(kotlin.math.abs(c.x1 - c.x0), kotlin.math.abs(c.y1 - c.y0)) - 1
+    open(company, Span(spans.size, company.id, false, c.style, c.x0, c.y0, c.x1, c.y1, deckHeight(c, toward, len, headHeight(c.x0, c.y0, axis, toward))))
 }
 
 /**

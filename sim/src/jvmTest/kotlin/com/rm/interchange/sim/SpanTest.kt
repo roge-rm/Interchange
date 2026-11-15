@@ -68,8 +68,69 @@ class SpanTest {
         val wide = land { x, _ -> (6 - minOf(x - 9, 31 - x)).coerceIn(2, 6) }
         assertEquals(-1L, wide.bridgeCost(wide.companies[0], Command.Bridge(0, 9, 10, 30, 10, Spans.TRESTLE)))
         // Land in the way.
-        val hill = land { _, _ -> 6 }
-        assertEquals(-1L, hill.bridgeCost(hill.companies[0], Command.Bridge(0, 19, 10, 25, 10, Spans.TRUSS)))
+        val hill = land { x, _ -> if (x in 21..22) 7 else 6 }
+        assertEquals(Refusal.HILL, hill.bridgeRefusal(hill.companies[0], Command.Bridge(0, 19, 10, 25, 10, Spans.TRUSS)))
+        // Track can't go in under a deck with no room.
+        w.apply(Command.Bridge(0, 19, 10, 30, 10, Spans.TRUSS))
+        w.apply(Command.Rail(0, 20, 3, 20, 20, Track.Y, remove = false))
+        assertEquals(0, w.trackAt(20, 10))
+    }
+
+    @Test
+    fun aTrainCrossesFlatLandOnABridgeWithRampHeads() {
+        val w = land { _, _ -> 4 }
+        w.apply(Command.Rail(0, 3, 10, 14, 10, Track.X, remove = false))
+        w.apply(Command.Rail(0, 26, 10, 45, 10, Track.X, remove = false))
+        // Track under it first; the bridge goes over with a step of room.
+        w.apply(Command.Rail(0, 20, 3, 20, 20, Track.Y, remove = false))
+        val c = Command.Bridge(0, 14, 10, 26, 10, Spans.TRUSS)
+        assertTrue(w.bridgeCost(w.companies[0], c) > 0)
+        w.apply(c)
+        assertEquals(1, w.spans.size)
+        assertEquals(11, w.deck.size)
+        val s = w.spans[0]!!
+        assertEquals(5, s.height)
+        // Each head is a ramp from the ground up to the deck.
+        assertEquals(Track.XP, w.rampEdge(14, 10))
+        assertEquals(Track.XM, w.rampEdge(26, 10))
+        assertEquals(4, w.edgeHeight(14, 10, Track.X, Track.XM))
+        assertEquals(5, w.edgeHeight(14, 10, Track.X, Track.XP))
+        assertEquals(5, w.edgeHeight(26, 10, Track.X, Track.XM))
+        assertEquals(4, w.edgeHeight(26, 10, Track.X, Track.XP))
+        // More track and a road can go under it.
+        w.apply(Command.Rail(0, 22, 3, 22, 20, Track.Y, remove = false))
+        w.apply(Command.Road(0, 24, 3, 24, 20, Surface.DIRT, remove = false))
+        assertEquals(Track.Y, w.trackAt(20, 10))
+        assertEquals(Track.Y, w.trackAt(22, 10))
+        assertTrue(w.road[w.index(24, 10)].toInt() != 0)
+        assertTrue(runTrainTo(w, 43), "never got across")
+        val again = Save.read(Save.write(w))
+        assertEquals(w.checksum(), again.checksum())
+        assertEquals(Track.XP, again.rampEdge(14, 10))
+        repeat(2000) { w.step(); again.step() }
+        assertEquals(w.checksum(), again.checksum())
+    }
+
+    @Test
+    fun flatEndsAreRefusedForWhatElseIsWrong() {
+        val company = { w: World -> w.companies[0] }
+        // Flat land the length of a bridge: it builds a step up.
+        val flat = land { _, _ -> 4 }
+        assertEquals(Refusal.NONE, flat.bridgeRefusal(company(flat), Command.Bridge(0, 10, 10, 16, 10, Spans.TRESTLE)))
+        // A head on a slope down to flat land isn't flat, so there's still nothing to span.
+        val tilted = land { x, _ -> if (x <= 10) 5 else 4 }
+        assertEquals(Refusal.NOTHING_TO_SPAN, tilted.bridgeRefusal(company(tilted), Command.Bridge(0, 10, 10, 16, 10, Spans.TRESTLE)))
+        // Ends side by side, not straight, too long, a station on an end, a house in the way: refused as before.
+        assertEquals(Refusal.NOTHING_TO_SPAN, flat.bridgeRefusal(company(flat), Command.Bridge(0, 10, 10, 11, 10, Spans.TRESTLE)))
+        assertEquals(Refusal.NOT_STRAIGHT, flat.bridgeRefusal(company(flat), Command.Bridge(0, 10, 10, 16, 12, Spans.TRESTLE)))
+        assertEquals(Refusal.TOO_LONG, flat.bridgeRefusal(company(flat), Command.Bridge(0, 10, 10, 30, 10, Spans.TRESTLE)))
+        flat.apply(Command.Station(0, 16, 10, 18, 10, Track.X))
+        assertEquals(Refusal.ENDS, flat.bridgeRefusal(company(flat), Command.Bridge(0, 10, 10, 16, 10, Spans.TRESTLE)))
+        flat.house[flat.index(13, 20)] = 1
+        assertEquals(Refusal.IN_THE_WAY, flat.bridgeRefusal(company(flat), Command.Bridge(0, 10, 20, 16, 20, Spans.TRESTLE)))
+        // Heads at different heights.
+        val step = land { x, _ -> if (x >= 16) 5 else 4 }
+        assertEquals(Refusal.NOT_LEVEL, step.bridgeRefusal(company(step), Command.Bridge(0, 10, 10, 16, 10, Spans.TRESTLE)))
     }
 
     @Test

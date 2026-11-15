@@ -66,12 +66,26 @@ fun World.hasFoundation(x: Int, y: Int) = needsFoundation(x, y, trackAt(x, y))
  */
 fun World.surfaceHeight(x: Int, y: Int, trackPieces: Int, corner: Int): Int {
     val pieces = builtPieces(x, y, trackPieces)
-    // A tunnel's portal runs level into the hill at the foot of its slope.
-    spanHeads[index(x, y)]?.let { id -> spans[id]?.let { if (it.tunnel) return it.height } }
     val n = heightAt(x, y)
     val e = heightAt(x + 1, y)
     val s = heightAt(x + 1, y + 1)
     val w = heightAt(x, y + 1)
+    spanHeads[index(x, y)]?.let { id ->
+        spans[id]?.let { span ->
+            // A tunnel's portal runs level into the hill at the foot of its slope.
+            if (span.tunnel) return span.height
+            // A bridge's ramp head on flat ground rises across the tile to the deck a step up.
+            if (span.height > maxOf(maxOf(n, e), maxOf(s, w))) {
+                val up = when (rampEdge(x, y)) {
+                    Track.XM -> corner == CORNER_N || corner == CORNER_W
+                    Track.XP -> corner == CORNER_E || corner == CORNER_S
+                    Track.YM -> corner == CORNER_N || corner == CORNER_E
+                    else -> corner == CORNER_S || corner == CORNER_W
+                }
+                return if (up) span.height else n
+            }
+        }
+    }
     if (!needsFoundation(x, y, pieces)) return when (corner) { CORNER_N -> n; CORNER_E -> e; CORNER_S -> s; else -> w }
     if (stationTiles.containsKey(index(x, y))) return maxOf(maxOf(n, e), maxOf(s, w))
     return when (pieces) {
@@ -136,7 +150,7 @@ private fun World.planLine(c: Command.Rail, line: IntArray, planned: HashMap<Int
         // Town roads and buildings stay put; level crossings come with roads of the player's own.
         // Across a road only on a level crossing.
         val special = stationTiles.containsKey(i) || depotTiles.containsKey(i) || (townBuilt(i) && !(road[i].toInt() != 0 && crossable(i, piece))) || spanHeads.containsKey(i) ||
-            othersBuilding(c.company, i)
+            othersBuilding(c.company, i) || (!c.remove && !roomUnder(i))
         val ok = !special && if (c.remove) {
             has and piece != 0 && owner[i].toInt() == c.company
         } else {
@@ -191,7 +205,7 @@ internal fun World.buildRail(company: Company, c: Command.Rail) {
             }
         } else {
             if (has and piece != 0 || (has != 0 && owner[i].toInt() != company.id)) continue
-            if (!piecesFit(x, y, has or piece)) continue
+            if (!piecesFit(x, y, has or piece) || !roomUnder(i)) continue
             val cost = price(Prices.TRACK) + treeCost(i) + if (!needsFoundation(x, y, has) && needsFoundation(x, y, has or piece)) price(Prices.FOUNDATION) else 0
             if (company.money < cost) return
             spend(company, Books.CONSTRUCTION, cost)
