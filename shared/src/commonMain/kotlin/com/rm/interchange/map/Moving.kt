@@ -13,6 +13,7 @@ import com.rm.interchange.map.gl.depthSpan
 import com.rm.interchange.sim.CarOrder
 import com.rm.interchange.sim.Calendar
 import com.rm.interchange.sim.Signals
+import com.rm.interchange.sim.SpanView
 import com.rm.interchange.sim.Spans
 import com.rm.interchange.sim.edgeHeight
 import com.rm.interchange.sim.burning
@@ -72,11 +73,18 @@ internal class FloatBuffer {
 /** The angles ships are drawn at, turning toward their sim headings. */
 private val turnEase = TurnEase()
 
+/** The bridges and tunnels drawn last frame by their ends' tiles ([spanKey]), and this frame's, swapped each frame. */
+private var spansDrawn = HashSet<Long>()
+private var spansDrawing = HashSet<Long>()
+
+private fun spanKey(world: World, s: SpanView) = world.index(s.x0, s.y0).toLong() shl 32 or world.index(s.x1, s.y1).toLong()
+
 /**
  * Puts signals and trains into [live], the GPU map's moving layer, nearest last. Trains are placed between where
- * they were on the last two ticks, so they glide.
+ * they were on the last two ticks, so they glide. While [holdNewSpans], a bridge or tunnel not drawn last frame stays
+ * out, so a player's new one shows with its track once the GPU map has it.
  */
-internal fun DrawScope.drawMoving(world: World, view: View, sheets: Sheets, moving: Moving, live: LiveBuilder) {
+internal fun DrawScope.drawMoving(world: World, view: View, sheets: Sheets, moving: Moving, live: LiveBuilder, holdNewSpans: Boolean = false) {
     // The level's sheet, or the nearest one unpacked while it isn't yet, or the level itself while none is: what moves
     // then goes in uncut, under the loading cover, so the vehicle sheets go up alongside the static ones.
     val start = Zoom.levelFor(view.halfWidth)
@@ -105,7 +113,11 @@ internal fun DrawScope.drawMoving(world: World, view: View, sheets: Sheets, movi
     for (tile in moving.now.buoys) add(items, world, view, tile % world.width + 0.5f, tile / world.width + 0.5f, 0f, 0f, BUOY)
     // Bridges a tile at a time, a step of pier at a time up from the ground, just in front of what's on the tile
     // under them; trains on a bridge are put further forward still. Tunnel mouths like engine houses.
+    spansDrawing.clear()
     for (s in moving.now.spans) {
+        val key = spanKey(world, s)
+        if (holdNewSpans && key !in spansDrawn) continue
+        spansDrawing.add(key)
         val dx = (s.x1 - s.x0).coerceIn(-1, 1)
         val dy = (s.y1 - s.y0).coerceIn(-1, 1)
         if (s.tunnel) {
@@ -149,6 +161,7 @@ internal fun DrawScope.drawMoving(world: World, view: View, sheets: Sheets, movi
             tileItem(items, view, x, y, s.height.toFloat(), DECK_DEPTH, sprite)
         }
     }
+    spansDrawn = spansDrawing.also { spansDrawing = spansDrawn }
     // Fires, and boards by worn or closed track, close enough in to make out.
     if (view.halfWidth >= 8f) forTilesOnScreen(world, view) { x, y ->
         val i = world.index(x, y)

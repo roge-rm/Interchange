@@ -192,7 +192,7 @@ fun MapView(
         gl.revision.intValue
         gl.show(view, sheets, size.width.toInt(), size.height.toInt())
         if (gl.wantsMoving()) moving()?.let {
-            drawMoving(world, view, sheets, it, gl.live)
+            drawMoving(world, view, sheets, it, gl.live, gl.editWaiting)
             drawSky(world, view, it)
         }
         val now = clock.elapsedNow().inWholeMilliseconds

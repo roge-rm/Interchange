@@ -161,6 +161,12 @@ internal class GlScene(private val world: World, parent: CoroutineScope) {
     /** Whether the player's last edit isn't drawn yet, so its preview should stay on screen. */
     val holdingEdit get() = edit.holding
 
+    /**
+     * Whether the held edit isn't on the GPU map yet, by the last [show]: what it adds to the moving layer, like a
+     * tunnel's portals, waits till then.
+     */
+    val editWaiting get() = edit.holding && !(editChanged && editCurrent)
+
     /** The versions of [turn]'s regions now, to hand [edited] for a command sent before it's called; null if none. */
     fun editMark(turn: Int): LongArray? = turns[turn]?.let { versions(it) }
 
@@ -173,6 +179,8 @@ internal class GlScene(private val world: World, parent: CoroutineScope) {
         val t = turns[turn] ?: return
         val base = before?.takeIf { it.size == t.regions.size } ?: versions(t)
         edit.start(nowMillis(), turn, regionsTouching(world, turn, x0, y0, x1, y1), base)
+        editChanged = false
+        editCurrent = false
         if (editTicker?.isActive == true) return
         // The map may be still, as when paused, so it's drawn again each frame while the edit's held. With no draws,
         // as in the background, the hold runs out here.
