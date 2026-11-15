@@ -152,15 +152,15 @@ private fun World.open(r: Rival, c: Company, opens: Int, from: Int = 0, running:
     var k0 = from
     var ran = running
     while (left > 0) {
-        if (ran < 0) {
-            ran = r.routes.count { !it.feeder }
-            if (ran >= maxRoutes(c)) return
-            // On borrowed money, only once what it runs pays.
-            if (c.loan > 0 && r.routes.isNotEmpty() && profitAWorkYear(c) <= 0) return
-        }
+        // Carrying on, the routes it ran when the turn began keep its kinds in the same order.
+        if (r.routes.count { !it.feeder } >= maxRoutes(c)) return
+        // On borrowed money, only once what it runs pays.
+        if (c.loan > 0 && r.routes.isNotEmpty() && profitAWorkYear(c) <= 0) return
+        if (ran < 0) ran = r.routes.count { !it.feeder }
         left--
         // Each level's kinds in turn; anything it can't do this time, the next kind.
         val kinds = KINDS[level()]
+        k0 = k0.coerceIn(0, kinds.size)
         var done = false
         for (k in k0 until kinds.size) {
             val tried = when (kinds[(ran + k) % kinds.size]) {
@@ -188,28 +188,26 @@ private fun World.open(r: Rival, c: Company, opens: Int, from: Int = 0, running:
 }
 
 /**
- * Each tick: rivals planning a railway carry on with it in turn, until [World.railTickStates] path search steps are used.
- * One that's done carries on opening as [think] would have.
+ * Each tick one rival planning a railway carries on with it, for up to [World.railTickStates] path search steps: the
+ * one part way through a pick, so only one holds a search's arrays, or else the first. One that's done carries on
+ * opening as [think] would have.
  */
 internal fun World.railJobs() {
     if (rivals.none { it.job != null }) return
-    var left = railTickStates
-    for (r in rivals.toList()) {
-        val job = r.job ?: continue
-        if (r !in rivals) continue
+    for (r in rivals) {
         val c = companies.getOrNull(r.company)
-        if (c == null || c.gone) { r.job = null; continue }
-        if (left <= 0) break
-        job.left = left
-        val t = runRailJob(r, c, job)
-        left = job.left
-        if (t == null) continue
-        r.job = null
-        when (t) {
-            Tried.BUILT -> open(r, c, job.opensLeft)
-            Tried.CANT -> open(r, c, job.opensLeft + 1, job.from, job.running)
-            Tried.POOR -> {}
-        }
+        if (c == null || c.gone) r.job = null
+    }
+    val r = rivals.firstOrNull { it.job?.aList != null } ?: rivals.firstOrNull { it.job != null } ?: return
+    val c = companies[r.company]
+    val job = r.job!!
+    job.left = railTickStates
+    val t = runRailJob(r, c, job) ?: return
+    r.job = null
+    when (t) {
+        Tried.BUILT -> open(r, c, job.opensLeft)
+        Tried.CANT -> open(r, c, job.opensLeft + 1, job.from, job.running)
+        Tried.POOR -> {}
     }
 }
 

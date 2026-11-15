@@ -665,7 +665,9 @@ internal class RailJob(val picks: List<RailPick>, val payback: Int, val loose: B
         ranOut = 0
         nextPair()
         floods.clear()
-        steps?.clear()
+        // The arrays go with the pick, so only the job part way through one holds them.
+        states = null
+        steps = null
     }
 
     fun nextPair() {
@@ -862,7 +864,8 @@ private fun World.buildPair(
     cost += price(Prices.PLATFORM) * (a.n + b.n) + price(Prices.DEPOT) + price(Prices.TRACK) + price(Prices.SIGNAL) + trainCost(train)
     if (payback > 0 && made(c, p, a, b, plan, train, tiles, path) * payback < cost) return null
     if (!afford(c, cost * 6 / 5)) return Tried.POOR
-    val route = buildRail(c, a, b, houses, path, runs + spans, train, p.cargo, p.from, p.to, serves) ?: return Tried.CANT
+    // One that doesn't build, as the map changed while it searched, goes on to the next pair.
+    val route = buildRail(c, a, b, houses, path, runs + spans, train, p.cargo, p.from, p.to, serves) ?: return null
     built(route)
     return Tried.BUILT
 }
@@ -1249,6 +1252,8 @@ private const val RAIL_HOUSE = 40
 /** A bridge tile costs the search this many times a tile of track on the ground. */
 private const val RAIL_BRIDGE = 4
 private const val RAIL_PATH_LIMIT = 120_000
+/** Tiles past the map's edges a saved rail site may reach. */
+private const val SITE_PAST = 64
 /** What looking at how many people a place for a terminus would reach counts as against [RailJob.left], in search steps. */
 private const val CATCH_STATES = 8
 /** Searches for one line that run out of steps before a computer company gives up on it. */
@@ -1460,11 +1465,19 @@ internal fun writeRailJob(w: ByteWriter, j: RailJob, tiles: Int) {
 internal fun World.readRailJob(r: ByteReader): RailJob {
     val tiles = width * height
     fun count(most: Int, what: String) = r.uvar().also { if (it > most) throw BadData("too many $what") }.toInt()
-    fun site() = RailSite(r.int(), r.int(), r.int(), r.int(), r.int(), r.int(), r.int())
-    fun termini() = List(count(10_000, "rail termini")) {
-        Terminus(r.int(), r.int(), r.int(), r.int(), r.int()).also { t -> if (t.out !in 0..3 || t.n !in 1..64 || t.lead !in 0..1) throw BadData("bad terminus") }
+    // A site may run a little past the map's edges; its middle and far end are on it.
+    fun site() = RailSite(r.int(), r.int(), r.int(), r.int(), r.int(), r.int(), r.int()).also {
+        if (it.x0 > it.x1 || it.y0 > it.y1 || it.x0 < -SITE_PAST || it.y0 < -SITE_PAST || it.x1 >= width + SITE_PAST || it.y1 >= height + SITE_PAST ||
+            !inside(it.cx, it.cy) || it.town !in -1 until towns.size) throw BadData("bad rail site")
     }
-    val picks = List(count(10_000, "rail picks")) { RailPick(r.int(), r.int(), r.int(), r.int(), site(), site()) }
+    fun termini() = List(count(10_000, "rail termini")) {
+        Terminus(r.int(), r.int(), r.int(), r.int(), r.int()).also { t ->
+            if (t.out !in 0..3 || t.n !in 1..64 || t.lead !in 0..1 || !inside(t.x, t.y) || !inside(t.x + Track.dx(t.out) * t.last, t.y + Track.dy(t.out) * t.last)) throw BadData("bad terminus")
+        }
+    }
+    val picks = List(count(10_000, "rail picks")) {
+        RailPick(r.int(), r.int(), r.int(), r.int(), site(), site()).also { if (it.cargo !in 0 until Cargo.COUNT) throw BadData("bad rail cargo") }
+    }
     val j = RailJob(picks, r.int(), r.bool())
     j.running = r.int(); j.from = r.int(); j.opensLeft = r.int(); j.pick = r.int()
     if (j.pick !in picks.indices) throw BadData("bad rail pick")
