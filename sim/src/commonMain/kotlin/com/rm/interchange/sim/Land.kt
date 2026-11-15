@@ -134,10 +134,15 @@ internal fun World.terraform(company: Company, cx: Int, cy: Int, up: Boolean) {
     }
     val cost = price(Prices.TERRAFORM) * changed.size
     if (company.money < cost) return
-    for (c in changed.keys) {
+    for ((c, h) in changed) {
         val x = c % (width + 1)
         val y = c / (width + 1)
         for (ty in y - 1..y) for (tx in x - 1..x) if (inside(tx, ty) && (track[index(tx, ty)].toInt() != 0 || townBuilt(index(tx, ty)) || stationBuildings.containsKey(index(tx, ty)))) return
+        // Under a bridge the land stays at least a step below the deck.
+        if (up) for (ty in y - 1..y) for (tx in x - 1..x) if (inside(tx, ty)) {
+            val s = deck[index(tx, ty)]?.let { spans.getOrNull(it) } ?: continue
+            if (!s.tunnel && h >= s.height) return
+        }
     }
     spend(company, Books.CONSTRUCTION, cost)
     for ((c, h) in changed) {

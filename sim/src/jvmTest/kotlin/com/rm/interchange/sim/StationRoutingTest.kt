@@ -302,6 +302,30 @@ class StationRoutingTest {
     }
 
     @Test
+    fun aTrainTurnedInIsShownInThatDepotAndLetsGoOfItWhenSentElsewhere() {
+        // As the test above: shown in the depot it turned in, not its own, and sent to its depot on the way there, it
+        // no longer turns in.
+        val w = world()
+        w.apply(Command.Depot(0, 10, 10, XM))
+        w.apply(Command.Depot(0, 2, 10, XP))
+        w.rail(3, 10, 9, 10, X)
+        w.piece(8, 10, W)
+        w.rail(8, 11, 8, 16, Y)
+        w.apply(Command.Station(0, 8, 12, 8, 15, Y))
+        val far = w.depotTiles.getValue(w.index(2, 10))
+        val t = w.train(0, Order.withWait(0, 20))
+        w.runUntil(30, "the train in the far depot") { t.inDepot && t.turnIn == far }
+        val view = w.view().trains.first { it.id == t.id }
+        assertEquals(far, view.shed)
+        assertEquals(2.5f, view.x)
+        assertEquals(0, t.depot)
+        w.runUntil(30, "the train at the station") { w.atStation(t) }
+        w.runUntil(30, "the train heading back to turn in") { !t.inDepot && t.turnIn == far && w.col(t) > 3 }
+        w.apply(Command.TrainOrder(0, t.id, Command.TrainOrder.TO_DEPOT))
+        assertEquals(-1, t.turnIn)
+    }
+
+    @Test
     fun withEveryPlatformFullATrainTurnsInTheEscapeDepotAndComesOutToTheFirstToFree() {
         // As the test above with every platform full, with an escape depot at (17, 8) on a spur off (17, 10) past the
         // signal, run into from the west and out again to the east.

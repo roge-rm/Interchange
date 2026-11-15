@@ -191,6 +191,11 @@ class Train(
      * worked out again each tick from the track, so it's neither saved nor in the checksum.
      */
     var curveKmh = 0
+    /**
+     * The tick it last looked for a way at a signal, so it looks at most once a tick. Only ever compared with the
+     * tick it's on, so it's neither saved nor in the checksum.
+     */
+    internal var choseAt = -1L
 
     /** The work day it was bought or last renewed, and last serviced. */
     var built = 0
@@ -327,7 +332,7 @@ internal fun World.trainCommand(company: Company, c: Command.TrainOrder) {
                 g.orders.clear()
                 g.orders += orders
                 g.order = 0
-                g.route = null
+                dropRoute(g)
                 g.aside = -1
             }
         }
@@ -341,13 +346,19 @@ internal fun World.trainCommand(company: Company, c: Command.TrainOrder) {
             val other = trains.getOrNull(c.stations.firstOrNull() ?: -1) ?: return
             if (other.owner != company.id || other.id == t.id || other.wreckedFor > 0) return
             if (other.shared < 0) other.shared = other.id
+            // Depot orders an electric train can't take are dropped for the whole group, as ORDERS would.
+            val orders = other.orders.mapNotNull { allowedOrder(it, company.id, Depots.RAIL, t.electric) }
+            val group = if (orders.size == other.orders.size) listOf(t) else trains.filter { it != null && (it.shared == other.shared || it === t) }
             t.shared = other.shared
             t.gap = other.gap
-            t.orders.clear()
-            t.orders += other.orders
-            t.order = 0
-            t.route = null
-            t.aside = -1
+            for (g in group) {
+                if (g!! !== t) releaseAhead(g)
+                g.orders.clear()
+                g.orders += orders
+                g.order = 0
+                dropRoute(g)
+                g.aside = -1
+            }
         }
         Command.TrainOrder.UNSHARE -> t.shared = -1
         Command.TrainOrder.TO_DEPOT -> {
@@ -355,7 +366,7 @@ internal fun World.trainCommand(company: Company, c: Command.TrainOrder) {
                 t.toDepot = !t.toDepot
                 t.servicing = false
                 t.aside = -1
-                t.route = null
+                dropRoute(t)
             }
         }
         Command.TrainOrder.AUTORENEW -> t.renewOff = !t.renewOff
@@ -364,7 +375,7 @@ internal fun World.trainCommand(company: Company, c: Command.TrainOrder) {
             if (!t.service && t.servicing) {
                 t.servicing = false
                 t.toDepot = false
-                t.route = null
+                dropRoute(t)
                 t.aside = -1
             }
         }
@@ -404,6 +415,11 @@ private fun World.leaveDepot(t: Train) {
     // An order to this depot it's done by being in it, and one to be serviced when it isn't due is skipped.
     t.current?.let { o -> if (Order.depot(o) == d.id && !t.toDepot) nextOrder(t) }
     skipService(t)
+    // Every order a service it isn't due: it waits inside, set going, till one is.
+    if (nothingDue(t)) {
+        t.running = true
+        return
+    }
     // With no orders it has nowhere to go: it waits inside, set going, till it gets some. Held in by [wayOut], it
     // looks again at its lostUntil.
     if (trainOnTile(d.tile) || t.target == -2 || tick < t.lostUntil) {
@@ -558,9 +574,15 @@ internal fun World.moveTrains() {
         if (p == null && t.leave >= 0 && t.leave == t.target) {
             // No way out of the station and back in to call again: on past the repeat to plan afresh.
             skipRepeat(t)
+        } else if (p == null && unwiredOrder(t)) {
+            // Its depot order is to a depot with no wires: on to its next order, waiting a while if that's one too.
+            nextOrder(t)
+            dropRoute(t)
+            t.lostUntil = if (unwiredOrder(t)) tick + LOST_RETRY else 0
         } else if (p == null) {
             // No depot it can reach for its service: straight back to its orders, to try again after its next call.
             if (t.toDepot && t.servicing) noDepot(t) else t.lostUntil = tick + LOST_RETRY
+            dropRoute(t)
         } else {
             // Off for a service, or home gone, it goes to whichever depot its route found, and lives there after.
             if (anyDepot(t)) depotTiles[stepTile(p.steps.last())]?.let { t.depot = it }
@@ -640,7 +662,7 @@ internal fun World.wreck(t: Train) {
     t.headOn = 0
     t.aside = -1
     t.snowbound = false
-    t.route = null
+    dropRoute(t)
     t.orders.clear()
     t.order = 0
     t.shared = -1
@@ -670,7 +692,7 @@ private fun World.drive(t: Train) {
         // Waited long enough, stood aside or still on its way there: it plans again from where it is.
         t.aside = -1
         t.headOn = 0
-        t.route = null
+        dropRoute(t)
         t.lostUntil = 0
     }
     if (t.waiting > 0) {
@@ -694,7 +716,7 @@ private fun World.drive(t: Train) {
             }
             if (waitForGap(t, due)) return
             nextOrder(t)
-            t.route = null
+            dropRoute(t)
             // Called here again next: out and back in first.
             val here = Order.station(o)
             t.leave = if (here >= 0 && t.target == here && stops(t)) here else -1
@@ -750,14 +772,14 @@ private fun World.drive(t: Train) {
     }
     // An order to be serviced when it isn't due is skipped, as when its orders were set.
     if (skipService(t)) {
-        t.route = null
+        dropRoute(t)
         t.aside = -1
     }
     // Going via a station: once the nose is in it, on to the next order without stopping.
     val o = t.orders.getOrNull(t.order % t.orders.size.coerceAtLeast(1)) ?: 0
     if ((Order.has(o, Order.VIA) || stations.getOrNull(Order.station(o))?.waypoint == true) && stationTiles[stepTile(t.steps.last())] == Order.station(o)) {
         nextOrder(t)
-        t.route = null
+        dropRoute(t)
         t.aside = -1
     }
     // Wet rail, leaves, ice and snow take the grip away, for pulling away and for braking; deep snow holds it back.
@@ -808,7 +830,7 @@ private fun World.drive(t: Train) {
         when (stop) {
             Stop.SIGNAL -> if (tick % PATH_RETRY == 0L && t.route != null && t.aside < 0 && !choosesHere(t)) {
                 // Held at a signal it doesn't choose its way at: look again for a way, another platform perhaps.
-                t.route = null
+                dropRoute(t)
                 releaseAhead(t)
             }
             Stop.STATION -> {
@@ -818,7 +840,7 @@ private fun World.drive(t: Train) {
             }
             Stop.DEPOT -> enterDepot(t)
             Stop.END -> if (t.route == null || t.routeAt >= (t.route?.size ?: 0)) {
-                t.route = null
+                dropRoute(t)
                 t.lostUntil = 0
             }
             else -> {}
@@ -1272,14 +1294,25 @@ private fun World.signalLets(t: Train, signal: Int, next: Int, at: Int, first: B
         if (reserved[stepKey(next)] == t.id) return true
         // Near its goal it chooses a way it can hold now on the tick the signal comes into reach ([first]), then
         // every CHOOSE_RETRY ticks, trying the way it has in between.
-        if ((first || (tick + t.id) % CHOOSE_RETRY == 0L) && wayLeft(t, next, at) >= 0) chooseFrom(t, next, at)
+        if (mayChoose(t, next, at, first)) chooseFrom(t, next, at)
         return reserveThrough(t, next, at)
     }
     val b = blocks[stepKey(next)] ?: return true
     if (!blockClear(t, b, Signals.kind(signal), 0)) return false
-    // Let in near its goal, it chooses the way behind green signals on the tick the signal comes into reach, as it
-    // pulls away from it, then every CHOOSE_RETRY ticks.
-    if ((first || t.speed == 0 || (tick + t.id) % CHOOSE_RETRY == 0L) && wayLeft(t, next, at) >= 0) chooseFrom(t, next, at, holding = false)
+    // Let in near its goal, it chooses the way behind green signals on the tick the signal comes into reach, then
+    // every CHOOSE_RETRY ticks.
+    if (mayChoose(t, next, at, first)) chooseFrom(t, next, at, holding = false)
+    return true
+}
+
+/**
+ * Whether [t] looks for a way at the signal before step [next] now: it chooses there ([wayLeft]), on the tick the
+ * signal comes into reach ([first]) or every CHOOSE_RETRY ticks, and once a tick at most however often the way ahead
+ * is looked over. Marks the tick if it does.
+ */
+private fun World.mayChoose(t: Train, next: Int, at: Int, first: Boolean): Boolean {
+    if (t.choseAt == tick || !first && (tick + t.id) % CHOOSE_RETRY != 0L || wayLeft(t, next, at) < 0) return false
+    t.choseAt = tick
     return true
 }
 
@@ -1521,6 +1554,29 @@ private fun World.skipService(t: Train): Boolean {
     val was = t.order
     nextOrder(t)
     return t.order != was
+}
+
+/**
+ * Lets go of [t]'s route, and of the depot it was to turn in unless it's in that depot or its nose is in the door,
+ * as it plans afresh for where it's going.
+ */
+internal fun World.dropRoute(t: Train) {
+    t.route = null
+    if (t.turnIn < 0 || t.inDepot) return
+    val nose = t.steps.lastOrNull()
+    if (nose == null || stepLevel(nose) != 0 || depotTiles[stepTile(nose)] != t.turnIn) t.turnIn = -1
+}
+
+/** Whether every one of [t]'s orders is a depot service it isn't due, so it has nowhere to go till one is. */
+private fun World.nothingDue(t: Train) =
+    !t.toDepot && t.orders.isNotEmpty() && !due(t.service, t.serviced) && t.orders.all { Order.isDepot(it) && Order.depotKind(it) == Order.DEPOT_SERVICE }
+
+/** Whether electric train [t]'s order now is to a depot with no wires over it, so it can't get there. */
+private fun World.unwiredOrder(t: Train): Boolean {
+    if (!t.electric || t.toDepot) return false
+    val o = t.current ?: return false
+    if (!Order.isDepot(o)) return false
+    return depots.getOrNull(Order.depot(o))?.let { !depotWired(it) } == true
 }
 
 /** Counts the train afresh on the tiles and blocks it's on. */

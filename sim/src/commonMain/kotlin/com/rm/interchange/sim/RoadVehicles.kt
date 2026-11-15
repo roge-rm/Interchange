@@ -304,6 +304,8 @@ private fun World.leaveGarage(v: RoadVehicle) {
     // An order to this garage it's done by being in it, and one to be serviced when it isn't due is skipped.
     v.current?.let { o -> if (Order.depot(o) == d.id && !v.toDepot) nextRoadOrder(v) }
     skipService(v)
+    // Every order a service it isn't due: it waits inside, set going, till one is.
+    if (!v.toDepot && v.orders.isNotEmpty() && !wantsGarage(v) && v.orders.all { Order.isDepot(it) && Order.depotKind(it) == Order.DEPOT_SERVICE }) return
     val out = roadAcross(d.tile, d.edge)
     if (out < 0) return
     if (roadVehicles.any { it != null && it !== v && !it.inDepot && roadStepTile(it.at) == d.tile }) return

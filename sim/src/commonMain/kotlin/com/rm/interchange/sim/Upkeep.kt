@@ -80,7 +80,7 @@ fun World.hasDepot(owner: Int, kind: Int) = depots.any { it != null && it.owner 
 internal fun World.forService(t: Train) {
     t.toDepot = true
     t.servicing = true
-    t.route = null
+    dropRoute(t)
     t.aside = -1
 }
 
@@ -100,7 +100,7 @@ internal fun World.noDepot(t: Train) {
  */
 internal fun World.depotGone(d: Depot) {
     for (v in carriers()) if (v.orders.removeAll { Order.depot(it) == d.id }) {
-        if (v is Train) v.route = null
+        if (v is Train) dropRoute(v)
         if (v is RoadVehicle) v.route = null
     }
     fun dist(e: Depot) = kotlin.math.abs(e.tile % width - d.tile % width) + kotlin.math.abs(e.tile / width - d.tile / width)
@@ -108,7 +108,7 @@ internal fun World.depotGone(d: Depot) {
         depots.filter { it != null && it.id != d.id && it.owner == owner && it.kind == d.kind && fits(it) }.minByOrNull { dist(it!!) }?.id ?: -1
     when (d.kind) {
         Depots.RAIL -> for (t in trains) if (t != null) {
-            if (t.depot == d.id) { t.depot = nearest(t.owner); if (t.toDepot) t.route = null }
+            if (t.depot == d.id) { t.depot = nearest(t.owner); if (t.toDepot) dropRoute(t) }
             if (t.turnIn == d.id && !t.inDepot) { t.turnIn = -1; t.route = null }
         }
         Depots.ROAD -> for (v in roadVehicles) if (v != null && v.depot == d.id) { v.depot = nearest(v.owner); if (v.toDepot) v.route = null }

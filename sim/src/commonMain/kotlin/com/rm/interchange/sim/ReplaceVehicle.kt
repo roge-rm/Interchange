@@ -21,7 +21,8 @@ internal fun World.replaceTrain(company: Company, old: Train, model: Int?) {
     val e = replacementModel(model, VehicleKind.ENGINE) ?: return
     if (e.id == old.engine) return
     val depot = depots.getOrNull(old.depot) ?: return
-    if (e.traction == Traction.ELECTRIC && !depotWired(depot)) return
+    // Wires over the depot it's in, which can be one it turned in.
+    if (e.traction == Traction.ELECTRIC && !depotWired(depots.getOrNull(old.shedIn) ?: depot)) return
     val cars = old.formation.toMutableList()
     val lead = cars.indexOfFirst { roster[it.model].pulls }
     cars[lead] = TrainCar(e.id)
@@ -47,6 +48,7 @@ internal fun World.replaceTrain(company: Company, old: Train, model: Int?) {
     made.routeAt = old.routeAt
     made.turnRound = old.turnRound
     made.turnIn = old.turnIn
+    made.choseAt = old.choseAt
     made.leave = old.leave
     made.lostUntil = old.lostUntil
     made.snowbound = old.snowbound

@@ -65,13 +65,15 @@ internal fun World.editTrain(company: Company, c: Command.EditTrain) {
     if (train.owner != company.id || !train.inDepot || train.wreckedFor > 0 || !validTrainFormation(roster, c.cars)) return
     val depot = depots.getOrNull(train.depot) ?: return
     if (depot.owner != company.id || depot.kind != Depots.RAIL) return
+    // Wires over the depot it's in, which can be one it turned in.
+    val shed = depots.getOrNull(train.shedIn) ?: depot
     val kept = train.formation.groupingBy { it.model }.eachCount().toMutableMap()
     for (car in c.cars) {
         val count = kept[car.model] ?: 0
         if (count > 0) kept[car.model] = count - 1
         else {
             val model = roster[car.model]
-            if (!onSale(model) || (model.pulls && model.traction == Traction.ELECTRIC && !depotWired(depot))) return
+            if (!onSale(model) || (model.pulls && model.traction == Traction.ELECTRIC && !depotWired(shed))) return
         }
     }
     val draft = Train(roster, train.id, train.owner, train.engine, train.wagon, 0, train.depot, formation = c.cars)

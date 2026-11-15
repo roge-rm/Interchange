@@ -74,7 +74,7 @@ fun TrainCard(
         Card(trainName(t), onClose, modifier) {
             VehicleHeader(roster[t.engine], trainFormationName(roster, t), trainStatus(view, t), statusColour(false, trainWrong(t)))
             TrainFormationEditor(
-                roster, t, year, funds, price, view.depots.firstOrNull { it.id == t.depot }?.wired == true,
+                roster, t, year, funds, price, view.depots.firstOrNull { it.id == t.shed }?.wired == true,
                 apply = { send(Command.EditTrain(me, t.id, it)); editingFormation = false },
                 cancel = { editingFormation = false },
             )
@@ -168,7 +168,7 @@ fun TrainCard(
             ReplaceList(
                 roster.available(year, pulls = true).filter { it.id != t.engine }, funds,
                 costOf = { price(base(it)) - (price(base(e)) - t.renewCost) },
-                blocked = { it.traction == Traction.ELECTRIC && view.depots.firstOrNull { d -> d.id == t.depot }?.wired != true },
+                blocked = { it.traction == Traction.ELECTRIC && view.depots.firstOrNull { d -> d.id == t.shed }?.wired != true },
             ) {
                 order(Command.TrainOrder.REPLACE, intArrayOf(it))
                 replacing = false
@@ -242,7 +242,7 @@ fun DepotCard(view: WorldView, roster: Roster, depot: Int, year: Int, funds: Lon
                 ActionButton(stringResource(Res.string.copy_one), strong = copying, onClick = { onCopy(vehicleCount) })
             },
             inDepot = {
-                for (t in view.trains.filter { it.depot == depot && it.inDepot }) {
+                for (t in view.trains.filter { it.shed == depot && it.inDepot }) {
                     InDepotRow(
                         trainName(t), t.running, { onTrain(t.id) },
                         onCopy = if (t.owner == me) { { send(Command.CopyVehicle(me, Command.CopyVehicle.TRAIN, t.id, depot, vehicleCount)) } } else null,

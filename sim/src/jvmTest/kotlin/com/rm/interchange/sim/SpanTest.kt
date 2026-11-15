@@ -112,6 +112,30 @@ class SpanTest {
     }
 
     @Test
+    fun landUnderABridgeStaysAStepBelowTheDeck() {
+        val w = land { _, _ -> 4 }
+        w.apply(Command.Rail(0, 20, 3, 20, 20, Track.Y, remove = false))
+        w.apply(Command.Bridge(0, 14, 10, 26, 10, Spans.TRUSS))
+        assertEquals(5, w.spans[0]!!.height)
+        // Up to the deck under it is refused; away from it, and down under it, the land moves.
+        w.apply(Command.Terraform(0, 18, 10, up = true))
+        assertEquals(4, w.heightAt(18, 10))
+        w.apply(Command.Terraform(0, 18, 30, up = true))
+        assertEquals(5, w.heightAt(18, 30))
+        w.apply(Command.Terraform(0, 18, 10, up = false))
+        assertEquals(3, w.heightAt(18, 10))
+        w.apply(Command.Terraform(0, 18, 10, up = true))
+        assertEquals(4, w.heightAt(18, 10))
+        // Over a valley the land comes up to a step below the deck and no further.
+        val v = land(valley)
+        v.apply(Command.Bridge(0, 19, 10, 30, 10, Spans.TRUSS))
+        val deck = v.spans[0]!!.height
+        assertEquals(2, v.heightAt(25, 10))
+        repeat(8) { v.apply(Command.Terraform(0, 25, 10, up = true)) }
+        assertEquals(deck - 1, v.heightAt(25, 10))
+    }
+
+    @Test
     fun flatEndsAreRefusedForWhatElseIsWrong() {
         val company = { w: World -> w.companies[0] }
         // Flat land the length of a bridge: it builds a step up.

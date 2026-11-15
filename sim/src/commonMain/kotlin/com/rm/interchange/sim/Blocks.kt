@@ -18,7 +18,7 @@ internal fun World.networkChanged() {
     for (t in trains) if (t != null) {
         // One on its way to stand aside plans again; one stood there keeps waiting.
         if (t.route != null) t.aside = -1
-        t.route = null
+        dropRoute(t)
         releaseAhead(t)
     }
 }

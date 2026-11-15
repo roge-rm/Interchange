@@ -195,7 +195,7 @@ private fun World.search(from: Int, t: Train, avoid: Set<Int>? = null, onward: M
     fun depotGoal(tile: Int, entry: Int): Boolean {
         val d = depotAt(tile) ?: return false
         if (d.edge != entry) return false
-        if (!anyDepot) return tile == depotTile
+        if (!anyDepot) return tile == depotTile && (!electric || depotWired(d))
         return d.owner == t.owner && d.kind == Depots.RAIL && (!electric || depotWired(d))
     }
     fun turnsAt(tile: Int, entry: Int): Boolean {
@@ -219,6 +219,8 @@ private fun World.search(from: Int, t: Train, avoid: Set<Int>? = null, onward: M
     dist[first] = 0
     heap.push(0, first)
     val choosing = reserving || blocking
+    // Whether each block is clear by a signal of a kind, as blockCost asks, worked out once a search.
+    val clear = if (blocking) HashMap<Int, Boolean>() else null
     val most = if (choosing) CHOOSE_LOOK else MAX_LOOK
     val reach = if (choosing) shortest + CHOOSE_REACH else Int.MAX_VALUE
     // The step that came into a place; out of a depot turned in, the step out through its door.
@@ -320,7 +322,7 @@ private fun World.search(from: Int, t: Train, avoid: Set<Int>? = null, onward: M
                 if (!beyond && !pieceFree(t, w, occupiedTile = false, reserving = true)) continue
                 if (beyond && heldPieceByOther(t, w)) c += HELD_PIECE
             }
-            if (blocking) c += blockCost(t, came, w)
+            if (clear != null) c += blockCost(t, came, w, clear)
             val n = (na * 4 + Track.opposite(out)) * 2 + (if (beyond) 1 else 0) + (wasOff or off(na))
             if (level == 0 && stationTiles.containsKey(nt)) c += 16
             // A platform of the station it's going to with a train on it or held for one costs more, so another is
@@ -444,12 +446,15 @@ internal fun World.platformTaken(t: Train, tile: Int, entry: Int): Boolean {
  * What running from step [came] on to [w] adds for a train let in by a block signal: [OCCUPIED_BLOCK] for coming
  * into a block with another train in it, and [RED_SIGNAL] for a block signal there that would show red.
  */
-private fun World.blockCost(t: Train, came: Int, w: Int): Int {
+private fun World.blockCost(t: Train, came: Int, w: Int, clear: HashMap<Int, Boolean>): Int {
     val b = blocks[stepKey(w)] ?: return 0
     if (b == blocks[stepKey(came)]) return 0
     var c = if ((blockTrains[b] ?: 0) - (if (b in t.onBlocks) 1 else 0) > 0) OCCUPIED_BLOCK else 0
     val sig = signalFor(came, w)
-    if (sig >= 0 && !Signals.path(sig) && !blockClear(t, b, Signals.kind(sig), 0)) c += RED_SIGNAL
+    if (sig >= 0 && !Signals.path(sig)) {
+        val kind = Signals.kind(sig)
+        if (!clear.getOrPut(b * 8 + kind) { blockClear(t, b, kind, 0) }) c += RED_SIGNAL
+    }
     return c
 }
 

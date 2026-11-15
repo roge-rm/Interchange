@@ -300,4 +300,77 @@ class DepotOrderTest {
         assertEquals(a.checksum(), b.checksum())
         assertContentEquals(Save.write(a), Save.write(b))
     }
+
+    /** [w]'s line wired from the first depot through the far one, and an electric train in the first depot. */
+    private fun electric(w: World): Train {
+        w.apply(Command.Wire(0, 2, 10, 40, 10, Track.X, remove = false))
+        assertTrue(w.depotWired(w.depots[1]!!))
+        w.apply(Command.BuyTrain(0, 0, w.roster.engines.first { it.key == "base:boxcab" }.id, w.roster.engines.first { it.key == "base:coach_steel" }.id, 3))
+        return w.trains.last { it != null }!!.also { assertTrue(it.electric) }
+    }
+
+    @Test
+    fun sharingWithAnElectricTrainDropsDepotOrdersWithNoWires() {
+        val w = line(year = 1914)
+        w.orders(0, Order.toDepot(1, Order.DEPOT_VIA), 1)
+        val e = electric(w)
+        w.apply(Command.Wire(0, 40, 10, 40, 10, Track.X, remove = true))
+        w.apply(Command.TrainOrder(0, e.id, Command.TrainOrder.SHARE, intArrayOf(0)))
+        assertContentEquals(intArrayOf(0, 1), e.orders.toIntArray())
+        assertContentEquals(intArrayOf(0, 1), w.trains[0]!!.orders.toIntArray())
+        assertEquals(w.trains[0]!!.shared, e.shared)
+    }
+
+    @Test
+    fun anElectricTrainSkipsADepotOrderWhoseWiresAreGone() {
+        val w = line(year = 1914)
+        val e = electric(w)
+        w.orders(0, Order.toDepot(1, Order.DEPOT_VIA), 1, train = e.id)
+        assertEquals(3, e.orders.size)
+        w.apply(Command.Wire(0, 40, 10, 40, 10, Track.X, remove = true))
+        w.start(e.id)
+        var wasIn = false
+        assertTrue(until(w, 20_000) { if (e.inDepot && e.shedIn == 1) wasIn = true; atStation(w, e, 1) }, "never got to station 1")
+        assertTrue(!wasIn)
+        assertEquals(2, e.order)
+    }
+
+    @Test
+    fun withOnlyServiceOrdersNotDueATrainWaitsInItsDepot() {
+        val w = line()
+        w.orders(Order.toDepot(1, Order.DEPOT_SERVICE))
+        w.start()
+        val t = w.trains[0]!!
+        var entries = 0
+        var was = t.inDepot
+        repeat(5_000) {
+            w.step()
+            if (t.inDepot && !was) entries++
+            was = t.inDepot
+        }
+        assertTrue(entries <= 1, "in and out $entries times")
+        assertTrue(t.inDepot && t.running)
+        t.serviced = w.workDay - SERVICE_DAYS
+        assertTrue(until(w, 20_000) { t.inDepot && t.shedIn == 1 }, "never went in when due")
+        assertTrue(w.workDay - t.serviced < 2, "not serviced")
+    }
+
+    @Test
+    fun withOnlyServiceOrdersNotDueABusWaitsInItsGarage() {
+        val w = road()
+        w.roadOrders(Order.toDepot(1, Order.DEPOT_SERVICE))
+        w.roadStart()
+        val v = w.roadVehicles[0]!!
+        var entries = 0
+        var was = v.inDepot
+        repeat(5_000) {
+            w.step()
+            if (v.inDepot && !was) entries++
+            was = v.inDepot
+        }
+        assertTrue(entries <= 1, "in and out $entries times")
+        assertTrue(v.inDepot && v.running)
+        v.serviced = w.workDay - SERVICE_DAYS
+        assertTrue(until(w, 20_000) { v.inDepot && v.depot == 1 }, "never went in when due")
+    }
 }

@@ -117,6 +117,8 @@ class TrainView(
     val renewOff: Boolean = false,
     /** Work days old, for what its cars fetch sold. */
     val days: Int = 0,
+    /** The depot it's in when [inDepot]: its own, or one it turned in. */
+    val shed: Int = depot,
 )
 
 /** A bus, truck or streetcar as the screen shows it. */
@@ -453,17 +455,18 @@ fun World.view(company: Int = 0, withReserved: Boolean = false): WorldView {
     fun atTile(tile: Int) = if (tile < 0) 0f to 0f else (tile % width + 0.5f) to (tile / width + 0.5f)
     fun atDepot(id: Int) = atTile(depots.getOrNull(id)?.tile ?: -1)
     val trainViews = trains.filterNotNull().map { t ->
-        val (tx, ty) = if (t.inDepot) atDepot(t.depot) else atTile(t.steps.lastOrNull()?.let { stepTile(it) } ?: -1)
+        val (tx, ty) = if (t.inDepot) atDepot(t.shedIn) else atTile(t.steps.lastOrNull()?.let { stepTile(it) } ?: -1)
         TrainView(
             t.id, t.name, t.engine, t.wagon, t.wagons, t.depot, t.inDepot, t.running, t.toDepot,
             t.orders.toIntArray(), t.order, t.speed / 16 * 2700 / 4096, t.waiting > 0, t.running && !t.inDepot && t.lostUntil > tick,
             IntArray(Cargo.COUNT) { t.load(it) }, IntArray(Cargo.COUNT) { t.capacity(it) }, t.profitThisYear, t.profitLastYear, t.shared,
             age(t), t.reliability / 100, t.brokenFor > 0, t.breakdowns, t.service, t.servicing, price(t.price) - value(t), age(t) >= t.life,
-            t.inDepot && t.electric && depots.getOrNull(t.depot)?.let { !depotWired(it) } == true,
+            t.inDepot && t.electric && depots.getOrNull(t.shedIn)?.let { !depotWired(it) } == true,
             owner = t.owner, wrecked = t.wreckedFor > 0, number = t.number,
             at = if (t.waiting > 0 && !t.inDepot) t.steps.lastOrNull()?.let { stationAt(stepTile(it))?.id } ?: -1 else -1,
             x = tx, y = ty, gap = t.gap, wagonCargo = t.wagonCargo, group = t.group, formation = t.formation.toList(), topSpeed = t.topSpeed, dieselSpeed = t.dieselSpeed,
             curveKmh = t.curveKmh, value = value(t), days = (workDay - t.built).coerceAtLeast(0), nextService = nextService(t.service, t.serviced), renewOff = t.renewOff,
+            shed = t.shedIn,
         )
     }
     val stationViews = stations.filterNotNull().map { s ->
