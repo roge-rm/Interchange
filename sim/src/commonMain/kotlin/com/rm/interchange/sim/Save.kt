@@ -16,7 +16,7 @@ package com.rm.interchange.sim
  */
 object Save {
     private val MAGIC = "ICHG".encodeToByteArray()
-    const val VERSION = 57
+    const val VERSION = 58
 
     /** A vehicle's [built] day as saved by [version]: work days from 36, calendar days before. */
     private fun World.builtOut(built: Int, version: Int) = if (version >= 36) built else built / settings.dayLength
@@ -180,6 +180,11 @@ object Save {
                     val held = rv.held.keys.sorted()
                     w.uvar(held.size.toLong())
                     for (k in held) { w.long(k); w.int(rv.held.getValue(k)) }
+                }
+                if (version >= 58) {
+                    val job = rv.job
+                    w.bool(job != null)
+                    if (job != null) writeRailJob(w, job, width * height)
                 }
             }
             w.uvar(subsidies.size.toLong())
@@ -534,6 +539,7 @@ object Save {
                 repeat(r.uvar().toInt().also { if (it > 100_000) throw BadData("too many tried pairs") }) { rv.failed[r.long()] = if (version >= 34) r.int() else 0 }
                 if (version >= 50) repeat(r.uvar().toInt().also { if (it > 1_000_000) throw BadData("too many standing vehicles") }) { rv.stood[r.int()] = r.int() }
                 if (version >= 51) repeat(r.uvar().toInt().also { if (it > 100_000) throw BadData("too many held routes") }) { rv.held[r.long()] = r.int() }
+                if (version >= 58 && r.bool()) rv.job = readRailJob(r)
                 rivals += rv
             }
             if (version >= 22) repeat(r.uvar().toInt().also { if (it > 100_000) throw BadData("too many subsidies") }) {

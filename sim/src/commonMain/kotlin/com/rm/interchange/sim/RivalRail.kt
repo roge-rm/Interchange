@@ -17,7 +17,7 @@ internal class RailSite(val x0: Int, val y0: Int, val x1: Int, val y1: Int, val 
  * out through edge [out]. The first terminus of a line has a depot behind and one tile of track with a signal between,
  * so a train leaving the depot waits there while another is at the platforms.
  */
-private class Terminus(val x: Int, val y: Int, val out: Int, val n: Int, val lead: Int) {
+internal class Terminus(val x: Int, val y: Int, val out: Int, val n: Int, val lead: Int) {
     /** The tile [k] steps out from the back. */
     fun at(w: World, k: Int) = w.index(x + Track.dx(out) * k, y + Track.dy(out) * k)
     /** Platform [k], 1 to [n]. */
@@ -62,20 +62,22 @@ private fun World.mayClear(c: Company, id: Int): Int {
  * the mouth facing the way the line goes, and for [people] in reach of as many as it can. [depot] puts a depot and its
  * signal tile behind. [loose] needs only the first platform in the site, for freight.
  */
-private fun World.termini(c: Company, site: RailSite, depot: Boolean, people: Boolean, clearing: Boolean, loose: Boolean = false): List<Terminus> {
-    val near = sites(c, site, depot, people, clearing, loose)
+private fun World.termini(c: Company, site: RailSite, depot: Boolean, people: Boolean, clearing: Boolean, loose: Boolean, job: RailJob): List<Terminus> {
+    val near = sites(c, site, depot, people, clearing, loose, job)
     if (near.isNotEmpty() || site.town < 0 || human(c.id)) return near
     // A rival's town with no room for one near the middle, a little further out.
     val w = RailSite(site.x0 - WIDER_REACH, site.y0 - WIDER_REACH, site.x1 + WIDER_REACH, site.y1 + WIDER_REACH, site.cx, site.cy, site.town)
-    return sites(c, w, depot, people, clearing, loose)
+    return sites(c, w, depot, people, clearing, loose, job)
 }
 
-private fun World.sites(c: Company, site: RailSite, depot: Boolean, people: Boolean, clearing: Boolean, loose: Boolean): List<Terminus> {
+/** As [termini], within [site] only. Each place looked at counts against [RailJob.left]. */
+private fun World.sites(c: Company, site: RailSite, depot: Boolean, people: Boolean, clearing: Boolean, loose: Boolean, job: RailJob): List<Terminus> {
     val found = ArrayList<Pair<Terminus, Int>>()
     val budget = if (clearing && people && site.town >= 0) mayClear(c, site.town) else 0
     val sizes = if (budget > 0) intArrayOf(PLATFORMS, TOWN_PLATFORMS) else intArrayOf(PLATFORMS)
     val lead = if (depot) 1 else 0
     for (n in sizes) for (y in site.y0..site.y1) for (x in site.x0..site.x1) for (out in 0 until 4) {
+        job.left--
         // The first platform at ([x], [y]).
         val t = Terminus(x - Track.dx(out) * (lead + 1), y - Track.dy(out) * (lead + 1), out, n, lead)
         val last = t.last
@@ -100,7 +102,7 @@ private fun World.sites(c: Company, site: RailSite, depot: Boolean, people: Bool
         // Facing away from where it's going costs it the turn round.
         val away = if (Track.dx(out) * (site.cx - x) + Track.dy(out) * (site.cy - y) < 0) 12 else 0
         // For passengers, nearer the houses: a tile further for every few dozen people more in reach, and a few for each building pulled down.
-        val near = if (people) catchPeople(t) / PEOPLE_A_TILE else 0
+        val near = if (people) catchPeople(t).also { job.left -= CATCH_STATES } / PEOPLE_A_TILE else 0
         found += t to chebyshev(m % width, m / width, site.cx, site.cy) + away - near + houses * HOUSE_TILES
     }
     found.sortWith(compareBy<Pair<Terminus, Int>> { it.second }.thenBy { it.first.y }.thenBy { it.first.x }.thenBy { it.first.out }.thenBy { -it.first.n })
@@ -114,15 +116,30 @@ private fun World.sites(c: Company, site: RailSite, depot: Boolean, people: Bool
     return picked
 }
 
-/**
- * A way for track from [a]'s mouth to [b]'s, as tiles each with the edges it's come in and goes out by, packed
- * tile * 16 + in * 4 + out. Null if there's none within reach. With [bridges], [c]'s bridges can carry
- * it straight over water or anything else in the way, from one tile on the way to the next some tiles on.
- * The search keeps what the tile before did, so a tight bend (a lone diagonal between straights, or two diagonals
- * turning the same way) costs more and a 90 is spread over three diagonals where there's room.
- */
-private fun World.railPath(c: Company, a: Terminus, b: Terminus, clearing: Boolean, bridges: Boolean, scratch: RailScratch): IntArray? {
+/** Starts a search for a way for track from [a]'s mouth to [b]'s, run by [runPath]. */
+private fun World.startPath(job: RailJob, a: Terminus, b: Terminus, clearing: Boolean, bridges: Boolean): RailSearch {
     val start = a.mouth(this)
+    val goal = b.mouth(this)
+    val limit = (chebyshev(start % width, start / width, goal % width, goal / width) + 10).let { it * it * 16 }
+        .coerceAtMost(if (bridges) LOOSE_PATH_LIMIT else RAIL_PATH_LIMIT)
+    val search = RailSearch(clearing, limit)
+    val states = job.states(width * height).apply { clear() }
+    val s0 = (start * 4 + Track.opposite(a.out)) * 5 + BEND_STRAIGHT
+    states.put(s0, 0, IntMap.NONE)
+    search.heap.push(((kotlin.math.abs(start % width - goal % width) + kotlin.math.abs(start / width - goal / width)) * RAIL_MOVE).toLong() shl 32 or s0.toLong())
+    return search
+}
+
+/**
+ * Carries on [search], from [a]'s mouth to [b]'s, until it's done or [RailJob.left] runs out. The way found, as tiles
+ * each with the edges it's come in and goes out by, packed tile * 16 + in * 4 + out; null if there's none within reach
+ * or it's not done yet ([RailSearch.done]). With [bridges], [c]'s bridges can carry it straight over water or anything
+ * else in the way, from one tile on the way to the next some tiles on.
+ * The search keeps what the tile before did, so a tight bend (a lone diagonal between straights, or two diagonals
+ * turning the same way) costs more and a 90 is spread over three diagonals where there's room. Paused and carried on,
+ * it pushes and pops the same as it would in one go.
+ */
+private fun World.runPath(c: Company, job: RailJob, a: Terminus, b: Terminus, search: RailSearch, bridges: Boolean): IntArray? {
     val goal = b.mouth(this)
     val gx = goal % width
     val gy = goal / width
@@ -132,33 +149,27 @@ private fun World.railPath(c: Company, a: Terminus, b: Terminus, clearing: Boole
     kept += a.tiles(this)
     kept += b.tiles(this)
     val keptTiles = kept.toIntArray()
-    val states = scratch.states.apply { clear() }
+    val states = job.states(width * height)
+    val clearing = search.clearing
     // Each step's cost by tile, edge come in at and edge left by, or -1 where it can't go. Kept for every search of one
-    // line, as the map doesn't change between them.
-    val steps = if (clearing) scratch.steps else scratch.plainSteps
-    val heap = scratch.heap.apply { clear() }
+    // pick, as worked out the first time.
+    val steps = job.steps(width * height).let { if (clearing) it.steps else it.plain }
+    val heap = search.heap
+    val limit = search.limit
     fun h(i: Int) = (kotlin.math.abs(i % width - gx) + kotlin.math.abs(i / width - gy)) * RAIL_MOVE
     // A state is a tile, the edge come in at and what the tile before did: [BEND_STRAIGHT], a lone diagonal after a
     // straight or one in a run of diagonals, each turning one way or the other.
     fun state(tile: Int, came: Int, bend: Int) = (tile * 4 + came) * 5 + bend
     fun tileOf(s: Int) = s / 20
-    val s0 = state(start, Track.opposite(a.out), BEND_STRAIGHT)
-    states.put(s0, 0, IntMap.NONE)
-    heap.push(h(start).toLong() shl 32 or s0.toLong())
-    val limit = (chebyshev(start % width, start / width, gx, gy) + 10).let { it * it * 16 }.coerceAtMost(if (bridges) LOOSE_PATH_LIMIT else RAIL_PATH_LIMIT)
-    // Without bridges, a goal that no track from the start could reach, whatever its bends, isn't searched for.
-    if (!bridges) {
-        val reach = scratch.floods.getOrPut(a to clearing) { railReach(c, a, clearing) }
-        if (reach != null && reach[goal] == IntMap.NONE) return null
-    }
-    var expanded = 0
-    while (!heap.isEmpty() && expanded < limit) {
+    while (!heap.isEmpty() && search.expanded < limit) {
+        if (job.left <= 0) return null
         val top = heap.pop()
         val s = (top and 0xffffffffL).toInt()
         val g = states.cost(s)
         if (g < 0) continue
         if ((top ushr 32).toInt() - h(tileOf(s)) > g) continue
-        expanded++
+        search.expanded++
+        job.left--
         val t = tileOf(s)
         val came = (s / 5) % 4
         val bend = s % 5
@@ -178,6 +189,7 @@ private fun World.railPath(c: Company, a: Terminus, b: Terminus, clearing: Boole
                 if (at < 0) break
             }
             out.reverse()
+            search.done = true
             return out.toIntArray()
         }
         val tx = t % width
@@ -226,26 +238,36 @@ private fun World.railPath(c: Company, a: Terminus, b: Terminus, clearing: Boole
             heap.push((ng + h(n)).toLong() shl 32 or ns.toLong())
         }
     }
-    if (expanded >= limit) scratch.ranOut++
+    search.done = true
+    if (search.expanded >= limit) job.ranOut++
     return null
 }
 
-/**
- * The tiles track could reach from [a]'s mouth in [railPath]'s search, each entered by any edge it could leave the
- * tile before by and only [a]'s own tiles kept clear, so every tile the search could reach is in it. Null if there
- * are more than [RAIL_PATH_LIMIT].
- */
-private fun World.railReach(c: Company, a: Terminus, clearing: Boolean): IntMap? {
-    val kept = a.tiles(this).toIntArray()
+/** A [railFlood] under way, for [RailJob.floods] key [key]: the tiles seen, one bit a tile, and those still to look on from. */
+internal class RailReach(val key: Int, val seen: ByteArray, var queue: IntArray, var head: Int, var tail: Int)
+
+/** A flood from [a]'s mouth for [RailJob.floods] key [key]. */
+private fun World.startFlood(a: Terminus, key: Int): RailReach {
     val start = a.mouth(this)
-    val seen = IntMap()
-    var queue = IntArray(1 shl 10)
-    var head = 0
-    var tail = 0
-    seen[start] = 1
-    queue[tail++] = start
-    while (head < tail) {
-        val t = queue[head++]
+    val f = RailReach(key, ByteArray((width * height + 7) / 8), IntArray(1 shl 10), 0, 0)
+    f.seen.mark(start)
+    f.queue[f.tail++] = start
+    return f
+}
+
+/**
+ * Carries on flood [f]: the tiles track could reach from [a]'s mouth in [runPath]'s search, each entered by any edge it
+ * could leave the tile before by and only [a]'s own tiles kept clear, so every tile the search could reach is in it.
+ * Once done it goes in [RailJob.floods], null if there are more than [RAIL_PATH_LIMIT] tiles, and it returns true;
+ * false if [RailJob.left] runs out first, each tile looked on from counting against it.
+ */
+private fun World.railFlood(c: Company, a: Terminus, clearing: Boolean, job: RailJob, f: RailReach): Boolean {
+    val kept = a.tiles(this).toIntArray()
+    val seen = f.seen
+    while (f.head < f.tail) {
+        if (job.left <= 0) return false
+        job.left--
+        val t = f.queue[f.head++]
         val tx = t % width
         val ty = t / width
         val turns = isFlat(tx, ty) && road[t].toInt() == 0
@@ -254,7 +276,7 @@ private fun World.railReach(c: Company, a: Terminus, clearing: Boolean): IntMap?
             val ny = ty + Track.dy(e)
             if (!inside(nx, ny)) continue
             val n = index(nx, ny)
-            if (seen[n] != IntMap.NONE || kept.contains(n) || railStep(c, n, e, clearing) == null) continue
+            if (seen.has(n) || kept.contains(n) || railStep(c, n, e, clearing) == null) continue
             val there = edgeHeight(nx, ny, Track.straight(e), Track.opposite(e))
             var fits = false
             for (came in 0 until 4) {
@@ -262,14 +284,21 @@ private fun World.railReach(c: Company, a: Terminus, clearing: Boolean): IntMap?
                 if (edgeHeight(tx, ty, Track.pieceOf(came, e), e) == there) { fits = true; break }
             }
             if (!fits) continue
-            if (tail == RAIL_PATH_LIMIT) return null
-            seen[n] = 1
-            if (tail == queue.size) queue = queue.copyOf(tail * 2)
-            queue[tail++] = n
+            if (f.tail == RAIL_PATH_LIMIT) {
+                job.floods[f.key] = null
+                return true
+            }
+            seen.mark(n)
+            if (f.tail == f.queue.size) f.queue = f.queue.copyOf(f.tail * 2)
+            f.queue[f.tail++] = n
         }
     }
-    return seen
+    job.floods[f.key] = seen
+    return true
 }
+
+private fun ByteArray.has(i: Int) = (this[i ushr 3].toInt() shr (i and 7)) and 1 != 0
+private fun ByteArray.mark(i: Int) { this[i ushr 3] = (this[i ushr 3].toInt() or (1 shl (i and 7))).toByte() }
 
 /** Which way a tile come in at [came] and left by [e] turns: 0 straight, 1 or -1. */
 private fun turnWay(came: Int, e: Int): Int {
@@ -574,102 +603,268 @@ private fun World.trainCost(t: RailTrain): Long = price(t.engine.cost + t.wagon.
  * [serves] checks each new station reaches what it's for. Only a line expected to pay for itself within [payback]
  * work years is built, or any line if that's 0. A computer company may pull down a few town buildings to get its
  * passenger stations nearer the middle of town. [loose] is for the scripted test player: any engine that moves its
- * train, as many wagons as the platforms hold, bridges over water and a longer search for the way.
+ * train, as many wagons as the platforms hold, bridges over water and a longer search for the way. All at once,
+ * through the same job a rival runs over ticks.
  */
 internal fun World.tryRail(
     c: Company, sa: RailSite, sb: RailSite, cargo: Int, load: Int, from: Int, to: Int,
     serves: (Station, Boolean) -> Boolean, payback: Int, loose: Boolean = false, built: (RivalRoute) -> Unit,
 ): Tried {
-    val passengers = cargo == Cargo.PASSENGERS
+    val job = RailJob(listOf(RailPick(from, to, cargo, load, sa, sb)), payback, loose)
+    job.left = Int.MAX_VALUE
+    return runPick(c, job, serves, built) ?: Tried.CANT
+}
+
+/** A railway a rival means to try: from [from] to [to], industries or towns, as for [tryRail]. */
+internal class RailPick(val from: Int, val to: Int, val cargo: Int, val load: Int, val sa: RailSite, val sb: RailSite)
+
+/**
+ * A rival's railway planning, carried on a little each tick: the [picks] to try in turn, as [tryRail] does each, and
+ * where it's got to. [running], [from] and [opensLeft] are where its look at opening routes carries on once it's done.
+ */
+internal class RailJob(val picks: List<RailPick>, val payback: Int, val loose: Boolean) {
+    var running = -1
+    var from = 0
+    var opensLeft = 0
+    /** The pick being tried, and its places for the first terminus and the second, each null before it's found. */
+    var pick = 0
+    var aList: List<Terminus>? = null
+    var bList: List<Terminus>? = null
+    /** The pair of termini being tried. */
+    var ia = 0
+    var ib = 0
+    /** Searches of this pick that ran out of steps. */
+    var ranOut = 0
+    /** 0 before the pair's search, 1 in its first, 2 in the one round town buildings, each flooding while [search] is null. */
+    var phase = 0
+    var search: RailSearch? = null
+    /** [railFlood] by first terminus and pulling down buildings or not, ia * 2 + 1 for pulling down. */
+    val floods = HashMap<Int, ByteArray?>()
+    /** A flood under way. */
+    var reach: RailReach? = null
+    /** Search steps left this tick, not saved. */
+    var left = 0
+    private var states: SearchStates? = null
+    private var steps: RailSteps? = null
+
+    /** The states the search uses, for a map of [tiles], made when first wanted. */
+    fun states(tiles: Int): SearchStates = states ?: SearchStates(if (tiles <= FLAT_TILES) tiles * 20 else 0).also { states = it }
+
+    /** The step costs worked out for this pick, on a map of [tiles]. */
+    fun steps(tiles: Int): RailSteps = steps ?: RailSteps(tiles).also { steps = it }
+
+    /** Whether any step costs have been worked out yet. */
+    val hasSteps get() = steps != null
+
+    fun nextPick() {
+        pick++
+        aList = null
+        bList = null
+        ia = 0
+        ib = 0
+        ranOut = 0
+        nextPair()
+        floods.clear()
+        steps?.clear()
+    }
+
+    fun nextPair() {
+        phase = 0
+        search = null
+        reach = null
+    }
+}
+
+/** A path search under way: its heap and steps so far, the states being [RailJob.states]. */
+internal class RailSearch(val clearing: Boolean, val limit: Int) {
+    val heap = LongHeap()
+    var expanded = 0
+    var done = false
+}
+
+/** What a pair of termini would carry and the trains that could run it; null if it isn't worth searching. */
+private class PairPlan(val pa: Int, val pb: Int, val trains: List<RailTrain>)
+
+private fun World.pairPlan(c: Company, p: RailPick, a: Terminus, b: Terminus, clearing: Boolean, loose: Boolean): PairPlan? {
+    val passengers = p.cargo == Cargo.PASSENGERS
+    // A computer company runs feeder buses from the middle of each town its platforms don't reach. Those riding
+    // them go to either station by its people and nearness, as passengers choose, and only those for the far
+    // one take the train.
+    val ca = if (passengers) catchPeople(a) else 0
+    val cb = if (passengers) catchPeople(b) else 0
+    val apart = kotlin.math.abs(a.mouth(this) % width - b.mouth(this) % width) + kotlin.math.abs(a.mouth(this) / width - b.mouth(this) / width)
+    fun people(t: Terminus, s: RailSite, here: Int, there: Int): Int {
+        if (!clearing || s.town < 0) return here
+        val town = towns.getOrNull(s.town) ?: return here
+        val pl = t.platform(this, 1)
+        val near = (here + 20) * 256L / (kotlin.math.abs(town.x - pl % width) + kotlin.math.abs(town.y - pl / width) + 8)
+        val far = (there + 20) * 256L / (apart + 8)
+        return here + (feederPeople(t, s.town) * far / (near + far)).toInt()
+    }
+    val pa = if (passengers) people(a, p.sa, ca, cb) else 0
+    val pb = if (passengers) people(b, p.sb, cb, ca) else 0
+    // Loose, a pair of termini where one has nobody in reach isn't built only to come up again.
+    if (loose && (passengers || p.cargo == Cargo.MAIL) && minOf(catchPeople(a), catchPeople(b)) == 0) return null
+    // Every length the platforms hold, the best picked below.
+    val trains = railTrains(p.cargo, LOOSE_LOAD, minOf(a.n, b.n), loose)
+    if (trains.isEmpty()) return null
+    return PairPlan(pa, pb, trains)
+}
+
+/**
+ * Carries on [job]'s pick, as [tryRail] describes, until it's built, can't be or can't be paid for, or [RailJob.left]
+ * runs out (null). The map may change between goes; a line that no longer builds is given up as any that won't.
+ */
+internal fun World.runPick(c: Company, job: RailJob, serves: (Station, Boolean) -> Boolean, built: (RivalRoute) -> Unit): Tried? {
+    val p = job.picks[job.pick]
+    val passengers = p.cargo == Cargo.PASSENGERS
     val clearing = passengers && !human(c.id)
-    val years = if (payback > 0) payback else ANY_PAYBACK
-    val scratch = RailScratch(width * height)
-    pairs@ for (a in termini(c, sa, true, passengers, clearing, loose)) for (b in termini(c, sb, false, passengers, clearing, loose)) {
-        // A computer company stops once a few searches to the far site have run out of steps, as the rest mostly do too.
-        if (!loose && scratch.ranOut >= RAN_OUT_TRIES) break@pairs
-        // A computer company runs feeder buses from the middle of each town its platforms don't reach. Those riding
-        // them go to either station by its people and nearness, as passengers choose, and only those for the far
-        // one take the train.
-        val ca = if (passengers) catchPeople(a) else 0
-        val cb = if (passengers) catchPeople(b) else 0
-        val apart = kotlin.math.abs(a.mouth(this) % width - b.mouth(this) % width) + kotlin.math.abs(a.mouth(this) / width - b.mouth(this) / width)
-        fun people(t: Terminus, s: RailSite, here: Int, there: Int): Int {
-            if (!clearing || s.town < 0) return here
-            val town = towns.getOrNull(s.town) ?: return here
-            val p = t.platform(this, 1)
-            val near = (here + 20) * 256L / (kotlin.math.abs(town.x - p % width) + kotlin.math.abs(town.y - p / width) + 8)
-            val far = (there + 20) * 256L / (apart + 8)
-            return here + (feederPeople(t, s.town) * far / (near + far)).toInt()
+    val loose = job.loose
+    val payback = job.payback
+    // The places for each terminus, each in one go.
+    if (job.aList == null) {
+        if (job.left <= 0) return null
+        job.aList = termini(c, p.sa, true, passengers, clearing, loose, job)
+    }
+    if (job.bList == null) {
+        if (job.left <= 0) return null
+        job.bList = termini(c, p.sb, false, passengers, clearing, loose, job)
+    }
+    val aList = job.aList!!
+    val bList = job.bList!!
+    // Town buildings in the way, by town: each town lets only so many go. A way that pulls down too many with the
+    // termini' own is looked for again round the buildings.
+    fun houses(a: Terminus, b: Terminus, path: IntArray) = (a.tiles(this) + b.tiles(this) + path.map { it / 16 }).filter { house[it].toInt() != 0 }.distinct()
+    fun tooMany(houses: List<Int>) = houses.groupingBy { townOf[it].toInt() }.eachCount().any { (t, n) -> n > mayClear(c, t) }
+    while (job.ia < aList.size) {
+        if (job.ib >= bList.size) {
+            job.ia++
+            job.ib = 0
+            continue
         }
-        val pa = if (passengers) people(a, sa, ca, cb) else 0
-        val pb = if (passengers) people(b, sb, cb, ca) else 0
-        // Loose, a pair of termini where one has nobody in reach isn't built only to come up again.
-        if (loose && (passengers || cargo == Cargo.MAIL) && minOf(catchPeople(a), catchPeople(b)) == 0) continue
-        // Every length the platforms hold, the best picked below.
-        val trains = railTrains(cargo, LOOSE_LOAD, minOf(a.n, b.n), loose)
-        if (trains.isEmpty()) continue
-        fun made(t: RailTrain, tiles: Int, path: IntArray? = null, giveUp: Boolean = true) =
-            yearly(c, t, cargo, load, pa, pb, tiles, a.platform(this, 1), b.platform(this, 1), path, giveUp)
-        // The line can't be shorter than the way straight there, so a pair that can't pay even then isn't searched.
-        val am = a.mouth(this)
-        val bm = b.mouth(this)
-        val least = kotlin.math.abs(am % width - bm % width) + kotlin.math.abs(am / width - bm / width) + a.last + b.last
-        val fixed = price(Prices.PLATFORM) * (a.n + b.n) + price(Prices.DEPOT) + price(Prices.SIGNAL) + price(Prices.TRACK) * least
-        if (payback > 0 && trains.none { made(it, least) * payback >= fixed + trainCost(it) }) continue
-        // Town buildings in the way, by town: each town lets only so many go. A way that pulls down too many with the
-        // termini' own is looked for again round the buildings.
-        fun houses(path: IntArray) = (a.tiles(this) + b.tiles(this) + path.map { it / 16 }).filter { house[it].toInt() != 0 }.distinct()
-        fun tooMany(houses: List<Int>) = houses.groupingBy { townOf[it].toInt() }.eachCount().any { (t, n) -> n > mayClear(c, t) }
-        var path = railPath(c, a, b, clearing, loose, scratch) ?: continue
-        var houses = houses(path)
-        if (clearing && tooMany(houses)) {
-            path = railPath(c, a, b, false, loose, scratch) ?: continue
-            houses = houses(path)
+        val a = aList[job.ia]
+        val b = bList[job.ib]
+        if (job.phase == 0) {
+            if (job.left <= 0) return null
+            // A computer company stops once a few searches to the far site have run out of steps, as the rest mostly do too.
+            if (!loose && job.ranOut >= RAN_OUT_TRIES) return Tried.CANT
+            val plan = pairPlan(c, p, a, b, clearing, loose)
+            if (plan == null || !pays(c, p, a, b, plan, payback, null)) {
+                job.ib++
+                continue
+            }
+            job.phase = 1
         }
+        // The first search pulls down town buildings if it may, the second goes round them.
+        val clears = job.phase == 1 && clearing
+        if (job.search == null) {
+            // Without bridges, a goal that no track from the start could reach, whatever its bends, isn't searched for.
+            if (!loose) {
+                val key = job.ia * 2 + (if (clears) 1 else 0)
+                if (!job.floods.containsKey(key)) {
+                    val f = job.reach ?: startFlood(a, key).also { job.reach = it }
+                    if (!railFlood(c, a, clears, job, f)) return null
+                    job.reach = null
+                }
+                val reach = job.floods[key]
+                if (reach != null && !reach.has(b.mouth(this))) {
+                    job.ib++
+                    job.nextPair()
+                    continue
+                }
+            }
+            job.search = startPath(job, a, b, clears, loose)
+        }
+        val search = job.search!!
+        val path = runPath(c, job, a, b, search, loose)
+        if (!search.done) return null
+        if (path == null) {
+            job.ib++
+            job.nextPair()
+            continue
+        }
+        if (job.phase == 1 && clearing && tooMany(houses(a, b, path))) {
+            job.search = null
+            job.phase = 2
+            continue
+        }
+        job.ib++
+        job.nextPair()
+        val houses = houses(a, b, path)
         if (tooMany(houses)) continue
-        val runs = railRuns(c.id, path)
-        val spans = if (loose) railBridges(c.id, path) else emptyList()
-        var cost = houses.sumOf { demolishCost(c.id, it) }
-        var ok = true
-        for (run in runs) {
-            val (each, n) = railCost(run)
-            // Track on a town building is laid once it's down, so costs a plain tile then. Any other piece that
-            // wouldn't go down leaves a gap, so no line.
-            val line = Track.line(this, run.sx, run.sy, run.ex, run.ey, run.first)
-            val laid = planRail(run)
-            if (each < 0 || line == null || laid == null) { ok = false; break }
-            var onHouses = 0
-            for (k in line.indices) if (!laid[k]) { if (house[line[k] / 64].toInt() != 0) onHouses++ else ok = false }
-            if (!ok || n == 0 && onHouses == 0) { ok = false; break }
-            cost += each + price(Prices.TRACK) * onHouses
-        }
-        for (span in spans) {
-            val each = bridgeCost(c, span)
-            if (each < 0) ok = false
-            cost += each
-        }
-        if (!ok) continue
-        val tiles = path.size + a.last + b.last
-        // The train that would do best over the payback time: what it makes in that time less what it costs.
-        var train = trains.first()
-        var best = made(train, tiles, path) * years - trainCost(train)
-        for (t in trains.drop(1)) {
-            val v = made(t, tiles, path) * years - trainCost(t)
-            if (v > best) { train = t; best = v }
-        }
-        // Loose, on a line too long for any train's passengers to be reckoned on, the one that would do best if
-        // they were.
-        if (loose && passengers && trains.all { oneWay(it, tiles, path) * 2 > GIVE_UP_DAYS }) {
-            train = trains.maxBy { made(it, tiles, path, giveUp = false) * years - trainCost(it) }
-        }
-        cost += price(Prices.PLATFORM) * (a.n + b.n) + price(Prices.DEPOT) + price(Prices.TRACK) + price(Prices.SIGNAL) + trainCost(train)
-        if (payback > 0 && made(train, tiles, path) * payback < cost) continue
-        if (!afford(c, cost * 6 / 5)) return Tried.POOR
-        val route = buildRail(c, a, b, houses, path, runs + spans, train, cargo, from, to, serves) ?: return Tried.CANT
-        built(route)
-        return Tried.BUILT
+        // What it'd carry, worked out again as the map may have changed while it searched.
+        val plan = pairPlan(c, p, a, b, clearing, loose) ?: continue
+        return buildPair(c, p, a, b, plan, path, houses, payback, loose, serves, built) ?: continue
     }
     return Tried.CANT
+}
+
+/**
+ * Whether a line between [a] and [b] could pay within [payback] work years ([pairPlan]'s trains over [path]'s
+ * length), or with no path yet over the way straight there, which it can't be shorter than.
+ */
+private fun World.pays(c: Company, p: RailPick, a: Terminus, b: Terminus, plan: PairPlan, payback: Int, path: IntArray?): Boolean {
+    if (payback <= 0) return true
+    val am = a.mouth(this)
+    val bm = b.mouth(this)
+    val least = kotlin.math.abs(am % width - bm % width) + kotlin.math.abs(am / width - bm / width) + a.last + b.last
+    val fixed = price(Prices.PLATFORM) * (a.n + b.n) + price(Prices.DEPOT) + price(Prices.SIGNAL) + price(Prices.TRACK) * least
+    return plan.trains.any { made(c, p, a, b, plan, it, least) * payback >= fixed + trainCost(it) }
+}
+
+private fun World.made(c: Company, p: RailPick, a: Terminus, b: Terminus, plan: PairPlan, t: RailTrain, tiles: Int, path: IntArray? = null, giveUp: Boolean = true) =
+    yearly(c, t, p.cargo, p.load, plan.pa, plan.pb, tiles, a.platform(this, 1), b.platform(this, 1), path, giveUp)
+
+/** Prices the line along [path] and builds it if it pays and can be paid for; null to try the next pair. */
+private fun World.buildPair(
+    c: Company, p: RailPick, a: Terminus, b: Terminus, plan: PairPlan, path: IntArray, houses: List<Int>, payback: Int, loose: Boolean,
+    serves: (Station, Boolean) -> Boolean, built: (RivalRoute) -> Unit,
+): Tried? {
+    val passengers = p.cargo == Cargo.PASSENGERS
+    val years = if (payback > 0) payback else ANY_PAYBACK
+    val trains = plan.trains
+    val runs = railRuns(c.id, path)
+    val spans = if (loose) railBridges(c.id, path) else emptyList()
+    var cost = houses.sumOf { demolishCost(c.id, it) }
+    for (run in runs) {
+        val (each, n) = railCost(run)
+        // Track on a town building is laid once it's down, so costs a plain tile then. Any other piece that
+        // wouldn't go down leaves a gap, so no line.
+        val line = Track.line(this, run.sx, run.sy, run.ex, run.ey, run.first)
+        val laid = planRail(run)
+        if (each < 0 || line == null || laid == null) return null
+        var onHouses = 0
+        var ok = true
+        for (k in line.indices) if (!laid[k]) { if (house[line[k] / 64].toInt() != 0) onHouses++ else ok = false }
+        if (!ok || n == 0 && onHouses == 0) return null
+        cost += each + price(Prices.TRACK) * onHouses
+    }
+    var ok = true
+    for (span in spans) {
+        val each = bridgeCost(c, span)
+        if (each < 0) ok = false
+        cost += each
+    }
+    if (!ok) return null
+    val tiles = path.size + a.last + b.last
+    // The train that would do best over the payback time: what it makes in that time less what it costs.
+    var train = trains.first()
+    var best = made(c, p, a, b, plan, train, tiles, path) * years - trainCost(train)
+    for (t in trains.drop(1)) {
+        val v = made(c, p, a, b, plan, t, tiles, path) * years - trainCost(t)
+        if (v > best) { train = t; best = v }
+    }
+    // Loose, on a line too long for any train's passengers to be reckoned on, the one that would do best if
+    // they were.
+    if (loose && passengers && trains.all { oneWay(it, tiles, path) * 2 > GIVE_UP_DAYS }) {
+        train = trains.maxBy { made(c, p, a, b, plan, it, tiles, path, giveUp = false) * years - trainCost(it) }
+    }
+    cost += price(Prices.PLATFORM) * (a.n + b.n) + price(Prices.DEPOT) + price(Prices.TRACK) + price(Prices.SIGNAL) + trainCost(train)
+    if (payback > 0 && made(c, p, a, b, plan, train, tiles, path) * payback < cost) return null
+    if (!afford(c, cost * 6 / 5)) return Tried.POOR
+    val route = buildRail(c, a, b, houses, path, runs + spans, train, p.cargo, p.from, p.to, serves) ?: return Tried.CANT
+    built(route)
+    return Tried.BUILT
 }
 
 private fun World.buildRail(
@@ -1054,6 +1249,8 @@ private const val RAIL_HOUSE = 40
 /** A bridge tile costs the search this many times a tile of track on the ground. */
 private const val RAIL_BRIDGE = 4
 private const val RAIL_PATH_LIMIT = 120_000
+/** What looking at how many people a place for a terminus would reach counts as against [RailJob.left], in search steps. */
+private const val CATCH_STATES = 8
 /** Searches for one line that run out of steps before a computer company gives up on it. */
 private const val RAN_OUT_TRIES = 2
 /** Maps up to this many tiles keep the path search's states in plain arrays. */
@@ -1066,37 +1263,42 @@ internal const val KMH_PER_TILE_A_DAY = 42
 /** Most work years another train on a line may take to pay for itself. */
 private const val TRAIN_PAYBACK = 10
 
-/**
- * What the rail path searches for one line share: the maps and heap each search uses again, the step costs with and
- * without pulling down buildings and, by terminus and that, the tiles track could reach from it. The map doesn't
- * change between them.
- */
-private class RailScratch(tiles: Int) {
+/** The step costs of the rail path searches of one pick, with and without pulling down buildings. */
+internal class RailSteps(tiles: Int) {
     private val flat = tiles <= FLAT_TILES
-    val states by lazy { SearchStates(if (flat) tiles * 20 else 0) }
-    val steps by lazy { IntMap(if (flat) tiles * 16 else 0) }
-    val plainSteps by lazy { IntMap(if (flat) tiles * 16 else 0) }
-    val heap = LongHeap()
-    val floods = HashMap<Pair<Terminus, Boolean>, IntMap?>()
-    /** Searches that ran out of steps. */
-    var ranOut = 0
+    val steps = IntMap(if (flat) tiles * 16 else 0)
+    val plain = IntMap(if (flat) tiles * 16 else 0)
+
+    fun clear() {
+        steps.clear()
+        plain.clear()
+    }
 }
 
 /**
  * Each path search state's cost so far and the state it came from, [IntMap.NONE] for one not reached. With [flat], states
  * below it sit in one array, a stamp, the cost and where from side by side; otherwise in maps.
  */
-private class SearchStates(flat: Int) {
+internal class SearchStates(flat: Int) {
     private val a = if (flat > 0) IntArray(flat * 3) else null
     private var gen = 1
     private val costs = if (flat > 0) null else IntMap()
     private val froms = if (flat > 0) null else IntMap()
+    /** The states reached, in the order first reached, for a save. */
+    var touched = IntArray(1 shl 10)
+        private set
+    var count = 0
+        private set
 
     fun cost(s: Int): Int = if (a != null) (if (a[s * 3] == gen) a[s * 3 + 1] else IntMap.NONE) else costs!![s]
 
     fun from(s: Int): Int = if (a != null) (if (a[s * 3] == gen) a[s * 3 + 2] else IntMap.NONE) else froms!![s]
 
     fun put(s: Int, cost: Int, from: Int) {
+        if (cost(s) == IntMap.NONE) {
+            if (count == touched.size) touched = touched.copyOf(count * 2)
+            touched[count++] = s
+        }
         if (a != null) {
             a[s * 3] = gen
             a[s * 3 + 1] = cost
@@ -1109,6 +1311,7 @@ private class SearchStates(flat: Int) {
 
     fun clear() {
         gen++
+        count = 0
         costs?.clear()
         froms?.clear()
     }
@@ -1118,12 +1321,14 @@ private class SearchStates(flat: Int) {
  * A map from keys of 0 and up to ints, [NONE] for a key not in it. Open addressing, cleared in place, or with [flatSize]
  * a plain array for keys below it.
  */
-private class IntMap(flatSize: Int = 0) {
+internal class IntMap(flatSize: Int = 0) {
     private val flat = flatSize > 0
     private var keys = IntArray(if (flat) 0 else 1 shl 12) { -1 }
     private var values = if (flat) IntArray(flatSize) { NONE } else IntArray(1 shl 12)
     private var size = 0
     private var mask = keys.size - 1
+    /** Flat, the keys set since the last [clear], so a few are put back without going over them all. */
+    private var set = IntArray(if (flat) 1 shl 10 else 0)
 
     operator fun get(key: Int): Int {
         if (flat) return values[key]
@@ -1138,6 +1343,11 @@ private class IntMap(flatSize: Int = 0) {
 
     operator fun set(key: Int, value: Int) {
         if (flat) {
+            if (values[key] == NONE && size < values.size / 8) {
+                if (size == set.size) set = set.copyOf(size * 2)
+                set[size] = key
+            }
+            if (values[key] == NONE) size++
             values[key] = value
             return
         }
@@ -1155,12 +1365,26 @@ private class IntMap(flatSize: Int = 0) {
 
     fun clear() {
         if (flat) {
-            values.fill(NONE)
+            if (size == 0) return
+            if (size <= values.size / 8) for (k in 0 until size) values[set[k]] = NONE else values.fill(NONE)
+            size = 0
             return
         }
         if (size == 0) return
         keys.fill(-1)
         size = 0
+    }
+
+    /** Each key and its value, keys in order. */
+    fun entries(): List<Pair<Int, Int>> {
+        val out = ArrayList<Pair<Int, Int>>()
+        if (flat) {
+            if (size > 0) for (k in values.indices) if (values[k] != NONE) out += k to values[k]
+            return out
+        }
+        for (j in keys.indices) if (keys[j] >= 0) out += keys[j] to values[j]
+        out.sortBy { it.first }
+        return out
     }
 
     private fun grow() {
@@ -1178,4 +1402,119 @@ private class IntMap(flatSize: Int = 0) {
     companion object {
         const val NONE = Int.MIN_VALUE
     }
+}
+
+/** Writes [j] for a save, on a map of [tiles]. */
+internal fun writeRailJob(w: ByteWriter, j: RailJob, tiles: Int) {
+    fun site(s: RailSite) { w.int(s.x0); w.int(s.y0); w.int(s.x1); w.int(s.y1); w.int(s.cx); w.int(s.cy); w.int(s.town) }
+    fun termini(list: List<Terminus>) {
+        w.uvar(list.size.toLong())
+        for (t in list) { w.int(t.x); w.int(t.y); w.int(t.out); w.int(t.n); w.int(t.lead) }
+    }
+    w.uvar(j.picks.size.toLong())
+    for (p in j.picks) { w.int(p.from); w.int(p.to); w.int(p.cargo); w.int(p.load); site(p.sa); site(p.sb) }
+    w.int(j.payback); w.bool(j.loose); w.int(j.running); w.int(j.from); w.int(j.opensLeft); w.int(j.pick)
+    for (list in listOf(j.aList, j.bList)) {
+        w.bool(list != null)
+        if (list != null) termini(list)
+    }
+    w.int(j.ia); w.int(j.ib); w.int(j.ranOut); w.int(j.phase)
+    val floods = j.floods.keys.sorted()
+    w.uvar(floods.size.toLong())
+    for (k in floods) {
+        val f = j.floods[k]
+        w.int(k); w.bool(f != null)
+        if (f != null) w.bytes(f)
+    }
+    // The step costs worked out so far, keys as the gap from the last.
+    w.bool(j.hasSteps)
+    if (j.hasSteps) for (m in j.steps(tiles).let { listOf(it.steps, it.plain) }) {
+        val e = m.entries()
+        w.uvar(e.size.toLong())
+        var last = 0
+        for ((k, v) in e) { w.uvar((k - last).toLong()); w.int(v); last = k }
+    }
+    val f = j.reach
+    w.bool(f != null)
+    if (f != null) {
+        w.int(f.key); w.bytes(f.seen); w.int(f.head); w.int(f.tail)
+        for (k in f.head until f.tail) w.int(f.queue[k])
+    }
+    val s = j.search
+    w.bool(s != null)
+    if (s == null) return
+    w.bool(s.clearing); w.int(s.limit); w.int(s.expanded); w.bool(s.done)
+    // The heap as laid out, each value its cost and state.
+    val heap = s.heap.values()
+    w.uvar(heap.size.toLong())
+    for (v in heap) { w.int((v ushr 32).toInt()); w.int(v.toInt()) }
+    val states = j.states(tiles)
+    w.uvar(states.count.toLong())
+    for (k in 0 until states.count) {
+        val st = states.touched[k]
+        w.int(st); w.int(states.cost(st)); w.int(states.from(st))
+    }
+}
+
+/** Reads a job [writeRailJob] wrote. */
+internal fun World.readRailJob(r: ByteReader): RailJob {
+    val tiles = width * height
+    fun count(most: Int, what: String) = r.uvar().also { if (it > most) throw BadData("too many $what") }.toInt()
+    fun site() = RailSite(r.int(), r.int(), r.int(), r.int(), r.int(), r.int(), r.int())
+    fun termini() = List(count(10_000, "rail termini")) {
+        Terminus(r.int(), r.int(), r.int(), r.int(), r.int()).also { t -> if (t.out !in 0..3 || t.n !in 1..64 || t.lead !in 0..1) throw BadData("bad terminus") }
+    }
+    val picks = List(count(10_000, "rail picks")) { RailPick(r.int(), r.int(), r.int(), r.int(), site(), site()) }
+    val j = RailJob(picks, r.int(), r.bool())
+    j.running = r.int(); j.from = r.int(); j.opensLeft = r.int(); j.pick = r.int()
+    if (j.pick !in picks.indices) throw BadData("bad rail pick")
+    if (r.bool()) j.aList = termini()
+    if (r.bool()) j.bList = termini()
+    if (j.aList == null && j.bList != null) throw BadData("bad rail termini")
+    j.ia = r.int(); j.ib = r.int(); j.ranOut = r.int(); j.phase = r.int()
+    if (j.ia < 0 || j.ib < 0 || j.phase !in 0..2) throw BadData("bad rail job")
+    repeat(count(100_000, "rail floods")) {
+        val k = r.int()
+        j.floods[k] = if (r.bool()) r.bytes().also { if (it.size != (tiles + 7) / 8) throw BadData("bad rail flood") } else null
+    }
+    if (r.bool()) for (m in j.steps(tiles).let { listOf(it.steps, it.plain) }) {
+        var key = 0
+        repeat(count(tiles * 16, "rail step costs")) {
+            key += r.uvar().toInt()
+            if (key !in 0 until tiles * 16) throw BadData("bad rail step cost")
+            m[key] = r.int()
+        }
+    }
+    if (r.bool()) {
+        val key = r.int()
+        val seen = r.bytes()
+        val head = r.int()
+        val tail = r.int()
+        if (seen.size != (tiles + 7) / 8 || head < 0 || tail < head || tail > tiles || j.bList == null || j.phase == 0) throw BadData("bad rail flood")
+        val queue = IntArray(maxOf(tail, 1))
+        for (k in head until tail) queue[k] = r.int().also { if (it !in 0 until tiles) throw BadData("bad rail flood") }
+        j.reach = RailReach(key, seen, queue, head, tail)
+    }
+    if (!r.bool()) return j
+    val s = RailSearch(r.bool(), r.int())
+    s.expanded = r.int()
+    s.done = r.bool()
+    val most = tiles * 20
+    s.heap.restore(LongArray(count(most * 4, "rail search steps")) {
+        val f = r.int()
+        val st = r.int()
+        if (st !in 0 until most) throw BadData("bad rail search state")
+        f.toLong() shl 32 or st.toLong()
+    })
+    val states = j.states(tiles).apply { clear() }
+    repeat(count(most, "rail search states")) {
+        val st = r.int()
+        val cost = r.int()
+        val from = r.int()
+        if (st !in 0 until most || cost < 0 || from != IntMap.NONE && from !in 0 until most) throw BadData("bad rail search state")
+        states.put(st, cost, from)
+    }
+    if (j.bList == null || j.phase == 0) throw BadData("bad rail search")
+    j.search = s
+    return j
 }

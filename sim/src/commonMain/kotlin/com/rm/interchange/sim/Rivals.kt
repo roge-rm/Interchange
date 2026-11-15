@@ -29,6 +29,8 @@ class Rival(val company: Int, val home: Int) {
      * that would come down: the route's key ([keyOf]) to the work day it was first held.
      */
     val held = HashMap<Long, Int>()
+    /** The railway it's planning, a little each tick, or null. */
+    internal var job: RailJob? = null
 }
 
 /** Whether [r] has tried [key] lately and not tried again yet. */
@@ -133,26 +135,81 @@ private fun World.think(r: Rival, c: Company) {
     townWork(r, c)
     for (route in r.routes) growRoute(c, route)
     for (route in r.routes.toList()) if (route.rail && !route.freight) feeders(r, c, route)
+    // Still planning a railway: nothing more opened until it's done.
+    if (r.job != null) return
     // A hard rival with money to spare opens two at a look.
     val opens = if (settings.rivalLevel == RivalLevel.HARD && c.money - c.loan > maxLoan()) 2 else 1
-    repeat(opens) {
-        val running = r.routes.count { !it.feeder }
-        if (running >= maxRoutes(c)) return
-        // On borrowed money, only once what it runs pays.
-        if (c.loan > 0 && r.routes.isNotEmpty() && profitAWorkYear(c) <= 0) return
+    open(r, c, opens)
+}
+
+/**
+ * Opens up to [opens] routes, trying each level's kinds in turn for each. A railway is planned over the next ticks as
+ * [Rival.job]; if it isn't built, that turn carries on afterwards from kind [from] with [running] routes, or -1 for a
+ * new turn.
+ */
+private fun World.open(r: Rival, c: Company, opens: Int, from: Int = 0, running: Int = -1) {
+    var left = opens
+    var k0 = from
+    var ran = running
+    while (left > 0) {
+        if (ran < 0) {
+            ran = r.routes.count { !it.feeder }
+            if (ran >= maxRoutes(c)) return
+            // On borrowed money, only once what it runs pays.
+            if (c.loan > 0 && r.routes.isNotEmpty() && profitAWorkYear(c) <= 0) return
+        }
+        left--
         // Each level's kinds in turn; anything it can't do this time, the next kind.
         val kinds = KINDS[level()]
         var done = false
-        for (k in kinds.indices) {
-            val tried = when (kinds[(running + k) % kinds.size]) {
+        for (k in k0 until kinds.size) {
+            val tried = when (kinds[(ran + k) % kinds.size]) {
                 KIND_BUS -> newRoute(r, c, richPayback(c, ROAD_PAYBACK[level()]))
                 KIND_TRUCK -> newFreightRoute(r, c, richPayback(c, ROAD_PAYBACK[level()]))
-                else -> newRailRoute(r, c, RAIL_PAYBACK[level()])
+                else -> {
+                    val job = railJob(r, c, RAIL_PAYBACK[level()])
+                    if (job != null) {
+                        job.running = ran
+                        job.from = k + 1
+                        job.opensLeft = left
+                        r.job = job
+                        return
+                    }
+                    Tried.CANT
+                }
             }
             if (tried == Tried.POOR) return
             if (tried == Tried.BUILT) { done = true; break }
         }
         if (!done) return
+        ran = -1
+        k0 = 0
+    }
+}
+
+/**
+ * Each tick: rivals planning a railway carry on with it in turn, until [World.railTickStates] path search steps are used.
+ * One that's done carries on opening as [think] would have.
+ */
+internal fun World.railJobs() {
+    if (rivals.none { it.job != null }) return
+    var left = railTickStates
+    for (r in rivals.toList()) {
+        val job = r.job ?: continue
+        if (r !in rivals) continue
+        val c = companies.getOrNull(r.company)
+        if (c == null || c.gone) { r.job = null; continue }
+        if (left <= 0) break
+        job.left = left
+        val t = runRailJob(r, c, job)
+        left = job.left
+        if (t == null) continue
+        r.job = null
+        when (t) {
+            Tried.BUILT -> open(r, c, job.opensLeft)
+            Tried.CANT -> open(r, c, job.opensLeft + 1, job.from, job.running)
+            Tried.POOR -> {}
+        }
     }
 }
 
@@ -619,11 +676,19 @@ internal fun World.newFreightRoute(r: Rival, c: Company, payback: Int = ROAD_PAY
 
 /**
  * Tries a railway: from an industry near home to the nearest that takes what it makes, or between two big towns,
- * farther apart than road vehicles go, the longer the better up to a point.
+ * farther apart than road vehicles go, the longer the better up to a point. All at once, through the same job a rival
+ * runs over ticks.
  */
 internal fun World.newRailRoute(r: Rival, c: Company, payback: Int = RAIL_PAYBACK[level()]): Tried {
+    val job = railJob(r, c, payback) ?: return Tried.CANT
+    job.left = Int.MAX_VALUE
+    return runRailJob(r, c, job) ?: Tried.CANT
+}
+
+/** The railways [r] would try, best first, as a job; null if there are none. */
+private fun World.railJob(r: Rival, c: Company, payback: Int): RailJob? {
     val far = homeReach(c)
-    val home = towns.getOrNull(r.home) ?: return Tried.CANT
+    val home = towns.getOrNull(r.home) ?: return null
     val served = r.routes.filter { it.rail }.map { keyOf(it) }.toSet()
     // Its own trucks at an industry would take half of what a train waits for.
     val trucked = r.routes.filter { it.freight }.map { it.townA to it.cargo }.toSet()
@@ -678,13 +743,26 @@ internal fun World.newRailRoute(r: Rival, c: Company, payback: Int = RAIL_PAYBAC
         }
     }
     picks.sortWith(compareByDescending<Pick> { it.score }.thenBy { it.from }.thenBy { it.to }.thenBy { it.cargo })
-    for (p in picks.take(RAIL_TRIES)) {
+    if (picks.isEmpty()) return null
+    return RailJob(picks.take(RAIL_TRIES).map { RailPick(it.from, it.to, it.cargo, it.load, it.sa, it.sb) }, payback, loose = false)
+}
+
+/**
+ * Carries on [job] for [r] until a line is built, every pick is given up (each remembered in [Rival.failed]) or it
+ * can't be paid for; null once [RailJob.left] runs out first.
+ */
+private fun World.runRailJob(r: Rival, c: Company, job: RailJob): Tried? {
+    while (job.pick < job.picks.size) {
+        val p = job.picks[job.pick]
         val freight = p.cargo != Cargo.PASSENGERS
         val serves = { s: Station, first: Boolean ->
             if (freight) stationIndustries[s.id]?.contains(if (first) p.from else p.to) == true else (stationPeople[s.id] ?: 0) > 0
         }
-        when (val t = tryRail(c, p.sa, p.sb, p.cargo, p.load, p.from, p.to, serves, payback) { r.routes += it }) {
-            Tried.CANT -> giveUp(r, railKey(p.from, p.to, p.cargo))
+        when (val t = runPick(c, job, serves) { r.routes += it } ?: return null) {
+            Tried.CANT -> {
+                giveUp(r, railKey(p.from, p.to, p.cargo))
+                job.nextPick()
+            }
             else -> return t
         }
     }
@@ -1339,6 +1417,13 @@ internal class LongHeap {
     fun clear() {
         size = 0
     }
+    /** The values as laid out inside, for a save. */
+    fun values(): LongArray = a.copyOf(size)
+    /** Puts back [values] as [values] gave them. */
+    fun restore(values: LongArray) {
+        a = values.copyOf(maxOf(256, values.size))
+        size = values.size
+    }
     fun push(v: Long) {
         if (size == a.size) a = a.copyOf(size * 2)
         var i = size++
@@ -1379,6 +1464,8 @@ private const val RAIL_LEAST = 60
 private const val RAIL_TOWN = 100
 /** Railways tried at each look. */
 private const val RAIL_TRIES = 3
+/** Rail path search steps all rivals' jobs take in one tick, about 10 ms on a slow tablet. */
+internal const val RAIL_TICK_STATES = 2500
 
 /** Work years a rival's railway and its road routes have to pay for themselves in, easy to hard. */
 private val RAIL_PAYBACK = intArrayOf(10, 12, 14)
