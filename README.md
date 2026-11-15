@@ -6,7 +6,7 @@ Move goods and people by rail, road, water and air. Build your company, upgrade 
 
 There's a campaign of seven chapters from 1836 on, goals to play for in your own games, and a scenario editor to make your own.
 
-The game is playable but still being worked on. Build things, run trains into each other, tell me what works and what doesn't.
+It's at 0.13, playable but still being worked on. Build things, run trains into each other, tell me what works and what doesn't.
 
 Join me in #interchange [on my discord](https://discord.gg/9Wun47jGC6) to talk about the game or report bugs, or open an issue here.
 
@@ -19,14 +19,14 @@ Dan
 
 <table>
   <tr>
-    <td align="center" width="33%"><img src="screenshots/town.jpg" width="100%" alt="A four track station in summer with three trains in, the town and buses behind"></td>
-    <td align="center" width="33%"><img src="screenshots/winter.jpg" width="100%" alt="The same station in March, under snow"></td>
-    <td align="center" width="33%"><img src="screenshots/logging.jpg" width="100%" alt="Log trucks on a salted road by a logging camp in February"></td>
+    <td align="center" width="33%"><img src="screenshots/station.jpg" width="100%" alt="Three passenger trains in at Maplewood station in July, the town behind"></td>
+    <td align="center" width="33%"><img src="screenshots/winter.jpg" width="100%" alt="Buses in the snow in Port Albert in March, a train passing through the spruce below"></td>
+    <td align="center" width="33%"><img src="screenshots/junction.jpg" width="100%" alt="An ore train and a passenger train on the curved junction outside Maplewood in October"></td>
   </tr>
   <tr>
-    <td align="center" width="33%"><img src="screenshots/freight.jpg" width="100%" alt="Ore trains at an iron mine in October, with a sawmill below"></td>
-    <td align="center" width="33%"><img src="screenshots/building.jpg" width="100%" alt="Laying track by the junction outside the station, two trains going through"></td>
-    <td align="center" width="33%"><img src="screenshots/campaign.jpg" width="100%" alt="The campaign's seven chapters"></td>
+    <td align="center" width="33%"><img src="screenshots/airport.jpg" width="100%" alt="Airliners on the runway at Saint-Rémi-Sud airport, with Dorval, its buses and the railway beside it, in 1962"></td>
+    <td align="center" width="33%"><img src="screenshots/early.jpg" width="100%" alt="A steam train with wooden coaches below Port Albert in 1861, horse wagons on Church Street and a flour mill by the line"></td>
+    <td align="center" width="33%"><img src="screenshots/snow-station.jpg" width="100%" alt="A diesel passenger train leaving a snowed-in station on the Canadian Shield"></td>
   </tr>
 </table>
 
@@ -34,13 +34,13 @@ Dan
 
 ## What's in it
 
-Six regions: mixed, prairies, Canadian Shield, Rockies, Maritimes and the north. The weather comes from a real town in that region. Towns are named in English or French depending on where they are, and they grow. Snow piles up and drifts, trains get stuck in it, lakes freeze over, the ground heaves in the spring and track washes out. Later on it's warmer than in 1900.
+Six regions: mixed, prairies, Canadian Shield, Rockies, Maritimes and the north. The weather comes from a real town in that region. Towns are named in English or French depending on where they are, and they grow. Snow piles up and drifts, trains get stuck in it, lakes freeze over, the ground heaves in the spring and track washes out. Later on it's warmer than in 1900. The map is drawn on the GPU, so it stays sharp while you pan, zoom and turn it, and the snow comes and goes with the season. Station buildings change through five eras.
 
-Trains have grades and grip, bridges and tunnels, wires, and snow plows for the drifts. Drag along a line to signal it, path signals and presignals, and turn on the overlay to see what track a train has claimed. Leave the signals out and trains run into each other, as in OpenTTD. You can turn crashes off. Engines and cars from the 1830s on. Mix wagons, add locomotives and rearrange a train in its depot, with a cargo choice for each car.
+Trains have grades and grip, bridges and tunnels, wires, and snow plows for the drifts. They run on smooth curves and slow down for tight bends. Drag along a line to signal it, path signals and presignals, each kind shown by a coloured band on the mast, and turn on the overlay to see what track a train has claimed. Leave the signals out and trains run into each other, as in OpenTTD. You can turn crashes off. Engines and cars from the 1830s on, up to 300 km/h trains. Mix wagons, add locomotives and rearrange a train in its depot, with a cargo choice for each car.
 
-Roads from dirt tracks to highways, one-way roads, trams, buses and trucks. Horse-drawn wagons and coaches early on, winter tires, salt and plows later. Level crossings flash when a train's coming. Don't let traffic queue across them. Canals and locks, ferries, lakers and icebreakers, strips, seaplane bases and airports, and bush planes on floats and skis with the seasons.
+Roads from dirt tracks to highways, one-way roads, trams, buses and trucks. Horse-drawn wagons and coaches early on, winter tires, sand, salt and plows later. Level crossings flash and drop their gates when a train's coming. Don't let traffic queue across them. Canals and locks, ferries, hovercraft, lakers and icebreakers, strips, seaplane bases and airports, and bush planes on floats and skis with the seasons. Aircraft taxi between the runway, stands and hangars, and land into the wind.
 
-Logging camps, farms, mines, mills, oil sands and ports. Loans, subsidies, company value and a league table. Autorenew replaces your vehicles as they get old. Up to 7 computer companies run buses, trucks and railways. They open routes, give them up, and go under when they can't pay their way. Buy one outright, or pick up one that's in trouble. Name your company and give it an insignia, one of 24 or one you draw, in your company's colour. At the town hall you can advertise, fund new buildings, put up a statue, do road works or buy exclusive rights.
+Logging camps, farms, mines, mills, oil sands and ports. Loans, subsidies, company value and a league table. Copy, refit and replace vehicles, put them in groups, and let autorenew replace them as they get old. Up to 7 computer companies run buses, trucks and railways. They open routes, give them up, and go under when they can't pay their way. Buy one outright, or pick up one that's in trouble. Name your company and give it an insignia, one of 24 or one you draw, in your company's colour. At the town hall you can advertise, fund new buildings, put up a statue, do road works or buy exclusive rights.
 
 Goals to grow towns, carry cargo and build the company up. The campaign runs from 1836 to 2072, and there's a scenario editor for your own. The chronicle keeps the news, and you can read back through it. Slow the days down, up to 16 times, so vehicles get more done in a year. Vehicles, buildings and industries come from packs, and you can make your own. The spec is in [packs/SPEC.md](packs/SPEC.md), with a template in [packs/template](packs/template).
 
@@ -48,7 +48,7 @@ Goals to grow towns, carry cargo and build the company up. The campaign runs fro
 
 ## Playing together
 
-Everyone plays the same game, so building, vehicles and money are the same on every phone. Start your own company, share one, or watch.
+Everyone plays the same game, so building, vehicles and money are the same on every phone. Start your own company, share one, or watch. Everyone needs the same version of Interchange.
 
 In a game, open the menu, then Multiplayer, then Open to players. You can set a password. The game keeps running in the background, and the notification has a button to stop.
 
@@ -69,7 +69,7 @@ Players on your network find it by themselves. The admin page is at `http://<thi
 
 ## Installing
 
-Download the signed APK from [GitHub releases](https://github.com/roge-rm/Interchange/releases/latest), or add [my F-Droid repo](https://hunke.ws/fdroid/repo) to your F-Droid client and install Interchange from there.
+Download the signed APK from [GitHub releases](https://github.com/roge-rm/Interchange/releases/latest), or add [my F-Droid repo](https://hunke.ws/fdroid/repo) to your F-Droid client and install Interchange from there. Your phone needs OpenGL ES 3.0.
 
 ## Building it
 
