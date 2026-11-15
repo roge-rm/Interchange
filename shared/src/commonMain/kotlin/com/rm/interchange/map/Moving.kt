@@ -31,6 +31,7 @@ import com.rm.interchange.sim.WorldView
 import com.rm.interchange.sim.World
 import kotlin.math.abs
 import kotlin.math.hypot
+import kotlin.math.round
 import kotlin.math.sqrt
 
 /** What moves, as the game last published it, the tick before, and how far it is between them. */
@@ -96,9 +97,9 @@ internal fun DrawScope.drawMoving(world: World, view: View, sheets: Sheets, movi
     for (s in moving.now.signals) {
         val p = signalPoint(world, s.tile, s.piece, s.facing, lines.lineOf(s.tile % world.width, s.tile / world.width, s.piece))
         val heads = if ((moving.now.weather?.year ?: 0) >= Atlas.SIGNAL_LIGHTS_FROM) Atlas.SIGNAL_LIGHT else Atlas.SIGNAL
-        add(items, world, view, p.first, p.second, (if (s.red) heads[1] else heads[0]).toFloat())
-        // A plate at its foot for the kinds that aren't plain block signals, just in front of it.
-        if (s.kind != Signals.TWO_WAY && s.kind != Signals.ONE_WAY) add(items, world, view, p.first, p.second, s.kind.toFloat(), 0.01f, MARK)
+        val item = add(items, world, view, p.first, p.second, (if (s.red) heads[1] else heads[0]).toFloat())
+        // The kind's band, painted on the mast as the signal's drawn: kind + 1, as 0 is the plain sprite.
+        if (item != null && s.kind != Signals.TWO_WAY && s.kind != Signals.ONE_WAY) item[5] = s.kind + 1f
     }
     for (tile in moving.now.waypoints) add(items, world, view, tile % world.width + 0.5f, tile / world.width + 0.5f, 0f, 0f, WAYPOINT)
     for (tile in moving.now.buoys) add(items, world, view, tile % world.width + 0.5f, tile / world.width + 0.5f, 0f, 0f, BUOY)
@@ -429,7 +430,7 @@ private fun Pen.drawShape(it: FloatArray, hw: Float): Boolean {
         FENCE -> drawFence(it)
         FIRE -> drawFire(it[3].toInt(), it[1], it[2], hw)
         BOARD -> drawBoard(it[3].toInt(), it[1], it[2], hw)
-        MARK, WAYPOINT -> drawMark(model, it[3].toInt(), it[1], it[2], hw)
+        WAYPOINT -> drawWaypoint(it[1], it[2], hw)
         BUOY -> drawBuoy(it[1], it[2], hw)
         CROSSING_ARM -> {
             drawCrossingGate(it, hw)
@@ -457,7 +458,8 @@ internal fun liveItems(items: List<FloatArray>, lit: List<FloatArray>, hw: Float
         if (live.drawShape(it, hw)) continue
         val model = it[4].toInt()
         if (model < 0) {
-            live.sprite(SIGNALS, it[3].toInt(), it[1], it[2])
+            val drawn = live.sprite(SIGNALS, it[3].toInt(), it[1], it[2])
+            if (drawn && it.size > 5 && it[5] > 0f) live.drawBand(it[5].toInt() - 1, it[3].toInt(), it[1], it[2], hw)
             continue
         }
         val low = it[6] >= 0f
@@ -469,8 +471,7 @@ internal fun liveItems(items: List<FloatArray>, lit: List<FloatArray>, hw: Float
 
 private val EDGE_FIRST = booleanArrayOf(true, false)
 
-/** Items that aren't sprites: a signal's kind plate, a waypoint's post, and wires over a piece of track. */
-private const val MARK = -2
+/** Items that aren't sprites: a waypoint's post, wires over a piece of track, etc. */
 private const val WAYPOINT = -3
 private const val WIRE = -4
 private const val FIRE = -5
@@ -1059,29 +1060,52 @@ private fun Pen.drawWire(it: FloatArray, hw: Float) {
     }
 }
 
-/** A signal kind's plate at the foot of its mast, or a waypoint's post with a diamond on top, standing at ([x], [y]) on screen. */
-private fun Pen.drawMark(what: Int, kind: Int, x: Float, y: Float, hw: Float) {
+/** A waypoint's post with a diamond on top, standing at ([x], [y]) on screen. */
+private fun Pen.drawWaypoint(x: Float, y: Float, hw: Float) {
     val u = hw / 16f
-    if (what == WAYPOINT) {
-        line(Color(0xff3a3a3a), x, y, x, y - 7 * u, 1.2f * u)
-        corners[0] = x; corners[1] = y - 11 * u
-        corners[2] = x + 2.5f * u; corners[3] = y - 8.5f * u
-        corners[4] = x; corners[5] = y - 6 * u
-        corners[6] = x - 2.5f * u; corners[7] = y - 8.5f * u
-        shape(Color(0xfff0c030), corners, 4)
-        shape(Color(0xff3a3a3a), corners, 4, 0.6f * u)
-        return
-    }
-    val colour = when (kind) {
-        Signals.ENTRY -> Color(0xfff0c030)
-        Signals.EXIT -> Color(0xff40a050)
-        Signals.COMBO -> Color(0xff3a78d0)
-        else -> Color(0xfff4f4f0)
-    }
-    val r = 1.6f * u
-    rect(colour, x - r, y - r * 1.6f, 2 * r, 1.6f * r)
-    rectEdge(Color(0xff2a2a2a), x - r, y - r * 1.6f, 2 * r, 1.6f * r, 0.5f * u)
+    line(Color(0xff3a3a3a), x, y, x, y - 7 * u, 1.2f * u)
+    corners[0] = x; corners[1] = y - 11 * u
+    corners[2] = x + 2.5f * u; corners[3] = y - 8.5f * u
+    corners[4] = x; corners[5] = y - 6 * u
+    corners[6] = x - 2.5f * u; corners[7] = y - 8.5f * u
+    shape(Color(0xfff0c030), corners, 4)
+    shape(Color(0xff3a3a3a), corners, 4, 0.6f * u)
 }
+
+/**
+ * A signal [kind]'s band, painted across the mast just under the head of signal sprite [cell] standing at ([x], [y])
+ * on screen. In the sharpest sheet's pixels, hw / 128 on screen: the sprite's corner is 32 left of and 96 up from
+ * where it stands, snapped down to whole pixels as [LiveBuilder.sprite] does; the mast is columns 30 to 33 of it and
+ * the band 2 rows from row 33 on a semaphore, 36 on a colour light, whose head hangs lower. Left out once the mast is
+ * under a pixel wide.
+ */
+private fun Pen.drawBand(kind: Int, cell: Int, x: Float, y: Float, hw: Float) {
+    val px = hw / 128f
+    if (4 * px < 1f) return
+    val (light, dark) = when (kind) {
+        Signals.ENTRY -> BAND_ENTRY
+        Signals.EXIT -> BAND_EXIT
+        Signals.COMBO -> BAND_COMBO
+        else -> BAND_PATH
+    }
+    val left = (x - 32 * px).toInt().toFloat()
+    val top = (y - 96 * px).toInt().toFloat()
+    val row = if (cell == Atlas.SIGNAL_LIGHT[0] || cell == Atlas.SIGNAL_LIGHT[1]) 36 else 33
+    val l = round(left + 30 * px)
+    val r = round(left + 34 * px)
+    val t = round(top + row * px)
+    val b = maxOf(t + 1f, round(top + (row + 2) * px))
+    // The mast's shaded right side, where it's a whole pixel of its own.
+    val shade = round(left + 33 * px).coerceAtMost(r)
+    if (shade > l) rect(light, l, t, shade - l, b - t)
+    if (r > shade) rect(dark, shade, t, r - shade, b - t)
+}
+
+private fun bandColours(c: Long) = Color(c).let { it to it.copy(red = it.red * 0.78f, green = it.green * 0.78f, blue = it.blue * 0.78f) }
+private val BAND_ENTRY = bandColours(0xffb08a3c)
+private val BAND_EXIT = bandColours(0xff6e9460)
+private val BAND_COMBO = bandColours(0xff6a82a4)
+private val BAND_PATH = bandColours(0xffd6d6cc)
 
 /** A sprite from the signals sheet anchored on tile ([x], [y])'s top corner at height [h], at [depth] in front of the tile's middle. */
 private fun DrawScope.tileItem(items: ArrayList<FloatArray>, view: View, x: Int, y: Int, h: Float, depth: Float, cell: Int) {

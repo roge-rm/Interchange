@@ -350,16 +350,17 @@ internal class LiveBuilder(private val atlas: LiveAtlas, private val source: Liv
     /**
      * Sprite [cell] of [src] standing at screen point ([px], [py]), drawn as [mode] says, cut by the buildings in front
      * of view point ([cutX], [cutY]) unless cutX is below 0. Placed as if on a tile whose middle is where it stands.
+     * Returns whether it went in, which it doesn't while its sheet isn't on the GPU.
      */
-    fun sprite(src: Int, cell: Int, px: Float, py: Float, mode: Int = LIVE_PLAIN, cutX: Float = -1f, cutY: Float = -1f) {
-        if (cell < 0) return
+    fun sprite(src: Int, cell: Int, px: Float, py: Float, mode: Int = LIVE_PLAIN, cutX: Float = -1f, cutY: Float = -1f): Boolean {
+        if (cell < 0) return false
         need(src)
-        val p = atlas.get(src, level) ?: return
-        if (!p.onGpu || (cell + 1) * LiveAtlas.CELL > p.cells.size) return
+        val p = atlas.get(src, level) ?: return false
+        if (!p.onGpu || (cell + 1) * LiveAtlas.CELL > p.cells.size) return false
         val c = p.cells
         val o = cell * LiveAtlas.CELL
         val page = c[o]
-        if (page < 0) return
+        if (page < 0) return false
         val w = c[o + 3]
         val h = c[o + 4]
         val left = px + c[o + 5] * scale
@@ -373,6 +374,7 @@ internal class LiveBuilder(private val atlas: LiveAtlas, private val source: Liv
             l.toFloat(), t.toFloat(), (left + w * scale).toInt().toFloat(), (top + h * scale).toInt().toFloat(),
             x0, y0, x0 + w, y0 + h,
             if (wreck) WRECK_R else 1f, if (wreck) WRECK_G else 1f, if (wreck) WRECK_B else 1f, if (mode == LIVE_SHADOW) SHADOW_ALPHA else 1f)
+        return true
     }
 
     /** The depth a cut item at view point ([vx], [vy]) goes at this frame. */

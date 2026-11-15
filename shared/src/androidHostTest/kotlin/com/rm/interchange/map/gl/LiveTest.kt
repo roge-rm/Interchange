@@ -8,6 +8,7 @@ import com.rm.interchange.map.Zoom
 import com.rm.interchange.map.gateDepth
 import com.rm.interchange.map.liveItems
 import com.rm.interchange.map.waitingDepth
+import com.rm.interchange.sim.Signals
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -150,6 +151,26 @@ class LiveTest {
         assertEquals(300f - 20f, b.batch()!!.data[(k.size - 1) * LIVE_FLOATS + 4])
         // Both vehicles are on the ground, so both are cut by what's in front of them.
         assertEquals(listOf(11.5f to 5.6f, 12f to 5.39f), cuts)
+    }
+
+    @Test
+    fun aSignalsBandGoesInRightAfterItAndOnlyForItsKinds() {
+        val (_, b) = builder()
+        b.begin(Zoom.SHARPEST, Zoom.LEVELS[Zoom.SHARPEST], 1f)
+        val items = arrayListOf(
+            floatArrayOf(1f, 10f, 10f, 0f, -1f, 0f, 1f, 1f),
+            floatArrayOf(2f, 40f, 10f, 0f, -1f, Signals.ENTRY + 1f, 2f, 2f),
+            // A cell the sheet doesn't have: no sprite, so no band either.
+            floatArrayOf(2.5f, 55f, 10f, 5f, -1f, Signals.EXIT + 1f, 2f, 2f),
+            floatArrayOf(3f, 70f, 10f, 0f, 0f, 0f, -1f, -1f),
+        )
+        liveItems(items, emptyList(), 128f, b) { _, _, _, _, _, _ -> }
+        val batch = b.batch()!!
+        assertEquals(listOf(LIVE_SPRITE, LIVE_SPRITE, LIVE_SHAPE, LIVE_SHAPE, LIVE_SPRITE), kinds(batch))
+        // On the mast, 4 sharpest pixels wide on the stand point, at the depth the signal drew at.
+        val o = (batch.covers + 2) * LIVE_FLOATS
+        assertEquals(38f, batch.data[o + 4])
+        assertEquals(batch.data[(batch.covers + 1) * LIVE_FLOATS + 2], batch.data[o + 2])
     }
 
     @Test
