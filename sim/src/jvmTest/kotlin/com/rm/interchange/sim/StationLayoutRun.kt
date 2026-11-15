@@ -311,7 +311,10 @@ class StationLayoutRun {
             val ts = (0 until 8).map { train(d, Order.withWait(a, 16), wp) }
             val o = run(ts, 200)
             when {
-                presignals -> say("$name: no S1 criteria")
+                presignals -> verdict(listOf(
+                    "platforms used ${o.byPlatform.size} >= 4" to (o.byPlatform.size >= 4),
+                    "nothing standing over 30 days (${"%.1f".format(o.worstDays)})" to (o.worstDays <= 30.0),
+                ))
                 // Trains take the nearest free platform, as in OpenTTD, so as many are used as are ever needed at once.
                 dense -> verdict(listOf(
                     "platforms used ${o.byPlatform.size} >= most calling at once ${o.mostCalling}" to (o.byPlatform.size >= o.mostCalling),
@@ -455,8 +458,13 @@ class StationLayoutRun {
             blocks(10, 44, 52)
             dump(4, 1, 44, 15)
             val ts = (0 until 7).map { train(d, Order.withWait(a, 16), wp) }
-            run(ts, 200)
-            say("$name: no S1 criteria")
+            val o = run(ts, 200)
+            val second = (o.byPlatform["y13"] ?: 0) + (o.byPlatform["y14"] ?: 0)
+            verdict(listOf(
+                "second group called at $second > 0" to (second > 0),
+                "first group called at ${(o.byPlatform["y10"] ?: 0) + (o.byPlatform["y11"] ?: 0)} > 0" to ((o.byPlatform["y10"] ?: 0) + (o.byPlatform["y11"] ?: 0) > 0),
+                "nothing standing over 30 days (${"%.1f".format(o.worstDays)})" to (o.worstDays <= 30.0),
+            ))
         }
     }
 

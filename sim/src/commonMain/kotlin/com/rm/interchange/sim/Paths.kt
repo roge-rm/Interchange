@@ -167,9 +167,11 @@ private class RailPath(val steps: IntArray, val cost: Int, val resumes: Boolean 
  * The cheapest way from step [from] to where [t] is going. [reserving] is for a train at a path signal, [from] the step
  * past it: up to the next signal a piece another train holds or stands on can't be used and a taken platform isn't a
  * goal, so the first section can be held now; past it a piece another holds costs [HELD_PIECE] more. It then looks no
- * further than [CHOOSE_REACH] past [shortest] and at no more than [CHOOSE_LOOK] places.
+ * further than [CHOOSE_REACH] past [shortest] and at no more than [CHOOSE_LOOK] places. [blocking] is for a train let
+ * in by a block signal, holding nothing: a block with another train in it costs [OCCUPIED_BLOCK] more and a block
+ * signal that would show red [RED_SIGNAL] more, with the same limits.
  */
-private fun World.search(from: Int, t: Train, avoid: Set<Int>? = null, onward: Map<Int, Int>? = null, reserving: Boolean = false, shortest: Int = 0): RailPath? {
+private fun World.search(from: Int, t: Train, avoid: Set<Int>? = null, onward: Map<Int, Int>? = null, reserving: Boolean = false, shortest: Int = 0, blocking: Boolean = false): RailPath? {
     val target = t.target
     if (target == -2) return null
     // Off for a service, or with its home gone, it ends at any depot of its company's it can get into; sent in, only at its own.
@@ -194,8 +196,9 @@ private fun World.search(from: Int, t: Train, avoid: Set<Int>? = null, onward: M
     val first = (a * 4 + Track.opposite(exit)) * 2
     dist[first] = 0
     heap.push(0, first)
-    val most = if (reserving) CHOOSE_LOOK else MAX_LOOK
-    val reach = if (reserving) shortest + CHOOSE_REACH else Int.MAX_VALUE
+    val choosing = reserving || blocking
+    val most = if (choosing) CHOOSE_LOOK else MAX_LOOK
+    val reach = if (choosing) shortest + CHOOSE_REACH else Int.MAX_VALUE
     // The step that came into a place.
     fun stepInto(place: Int): Int {
         if (place == first) return from
@@ -235,7 +238,7 @@ private fun World.search(from: Int, t: Train, avoid: Set<Int>? = null, onward: M
             continue
         }
         if (++looked > most) return found()
-        val came = if (reserving) stepInto(place) else 0
+        val came = if (choosing) stepInto(place) else 0
         for (w in waysIn(nt, entry, level)) {
             val piece = stepPiece(w)
             if (level == 0 && !mayPass(nt, piece, entry)) continue
@@ -253,6 +256,7 @@ private fun World.search(from: Int, t: Train, avoid: Set<Int>? = null, onward: M
                 if (!beyond && !pieceFree(t, w, occupiedTile = false, reserving = true)) continue
                 if (beyond && heldPieceByOther(t, w)) c += HELD_PIECE
             }
+            if (blocking) c += blockCost(t, came, w)
             val n = (na * 4 + Track.opposite(out)) * 2 + if (beyond) 1 else 0
             if (level == 0 && stationTiles.containsKey(nt)) c += 16
             // A platform of the station it's going to with a train on it or held for one costs more, so another is
@@ -372,6 +376,19 @@ internal fun World.platformTaken(t: Train, tile: Int, entry: Int): Boolean {
     }
 }
 
+/**
+ * What running from step [came] on to [w] adds for a train let in by a block signal: [OCCUPIED_BLOCK] for coming
+ * into a block with another train in it, and [RED_SIGNAL] for a block signal there that would show red.
+ */
+private fun World.blockCost(t: Train, came: Int, w: Int): Int {
+    val b = blocks[stepKey(w)] ?: return 0
+    if (b == blocks[stepKey(came)]) return 0
+    var c = if ((blockTrains[b] ?: 0) - (if (b in t.onBlocks) 1 else 0) > 0) OCCUPIED_BLOCK else 0
+    val sig = signalFor(came, w)
+    if (sig >= 0 && !Signals.path(sig) && !blockClear(t, b, Signals.kind(sig), 0)) c += RED_SIGNAL
+    return c
+}
+
 /** Whether a train other than [t] holds step [w]'s piece or one meeting it there. */
 private fun World.heldPieceByOther(t: Train, w: Int): Boolean {
     val piece = stepPiece(w)
@@ -386,14 +403,15 @@ private fun World.heldPieceByOther(t: Train, w: Int): Boolean {
 /**
  * At a path signal, a way on for [t] from step [next] past it, place [at] in its route, to where it's going, whose
  * first section up to the next signal it can hold now: the platform or bay free soonest, or a way round. Its route
- * becomes the steps up to [next] and the new way. False, leaving the route, if there's none.
+ * becomes the steps up to [next] and the new way. False, leaving the route, if there's none. Not [holding], it's at a
+ * block signal that lets it in, and takes the way with the fewest trains in its blocks and red signals on it.
  */
-internal fun World.chooseFrom(t: Train, next: Int, at: Int): Boolean {
+internal fun World.chooseFrom(t: Train, next: Int, at: Int, holding: Boolean = true): Boolean {
     val r = t.route ?: return false
-    if (!pieceFree(t, next, occupiedTile = false, reserving = true)) return false
+    if (holding && !pieceFree(t, next, occupiedTile = false, reserving = true)) return false
     val shortest = wayLeft(t, next, at)
     if (shortest < 0) return false
-    val found = search(next, t, reserving = true, shortest = shortest) ?: return false
+    val found = search(next, t, reserving = holding, shortest = shortest, blocking = !holding) ?: return false
     val steps = found.steps
     if (r.size == at + 1 + steps.size && steps.indices.all { r[at + 1 + it] == steps[it] }) return true
     t.route = r.copyOf(at + 1) + steps
@@ -426,6 +444,12 @@ private fun World.heldByOther(t: Train, tile: Int): Boolean {
 
 /** What a platform already taken adds to a way's cost. */
 private const val TAKEN_PLATFORM = 400
+
+/** What a block with another train in it adds to a way's cost, for a train let in by a block signal. */
+private const val OCCUPIED_BLOCK = 128
+
+/** What a block signal that would show red adds to a way's cost, for a train let in by a block signal. */
+private const val RED_SIGNAL = 160
 
 /** What a piece another train holds past the first signal adds to a way's cost, choosing at a path signal. */
 private const val HELD_PIECE = 32

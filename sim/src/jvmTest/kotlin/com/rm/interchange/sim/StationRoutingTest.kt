@@ -14,7 +14,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
-/** Trains choosing their platform, bay or a way round at a path signal, as they come up to it. */
+/** Trains choosing their platform, bay or a way round at a path signal or a block signal that lets them in. */
 class StationRoutingTest {
     private fun world(): World {
         val w = World(NewGame(64, 48, 1, 1900, towns = 0, industries = 0, weather = false, collisions = true))
@@ -27,6 +27,8 @@ class StationRoutingTest {
     private fun World.piece(x: Int, y: Int, p: Int) = rail(x, y, x, y, p)
     private fun World.path(x: Int, y: Int, p: Int, facing: Int, oneWay: Boolean = false) =
         repeat(if (oneWay) 2 else 1) { apply(Command.Signal(0, x, y, p, facing, Signals.PATH)) }
+
+    private fun World.block(x: Int, y: Int, p: Int, facing: Int, kind: Int) = apply(Command.Signal(0, x, y, p, facing, kind))
 
     private fun World.train(depot: Int, vararg orders: Int, start: Boolean = true): Train {
         apply(Command.BuyTrain(0, depot, roster.engines.first { it.key == "base:american" }.id, roster.engines.first { it.key == "base:coach_wood" }.id, 2))
@@ -200,6 +202,81 @@ class StationRoutingTest {
         w.runUntil(20, "a at the platform") { w.atStation(a) }
         val b = w.train(0, Order.withWait(0, 20))
         w.runUntil(20, "b onto the loop") { !b.inDepot && w.col(b) == 10 && w.row(b) >= 11 }
+    }
+
+    /**
+     * A line east along y = 10 from a depot at x = 2, splitting at x = 20 into rows 10 to [rows].last, into a station at
+     * x = 24 to 29, with a [kind] signal at x = 15 and [platform] signals at x = 23 on each row.
+     */
+    private fun blockThroat(rows: IntRange, kind: Int, platform: Int): World {
+        val w = world()
+        w.apply(Command.Depot(0, 2, 10, XP))
+        w.rail(3, 10, 30, 10, X)
+        w.entryLadder(20, rows)
+        for (y in rows.first + 1..rows.last) w.rail(20 + y - rows.first, y, 30, y, X)
+        w.apply(Command.Station(0, 24, rows.first, 29, rows.last, X))
+        w.block(15, 10, X, XM, kind)
+        for (y in rows) w.block(23, y, X, XM, platform)
+        return w
+    }
+
+    @Test
+    fun anEntrySignalSendsTheTrainToThePlatformWhoseExitIsGreen() {
+        val w = blockThroat(10..11, Signals.ENTRY, Signals.EXIT)
+        val a = w.train(0, Order.withWait(0, 100))
+        w.runUntil(20, "a past the entry signal") { !a.inDepot && w.col(a) >= 17 }
+        // Planned while a is still short of the platforms, so both look free.
+        val b = w.train(0, Order.withWait(0, 20))
+        w.runUntil(5, "b set off") { !b.inDepot && b.route != null }
+        assertEquals(10, stepTile(b.route!!.last()) / w.width, "b planned for row 10")
+        w.runUntil(30, "b at a platform") { w.atStation(b) }
+        assertEquals(10, w.row(a))
+        assertEquals(11, w.row(b))
+    }
+
+    @Test
+    fun aComboSignalCrossesToTheOtherGroupWhenItsOwnIsFull() {
+        // Group one on rows 10 and 11, group two on rows 13 and 14 off a diagonal at x = 12, each behind a combo signal
+        // at x = 16 and exits at x = 23, all behind an entry signal at x = 8.
+        val w = world()
+        w.apply(Command.Depot(0, 2, 10, XP))
+        w.rail(3, 10, 30, 10, X)
+        w.piece(12, 10, W); w.piece(12, 11, E); w.piece(13, 11, W); w.piece(13, 12, E); w.piece(14, 12, W); w.piece(14, 13, E)
+        w.rail(15, 13, 30, 13, X)
+        w.entryLadder(20, 10..11)
+        w.entryLadder(20, 13..14)
+        w.rail(21, 11, 30, 11, X)
+        w.rail(21, 14, 30, 14, X)
+        w.apply(Command.Station(0, 24, 10, 29, 14, X))
+        w.block(8, 10, X, XM, Signals.ENTRY)
+        w.block(16, 10, X, XM, Signals.COMBO)
+        w.block(16, 13, X, XM, Signals.COMBO)
+        for (y in intArrayOf(10, 11, 13, 14)) w.block(23, y, X, XM, Signals.EXIT)
+        val a1 = w.train(0, Order.withWait(0, 100))
+        w.runUntil(20, "a1 at its platform") { w.atStation(a1) }
+        val a2 = w.train(0, Order.withWait(0, 100))
+        w.runUntil(20, "a2 set off") { !a2.inDepot && w.col(a2) >= 12 }
+        val b = w.train(0, Order.withWait(0, 20))
+        w.runUntil(5, "b set off") { !b.inDepot && b.route != null }
+        assertTrue(stepTile(b.route!!.last()) / w.width <= 11, "b planned for group one")
+        w.runUntil(30, "b at a platform") { w.atStation(b) }
+        assertEquals(setOf(10, 11), setOf(w.row(a1), w.row(a2)))
+        assertTrue(w.row(b) >= 13, "b in group two, row ${w.row(b)}")
+    }
+
+    @Test
+    fun aBlockSignalThroatUsesMoreThanOnePlatform() {
+        val w = blockThroat(10..12, Signals.TWO_WAY, Signals.TWO_WAY)
+        // All set off on one tick, so all plan for the same platform.
+        val ts = (0 until 3).map { w.train(0, Order.withWait(0, 100), start = false) }
+        for (t in ts) w.start(t)
+        // The row each first calls at.
+        val rows = HashMap<Int, Int>()
+        w.runUntil(60, "all called") {
+            for (t in ts) if (t.id !in rows && w.atStation(t)) rows[t.id] = w.row(t)
+            rows.size == ts.size
+        }
+        assertEquals(3, rows.values.toSet().size, "rows $rows")
     }
 
     /** The ladder of StationLayoutRun: six platforms off one line, with a ring back round past a depot and a waypoint. */

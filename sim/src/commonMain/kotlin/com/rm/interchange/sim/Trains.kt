@@ -1211,11 +1211,15 @@ private fun World.signalLets(t: Train, signal: Int, next: Int, at: Int, first: B
         return reserveThrough(t, next, at)
     }
     val b = blocks[stepKey(next)] ?: return true
-    return blockClear(t, b, Signals.kind(signal), 0)
+    if (!blockClear(t, b, Signals.kind(signal), 0)) return false
+    // Let in near its goal, it chooses the way behind green signals on the tick the signal comes into reach, as it
+    // pulls away from it, then every CHOOSE_RETRY ticks.
+    if ((first || t.speed == 0 || (tick + t.id) % CHOOSE_RETRY == 0L) && wayLeft(t, next, at) >= 0) chooseFrom(t, next, at, holding = false)
+    return true
 }
 
 /** Whether block [b] has no train but [t] in it and, for an entry or combo signal ([kind]) into it, a clear way out. */
-private fun World.blockClear(t: Train, b: Int, kind: Int, depth: Int): Boolean {
+internal fun World.blockClear(t: Train, b: Int, kind: Int, depth: Int): Boolean {
     if ((blockTrains[b] ?: 0) - (if (b in t.onBlocks) 1 else 0) > 0) return false
     if ((kind != Signals.ENTRY && kind != Signals.COMBO) || depth > MAX_PRESIGNALS) return true
     val outs = exits[b].orEmpty().filter { it[0] == Signals.EXIT || it[0] == Signals.COMBO }
