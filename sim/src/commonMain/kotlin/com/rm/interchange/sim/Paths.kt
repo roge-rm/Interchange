@@ -7,8 +7,11 @@ package com.rm.interchange.sim
  * signals are kept to. Costs are the length of track run, with a little more
  * for running through someone else's platforms.
  *
- * It only reads the track, never where other trains are, so every train's
- * route can be found at once on the worker threads.
+ * The full search reads where other trains stand and what they hold only to
+ * weigh taken platforms, and nothing moves while it runs, so every train's
+ * route can be found at once on the worker threads. [chooseFrom] reads them to
+ * choose a way it can hold now, so it runs only in the moves, one train after
+ * another.
  */
 
 /** A way ahead: the steps after the train's nose, and whether the train has to turn round first. */
@@ -160,7 +163,13 @@ fun World.follows(cur: Int, next: Int): Boolean {
 
 private class RailPath(val steps: IntArray, val cost: Int, val resumes: Boolean = true)
 
-private fun World.search(from: Int, t: Train, avoid: Set<Int>? = null, onward: Map<Int, Int>? = null): RailPath? {
+/**
+ * The cheapest way from step [from] to where [t] is going. [reserving] is for a train at a path signal, [from] the step
+ * past it: up to the next signal a piece another train holds or stands on can't be used and a taken platform isn't a
+ * goal, so the first section can be held now; past it a piece another holds costs [HELD_PIECE] more. It then looks no
+ * further than [CHOOSE_REACH] past [shortest] and at no more than [CHOOSE_LOOK] places.
+ */
+private fun World.search(from: Int, t: Train, avoid: Set<Int>? = null, onward: Map<Int, Int>? = null, reserving: Boolean = false, shortest: Int = 0): RailPath? {
     val target = t.target
     if (target == -2) return null
     // Off for a service, or with its home gone, it ends at any depot of its company's it can get into; sent in, only at its own.
@@ -177,13 +186,23 @@ private fun World.search(from: Int, t: Train, avoid: Set<Int>? = null, onward: M
     // How each place was reached: the place before, times 8, plus the piece run along from it.
     val prev = HashMap<Int, Long>()
     val heap = Heap()
-    // A place is (tile * 2 + level) * 4 + the edge come in at.
+    // A place is ((tile * 2 + level) * 4 + the edge come in at) * 2 + 1 if the way has passed a signal, only ever
+    // set when [reserving].
     val exit = stepExit(from)
     val a = across(stepTile(from), stepLevel(from), exit)
     if (a < 0) return null
-    val first = a * 4 + Track.opposite(exit)
+    val first = (a * 4 + Track.opposite(exit)) * 2
     dist[first] = 0
     heap.push(0, first)
+    val most = if (reserving) CHOOSE_LOOK else MAX_LOOK
+    val reach = if (reserving) shortest + CHOOSE_REACH else Int.MAX_VALUE
+    // The step that came into a place.
+    fun stepInto(place: Int): Int {
+        if (place == first) return from
+        val p = prev.getValue(place)
+        val f = (p ushr 3).toInt() / 2
+        return step(f / 8, (p and 7).toInt(), f % 4, (f / 4) % 2)
+    }
     var looked = 0
     var nearest = -1
     var nearestCost = 0
@@ -197,21 +216,26 @@ private fun World.search(from: Int, t: Train, avoid: Set<Int>? = null, onward: M
     while (heap.size > 0) {
         val top = heap.pop()
         val cost = (top ushr 32).toInt()
-        val node = top.toInt()
-        if (cost > (dist[node] ?: Int.MAX_VALUE)) continue
+        val place = top.toInt()
+        if (cost > (dist[place] ?: Int.MAX_VALUE)) continue
+        val node = place / 2
+        val passed = place % 2 == 1
         val nt = node / 8
         val level = (node / 4) % 2
         val entry = node % 4
-        if (cost >= bestCost) break
+        if (cost >= bestCost || cost > reach) break
         if (level == 0 && if (target >= 0) stationTiles[nt] == target else depotGoal(nt, entry)) {
-            if (onward == null) return RailPath(path(first, node, prev, target), cost)
-            if (nearest < 0) { nearest = node; nearestCost = cost }
+            // A platform taken in the first section can't be held now, so it's no goal.
+            if (reserving && target >= 0 && !passed && signalFor(stepInto(place), platformStep(nt, entry)) < 0 && platformTaken(t, nt, entry)) continue
+            if (onward == null) return RailPath(path(first, place, prev, target), cost)
+            if (nearest < 0) { nearest = place; nearestCost = cost }
             onward[nt]?.let { after ->
-                if (cost + after < bestCost) { best = node; bestCost = cost + after }
+                if (cost + after < bestCost) { best = place; bestCost = cost + after }
             }
             continue
         }
-        if (++looked > MAX_LOOK) return found()
+        if (++looked > most) return found()
+        val came = if (reserving) stepInto(place) else 0
         for (w in waysIn(nt, entry, level)) {
             val piece = stepPiece(w)
             if (level == 0 && !mayPass(nt, piece, entry)) continue
@@ -222,15 +246,25 @@ private fun World.search(from: Int, t: Train, avoid: Set<Int>? = null, onward: M
             val out = Track.other(piece, entry)
             val na = across(nt, level, out)
             if (na < 0 || piecesAt(na / 2, na % 2) == 0) continue
-            val n = na * 4 + Track.opposite(out)
+            var beyond = passed
             var c = cost + Track.length(piece)
+            if (reserving) {
+                if (!beyond && signalFor(came, w) >= 0) beyond = true
+                if (!beyond && !pieceFree(t, w, occupiedTile = false, reserving = true)) continue
+                if (beyond && heldPieceByOther(t, w)) c += HELD_PIECE
+            }
+            val n = (na * 4 + Track.opposite(out)) * 2 + if (beyond) 1 else 0
             if (level == 0 && stationTiles.containsKey(nt)) c += 16
-            // A platform of the station it's going to with a train on it or held for one costs more, so another is taken if there is one.
+            // A platform of the station it's going to with a train on it or held for one costs more, so another is
+            // taken if there is one. In the first section a taken one isn't a goal at all.
             val into = na / 2
-            if (na % 2 == 0 && target >= 0 && stationTiles[into] == target && ((tileTrains[into] ?: 0) - (if (into in t.onTiles) 1 else 0) > 0 || heldByOther(t, into))) c += TAKEN_PLATFORM
+            if (na % 2 == 0 && target >= 0 && stationTiles[into] == target) {
+                val inAt = Track.opposite(out)
+                if ((!reserving || beyond || signalFor(w, platformStep(into, inAt)) >= 0) && platformTaken(t, into, inAt)) c += TAKEN_PLATFORM
+            }
             if (c < (dist[n] ?: Int.MAX_VALUE)) {
                 dist[n] = c
-                prev[n] = (node.toLong() shl 3) or Track.index(piece).toLong()
+                prev[n] = (place.toLong() shl 3) or Track.index(piece).toLong()
                 heap.push(c, n)
             }
         }
@@ -280,7 +314,7 @@ private fun World.railOnwardCosts(t: Train, target: Int): Map<Int, Int> {
             var c = cost + Track.length(piece)
             if (level == 0 && stationTiles.containsKey(tile)) c += 16
             val into = node / 8
-            if (node / 4 % 2 == 0 && stationTiles[into] == target && ((tileTrains[into] ?: 0) - (if (into in t.onTiles) 1 else 0) > 0 || heldByOther(t, into))) c += TAKEN_PLATFORM
+            if (node / 4 % 2 == 0 && stationTiles[into] == target && platformTaken(t, into, node % 4)) c += TAKEN_PLATFORM
             val prev = a * 4 + entry
             if (c < (dist[prev] ?: Int.MAX_VALUE)) {
                 dist[prev] = c
@@ -294,18 +328,16 @@ private fun World.railOnwardCosts(t: Train, target: Int): Map<Int, Int> {
 /** The steps from [first] to [goal], then on to the far end of the platform if it's a station. */
 private fun World.path(first: Int, goal: Int, prev: HashMap<Int, Long>, target: Int): IntArray {
     val back = ArrayList<Int>()
-    var node = goal
-    while (node != first) {
-        val p = prev.getValue(node)
+    var place = goal
+    while (place != first) {
+        val p = prev.getValue(place)
         val from = (p ushr 3).toInt()
-        back += step(from / 8, (p and 7).toInt(), from % 4, (from / 4) % 2)
-        node = from
+        val f = from / 2
+        back += step(f / 8, (p and 7).toInt(), f % 4, (f / 4) % 2)
+        place = from
     }
     back.reverse()
-    val goalTile = goal / 8
-    val goalEntry = goal % 4
-    val piece = waysIn(goalTile, goalEntry).firstOrNull()?.let { stepPiece(it) } ?: Track.straight(goalEntry)
-    back += step(goalTile, Track.index(piece), goalEntry)
+    back += platformStep(goal / 16, goal / 2 % 4)
     if (target >= 0) {
         // Along the platform to its end.
         while (true) {
@@ -317,6 +349,75 @@ private fun World.path(first: Int, goal: Int, prev: HashMap<Int, Long>, target: 
     return back.toIntArray()
 }
 
+/** The step [path] takes onto [tile] come in at [entry], at ground level: the first piece there that edge leads onto. */
+private fun World.platformStep(tile: Int, entry: Int): Int {
+    val piece = waysIn(tile, entry).firstOrNull()?.let { stepPiece(it) } ?: Track.straight(entry)
+    return step(tile, Track.index(piece), entry)
+}
+
+/**
+ * Whether the platform come into at [tile] by [entry] is taken for [t]: any tile of it, from there to its end as
+ * [path] runs along it, with another train on it or holding a piece of it.
+ */
+internal fun World.platformTaken(t: Train, tile: Int, entry: Int): Boolean {
+    val station = stationTiles[tile] ?: return false
+    var s = platformStep(tile, entry)
+    var n = 0
+    while (true) {
+        val k = stepTile(s)
+        if ((tileTrains[k] ?: 0) - (if (k in t.onTiles) 1 else 0) > 0 || heldByOther(t, k)) return true
+        val nx = onlyWayOn(s)
+        if (nx < 0 || stepLevel(nx) != 0 || stationTiles[stepTile(nx)] != station || ++n > 4 * MAX_STATION) return false
+        s = nx
+    }
+}
+
+/** Whether a train other than [t] holds step [w]'s piece or one meeting it there. */
+private fun World.heldPieceByOther(t: Train, w: Int): Boolean {
+    val piece = stepPiece(w)
+    for (q in Track.PIECES) {
+        if (q != piece && !Track.touch(q, piece)) continue
+        val id = reserved[pieceKey(stepTile(w), q, stepLevel(w))] ?: continue
+        if (id != t.id) return true
+    }
+    return false
+}
+
+/**
+ * At a path signal, a way on for [t] from step [next] past it, place [at] in its route, to where it's going, whose
+ * first section up to the next signal it can hold now: the platform or bay free soonest, or a way round. Its route
+ * becomes the steps up to [next] and the new way. False, leaving the route, if there's none.
+ */
+internal fun World.chooseFrom(t: Train, next: Int, at: Int): Boolean {
+    val r = t.route ?: return false
+    if (!pieceFree(t, next, occupiedTile = false, reserving = true)) return false
+    val shortest = wayLeft(t, next, at)
+    if (shortest < 0) return false
+    val found = search(next, t, reserving = true, shortest = shortest) ?: return false
+    val steps = found.steps
+    if (r.size == at + 1 + steps.size && steps.indices.all { r[at + 1 + it] == steps[it] }) return true
+    t.route = r.copyOf(at + 1) + steps
+    return true
+}
+
+/**
+ * How far [t]'s route runs on past step [next], place [at] in it, to the end, in sixteenths of a tile with station
+ * tiles' extra, or -1 if [t] doesn't choose its way at the path signal before [next]: it does when the route ends at
+ * its station or its own depot within [CHOOSE_NEAR] and [next] isn't on that station already.
+ */
+internal fun World.wayLeft(t: Train, next: Int, at: Int): Int {
+    val r = t.route ?: return -1
+    val target = t.target
+    if (at >= r.size || r[at] != next || target == -2 || target == -1 && anyDepot(t)) return -1
+    if (target >= 0 && stationTiles[stepTile(next)] == target) return -1
+    var left = 0
+    for (k in at + 1 until r.size) {
+        left += Track.length(stepPiece(r[k])) + if (stepLevel(r[k]) == 0 && stationTiles.containsKey(stepTile(r[k]))) 16 else 0
+        if (left > CHOOSE_NEAR) return -1
+    }
+    return left
+}
+
 /** Whether a train other than [t] holds any piece of [tile]. */
 private fun World.heldByOther(t: Train, tile: Int): Boolean {
     for (q in Track.PIECES) reserved[pieceKey(tile, q)]?.let { if (it != t.id) return true }
@@ -325,6 +426,18 @@ private fun World.heldByOther(t: Train, tile: Int): Boolean {
 
 /** What a platform already taken adds to a way's cost. */
 private const val TAKEN_PLATFORM = 400
+
+/** What a piece another train holds past the first signal adds to a way's cost, choosing at a path signal. */
+private const val HELD_PIECE = 32
+
+/** How much further than its planned way a train at a path signal looks for one it can hold: 64 tiles. */
+private const val CHOOSE_REACH = 64 * 16
+
+/** How near its goal a train's route has to end for it to choose its way at a path signal: 64 tiles. */
+private const val CHOOSE_NEAR = 64 * 16
+
+/** The most places a search at a path signal looks at. */
+private const val CHOOSE_LOOK = 20_000
 
 /** The most places a search looks at before giving up. */
 private const val MAX_LOOK = 200_000

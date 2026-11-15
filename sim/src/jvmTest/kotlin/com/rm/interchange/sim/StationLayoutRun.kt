@@ -17,8 +17,9 @@ import kotlin.test.Test
  * Builds the station layouts of OpenTTD's railway station manual on flat maps and runs trains through them: ladder
  * throats, a three-way split, a terminus, drive-thru, waiting bays, a double entrance on presignals, a bag station and
  * a bridge over a throat. The ring back round has a signal every few tiles, so it holds more trains than the station;
- * ladderSparse leaves them out, and jams. Prints, for each, what the game refused to build, which platforms trains called at, where
- * they stood held and for how long, depot visits and any train that stood still too long. Run with
+ * ladderSparse leaves them out. Prints, for each, what the game refused to build, which platforms trains called at, where
+ * they stood held and for how long, depot visits and any train that stood still too long, then a PASS or FAIL line
+ * against what station routing has to do for it. Run with
  * -Pinterchange.layouts=all (or a comma list of names); the table also goes to sim/build/layouts.txt. Skipped without it.
  */
 class StationLayoutRun {
@@ -192,7 +193,7 @@ class StationLayoutRun {
          * (days in all), depot visits, the longest any train stood still away from a platform and its depot, crashes,
          * and, for [watch], how often a train's front came onto each of those tiles.
          */
-        fun run(trains: List<Train>, days: Int, watch: List<Int> = emptyList(), groups: Map<String, List<Train>> = emptyMap()) {
+        fun run(trains: List<Train>, days: Int, watch: List<Int> = emptyList(), groups: Map<String, List<Train>> = emptyMap()): Outcome {
             for (p in problems) say("$name: REFUSED $p")
             val calls = HashMap<Int, java.util.TreeMap<String, Int>>()
             val callsBy = HashMap<Int, Int>()
@@ -208,9 +209,11 @@ class StationLayoutRun {
             val wasWaiting = HashMap<Int, Boolean>()
             val wasIn = HashMap<Int, Boolean>()
             val lastFront = HashMap<Int, Int>()
+            var mostCalling = 0
             val ticks = days * Calendar.TICKS_PER_DAY
             for (tick in 0 until ticks) {
                 w.step()
+                mostCalling = maxOf(mostCalling, trains.count { w.trains.getOrNull(it.id) === it && it.waiting > 0 && !it.inDepot && w.stationTiles.containsKey(front(it)) })
                 for (t in trains) {
                     if (w.trains.getOrNull(t.id) !== t) continue
                     val f = front(t)
@@ -241,6 +244,8 @@ class StationLayoutRun {
             for (t in trains) if ((still[t.id] ?: 0) > 30 * Calendar.TICKS_PER_DAY) say("$name: standing train ${t.id} front ${xy(front(t))} held ${t.held} target ${t.target} route ${t.route?.size} speed ${t.speed} turnRound ${t.turnRound} stuck ${t.stuck} aside ${t.aside} routeAt ${t.routeAt} route ${t.route?.joinToString(" ") { xy(stepTile(it)) }} ahead ${walk(t)} broken ${t.brokenFor} running ${t.running} waiting ${t.waiting} headOn ${t.headOn} holds ${w.reserved.entries.filter { it.value == t.id }.map { xy(it.key / 8) }.distinct()}")
             // A train standing at a red signal with a route but not held never plans again; drop its route and see if that frees things.
             val unheld = trains.filter { (still[it.id] ?: 0) > 30 * Calendar.TICKS_PER_DAY && !it.held && it.route != null }
+            val unheldFired = unheld.isNotEmpty()
+            val crashes = w.crashes.list.size
             if (unheld.isNotEmpty()) {
                 for (t in unheld) t.route = null
                 val before = trains.map { "${it.steps.lastOrNull()}:${it.nose}" }
@@ -249,14 +254,35 @@ class StationLayoutRun {
                 say("$name: routes of ${unheld.map { it.id }} dropped by hand: 10 days on, ${unheld.joinToString { "train ${it.id} at ${xy(front(it))} held ${it.held} ahead ${walk(it)} new route ${it.route?.joinToString(" ") { r -> xy(stepTile(r)) }} plan ${w.planRoute(it)?.let { p -> "behind ${p.behind} " + p.steps.joinToString(" ") { r -> xy(stepTile(r)) } }} lostUntil-tick ${it.lostUntil - w.tick} order ${it.order} orders ${it.orders}" }}, $moved/${trains.size} trains moved")
             }
             for ((st, m) in calls.toSortedMap()) say("$name: station $st calls by platform $m")
-            say("$name: calls per train ${trains.map { callsBy[it.id] ?: 0 }}")
+            say("$name: calls per train ${trains.map { callsBy[it.id] ?: 0 }}; most calling at once $mostCalling")
             say("$name: held days by tile ${held.entries.sortedByDescending { it.value }.take(8).joinToString { "${xy(it.key)} %.1f".format(it.value.toDouble() / Calendar.TICKS_PER_DAY) }}")
             say("$name: depot entries by depot $depotIn")
             if (watch.isNotEmpty()) say("$name: fronts onto ${watch.joinToString { "${xy(it)} ${watched[it] ?: 0}" }}")
             for ((g, ts) in groups) say("$name: $g visited stations ${ts.map { visits[it.id]?.sorted() ?: emptyList() }}")
             say("$name: longest standing still ${"%.1f".format(worst.toDouble() / Calendar.TICKS_PER_DAY)} days ($worstAt); still over 30 days at the end: $stuckNow; crashes ${w.crashes.list.size}; trains left ${trains.count { w.trains.getOrNull(it.id) === it }}/${trains.size}")
+            return Outcome(calls.values.flatMap { it.entries }.associate { it.key to it.value }, callsBy.values.sum(), worst.toDouble() / Calendar.TICKS_PER_DAY, stuckNow, unheldFired, crashes, watch.associateWith { watched[it] ?: 0 })
         }
+
+        /** Says PASS or FAIL for the layout, with the checks that failed. */
+        fun verdict(checks: List<Pair<String, Boolean>>) {
+            val failed = checks.filter { !it.second }.map { it.first }
+            say(if (failed.isEmpty()) "$name: PASS ${checks.joinToString { it.first }}" else "$name: FAIL ${failed.joinToString()}")
+        }
+
+        /**
+         * As before free platform choice or better: as many calls as [calls], none standing still longer than
+         * [longest] days, nothing still standing at the end and no crashes.
+         */
+        fun noWorse(o: Outcome, calls: Int, longest: Double) = verdict(listOf(
+            "calls ${o.calls} >= $calls" to (o.calls >= calls),
+            "longest standing ${"%.1f".format(o.worstDays)} <= $longest days" to (o.worstDays <= longest),
+            "none still standing (${o.stuckNow})" to (o.stuckNow == 0),
+            "no crashes (${o.crashes})" to (o.crashes == 0),
+        ))
     }
+
+    /** What a run gave: calls by platform label, calls in all, the longest standing still in days and the rest. */
+    private class Outcome(val byPlatform: Map<String, Int>, val calls: Int, val worstDays: Double, val stuckNow: Int, val unheld: Boolean, val crashes: Int, val watched: Map<Int, Int>)
 
     /** Six through platforms fed by a diagonal ladder off one eastbound line and merged out by another. */
     private fun ladder(presignals: Boolean, dense: Boolean = true) {
@@ -283,7 +309,18 @@ class StationLayoutRun {
             if (dense) blocks(10, 44, 52)
             dump(4, 1, 44, 16)
             val ts = (0 until 8).map { train(d, Order.withWait(a, 16), wp) }
-            run(ts, 200)
+            val o = run(ts, 200)
+            when {
+                presignals -> say("$name: no S1 criteria")
+                dense -> verdict(listOf(
+                    "every platform y10 to y15 called at ${o.byPlatform}" to (10..15).all { (o.byPlatform["y$it"] ?: 0) > 0 },
+                    "nothing standing over 30 days (${"%.1f".format(o.worstDays)})" to (o.worstDays <= 30.0),
+                ))
+                else -> verdict(listOf(
+                    "none still standing over 30 days (${o.stuckNow})" to (o.stuckNow == 0),
+                    "unheld branch never fired" to !o.unheld,
+                ))
+            }
         }
     }
 
@@ -306,7 +343,7 @@ class StationLayoutRun {
             say("$name: split (10,8) holds ${w.trackAt(10, 8)} (Y+N+E = ${Y or N or E}), crossing (10,9) holds ${w.trackAt(10, 9)}")
             dump(8, 1, 40, 11)
             val ts = (0 until 5).map { train(d, Order.withWait(a, 16), wp) }
-            run(ts, 200, watch = listOf(w.index(11, 8), w.index(11, 9), w.index(11, 10)))
+            noWorse(run(ts, 200, watch = listOf(w.index(11, 8), w.index(11, 9), w.index(11, 10))), 11, 19.3)
         }
     }
 
@@ -339,7 +376,7 @@ class StationLayoutRun {
             say("$name: escape depot $escape, spur tile (11,10) holds ${w.trackAt(11, 10)}")
             dump(3, 7, 28, 16)
             val ts = (0 until 6).map { train(d, Order.withWait(a, 12), wp) }
-            run(ts, 200)
+            noWorse(run(ts, 200), 11, 73.0)
         }
     }
 
@@ -360,7 +397,7 @@ class StationLayoutRun {
             dump(4, 1, 44, 13)
             val stop = (0 until 3).map { train(d, Order.withWait(a, 16), wp) }
             val pass = (0 until 3).map { train(d, Order.withWait(b, 0), Order.withWait(c, 0)) }
-            run(stop + pass, 200, groups = mapOf("stopping" to stop, "non-stop" to pass))
+            noWorse(run(stop + pass, 200, groups = mapOf("stopping" to stop, "non-stop" to pass)), 20, 16.0)
         }
     }
 
@@ -384,7 +421,11 @@ class StationLayoutRun {
             sig(52, 10, X, XM, Signals.PATH, true)
             dump(4, 1, 50, 13)
             val ts = (0 until 6).map { train(d, Order.withWait(a, 16), wp) }
-            run(ts, 200, watch = (10..12).map { w.index(20, it) })
+            val o = run(ts, 200, watch = (10..12).map { w.index(20, it) })
+            verdict(listOf(
+                "fronts onto (20,11) ${o.watched[w.index(20, 11)]}" to ((o.watched[w.index(20, 11)] ?: 0) > 0),
+                "fronts onto (20,12) ${o.watched[w.index(20, 12)]}" to ((o.watched[w.index(20, 12)] ?: 0) > 0),
+            ))
         }
     }
 
@@ -413,6 +454,7 @@ class StationLayoutRun {
             dump(4, 1, 44, 15)
             val ts = (0 until 7).map { train(d, Order.withWait(a, 16), wp) }
             run(ts, 200)
+            say("$name: no S1 criteria")
         }
     }
 
@@ -432,7 +474,7 @@ class StationLayoutRun {
             say("$name: wye (15,10) holds ${w.trackAt(15, 10)} (X+W+S = ${X or W or S})")
             dump(4, 1, 24, 17)
             val ts = (0 until 3).map { train(d, Order.withWait(a, 6), wp) }
-            run(ts, 150, watch = listOf(w.index(14, 10), w.index(16, 10)))
+            noWorse(run(ts, 150, watch = listOf(w.index(14, 10), w.index(16, 10))), 5, 12.2)
         }
     }
 
@@ -447,6 +489,7 @@ class StationLayoutRun {
             w.apply(c)
             say("$name: flat-land bridge over track: cost $cost, spans ${w.spans.count { it != null }}, deck tiles ${w.deck.size}")
             for (p in problems) say("$name: REFUSED $p")
+            say("$name: no S1 criteria")
         }
     }
 }

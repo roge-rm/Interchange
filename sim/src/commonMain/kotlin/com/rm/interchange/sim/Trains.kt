@@ -610,6 +610,7 @@ private fun World.clearWreck(t: Train) {
 private fun World.anyWreck() = trains.any { it != null && it.wreckedFor > 0 }
 
 private fun World.drive(t: Train) {
+    val wasHeld = t.held
     t.held = false
     t.curveKmh = 0
     if (t.aside >= 0 && ++t.asideTicks >= ASIDE_WAIT) {
@@ -647,8 +648,9 @@ private fun World.drive(t: Train) {
         return
     }
     if (t.brokenFor > 0) {
-        // Broken down: it rolls to a stand and waits for the fitters.
+        // Broken down: it rolls to a stand and waits for the fitters, still held if it was stood at a signal or train.
         t.brokenFor--
+        t.held = wasHeld && t.speed == 0
         t.speed = (t.speed - BRAKE).coerceAtLeast(0)
         if (t.speed > 0) advance(t, t.speed / 16, freeAhead(t).first)
         else if (atDoor(t)) {
@@ -743,8 +745,8 @@ private fun World.drive(t: Train) {
         t.held = stop == Stop.TRAIN || stop == Stop.SIGNAL
         if ((stop == Stop.TRAIN || stop == Stop.SIGNAL) && tick % HEAD_ON_CHECK == 0L && headOnWait(t)) return
         when (stop) {
-            Stop.SIGNAL -> if (tick % PATH_RETRY == 0L && t.route != null && t.aside < 0) {
-                // Held at a signal: look again for a way, another platform perhaps.
+            Stop.SIGNAL -> if (tick % PATH_RETRY == 0L && t.route != null && t.aside < 0 && !choosesHere(t)) {
+                // Held at a signal it doesn't choose its way at: look again for a way, another platform perhaps.
                 t.route = null
                 releaseAhead(t)
             }
@@ -761,6 +763,15 @@ private fun World.drive(t: Train) {
             else -> {}
         }
     }
+}
+
+/** Whether [t], standing at a signal, is at a path signal where it chooses its way, so keeps its route. */
+private fun World.choosesHere(t: Train): Boolean {
+    val cur = t.steps.last()
+    val next = nextFrom(t, cur, t.routeAt)
+    if (next < 0) return false
+    val sig = signalFor(cur, next)
+    return sig >= 0 && Signals.path(sig) && wayLeft(t, next, t.routeAt) >= 0
 }
 
 /**
@@ -1179,7 +1190,7 @@ fun World.waysIn(tile: Int, entry: Int, level: Int = 0): IntArray {
 }
 
 /** The signal that a train going from step [cur] to [next] comes to, packed, or -1. */
-private fun World.signalFor(cur: Int, next: Int): Int {
+internal fun World.signalFor(cur: Int, next: Int): Int {
     val mine = if (stepLevel(cur) == 0) signalAt(stepTile(cur), stepPiece(cur)) else -1
     if (mine >= 0 && Signals.facing(mine) == stepExit(cur) && !Signals.oneWay(mine)) return mine
     val theirs = if (stepLevel(next) == 0) signalAt(stepTile(next), stepPiece(next)) else -1
@@ -1192,7 +1203,13 @@ private fun World.signalFor(cur: Int, next: Int): Int {
  * and for an entry or combo signal a way out of it too.
  */
 private fun World.signalLets(t: Train, signal: Int, next: Int, at: Int): Boolean {
-    if (Signals.path(signal)) return reserveThrough(t, next, at)
+    if (Signals.path(signal)) {
+        if (reserved[stepKey(next)] == t.id) return true
+        // Near its goal it chooses a way it can hold now as it comes up to the signal, and while it stands there looks
+        // again every CHOOSE_RETRY ticks, trying the way it has in between.
+        if ((t.speed > 0 || (tick + t.id) % CHOOSE_RETRY == 0L) && wayLeft(t, next, at) >= 0) chooseFrom(t, next, at)
+        return reserveThrough(t, next, at)
+    }
     val b = blocks[stepKey(next)] ?: return true
     return blockClear(t, b, Signals.kind(signal), 0)
 }
@@ -1209,7 +1226,7 @@ private fun World.blockClear(t: Train, b: Int, kind: Int, depth: Int): Boolean {
  * Whether step [s]'s piece is free for train [t]: neither it nor a piece crossing it held or run on by another train,
  * nor, if [occupiedTile], the tile. A path signal [reserving] the way always looks for trains on it.
  */
-private fun World.pieceFree(t: Train, s: Int, occupiedTile: Boolean, reserving: Boolean = false): Boolean {
+internal fun World.pieceFree(t: Train, s: Int, occupiedTile: Boolean, reserving: Boolean = false): Boolean {
     val tile = stepTile(s)
     val level = stepLevel(s)
     val piece = stepPiece(s)
@@ -1477,6 +1494,9 @@ const val HEAD_ON_WAIT = Calendar.TICKS_PER_DAY
 const val ASIDE_WAIT = 8 * Calendar.TICKS_PER_DAY
 /** Ticks a train waits at a path signal before looking for another way, to a free platform say. */
 const val PATH_RETRY = 128L
+
+/** How often a train standing at a path signal near its goal looks again for a way it can hold, in ticks. */
+const val CHOOSE_RETRY = 16L
 
 /** How hard trains brake, in speed units a tick. */
 const val BRAKE = 40
