@@ -27,12 +27,16 @@ class PhysicsTest {
         return w to t
     }
 
-    /** The fastest the train goes, in km/h, while its nose is between tiles [from] and [until] along x. */
+    /**
+     * The fastest the train goes, in km/h, while its nose is between tiles [from] and [until] along x on its way east.
+     * Its way back west, to turn in the depot and call again, doesn't count.
+     */
     private fun topSpeed(w: World, t: Train, from: Int, until: Int): Int {
         var top = 0
         repeat(6000) {
             w.step()
             val x = stepTile(t.steps.lastOrNull() ?: return@repeat) % w.width
+            if (!t.inDepot && x >= until) return top
             if (!t.inDepot && x in from until until) top = maxOf(top, t.speed * 2700 / 65536)
         }
         return top

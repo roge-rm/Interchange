@@ -46,7 +46,13 @@ class SnowTest {
         w.apply(Command.BuyTrain(0, 0, w.roster.engines.first { it.key == "base:consolidation" }.id, wedge.id, 1))
         w.apply(Command.TrainOrder(0, 0, Command.TrainOrder.ORDERS, intArrayOf(1)))
         w.apply(Command.TrainOrder(0, 0, Command.TrainOrder.START_STOP))
-        repeat(4000) { w.step() }
+        // Over the snow once: it's looked at when the train calls, before it goes out and back to call again.
+        val t = w.trains[0]!!
+        var ticks = 0
+        while (!(t.waiting > 0 && w.stationTiles[stepTile(t.steps.last())] == 1)) {
+            w.step()
+            assertTrue(++ticks < 4000, "never got to the station")
+        }
         val left = u(w.weather.snow[w.index(20, 10)])
         assertEquals(140 - WEDGE_CLEARS, left)
     }
