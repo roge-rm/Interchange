@@ -226,6 +226,7 @@ private fun World.railPath(c: Company, a: Terminus, b: Terminus, clearing: Boole
             heap.push((ng + h(n)).toLong() shl 32 or ns.toLong())
         }
     }
+    if (expanded >= limit) scratch.ranOut++
     return null
 }
 
@@ -583,7 +584,9 @@ internal fun World.tryRail(
     val clearing = passengers && !human(c.id)
     val years = if (payback > 0) payback else ANY_PAYBACK
     val scratch = RailScratch(width * height)
-    for (a in termini(c, sa, true, passengers, clearing, loose)) for (b in termini(c, sb, false, passengers, clearing, loose)) {
+    pairs@ for (a in termini(c, sa, true, passengers, clearing, loose)) for (b in termini(c, sb, false, passengers, clearing, loose)) {
+        // A computer company stops once a few searches to the far site have run out of steps, as the rest mostly do too.
+        if (!loose && scratch.ranOut >= RAN_OUT_TRIES) break@pairs
         // A computer company runs feeder buses from the middle of each town its platforms don't reach. Those riding
         // them go to either station by its people and nearness, as passengers choose, and only those for the far
         // one take the train.
@@ -1051,6 +1054,8 @@ private const val RAIL_HOUSE = 40
 /** A bridge tile costs the search this many times a tile of track on the ground. */
 private const val RAIL_BRIDGE = 4
 private const val RAIL_PATH_LIMIT = 120_000
+/** Searches for one line that run out of steps before a computer company gives up on it. */
+private const val RAN_OUT_TRIES = 2
 /** Maps up to this many tiles keep the path search's states in plain arrays. */
 private const val FLAT_TILES = 256 * 256
 /** For the scripted test player: the most steps searched, and a load big enough to fill the platforms. */
@@ -1073,6 +1078,8 @@ private class RailScratch(tiles: Int) {
     val plainSteps by lazy { IntMap(if (flat) tiles * 16 else 0) }
     val heap = LongHeap()
     val floods = HashMap<Pair<Terminus, Boolean>, IntMap?>()
+    /** Searches that ran out of steps. */
+    var ranOut = 0
 }
 
 /**
