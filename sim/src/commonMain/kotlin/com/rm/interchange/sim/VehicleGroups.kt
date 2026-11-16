@@ -18,7 +18,10 @@ internal fun World.groupVehicles(kind: Int): List<Carrier?> = when (kind) {
 
 internal fun World.pruneVehicleGroup(owner: Int, kind: Int, id: Int) {
     if (id < 0 || groupVehicles(kind).any { it != null && it.owner == owner && it.group == id }) return
-    companies.getOrNull(owner)?.groups?.getOrNull(kind)?.removeAll { it.id == id }
+    val c = companies.getOrNull(owner) ?: return
+    c.groups.getOrNull(kind)?.removeAll { it.id == id }
+    // Its rules go with it, so a new group given its id doesn't take them on.
+    if (c.upgrades.removeAll { it.kind == kind && it.group == id }) refreshUpgrades(owner, kind)
 }
 
 internal fun World.setVehicleGroup(company: Company, kind: Int, vehicle: Carrier, id: Int?) {

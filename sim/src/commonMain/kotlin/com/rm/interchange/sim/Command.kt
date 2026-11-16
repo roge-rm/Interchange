@@ -144,6 +144,15 @@ sealed interface Command {
     /** Autorenew on or off, [months] work months from the end of a vehicle's life (before if negative), keeping [floor] dollars in hand. */
     data class SetAutorenew(override val company: Int, val on: Boolean, val months: Int, val floor: Long) : Command
 
+    /**
+     * Adds an upgrade rule: vehicles of [kind] ([CopyVehicle]'s kinds) of model [from] in [group], -1 for the whole
+     * fleet, become [to]. One there already for that kind, group and model is changed to [to]; [remove] takes it out.
+     */
+    data class Upgrade(override val company: Int, val kind: Int, val from: Int, val to: Int, val group: Int = -1, val remove: Boolean = false) : Command
+
+    /** Upgrades by the company's rules on or off. */
+    data class SetUpgrade(override val company: Int, val on: Boolean) : Command
+
     /** Marks a tile of straight track as a waypoint, for orders to route trains through. */
     data class Waypoint(override val company: Int, val x: Int, val y: Int) : Command
 

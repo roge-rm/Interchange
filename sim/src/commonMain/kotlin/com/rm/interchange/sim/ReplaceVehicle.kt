@@ -14,19 +14,35 @@ private fun Carrier.copyLoadAndOrders(old: Carrier) {
     for (c in cargo.indices) if (capacity(c) > 0) cargo[c].addAll(old.cargo[c])
 }
 
+/** [t]'s cars with its lead engine made [engine]. */
+internal fun leadSwapped(t: Train, engine: Int): List<TrainCar> {
+    val cars = t.formation.toMutableList()
+    val lead = cars.indexOfFirst { t.roster[it.model].pulls }
+    cars[lead] = TrainCar(engine)
+    return cars
+}
+
 // Models and train lengths are fixed at construction, so rebuild in the same slot.
 // The buy functions would consume order backups and must not be used here.
 internal fun World.replaceTrain(company: Company, old: Train, model: Int?) {
     if (!old.inDepot) return
     val e = replacementModel(model, VehicleKind.ENGINE) ?: return
     if (e.id == old.engine) return
-    val depot = depots.getOrNull(old.depot) ?: return
-    // Wires over the depot it's in, which can be one it turned in.
-    if (e.traction == Traction.ELECTRIC && !depotWired(depots.getOrNull(old.shedIn) ?: depot)) return
-    val cars = old.formation.toMutableList()
-    val lead = cars.indexOfFirst { roster[it.model].pulls }
-    cars[lead] = TrainCar(e.id)
-    val made = Train(roster, old.id, old.owner, e.id, old.wagon, 0, old.depot, formation = cars)
+    depots.getOrNull(old.depot) ?: return
+    val cars = leadSwapped(old, e.id)
+    if (trainWhy(old, cars) != UpgradeWhy.OK) return
+    val made = rebuildTrain(old, cars)
+    val cost = price(made.price) - value(old)
+    if (company.money < cost) return
+    trains[old.id] = made
+    spend(company, Books.NEW_TRAINS, cost)
+    refreshUpgrade(made)
+    linksDirty = true
+}
+
+/** [old] rebuilt new as a train of [cars], keeping all it was doing. */
+internal fun World.rebuildTrain(old: Train, cars: List<TrainCar>): Train {
+    val made = Train(roster, old.id, old.owner, old.engine, old.wagon, 0, old.depot, formation = cars)
     made.owner = old.owner
     made.depot = old.depot
     made.name = old.name
@@ -78,6 +94,8 @@ internal fun World.replaceTrain(company: Company, old: Train, model: Int?) {
     made.renewAsked = old.renewAsked
     made.renewFailed = old.renewFailed
     made.renewOff = old.renewOff
+    made.upgradeWhy = old.upgradeWhy
+    made.upgradeTold = old.upgradeTold
     made.onTiles = old.onTiles
     made.onPieces = old.onPieces
     made.onBlocks = old.onBlocks
@@ -85,17 +103,23 @@ internal fun World.replaceTrain(company: Company, old: Train, model: Int?) {
     made.built = workDay
     made.serviced = workDay
     made.reliability = made.newReliability
-    val cost = price(made.price) - value(old)
-    if (company.money < cost) return
-    trains[old.id] = made
-    spend(company, Books.NEW_TRAINS, cost)
-    linksDirty = true
+    return made
 }
 
 internal fun World.replaceRoadVehicle(company: Company, old: RoadVehicle, model: Int?) {
     if (!old.inDepot) return
     val e = replacementModel(model, VehicleKind.ROAD) ?: return
-    if (e.id == old.model) return
+    if (e.id == old.model || roadWhy(old, e) != UpgradeWhy.OK) return
+    val cost = price(e.cost) - roadValue(old)
+    if (company.money < cost) return
+    val made = rebuildRoadVehicle(old, e)
+    roadVehicles[old.id] = made
+    spend(company, Books.NEW_TRAINS, cost)
+    refreshUpgrade(made)
+    linksDirty = true
+}
+
+internal fun World.rebuildRoadVehicle(old: RoadVehicle, e: Engine): RoadVehicle {
     val made = RoadVehicle(roster, old.id, old.owner, e.id, old.depot, old.cargoChoice)
     made.owner = old.owner
     made.depot = old.depot
@@ -138,6 +162,8 @@ internal fun World.replaceRoadVehicle(company: Company, old: RoadVehicle, model:
     made.renewAsked = old.renewAsked
     made.renewFailed = old.renewFailed
     made.renewOff = old.renewOff
+    made.upgradeWhy = old.upgradeWhy
+    made.upgradeTold = old.upgradeTold
     made.tires = old.tires
     made.seasonalTires = old.seasonalTires
     made.slid = old.slid
@@ -147,17 +173,23 @@ internal fun World.replaceRoadVehicle(company: Company, old: RoadVehicle, model:
     made.built = workDay
     made.serviced = workDay
     made.reliability = e.reliability * 100
-    val cost = price(made.price) - roadValue(old)
-    if (company.money < cost) return
-    roadVehicles[old.id] = made
-    spend(company, Books.NEW_TRAINS, cost)
-    linksDirty = true
+    return made
 }
 
 internal fun World.replaceShip(company: Company, old: Ship, model: Int?) {
     if (!old.inDepot) return
     val e = replacementModel(model, VehicleKind.SHIP) ?: return
     if (e.id == old.model) return
+    val cost = craftSwapCost(old.price, old.built, old.info.life, e)
+    if (company.money < cost) return
+    val made = rebuildShip(old, e)
+    ships[old.id] = made
+    spend(company, Books.NEW_TRAINS, cost)
+    refreshUpgrade(made)
+    linksDirty = true
+}
+
+internal fun World.rebuildShip(old: Ship, e: Engine): Ship {
     val made = Ship(roster, old.id, old.owner, e.id, old.depot, old.cargoChoice)
     made.owner = old.owner
     made.depot = old.depot
@@ -178,6 +210,8 @@ internal fun World.replaceShip(company: Company, old: Ship, model: Int?) {
     made.renewAsked = old.renewAsked
     made.renewFailed = old.renewFailed
     made.renewOff = old.renewOff
+    made.upgradeWhy = old.upgradeWhy
+    made.upgradeTold = old.upgradeTold
     made.inDepot = old.inDepot
     made.running = old.running
     made.waiting = old.waiting
@@ -207,19 +241,25 @@ internal fun World.replaceShip(company: Company, old: Ship, model: Int?) {
     made.built = workDay
     made.serviced = workDay
     made.reliability = e.reliability * 100
-    val cost = price(made.price) - craftValue(old.price, old.built, old.info.life)
-    if (company.money < cost) return
-    ships[old.id] = made
-    spend(company, Books.NEW_TRAINS, cost)
-    linksDirty = true
+    return made
 }
 
 internal fun World.replaceAircraft(company: Company, old: Aircraft, model: Int?) {
     if (!old.inDepot) return
     val e = replacementModel(model, VehicleKind.AIRCRAFT) ?: return
     if (e.id == old.model) return
-    val airport = hangarAirport(old) ?: return
-    if (!airport.serves(e)) return
+    hangarAirport(old) ?: return
+    if (aircraftWhy(old, e) != UpgradeWhy.OK) return
+    val cost = craftSwapCost(old.price, old.built, old.info.life, e)
+    if (company.money < cost) return
+    val made = rebuildAircraft(old, e)
+    aircraft[old.id] = made
+    spend(company, Books.NEW_TRAINS, cost)
+    refreshUpgrade(made)
+    linksDirty = true
+}
+
+internal fun World.rebuildAircraft(old: Aircraft, e: Engine): Aircraft {
     val made = Aircraft(roster, old.id, old.owner, e.id, old.depot, old.cargoChoice)
     made.owner = old.owner
     made.depot = old.depot
@@ -240,6 +280,8 @@ internal fun World.replaceAircraft(company: Company, old: Aircraft, model: Int?)
     made.renewAsked = old.renewAsked
     made.renewFailed = old.renewFailed
     made.renewOff = old.renewOff
+    made.upgradeWhy = old.upgradeWhy
+    made.upgradeTold = old.upgradeTold
     made.inDepot = old.inDepot
     made.running = old.running
     made.waiting = old.waiting
@@ -274,9 +316,5 @@ internal fun World.replaceAircraft(company: Company, old: Aircraft, model: Int?)
     made.built = workDay
     made.serviced = workDay
     made.reliability = e.reliability * 100
-    val cost = price(made.price) - craftValue(old.price, old.built, old.info.life)
-    if (company.money < cost) return
-    aircraft[old.id] = made
-    spend(company, Books.NEW_TRAINS, cost)
-    linksDirty = true
+    return made
 }

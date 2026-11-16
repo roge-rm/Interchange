@@ -173,6 +173,9 @@ class ReplaceTest {
                 "built", "serviced" -> assertEquals(f.world.workDay, actual, name)
                 "reliability" -> assertEquals(9300, actual, name)
                 "cargoChoice" -> assertEquals(Cargo.GOODS, actual, name)
+                // Worked out again for the new model, which no rule names.
+                "upgradeWhy" -> assertEquals(UpgradeWhy.NONE, actual, name)
+                "upgradeTold" -> assertEquals(false, actual, name)
                 else -> if (actual is IntArray) assertContentEquals(field.get(old) as IntArray, actual, name)
                     else assertEquals(field.get(old), actual, name)
             }
@@ -393,7 +396,7 @@ class ReplaceTest {
 
     @Test
     fun saveKeepsTheReplacementModel() {
-        assertEquals(62, Save.VERSION)
+        assertEquals(63, Save.VERSION)
         for (kind in kinds) {
             val f = fleet(kind)
             f.replace()

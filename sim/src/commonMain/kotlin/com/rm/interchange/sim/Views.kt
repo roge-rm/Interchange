@@ -122,6 +122,13 @@ class TrainView(
     /** Its service's id in [WorldView.services], -1 for none, and ticks it's running late, less than 0 early. */
     val serviceId: Int = -1,
     val late: Int = 0,
+    /**
+     * The model an upgrade rule gives it at its next service, -1 for none, and why it can't be, an [UpgradeWhy].
+     * In a depot, the player's own: models on sale it can't be replaced with by hand, money aside, to why not.
+     */
+    val upgradeTo: Int = -1,
+    val upgradeWhy: Int = UpgradeWhy.NONE,
+    val replaceWhy: Map<Int, Int> = emptyMap(),
 )
 
 /** A bus, truck or streetcar as the screen shows it. */
@@ -173,6 +180,13 @@ class RoadVehicleView(
     /** Its service's id in [WorldView.services], -1 for none, and ticks it's running late, less than 0 early. */
     val serviceId: Int = -1,
     val late: Int = 0,
+    /**
+     * The model an upgrade rule gives it at its next service, -1 for none, and why it can't be, an [UpgradeWhy].
+     * In a depot, the player's own: models on sale it can't be replaced with by hand, money aside, to why not.
+     */
+    val upgradeTo: Int = -1,
+    val upgradeWhy: Int = UpgradeWhy.NONE,
+    val replaceWhy: Map<Int, Int> = emptyMap(),
 )
 
 /** A ship as the screen shows it. */
@@ -222,6 +236,13 @@ class ShipView(
     /** Its service's id in [WorldView.services], -1 for none, and ticks it's running late, less than 0 early. */
     val serviceId: Int = -1,
     val late: Int = 0,
+    /**
+     * The model an upgrade rule gives it at its next service, -1 for none, and why it can't be, an [UpgradeWhy].
+     * In a depot, the player's own: models on sale it can't be replaced with by hand, money aside, to why not.
+     */
+    val upgradeTo: Int = -1,
+    val upgradeWhy: Int = UpgradeWhy.NONE,
+    val replaceWhy: Map<Int, Int> = emptyMap(),
 )
 
 /** An aircraft as the screen shows it. */
@@ -274,6 +295,13 @@ class AircraftView(
     /** Its service's id in [WorldView.services], -1 for none, and ticks it's running late, less than 0 early. */
     val serviceId: Int = -1,
     val late: Int = 0,
+    /**
+     * The model an upgrade rule gives it at its next service, -1 for none, and why it can't be, an [UpgradeWhy].
+     * In a depot, the player's own: models on sale it can't be replaced with by hand, money aside, to why not.
+     */
+    val upgradeTo: Int = -1,
+    val upgradeWhy: Int = UpgradeWhy.NONE,
+    val replaceWhy: Map<Int, Int> = emptyMap(),
 )
 
 /** An airport as the screen shows it. */
@@ -339,6 +367,8 @@ class CompanyView(
     val autorenew: Boolean = true,
     val renewMonths: Int = Autorenew.MONTHS_DEFAULT,
     val renewFloor: Long = 0,
+    /** Upgrades by its rules on. */
+    val upgrade: Boolean = true,
 )
 
 /** The weather as the screen shows it: copies of the fronts, the air and the wind, as of the start of [day]. */
@@ -387,6 +417,8 @@ class WorldView(
     /** The player's company values for conditional orders, and their names, empty for none. */
     val values: IntArray = IntArray(0),
     val valueNames: List<String> = emptyList(),
+    /** The player's upgrade rules. */
+    val upgrades: List<UpgradeView> = emptyList(),
 )
 
 /**
@@ -497,6 +529,7 @@ fun World.view(company: Int = 0, withReserved: Boolean = false, withNetwork: Boo
             x = tx, y = ty, gap = t.gap, wagonCargo = t.wagonCargo, group = t.group, formation = t.formation.toList(), topSpeed = t.topSpeed, dieselSpeed = t.dieselSpeed,
             curveKmh = t.curveKmh, value = value(t), days = (workDay - t.built).coerceAtLeast(0), nextService = nextService(t.service, t.serviced), renewOff = t.renewOff,
             shed = t.shedIn, serviceId = serviceOf(t)?.key ?: -1, late = t.late,
+            upgradeTo = upgradeTo(t), upgradeWhy = t.upgradeWhy, replaceWhy = replaceWhy(t, company),
         )
     }
     // Made once, and only if one of the player's stations has a destination to give a reason for.
@@ -539,7 +572,7 @@ fun World.view(company: Int = 0, withReserved: Boolean = false, withNetwork: Boo
     for (v in roadVehicles) if (v != null && v.wreckedFor > 0) wrecks += VehicleView.key(VehicleView.ROAD, v.id)
     for (v in aircraft) if (v != null && v.wreckedFor > 0) wrecks += VehicleView.key(VehicleView.AIRCRAFT, v.id)
     return WorldView(VehicleView(tick, cars.toFloatArray(), wrecks), trainViews, stationViews, signalViews, depotViews, townViews, payments.filter { it.company == company }, news.toList(),
-        companies.getOrNull(company)?.let { c -> CompanyView(c.money, c.loan, maxLoan(), c.thisYear.copyOf(), c.lastYear.copyOf(), c.history.map { it.copyOf() }, c.upkeep, c.autorenew, c.renewMonths, c.renewFloor) }, tick, weatherView(),
+        companies.getOrNull(company)?.let { c -> CompanyView(c.money, c.loan, maxLoan(), c.thisYear.copyOf(), c.lastYear.copyOf(), c.history.map { it.copyOf() }, c.upkeep, c.autorenew, c.renewMonths, c.renewFloor, c.upgrade) }, tick, weatherView(),
         stations.filterNotNull().filter { it.waypoint }.flatMap { it.tiles }.toIntArray(),
         spans.filterNotNull().map { SpanView(it.tunnel, it.style, it.x0, it.y0, it.x1, it.y1, it.height) },
         sheds.toIntArray(), fences.toIntArray(),
@@ -556,6 +589,7 @@ fun World.view(company: Int = 0, withReserved: Boolean = false, withNetwork: Boo
                 x = rx, y = ry, shared = v.shared, gap = v.gap, group = v.group,
                 value = roadValue(v), nextService = nextService(v.service, v.serviced), renewOff = v.renewOff,
                 serviceId = serviceOf(v)?.key ?: -1, late = v.late,
+                upgradeTo = upgradeTo(v), upgradeWhy = v.upgradeWhy, replaceWhy = replaceWhy(v, company),
             )
         },
         ships.filterNotNull().map { v ->
@@ -574,6 +608,7 @@ fun World.view(company: Int = 0, withReserved: Boolean = false, withNetwork: Boo
                 x = sx, y = sy, shared = v.shared, gap = v.gap, group = v.group,
                 value = craftValue(v.price, v.built, v.info.life), nextService = nextService(v.service, v.serviced), renewOff = v.renewOff,
                 serviceId = serviceOf(v)?.key ?: -1, late = v.late,
+                upgradeTo = upgradeTo(v), upgradeWhy = v.upgradeWhy, replaceWhy = replaceWhy(v, company),
             )
         },
         aircraft.filterNotNull().map { v ->
@@ -591,6 +626,7 @@ fun World.view(company: Int = 0, withReserved: Boolean = false, withNetwork: Boo
                 x = ax, y = ay, shared = v.shared, gap = v.gap, group = v.group,
                 value = if (v.wreckedFor > 0) 0 else craftValue(v.price, v.built, v.info.life), nextService = nextService(v.service, v.serviced), renewOff = v.renewOff,
                 serviceId = serviceOf(v)?.key ?: -1, late = v.late,
+                upgradeTo = upgradeTo(v), upgradeWhy = v.upgradeWhy, replaceWhy = replaceWhy(v, company),
             )
         },
         airports.filterNotNull().map { AirportView(it.id, it.station, it.kind, it.x, it.y, it.w, it.h, it.axis, it.depot, it.ils, it.deice) },
@@ -605,6 +641,7 @@ fun World.view(company: Int = 0, withReserved: Boolean = false, withNetwork: Boo
         serviceViews(company),
         companies.getOrNull(company)?.values?.copyOf() ?: IntArray(0),
         companies.getOrNull(company)?.valueNames?.toList().orEmpty(),
+        upgradeViews(company),
     )
 }
 

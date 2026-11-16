@@ -97,8 +97,9 @@ private fun World.payRenewal(v: Carrier, kind: Int, cost: Long): Boolean {
     return true
 }
 
-/** Train [t], in for a service: renewed if it's due and its company can pay. */
+/** Train [t], in for a service: upgraded if a rule says, else renewed if it's due and its company can pay. */
 internal fun World.autorenew(t: Train) {
+    if (upgradeAtService(t)) return
     if (!renewDue(t) || !payRenewal(t, Autorenew.TRAIN, renewCost(t))) return
     t.built = workDay
     t.serviced = workDay
@@ -106,6 +107,7 @@ internal fun World.autorenew(t: Train) {
 }
 
 internal fun World.autorenew(v: RoadVehicle) {
+    if (upgradeAtService(v)) return
     if (!renewDue(v) || !payRenewal(v, Autorenew.ROAD, renewCost(v))) return
     v.built = workDay
     v.serviced = workDay
@@ -113,6 +115,7 @@ internal fun World.autorenew(v: RoadVehicle) {
 }
 
 internal fun World.autorenew(v: Ship) {
+    if (upgradeAtService(v)) return
     if (!renewDue(v) || !payRenewal(v, Autorenew.SHIP, renewCost(v))) return
     v.built = workDay
     v.serviced = workDay
@@ -120,6 +123,7 @@ internal fun World.autorenew(v: Ship) {
 }
 
 internal fun World.autorenew(v: Aircraft) {
+    if (upgradeAtService(v)) return
     if (!renewDue(v) || !payRenewal(v, Autorenew.AIRCRAFT, renewCost(v))) return
     v.built = workDay
     v.serviced = workDay
@@ -131,4 +135,6 @@ internal fun World.setAutorenew(company: Company, c: Command.SetAutorenew) {
     company.autorenew = c.on
     company.renewMonths = c.months.coerceIn(-12, 12)
     company.renewFloor = c.floor.coerceIn(0, 1_000_000_000_000)
+    // The reserve is the upgrades' too.
+    refreshUpgrades(company.id)
 }

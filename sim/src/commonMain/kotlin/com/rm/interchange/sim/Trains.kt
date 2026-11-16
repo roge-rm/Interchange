@@ -220,6 +220,8 @@ class Train(
     override var renewAsked = NEVER_ASKED
     override var renewFailed = false
     override var renewOff = false
+    override var upgradeWhy = UpgradeWhy.NONE
+    override var upgradeTold = false
 
     // The tiles and blocks it's on, as last counted.
     internal var onTiles = IntArray(0)

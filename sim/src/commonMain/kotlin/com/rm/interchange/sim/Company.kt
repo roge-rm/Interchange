@@ -40,6 +40,9 @@ class Company(val id: Int, var name: String, var money: Long) {
     var autorenew = true
     var renewMonths = Autorenew.MONTHS_DEFAULT
     var renewFloor = 0L
+    /** Upgrades on, and its upgrade rules, sorted by kind, group and from model. */
+    var upgrade = true
+    val upgrades = ArrayList<UpgradeRule>()
     val orderBackups = arrayOfNulls<OrderBackup>(4)
     /** Values its conditional orders can test, 0 to [Order.COND_VALUE_MOST], each with a name of up to [COMPANY_VALUE_NAME_MOST]. */
     val values = IntArray(COMPANY_VALUES)

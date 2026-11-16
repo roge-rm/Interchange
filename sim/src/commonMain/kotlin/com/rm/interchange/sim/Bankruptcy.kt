@@ -130,6 +130,8 @@ internal fun World.takeOver(from: Company, to: Company) {
     from.loan = 0
     from.gone = true
     from.trouble = 0
+    from.upgrades.clear()
+    refreshUpgrades(to.id)
     // A computer company buying one runs its routes as its own; the player takes them on by hand.
     rivals.firstOrNull { it.company == from.id }?.let { gone ->
         rivals.firstOrNull { it.company == to.id }?.let { r ->
@@ -155,6 +157,7 @@ internal fun World.dissolve(c: Company) {
     for (v in ships) if (v != null && v.owner == c.id) ships[v.id] = null
     for (v in aircraft) if (v != null && v.owner == c.id) aircraft[v.id] = null
     for (groups in c.groups) groups.clear()
+    c.upgrades.clear()
     c.orderBackups.fill(null)
     // With nothing standing on them, Clear takes up what's on each of its tiles; the bank pays.
     c.money = Long.MAX_VALUE / 4

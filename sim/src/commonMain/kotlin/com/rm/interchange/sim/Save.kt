@@ -16,7 +16,7 @@ package com.rm.interchange.sim
  */
 object Save {
     private val MAGIC = "ICHG".encodeToByteArray()
-    const val VERSION = 62
+    const val VERSION = 63
 
     /** A vehicle's [built] day as saved by [version]: work days from 36, calendar days before. */
     private fun World.builtOut(built: Int, version: Int) = if (version >= 36) built else built / settings.dayLength
@@ -301,6 +301,14 @@ object Save {
             if (version >= 62) for (c in companies) {
                 for (x in c.values) w.int(x)
                 for (n in c.valueNames) w.string(n)
+            }
+            if (version >= 63) {
+                for (c in companies) {
+                    w.bool(c.upgrade)
+                    w.uvar(c.upgrades.size.toLong())
+                    for (u in c.upgrades) { w.int(u.kind); w.int(u.from); w.int(u.to); w.int(u.group) }
+                }
+                for (list in listOf<List<Carrier?>>(trains, roadVehicles, ships, aircraft)) for (v in list) if (v != null) { w.int(v.upgradeWhy); w.bool(v.upgradeTold) }
             }
         }
         val body = Squeeze.pack(w.toByteArray())
@@ -753,6 +761,26 @@ object Save {
             if (version >= 62) for (c in companies) {
                 for (j in c.values.indices) c.values[j] = r.int().coerceIn(0, Order.COND_VALUE_MOST)
                 for (j in c.valueNames.indices) c.valueNames[j] = capName(r.string(), COMPANY_VALUE_NAME_MOST)
+            }
+            // Before 63 there were no upgrade rules. A rule naming a model or group not here is dropped.
+            if (version >= 63) {
+                for (c in companies) {
+                    c.upgrade = r.bool()
+                    // Each rule takes four bytes at the least.
+                    val n = r.uvar()
+                    if (n !in 0..r.left / 4L) throw BadData("too many upgrade rules")
+                    val rules = List(n.toInt()) {
+                        val kind = r.int()
+                        val from = remap.getOrNull(r.int()) ?: -1
+                        val to = remap.getOrNull(r.int()) ?: -1
+                        UpgradeRule(kind, from, to, r.int())
+                    }
+                    c.upgrades += cleanRules(c, rules)
+                }
+                for (list in listOf<List<Carrier?>>(trains, roadVehicles, ships, aircraft)) for (v in list) if (v != null) {
+                    v.upgradeWhy = r.int().let { if (it in UpgradeWhy.NONE..UpgradeWhy.MOST) it else UpgradeWhy.NONE }
+                    v.upgradeTold = r.bool()
+                }
             }
             // A conditional order with a test there isn't or a jump past the end is left out, as are orders past
             // the most a vehicle takes, as a command would.

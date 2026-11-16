@@ -48,6 +48,8 @@ class Ship(
     override var renewAsked = NEVER_ASKED
     override var renewFailed = false
     override var renewOff = false
+    override var upgradeWhy = UpgradeWhy.NONE
+    override var upgradeTold = false
     val info get() = roster[model]
     var inDepot = true
     var running = false

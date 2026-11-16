@@ -77,6 +77,9 @@ interface Carrier {
     var renewFailed: Boolean
     /** Autorenew off for this vehicle whatever its company has. */
     var renewOff: Boolean
+    /** Why its company's upgrade rules can't upgrade it, an [UpgradeWhy], and told so in the news since that changed. */
+    var upgradeWhy: Int
+    var upgradeTold: Boolean
 }
 
 /** A step of road: [tile], the edge come in at and the edge leaving by. */
@@ -159,6 +162,8 @@ class RoadVehicle(
     override var renewAsked = NEVER_ASKED
     override var renewFailed = false
     override var renewOff = false
+    override var upgradeWhy = UpgradeWhy.NONE
+    override var upgradeTold = false
     /** Its tires, a [Tires] kind, and whether it changes them at the garage as the seasons turn. */
     var tires = Tires.SUMMER
     var seasonalTires = true
