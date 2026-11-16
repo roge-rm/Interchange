@@ -135,11 +135,11 @@ fun TrainCard(
             val depotWord = stringResource(Res.string.depot)
             for (o in others) key(o.id) {
                 // Unnamed stations are rare, so their stand-in names are looked up one by one.
-                val unnamed = o.orders.filter { !Order.isDepot(it) }.map { Order.station(it) }.filter { stations[it]?.name.isNullOrEmpty() }.distinct()
+                val unnamed = o.orders.map { Order.station(it) }.filter { it >= 0 && stations[it]?.name.isNullOrEmpty() }.distinct()
                     .associateWith { stringResource(Res.string.station_n, it + 1) }
                 val line = remember(o.orders.contentHashCode(), stations, unnamed) {
                     if (o.orders.isEmpty()) none
-                    else o.orders.joinToString("  ·  ") { if (Order.isDepot(it)) depotWord else Order.station(it).let { id -> unnamed[id] ?: stations[id]?.name ?: "" } }
+                    else o.orders.filter { !Order.isCond(it) }.joinToString("  ·  ") { if (Order.isDepot(it)) depotWord else Order.station(it).let { id -> unnamed[id] ?: stations[id]?.name ?: "" } }
                 }
                 PictureRow(
                     trainName(o), picture = { VehiclePicture(roster[o.engine], it) },

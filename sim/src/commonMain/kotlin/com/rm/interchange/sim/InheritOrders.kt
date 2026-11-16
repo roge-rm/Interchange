@@ -36,11 +36,11 @@ internal fun World.inheritOrders(company: Company, kind: Int, made: Carrier?) {
     made.gap = survivor?.gap ?: backup.gap
     made.shared = survivor?.shared ?: -1
     when (made) {
-        is Train -> { made.order = 0; made.route = null }
-        is RoadVehicle -> { made.order = 0; made.route = null }
-        is Ship -> { made.order = 0; made.route = null }
-        is Aircraft -> made.order = 0
+        is Train -> made.route = null
+        is RoadVehicle -> made.route = null
+        is Ship -> made.route = null
     }
+    firstOrder(made)
     restartTimetable(made)
     company.orderBackups[kind] = null
     linksDirty = true

@@ -384,6 +384,9 @@ class WorldView(
     val links: List<LinkView> = emptyList(),
     /** The player's services, by key. */
     val services: List<ServiceView> = emptyList(),
+    /** The player's company values for conditional orders, and their names, empty for none. */
+    val values: IntArray = IntArray(0),
+    val valueNames: List<String> = emptyList(),
 )
 
 /**
@@ -600,6 +603,8 @@ fun World.view(company: Int = 0, withReserved: Boolean = false, withNetwork: Boo
         depots.filter { it != null && it.owner == company && (it.kind == Depots.RAIL || it.kind == Depots.ROAD) }.associate { it!!.id to nearestTown(it.tile) },
         if (withNetwork) linkViews() else emptyList(),
         serviceViews(company),
+        companies.getOrNull(company)?.values?.copyOf() ?: IntArray(0),
+        companies.getOrNull(company)?.valueNames?.toList().orEmpty(),
     )
 }
 

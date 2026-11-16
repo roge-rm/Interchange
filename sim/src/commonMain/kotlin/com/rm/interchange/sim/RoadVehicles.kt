@@ -50,7 +50,7 @@ interface Carrier {
     val cargo: Array<ArrayList<Packet>>
     var profitThisYear: Long
     val orders: ArrayList<Int>
-    val order: Int
+    var order: Int
     var group: Int
     var shared: Int
     var gap: Int
@@ -262,11 +262,11 @@ internal fun World.roadVehicleCommand(company: Company, c: Command.RoadOrder) {
         Command.TrainOrder.ORDERS -> {
             val group = roadVehicles.filterNotNull().filter { v.shared >= 0 && it.shared == v.shared }.ifEmpty { listOf(v) }
             // A depot order has to be to one of the company's garages.
-            val orders = c.stations.toList().mapNotNull { allowedOrder(it, company.id, Depots.ROAD) }
+            val orders = allowedOrders(c.stations, company.id, Depots.ROAD)
             for (g in group) {
                 g.orders.clear()
                 g.orders += orders
-                g.order = 0
+                firstOrder(g)
                 g.route = null
                 ordersChanged(g)
             }
@@ -286,7 +286,7 @@ internal fun World.roadVehicleCommand(company: Company, c: Command.RoadOrder) {
             v.gap = other.gap
             v.orders.clear()
             v.orders += other.orders
-            v.order = 0
+            firstOrder(v)
             v.route = null
             restartTimetable(v)
             if (was != v.shared) pruneService(Command.CopyVehicle.ROAD, was)
@@ -335,7 +335,7 @@ private fun World.leaveGarage(v: RoadVehicle) {
     v.current?.let { o -> if (Order.depot(o) == d.id && !v.toDepot) nextRoadOrder(v) }
     skipService(v)
     // Every order a service it isn't due: it waits inside, set going, till one is.
-    if (!v.toDepot && v.orders.isNotEmpty() && !wantsGarage(v) && v.orders.all { Order.isDepot(it) && Order.depotKind(it) == Order.DEPOT_SERVICE }) return
+    if (!v.toDepot && v.orders.isNotEmpty() && !wantsGarage(v) && v.orders.all { Order.isCond(it) || Order.isDepot(it) && Order.depotKind(it) == Order.DEPOT_SERVICE }) return
     val out = roadAcross(d.tile, d.edge)
     if (out < 0) return
     if (roadVehicles.any { it != null && it !== v && !it.inDepot && roadStepTile(it.at) == d.tile }) return
@@ -709,7 +709,7 @@ private fun World.nextRoadOrder(v: RoadVehicle) {
     if (n == 0) return
     repeat(n) {
         passOrder(v)
-        v.order = (v.order + 1) % n
+        stepOrder(v)
         val o = v.orders[v.order]
         if (Order.isDepot(o)) {
             if (Order.depotKind(o) != Order.DEPOT_SERVICE || wantsGarage(v)) return

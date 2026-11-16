@@ -357,8 +357,8 @@ internal fun World.aircraftCommand(company: Company, c: Command.CraftOrder) {
             val group = aircraft.filterNotNull().filter { v.shared >= 0 && it.shared == v.shared }.ifEmpty { listOf(v) }
             for (g in group) {
                 g.orders.clear()
-                for (o in c.stations) if (stations.getOrNull(Order.station(o))?.owner == company.id) g.orders += o and Order.VIA.inv()
-                g.order = 0
+                g.orders += allowedOrders(c.stations, company.id, Depots.HANGAR, depotOrders = false)
+                firstOrder(g)
                 ordersChanged(g)
             }
         }
@@ -377,7 +377,7 @@ internal fun World.aircraftCommand(company: Company, c: Command.CraftOrder) {
             v.gap = other.gap
             v.orders.clear()
             v.orders += other.orders
-            v.order = 0
+            firstOrder(v)
             restartTimetable(v)
             if (was != v.shared) pruneService(Command.CopyVehicle.AIRCRAFT, was)
         }
@@ -606,7 +606,7 @@ private fun holdsStand(w: Aircraft, a: Airport, s: Int) = !w.inDepot && w.at == 
 private fun World.standFor(a: Airport, v: Aircraft): Int {
     val first = freeStand(a, v)
     if (first < 0 || v.heli || v.toDepot || v.orders.size < 2) return first
-    val next = airportOf(Order.station(v.orders[(v.order + 1) % v.orders.size]))
+    val next = airportOf(Order.nextStation(v.orders, v.order + 1))
     val join = Taxiways.spur(a.kind, endFor(a, takeOffTowards(a, next)))[0]
     val st = Taxiways.STANDS[a.kind]
     var best = first
@@ -979,7 +979,7 @@ private fun World.atGate(v: Aircraft) {
             v.holding = 0
             if (v.orders.isNotEmpty() && !v.toDepot) {
                 passOrder(v)
-                v.order = (v.order + 1) % v.orders.size
+                stepOrder(v)
             }
             // Due a service or a change of gear: from this stop to the nearest hangar, then on to its next order.
             if (due) forService(v)
@@ -999,7 +999,7 @@ private fun World.atGate(v: Aircraft) {
     // Somewhere it can't land at all, or out of its range from here: on to the next order.
     if (dest == null || !dest.serves(v.info) || here != null && tooFar(v, here, dest)) {
         passOrder(v)
-        v.order = (v.order + 1) % v.orders.size
+        stepOrder(v)
         v.holding = -1
         v.waiting = Calendar.TICKS_PER_DAY / 4
         return
@@ -1229,7 +1229,7 @@ private fun World.cruise(v: Aircraft) {
         // Its airport's gone, or it can't land there: on to the next stop, or home.
         if (target >= 0 && v.orders.size > 1) {
             passOrder(v)
-            v.order = (v.order + 1) % v.orders.size
+            stepOrder(v)
         } else v.toDepot = true
         return
     }
@@ -1298,7 +1298,7 @@ private fun World.hold(v: Aircraft) {
     if (v.holding > HOLD_TICKS && v.orders.size > 1 && target >= 0) {
         // Diverted: on to its next stop with what it carries.
         passOrder(v)
-        v.order = (v.order + 1) % v.orders.size
+        stepOrder(v)
         v.state = Flight.CRUISE
         // A wreck closing the airport has its own news.
         if (!wreckAt(dest)) tell(News.DIVERTED, v.id)

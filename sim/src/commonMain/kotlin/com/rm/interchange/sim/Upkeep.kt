@@ -99,8 +99,9 @@ internal fun World.noDepot(t: Train) {
  * or none, and one on its way there looks for its way afresh. Orders to it are taken out.
  */
 internal fun World.depotGone(d: Depot) {
-    for (v in carriers()) if (v.orders.removeAll { Order.depot(it) == d.id }) {
+    for (v in carriers()) if (removeOrders(v) { Order.depot(it) == d.id }) {
         ordersChanged(v)
+        settleOrder(v)
         if (v is Train) dropRoute(v)
         if (v is RoadVehicle) v.route = null
     }

@@ -854,4 +854,5 @@
     <string name="on_time">À l'heure</string>
     <string name="days_late">%1$s de retard</string>
     <string name="days_early">%1$s d'avance</string>
+    <string name="cond_go_to">Aller à l'ordre %1$d</string>
 </resources>

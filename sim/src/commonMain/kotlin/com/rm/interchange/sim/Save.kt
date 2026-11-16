@@ -16,7 +16,7 @@ package com.rm.interchange.sim
  */
 object Save {
     private val MAGIC = "ICHG".encodeToByteArray()
-    const val VERSION = 61
+    const val VERSION = 62
 
     /** A vehicle's [built] day as saved by [version]: work days from 36, calendar days before. */
     private fun World.builtOut(built: Int, version: Int) = if (version >= 36) built else built / settings.dayLength
@@ -287,10 +287,20 @@ object Save {
                     val s = services.getValue(k)
                     w.int(s.kind); w.int(s.shared); w.int(s.owner); w.string(s.name); w.bool(s.timetabled)
                     w.ints(s.orders); w.ints(s.planTravel); w.ints(s.planWait); w.ints(s.measuredTravel); w.ints(s.measuredWait)
+                    if (version >= 62) {
+                        w.bool(s.spaced)
+                        for (a in listOf(s.lastLeft, s.lastReached)) { w.uvar(a.size.toLong()); for (x in a) w.long(x) }
+                        w.uvar(s.connections.size.toLong())
+                        for (c in s.connections) { w.int(c.order); w.int(c.other); w.int(c.most); w.int(c.made); w.int(c.missed); w.int(c.madeLast); w.int(c.missedLast) }
+                    }
                 }
                 for (list in listOf<List<Carrier?>>(trains, roadVehicles, ships, aircraft)) for (v in list) if (v != null) {
                     w.int(v.orderLeft); w.long(v.orderLeftAt); w.long(v.orderReachedAt); w.int(v.late)
                 }
+            }
+            if (version >= 62) for (c in companies) {
+                for (x in c.values) w.int(x)
+                for (n in c.valueNames) w.string(n)
             }
         }
         val body = Squeeze.pack(w.toByteArray())
@@ -709,11 +719,53 @@ object Save {
                     s.planWait = IntArray(s.orders.size) { times[1][it].coerceIn(0, MAX_LINK_TICKS) }
                     s.measuredTravel = IntArray(s.orders.size) { times[2][it].coerceIn(-1, MAX_LINK_TICKS) }
                     s.measuredWait = IntArray(s.orders.size) { times[3][it].coerceIn(-1, MAX_LINK_TICKS) }
+                    // Before 62 nothing was spaced or connected.
+                    s.lastLeft = LongArray(s.orders.size) { -1 }
+                    s.lastReached = LongArray(s.orders.size) { -1 }
+                    if (version >= 62) {
+                        s.spaced = r.bool()
+                        for (a in listOf(s.lastLeft, s.lastReached)) {
+                            val k = r.uvar()
+                            if (k != a.size.toLong()) throw BadData("bad service departures")
+                            for (j in a.indices) a[j] = r.long().coerceIn(-1, tick)
+                        }
+                        // A connection takes seven bytes at the least.
+                        val k = r.uvar()
+                        if (k !in 0..minOf(r.left / 7L, CONNECTIONS_MOST.toLong())) throw BadData("too many connections")
+                        repeat(k.toInt()) {
+                            val c = Connection(r.int(), r.int(), r.int().coerceIn(1, CONNECTION_WAIT_MOST))
+                            c.made = r.int().coerceAtLeast(0); c.missed = r.int().coerceAtLeast(0)
+                            c.madeLast = r.int().coerceAtLeast(0); c.missedLast = r.int().coerceAtLeast(0)
+                            if (c.order in s.orders.indices && c.other != s.key) s.connections += c
+                        }
+                        s.connections.sortWith(compareBy({ it.order }, { it.other }))
+                    }
                     // Its orders are some vehicle's of its kind: one longer than any is left behind.
                     if (s.orders.size <= longest[s.kind]) services[s.key] = s
                 }
                 for (list in listOf<List<Carrier?>>(trains, roadVehicles, ships, aircraft)) for (v in list) if (v != null) {
                     v.orderLeft = r.int(); v.orderLeftAt = r.long().coerceIn(-1, tick); v.orderReachedAt = r.long().coerceIn(-1, tick); v.late = r.int().coerceIn(-LATE_MOST, LATE_MOST)
+                }
+                // Connections to a service left behind, or of another company, go.
+                for (s in services.values) s.connections.removeAll { services[it.other]?.owner != s.owner }
+            }
+            // Before 62 every company value was 0 with no name.
+            if (version >= 62) for (c in companies) {
+                for (j in c.values.indices) c.values[j] = r.int().coerceIn(0, Order.COND_VALUE_MOST)
+                for (j in c.valueNames.indices) c.valueNames[j] = capName(r.string(), COMPANY_VALUE_NAME_MOST)
+            }
+            // A conditional order with a test there isn't or a jump past the end is left out, as a command would.
+            for (list in listOf<List<Carrier?>>(trains, roadVehicles, ships, aircraft)) for (v in list) {
+                if (v == null || v.orders.none { Order.isCond(it) }) continue
+                val kept = Order.remapped(v.orders) { if (Order.isCond(it)) Order.cleanCond(it) else it }
+                if (kept != v.orders) { v.orders.clear(); v.orders += kept }
+                settleOrder(v)
+            }
+            for (c in companies) for (j in c.orderBackups.indices) {
+                val b = c.orderBackups[j] ?: continue
+                if (b.orders.any { Order.isCond(it) }) {
+                    val kept = Order.remapped(b.orders) { if (Order.isCond(it)) Order.cleanCond(it) else it }
+                    b.orders.clear(); b.orders += kept
                 }
             }
         }

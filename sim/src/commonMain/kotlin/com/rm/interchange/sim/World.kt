@@ -361,6 +361,7 @@ class World(settings: NewGame, val roster: Roster = Roster.BASE, generate: Boole
             is Command.CopyVehicle -> copyVehicle(company, command)
             is Command.CreateGroup -> createGroup(company, command)
             is Command.ServiceOrder -> serviceCommand(company, command)
+            is Command.CompanyValue -> companyValue(company, command)
             is Command.BuyTrain -> {
                 for (i in 0 until command.count.coerceAtMost(MAX_AT_ONCE)) {
                     val sizeBefore = trains.size
@@ -496,7 +497,8 @@ class World(settings: NewGame, val roster: Roster = Roster.BASE, generate: Boole
         for (r in rivals) { mix(r.thinkOn.toLong()); mix(r.routes.size.toLong()); for (rt in r.routes) for (l in rt.loops) mix(l.toLong()); mix(r.failed.size.toLong()); for (f in r.failed.keys.sorted()) { mix(f); mix(r.failed.getValue(f).toLong()) }; for (k in r.stood.keys.sorted()) { mix(k.toLong()); mix(r.stood.getValue(k).toLong()) }; for (k in r.held.keys.sorted()) { mix(k); mix(r.held.getValue(k).toLong()) }
             r.job?.let { j -> mix(j.pick.toLong()); mix(j.ia.toLong()); mix(j.ib.toLong()); mix(j.phase.toLong()); mix(j.search?.expanded?.toLong() ?: -1L) } }
         for (c in companies) { mix(c.money); mix(c.loan); mix(c.founded); mix(c.upkeepOwed); mix(c.trackTiles.toLong()); mix(c.roadUpkeep); mix(c.trouble.toLong()); mix(if (c.gone) 1 else 0); for (ch in c.name) mix(ch.code.toLong())
-            for (b in c.insignia) mix(b.toLong()); mix(if (c.autorenew) 1L else 0L); mix(c.renewMonths.toLong()); mix(c.renewFloor) }
+            for (b in c.insignia) mix(b.toLong()); mix(if (c.autorenew) 1L else 0L); mix(c.renewMonths.toLong()); mix(c.renewFloor)
+            for (x in c.values) mix(x.toLong()); for (n in c.valueNames) { mix(n.length.toLong()); for (ch in n) mix(ch.code.toLong()) } }
         for (list in listOf<List<Carrier?>>(trains, roadVehicles, ships, aircraft)) for (v in list) if (v != null) { mix(v.renewAsked.toLong()); mix(if (v.renewFailed) 1L else 0L); mix(if (v.renewOff) 1L else 0L) }
         mix(if (upkeepCounted) 1L else 0L)
         mix(if (settings.collisions) 1L else 0L); mix(crashes.first.toLong() + crashes.list.size)
@@ -517,9 +519,12 @@ class World(settings: NewGame, val roster: Roster = Roster.BASE, generate: Boole
         }
         for (k in services.keys.sorted()) {
             val sv = services.getValue(k)
-            mix(k.toLong()); mix(sv.owner.toLong()); mix(if (sv.timetabled) 1L else 0L)
+            mix(k.toLong()); mix(sv.owner.toLong()); mix(if (sv.timetabled) 1L else 0L); mix(if (sv.spaced) 1L else 0L)
             for (ch in sv.name) mix(ch.code.toLong())
             for (a in listOf(sv.orders, sv.planTravel, sv.planWait, sv.measuredTravel, sv.measuredWait)) { mix(a.size.toLong()); for (x in a) mix(x.toLong()) }
+            for (a in listOf(sv.lastLeft, sv.lastReached)) { mix(a.size.toLong()); for (x in a) mix(x) }
+            mix(sv.connections.size.toLong())
+            for (c in sv.connections) { mix(c.order.toLong()); mix(c.other.toLong()); mix(c.most.toLong()); mix(c.made.toLong()); mix(c.missed.toLong()); mix(c.madeLast.toLong()); mix(c.missedLast.toLong()) }
         }
         for (s in stations) if (s != null) {
             for (c in s.cargo) for (p in c) { mix(p.dest.toLong()); mix(p.count.toLong()); mix(p.credit) }

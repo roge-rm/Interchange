@@ -5,6 +5,21 @@ const val SERVICE_NAME_MOST = GROUP_NAME_MOST
 /** The most a vehicle can be late or early, in ticks, so it never overflows. */
 const val LATE_MOST = MAX_LINK_TICKS
 
+/** The longest a connection can hold a vehicle, in ticks, and the most connections a service can have. */
+const val CONNECTION_WAIT_MOST = Calendar.TICKS_PER_DAY * 10
+const val CONNECTIONS_MOST = 32
+
+/**
+ * At [order] of its service a vehicle waits for one of service [other] to arrive at the same station, up to [most]
+ * ticks after it got there. Made and missed are counted this month and last.
+ */
+class Connection(var order: Int, val other: Int, var most: Int) {
+    var made = 0
+    var missed = 0
+    var madeLast = 0
+    var missedLast = 0
+}
+
 /**
  * The vehicles of one [kind] sharing their orders, by their [shared] id, and its timetable. The arrays run parallel
  * to [orders], the orders the times were taken for: planned times in ticks with 0 for none, measured ones with -1
@@ -13,11 +28,18 @@ const val LATE_MOST = MAX_LINK_TICKS
 class Service(val kind: Int, val shared: Int, var owner: Int) {
     var name = ""
     var timetabled = false
+    /** Its vehicles held at each stop to keep them evenly apart. */
+    var spaced = false
     var orders = IntArray(0)
     var planTravel = IntArray(0)
     var planWait = IntArray(0)
     var measuredTravel = IntArray(0)
     var measuredWait = IntArray(0)
+    /** The tick a vehicle of it last left and last reached each order, -1 for none. */
+    var lastLeft = LongArray(0)
+    var lastReached = LongArray(0)
+    /** Sorted by order, then other service. */
+    val connections = ArrayList<Connection>()
 
     val key get() = serviceKey(kind, shared)
 }
@@ -34,7 +56,11 @@ internal fun kindOf(v: Carrier) = when (v) {
 }
 
 /** What an order goes to, for matching orders when they change: the station or depot, without what's done there. */
-private fun orderPlace(o: Int) = if (Order.isDepot(o)) o and (Order.DEPOT or 0xffff) else o and 0xffff
+private fun orderPlace(o: Int) = when {
+    Order.isCond(o) -> o
+    Order.isDepot(o) -> o and (Order.DEPOT or 0xffff)
+    else -> o and 0xffff
+}
 
 /** [v]'s service, or null if it has none. */
 internal fun World.serviceOf(v: Carrier): Service? = if (v.shared < 0) null else services[serviceKey(kindOf(v), v.shared)]
@@ -75,11 +101,17 @@ internal fun fit(s: Service, orders: List<Int>) {
     val planWait = IntArray(n)
     val measuredTravel = IntArray(n) { -1 }
     val measuredWait = IntArray(n) { -1 }
+    val lastLeft = LongArray(n) { -1 }
+    val lastReached = LongArray(n) { -1 }
+    val to = IntArray(m) { -1 }
     for (k in 0 until n) {
         val f = from[k]
         if (f < 0) continue
+        to[f] = k
         planWait[k] = s.planWait[f]
         measuredWait[k] = s.measuredWait[f]
+        lastLeft[k] = s.lastLeft.getOrElse(f) { -1 }
+        lastReached[k] = s.lastReached.getOrElse(f) { -1 }
         val before = from[(k - 1).mod(n)]
         if (before >= 0 && before == (f - 1).mod(m)) {
             planTravel[k] = s.planTravel[f]
@@ -91,6 +123,12 @@ internal fun fit(s: Service, orders: List<Int>) {
     s.planWait = planWait
     s.measuredTravel = measuredTravel
     s.measuredWait = measuredWait
+    s.lastLeft = lastLeft
+    s.lastReached = lastReached
+    // Connections follow their order, and go with it.
+    s.connections.removeAll { it.order !in 0 until m || to[it.order] < 0 }
+    for (c in s.connections) c.order = to[c.order]
+    s.connections.sortWith(compareBy({ it.order }, { it.other }))
 }
 
 /** [v]'s timing of its orders starts afresh: no order left or reached yet. */
@@ -118,7 +156,15 @@ internal fun World.pruneService(kind: Int, shared: Int) {
     if (shared < 0) return
     val key = serviceKey(kind, shared)
     if (!services.containsKey(key)) return
-    if (groupVehicles(kind).none { it != null && it.shared == shared }) services.remove(key)
+    if (groupVehicles(kind).none { it != null && it.shared == shared }) {
+        services.remove(key)
+        dropLostConnections()
+    }
+}
+
+/** Connections to services that have gone are dropped. */
+internal fun World.dropLostConnections() {
+    for (s in services.values) s.connections.removeAll { it.other !in services }
 }
 
 /** Each work day: services no vehicle shares any more are dropped. */
@@ -126,7 +172,17 @@ internal fun World.servicesDay() {
     if (services.isEmpty()) return
     val held = HashSet<Int>()
     for (list in listOf<List<Carrier?>>(trains, roadVehicles, ships, aircraft)) for (v in list) if (v != null && v.shared >= 0) held += serviceKey(kindOf(v), v.shared)
-    services.keys.removeAll { it !in held }
+    if (services.keys.removeAll { it !in held }) dropLostConnections()
+}
+
+/** The first of each month: connections' counts become last month's. */
+internal fun World.servicesMonth() {
+    for (s in services.values) for (c in s.connections) {
+        c.madeLast = c.made
+        c.missedLast = c.missed
+        c.made = 0
+        c.missed = 0
+    }
 }
 
 /** A measured time, [old] (-1 for none) with [sample] ticks fed in, the sample held to [SAMPLE_MOST] times the old time or a day. */
@@ -169,6 +225,7 @@ internal fun World.reachOrder(v: Carrier) {
     v.orderLeft = -1
     v.orderLeftAt = -1
     v.orderReachedAt = tick
+    s.lastReached[i] = tick
 }
 
 /**
@@ -185,13 +242,14 @@ internal fun World.passOrder(v: Carrier) {
     val i = v.order
     val wait = tick - reached
     s.measuredWait[i] = averaged(s.measuredWait[i], wait)
+    s.lastLeft[i] = tick
     if (s.timetabled && s.planWait[i] > 0 && callsAt(s.orders[i])) v.late = lateBy(v.late, wait - s.planWait[i])
     v.orderLeft = i
     v.orderLeftAt = tick
 }
 
 /** Whether order [o] stands at a station, so a planned wait counts there: not a depot, a via order or a waypoint. */
-internal fun World.callsAt(o: Int) = !Order.isDepot(o) && !Order.has(o, Order.VIA) && stations.getOrNull(Order.station(o))?.waypoint != true
+internal fun World.callsAt(o: Int) = !Order.isDepot(o) && !Order.isCond(o) && !Order.has(o, Order.VIA) && stations.getOrNull(Order.station(o))?.waypoint != true
 
 /**
  * Ticks [v] stays at its stop to be back on its service's timetable, or 0 if it's not early. It never stands more
@@ -209,6 +267,102 @@ internal fun World.timetableHold(v: Carrier): Int {
     return if (ahead < 0) minOf(-ahead, most).coerceIn(0, LATE_MOST.toLong()).toInt() else 0
 }
 
+/** Whether [v] is out running: not in a depot, stopped or wrecked. */
+private fun running(v: Carrier) = when (v) {
+    is Train -> v.running && !v.inDepot && v.wreckedFor == 0
+    is RoadVehicle -> v.running && !v.inDepot && v.wreckedFor == 0
+    is Ship -> v.running && !v.inDepot
+    is Aircraft -> v.running && !v.inDepot && v.wreckedFor == 0
+    else -> false
+}
+
+/**
+ * Ticks round [s]'s orders: each order's travel and wait, planned where set and measured where not, or -1 while a
+ * stop has neither for its travel. Conditional orders take no time.
+ */
+internal fun World.roundTrip(s: Service): Long {
+    var sum = 0L
+    for (i in s.orders.indices) {
+        val o = s.orders[i]
+        if (Order.isCond(o)) continue
+        sum += when {
+            s.planTravel[i] > 0 -> s.planTravel[i]
+            s.measuredTravel[i] >= 0 -> s.measuredTravel[i]
+            callsAt(o) -> return -1
+            else -> 0
+        }
+        sum += when {
+            s.planWait[i] > 0 -> s.planWait[i]
+            s.measuredWait[i] >= 0 -> s.measuredWait[i]
+            else -> 0
+        }
+    }
+    return sum
+}
+
+/** Ticks between [s]'s vehicles when evenly spaced: the round trip over how many are running, or 0 with under two or no round trip yet. */
+internal fun World.interval(s: Service): Long {
+    val running = groupVehicles(s.kind).count { it != null && it.shared == s.shared && running(it) }
+    if (running < 2) return 0
+    val trip = roundTrip(s)
+    return if (trip <= 0) 0 else trip / running
+}
+
+/** [v]'s service and its order index when it's standing at a stop of the service, else null. */
+private fun World.standingAt(v: Carrier): Service? {
+    if (v.shared < 0 || v.orderReachedAt < 0) return null
+    val s = serviceOf(v) ?: return null
+    val i = v.order
+    if (s.orders.size != v.orders.size || i !in s.orders.indices || !callsAt(s.orders[i])) return null
+    return s
+}
+
+/**
+ * Ticks [v] stays at its stop to keep an interval behind the last of its spaced service to leave it, or 0. It
+ * never stands more than an interval.
+ */
+internal fun World.spacingHold(v: Carrier): Int {
+    val s = standingAt(v) ?: return 0
+    if (!s.spaced) return 0
+    val left = s.lastLeft[v.order]
+    if (left < 0) return 0
+    val interval = interval(s)
+    if (interval <= 0) return 0
+    val stood = tick - v.orderReachedAt
+    return minOf(left + interval - tick, interval - stood).coerceIn(0, LATE_MOST.toLong()).toInt()
+}
+
+/** The last tick a vehicle of service [other] reached [station], or -1. */
+private fun World.reachedBy(other: Int, station: Int): Long {
+    val o = services[other] ?: return -1
+    var last = -1L
+    for (j in o.orders.indices) if (!Order.isCond(o.orders[j]) && Order.station(o.orders[j]) == station) last = maxOf(last, o.lastReached.getOrElse(j) { -1 })
+    return last
+}
+
+/** Whether connection [c] of [s] is made for a vehicle that got to its stop at [reached]. */
+private fun World.made(s: Service, c: Connection, reached: Long) = reachedBy(c.other, Order.station(s.orders[c.order])).let { it >= 0 && it >= reached - c.most }
+
+/** Ticks [v] stays at its stop waiting for a connection not yet made, or 0 once each is made or waited out. */
+internal fun World.connectionHold(v: Carrier): Int {
+    val s = standingAt(v) ?: return 0
+    var hold = 0L
+    for (c in s.connections) {
+        if (c.order != v.order || c.other !in services || made(s, c, v.orderReachedAt)) continue
+        hold = maxOf(hold, v.orderReachedAt + c.most - tick)
+    }
+    return hold.coerceIn(0, LATE_MOST.toLong()).toInt()
+}
+
+/** [v] is leaving its stop: each connection there is counted made or missed. */
+internal fun World.countConnections(v: Carrier) {
+    val s = standingAt(v) ?: return
+    for (c in s.connections) {
+        if (c.order != v.order || c.other !in services) continue
+        if (made(s, c, v.orderReachedAt)) c.made++ else c.missed++
+    }
+}
+
 /**
  * A shared id for [v] to start a group with: its own id unless a vehicle of its kind already shares that, else the
  * lowest one none does. Any service left at that id is dropped.
@@ -222,7 +376,7 @@ internal fun World.freshShared(v: Carrier): Int {
         id = 0
         while (id in used) id++
     }
-    services.remove(serviceKey(kind, id))
+    if (services.remove(serviceKey(kind, id)) != null) dropLostConnections()
     return id
 }
 
@@ -270,11 +424,36 @@ internal fun World.serviceCommand(company: Company, c: Command.ServiceOrder) {
         }
         Command.ServiceOrder.PLAN -> {
             val i = c.values.getOrNull(0) ?: return
-            if (i !in 0 until n) return
+            if (i !in 0 until n || Order.isCond(s.orders[i])) return
             c.values.getOrNull(1)?.let { if (it >= 0) s.planTravel[i] = it.coerceAtMost(MAX_LINK_TICKS) }
             c.values.getOrNull(2)?.let { if (it >= 0 && callsAt(s.orders[i])) s.planWait[i] = it.coerceAtMost(MAX_LINK_TICKS) }
         }
+        Command.ServiceOrder.SPACED -> s.spaced = c.values.firstOrNull() == 1
+        Command.ServiceOrder.CONNECT -> {
+            if (c.values.size < 3) return
+            val i = c.values[0]
+            val other = services[c.values[1]] ?: return
+            val most = c.values[2]
+            if (i !in 0 until n || !callsAt(s.orders[i]) || other === s || other.owner != company.id || most !in 1..CONNECTION_WAIT_MOST) return
+            val had = s.connections.firstOrNull { it.order == i && it.other == other.key }
+            if (had != null) had.most = most
+            else if (s.connections.size < CONNECTIONS_MOST) {
+                s.connections += Connection(i, other.key, most)
+                s.connections.sortWith(compareBy({ it.order }, { it.other }))
+            }
+        }
+        Command.ServiceOrder.DISCONNECT -> {
+            if (c.values.size < 2) return
+            s.connections.removeAll { it.order == c.values[0] && it.other == c.values[1] }
+        }
     }
+}
+
+/** Sets [company]'s value [Command.CompanyValue.index] and its name, each left as it is when not given. */
+internal fun World.companyValue(company: Company, c: Command.CompanyValue) {
+    if (c.index !in 0 until COMPANY_VALUES) return
+    if (c.value in 0..Order.COND_VALUE_MOST) company.values[c.index] = c.value
+    c.name?.let { company.valueNames[c.index] = capName(it.trim(), COMPANY_VALUE_NAME_MOST).trim() }
 }
 
 /** A service as the screen shows it, for the player's company; times in ticks as [Service] keeps them. */
@@ -292,7 +471,16 @@ class ServiceView(
     val vehicleIds: IntArray,
     /** Ticks late, parallel to [vehicleIds]; less than 0 is early. */
     val late: IntArray,
+    val spaced: Boolean = false,
+    /** Ticks between its vehicles when evenly spaced, 0 while it can't be worked out. */
+    val interval: Long = 0,
+    /** The tick a vehicle last left each order, -1 for none. */
+    val lastLeft: LongArray = LongArray(0),
+    val connections: List<ConnectionView> = emptyList(),
 )
+
+/** A connection as the screen shows it: at [order], waits up to [most] ticks for service [other], made and missed last month. */
+class ConnectionView(val order: Int, val other: Int, val otherName: String, val most: Int, val made: Int, val missed: Int)
 
 /** The services of [company], sorted by key, each with its vehicles in id order. */
 internal fun World.serviceViews(company: Int): List<ServiceView> {
@@ -310,6 +498,8 @@ internal fun World.serviceViews(company: Int): List<ServiceView> {
             k, s.kind, s.owner, s.name, s.orders.copyOf(), s.planTravel.copyOf(), s.planWait.copyOf(),
             s.measuredTravel.copyOf(), s.measuredWait.copyOf(), s.timetabled,
             IntArray(vs.size) { vs[it].id }, IntArray(vs.size) { vs[it].late },
+            s.spaced, interval(s), s.lastLeft.copyOf(),
+            s.connections.map { ConnectionView(it.order, it.other, services[it.other]?.name ?: "", it.most, it.madeLast, it.missedLast) },
         )
     }
     return out

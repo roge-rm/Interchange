@@ -608,6 +608,7 @@ fun fare(c: Int, n: Int, from: Station, to: Station, days: Int, ticks: Long = da
  */
 internal fun World.passengersMonth() {
     networkStatsMonth()
+    servicesMonth()
     for (t in towns) {
         t.servedLastMonth = t.servedThisMonth
         t.servedThisMonth = 0

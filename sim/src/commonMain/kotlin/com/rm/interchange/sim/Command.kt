@@ -179,8 +179,8 @@ sealed interface Command {
 
     /**
      * Acts on the service of vehicle [vehicle] of [kind] ([CopyVehicle]'s kinds), making one for a vehicle that has
-     * none: [values] carries the timetable on (1) or off, or an order and its planned travel and wait in ticks, -1
-     * to keep one as it is.
+     * none: [values] carries the timetable or spacing on (1) or off, an order and its planned travel and wait in
+     * ticks, -1 to keep one as it is, or a connection's order, other service key and most wait in ticks.
      */
     class ServiceOrder(override val company: Int, val kind: Int, val vehicle: Int, val what: Int, val values: IntArray = IntArray(0), val name: String = "") : Command {
         companion object {
@@ -192,8 +192,16 @@ sealed interface Command {
             const val AUTOFILL = 3
             const val CLEAR = 4
             const val PLAN = 5
+            const val SPACED = 6
+            /** Values: order, the other service's key, most wait in ticks; sets the wait of one already there. */
+            const val CONNECT = 7
+            /** Values: order, the other service's key. */
+            const val DISCONNECT = 8
         }
     }
+
+    /** Sets company value [index] to [value] (0 to [Order.COND_VALUE_MOST], else kept) and, unless null, its [name]. */
+    data class CompanyValue(override val company: Int, val index: Int, val value: Int, val name: String? = null) : Command
 
     /** Pays for a new industry of [kind] somewhere on the map: built for sure if it takes cargo, prospected if not. */
     data class FundIndustry(override val company: Int, val kind: Int) : Command

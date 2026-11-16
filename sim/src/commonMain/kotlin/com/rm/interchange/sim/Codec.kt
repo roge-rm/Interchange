@@ -75,6 +75,7 @@ object Codec {
     /** Platforms with the station they join. */
     private const val STATION_JOIN = 64
     private const val SERVICE_ORDER = 65
+    private const val COMPANY_VALUE = 66
 
     /** The most goals a [Command.SetGoals] may carry. */
     const val MOST_GOALS = 100
@@ -126,6 +127,7 @@ object Codec {
             is Command.PlantTrees -> { w.byte(PLANT_TREES); w.int(c.company); w.int(c.x0); w.int(c.y0); w.int(c.x1); w.int(c.y1) }
             is Command.CreateGroup -> { w.byte(CREATE_GROUP); w.int(c.company); w.int(c.kind); w.int(c.vehicle); w.string(c.name) }
             is Command.ServiceOrder -> { w.byte(SERVICE_ORDER); w.int(c.company); w.int(c.kind); w.int(c.vehicle); w.int(c.what); w.ints(c.values); w.string(c.name) }
+            is Command.CompanyValue -> { w.byte(COMPANY_VALUE); w.int(c.company); w.int(c.index); w.int(c.value); w.bool(c.name != null); w.string(c.name ?: "") }
             is Command.CopyVehicle -> { w.byte(if (c.count == 1) COPY_VEHICLE else COPY_VEHICLES); w.int(c.company); w.int(c.kind); w.int(c.vehicle); w.int(c.depot); if (c.count != 1) w.int(c.count) }
             is Command.EditTrain -> { w.byte(EDIT_TRAIN); w.int(c.company); w.int(c.train); writeFormation(w, c.cars) }
             is Command.BuyTrain -> { w.byte(if (c.count == 1) BUY_TRAIN_CARGO else BUY_TRAINS); w.int(c.company); w.int(c.depot); w.int(c.engine); w.int(c.wagon); w.int(c.wagons); w.int(c.cargo); if (c.count != 1) w.int(c.count) }
@@ -169,6 +171,7 @@ object Codec {
         PLANT_TREES -> Command.PlantTrees(r.int(), r.int(), r.int(), r.int(), r.int())
         CREATE_GROUP -> Command.CreateGroup(r.int(), r.int(), r.int(), r.string())
         SERVICE_ORDER -> Command.ServiceOrder(r.int(), r.int(), r.int(), r.int(), r.ints(), r.string())
+        COMPANY_VALUE -> Command.CompanyValue(r.int(), r.int(), r.int(), if (r.bool()) r.string() else r.string().let { null })
         COPY_VEHICLE -> Command.CopyVehicle(r.int(), r.int(), r.int(), r.int())
         COPY_VEHICLES -> Command.CopyVehicle(r.int(), r.int(), r.int(), r.int(), r.int())
         BUY_TRAIN -> Command.BuyTrain(r.int(), r.int(), r.int(), r.int(), r.int())

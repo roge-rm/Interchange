@@ -53,13 +53,13 @@ fun whyText(why: Int): String? = when (why) {
 fun currentLink(network: WorldView?, mode: Int, id: Int, orders: IntArray, order: Int): LinkView? {
     if (network == null || orders.isEmpty()) return null
     val now = orders[order.mod(orders.size)]
-    if (Order.isDepot(now)) return null
+    if (Order.station(now) < 0) return null
     val to = Order.station(now)
     val runs = network.links.filter { l -> l.to == to && l.vehicleIds.indices.any { l.vehicleIds[it] == id && l.vehicleModes[it] == mode } }
     if (runs.size <= 1) return runs.firstOrNull()
     for (back in 1 until orders.size) {
         val o = orders[(order - back).mod(orders.size)]
-        if (Order.isDepot(o)) continue
+        if (Order.station(o) < 0) continue
         runs.firstOrNull { it.from == Order.station(o) }?.let { return it }
     }
     return runs.first()

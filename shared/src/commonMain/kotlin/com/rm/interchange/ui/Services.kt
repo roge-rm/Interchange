@@ -51,7 +51,7 @@ private fun tenthsToTicks(tenths: Int) = (tenths * Calendar.TICKS_PER_DAY + 9) /
 @Composable
 fun serviceTitle(view: WorldView, s: ServiceView): String {
     if (s.name.isNotEmpty()) return s.name
-    val stops = s.orders.filter { !Order.isDepot(it) }.map { Order.station(it) }
+    val stops = s.orders.map { Order.station(it) }.filter { it >= 0 }
     return when {
         stops.isEmpty() -> stringResource(Res.string.service)
         stops.size == 1 || stops.first() == stops.last() -> stationName(view, stops.first())
@@ -158,7 +158,8 @@ fun ServiceWindow(runner: GameThread, id: Int, onVehicle: (ShowVehicle) -> Unit,
         Head(stringResource(Res.string.orders), Glyph.Station)
         var open by remember(id) { mutableIntStateOf(-1) }
         val depotWord = stringResource(Res.string.depot)
-        for (i in s.orders.indices) key(i) {
+        // Conditional orders take no time, so they have no row.
+        for (i in s.orders.indices) if (!Order.isCond(s.orders[i])) key(i) {
             val o = s.orders[i]
             val title = if (Order.isDepot(o)) depotWord else stationName(v, Order.station(o))
             PictureRow(

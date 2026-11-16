@@ -6,6 +6,10 @@ package com.rm.interchange.sim
  * year's kept apart, and the last [HISTORY_MONTHS] months' money, income and
  * spending kept for graphs.
  */
+/** How many values a company has for its conditional orders, and how long their names can be. */
+const val COMPANY_VALUES = 8
+const val COMPANY_VALUE_NAME_MOST = 24
+
 class Company(val id: Int, var name: String, var money: Long) {
     /** Running costs owed short of a whole dollar a day, carried to the next. */
     var runningOwed = 0L
@@ -37,6 +41,9 @@ class Company(val id: Int, var name: String, var money: Long) {
     var renewMonths = Autorenew.MONTHS_DEFAULT
     var renewFloor = 0L
     val orderBackups = arrayOfNulls<OrderBackup>(4)
+    /** Values its conditional orders can test, 0 to [Order.COND_VALUE_MOST], each with a name of up to [COMPANY_VALUE_NAME_MOST]. */
+    val values = IntArray(COMPANY_VALUES)
+    val valueNames = Array(COMPANY_VALUES) { "" }
     // A group is a named list, separate from the shared order id.
     val groups = Array(4) { ArrayList<VehicleGroup>() }
 }

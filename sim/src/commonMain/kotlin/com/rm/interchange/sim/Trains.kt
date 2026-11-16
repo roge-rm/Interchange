@@ -333,12 +333,12 @@ internal fun World.trainCommand(company: Company, c: Command.TrainOrder) {
             val group = trains.filter { it != null && t.shared >= 0 && it.shared == t.shared }.ifEmpty { listOf(t) }
             // A depot order has to be to one of the company's rail depots, wired if any of the trains is electric.
             val electric = group.any { it!!.electric }
-            val orders = c.stations.toList().mapNotNull { allowedOrder(it, company.id, Depots.RAIL, electric) }
+            val orders = allowedOrders(c.stations, company.id, Depots.RAIL, electric)
             for (g in group) {
                 releaseAhead(g!!)
                 g.orders.clear()
                 g.orders += orders
-                g.order = 0
+                firstOrder(g)
                 dropRoute(g)
                 g.aside = -1
                 ordersChanged(g)
@@ -355,7 +355,7 @@ internal fun World.trainCommand(company: Company, c: Command.TrainOrder) {
             if (other.owner != company.id || other.id == t.id || other.wreckedFor > 0) return
             if (other.shared < 0) other.shared = freshShared(other)
             // Depot orders an electric train can't take are dropped for the whole group, as ORDERS would.
-            val orders = if (!t.electric) other.orders else other.orders.filter { !Order.isDepot(it) || depots.getOrNull(Order.depot(it))?.let { d -> depotWired(d) } == true }
+            val orders = if (!t.electric) other.orders else Order.remapped(other.orders) { o -> o.takeIf { !Order.isDepot(it) || depots.getOrNull(Order.depot(it))?.let { d -> depotWired(d) } == true } }
             val group = if (orders.size == other.orders.size) listOf(t) else trains.filter { it != null && (it.shared == other.shared || it === t) }
             val was = t.shared
             t.shared = other.shared
@@ -364,7 +364,7 @@ internal fun World.trainCommand(company: Company, c: Command.TrainOrder) {
                 if (g!! !== t) releaseAhead(g)
                 g.orders.clear()
                 g.orders += orders
-                g.order = 0
+                firstOrder(g)
                 dropRoute(g)
                 g.aside = -1
                 ordersChanged(g)
@@ -1595,7 +1595,7 @@ internal fun World.dropRoute(t: Train) {
 
 /** Whether every one of [t]'s orders is a depot service it isn't due, so it has nowhere to go till one is. */
 private fun World.nothingDue(t: Train) =
-    !t.toDepot && t.orders.isNotEmpty() && !due(t.service, t.serviced) && t.orders.all { Order.isDepot(it) && Order.depotKind(it) == Order.DEPOT_SERVICE }
+    !t.toDepot && t.orders.isNotEmpty() && !due(t.service, t.serviced) && t.orders.all { Order.isCond(it) || Order.isDepot(it) && Order.depotKind(it) == Order.DEPOT_SERVICE }
 
 /** Whether electric train [t]'s order now is to a depot with no wires over it, so it can't get there. */
 private fun World.unwiredOrder(t: Train): Boolean {
@@ -1656,7 +1656,7 @@ internal fun World.nextOrder(t: Train) {
     if (n == 0) return
     repeat(n) {
         passOrder(t)
-        t.order = (t.order + 1) % n
+        stepOrder(t)
         val o = t.orders[t.order]
         if (Order.isDepot(o)) {
             if (Order.depotKind(o) != Order.DEPOT_SERVICE || due(t.service, t.serviced)) return

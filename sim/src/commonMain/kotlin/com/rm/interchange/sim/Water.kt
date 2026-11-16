@@ -420,8 +420,8 @@ internal fun World.shipCommand(company: Company, c: Command.CraftOrder) {
             val group = ships.filterNotNull().filter { v.shared >= 0 && it.shared == v.shared }.ifEmpty { listOf(v) }
             for (g in group) {
                 g.orders.clear()
-                for (o in c.stations) if (stations.getOrNull(Order.station(o))?.owner == company.id) g.orders += o and Order.VIA.inv()
-                g.order = 0
+                g.orders += allowedOrders(c.stations, company.id, Depots.SHIPYARD, depotOrders = false)
+                firstOrder(g)
                 ordersChanged(g)
                 g.route = null
             }
@@ -441,7 +441,7 @@ internal fun World.shipCommand(company: Company, c: Command.CraftOrder) {
             v.gap = other.gap
             v.orders.clear()
             v.orders += other.orders
-            v.order = 0
+            firstOrder(v)
             v.route = null
             restartTimetable(v)
             if (was != v.shared) pruneService(Command.CopyVehicle.SHIP, was)
@@ -530,7 +530,7 @@ private fun World.sail(v: Ship) {
                 if (!v.toDepot && !due && waitForLoad(v, o)) return
                 if (waitForGap(v, due)) return
                 passOrder(v)
-                v.order = (v.order + 1) % v.orders.size
+                stepOrder(v)
             }
             v.route = null
             // Due a service: from this call to the nearest shipyard, so it never turns back halfway across a lake.
@@ -619,7 +619,7 @@ private fun World.arriveShip(v: Ship) {
         if (s.waypoint) {
             reachOrder(v)
             passOrder(v)
-            v.order = (v.order + 1) % v.orders.size.coerceAtLeast(1)
+            stepOrder(v)
             return
         }
         val o = v.orders.getOrNull(v.order % v.orders.size.coerceAtLeast(1)) ?: 0

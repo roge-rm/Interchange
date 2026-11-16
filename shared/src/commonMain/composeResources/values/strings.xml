@@ -871,4 +871,5 @@
     <string name="on_time">On time</string>
     <string name="days_late">%1$s late</string>
     <string name="days_early">%1$s early</string>
+    <string name="cond_go_to">Go to order %1$d</string>
 </resources>
