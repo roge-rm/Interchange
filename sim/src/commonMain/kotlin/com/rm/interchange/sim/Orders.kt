@@ -68,10 +68,11 @@ object Order {
  * is far enough behind it.
  */
 internal fun World.waitForGap(v: Carrier, due: Boolean): Boolean {
-    if (!due) {
+    if (!due && !sentToDepot(v)) {
+        // Held in chunks, so turning the timetable off or changing the service lets it go at the next check.
         val early = timetableHold(v)
         if (early > 0) {
-            v.waiting = early
+            v.waiting = minOf(early, FULL_LOAD_RETRY)
             return true
         }
     }
@@ -99,6 +100,15 @@ internal fun World.waitForGap(v: Carrier, due: Boolean): Boolean {
         countDeparture(v)
     }
     return false
+}
+
+/** Whether [v] has been sent to a depot. */
+private fun sentToDepot(v: Carrier) = when (v) {
+    is Train -> v.toDepot
+    is RoadVehicle -> v.toDepot
+    is Ship -> v.toDepot
+    is Aircraft -> v.toDepot
+    else -> false
 }
 
 /** Ships and aircraft retry loading before considering their departure gap. */

@@ -228,6 +228,8 @@ private fun Root(settings: Settings) {
     // Saved from the menu since it was opened.
     var saved by remember { mutableStateOf(false) }
     var runner by remember { mutableStateOf<GameThread?>(null) }
+    // A game loaded or quit takes its service window with it.
+    LaunchedEffect(runner) { openService.value = null }
     // The game opened to players on the network, while it is; and whether it's being opened, or why it couldn't be.
     var host by remember { mutableStateOf<Host?>(null) }
     var opening by remember { mutableStateOf(false) }

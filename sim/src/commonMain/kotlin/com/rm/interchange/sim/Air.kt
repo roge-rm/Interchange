@@ -371,7 +371,7 @@ internal fun World.aircraftCommand(company: Company, c: Command.CraftOrder) {
         Command.TrainOrder.SHARE -> {
             val other = aircraft.getOrNull(c.stations.firstOrNull() ?: -1) ?: return
             if (other.owner != company.id || other.id == v.id || other.wreckedFor > 0) return
-            if (other.shared < 0) other.shared = other.id
+            if (other.shared < 0) other.shared = freshShared(other)
             val was = v.shared
             v.shared = other.shared
             v.gap = other.gap

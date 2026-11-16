@@ -353,7 +353,7 @@ internal fun World.trainCommand(company: Company, c: Command.TrainOrder) {
         Command.TrainOrder.SHARE -> {
             val other = trains.getOrNull(c.stations.firstOrNull() ?: -1) ?: return
             if (other.owner != company.id || other.id == t.id || other.wreckedFor > 0) return
-            if (other.shared < 0) other.shared = other.id
+            if (other.shared < 0) other.shared = freshShared(other)
             // Depot orders an electric train can't take are dropped for the whole group, as ORDERS would.
             val orders = if (!t.electric) other.orders else other.orders.filter { !Order.isDepot(it) || depots.getOrNull(Order.depot(it))?.let { d -> depotWired(d) } == true }
             val group = if (orders.size == other.orders.size) listOf(t) else trains.filter { it != null && (it.shared == other.shared || it === t) }

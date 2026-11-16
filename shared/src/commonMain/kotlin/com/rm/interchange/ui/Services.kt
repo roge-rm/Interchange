@@ -40,7 +40,9 @@ private const val LATE_WARN = Calendar.TICKS_PER_DAY
 private const val LATE_BAD = 3 * Calendar.TICKS_PER_DAY
 private const val MOST_TENTHS = 3000
 
-private fun ticksToTenths(ticks: Int) = (ticks * 10 + Calendar.TICKS_PER_DAY / 2) / Calendar.TICKS_PER_DAY
+/** [ticks] in tenths of a day, rounded to the nearest, halves away from 0 either side of it. */
+private fun ticksToTenths(ticks: Int): Int =
+    if (ticks < 0) -ticksToTenths(-ticks) else (ticks * 10 + Calendar.TICKS_PER_DAY / 2) / Calendar.TICKS_PER_DAY
 
 /** The ticks of [tenths] of a day, rounded up as autofill does. */
 private fun tenthsToTicks(tenths: Int) = (tenths * Calendar.TICKS_PER_DAY + 9) / 10
@@ -142,6 +144,12 @@ fun ServiceWindow(runner: GameThread, id: Int, onVehicle: (ShowVehicle) -> Unit,
     }
     Window(serviceTitle(v, s), onClose, Glyph.Calendar) {
         var text by remember(id) { mutableStateOf(s.name) }
+        // Renamed by someone else: the field follows, unless it's being typed in.
+        var seen by remember(id) { mutableStateOf(s.name) }
+        LaunchedEffect(s.name) {
+            if (text == seen) text = s.name
+            seen = s.name
+        }
         val clean = cleanGroupName(text)
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Box(Modifier.weight(1f)) { Field(text, stringResource(Res.string.service_name), { text = capGroupName(it) }) }
@@ -159,7 +167,9 @@ fun ServiceWindow(runner: GameThread, id: Int, onVehicle: (ShowVehicle) -> Unit,
                 below = {
                     Column(verticalArrangement = Arrangement.spacedBy(KitSpace.Gap)) {
                         TimeRow(Res.string.service_travel, s.planTravel[i], s.measuredTravel[i], open == i) { send(Command.ServiceOrder.PLAN, intArrayOf(i, it, -1)) }
-                        TimeRow(Res.string.service_wait, s.planWait[i], s.measuredWait[i], open == i) { send(Command.ServiceOrder.PLAN, intArrayOf(i, -1, it)) }
+                        // A depot, via order or waypoint has no wait to plan.
+                        val stands = !Order.isDepot(o) && !Order.has(o, Order.VIA) && v.stations.firstOrNull { it.id == Order.station(o) }?.waypoint != true
+                        if (stands) TimeRow(Res.string.service_wait, s.planWait[i], s.measuredWait[i], open == i) { send(Command.ServiceOrder.PLAN, intArrayOf(i, -1, it)) }
                     }
                 },
             )

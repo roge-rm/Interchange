@@ -690,22 +690,30 @@ object Save {
                 val vehicles = trains.size.toLong() + roadVehicles.size + ships.size + aircraft.size
                 val n = r.uvar()
                 if (n !in 0..minOf(r.left / 8L, vehicles)) throw BadData("too many services")
+                val longest = IntArray(4) { k -> groupVehicles(k).maxOfOrNull { it?.orders?.size ?: 0 } ?: 0 }
                 repeat(n.toInt()) {
                     val s = Service(r.int(), r.int(), r.int())
                     if (s.kind !in 0..3 || s.shared !in 0 until (1 shl 28)) throw BadData("bad service")
                     s.name = capName(r.string(), SERVICE_NAME_MOST)
                     s.timetabled = r.bool()
-                    s.orders = r.ints()
-                    val times = Array(4) { r.ints() }
+                    // Each order takes a byte at the least in each of its five lists.
+                    fun ints(most: Long): IntArray {
+                        val k = r.uvar()
+                        if (k !in 0..most) throw BadData("bad service orders")
+                        return IntArray(k.toInt()) { r.int() }
+                    }
+                    s.orders = ints(r.left / 4L)
+                    val times = Array(4) { ints(s.orders.size.toLong()) }
                     if (times.any { it.size != s.orders.size }) throw BadData("bad service times")
                     s.planTravel = IntArray(s.orders.size) { times[0][it].coerceIn(0, MAX_LINK_TICKS) }
                     s.planWait = IntArray(s.orders.size) { times[1][it].coerceIn(0, MAX_LINK_TICKS) }
                     s.measuredTravel = IntArray(s.orders.size) { times[2][it].coerceIn(-1, MAX_LINK_TICKS) }
                     s.measuredWait = IntArray(s.orders.size) { times[3][it].coerceIn(-1, MAX_LINK_TICKS) }
-                    services[s.key] = s
+                    // Its orders are some vehicle's of its kind: one longer than any is left behind.
+                    if (s.orders.size <= longest[s.kind]) services[s.key] = s
                 }
                 for (list in listOf<List<Carrier?>>(trains, roadVehicles, ships, aircraft)) for (v in list) if (v != null) {
-                    v.orderLeft = r.int(); v.orderLeftAt = r.long(); v.orderReachedAt = r.long(); v.late = r.int().coerceIn(-LATE_MOST, LATE_MOST)
+                    v.orderLeft = r.int(); v.orderLeftAt = r.long().coerceIn(-1, tick); v.orderReachedAt = r.long().coerceIn(-1, tick); v.late = r.int().coerceIn(-LATE_MOST, LATE_MOST)
                 }
             }
         }

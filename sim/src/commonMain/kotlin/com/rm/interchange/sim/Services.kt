@@ -185,20 +185,45 @@ internal fun World.passOrder(v: Carrier) {
     val i = v.order
     val wait = tick - reached
     s.measuredWait[i] = averaged(s.measuredWait[i], wait)
-    if (s.timetabled && s.planWait[i] > 0) v.late = lateBy(v.late, wait - s.planWait[i])
+    if (s.timetabled && s.planWait[i] > 0 && callsAt(s.orders[i])) v.late = lateBy(v.late, wait - s.planWait[i])
     v.orderLeft = i
     v.orderLeftAt = tick
 }
 
-/** Ticks [v] stays at its stop to be back on its service's timetable, or 0 if it's not early. */
+/** Whether order [o] stands at a station, so a planned wait counts there: not a depot, a via order or a waypoint. */
+internal fun World.callsAt(o: Int) = !Order.isDepot(o) && !Order.has(o, Order.VIA) && stations.getOrNull(Order.station(o))?.waypoint != true
+
+/**
+ * Ticks [v] stays at its stop to be back on its service's timetable, or 0 if it's not early. It never stands more
+ * than twice the stop's planned wait, the rest of how early it is carried on.
+ */
 internal fun World.timetableHold(v: Carrier): Int {
     if (v.shared < 0 || v.orderReachedAt < 0) return 0
     val s = serviceOf(v) ?: return 0
     if (!s.timetabled) return 0
     val i = v.order
-    if (i !in s.planWait.indices || s.orders.size != v.orders.size || s.planWait[i] <= 0) return 0
-    val ahead = v.late + (tick - v.orderReachedAt) - s.planWait[i]
-    return if (ahead < 0) (-ahead).coerceAtMost(LATE_MOST.toLong()).toInt() else 0
+    if (i !in s.planWait.indices || s.orders.size != v.orders.size || s.planWait[i] <= 0 || !callsAt(s.orders[i])) return 0
+    val stood = tick - v.orderReachedAt
+    val ahead = v.late + stood - s.planWait[i]
+    val most = 2L * s.planWait[i] - stood
+    return if (ahead < 0) minOf(-ahead, most).coerceIn(0, LATE_MOST.toLong()).toInt() else 0
+}
+
+/**
+ * A shared id for [v] to start a group with: its own id unless a vehicle of its kind already shares that, else the
+ * lowest one none does. Any service left at that id is dropped.
+ */
+internal fun World.freshShared(v: Carrier): Int {
+    val kind = kindOf(v)
+    val used = HashSet<Int>()
+    for (g in groupVehicles(kind)) if (g != null && g.shared >= 0) used += g.shared
+    var id = v.id
+    if (id in used) {
+        id = 0
+        while (id in used) id++
+    }
+    services.remove(serviceKey(kind, id))
+    return id
 }
 
 /** [ticks] rounded up to a whole tenth of a day, as the timetable shows them. */
@@ -220,7 +245,7 @@ internal fun World.serviceCommand(company: Company, c: Command.ServiceOrder) {
     }) return
     if (v.shared < 0) {
         // A service of one, as sharing with itself.
-        v.shared = v.id
+        v.shared = freshShared(v)
         restartTimetable(v)
     }
     val s = serviceFor(v) ?: return
@@ -236,7 +261,8 @@ internal fun World.serviceCommand(company: Company, c: Command.ServiceOrder) {
         }
         Command.ServiceOrder.AUTOFILL -> for (i in 0 until n) {
             if (s.measuredTravel[i] >= 0) s.planTravel[i] = roundUpTenth(s.measuredTravel[i])
-            if (s.measuredWait[i] >= 0) s.planWait[i] = roundUpTenth(maxOf(s.measuredWait[i], Order.waitDays(s.orders[i]) * Calendar.TICKS_PER_DAY))
+            if (!callsAt(s.orders[i])) s.planWait[i] = 0
+            else if (s.measuredWait[i] >= 0) s.planWait[i] = roundUpTenth(maxOf(s.measuredWait[i], Order.waitDays(s.orders[i]) * Calendar.TICKS_PER_DAY))
         }
         Command.ServiceOrder.CLEAR -> {
             s.planTravel.fill(0)
@@ -246,7 +272,7 @@ internal fun World.serviceCommand(company: Company, c: Command.ServiceOrder) {
             val i = c.values.getOrNull(0) ?: return
             if (i !in 0 until n) return
             c.values.getOrNull(1)?.let { if (it >= 0) s.planTravel[i] = it.coerceAtMost(MAX_LINK_TICKS) }
-            c.values.getOrNull(2)?.let { if (it >= 0) s.planWait[i] = it.coerceAtMost(MAX_LINK_TICKS) }
+            c.values.getOrNull(2)?.let { if (it >= 0 && callsAt(s.orders[i])) s.planWait[i] = it.coerceAtMost(MAX_LINK_TICKS) }
         }
     }
 }

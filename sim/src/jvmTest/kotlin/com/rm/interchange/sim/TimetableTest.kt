@@ -159,17 +159,57 @@ class TimetableTest {
 
     @Test
     fun anEarlyBusHoldsUntilItsOnTime() {
-        val (w, v) = standing(-200)
+        val (w, v) = standing(0)
         val s = w.serviceOf(0)!!
         val i = v.order
+        assertTrue(s.planWait[i] > 0)
+        v.late = -s.planWait[i] / 2
         val held = -(v.late + (w.tick + 1 - v.orderReachedAt) - s.planWait[i])
         assertTrue(held > 0)
         w.step()
         assertEquals(i, v.order)
-        assertEquals(held.toInt(), v.waiting)
+        // Held in chunks, each checked again.
+        assertEquals(minOf(held, FULL_LOAD_RETRY.toLong()).toInt(), v.waiting)
         w.until { v.order != i }
         // It leaves on time to the tick.
         assertEquals(0, v.late)
+    }
+
+    @Test
+    fun aHugeEarlyHoldEndsSoonAfterTheTimetableGoesOff() {
+        val (w, v) = standing(-LATE_MOST)
+        val i = v.order
+        w.step()
+        assertEquals(i, v.order)
+        assertTrue(v.waiting in 1..FULL_LOAD_RETRY)
+        w.service(0, Command.ServiceOrder.TIMETABLE, 0)
+        w.until(FULL_LOAD_RETRY + 2) { v.order != i }
+    }
+
+    @Test
+    fun anEarlyBusStandsAtMostTwiceItsPlannedWait() {
+        val (w, v) = standing(-LATE_MOST)
+        val s = w.serviceOf(0)!!
+        val i = v.order
+        val reached = v.orderReachedAt
+        w.until { v.order != i }
+        assertTrue(w.tick - reached <= 2L * s.planWait[i] + 1, "stood ${w.tick - reached}, plan ${s.planWait[i]}")
+        // Still early, the rest carried on.
+        assertTrue(v.late < -LATE_MOST / 2)
+    }
+
+    @Test
+    fun aDepotOrderHasNoWaitToPlan() {
+        val w = line(buses = 1)
+        w.order(0, Command.TrainOrder.ORDERS, 0, Order.toDepot(0), 1)
+        w.service(0, Command.ServiceOrder.START)
+        val s = w.serviceOf(0)!!
+        assertTrue(Order.isDepot(s.orders[1]))
+        w.service(0, Command.ServiceOrder.PLAN, 1, 300, 300)
+        w.service(0, Command.ServiceOrder.PLAN, 0, -1, 300)
+        assertEquals(300, s.planTravel[1])
+        assertEquals(0, s.planWait[1])
+        assertEquals(300, s.planWait[0])
     }
 
     @Test
@@ -259,6 +299,25 @@ class TimetableTest {
         // Leaving it ends the service.
         w.order(0, Command.TrainOrder.UNSHARE)
         assertTrue(w.services.isEmpty())
+    }
+
+    @Test
+    fun aNewServiceNeverTakesAnotherGroupsId() {
+        val w = line(buses = 3)
+        w.order(0, Command.TrainOrder.ORDERS, 0, 1)
+        w.order(1, Command.TrainOrder.SHARE, 0)
+        w.order(0, Command.TrainOrder.UNSHARE)
+        val (a, b, c) = w.roadVehicles.map { it!! }
+        assertEquals(a.id, b.shared)
+        // A lone bus starting a service of its own.
+        w.service(0, Command.ServiceOrder.START)
+        assertTrue(a.shared >= 0 && a.shared != b.shared)
+        assertTrue(w.serviceOf(0) !== w.serviceOf(1))
+        // And one shared with, starting a group.
+        w.order(0, Command.TrainOrder.UNSHARE)
+        w.order(2, Command.TrainOrder.SHARE, 0)
+        assertEquals(a.shared, c.shared)
+        assertTrue(a.shared >= 0 && a.shared != b.shared)
     }
 
     @Test
