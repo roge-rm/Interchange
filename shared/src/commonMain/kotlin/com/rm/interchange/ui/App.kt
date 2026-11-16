@@ -92,6 +92,7 @@ import com.rm.interchange.server.GameThread
 import com.rm.interchange.platform.Network
 import com.rm.interchange.server.Host
 import com.rm.interchange.server.ChatLine
+import com.rm.interchange.server.Reconnect
 import com.rm.interchange.server.Remote
 import com.rm.interchange.map.VehicleSource
 import com.rm.interchange.platform.cameraCutouts
@@ -203,6 +204,16 @@ private fun soundBusGains(sound: Int, world: Int, tools: Int): FloatArray {
 private enum class Screen { Title, NewGame, Playing }
 
 /** A window open over the screen. */
+/**
+ * The game screen's camera, [shown], and one to [carry] over to the next game screen when the same game comes back,
+ * after joining again or being sent the world again. [rejoined] keeps the service window open over a rejoin.
+ */
+private class KeptView {
+    var shown: View? = null
+    var carry: View? = null
+    var rejoined = false
+}
+
 private enum class Win { Menu, Load, Settings, Packs, Overlays, Map, Finances, Vehicles, Services, Upgrades, Industries, Values, Companies, Insignia, Town, Subsidies, Goals, Chronicle, Multiplayer, Players, Chat, Scenarios, Campaign, Scenario, SaveScenario, Intro, Outcome }
 
 /** Picking a place by tapping the map: what to tell the player, what a tapped tile does (false if nothing there will do), and giving up. */
@@ -232,18 +243,29 @@ private fun Root(settings: Settings) {
     val showVehicle = remember { mutableStateOf<ShowVehicle?>(null) }
     // The id of the service whose window is open.
     val openService = remember { mutableStateOf<Int?>(null) }
+    // The game screen's camera, and the one to carry over to the next game screen when the same game comes back.
+    val kept = remember { KeptView() }
     val copyPick = remember { mutableStateOf<CopyPick?>(null) }
     // Saved from the menu since it was opened.
     var saved by remember { mutableStateOf(false) }
     var runner by remember { mutableStateOf<GameThread?>(null) }
     // A game loaded or quit takes its service window with it.
-    LaunchedEffect(runner) { openService.value = null }
+    LaunchedEffect(runner) {
+        if (!kept.rejoined) openService.value = null
+        kept.rejoined = false
+    }
     // The game opened to players on the network, while it is; and whether it's being opened, or why it couldn't be.
     var host by remember { mutableStateOf<Host?>(null) }
     var opening by remember { mutableStateOf(false) }
     var hostProblem by remember { mutableStateOf<String?>(null) }
-    // The game joined stopped answering.
+    // The game joined stopped answering, and won't be joined again by itself.
     var lost by remember { mutableStateOf(false) }
+    // Joining again after the connection dropped, and where it's got to; kept after giving up, for the reason.
+    var reconnect by remember { mutableStateOf<Reconnect?>(null) }
+    var reconnectState by remember { mutableStateOf<Reconnect.State?>(null) }
+    // A connection that dropped while the app was in the background, joined again once it's shown.
+    var droppedAway by remember { mutableStateOf<Remote?>(null) }
+    var shown by remember { mutableStateOf(true) }
     val cantOpen = stringResource(Res.string.cant_open, "%s")
     val gameOf = stringResource(Res.string.game_of, "%s")
     var saves by remember { mutableStateOf(SavedGames.list()) }
@@ -277,13 +299,17 @@ private fun Root(settings: Settings) {
     DisposableEffect(Unit) {
         // A world being edited goes to the editor's own autosave, and a scenario being tried isn't saved at all.
         Lifecycle.onHide = {
+            shown = false
             AudioEngine.pause(true)
             runner?.takeIf { it.remote == null }?.let { r ->
                 if (editing) r.onGameThread { g -> SavedScenarios.autosaveEditor(g.world) }
                 else if (testing == null) SavedGames.save(r, SavedGames.AUTOSAVE)
             }
         }
-        Lifecycle.onShow = { AudioEngine.pause(false) }
+        Lifecycle.onShow = {
+            shown = true
+            AudioEngine.pause(false)
+        }
         onDispose {
             Lifecycle.onHide = null
             Lifecycle.onShow = null
@@ -339,6 +365,11 @@ private fun Root(settings: Settings) {
         closeHost()
         hostProblem = null
         lost = false
+        reconnect?.cancel()
+        reconnect = null
+        reconnectState = null
+        droppedAway = null
+        kept.carry = null
         runner?.remote?.leave()
         runner?.stop()
         runner = null
@@ -377,9 +408,20 @@ private fun Root(settings: Settings) {
         window = if (intro) Win.Intro else null
     }
 
-    /** Follows a game joined on the network, playing the company it gave us, with no autosaves. */
-    fun joined(remote: Remote, world: World) {
+    /**
+     * Follows a game joined on the network, playing the company it gave us, with no autosaves. Joined [again] after
+     * the connection dropped, the camera and the open window stay as they were, if what the window shows is still there.
+     */
+    fun joined(remote: Remote, world: World, again: Boolean = false) {
+        val keepWindow = window
+        val view = kept.shown
         stopGame()
+        settings.rejoin = LastGame(remote.host, remote.port, remote.company, remote.server)
+        settings.save()
+        if (again) {
+            kept.carry = view
+            kept.rejoined = true
+        }
         editing = false
         testing = null
         val r = GameThread({ world }, remote)
@@ -391,7 +433,21 @@ private fun Root(settings: Settings) {
         runner = r
         lost = false
         screen = Screen.Playing
-        window = null
+        window = if (again && !(keepWindow == Win.Town && world.towns.getOrNull(town) == null)) keepWindow else null
+    }
+
+    /** Joins again where [remote] was, now its connection has dropped. */
+    fun startReconnect(remote: Remote) {
+        droppedAway = null
+        reconnect?.cancel()
+        val again = Reconnect.of(remote, { r ->
+            val w = Save.read(r.welcome!!.save, InstalledPacks::findExact)
+            InstalledPacks.prepare(w.roster, InstalledPacks::findExact)
+            w
+        })
+        reconnect = again
+        reconnectState = again.state
+        again.start()
     }
 
     /** Opens the game to players on the network, as the company played here; the port is taken off the main thread. */
@@ -423,12 +479,42 @@ private fun Root(settings: Settings) {
         }
     }
 
-    // Watches a game joined for its connection dropping.
+    // Watches a game joined for its connection dropping. A drop joins again, at once or when the app is next shown;
+    // a kick, the game closing or leaving it opens the lost window.
     LaunchedEffect(runner) {
         val r = runner ?: return@LaunchedEffect
         val remote = r.remote ?: return@LaunchedEffect
         while (remote.lost == null) delay(500)
-        if (runner === r) lost = true
+        if (runner !== r) return@LaunchedEffect
+        if (!remote.dropped) lost = true
+        else if (shown) startReconnect(remote)
+        else droppedAway = remote
+    }
+    LaunchedEffect(shown, droppedAway) {
+        val remote = droppedAway ?: return@LaunchedEffect
+        if (shown && runner?.remote === remote) startReconnect(remote)
+    }
+    // Follows the reconnect: back in, the game carries on; given up, the lost window says why.
+    LaunchedEffect(reconnect) {
+        val again = reconnect ?: return@LaunchedEffect
+        while (reconnect === again) {
+            when (val st = again.state) {
+                is Reconnect.State.Back -> {
+                    reconnect = null
+                    reconnectState = null
+                    joined(st.remote, st.world, again = true)
+                    return@LaunchedEffect
+                }
+                is Reconnect.State.GaveUp -> {
+                    reconnectState = st
+                    lost = true
+                    return@LaunchedEffect
+                }
+                Reconnect.State.Cancelled -> return@LaunchedEffect
+                else -> reconnectState = st
+            }
+            delay(250)
+        }
     }
 
     // The latest line of chat, and the latest one read, for lighting the strip's chat button.
@@ -620,7 +706,7 @@ private fun Root(settings: Settings) {
                 if (r == null || s == null) {
                     Box(Modifier.fillMaxSize().background(LocalColors.current.page))
                 } else {
-                    Playing(r, s, settings, pick, copyPick, onMenu = { saved = false; window = Win.Menu }, onOverlays = { window = Win.Overlays }, onFinances = { window = Win.Finances }, onTown = { town = it; window = Win.Town }, goTo = goTo, showVehicle = showVehicle,
+                    Playing(r, s, settings, kept, pick, copyPick, onMenu = { saved = false; window = Win.Menu }, onOverlays = { window = Win.Overlays }, onFinances = { window = Win.Finances }, onTown = { town = it; window = Win.Town }, goTo = goTo, showVehicle = showVehicle,
                         onMap = { window = Win.Map }, overview = window == Win.Map, onCloseOverview = { window = null },
                         onChat = if (inMultiplayer) ({ window = Win.Chat }) else null, chatUnread = lastChat != null && lastChat !== readChat)
                 }
@@ -773,7 +859,7 @@ private fun Root(settings: Settings) {
             runner?.let { r -> ServiceWindow(r, id, { showVehicle.value = it; openService.value = null; window = null }) { openService.value = null } }
         }
         // Over the game only: a new game being set up stays, and the window waits for the game to come back.
-        if (lost && screen == Screen.Playing) LostWindow {
+        if ((lost || reconnect != null) && screen == Screen.Playing) LostWindow {
             lost = false
             stopGame()
             window = null
@@ -784,14 +870,20 @@ private fun Root(settings: Settings) {
 
 /** A game being played: waits for the world to be made, then shows it. */
 @Composable
-private fun Playing(runner: GameThread, sheets: Sheets, settings: Settings, pick: MapPick?, copyPick: MutableState<CopyPick?>, onMenu: () -> Unit, onOverlays: () -> Unit, onFinances: () -> Unit, onTown: (Int) -> Unit, goTo: MutableState<Pair<Float, Float>?>, showVehicle: MutableState<ShowVehicle?>, onChat: (() -> Unit)?, chatUnread: Boolean, onMap: () -> Unit, overview: Boolean, onCloseOverview: () -> Unit) {
+private fun Playing(runner: GameThread, sheets: Sheets, settings: Settings, kept: KeptView, pick: MapPick?, copyPick: MutableState<CopyPick?>, onMenu: () -> Unit, onOverlays: () -> Unit, onFinances: () -> Unit, onTown: (Int) -> Unit, goTo: MutableState<Pair<Float, Float>?>, showVehicle: MutableState<ShowVehicle?>, onChat: (() -> Unit)?, chatUnread: Boolean, onMap: () -> Unit, overview: Boolean, onCloseOverview: () -> Unit) {
     var world by remember(runner) { mutableStateOf<World?>(null) }
     // Redraws every display frame, and picks up the world once it's made, or when a server sends it again.
     val frame = remember(runner) { mutableLongStateOf(0L) }
     LaunchedEffect(runner) {
         while (true) withFrameNanos {
             frame.longValue++
-            runner.game?.world?.let { if (it !== world) world = it }
+            runner.game?.world?.let {
+                if (it !== world) {
+                    // A world sent again after going out of step keeps the camera where it was.
+                    if (world != null) kept.carry = kept.shown
+                    world = it
+                }
+            }
         }
     }
     val w = world
@@ -799,11 +891,11 @@ private fun Playing(runner: GameThread, sheets: Sheets, settings: Settings, pick
         Box(Modifier.fillMaxSize().background(LocalColors.current.page))
         return
     }
-    key(runner, w) { CompositionLocalProvider(LocalCargo provides w.roster.cargo) { GameScreen(runner, w, sheets, frame, settings, pick, copyPick, onMenu, onOverlays, onFinances, onTown, goTo, showVehicle, onChat, chatUnread, onMap, overview, onCloseOverview) } }
+    key(runner, w) { CompositionLocalProvider(LocalCargo provides w.roster.cargo) { GameScreen(runner, w, sheets, frame, settings, kept, pick, copyPick, onMenu, onOverlays, onFinances, onTown, goTo, showVehicle, onChat, chatUnread, onMap, overview, onCloseOverview) } }
 }
 
 @Composable
-private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: State<Long>, settings: Settings, pick: MapPick?, copyPick: MutableState<CopyPick?>, onMenu: () -> Unit, onOverlays: () -> Unit, onFinances: () -> Unit, onTown: (Int) -> Unit, goTo: MutableState<Pair<Float, Float>?>, showVehicle: MutableState<ShowVehicle?>, onChat: (() -> Unit)?, chatUnread: Boolean, onMap: () -> Unit, overview: Boolean, onCloseOverview: () -> Unit) {
+private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: State<Long>, settings: Settings, kept: KeptView, pick: MapPick?, copyPick: MutableState<CopyPick?>, onMenu: () -> Unit, onOverlays: () -> Unit, onFinances: () -> Unit, onTown: (Int) -> Unit, goTo: MutableState<Pair<Float, Float>?>, showVehicle: MutableState<ShowVehicle?>, onChat: (() -> Unit)?, chatUnread: Boolean, onMap: () -> Unit, overview: Boolean, onCloseOverview: () -> Unit) {
     val me = runner.company
     val c = LocalColors.current
     // The drawings of this game's vehicles: the base pack's come with the app, the others from their packs.
@@ -820,14 +912,16 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
         )
     }
     val view = remember {
-        // Over the biggest town, or the dry land nearest the middle if there are none.
-        View(world.width, world.height).apply {
+        // The camera carried over from the same game, or over the biggest town, or the dry land nearest the middle if
+        // there are no towns.
+        kept.carry?.takeIf { it.mapWidth == world.width && it.mapHeight == world.height }?.also { kept.carry = null } ?: View(world.width, world.height).apply {
             val town = world.towns.maxByOrNull { it.population }
             val i = if (town != null) world.index(town.x, town.y) else world.landNearMiddle()
             focusX = i % world.width + 0.5f
             focusY = i / world.width + 0.5f
         }
     }
+    kept.shown = view
     val overviewOptions = remember(runner) { OverviewOptions() }
     val mapSharp = remember(runner) { mutableStateOf(false) }
     // The overview's picture made once the map's first screen is sharp, so it doesn't hold up the start, and kept so

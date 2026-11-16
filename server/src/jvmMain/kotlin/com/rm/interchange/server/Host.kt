@@ -1,8 +1,10 @@
 package com.rm.interchange.server
 
 import com.rm.interchange.net.Beacon
+import com.rm.interchange.net.ChatEvent
 import com.rm.interchange.net.CompanyInfo
 import com.rm.interchange.net.Connection
+import com.rm.interchange.net.Heartbeat
 import com.rm.interchange.net.LanDiscovery
 import com.rm.interchange.net.Listener
 import com.rm.interchange.net.Message
@@ -33,6 +35,10 @@ import java.util.concurrent.atomic.AtomicInteger
  * since the password was set. Players missing a pack the game uses can
  * download it from here first.
  *
+ * A player whose connection drops keeps their company. A [Message.Hello] from
+ * a client already in replaces their old session, so a player who reconnects
+ * before the old connection has timed out isn't in twice.
+ *
  * Network threads only read and pass things on; everything touching the world
  * runs on the game thread.
  */
@@ -55,6 +61,8 @@ class Host(
     private val announce: Boolean = true,
     /** The zip of a pack, for players who haven't got it; null if there's none. Called off the game thread. */
     private val packBytes: (PackRef) -> ByteArray? = { null },
+    /** How often players are pinged and how long one can go quiet before they're let go. */
+    beat: Heartbeat = Heartbeat(),
 ) {
     private class Session(val connection: Connection) {
         @Volatile var name = ""
@@ -63,6 +71,8 @@ class Host(
         /** Sent the world and getting every frame; only changed on the game thread. */
         @Volatile var joined = false
         @Volatile var helloed = false
+        /** Its client joined again on another connection, so this one ending isn't them leaving. */
+        @Volatile var replaced = false
         /** Sending a pack; one at a time on a connection. */
         val sending = AtomicBoolean(false)
     }
@@ -70,6 +80,8 @@ class Host(
     private val sessions = CopyOnWriteArrayList<Session>()
     /** The company each client last played, so they get it back on rejoining. */
     private val claims = ConcurrentHashMap(claimed)
+    /** Clients that have played in this game, so one coming back is said to be back. */
+    private val seen: MutableSet<String> = ConcurrentHashMap.newKeySet<String>().apply { addAll(claimed.keys) }
 
     /** The company each client last played, to keep for next time. */
     val claimsNow: Map<String, Int> get() = HashMap(claims)
@@ -88,7 +100,7 @@ class Host(
     private val promised = HashMap<Int, Long>()
     /** The last frame a company is renamed or given a new insignia in, so the companies are sent again once it's run; -1 if none. Game thread only. */
     private var renamedIn = -1L
-    private val listener = Listener(port, ::connected)
+    private val listener = Listener(port, beat, ::connected)
     private val id = UUID.randomUUID().toString()
     /** Packs being sent now, each on a thread of its own. */
     private val senders = AtomicInteger()
@@ -122,7 +134,10 @@ class Host(
     fun stop() {
         closed = true
         listener.close()
-        for (s in sessions) s.connection.close("server closed")
+        for (s in sessions) {
+            if (s.joined) s.connection.send(Message.Rejected(Reject.CLOSED))
+            s.connection.close("server closed")
+        }
         runner.onGameThread { g -> g.broadcast = null }
     }
 
@@ -133,7 +148,7 @@ class Host(
 
     /** Keeps [m] and sends it to everyone in, in the same order for all. */
     @Synchronized private fun tell(m: Message.Chat) {
-        chat = (chat + ChatLine(m.name, m.company, m.text)).takeLast(Remote.CHAT_KEPT)
+        chat = (chat + ChatLine(m.name, m.company, m.text, m.event)).takeLast(Remote.CHAT_KEPT)
         for (s in sessions) if (s.joined) s.connection.send(m)
     }
 
@@ -251,10 +266,19 @@ class Host(
         val reason = when {
             hello.protocol != Wire.PROTOCOL -> Reject.VERSION
             password.isNotEmpty() && hello.password != password -> Reject.PASSWORD
-            sessions.count { it.joined } >= MAX_PLAYERS -> Reject.FULL
             else -> 0
         }
         if (reason != 0) return refuse(s, reason)
+        // The same client on an older connection, perhaps one that went quiet without closing, is let go first.
+        if (hello.client.isNotEmpty()) for (o in sessions) if (o !== s && o.client == hello.client) {
+            o.replaced = true
+            o.joined = false
+            sessions.remove(o)
+            o.connection.close("replaced")
+            log("${o.name} joined again, closing their old connection")
+        }
+        val back = hello.client.isNotEmpty() && !seen.add(hello.client)
+        if (sessions.count { it.joined } >= MAX_PLAYERS) return refuse(s, Reject.FULL)
         s.name = hello.name.take(NAME_MOST).ifBlank { "Player" }
         s.client = hello.client
         promised.values.removeAll { it < g.frame }
@@ -280,7 +304,8 @@ class Host(
         if (company >= 0) claims[hello.client] = company
         welcome(s, g)
         s.joined = true
-        log("${s.name} joined from ${s.connection.address}, playing company $company")
+        log("${s.name} ${if (back) "is back" else "joined"} from ${s.connection.address}, playing company $company")
+        tell(Message.Chat(s.name, company, "", if (back) ChatEvent.BACK else ChatEvent.JOINED))
         sendPlayers()
     }
 
@@ -354,8 +379,9 @@ class Host(
 
     private fun left(s: Session, why: String) {
         sessions.remove(s)
-        if (s.joined) {
+        if (s.joined && !s.replaced) {
             log("${s.name} left: $why")
+            if (!closed) tell(Message.Chat(s.name, s.company, "", ChatEvent.LEFT))
             sendPlayers()
         }
     }

@@ -226,9 +226,11 @@ class HostTest {
         Thread.sleep(300)
         host.say("welcome")
         Thread.sleep(500)
-        assertEquals(listOf("hello", "welcome"), b.chat.map { it.text })
-        assertEquals("Ann", b.chat[0].name)
-        assertEquals(listOf("hello", "welcome"), host.chat.map { it.text })
+        // Lines said, leaving out the host's joined lines.
+        val said = b.chat.filter { it.event == 0 }
+        assertEquals(listOf("hello", "welcome"), said.map { it.text })
+        assertEquals("Ann", said[0].name)
+        assertEquals(listOf("hello", "welcome"), host.chat.filter { it.event == 0 }.map { it.text })
     }
 
     @Test

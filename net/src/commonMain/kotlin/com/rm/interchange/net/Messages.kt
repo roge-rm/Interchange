@@ -69,8 +69,15 @@ sealed interface Message {
      */
     data class Frame(val frame: Long, val ticks: Int, val checksum: Long = 0) : Message
 
-    /** Server to everyone: [name], playing [company] (-1 for the server or someone watching), said [text]. */
-    data class Chat(val name: String, val company: Int, val text: String) : Message
+    /**
+     * Server to everyone: [name], playing [company] (-1 for the server or someone watching), said [text]. With an
+     * [event] from [ChatEvent] it's the host saying player [name] joined, left or is back, and [text] is empty, so
+     * each player shows it in their own language.
+     */
+    data class Chat(val name: String, val company: Int, val text: String, val event: Int = 0) : Message
+
+    /** Both ways, when nothing else was sent for a while, so each end knows the other is still there. */
+    data object Ping : Message
 
     /**
      * Server to everyone: who's playing now, and the companies players can play. Answering a [Look] it also has
@@ -114,7 +121,23 @@ object Reject {
     const val COMPANY_PASSWORD = 6
     /** The pack asked for isn't one this game uses, or the server hasn't got it. */
     const val NO_PACK = 7
+    /** Sent to everyone in when the host closes the game. */
+    const val CLOSED = 8
 }
+
+/** What a [Message.Chat] from the host says happened to a player; 0 for a line someone said. */
+object ChatEvent {
+    const val JOINED = 1
+    const val LEFT = 2
+    /** A player who played here before in this game came back, such as after their connection dropped. */
+    const val BACK = 3
+}
+
+/**
+ * How often a [Connection] with nothing else to send sends a [Message.Ping], and how long it waits hearing
+ * nothing before it ends the connection.
+ */
+data class Heartbeat(val pingMillis: Long = 2_000, val timeoutMillis: Int = 10_000)
 
 /**
  * Messages as bytes. Each starts with its kind; commands are written by the
@@ -123,7 +146,7 @@ object Reject {
  */
 object Wire {
     /** The version of the protocol and the sim together; players and servers must match. */
-    const val PROTOCOL = 100
+    const val PROTOCOL = 101
 
     private const val HELLO = 1
     private const val REQUEST = 2
@@ -139,6 +162,7 @@ object Wire {
     private const val LOCK = 12
     private const val PACK_GET = 13
     private const val PACK_PART = 14
+    private const val PING = 15
 
     fun encode(m: Message): ByteArray {
         val w = ByteWriter(when (m) {
@@ -163,7 +187,8 @@ object Wire {
             is Message.Rejected -> { w.byte(REJECTED); w.int(m.reason) }
             is Message.Scheduled -> { w.byte(SCHEDULED); w.long(m.frame); Codec.write(w, m.command) }
             is Message.Frame -> { w.byte(FRAME); w.long(m.frame); w.int(m.ticks); w.long(m.checksum) }
-            is Message.Chat -> { w.byte(CHAT); w.string(m.name); w.int(m.company); w.string(m.text) }
+            is Message.Chat -> { w.byte(CHAT); w.string(m.name); w.int(m.company); w.string(m.text); w.int(m.event) }
+            Message.Ping -> w.byte(PING)
             is Message.Players -> {
                 w.byte(PLAYERS); w.int(m.players.size)
                 for (p in m.players) { w.string(p.name); w.int(p.company) }
@@ -204,7 +229,8 @@ object Wire {
             REJECTED -> Message.Rejected(r.int())
             SCHEDULED -> Message.Scheduled(r.long(), Codec.read(r))
             FRAME -> Message.Frame(r.long(), r.int(), r.long())
-            CHAT -> Message.Chat(r.string(), r.int(), r.string())
+            CHAT -> Message.Chat(r.string(), r.int(), r.string(), r.int())
+            PING -> Message.Ping
             PLAYERS -> {
                 val n = r.int().also { if (it !in 0..256) throw BadData("too many players") }
                 val players = List(n) { Player(r.string(), r.int()) }

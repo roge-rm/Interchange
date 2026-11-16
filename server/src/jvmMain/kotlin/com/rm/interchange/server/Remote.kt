@@ -2,6 +2,7 @@ package com.rm.interchange.server
 
 import com.rm.interchange.net.CompanyInfo
 import com.rm.interchange.net.Connection
+import com.rm.interchange.net.Heartbeat
 import com.rm.interchange.net.Message
 import com.rm.interchange.net.Player
 import com.rm.interchange.net.Reject
@@ -25,14 +26,20 @@ class Refused(val reason: Int) : IOException("refused: $reason")
 /** A download was stopped part way, as asked. */
 class Cancelled : IOException("cancelled")
 
-/** A line of chat: who said it, the company they play (-1 for none) and what they said. */
-data class ChatLine(val name: String, val company: Int, val text: String)
+/**
+ * A line of chat: who said it, the company they play (-1 for none) and what they said. With an [event] from
+ * [com.rm.interchange.net.ChatEvent] it's the host saying player [name] joined, left or is back, with no [text].
+ */
+data class ChatLine(val name: String, val company: Int, val text: String, val event: Int = 0)
 
 /**
  * A game hosted somewhere else, as one player sees it. Made by [join], which
  * waits until it's let in; then hand it to a [GameThread] to follow the game.
+ * [host], [port] and [hello] are what it joined with, for joining again.
  */
-class Remote private constructor(private val connection: Connection) {
+class Remote private constructor(
+    private val connection: Connection, val host: String, val port: Int, val hello: Message.Hello,
+) {
     /** Messages for the game thread, in the order they came. */
     val inbox = ConcurrentLinkedQueue<Message>()
 
@@ -58,6 +65,23 @@ class Remote private constructor(private val connection: Connection) {
     @Volatile var lost: String? = null
         private set
 
+    /**
+     * After joining, the [Reject] reason the server gave for ending it: [Reject.KICKED] or [Reject.CLOSED]; 0 if it
+     * gave none.
+     */
+    @Volatile var ended: Int = 0
+        private set
+
+    /** Whether we left it ourselves. */
+    @Volatile var left = false
+        private set
+
+    /**
+     * Whether the connection ended without us leaving, being kicked or the game closing, as when the network went
+     * away or the server stopped answering; worth joining again.
+     */
+    val dropped: Boolean get() = lost != null && ended == 0 && !left
+
     @Volatile private var refused: Int = 0
     private val answered = CountDownLatch(1)
 
@@ -68,7 +92,13 @@ class Remote private constructor(private val connection: Connection) {
     /** Sets the password for the company we play, or clears it with an empty one. */
     fun lock(password: String) = send(Message.Lock(password))
 
-    fun leave() = connection.close("left")
+    fun leave() {
+        left = true
+        connection.close("left")
+    }
+
+    /** Drops the connection at once, as the network going away would; for tests. */
+    internal fun cut() = connection.cut()
 
     private fun take(m: Message) {
         when (m) {
@@ -82,10 +112,10 @@ class Remote private constructor(private val connection: Connection) {
                 }
             }
             is Message.Rejected -> {
-                refused = m.reason
+                if (welcome != null) ended = m.reason else refused = m.reason
                 answered.countDown()
             }
-            is Message.Chat -> chat = (chat + ChatLine(m.name, m.company, m.text)).takeLast(CHAT_KEPT)
+            is Message.Chat -> chat = (chat + ChatLine(m.name, m.company, m.text, m.event)).takeLast(CHAT_KEPT)
             is Message.Players -> { players = m.players; companies = m.companies }
             else -> inbox.add(m)
         }
@@ -192,9 +222,9 @@ class Remote private constructor(private val connection: Connection) {
          * Connects to [host] on [port] and asks to join as [hello] says, waiting up to [timeoutMillis] to be let in.
          * Throws [Refused] if we're turned away, or [IOException] if the server can't be reached.
          */
-        fun join(host: String, port: Int, hello: Message.Hello, timeoutMillis: Long = 60_000): Remote {
-            val c = Connection.connect(host, port)
-            val r = Remote(c)
+        fun join(host: String, port: Int, hello: Message.Hello, timeoutMillis: Long = 60_000, beat: Heartbeat = Heartbeat()): Remote {
+            val c = Connection.connect(host, port, beat = beat)
+            val r = Remote(c, host, port, hello.copy(protocol = Wire.PROTOCOL))
             c.onMessage = r::take
             c.onClosed = { why ->
                 r.lost = why
@@ -202,7 +232,13 @@ class Remote private constructor(private val connection: Connection) {
             }
             c.start()
             c.send(hello.copy(protocol = Wire.PROTOCOL))
-            if (!r.answered.await(timeoutMillis, TimeUnit.MILLISECONDS)) {
+            val answered = try {
+                r.answered.await(timeoutMillis, TimeUnit.MILLISECONDS)
+            } catch (e: InterruptedException) {
+                c.close("cancelled")
+                throw e
+            }
+            if (!answered) {
                 c.close("timed out")
                 throw IOException("timed out")
             }

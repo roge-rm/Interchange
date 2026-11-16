@@ -30,6 +30,11 @@ class Settings {
     var lastAddress by mutableStateOf("")
     /** Made once, so a server knows this phone again and gives back its company. */
     var client = ""
+    /**
+     * The last game joined, for rejoining it from the multiplayer screen: its address and port, the company played
+     * there (-1 watching) and the server's name; an empty address for none. No password is kept.
+     */
+    var rejoin by mutableStateOf(LastGame("", 0, -1, ""))
     /** The first-route checklist in new games. Turned off when it's dismissed or done. */
     var checklist by mutableStateOf(true)
     /** The game the checklist is going in, as [checklistKey] gives it, and the steps ticked there, a bit each. */
@@ -45,7 +50,9 @@ class Settings {
             "sound=$sound\nworld=$world\ntools=$tools\n" +
             "player=${playerName.replace('\n', ' ')}\naddress=${lastAddress.replace('\n', ' ')}\nclient=$client\n" +
             "checklist=$checklist\nchecklistGame=$checklistGame\nchecklistTicks=$checklistTicks\n" +
-            "chapters=${chaptersWon.sorted().joinToString(",")}\n").encodeToByteArray())
+            "chapters=${chaptersWon.sorted().joinToString(",")}\n" +
+            "rejoinAddress=${rejoin.address.replace('\n', ' ')}\nrejoinPort=${rejoin.port}\nrejoinCompany=${rejoin.company}\n" +
+            "rejoinServer=${rejoin.server.replace('\n', ' ')}\n").encodeToByteArray())
     }
 
     companion object {
@@ -77,6 +84,10 @@ class Settings {
                     "checklistGame" -> s.checklistGame = v
                     "checklistTicks" -> v.toIntOrNull()?.let { s.checklistTicks = it }
                     "chapters" -> s.chaptersWon = v.split(",").filter { it.isNotBlank() }.toSet()
+                    "rejoinAddress" -> s.rejoin = s.rejoin.copy(address = v)
+                    "rejoinPort" -> v.toIntOrNull()?.let { s.rejoin = s.rejoin.copy(port = it) }
+                    "rejoinCompany" -> v.toIntOrNull()?.let { s.rejoin = s.rejoin.copy(company = it) }
+                    "rejoinServer" -> s.rejoin = s.rejoin.copy(server = v)
                 }
             }
             if (s.client.isEmpty()) {
@@ -87,3 +98,6 @@ class Settings {
         }
     }
 }
+
+/** A game joined: where it is, the company played there (-1 watching) and the server's name. */
+data class LastGame(val address: String, val port: Int, val company: Int, val server: String)

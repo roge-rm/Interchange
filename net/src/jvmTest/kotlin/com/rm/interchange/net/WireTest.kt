@@ -27,6 +27,8 @@ class WireTest {
             Message.Scheduled(1234567890123L, Command.NewCompany(3, "Ann")),
             Message.Frame(99, 16, -42),
             Message.Chat("Ann", 3, "hi"),
+            Message.Chat("Bo", -1, "", ChatEvent.BACK),
+            Message.Ping,
             Message.Players(listOf(Player("Host", 0), Player("Ann", 3), Player("Bo", -1))),
             Message.Players(listOf(Player("Ann", 3)), listOf(CompanyInfo(0, "Host & Co", 1, false), CompanyInfo(3, "Ann", 2, true, com.rm.interchange.sim.Insignia.presets[0]))),
             Message.Players(listOf(Player("Ann", 3)), emptyList(), listOf(PackRef("prairie", 3, -77L), PackRef("railbus", 2, 5L))),

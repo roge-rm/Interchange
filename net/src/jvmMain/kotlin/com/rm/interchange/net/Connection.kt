@@ -8,7 +8,9 @@ import java.io.IOException
 import java.net.InetSocketAddress
 import java.net.ServerSocket
 import java.net.Socket
+import java.net.SocketTimeoutException
 import java.util.concurrent.LinkedBlockingQueue
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 
@@ -17,8 +19,13 @@ import java.util.concurrent.atomic.AtomicLong
  * then its bytes. A thread reads and hands each message to [onMessage]; another
  * writes, so [send] never blocks on a slow network. [onClosed] is called once,
  * from either thread, when the connection ends for any reason.
+ *
+ * The writing thread sends a [Message.Ping] when nothing else went out for
+ * [Heartbeat.pingMillis], and the reading thread ends the connection with
+ * "timed out" when nothing came in for [Heartbeat.timeoutMillis], by the
+ * socket's read timeout. Pings aren't handed to [onMessage].
  */
-class Connection(private val socket: Socket) {
+class Connection(private val socket: Socket, private val beat: Heartbeat = Heartbeat()) {
     var onMessage: (Message) -> Unit = {}
     var onClosed: (String) -> Unit = {}
 
@@ -37,6 +44,7 @@ class Connection(private val socket: Socket) {
     /** Starts the reading and writing threads; set [onMessage] and [onClosed] first. */
     fun start() {
         socket.tcpNoDelay = true
+        socket.soTimeout = beat.timeoutMillis
         Thread(::read, "interchange-read-$address").apply { isDaemon = true }.start()
         Thread(::write, "interchange-write-$address").apply { isDaemon = true }.start()
     }
@@ -66,8 +74,11 @@ class Connection(private val socket: Socket) {
                 if (n < 1 || n > MAX_MESSAGE) throw IOException("a message of $n bytes")
                 val b = ByteArray(n)
                 input.readFully(b)
-                onMessage(Wire.decode(b))
+                val m = Wire.decode(b)
+                if (m !== Message.Ping) onMessage(m)
             }
+        } catch (e: SocketTimeoutException) {
+            end("timed out")
         } catch (e: Exception) {
             end(e.message ?: e.toString())
         }
@@ -77,7 +88,13 @@ class Connection(private val socket: Socket) {
         try {
             val output = DataOutputStream(BufferedOutputStream(socket.getOutputStream(), 1 shl 16))
             while (!closed.get()) {
-                val b = out.take()
+                val b = out.poll(beat.pingMillis, TimeUnit.MILLISECONDS)
+                if (b == null) {
+                    output.writeInt(PING.size)
+                    output.write(PING)
+                    output.flush()
+                    continue
+                }
                 if (b === CLOSE) {
                     output.flush()
                     end("closed")
@@ -95,6 +112,9 @@ class Connection(private val socket: Socket) {
         }
     }
 
+    /** Drops the connection at once, sending nothing more, as a network going away would. */
+    fun cut() = end("cut")
+
     private fun end(why: String) {
         if (!closed.compareAndSet(false, true)) return
         out.clear()
@@ -107,18 +127,19 @@ class Connection(private val socket: Socket) {
         /** The biggest message, a save of the biggest map with room to spare. */
         const val MAX_MESSAGE = 512 shl 20
         private val CLOSE = ByteArray(0)
+        private val PING = Wire.encode(Message.Ping)
 
         /** Connects to [host] on [port], or throws [IOException]. */
-        fun connect(host: String, port: Int, timeoutMillis: Int = 10_000): Connection {
+        fun connect(host: String, port: Int, timeoutMillis: Int = 10_000, beat: Heartbeat = Heartbeat()): Connection {
             val s = Socket()
             s.connect(InetSocketAddress(host, port), timeoutMillis)
-            return Connection(s)
+            return Connection(s, beat)
         }
     }
 }
 
 /** Listens on [port] (0 for any) and hands each player who connects to [onConnection], on its own thread. */
-class Listener(port: Int, private val onConnection: (Connection) -> Unit) {
+class Listener(port: Int, private val beat: Heartbeat = Heartbeat(), private val onConnection: (Connection) -> Unit) {
     private val server = ServerSocket().apply {
         reuseAddress = true
         bind(InetSocketAddress(port))
@@ -128,7 +149,7 @@ class Listener(port: Int, private val onConnection: (Connection) -> Unit) {
     private val thread = Thread({
         while (!server.isClosed) {
             val s = try { server.accept() } catch (_: IOException) { break }
-            onConnection(Connection(s))
+            onConnection(Connection(s, beat))
         }
     }, "interchange-listen").apply { isDaemon = true }
 
