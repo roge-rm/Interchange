@@ -125,12 +125,14 @@ class TerminalTest {
         for (owner in listOf(0, 1)) {
             b.owner = owner
             val before = LongArray(2) { w.companies[it].thisYear[Books.HANDLING] }
+            val took = w.companies[1].thisYear[Books.HANDLING_IN]
             t.cargo[Cargo.GOODS] += Packet(-1, 0, 100, w.tick - 640, 0, 0)
             w.callAt(t, b, b.id or Order.TRANSFER or Order.NO_LOAD)
             val charge = w.pay(100L * Handling.CHARGE[Handling.GENERAL]) / 100
             assertTrue(charge > 0)
             assertEquals(before[0] - charge, w.companies[0].thisYear[Books.HANDLING])
-            assertEquals(before[1] + if (owner == 1) charge else 0, w.companies[1].thisYear[Books.HANDLING])
+            assertEquals(before[1], w.companies[1].thisYear[Books.HANDLING])
+            assertEquals(took + if (owner == 1) charge else 0, w.companies[1].thisYear[Books.HANDLING_IN])
             b.cargo[Cargo.GOODS].clear()
         }
     }
@@ -212,5 +214,72 @@ class TerminalTest {
         assertEquals(a.checksum(), b.checksum())
         while (a.day < 300) { a.step(); b.step() }
         assertEquals(a.checksum(), b.checksum())
+    }
+
+    @Test
+    fun smallTransfersAreBilledInFullOverCalls() {
+        val w = world()
+        val t = w.trains[0]!!
+        val b = w.stations[1]!!
+        val co = w.companies[0]
+        val cents = w.pay(Handling.CHARGE[Handling.PEOPLE].toLong())
+        assertTrue(cents in 1 until 100)
+        repeat(5) {
+            t.cargo[Cargo.PASSENGERS] += Packet(-1, 0, 1, w.tick - 640, 0, 0)
+            w.callAt(t, b, b.id or Order.TRANSFER or Order.NO_LOAD)
+        }
+        val recorded = b.cargo[Cargo.PASSENGERS].sumOf { it.charged }
+        assertEquals(5 * cents, recorded)
+        assertEquals(recorded, -co.thisYear[Books.HANDLING] * 100 + co.handlingOwed)
+        assertTrue(co.handlingOwed in 0 until 100)
+        assertEquals(recorded / 100, -co.thisYear[Books.HANDLING])
+    }
+
+    @Test
+    fun demolishingAStationPaysHalfItsEquipmentBack() {
+        val change = LongArray(2)
+        for (equipped in listOf(false, true)) {
+            val w = world()
+            if (equipped) { w.apply(Command.Equip(0, 1, Equipment.CRANE)); w.apply(Command.Equip(0, 1, Equipment.WAREHOUSE)) }
+            val before = w.companies[0].money
+            w.apply(Command.ClearArea(0, 24, 10, 27, 10))
+            assertNull(w.stations[1])
+            change[if (equipped) 1 else 0] = w.companies[0].money - before
+        }
+        assertEquals(world().let { it.scrapBack(Equipment.COST[Equipment.CRANE]) + it.scrapBack(Equipment.COST[Equipment.WAREHOUSE]) }, change[1] - change[0])
+    }
+
+    @Test
+    fun loadingDropsEquipmentWithoutHandlingOrAtAWaypoint() {
+        val off = world(handling = false)
+        off.stations[0]!!.equipment = 1 shl Equipment.CRANE
+        off.companies[0].handlingOwed = 40
+        val offRead = Save.read(Save.write(off))
+        assertEquals(0, offRead.stations[0]!!.equipment)
+        assertEquals(0L, offRead.companies[0].handlingOwed)
+        val on = world()
+        on.apply(Command.Waypoint(0, 30, 10))
+        val wp = assertNotNull(on.stations.firstOrNull { it != null && it.waypoint })
+        wp.equipment = 1 shl Equipment.CRANE
+        on.apply(Command.Equip(0, 0, Equipment.CRANE))
+        on.companies[0].handlingOwed = 40
+        val onRead = Save.read(Save.write(on))
+        assertEquals(0, onRead.stations[wp.id]!!.equipment)
+        assertEquals(1 shl Equipment.CRANE, onRead.stations[0]!!.equipment)
+        assertEquals(40L, onRead.companies[0].handlingOwed)
+    }
+
+    @Test
+    fun theViewCarriesHandlingAndFlows() {
+        val w = world()
+        w.flowsLast[flowKey(Cargo.PASSENGERS, 0, 2)] = longArrayOf(10, 1000, 100, 500)
+        val v = w.view().stations.first { it.id == 0 }
+        assertNotNull(v.handling)
+        assertEquals(1, v.flows.size)
+        assertEquals(w.flowsAt(0).single().units, v.flows.single().units)
+        assertTrue(w.view().stations.first { it.id == 2 }.flows.isEmpty())
+        val off = world(handling = false).view().stations.first { it.id == 0 }
+        assertNull(off.handling)
+        assertTrue(off.flows.isEmpty())
     }
 }

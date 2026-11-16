@@ -30,6 +30,8 @@ class Company(val id: Int, var name: String, var money: Long) {
     var roadUpkeep = 0L
     /** What its priority tiles owe short of a dollar, in tenths of a cent. */
     var priorityOwed = 0L
+    /** Transfer charges it owes short of a dollar, in cents, carried to its next call. Only with handling. */
+    var handlingOwed = 0L
     /** Months running it's been unable to pay its way, even borrowing all it can. */
     var trouble = 0
     /** Bought out or gone under: it owns nothing and does nothing. Kept so ids stay put. */
@@ -67,9 +69,11 @@ object Books {
     const val UPKEEP = 6
     /** Priority track and road, and digging trains out of snow on it. */
     const val PRIORITY = 7
-    /** Handling charges for transfers, paid out and taken in at the company's stations. */
+    /** Handling charges it pays for transfers. */
     const val HANDLING = 8
-    const val COUNT = 9
+    /** Handling charges other companies pay at its stations. */
+    const val HANDLING_IN = 9
+    const val COUNT = 10
 }
 
 /** Months of money kept for the finance graphs. */

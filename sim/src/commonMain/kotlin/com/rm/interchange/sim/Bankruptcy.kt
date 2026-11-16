@@ -88,6 +88,7 @@ internal fun World.restart(c: Company, news: Boolean = true) {
     c.runningOwed = 0
     c.upkeepOwed = 0
     c.priorityOwed = 0
+    c.handlingOwed = 0
     dropPriority(c.id)
     dropEquipmentOf(c.id)
     c.thisYear.fill(0)

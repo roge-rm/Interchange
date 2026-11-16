@@ -330,6 +330,9 @@ class StationView(
     val gaveUp: IntArray = IntArray(Cargo.MAX),
     /** Its service score, 0 to 100 (50 makes as many passengers as before), -1 before it's worked out or with nowhere to go. */
     val service: Int = -1,
+    /** Its handling and last month's flows from it, with handling on only. */
+    val handling: HandlingView? = null,
+    val flows: List<FlowView> = emptyList(),
 )
 
 /**
@@ -559,6 +562,8 @@ fun World.view(company: Int = 0, withReserved: Boolean = false, withNetwork: Boo
     }
     // Made once, and only if one of the player's stations has a destination to give a reason for.
     val whyGraph by lazy { whyGraph() }
+    val flows = if (settings.handling) flowsBy() else emptyMap()
+    val equipmentPrices = if (settings.handling) equipmentPrices() else null
     val stationViews = stations.filterNotNull().map { s ->
         val going = HashMap<Int, IntArray>()
         for (c in 0 until cargoCount) for (p in s.cargo[c]) going.getOrPut(p.dest) { IntArray(Cargo.MAX) }[c] += p.count
@@ -578,6 +583,7 @@ fun World.view(company: Int = 0, withReserved: Boolean = false, withNetwork: Boo
             s.id, s.name, s.tiles.size, IntArray(Cargo.MAX) { s.waiting(it) }, list, s.rating.copyOf(), served, s.owner, mx, my, s.waypoint,
             IntArray(Cargo.MAX) { c -> if (s.boardedLastMonth[c] == 0) -1 else (s.waitedLastMonth[c] / s.boardedLastMonth[c]).toInt() },
             s.boardedLastMonth.copyOf(), s.gaveUpLastMonth.copyOf(), s.service,
+            equipmentPrices?.let { handlingView(s, it) }, flows[s.id] ?: emptyList(),
         )
     }
     val signalViews = signals.entries.sortedBy { it.key }.map { (k, s) ->

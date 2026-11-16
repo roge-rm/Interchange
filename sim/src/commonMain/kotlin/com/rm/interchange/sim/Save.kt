@@ -359,6 +359,7 @@ object Save {
             }
             if (version >= 70) {
                 for (st in stations) if (st != null) w.int(st.equipment)
+                for (c in companies) w.uvar(c.handlingOwed.coerceIn(0, 99))
                 for (flows in listOf(flowsMonth, flowsLast)) {
                     val keys = flows.keys.sorted()
                     w.uvar(keys.size.toLong())
@@ -912,7 +913,9 @@ object Save {
             }
             // Before 70 no equipment or flows.
             if (version >= 70) {
-                for (st in stations) if (st != null) st.equipment = r.int() and ((1 shl Equipment.COUNT) - 1)
+                // Equipment only with handling, and never at a waypoint.
+                for (st in stations) if (st != null) st.equipment = r.int().let { if (settings.handling && !st.waypoint) it and ((1 shl Equipment.COUNT) - 1) else 0 }
+                for (c in companies) c.handlingOwed = r.uvar().let { if (settings.handling) it.coerceIn(0, 99) else 0 }
                 for (flows in listOf(flowsMonth, flowsLast)) {
                     // Each takes five bytes at the least.
                     val n = r.uvar()

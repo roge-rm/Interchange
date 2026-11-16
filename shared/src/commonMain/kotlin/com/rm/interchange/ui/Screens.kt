@@ -691,6 +691,7 @@ fun FinanceWindow(runner: com.rm.interchange.server.GameThread, onClose: () -> U
             Res.string.book_upkeep to com.rm.interchange.sim.Books.UPKEEP,
             Res.string.book_priority to com.rm.interchange.sim.Books.PRIORITY,
             Res.string.book_handling to com.rm.interchange.sim.Books.HANDLING,
+            Res.string.book_handling_in to com.rm.interchange.sim.Books.HANDLING_IN,
         )
         @Composable
         fun line(label: String, a: String, b: String, strong: Boolean = false, colour: androidx.compose.ui.graphics.Color = c.text) {

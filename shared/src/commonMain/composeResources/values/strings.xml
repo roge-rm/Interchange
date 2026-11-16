@@ -870,7 +870,8 @@
     <string name="recipe_line">%1$s to %2$s</string>
     <string name="rate_label">Work rate</string>
     <string name="handling">Handling</string>
-    <string name="book_handling">Handling</string>
+    <string name="book_handling">Handling charges</string>
+    <string name="book_handling_in">Handling income</string>
     <string name="head_handling">Handling a day</string>
     <string name="head_equipment">Equipment</string>
     <string name="head_flows">Sent last month</string>

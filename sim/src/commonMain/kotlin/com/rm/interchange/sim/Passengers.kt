@@ -645,12 +645,16 @@ internal fun World.callAt(t: Carrier, s: Station, o: Int = 0) {
     }
     if (!Order.has(o, Order.NO_LOAD)) loadAt(t, s, tally)
     if (tally != null) {
-        // The charges go to the station's owner when it's someone else's.
-        val dollars = charges / 100
-        if (dollars > 0) {
-            spend(company, Books.HANDLING, dollars)
-            t.profitThisYear -= dollars
-            companies.getOrNull(s.owner)?.takeIf { it.id != company.id && !it.gone }?.let { earn(it, Books.HANDLING, dollars) }
+        // The charges go to the station's owner when it's someone else's; what's short of a dollar is carried.
+        if (charges > 0) {
+            company.handlingOwed += charges
+            val dollars = company.handlingOwed / 100
+            company.handlingOwed %= 100
+            if (dollars > 0) {
+                spend(company, Books.HANDLING, dollars)
+                t.profitThisYear -= dollars
+                companies.getOrNull(s.owner)?.takeIf { it.id != company.id && !it.gone }?.let { earn(it, Books.HANDLING_IN, dollars) }
+            }
         }
         val ticks = handlingTicks(t, s, tally)
         settleCall(tally, ticks, s.id)

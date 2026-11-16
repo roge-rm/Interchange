@@ -72,6 +72,14 @@ internal fun World.equipStation(company: Company, c: Command.Equip) {
     }
 }
 
+/** Pays [s]'s owner half back for each piece of its equipment, as taking it away would, and drops it. */
+internal fun World.refundEquipment(s: Station) {
+    if (!settings.handling || s.equipment == 0) return
+    val owner = companies.getOrNull(s.owner)?.takeIf { !it.gone }
+    if (owner != null) for (p in 0 until Equipment.COUNT) if (Equipment.has(s.equipment, p)) scrap(owner, Equipment.COST[p])
+    s.equipment = 0
+}
+
 /** Drops the equipment of every station [company] owns, as its stations change hands or it starts again. */
 internal fun World.dropEquipmentOf(company: Int) {
     for (s in stations) if (s != null && s.owner == company) s.equipment = 0
@@ -196,13 +204,14 @@ internal fun World.transferCharge(cl: Int, n: Int): Long = pay(n.toLong() * Hand
 class HandlingView(val rates: Array<IntArray>, val equipment: Int, val cost: LongArray, val upkeep: LongArray)
 
 /** Station [id]'s handling, or null without handling. */
-fun World.handlingView(id: Int): HandlingView? {
+fun World.handlingView(id: Int): HandlingView? = stations.getOrNull(id)?.let { handlingView(it, equipmentPrices()) }
+
+/** Each part's cost now and upkeep a month now, shared by every station's [HandlingView] in a view. */
+internal fun World.equipmentPrices() = LongArray(Equipment.COUNT) { price(Equipment.COST[it]) } to LongArray(Equipment.COUNT) { price(Equipment.UPKEEP[it]) }
+
+internal fun World.handlingView(s: Station, prices: Pair<LongArray, LongArray>): HandlingView? {
     if (!settings.handling) return null
-    val s = stations.getOrNull(id) ?: return null
-    return HandlingView(
-        Array(4) { m -> IntArray(Handling.COUNT) { handlingRate(s, m, it) } }, s.equipment,
-        LongArray(Equipment.COUNT) { price(Equipment.COST[it]) }, LongArray(Equipment.COUNT) { price(Equipment.UPKEEP[it]) },
-    )
+    return HandlingView(Array(4) { m -> IntArray(Handling.COUNT) { handlingRate(s, m, it) } }, s.equipment, prices.first, prices.second)
 }
 
 /**
@@ -212,16 +221,21 @@ fun World.handlingView(id: Int): HandlingView? {
 class FlowView(val cargo: Int, val from: Int, val to: Int, val units: Int, val tripTicks: Long, val handlingShare: Int, val costCents: Long)
 
 /** Last month's flows from station [id], or to it with [to], the most units first. */
-fun World.flowsAt(id: Int, to: Boolean = false): List<FlowView> {
-    val out = ArrayList<FlowView>()
+fun World.flowsAt(id: Int, to: Boolean = false): List<FlowView> = flowsBy(to)[id] ?: emptyList()
+
+/** Last month's flows by the station they're from, or to with [to], each the most units first. Sim thread only. */
+internal fun World.flowsBy(to: Boolean = false): Map<Int, List<FlowView>> {
+    if (flowsLast.isEmpty()) return emptyMap()
+    val out = HashMap<Int, ArrayList<FlowView>>()
     for ((k, f) in flowsLast) {
         val a = ((k shr 16) and 0xffff).toInt()
         val b = (k and 0xffff).toInt()
-        if ((if (to) b else a) != id || f[0] <= 0) continue
+        if (f[0] <= 0) continue
         val trip = f[1] / f[0]
         val share = if (f[1] > 0) (f[2] * 100 / f[1]).toInt().coerceIn(0, 100) else 0
-        out += FlowView((k shr 32).toInt(), a, b, f[0].toInt(), trip, share, f[3] / f[0])
+        out.getOrPut(if (to) b else a) { ArrayList() } += FlowView((k shr 32).toInt(), a, b, f[0].toInt(), trip, share, f[3] / f[0])
     }
-    out.sortWith(compareByDescending<FlowView> { it.units }.thenBy { it.cargo }.thenBy { it.from }.thenBy { it.to })
+    val order = compareByDescending<FlowView> { it.units }.thenBy { it.cargo }.thenBy { it.from }.thenBy { it.to }
+    for (list in out.values) list.sortWith(order)
     return out
 }

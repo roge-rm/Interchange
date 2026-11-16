@@ -610,7 +610,7 @@ const val STATION_SPREAD = 12
 
 /** Takes station [id] off the map and out of every order. */
 internal fun World.dropStation(id: Int) {
-    stations[id]?.let { dropStationBuilding(it) }
+    stations[id]?.let { dropStationBuilding(it); refundEquipment(it) }
     stations[id] = null
     dropFlows(id)
     for (t in carriers()) if (removeOrders(t) { Order.station(it) == id }) {

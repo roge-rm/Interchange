@@ -610,6 +610,7 @@ class World(settings: NewGame, val roster: Roster = Roster.BASE, generate: Boole
         if (settings.handling) {
             mix(900L)
             for (s in stations) if (s != null && s.equipment != 0) { mix(s.id.toLong()); mix(s.equipment.toLong()) }
+            for (c in companies) mix(c.handlingOwed)
         }
         for (k in roadStops.keys.sorted()) mix(k.toLong() * 31 + roadStops.getValue(k))
         for (k in saltDepots.sorted()) mix(k.toLong() * 7)

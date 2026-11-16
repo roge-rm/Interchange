@@ -853,7 +853,8 @@
     <string name="recipe_line">%1$s donne %2$s</string>
     <string name="rate_label">Rythme de travail</string>
     <string name="handling">Manutention</string>
-    <string name="book_handling">Manutention</string>
+    <string name="book_handling">Frais de manutention</string>
+    <string name="book_handling_in">Recettes de manutention</string>
     <string name="head_handling">Manutention par jour</string>
     <string name="head_equipment">Équipement</string>
     <string name="head_flows">Envoyé le mois dernier</string>
