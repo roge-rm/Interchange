@@ -831,7 +831,10 @@
     <string name="days_tenths">%1$d,%2$d jours</string>
     <string name="days_tenths_about">Environ %1$d,%2$d jours</string>
     <string name="waited_days">Attente de %1$d,%2$d jours</string>
-    <string name="gave_up_n">%1$s abandons</string>
+    <plurals name="gave_up_n">
+        <item quantity="one">%1$s a abandonné</item>
+        <item quantity="other">%1$s ont abandonné</item>
+    </plurals>
     <string name="why_no_service">Aucun service jusque-là</string>
     <string name="why_not_carried">Rien en route ne le transporte</string>
     <string name="why_orders">Les ordres ne le permettent pas</string>

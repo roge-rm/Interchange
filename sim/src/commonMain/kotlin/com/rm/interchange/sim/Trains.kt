@@ -730,9 +730,9 @@ private fun World.drive(t: Train) {
     }
     if (t.brokenFor > 0) {
         // Broken down: it rolls to a stand and waits for the fitters, still held if it was stood at a signal or train.
+        // The repair isn't counted as held time on the link.
         t.brokenFor--
         t.held = wasHeld && t.speed == 0
-        if (t.held && t.leftAt >= 0) t.heldTicks++
         t.speed = (t.speed - BRAKE).coerceAtLeast(0)
         if (t.speed > 0) advance(t, t.speed / 16, freeAhead(t).first)
         else if (atDoor(t)) {

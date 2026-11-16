@@ -38,7 +38,7 @@ internal fun OverviewCanvas(image: MapImage?, traffic: State<List<OverviewVehicl
     val shape = RoundedCornerShape(10.dp)
     Canvas(modifier.onSizeChanged { camera.resize(Size(it.width.toFloat(), it.height.toFloat()), view.mapWidth, view.mapHeight) }.clip(shape).background(c.page).border(1.dp, c.chromeEdge, shape)
         .semantics { contentDescription = title }
-        .pointerInput(view, camera) {
+        .pointerInput(view, camera, owner) {
             awaitEachGesture {
                 val down = awaitFirstDown(requireUnconsumed = false)
                 down.consume()

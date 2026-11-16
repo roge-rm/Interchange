@@ -848,7 +848,10 @@
     <string name="days_tenths">%1$d.%2$d days</string>
     <string name="days_tenths_about">About %1$d.%2$d days</string>
     <string name="waited_days">Waited %1$d.%2$d days</string>
-    <string name="gave_up_n">%1$s gave up</string>
+    <plurals name="gave_up_n">
+        <item quantity="one">%1$s gave up</item>
+        <item quantity="other">%1$s gave up</item>
+    </plurals>
     <string name="why_no_service">No service there</string>
     <string name="why_not_carried">Nothing on the way carries it</string>
     <string name="why_orders">Orders don't let it go</string>

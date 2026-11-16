@@ -102,16 +102,40 @@ internal fun World.networkStatsMonth() {
 }
 
 /**
- * Why cargo [c] can't be sent from station [from] to [to], a [WhyNot] reason: [WhyNot.OK] if it can. Worked out from
- * the link tables and vehicles' orders when asked, never in the step.
+ * The vehicles and which station each one's orders go to after which, made once for many [whyNot] calls, as when
+ * building a view.
  */
-fun World.whyNot(from: Int, to: Int, c: Int): Int {
+class WhyGraph internal constructor(internal val runs: List<Carrier>) {
+    internal val outs: Map<Int, List<Int>> by lazy {
+        val outs = HashMap<Int, ArrayList<Int>>()
+        for (v in runs) {
+            val ids = v.orders.map { Order.station(it) }.filter { it >= 0 }
+            if (ids.size < 2) continue
+            for (k in ids.indices) {
+                val a = ids[k]
+                val b = ids[(k + 1) % ids.size]
+                if (a != b) outs.getOrPut(a) { ArrayList() } += b
+            }
+        }
+        outs
+    }
+}
+
+/** A [WhyGraph] of the world's vehicles as they are now. */
+fun World.whyGraph() = WhyGraph(carriers())
+
+/**
+ * Why cargo [c] can't be sent from station [from] to [to], a [WhyNot] reason: [WhyNot.OK] if it can. Worked out from
+ * the link tables and vehicles' orders in [graph] when asked, never in the step.
+ */
+fun World.whyNot(from: Int, to: Int, c: Int, graph: WhyGraph? = null): Int {
     val dest = stations.getOrNull(to) ?: return WhyNot.NO_SERVICE
     if (from == to) return WhyNot.OK
     val reached = nextHop(from, to, c) >= 0
     if (!accepts(dest, c)) return WhyNot.NOT_ACCEPTED
     if (reached) return WhyNot.OK
-    val runs = carriers()
+    val g = graph ?: whyGraph()
+    val runs = g.runs
     // A vehicle carrying it that names both stations in its orders, but whose orders don't link them for it.
     for (v in runs) {
         if (v.capacity(c) == 0) continue
@@ -125,16 +149,7 @@ fun World.whyNot(from: Int, to: Int, c: Int): Int {
         if (a && b) return WhyNot.ORDERS
     }
     // Linked at all, by any vehicle's station orders one after another, whatever it carries.
-    val outs = HashMap<Int, ArrayList<Int>>()
-    for (v in runs) {
-        val ids = v.orders.map { Order.station(it) }.filter { it >= 0 }
-        if (ids.size < 2) continue
-        for (k in ids.indices) {
-            val a = ids[k]
-            val b = ids[(k + 1) % ids.size]
-            if (a != b) outs.getOrPut(a) { ArrayList() } += b
-        }
-    }
+    val outs = g.outs
     val seen = HashSet<Int>()
     val queue = ArrayDeque<Int>()
     queue += from
@@ -172,12 +187,15 @@ class LinkView(
     val vehicleIds: IntArray,
 )
 
-/** The links company [company]'s vehicles run, stop to stop as their orders go, and those it ran last month, by key. */
-internal fun World.linkViews(company: Int): List<LinkView> {
+/**
+ * The links each company's vehicles run, stop to stop as their orders go, and those from its stations it ran last
+ * month, by company and then key.
+ */
+internal fun World.linkViews(): List<LinkView> {
     class Building(var modes: Int = 0, var guess: Int = MAX_LINK_TICKS, val modesList: ArrayList<Int> = ArrayList(), val ids: ArrayList<Int> = ArrayList())
-    val found = HashMap<Long, Building>()
+    // By company, then link key.
+    val found = HashMap<Pair<Int, Long>, Building>()
     for (v in carriers()) {
-        if (v.owner != company) continue
         val stops = v.orders.filter { isStop(it) }
         if (stops.size < 2) continue
         val seen = HashSet<Long>()
@@ -186,7 +204,7 @@ internal fun World.linkViews(company: Int): List<LinkView> {
             val b = Order.station(stops[(k + 1) % stops.size])
             if (a == b) continue
             val key = linkKey(a, b)
-            val l = found.getOrPut(key) { Building() }
+            val l = found.getOrPut(v.owner to key) { Building() }
             val ticks = (stationDistance(a, b) * TILE_TICKS_KMH / v.topSpeed.coerceAtLeast(1)).coerceIn(1, MAX_LINK_TICKS)
             l.guess = minOf(l.guess, ticks)
             l.modes = l.modes or (1 shl modeOf(v))
@@ -197,11 +215,12 @@ internal fun World.linkViews(company: Int): List<LinkView> {
         }
     }
     for (key in linkStats.keys) {
-        if (key in found) continue
-        if (stations.getOrNull((key shr 16).toInt())?.owner == company) found[key] = Building()
+        val owner = stations.getOrNull((key shr 16).toInt())?.owner ?: continue
+        if ((owner to key) !in found) found[owner to key] = Building()
     }
-    return found.keys.sorted().map { key ->
-        val l = found.getValue(key)
+    return found.keys.sortedWith(compareBy<Pair<Int, Long>> { it.first }.thenBy { it.second }).map { id ->
+        val (company, key) = id
+        val l = found.getValue(id)
         val last = linkStats[key]?.last
         val time = linkTimes[key]
         LinkView(

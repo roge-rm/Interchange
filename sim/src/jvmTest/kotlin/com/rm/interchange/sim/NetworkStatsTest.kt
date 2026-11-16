@@ -106,8 +106,10 @@ class NetworkStatsTest {
         var held = 0
         n = 0
         while (held < 2000) {
+            // Time broken down isn't counted as held.
+            val broken = t.brokenFor > 0
             w.step()
-            if (t.held && t.leftAt >= 0) held++
+            if (t.held && t.leftAt >= 0 && !broken) held++
             assertTrue(++n < 100_000, "never held")
         }
         assertEquals(held, t.heldTicks)

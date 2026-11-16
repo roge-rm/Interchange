@@ -368,7 +368,7 @@ class WorldView(
     val shedYears: IntArray = IntArray(0),
     /** The town nearest each of the player's rail depots and garages, by depot id, to name them in orders. */
     val depotTowns: Map<Int, Int> = emptyMap(),
-    /** The links the player's vehicles run, by key; empty unless asked for. */
+    /** The links every company's vehicles run, by company and key; empty unless asked for. */
     val links: List<LinkView> = emptyList(),
 )
 
@@ -482,6 +482,8 @@ fun World.view(company: Int = 0, withReserved: Boolean = false, withNetwork: Boo
             shed = t.shedIn,
         )
     }
+    // Made once, and only if one of the player's stations has a destination to give a reason for.
+    val whyGraph by lazy { whyGraph() }
     val stationViews = stations.filterNotNull().map { s ->
         val going = HashMap<Int, IntArray>()
         for (c in 0 until Cargo.COUNT) for (p in s.cargo[c]) going.getOrPut(p.dest) { IntArray(Cargo.COUNT) }[c] += p.count
@@ -489,7 +491,7 @@ fun World.view(company: Int = 0, withReserved: Boolean = false, withNetwork: Boo
             // The way shown is the one for the cargo most of them are.
             val most = n.indices.maxBy { n[it] }
             val hop = if (d >= 0) nextHop(s.id, d, most) else -1
-            val why = if (!withNetwork || d < 0 || i >= GOING_WHY) -1 else whyNot(s.id, d, most)
+            val why = if (!withNetwork || s.owner != company || d < 0 || i >= GOING_WHY) -1 else whyNot(s.id, d, most, whyGraph)
             GoingView(d, if (hop >= 0 && hop != d) hop else -1, n, why)
         }
         var served = 0
@@ -579,7 +581,7 @@ fun World.view(company: Int = 0, withReserved: Boolean = false, withNetwork: Boo
         companies.map { c -> c.groups.map { it.toList() } },
         sheds.map { shedYears[it] ?: 0 }.toIntArray(),
         depots.filter { it != null && it.owner == company && (it.kind == Depots.RAIL || it.kind == Depots.ROAD) }.associate { it!!.id to nearestTown(it.tile) },
-        if (withNetwork) linkViews(company) else emptyList(),
+        if (withNetwork) linkViews() else emptyList(),
     )
 }
 

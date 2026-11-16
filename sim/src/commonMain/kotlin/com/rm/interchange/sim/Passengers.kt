@@ -349,13 +349,10 @@ internal fun World.passengersDay() {
     for (s in stations) {
         if (s == null) continue
         for (cg in 0 until Cargo.COUNT) {
-            val lots = s.cargo[cg].iterator()
-            while (lots.hasNext()) {
-                val p = lots.next()
-                if (tick - p.waitingFrom > GIVE_UP_DAYS * Calendar.TICKS_PER_DAY.toLong()) {
-                    s.gaveUp[cg] += p.count
-                    lots.remove()
-                }
+            s.cargo[cg].removeAll { p ->
+                val old = tick - p.waitingFrom > GIVE_UP_DAYS * Calendar.TICKS_PER_DAY.toLong()
+                if (old) s.gaveUp[cg] += p.count
+                old
             }
             // The rating creeps towards what the service deserves, a little a day.
             val target = (ratingTarget(s, cg) + if (s.id in statues) STATUE_RATING else 0).coerceAtMost(255)

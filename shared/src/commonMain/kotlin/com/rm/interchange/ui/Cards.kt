@@ -285,7 +285,7 @@ fun StationCard(view: WorldView, roster: Roster, s: StationView, onVehicle: (Veh
                 val tenths = (waited.coerceAtLeast(0) * 10 + Calendar.TICKS_PER_DAY / 2) / Calendar.TICKS_PER_DAY
                 val line = listOfNotNull(
                     stringResource(Res.string.waited_days, tenths / 10, tenths % 10).takeIf { waited >= 0 },
-                    stringResource(Res.string.gave_up_n, Numbers.grouped(gaveUp.toLong())).takeIf { gaveUp > 0 },
+                    pluralStringResource(Res.plurals.gave_up_n, gaveUp, Numbers.grouped(gaveUp.toLong())).takeIf { gaveUp > 0 },
                 ).joinToString(", ")
                 Text(line, color = c.textDim, style = KitType.Dim, modifier = Modifier.padding(start = 12.dp + KitSpace.Gap))
             }

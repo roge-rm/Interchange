@@ -80,8 +80,8 @@ internal class OverviewOptions {
     val cargo = mutableIntStateOf(-1)
     val coverage = mutableStateOf(false)
     val links = mutableStateOf(false)
-    /** The link whose window is open, by its from and to stations. */
-    val link = mutableStateOf<Pair<Int, Int>?>(null)
+    /** The link whose window is open, by its company and its from and to stations. */
+    val link = mutableStateOf<Triple<Int, Int, Int>?>(null)
 }
 
 internal suspend fun <T> mapRead(runner: GameThread, read: (World) -> T): T = suspendCancellableCoroutine { continuation ->
@@ -112,6 +112,8 @@ internal fun OverviewWindow(runner: GameThread, view: View, viewport: Size, opti
     // The game thread builds the links every half second while they're asked for, so they're read as often.
     val network = remember(runner) { mutableStateOf(runner.networkView) }
     val links = remember(runner) { mutableStateOf<List<LinkView>>(emptyList()) }
+    // The link window closes with the map.
+    DisposableEffect(options) { onDispose { options.link.value = null } }
     LaunchedEffect(runner, linksOn, openLink) {
         while (linksOn || openLink != null) {
             network.value = runner.networkView
@@ -191,7 +193,7 @@ internal fun OverviewWindow(runner: GameThread, view: View, viewport: Size, opti
             val map: @Composable (Modifier) -> Unit = { modifier ->
                 Box(modifier) {
                     OverviewCanvas(current, traffic, view, viewport, options, filter, Modifier.fillMaxSize(), links,
-                        onIndustry = { selectedIndustry = it }, onLink = { openLink = it.from to it.to })
+                        onIndustry = { selectedIndustry = it }, onLink = { openLink = Triple(it.owner, it.from, it.to) })
                     if (flow) {
                         val onBoard = current?.data?.info?.flows.orEmpty().filter { (filter < 0 || it.owner == filter) && (cargo < 0 || it.cargo == cargo) }.sumOf { it.count }
                         val loadLabel = stringResource(Res.string.map_on_board)
@@ -264,14 +266,11 @@ internal fun OverviewWindow(runner: GameThread, view: View, viewport: Size, opti
         }
     }
     if (showHelp) MapControlsHelp { showHelp = false }
-    openLink?.let { (from, to) ->
-        val shown = network.value
-        val link = shown?.links?.firstOrNull { it.from == from && it.to == to }
-        if (shown == null || link == null) {
-            // Not built yet after a tap, or gone since: wait for the next, or close once the links are there without it.
-            if (shown != null) openLink = null
-        } else LinkWindow(shown, roster, link, onVehicle) { openLink = null }
-    }
+    val shownNetwork = network.value
+    val shownLink = openLink?.let { (company, from, to) -> shownNetwork?.links?.firstOrNull { it.owner == company && it.from == from && it.to == to } }
+    // A link gone since it was tapped closes its window once the links are there without it.
+    LaunchedEffect(openLink, shownNetwork) { if (openLink != null && shownNetwork != null && shownLink == null) openLink = null }
+    if (shownNetwork != null && shownLink != null) LinkWindow(shownNetwork, roster, shownLink, onVehicle) { openLink = null }
     current?.data?.industries?.firstOrNull { it.place.id == selectedIndustry }?.let { industry ->
         val info = industry.info
         val slot = if (filter < 0) OVERVIEW_ALL else filter
