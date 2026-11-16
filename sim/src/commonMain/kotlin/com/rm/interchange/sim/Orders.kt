@@ -83,6 +83,7 @@ internal fun World.waitForGap(v: Carrier, due: Boolean): Boolean {
         }
     }
     v.departed = tick
+    if (v.leftFrom >= 0 && v.leftAt < 0) v.leftAt = tick
     return false
 }
 

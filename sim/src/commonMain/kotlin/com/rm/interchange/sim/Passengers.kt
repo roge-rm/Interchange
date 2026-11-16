@@ -6,9 +6,10 @@ package com.rm.interchange.sim
  * Town buildings make them each day for the station whose platforms are
  * nearest within [CATCHMENT] tiles. Each lot is given somewhere to go among
  * the stations it can reach by train, more to big places and near ones, and
- * waits as a [Packet]. Trains' orders link the stations they call at; the way
- * from each station to each other, by distance with a cost for each change of
- * train, gives the next stop to take for each destination ([nextHop]).
+ * waits as a [Packet]. Vehicles' orders link the stations they call at, for
+ * each cargo they can carry; the way from each station to each other, by the
+ * links' journey times with a cost for each change, gives the next stop to
+ * take for each cargo and destination ([nextHop]).
  *
  * A train calling at a station lets off those who've arrived, who pay for the
  * whole journey, and those who change here, whose leg is credited to the train;
@@ -36,8 +37,17 @@ const val MAX_WAITING = 4095
 /** Days cargo waits at a station before it gives up, counted from when it got there. */
 const val GIVE_UP_DAYS = 90
 
-/** What a change of train costs a journey, in tiles of distance, when working out the way. */
-const val CHANGE_COST = 16
+/**
+ * Ticks a vehicle at 1 km/h takes over a tile: positions are 4096ths of a tile, and a vehicle at top speed moves
+ * km/h * 4096 / 2700 of them a tick.
+ */
+const val TILE_TICKS_KMH = 2700
+
+/** What a change of vehicle costs a journey when working out the way, in ticks: 16 tiles at 100 km/h. */
+const val CHANGE_TICKS = 16 * TILE_TICKS_KMH / 100
+
+/** The longest a link's journey time is taken to be, in ticks. */
+const val MAX_LINK_TICKS = 1_000_000
 
 /** A new station's rating. */
 const val START_RATING = 175
@@ -102,51 +112,126 @@ internal fun World.workOutCatchment() {
 }
 
 
+/** A link's key in [World.linkTimes]: station [from] in the high bits, [to] in the low 16. */
+internal fun linkKey(from: Int, to: Int) = (from.toLong() shl 16) or to.toLong()
+
+/** Whether order [o] is a stop: a station order that isn't run through, to a station that isn't a waypoint. */
+internal fun World.isStop(o: Int): Boolean {
+    val id = Order.station(o)
+    return id >= 0 && !Order.has(o, Order.VIA) && stations.getOrNull(id)?.waypoint == false
+}
+
 /**
- * The links trains' orders make, each stop to the next and the last back to
- * the first, and from them the next stop from each station towards each it
- * can reach, by the shortest way.
+ * The links vehicles' orders make for each cargo, each stop to the next and the last back to the first, for every
+ * cargo the vehicle can carry and none out of a stop it doesn't load at; and from them the next stop from each station
+ * towards each it can reach, by the quickest way. Cargoes with the same links share one table.
  */
 internal fun World.workOutLinks() {
     linksDirty = false
-    val links = HashMap<Int, MutableList<Int>>()
+    val sets = Array(Cargo.COUNT) { HashSet<Long>() }
+    // A link no vehicle has timed yet goes by its distance at the top speed of the fastest running it.
+    val guess = HashMap<Long, Int>()
     for (t in carriers()) {
-        // Depot orders are left out: a stop links to the next station on.
-        val stops = t.orders.filter { !Order.isDepot(it) }
+        // Depot orders and stations run through are left out: a stop links to the next stop on.
+        val stops = t.orders.filter { isStop(it) }
         if (stops.size < 2) continue
+        val carries = (0 until Cargo.COUNT).filter { t.capacity(it) > 0 }
+        if (carries.isEmpty()) continue
         for (k in stops.indices) {
+            if (Order.has(stops[k], Order.NO_LOAD)) continue
             val a = Order.station(stops[k])
             val b = Order.station(stops[(k + 1) % stops.size])
-            if (a == b || stations.getOrNull(a) == null || stations.getOrNull(b) == null) continue
-            val out = links.getOrPut(a) { ArrayList() }
-            if (b !in out) out += b
+            if (a == b) continue
+            val key = linkKey(a, b)
+            val ticks = (stationDistance(a, b) * TILE_TICKS_KMH / t.topSpeed.coerceAtLeast(1)).coerceIn(1, MAX_LINK_TICKS)
+            guess[key] = minOf(guess[key] ?: MAX_LINK_TICKS, ticks)
+            for (c in carries) sets[c] += key
         }
     }
-    for (out in links.values) out.sort()
-    nextHops.clear()
-    for (from in links.keys.sorted()) {
-        // Dijkstra over the stations, each link costing its length and a change of train; there are few enough
-        // stations to pick the nearest unsettled one by looking through them all.
-        val dist = HashMap<Int, Int>()
-        val first = HashMap<Int, Int>()
-        val settled = HashSet<Int>()
+    val keys = Array(Cargo.COUNT) { c -> sets[c].toLongArray().also { it.sort() } }
+    val tables = ArrayList<HashMap<Int, HashMap<Int, Int>>>()
+    for (c in 0 until Cargo.COUNT) {
+        val same = (0 until c).firstOrNull { keys[it].contentEquals(keys[c]) }
+        tables += if (same != null) tables[same] else routes(keys[c], guess)
+    }
+    nextHops = Array(Cargo.COUNT) { tables[it] }
+}
+
+/**
+ * The next stop from each station towards each it can reach over the links [keys] (sorted), by Dijkstra: each link
+ * costs its journey time and a change, ties going to the lower station id.
+ */
+private fun World.routes(keys: LongArray, guess: Map<Long, Int>): HashMap<Int, HashMap<Int, Int>> {
+    val hops = HashMap<Int, HashMap<Int, Int>>()
+    if (keys.isEmpty()) return hops
+    // The stations in the links, by id, numbered in that order.
+    val ids = keys.flatMap { listOf((it shr 16).toInt(), (it and 0xffff).toInt()) }.distinct().sorted().toIntArray()
+    val index = HashMap<Int, Int>()
+    for ((i, id) in ids.withIndex()) index[id] = i
+    val n = ids.size
+    val outs = Array(n) { ArrayList<Int>() }
+    val costs = Array(n) { ArrayList<Int>() }
+    for (k in keys) {
+        val a = index.getValue((k shr 16).toInt())
+        outs[a] += index.getValue((k and 0xffff).toInt())
+        costs[a] += (linkCosts[k] ?: guess[k] ?: MAX_LINK_TICKS) + CHANGE_TICKS
+    }
+    val dist = IntArray(n)
+    val first = IntArray(n)
+    val settled = BooleanArray(n)
+    for (from in 0 until n) {
+        if (outs[from].isEmpty()) continue
+        dist.fill(Int.MAX_VALUE)
+        first.fill(-1)
+        settled.fill(false)
         dist[from] = 0
         while (true) {
+            // Few enough stations to pick the nearest unsettled one by looking through them all.
             var s = -1
             var d = Int.MAX_VALUE
-            for ((k, v) in dist) if (k !in settled && (v < d || (v == d && k < s))) { s = k; d = v }
+            for (i in 0 until n) if (!settled[i] && dist[i] < d) { s = i; d = dist[i] }
             if (s < 0) break
-            settled += s
-            for (n in links[s].orEmpty()) {
-                val nd = d + stationDistance(s, n) + CHANGE_COST
-                if (nd < (dist[n] ?: Int.MAX_VALUE)) {
-                    dist[n] = nd
-                    first[n] = if (s == from) n else first.getValue(s)
+            settled[s] = true
+            val out = outs[s]
+            for (j in out.indices) {
+                val m = out[j]
+                val nd = d + costs[s][j]
+                if (nd < dist[m]) {
+                    dist[m] = nd
+                    first[m] = if (s == from) m else first[s]
                 }
             }
         }
-        first.remove(from)
-        nextHops[from] = first
+        val map = HashMap<Int, Int>()
+        for (i in 0 until n) if (i != from && first[i] >= 0) map[ids[i]] = ids[first[i]]
+        hops[ids[from]] = map
+    }
+    return hops
+}
+
+/** Feeds a vehicle's run of [ticks] over the link from station [from] to [to] into the link's journey time. */
+internal fun World.timeLink(from: Int, to: Int, ticks: Long) {
+    val sample = ticks.coerceIn(1, MAX_LINK_TICKS.toLong()).toInt()
+    val key = linkKey(from, to)
+    val old = linkTimes[key]
+    linkTimes[key] = if (old == null) sample else (7 * old + sample) / 8
+}
+
+/** Each week: the way goes by the journey times measured so far, until the next week. */
+internal fun World.linksWeek() {
+    linkCosts.clear()
+    linkCosts.putAll(linkTimes)
+    linksDirty = true
+}
+
+/** Forgets the journey times of links to and from station [id], and vehicles' leaving it. */
+internal fun World.dropLinkTimes(id: Int) {
+    val gone = { k: Long -> (k shr 16).toInt() == id || (k and 0xffff).toInt() == id }
+    linkTimes.keys.removeAll(gone)
+    linkCosts.keys.removeAll(gone)
+    for (list in listOf<List<Carrier?>>(trains, roadVehicles, ships, aircraft)) for (v in list) if (v != null && v.leftFrom == id) {
+        v.leftFrom = -1
+        v.leftAt = -1
     }
 }
 
@@ -157,11 +242,11 @@ internal fun World.stationDistance(a: Int, b: Int): Int {
     return kotlin.math.abs(sa.signX - sb.signX) + kotlin.math.abs(sa.signY - sb.signY)
 }
 
-/** The next stop from [from] towards [dest], or -1 if it can't be reached. */
-fun World.nextHop(from: Int, dest: Int): Int {
+/** The next stop from [from] towards [dest] for cargo [c], or -1 if it can't be reached. */
+fun World.nextHop(from: Int, dest: Int, c: Int = Cargo.PASSENGERS): Int {
     if (catchmentDirty) workOutCatchment()
     if (linksDirty) workOutLinks()
-    return nextHops[from]?.get(dest) ?: -1
+    return nextHops[c][from]?.get(dest) ?: -1
 }
 
 /**
@@ -223,10 +308,10 @@ internal fun World.passengersDay() {
     }
     for (sid in made.keys.sorted()) {
         val s = stations.getOrNull(sid) ?: continue
-        val reachable = nextHops[sid]?.keys?.sorted().orEmpty()
         for (cg in 0 until Cargo.COUNT) {
             val n = minOf(made.getValue(sid)[cg], MAX_WAITING - s.waiting(cg))
             if (n <= 0) continue
+            val reachable = nextHops[cg][sid]?.keys?.sorted().orEmpty()
             // Where it can go: stations that take it, people for passengers and mail weighed by how many, freight
             // by nearness alone.
             // Never to another industry of a kind that made it here, so grain doesn't go round from elevator to elevator.
@@ -361,10 +446,12 @@ const val HEAVY = 1500
 const val RESORT_HEIGHT = 12
 const val RESORT_REACH = 4
 
-/** The station train [t] calls at after the one it's at now, past any depot orders, or -1. */
-private fun nextStop(t: Carrier): Int {
-    if (t.orders.count { !Order.isDepot(it) } < 2) return -1
-    return Order.nextStation(t.orders, t.order + 1)
+/** The station [t] stops at after the one it's at now, past depot orders and stations it runs through, or -1. */
+private fun World.nextStop(t: Carrier): Int {
+    if (t.orders.count { isStop(it) } < 2) return -1
+    val n = t.orders.size
+    for (k in 1..n) t.orders[(t.order + k).mod(n)].let { if (isStop(it)) return Order.station(it) }
+    return -1
 }
 
 /**
@@ -376,6 +463,10 @@ private fun nextStop(t: Carrier): Int {
  * one not to load takes nothing on.
  */
 internal fun World.callAt(t: Carrier, s: Station, o: Int = 0) {
+    // The link it has just run, timed from when it left its last stop.
+    if (t.leftFrom >= 0 && t.leftAt >= 0 && t.leftFrom != s.id) timeLink(t.leftFrom, s.id, tick - t.leftAt)
+    t.leftFrom = s.id
+    t.leftAt = -1
     val company = companies.getOrNull(t.owner) ?: return
     val next = nextStop(t)
     // Days on board, over every leg so far.
@@ -406,7 +497,7 @@ internal fun World.callAt(t: Carrier, s: Station, o: Int = 0) {
                     t.profitThisYear += full - p.credit
                 }
                 arrived -> {}
-                transfer || unload || (p.dest >= 0 && nextHop(s.id, p.dest) != next) -> {
+                transfer || unload || (p.dest >= 0 && nextHop(s.id, p.dest, c) != next) -> {
                     // Changing here: the leg it's done on this train is this train's, up to what the whole journey will pay.
                     val boarded = stations.getOrNull(p.boarded)
                     val dest = stations.getOrNull(p.dest)
@@ -445,7 +536,7 @@ internal fun World.loadAt(t: Carrier, s: Station) {
         while (room > 0 && it.hasNext()) {
             val p = it.next()
             // Only towards where it's going, and never back where it came from.
-            if (next == p.origin || (p.dest != -1 && (next < 0 || nextHop(s.id, p.dest) != next))) continue
+            if (next == p.origin || (p.dest != -1 && (next < 0 || nextHop(s.id, p.dest, c) != next))) continue
             val take = minOf(room, p.count)
             // Passengers and mail starting out here count for the town as picked up from it.
             if (p.origin == s.id && (c == Cargo.PASSENGERS || c == Cargo.MAIL)) stationTown(s)?.let { town ->

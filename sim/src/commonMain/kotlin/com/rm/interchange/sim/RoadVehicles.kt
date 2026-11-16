@@ -55,6 +55,9 @@ interface Carrier {
     var shared: Int
     var gap: Int
     var departed: Long
+    /** The station it last called at, or -1, and the tick it left there, -1 while still there: for timing links. */
+    var leftFrom: Int
+    var leftAt: Long
     var waiting: Int
     fun capacity(c: Int): Int
     /** Its top speed, in km/h, for station ratings. */
@@ -105,6 +108,8 @@ class RoadVehicle(
     override var shared = -1
     override var gap = 0
     override var departed = 0L
+    override var leftFrom = -1
+    override var leftAt = -1L
     val info get() = roster[model]
     var inDepot = true
     var running = false
@@ -537,6 +542,7 @@ private fun World.arrive(v: RoadVehicle) {
         val o = if (v.toDepot) null else v.current?.takeIf { Order.depot(it) == depotTiles[tile] }
         v.depot = v.goalDepot
         v.inDepot = true
+        v.leftFrom = -1
         v.running = false
         v.toDepot = false
         v.route = null

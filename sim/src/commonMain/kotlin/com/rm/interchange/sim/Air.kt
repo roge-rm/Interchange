@@ -98,6 +98,8 @@ class Aircraft(
     override var shared = -1
     override var gap = 0
     override var departed = 0L
+    override var leftFrom = -1
+    override var leftAt = -1L
     override var renewAsked = NEVER_ASKED
     override var renewFailed = false
     override var renewOff = false
@@ -1413,6 +1415,7 @@ private fun World.callHere(v: Aircraft, a: Airport) {
 
 private fun World.intoHangar(v: Aircraft) {
     v.inDepot = true
+    v.leftFrom = -1
     v.stand = -1
     v.running = false
     v.toDepot = false

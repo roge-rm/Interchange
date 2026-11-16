@@ -38,6 +38,8 @@ class Ship(
     override var shared = -1
     override var gap = 0
     override var departed = 0L
+    override var leftFrom = -1
+    override var leftAt = -1L
     override var renewAsked = NEVER_ASKED
     override var renewFailed = false
     override var renewOff = false
@@ -609,6 +611,7 @@ private fun World.arriveShip(v: Ship) {
         val d = depots.getOrNull(v.depot) ?: return
         if (tile != shipyardWater(d)) return
         v.inDepot = true
+        v.leftFrom = -1
         v.running = false
         v.toDepot = false
         if (v.servicing) {

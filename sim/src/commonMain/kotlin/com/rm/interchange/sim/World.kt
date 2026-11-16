@@ -120,9 +120,15 @@ class World(settings: NewGame, val roster: Roster = Roster.BASE, generate: Boole
     internal var catchmentDirty = true
     /** Rail path search steps all rivals' railway jobs take in one tick. Tests set it lower. Not saved. */
     internal var railTickStates = RAIL_TICK_STATES
-    /** The people round each station, and the next stop from each station towards each it can reach. Not saved. */
+    /** The people round each station, and for each cargo the next stop from each station towards each it can reach. Not saved. */
     internal val stationPeople = HashMap<Int, Int>()
-    internal val nextHops = HashMap<Int, HashMap<Int, Int>>()
+    internal var nextHops: Array<HashMap<Int, HashMap<Int, Int>>> = Array(Cargo.COUNT) { HashMap() }
+    /**
+     * Each link's journey time in ticks as vehicles have run it, keyed [linkKey], and the copy of it taken each week
+     * that [workOutLinks] goes by, so the way only changes at the weekly rework or when orders change. Both saved.
+     */
+    internal val linkTimes = HashMap<Long, Int>()
+    internal val linkCosts = HashMap<Long, Int>()
     /** The stations reaching each industry, and the industries each station reaches, by id. Not saved. */
     internal val industryStations = HashMap<Int, ArrayList<Int>>()
     internal val stationIndustries = HashMap<Int, ArrayList<Int>>()
@@ -398,6 +404,7 @@ class World(settings: NewGame, val roster: Roster = Roster.BASE, generate: Boole
             // On a calendar day tick it runs after the weather and trackDay below.
             if (tick % dayTicks != 0L) trackWorkDay()
             upkeepDay()
+            if (workDay % 7 == 0) linksWeek()
             passengersDay()
             payments.removeAll { tick - it.tick > PAYMENT_TICKS }
         }
@@ -496,6 +503,9 @@ class World(settings: NewGame, val roster: Roster = Roster.BASE, generate: Boole
         for (t in towns) { mix(t.mailThisMonth.toLong()); mix(t.mailLastMonth.toLong()); mix(t.servedLastMonth.toLong()); for (v in t.delivered) mix(v.toLong()); for (v in t.deliveredLastMonth) mix(v.toLong()) }
         for (g in goals) { mix(g.kind.toLong()); mix(g.amount); mix(g.deadline.toLong()); mix(g.status.toLong()); mix(g.by.toLong()); mix(g.doneYear.toLong()); mix(g.doneMonth.toLong()); mix(g.cargo.toLong()); mix(g.town.toLong()); mix(g.town2.toLong()); mix(g.industry.toLong()); mix(g.from.toLong()); for (v in g.count) mix(v) }
         for (ind in industries) { mix(if (ind.closed) 1L else 0L); mix(ind.level.toLong()); mix(ind.brought.toLong()); for (m in ind.made) mix(m.toLong()) }
+        for (k in linkTimes.keys.sorted()) { mix(k); mix(linkTimes.getValue(k).toLong()) }
+        for (k in linkCosts.keys.sorted()) { mix(k); mix(linkCosts.getValue(k).toLong()) }
+        for (list in listOf<List<Carrier?>>(trains, roadVehicles, ships, aircraft)) for (v in list) if (v != null) { mix(v.leftFrom.toLong()); mix(v.leftAt) }
         for (s in stations) if (s != null) {
             for (c in s.cargo) for (p in c) { mix(p.dest.toLong()); mix(p.count.toLong()); mix(p.credit) }
             for (r in s.rating) mix(r.toLong())

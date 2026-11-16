@@ -16,7 +16,7 @@ package com.rm.interchange.sim
  */
 object Save {
     private val MAGIC = "ICHG".encodeToByteArray()
-    const val VERSION = 58
+    const val VERSION = 59
 
     /** A vehicle's [built] day as saved by [version]: work days from 36, calendar days before. */
     private fun World.builtOut(built: Int, version: Int) = if (version >= 36) built else built / settings.dayLength
@@ -255,6 +255,13 @@ object Save {
                     w.int(groups.size)
                     for (group in groups) { w.int(group.id); w.string(group.name) }
                 }
+            }
+            if (version >= 59) {
+                for (times in listOf(linkTimes, linkCosts)) {
+                    w.uvar(times.size.toLong())
+                    for (k in times.keys.sorted()) { w.long(k); w.int(times.getValue(k)) }
+                }
+                for (list in listOf<List<Carrier?>>(trains, roadVehicles, ships, aircraft)) for (v in list) if (v != null) { w.int(v.leftFrom); w.long(v.leftAt) }
             }
         }
         val body = Squeeze.pack(w.toByteArray())
@@ -615,6 +622,13 @@ object Save {
                         groups += VehicleGroup(r.int(), r.string())
                     }
                 }
+            }
+            // Before 59 no link was timed: they go by estimates until vehicles have run them.
+            if (version >= 59) {
+                for (times in listOf(linkTimes, linkCosts)) {
+                    repeat(r.uvar().toInt().also { if (it > 10_000_000) throw BadData("too many link times") }) { times[r.long()] = r.int() }
+                }
+                for (list in listOf<List<Carrier?>>(trains, roadVehicles, ships, aircraft)) for (v in list) if (v != null) { v.leftFrom = r.int(); v.leftAt = r.long() }
             }
         }
         // Vehicles' built day was a calendar day before 36, a work day since.

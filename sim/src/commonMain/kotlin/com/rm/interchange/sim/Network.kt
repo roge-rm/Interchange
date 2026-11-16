@@ -597,6 +597,7 @@ internal fun World.dropStation(id: Int) {
     stations[id]?.let { dropStationBuilding(it) }
     stations[id] = null
     for (t in carriers()) t.orders.removeAll { Order.station(it) == id }
+    dropLinkTimes(id)
 }
 
 /** Everything that calls at stations. */

@@ -147,6 +147,8 @@ class Train(
     override var shared = -1
     override var gap = 0
     override var departed = 0L
+    override var leftFrom = -1
+    override var leftAt = -1L
 
     /** The stations it calls at in turn, and what to do at each, packed by [Order]. */
     override val orders = ArrayList<Int>()
@@ -1511,6 +1513,8 @@ private fun World.enterDepot(t: Train) {
     val o = if (t.toDepot) null else t.current?.takeIf { Order.depot(it) == d.id }
     t.depot = d.id
     t.inDepot = true
+    // A stop in a depot isn't part of the link's journey time.
+    t.leftFrom = -1
     t.running = false
     t.toDepot = false
     t.steps.clear()

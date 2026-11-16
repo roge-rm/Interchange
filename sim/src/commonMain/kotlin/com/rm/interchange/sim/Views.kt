@@ -473,7 +473,9 @@ fun World.view(company: Int = 0, withReserved: Boolean = false): WorldView {
         val going = HashMap<Int, IntArray>()
         for (c in 0 until Cargo.COUNT) for (p in s.cargo[c]) going.getOrPut(p.dest) { IntArray(Cargo.COUNT) }[c] += p.count
         val list = going.entries.sortedWith(compareByDescending<Map.Entry<Int, IntArray>> { it.value.sum() }.thenBy { it.key }).map { (d, n) ->
-            val hop = if (d >= 0) nextHop(s.id, d) else -1
+            // The way shown is the one for the cargo most of them are.
+            val most = n.indices.maxBy { n[it] }
+            val hop = if (d >= 0) nextHop(s.id, d, most) else -1
             GoingView(d, if (hop >= 0 && hop != d) hop else -1, n)
         }
         var served = 0
