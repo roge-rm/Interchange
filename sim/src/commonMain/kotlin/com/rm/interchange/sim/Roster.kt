@@ -220,6 +220,10 @@ class Roster(
     companion object {
         val BASE: Roster by lazy { build(listOf(Packs.BASE)) }
 
+        /** The most town buildings and industry kinds a game can have: a tile keeps a building in 12 bits, and saves keep as many. */
+        const val MOST_HOUSES = 4095
+        const val MOST_INDUSTRIES = 4095
+
         /** The roster from [packs], in order. Packs build on those before them: adding vehicles, changing them or turning them off. */
         fun build(packs: List<Pack>): Roster {
             val problems = ArrayList<String>()
@@ -335,7 +339,8 @@ class Roster(
                 val layout = d.layout!!
                 val produces = d.produces.orEmpty()
                 for (part in layout.flatten().toSet()) if (part !in s.parts && part !in baseParts) problems += "${s.key}: part \"$part\" has no drawing in its pack or the base pack"
-                for (cg in d.production.orEmpty().keys) if (cg !in produces) problems += "${s.key}: production: \"$cg\" should be in \"produces\" too"
+                // Rivals and subsidies go by the produces amount, so a cargo made by a rule needs one.
+                for (cg in d.production.orEmpty().keys) if ((produces[cg] ?: 0) <= 0) problems += "${s.key}: production: \"$cg\" should be in \"produces\" too, above 0"
                 IndustryKind(
                     i, s.key, d.names!!, d.from!!, d.until!!, d.regions.orEmpty(), d.ground.orEmpty(), layout,
                     IntArray(Cargo.COUNT) { c -> produces[Cargo.IDS[c]] ?: 0 },
@@ -349,6 +354,8 @@ class Roster(
                     open = d.open, closes = d.closes,
                 )
             }
+            if (houses.size > MOST_HOUSES) problems += "These packs have ${houses.size} town buildings, more than the $MOST_HOUSES a game can hold"
+            if (industries.size > MOST_INDUSTRIES) problems += "These packs have ${industries.size} industries, more than the $MOST_INDUSTRIES a game can hold"
             if (problems.isNotEmpty()) throw BadPack(problems)
             return Roster(packs.map { it.ref }, engines, sprites, houses, industries)
         }

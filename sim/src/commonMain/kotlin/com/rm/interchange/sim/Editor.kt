@@ -230,11 +230,7 @@ private fun World.removeIndustry(id: Int) {
     val ind = industries.getOrNull(id) ?: return
     if (ind.closed) return
     ind.closed = true
-    val kind = roster.industries[ind.kind]
-    for (ty in ind.y until ind.y + kind.along(ind.turn)) for (tx in ind.x until ind.x + kind.across(ind.turn)) {
-        industryOf[index(tx, ty)] = 0
-        touched(tx, ty)
-    }
+    clearIndustryTiles(ind)
     catchmentDirty = true
     linksDirty = true
     goals.removeAll { it.industry == id }

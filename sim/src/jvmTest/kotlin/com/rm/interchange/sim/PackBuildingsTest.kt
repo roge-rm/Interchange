@@ -10,9 +10,9 @@ import kotlin.test.assertTrue
 class PackBuildingsTest {
     private val png = byteArrayOf(1)
 
-    private fun pack(houses: String? = null, industries: String? = null, format: Int = 2, disables: String = "[]", sprites: List<String> = listOf("cottage", "tower", "future", "works")): Pack {
+    private fun pack(houses: String? = null, industries: String? = null, format: Int = 2, disables: String = "[]", sprites: List<String> = listOf("cottage", "tower", "future", "works"), version: Int = 1): Pack {
         val files = HashMap<String, ByteArray>()
-        files["manifest.json"] = """{ "format": $format, "id": "town", "version": 1, "name": { "en": "Town" }, "needs": ["base"], "disables": $disables }""".encodeToByteArray()
+        files["manifest.json"] = """{ "format": $format, "id": "town", "version": $version, "name": { "en": "Town" }, "needs": ["base"], "disables": $disables }""".encodeToByteArray()
         if (houses != null) files["houses.json"] = """{ "houses": [ $houses ] }""".encodeToByteArray()
         if (industries != null) files["industries.json"] = """{ "industries": [ $industries ] }""".encodeToByteArray()
         for (s in sprites) files["sprites/$s.png"] = png
@@ -167,6 +167,43 @@ class PackBuildingsTest {
     }
 
     @Test
+    fun aSavedIndustryLoadsAgainstASmallerLayout() {
+        val big = works().replace("[\"works coal_heap\"]", "[\"works coal_heap\", \"works coal_heap\"]")
+        val w = world(pack(industries = big))
+        val ind = place(w)
+        val mark = (ind.id + 1).toShort()
+        assertEquals(4, w.industryOf.count { it == mark })
+        repeat(Calendar.TICKS_PER_DAY * 5) { w.step() }
+        // A newer version of the pack with a one-tile layout.
+        val small = pack(industries = works().replace("\"works coal_heap\"", "\"works\""), version = 2)
+        val copy = Save.read(Save.write(w)) { ref -> listOf(Packs.BASE, small).firstOrNull { it.id == ref.id } }
+        val kind = copy.roster.industries.first { it.key == "town:works" }
+        assertEquals(1, kind.width * kind.height)
+        for (turn in 0..3) for (fy in -1..5) for (fx in -1..5) {
+            val part = kind.part(fx, fy, turn)
+            assertTrue(part == "" || part == "works")
+        }
+        val tiles = (0 until copy.width * copy.height).filter { copy.industryOf[it] == mark }
+        assertEquals(4, tiles.size)
+        assertEquals(3, tiles.count { kind.part(it % copy.width - ind.x, it / copy.width - ind.y, ind.turn) == "" })
+        repeat(Calendar.TICKS_PER_DAY * 40) { copy.step() }
+        copy.closeIndustry(copy.industries[ind.id])
+        assertEquals(0, copy.industryOf.count { it == mark })
+        repeat(Calendar.TICKS_PER_DAY * 5) { copy.step() }
+    }
+
+    @Test
+    fun aGameHoldsNoMoreBuildingsThanASaveCanLoad() {
+        fun houses(n: Int) = (0 until n).joinToString(", ") {
+            """{ "id": "h$it", "name": { "en": "H" }, "sprite": "cottage", "from": 1800, "until": 2100, "residents": 1, "jobs": 0, "zones": ["outskirts"] }"""
+        }
+        val baseHouses = Packs.BASE.houses.size
+        Roster.build(listOf(Packs.BASE, pack(houses = houses(Roster.MOST_HOUSES - baseHouses))))
+        val e = assertFailsWith<BadPack> { Roster.build(listOf(Packs.BASE, pack(houses = houses(Roster.MOST_HOUSES - baseHouses + 1)))) }
+        assertEquals(listOf("These packs have ${Roster.MOST_HOUSES + 1} town buildings, more than the ${Roster.MOST_HOUSES} a game can hold"), e.problems)
+    }
+
+    @Test
     fun formatsAndProblems() {
         // A format 1 pack of vehicles alone still loads; buildings need format 2.
         Packs.read(mapOf("manifest.json" to """{ "format": 1, "id": "old", "version": 1, "name": { "en": "Old" } }""".encodeToByteArray()))
@@ -183,7 +220,7 @@ class PackBuildingsTest {
             "industries.json, \"a\": unknown cargo \"sand\"",
             "industries.json, \"a\": sprites/nothere.png is missing",
             "industries.json, \"a\": part \"mystery\" isn't in \"parts\" or the base pack",
-            "industries.json, \"a\": production: \"coal\" should be in \"produces\" too",
+            "industries.json, \"a\": production: \"coal\" should be in \"produces\" too, above 0",
             "industries.json, \"a\": production coal, column 5: unknown name \"bogus\"",
             "industries.json, \"a\": open, column 3: expected \")\"",
             "industries.json, \"big\": \"layout\" can be at most 5 by 5",

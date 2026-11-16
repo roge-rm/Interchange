@@ -148,7 +148,7 @@ Each industry:
 | accepts | no | The cargo it takes, by id. One that takes cargo and has a cargo at 0 in `produces` makes that from what it's brought, a tonne for a tonne. |
 | seasons | no | Twelve numbers, January first: how much it makes each month, in percent of its usual, 0 to 1000. |
 | weather | no | How the weather changes it: `crops` (makes less in drought or soaked ground), `thaw` (stops in the spring mud), `ice` (shut while the water by it is frozen). |
-| production | no | `{ "cargo": "rule" }`: a rule giving that cargo's monthly amount in place of the usual. The cargo has to be in `produces` too. |
+| production | no | `{ "cargo": "rule" }`: a rule giving that cargo's monthly amount in place of the usual. The cargo has to be in `produces` too, above 0: rivals and subsidies go by that amount. |
 | open | no | A rule worked out where and when one would open: 0 means it can't. |
 | closes | no | A rule worked out on the first of each month: anything but 0 closes it. |
 

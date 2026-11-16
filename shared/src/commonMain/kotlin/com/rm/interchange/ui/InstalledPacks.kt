@@ -122,6 +122,7 @@ object InstalledPacks {
     private fun spriteProblems(pack: Pack): List<String> {
         val problems = ArrayList<String>()
         val buildingSheets = pack.houses.mapNotNull { it.sprite }.toSet() + pack.industries.flatMap { it.parts.orEmpty().values }
+        val vehicleSheets = pack.vehicles.flatMap { listOfNotNull(it.sprite, it.spriteOffWire) }.toSet()
         for ((name, png) in pack.sprites) {
             val picture = try {
                 pictures.decode(png)
@@ -129,7 +130,7 @@ object InstalledPacks {
                 problems += "sprites/$name.png can't be read as a PNG"
                 continue
             }
-            problems += PackSprites.problems(picture, if (name in buildingSheets) PackSprites.BUILDING_CELLS else 16).map { "sprites/$name.png: $it" }
+            problems += PackSprites.problems(picture, if (name in buildingSheets && name !in vehicleSheets) PackSprites.BUILDING_CELLS else 16).map { "sprites/$name.png: $it" }
         }
         return problems
     }

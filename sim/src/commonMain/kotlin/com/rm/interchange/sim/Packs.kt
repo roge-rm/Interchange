@@ -385,7 +385,7 @@ object Packs {
                 }
                 val production = f.stringMap("production")?.entries?.mapNotNull { (cg, src) ->
                     if (Cargo.of(cg) < 0) { problems += "$at: production: unknown cargo \"$cg\""; return@mapNotNull null }
-                    if (fresh && produces?.containsKey(cg) != true) problems += "$at: production: \"$cg\" should be in \"produces\" too"
+                    if (fresh && (produces?.get(cg) ?: 0) <= 0) problems += "$at: production: \"$cg\" should be in \"produces\" too, above 0"
                     rule(at, "production $cg", src, problems)?.let { cg to it }
                 }?.toMap()
                 val open = f.string("open")?.let { rule(at, "open", it, problems) }

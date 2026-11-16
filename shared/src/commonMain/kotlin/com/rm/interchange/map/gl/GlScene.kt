@@ -12,6 +12,7 @@ import com.rm.interchange.map.LoadStep
 import com.rm.interchange.map.MapOverlays
 import com.rm.interchange.map.Zoom
 import com.rm.interchange.map.Sheets
+import com.rm.interchange.map.StaticCells
 import com.rm.interchange.map.View
 import com.rm.interchange.map.TileRecorder
 import com.rm.interchange.map.WeatherCopy
@@ -431,13 +432,15 @@ internal class GlScene(private val world: World, parent: CoroutineScope) {
         for (l in from.indices) {
             val s = from[l] ?: continue
             if (s.released || !releasing.add(s)) continue
+            val rects = StaticCells.rects
+            val levelRects = StaticCells.levelRects
             scope.launch {
                 val columns = try {
-                    withContext(Dispatchers.Default) { Cover.columnsAhead(l, s) }
+                    withContext(Dispatchers.Default) { Cover.columnsAhead(l, s, rects, levelRects) }
                 } finally {
                     releasing.remove(s)
                 }
-                if (failed || onGpu?.getOrNull(l) !== s) return@launch
+                if (failed || onGpu?.getOrNull(l) !== s || StaticCells.rects !== rects) return@launch
                 Cover.takeColumns(l, columns)
                 s.release()
             }

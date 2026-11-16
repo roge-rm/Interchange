@@ -111,13 +111,16 @@ internal fun World.tell(kind: Int, about: Int) {
 fun IndustryKind.across(turn: Int) = if (turn % 2 == 0) width else height
 fun IndustryKind.along(turn: Int) = if (turn % 2 == 0) height else width
 
-/** The part of [kind]'s layout at ([fx], [fy]) from its top corner, turned by [turn]. */
+/**
+ * The part of [kind]'s layout at ([fx], [fy]) from its top corner, turned by [turn], or "" outside the layout (a save's
+ * industry against a newer pack whose layout is smaller).
+ */
 fun IndustryKind.part(fx: Int, fy: Int, turn: Int): String = when (turn) {
-    0 -> layout[fy][fx]
-    1 -> layout[height - 1 - fx][fy]
-    2 -> layout[height - 1 - fy][width - 1 - fx]
-    else -> layout[fx][width - 1 - fy]
-}
+    0 -> layout.getOrNull(fy)?.getOrNull(fx)
+    1 -> layout.getOrNull(height - 1 - fx)?.getOrNull(fy)
+    2 -> layout.getOrNull(height - 1 - fy)?.getOrNull(width - 1 - fx)
+    else -> layout.getOrNull(fx)?.getOrNull(width - 1 - fy)
+} ?: ""
 
 /** The industry standing on tile [i], or null. */
 fun World.industryAt(i: Int): Industry? = industries.getOrNull(industryOf[i].toInt() - 1)
@@ -383,14 +386,25 @@ internal fun World.fundIndustry(company: Company, c: Command.FundIndustry) {
     tell(News.INDUSTRY_OPENS, industries.last().id)
 }
 
+/**
+ * Clears every tile marked as [ind]'s within the largest footprint a layout can have, row by row, so a save's
+ * industry against a pack whose layout changed size leaves no stray tiles.
+ */
+internal fun World.clearIndustryTiles(ind: Industry) {
+    val mark = (ind.id + 1).toShort()
+    for (ty in ind.y until ind.y + Packs.MAX_LAYOUT) for (tx in ind.x until ind.x + Packs.MAX_LAYOUT) {
+        if (!inside(tx, ty)) continue
+        val i = index(tx, ty)
+        if (industryOf[i] != mark) continue
+        industryOf[i] = 0
+        touched(tx, ty)
+    }
+}
+
 /** Shuts [ind] down: its tiles cleared, its stations no longer reaching it. */
 internal fun World.closeIndustry(ind: Industry) {
     ind.closed = true
-    val kind = roster.industries[ind.kind]
-    for (ty in ind.y until ind.y + kind.along(ind.turn)) for (tx in ind.x until ind.x + kind.across(ind.turn)) {
-        industryOf[index(tx, ty)] = 0
-        touched(tx, ty)
-    }
+    clearIndustryTiles(ind)
     catchmentDirty = true
     tell(News.INDUSTRY_CLOSES, ind.id)
     failGoalsFor(ind)

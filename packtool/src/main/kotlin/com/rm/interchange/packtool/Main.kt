@@ -57,8 +57,8 @@ private fun check(f: File, with: List<File>): Boolean {
     }
     // Rules are parsed as the pack is read, so a bad one is already listed above.
     val buildingSheets = pack.houses.mapNotNull { it.sprite }.toSet() + pack.industries.flatMap { it.parts.orEmpty().values }
-    val used = pack.vehicles.flatMap { listOfNotNull(it.sprite, it.spriteOffWire) }.toSet() +
-        pack.houses.mapNotNull { it.sprite } + pack.industries.flatMap { it.parts.orEmpty().values }
+    val vehicleSheets = pack.vehicles.flatMap { listOfNotNull(it.sprite, it.spriteOffWire) }.toSet()
+    val used = vehicleSheets + buildingSheets
     for ((name, png) in pack.sprites) {
         if (name !in used) { problems += "sprites/$name.png isn't used by any vehicle, building or industry"; continue }
         val picture = try {
@@ -67,7 +67,7 @@ private fun check(f: File, with: List<File>): Boolean {
             problems += "sprites/$name.png can't be read as a PNG"
             continue
         }
-        val wrong = PackSprites.problems(picture, if (name in buildingSheets) PackSprites.BUILDING_CELLS else 16)
+        val wrong = PackSprites.problems(picture, if (name in buildingSheets && name !in vehicleSheets) PackSprites.BUILDING_CELLS else 16)
         problems += wrong.map { "sprites/$name.png: $it" }
         if (wrong.isEmpty()) PackSprites.pack(picture)
     }
