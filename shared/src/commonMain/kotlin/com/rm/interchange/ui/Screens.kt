@@ -188,8 +188,9 @@ fun NewGameScreen(packs: List<Pack>, onStart: (NewGame, List<Pack>) -> Unit, onB
     var breakdowns by remember { mutableIntStateOf(com.rm.interchange.sim.Breakdowns.NEW_GAME) }
     var stockpiles by remember { mutableStateOf(true) }
     var contracts by remember { mutableStateOf(true) }
+    var handling by remember { mutableStateOf(true) }
     var off by remember { mutableStateOf(emptySet<String>()) }
-    val settings = NewGame(width, height, seed, year, region, sea, hills, trees, towns, industries, inflation, weather, dayLength, rivals, sharing, rivalLevel, townGrowth, goals, collisions, breakdowns = breakdowns, stockpiles = stockpiles, contracts = contracts && stockpiles)
+    val settings = NewGame(width, height, seed, year, region, sea, hills, trees, towns, industries, inflation, weather, dayLength, rivals, sharing, rivalLevel, townGrowth, goals, collisions, breakdowns = breakdowns, stockpiles = stockpiles, contracts = contracts && stockpiles, handling = handling)
     // The map's the same whatever the goals and growth, so changing them doesn't make it again.
     val land = settings.copy(townGrowth = com.rm.interchange.sim.TownGrowth.NORMAL, goals = com.rm.interchange.sim.GoalSet.NONE, breakdowns = com.rm.interchange.sim.Breakdowns.NORMAL)
     val chosen = packs.filter { it.id !in off }
@@ -302,7 +303,7 @@ fun NewGameScreen(packs: List<Pack>, onStart: (NewGame, List<Pack>) -> Unit, onB
             Text(stringResource(Res.string.breakdowns_setting), color = c.text, style = KitType.Label)
             FillChips((0..2).toList(), breakdowns, { breakdownNames.getOrElse(it) { "$it" } }) { breakdowns = it }
         }
-        // The six switches, three to a row where wide, else two and two.
+        // The seven switches, four to a row where wide, else two and two.
         val toggles = listOf<@Composable (Modifier) -> Unit>(
             { m -> TogglePill(stringResource(Res.string.inflation), inflation, m) { inflation = it } },
             { m -> TogglePill(stringResource(Res.string.weather), weather, m) { weather = it } },
@@ -310,8 +311,9 @@ fun NewGameScreen(packs: List<Pack>, onStart: (NewGame, List<Pack>) -> Unit, onB
             { m -> TogglePill(stringResource(Res.string.collisions), collisions, m) { collisions = it } },
             { m -> TogglePill(stringResource(Res.string.stockpiles), stockpiles, m) { stockpiles = it } },
             { m -> TogglePill(stringResource(Res.string.contracts), contracts && stockpiles, m) { contracts = it } },
+            { m -> TogglePill(stringResource(Res.string.handling), handling, m) { handling = it } },
         )
-        for (row in toggles.chunked(if (wide) 3 else 2)) {
+        for (row in toggles.chunked(if (wide) 4 else 2)) {
             Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 for (t in row) t(Modifier.weight(1f).fillMaxHeight())
             }
@@ -688,6 +690,7 @@ fun FinanceWindow(runner: com.rm.interchange.server.GameThread, onClose: () -> U
             Res.string.book_sold to com.rm.interchange.sim.Books.TRAINS_SOLD,
             Res.string.book_upkeep to com.rm.interchange.sim.Books.UPKEEP,
             Res.string.book_priority to com.rm.interchange.sim.Books.PRIORITY,
+            Res.string.book_handling to com.rm.interchange.sim.Books.HANDLING,
         )
         @Composable
         fun line(label: String, a: String, b: String, strong: Boolean = false, colour: androidx.compose.ui.graphics.Color = c.text) {

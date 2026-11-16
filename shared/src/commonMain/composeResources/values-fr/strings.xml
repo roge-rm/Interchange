@@ -852,6 +852,20 @@
     <string name="recipe_label">Recette</string>
     <string name="recipe_line">%1$s donne %2$s</string>
     <string name="rate_label">Rythme de travail</string>
+    <string name="handling">Manutention</string>
+    <string name="book_handling">Manutention</string>
+    <string name="head_handling">Manutention par jour</string>
+    <string name="head_equipment">Équipement</string>
+    <string name="head_flows">Envoyé le mois dernier</string>
+    <string name="equipment_line">%1$s, %2$s par mois</string>
+    <string name="build_for">Construire, %1$s</string>
+    <string name="flow_to">%1$s vers %2$s</string>
+    <string name="flow_line">%1$s jours, %2$d&#160;% manutention, %3$s l’unité</string>
+    <string name="money_cents">%1$s&#160;$</string>
+    <string name="mode_rate">%1$s %2$s</string>
+    <string-array name="handling_classes"><item>Voyageurs et courrier</item><item>Vrac</item><item>Marchandises</item><item>Liquides</item><item>Bétail</item></string-array>
+    <string-array name="handling_modes"><item>rail</item><item>route</item><item>eau</item><item>air</item></string-array>
+    <string-array name="equipment_names"><item>Grue</item><item>Convoyeur</item><item>Entrepôt</item><item>Parc de citernes</item><item>Chambre froide</item></string-array>
     <string name="rate_line">Jusqu’à %1$s t par jour</string>
 
     <plurals name="open_in_days">

@@ -25,6 +25,11 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import com.rm.interchange.sim.Command
+import com.rm.interchange.sim.Handling
+import com.rm.interchange.sim.HandlingView
+import com.rm.interchange.sim.FlowView
+import com.rm.interchange.sim.Equipment
+import androidx.compose.foundation.layout.size
 import com.rm.interchange.sim.Engine
 import com.rm.interchange.sim.VehicleKind
 import com.rm.interchange.sim.Traction
@@ -264,9 +269,10 @@ fun DepotCard(view: WorldView, roster: Roster, depot: Int, year: Int, funds: Lon
 
 /** A station: what's waiting there and its ratings, where passengers and mail are going, and what calls there. */
 @Composable
-fun StationCard(view: WorldView, roster: Roster, s: StationView, onVehicle: (VehicleKind, Int) -> Unit, onClose: () -> Unit, modifier: Modifier) {
+fun StationCard(view: WorldView, roster: Roster, s: StationView, handling: HandlingView?, flows: List<FlowView>, funds: Long, send: (Command) -> Unit, onVehicle: (VehicleKind, Int) -> Unit, onClose: () -> Unit, modifier: Modifier) {
     val c = LocalColors.current
     val lang = languageCode()
+    val me = LocalCompany.current
     Card(stationName(view, s.id), onClose, modifier) {
         if (s.platforms > 0) InfoRow(stringResource(Res.string.platform_tiles_label), s.platforms.toString(), Glyph.Station)
         serviceText(s.service)?.let {
@@ -316,6 +322,7 @@ fun StationCard(view: WorldView, roster: Roster, s: StationView, onVehicle: (Veh
             }
             Grid(names) { PlaceCell(it.name, it.amounts, it.via, it.why) }
         }
+        if (handling != null) HandlingSection(view, s, handling, flows, funds, me, send)
         // Everything with a stop here, each tapped to open it.
         Head(stringResource(Res.string.head_calling))
         fun calls(orders: IntArray) = orders.any { Order.station(it) == s.id }
@@ -364,3 +371,55 @@ private class GoingCell(val name: String, val via: String?, val amounts: List<Pa
 
 /** How many destinations a station's card lists, two to a row. */
 private const val GOING_SHOWN = 8
+
+/** A station's handling rate a day for each class by the ways of travel that call there, its equipment to build or remove, and last month's flows from it. */
+@Composable
+private fun HandlingSection(view: WorldView, s: StationView, h: HandlingView, flows: List<FlowView>, funds: Long, me: Int, send: (Command) -> Unit) {
+    val c = LocalColors.current
+    fun calls(orders: IntArray) = orders.any { Order.station(it) == s.id }
+    val modes = listOf(
+        Handling.RAIL to view.trains.any { calls(it.orders) },
+        Handling.ROAD to view.roadVehicles.any { calls(it.orders) },
+        Handling.WATER to view.ships.any { calls(it.orders) },
+        Handling.AIR to view.aircraft.any { calls(it.orders) },
+    ).filter { it.second }.map { it.first }.ifEmpty { listOf(if (s.platforms > 0) Handling.RAIL else Handling.ROAD) }
+    val modeNames = stringArrayResource(Res.array.handling_modes)
+    val classes = stringArrayResource(Res.array.handling_classes)
+    Head(stringResource(Res.string.head_handling), Glyph.Speed)
+    for (k in 0 until Handling.COUNT) {
+        val value = modes.map { m ->
+            val rate = Numbers.grouped(h.rates[m][k].toLong())
+            if (modes.size > 1) stringResource(Res.string.mode_rate, modeNames.getOrElse(m) { "" }, rate) else rate
+        }.joinToString(", ")
+        InfoRow(classes.getOrElse(k) { "" }, value)
+    }
+    Head(stringResource(Res.string.head_equipment), Glyph.Shed)
+    val names = stringArrayResource(Res.array.equipment_names)
+    val mine = s.owner == me
+    for (part in 0 until Equipment.COUNT) {
+        val has = Equipment.has(h.equipment, part)
+        if (!has && !mine) continue
+        ActionRow(Glyph.Shed, stringResource(Res.string.equipment_line, names.getOrElse(part) { "" }, money(h.upkeep[part])), dim = !has, end = {
+            if (mine) {
+                if (has) ActionButton(stringResource(Res.string.remove)) { send(Command.Equip(me, s.id, part, remove = true)) }
+                else ActionButton(stringResource(Res.string.build_for, money(h.cost[part])), enabled = funds >= h.cost[part], strong = true) { send(Command.Equip(me, s.id, part)) }
+            } else GlyphIcon(Glyph.Tick, c.good, Modifier.size(22.dp))
+        })
+    }
+    if (flows.isNotEmpty()) {
+        Head(stringResource(Res.string.head_flows), Glyph.Up)
+        val comma = languageCode() == "fr"
+        for (f in flows.take(FLOWS_SHOWN)) {
+            CargoRow(f.cargo, stringResource(Res.string.flow_to, Numbers.grouped(f.units.toLong()), stationName(view, f.to)))
+            val tenths = ((f.tripTicks * 10 + Calendar.TICKS_PER_DAY / 2) / Calendar.TICKS_PER_DAY).toInt()
+            val whole = (f.costCents / 100).toString() + (if (comma) "," else ".") + (f.costCents % 100).toString().padStart(2, '0')
+            Text(
+                stringResource(Res.string.flow_line, "${tenths / 10}${if (comma) "," else "."}${tenths % 10}", f.handlingShare, stringResource(Res.string.money_cents, whole)),
+                color = c.textDim, style = KitType.Dim, modifier = Modifier.padding(start = 12.dp + KitSpace.Gap),
+            )
+        }
+    }
+}
+
+/** How many flows a station's card lists. */
+private const val FLOWS_SHOWN = 6

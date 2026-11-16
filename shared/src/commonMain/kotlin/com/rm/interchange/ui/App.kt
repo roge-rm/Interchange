@@ -69,6 +69,8 @@ import com.rm.interchange.sim.Train
 import com.rm.interchange.sim.UpgradeWhy
 import com.rm.interchange.sim.Crash
 import com.rm.interchange.sim.contractView
+import com.rm.interchange.sim.handlingView
+import com.rm.interchange.sim.flowsAt
 import com.rm.interchange.sim.stockView
 import com.rm.interchange.sim.contractsOn
 import com.rm.interchange.sim.crashFor
@@ -1783,7 +1785,7 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
                 is Selection.Station -> {
                     val s = wv?.stations?.firstOrNull { it.id == sel.id }
                     if (s == null || wv == null) selected = null
-                    else StationCard(wv, world.roster, s, { kind, id ->
+                    else StationCard(wv, world.roster, s, world.handlingView(s.id), if (world.settings.handling) world.flowsAt(s.id) else emptyList(), money, runner::request, { kind, id ->
                         selected = when (kind) {
                             VehicleKind.ROAD -> Selection.RoadVehicle(id)
                             VehicleKind.SHIP -> Selection.Ship(id)

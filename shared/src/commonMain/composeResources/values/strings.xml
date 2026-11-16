@@ -869,6 +869,20 @@
     <string name="recipe_label">Recipe</string>
     <string name="recipe_line">%1$s to %2$s</string>
     <string name="rate_label">Work rate</string>
+    <string name="handling">Handling</string>
+    <string name="book_handling">Handling</string>
+    <string name="head_handling">Handling a day</string>
+    <string name="head_equipment">Equipment</string>
+    <string name="head_flows">Sent last month</string>
+    <string name="equipment_line">%1$s, %2$s a month</string>
+    <string name="build_for">Build, %1$s</string>
+    <string name="flow_to">%1$s to %2$s</string>
+    <string name="flow_line">%1$s days, %2$d% handling, %3$s a unit</string>
+    <string name="money_cents">$%1$s</string>
+    <string name="mode_rate">%1$s %2$s</string>
+    <string-array name="handling_classes"><item>Passengers and mail</item><item>Bulk</item><item>General freight</item><item>Liquids</item><item>Livestock</item></string-array>
+    <string-array name="handling_modes"><item>rail</item><item>road</item><item>water</item><item>air</item></string-array>
+    <string-array name="equipment_names"><item>Crane</item><item>Conveyor</item><item>Warehouse</item><item>Tank farm</item><item>Cold store</item></string-array>
     <string name="rate_line">Up to %1$s t a day</string>
 
     <plurals name="open_in_days">
