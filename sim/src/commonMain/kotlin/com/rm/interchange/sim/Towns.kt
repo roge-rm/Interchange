@@ -374,7 +374,7 @@ private fun World.pickHouse(t: Town, x: Int, y: Int, year: Int): Int {
     return -1
 }
 
-private fun fits(h: House, t: Town, zone: Int, year: Int) = year >= h.from && year < h.until && h.zones and zone != 0 && t.population >= h.minPopulation
+private fun fits(h: House, t: Town, zone: Int, year: Int) = h.enabled && year >= h.from && year < h.until && h.zones and zone != 0 && t.population >= h.minPopulation
 
 /**
  * A building on the free lot ([x], [y]), facing [facing]. On a slope it

@@ -1,11 +1,12 @@
 package com.rm.interchange.sim
 
 /*
- * Content packs: vehicles (and later everything else) as data, so anyone can
- * add to the game. packs/SPEC.md is the standard; this reads it.
+ * Content packs: vehicles, town buildings and industries as data, so anyone
+ * can add to the game. packs/SPEC.md is the standard; this reads it.
  *
- * A pack is a zip of manifest.json, vehicles.json and sprites/<name>.png. The
- * game's own vehicles are the base pack, in the same format.
+ * A pack is a zip of manifest.json, vehicles.json, houses.json,
+ * industries.json and sprites/<name>.png. The game's own are the base pack,
+ * in the same format.
  */
 
 /** A pack as a save or a server names it: which one, which version, and a hash of its data so both sides have the same. */
@@ -65,42 +66,57 @@ class VehicleDef(
     val floats: Boolean? = null,
 )
 
-/** A town building as a pack gives it. [zones] are bits of [Zones], from the outskirts in to the centre. */
+/**
+ * A town building as a pack gives it. [zones] are bits of [Zones], from the outskirts in to the centre. Only [id] is
+ * sure to be there: one that [replaces] another gives just what it changes.
+ */
 class HouseDef(
     val id: String,
-    val names: Map<String, String>,
-    val from: Int,
-    val until: Int,
-    val residents: Int,
-    val jobs: Int,
-    val zones: Int,
-    val minPopulation: Int,
-    val weight: Int,
-    val monument: Boolean = false,
+    val names: Map<String, String>?,
+    val from: Int?,
+    val until: Int?,
+    val residents: Int?,
+    val jobs: Int?,
+    val zones: Int?,
+    val minPopulation: Int?,
+    val weight: Int?,
+    val monument: Boolean? = null,
+    val replaces: String? = null,
+    /** Its sprite sheet in its pack; null for the base pack's, drawn by the game. */
+    val sprite: String? = null,
 )
 
 /**
  * An industry as a pack gives it: its tile pieces as rows of part names, the
  * regions it's found in with how often, the ground it needs, what it makes a
  * month by cargo id, and what it takes. One that takes something makes its
- * cargo from what it's brought.
+ * cargo from what it's brought. Only [id] is sure to be there: one that
+ * [replaces] another gives just what it changes.
  */
 class IndustryDef(
     val id: String,
-    val names: Map<String, String>,
-    val from: Int,
-    val until: Int,
-    val regions: Map<String, Int>,
-    val ground: List<String>,
-    val layout: List<List<String>>,
-    val produces: Map<String, Int>,
-    val accepts: List<String>,
+    val names: Map<String, String>?,
+    val from: Int?,
+    val until: Int?,
+    val regions: Map<String, Int>?,
+    val ground: List<String>?,
+    val layout: List<List<String>>?,
+    val produces: Map<String, Int>?,
+    val accepts: List<String>?,
     /** How much it makes each month, January first, in percent of its usual. */
-    val seasons: List<Int>,
+    val seasons: List<Int>?,
     /** It stands on the shore, the first row of its layout facing the water. */
-    val water: Boolean,
+    val water: Boolean?,
     /** How the weather changes it, by [IndustryKind.WEATHER] names. */
-    val weather: List<String> = emptyList(),
+    val weather: List<String>? = null,
+    val replaces: String? = null,
+    /** Sprite sheets in its pack for layout parts, by part name; parts not here are the base pack's. */
+    val parts: Map<String, String>? = null,
+    /** Rules for a cargo's monthly amount in place of the usual, by cargo id. */
+    val production: Map<String, Rule>? = null,
+    /** A rule that's 0 where and when it can't open, and one that closes it at the month when it isn't 0. */
+    val open: Rule? = null,
+    val closes: Rule? = null,
 )
 
 /** How far into a town a building stands, as bits, from the outskirts in to the centre. */
@@ -121,7 +137,7 @@ class Pack(
     val licence: String,
     /** Packs that have to come before this one. */
     val needs: List<String>,
-    /** Vehicles of other packs this one turns off, as pack:id. */
+    /** Vehicles, town buildings and industries of other packs this one turns off, as pack:id. */
     val disables: List<String>,
     val vehicles: List<VehicleDef>,
     val houses: List<HouseDef>,
@@ -137,7 +153,7 @@ class Pack(
 
 object Packs {
     /** The newest pack format this game reads. */
-    const val FORMAT = 1
+    const val FORMAT = 2
     const val BASE_ID = "base"
 
     /** Sprite sheets: four by four cells, each [CELL] pixels square at the sharpest level. */
@@ -150,6 +166,8 @@ object Packs {
     // Limits, so a broken or hostile zip can't fill the phone.
     const val MAX_FILE = 16 shl 20
     const val MAX_TOTAL = 64 shl 20
+    /** The most tiles an industry's layout has each way. */
+    const val MAX_LAYOUT = 5
 
     private val ID = Regex("[a-z0-9][a-z0-9_-]{0,31}")
     private val LANGUAGES = setOf("en", "fr")
@@ -284,10 +302,15 @@ object Packs {
                 vehicles += def
             }
         }
+        // Town buildings, industries and rules came in format 2; the base pack has always had them.
+        if (id != BASE_ID && format < 2 && (housesBytes.isNotEmpty() || industriesBytes.isNotEmpty())) {
+            problems += "manifest.json: a pack with houses.json or industries.json needs \"format\": 2"
+        }
+        fun sprite(at: String, name: String?) {
+            if (!spritesElsewhere && name != null && "sprites/$name.png" !in inner) problems += "$at: sprites/$name.png is missing"
+        }
         val houses = ArrayList<HouseDef>()
         if (housesBytes.isNotEmpty()) {
-            // Town buildings are drawn from the game's own sheets for now, so only the base pack has them.
-            if (!base) problems += "houses.json: town buildings in packs come with a later version of the game"
             val root = json("houses.json", housesBytes)
             val list = (root as? Map<*, *>)?.get("houses") as? List<*>
             if (root != null && list == null) problems += "houses.json should be { \"houses\": [ ... ] }"
@@ -297,55 +320,101 @@ object Packs {
                 val f = Fields("houses.json, building ${n + 1}", map, problems)
                 val hid = f.string("id", need = true) ?: ""
                 f.where = "houses.json, \"$hid\""
+                if (hid.isNotEmpty() && !ID.matches(hid)) problems += "${f.where}: id should be lower case letters, digits, - and _"
                 if (!seen.add(hid)) problems += "${f.where}: id is used twice"
+                val replaces = f.string("replaces")
+                val fresh = replaces == null
+                val zoneNames = f.strings("zones")
                 var zones = 0
-                for (z in f.strings("zones") ?: emptyList()) {
+                for (z in zoneNames ?: emptyList()) {
                     val k = Zones.NAMES.indexOf(z)
                     if (k < 0) problems += "${f.where}: zone \"$z\" should be outskirts, suburbs, inner or centre" else zones = zones or (1 shl k)
                 }
-                val monument = f.bool("monument") ?: false
-                if (zones == 0 && !monument) problems += "${f.where}: \"zones\" needs at least one zone"
-                houses += HouseDef(
-                    hid, f.words("name", need = true) ?: emptyMap(),
-                    f.int("from", 1700, 2300, need = true) ?: 0, f.int("until", 1700, 2300, need = true) ?: 0,
-                    f.int("residents", 0, 10_000, need = true) ?: 0, f.int("jobs", 0, 10_000, need = true) ?: 0,
-                    zones, f.int("min_population", 0, 10_000_000) ?: 0, f.int("weight", 1, 100) ?: 1, monument,
+                val monument = f.bool("monument")
+                if (fresh && zones == 0 && monument != true) problems += "${f.where}: \"zones\" needs at least one zone"
+                val def = HouseDef(
+                    hid, f.words("name", need = fresh),
+                    f.int("from", 1700, 2300, need = fresh), f.int("until", 1700, 2300, need = fresh),
+                    f.int("residents", 0, 10_000, need = fresh), f.int("jobs", 0, 10_000, need = fresh),
+                    if (zoneNames == null && !fresh) null else zones, f.int("min_population", 0, 10_000_000), f.int("weight", 1, 100), monument,
+                    replaces, f.string("sprite") ?: if (fresh && id != BASE_ID) hid else null,
                 )
                 f.done()
+                if (def.from != null && def.until != null && def.from >= def.until) problems += "${f.where}: from should be before until"
+                sprite(f.where, def.sprite)
+                houses += def
             }
         }
         val industries = ArrayList<IndustryDef>()
         if (industriesBytes.isNotEmpty()) {
-            if (!base) problems += "industries.json: industries in packs come with a later version of the game"
             val root = json("industries.json", industriesBytes)
             val list = (root as? Map<*, *>)?.get("industries") as? List<*>
             if (root != null && list == null) problems += "industries.json should be { \"industries\": [ ... ] }"
+            val seen = HashSet<String>()
+            // The parts the game draws itself, which any pack's layout may use.
+            val baseParts = if (id == BASE_ID) emptySet() else BASE.industries.flatMap { d -> d.layout.orEmpty().flatten() }.toSet()
             list?.forEachIndexed { n, item ->
                 val map = item as? Map<*, *> ?: run { problems += "industries.json, industry ${n + 1} should be an object { }"; return@forEachIndexed }
                 val f = Fields("industries.json, industry ${n + 1}", map, problems)
                 val iid = f.string("id", need = true) ?: ""
                 f.where = "industries.json, \"$iid\""
-                val regions = (map["regions"] as? Map<*, *>)?.entries?.associate { (k, v) -> k.toString() to ((v as? Long)?.toInt() ?: 0) } ?: emptyMap()
-                f.used("regions")
-                for (r in regions.keys) if (Region.entries.none { it.name.lowercase() == r }) problems += "${f.where}: unknown region \"$r\""
-                val layout = (f.strings("layout") ?: emptyList()).map { row -> row.split(' ').filter { it.isNotEmpty() } }
-                if (layout.isEmpty() || layout.any { it.size != layout[0].size }) problems += "${f.where}: \"layout\" needs rows of the same length"
-                val produces = (map["produces"] as? Map<*, *>)?.entries?.associate { (k, v) -> k.toString() to ((v as? Long)?.toInt() ?: 0) } ?: emptyMap()
-                f.used("produces")
-                val accepts = f.strings("accepts") ?: emptyList()
-                for (cg in produces.keys + accepts) if (Cargo.of(cg) < 0) problems += "${f.where}: unknown cargo \"$cg\""
-                industries += IndustryDef(
-                    iid, f.words("name", need = true) ?: emptyMap(), f.int("from", 1700, 2300, need = true) ?: 0, f.int("until", 1700, 2300, need = true) ?: 0,
-                    regions, f.strings("ground") ?: emptyList(), layout, produces, accepts,
-                    f.seasons(), f.bool("water") ?: false, f.strings("weather") ?: emptyList(),
+                val at = f.where
+                if (iid.isNotEmpty() && !ID.matches(iid)) problems += "$at: id should be lower case letters, digits, - and _"
+                if (!seen.add(iid)) problems += "$at: id is used twice"
+                val replaces = f.string("replaces")
+                val fresh = replaces == null
+                val regions = f.intMap("regions", 0, 100)
+                for (r in regions?.keys.orEmpty()) if (Region.entries.none { it.name.lowercase() == r }) problems += "$at: unknown region \"$r\""
+                val ground = f.strings("ground")
+                for (g in ground.orEmpty()) if (Ground.NAMES.none { it.lowercase() == g }) problems += "$at: ground \"$g\" should be ${Ground.NAMES.joinToString { it.lowercase() }}"
+                val layout = f.strings("layout", need = fresh)?.map { row -> row.split(' ').filter { it.isNotEmpty() } }
+                if (layout != null) {
+                    if (layout.isEmpty() || layout[0].isEmpty() || layout.any { it.size != layout[0].size }) problems += "$at: \"layout\" needs rows of the same length"
+                    else if (layout.size > MAX_LAYOUT || layout[0].size > MAX_LAYOUT) problems += "$at: \"layout\" can be at most $MAX_LAYOUT by $MAX_LAYOUT"
+                }
+                val produces = f.intMap("produces", 0, 100_000)
+                val accepts = f.strings("accepts")
+                for (cg in produces?.keys.orEmpty() + accepts.orEmpty()) if (Cargo.of(cg) < 0) problems += "$at: unknown cargo \"$cg\""
+                val parts = f.stringMap("parts")
+                for ((part, sheet) in parts.orEmpty()) {
+                    if (!ID.matches(part)) problems += "$at: part \"$part\" should be lower case letters, digits, - and _"
+                    sprite(at, sheet)
+                }
+                if (fresh && id != BASE_ID) for (part in layout.orEmpty().flatten().toSet()) {
+                    if (part !in parts.orEmpty() && part !in baseParts) problems += "$at: part \"$part\" isn't in \"parts\" or the base pack"
+                }
+                val production = f.stringMap("production")?.entries?.mapNotNull { (cg, src) ->
+                    if (Cargo.of(cg) < 0) { problems += "$at: production: unknown cargo \"$cg\""; return@mapNotNull null }
+                    if (fresh && produces?.containsKey(cg) != true) problems += "$at: production: \"$cg\" should be in \"produces\" too"
+                    rule(at, "production $cg", src, problems)?.let { cg to it }
+                }?.toMap()
+                val open = f.string("open")?.let { rule(at, "open", it, problems) }
+                val closes = f.string("closes")?.let { rule(at, "closes", it, problems) }
+                val weather = f.strings("weather")
+                weather.orEmpty().filter { it !in IndustryKind.WEATHER }.forEach { problems += "$at: unknown weather rule \"$it\"" }
+                val def = IndustryDef(
+                    iid, f.words("name", need = fresh), f.int("from", 1700, 2300, need = fresh), f.int("until", 1700, 2300, need = fresh),
+                    regions ?: if (fresh) emptyMap() else null, ground ?: if (fresh) emptyList() else null, layout,
+                    produces ?: if (fresh) emptyMap() else null, accepts ?: if (fresh) emptyList() else null,
+                    f.seasons(fresh), f.bool("water") ?: if (fresh) false else null, weather ?: if (fresh) emptyList() else null,
+                    replaces, parts, production, open, closes,
                 )
-                industries.last().weather.filter { it !in IndustryKind.WEATHER }.forEach { problems += "${f.where}: unknown weather rule \"$it\"" }
                 f.done()
+                if (def.from != null && def.until != null && def.from >= def.until) problems += "$at: from should be before until"
+                industries += def
             }
         }
         if (problems.isNotEmpty()) throw BadPack(problems)
         val sprites = inner.filterKeys { it.startsWith("sprites/") && it.endsWith(".png") }.mapKeys { it.key.removePrefix("sprites/").removeSuffix(".png") }
         return Pack(id, version, names, descriptions, author, licence, needs, disables, vehicles, houses, industries, sprites, hash(manifestBytes, vehiclesBytes, housesBytes, industriesBytes))
+    }
+
+    /** [source] parsed as a rule, or null with its problem noted, at its column. */
+    private fun rule(at: String, field: String, source: String, problems: MutableList<String>): Rule? = try {
+        Rule.parse(source)
+    } catch (e: BadRule) {
+        problems += "$at: $field, column ${e.column}: ${e.what}"
+        null
     }
 
     /** FNV-1a over the data files, so two packs match when their data does. Sprites are left out: they don't change the game. */
@@ -360,11 +429,29 @@ object Packs {
 
     /** Reads typed fields out of a JSON object, noting each problem, and any field left over as unknown. */
     private class Fields(var where: String, val map: Map<*, *>, val problems: MutableList<String>) {
-        /** An industry's months, twelve percentages, or all a hundred if it doesn't say. */
-        fun seasons(): List<Int> {
-            val v = intList("seasons") ?: return List(12) { 100 }
+        /** An industry's months, twelve percentages, or all a hundred if it doesn't say and it's [fresh]. */
+        fun seasons(fresh: Boolean = true): List<Int>? {
+            val v = intList("seasons") ?: return if (fresh) List(12) { 100 } else null
             if (v.size != 12) { problems += "$where: \"seasons\" needs twelve months"; return List(12) { 100 } }
+            if (v.any { it < 0 || it > 1000 }) problems += "$where: \"seasons\" should be from 0 to 1000 each"
             return v
+        }
+
+        /** { "name": whole number } with each from [lo] to [hi]. */
+        fun intMap(k: String, lo: Int, hi: Int): Map<String, Int>? {
+            val v = get(k, false) ?: return null
+            val m = v as? Map<*, *>
+            if (m == null || m.values.any { it !is Long }) { problems += "$where: \"$k\" should be { \"name\": whole number }"; return null }
+            if (m.values.any { (it as Long) !in lo.toLong()..hi.toLong() }) problems += "$where: \"$k\" should be from $lo to $hi each"
+            return m.entries.associate { it.key as String to (it.value as Long).coerceIn(lo.toLong(), hi.toLong()).toInt() }
+        }
+
+        /** { "name": "text" }. */
+        fun stringMap(k: String): Map<String, String>? {
+            val v = get(k, false) ?: return null
+            val m = v as? Map<*, *>
+            if (m == null || m.values.any { it !is String }) { problems += "$where: \"$k\" should be { \"name\": \"...\" }"; return null }
+            return m.entries.associate { it.key as String to it.value as String }
         }
 
         fun intList(k: String): List<Int>? {
@@ -411,8 +498,8 @@ object Packs {
             return if (v is String) string(k)?.let { listOf(it) } else strings(k)
         }
 
-        fun strings(k: String): List<String>? {
-            val v = get(k, false) ?: return null
+        fun strings(k: String, need: Boolean = false): List<String>? {
+            val v = get(k, need) ?: return null
             val list = v as? List<*>
             if (list == null || list.any { it !is String }) { problems += "$where: \"$k\" should be a list of text [ \"...\" ]"; return null }
             return list.map { it as String }

@@ -52,9 +52,11 @@ private fun check(f: File, with: List<File>): Boolean {
     } catch (e: BadPack) {
         problems += e.problems
     }
-    val used = pack.vehicles.mapNotNull { it.sprite }.toSet()
+    // Rules are parsed as the pack is read, so a bad one is already listed above.
+    val used = pack.vehicles.flatMap { listOfNotNull(it.sprite, it.spriteOffWire) }.toSet() +
+        pack.houses.mapNotNull { it.sprite } + pack.industries.flatMap { it.parts.orEmpty().values }
     for ((name, png) in pack.sprites) {
-        if (name !in used) { problems += "sprites/$name.png isn't used by any vehicle"; continue }
+        if (name !in used) { problems += "sprites/$name.png isn't used by any vehicle, building or industry"; continue }
         val picture = try {
             JvmPictures.decode(png)
         } catch (e: Exception) {
@@ -66,7 +68,8 @@ private fun check(f: File, with: List<File>): Boolean {
         if (wrong.isEmpty()) PackSprites.pack(picture)
     }
     if (problems.isNotEmpty()) { report(f, problems); return false }
-    println("${pack.id} ${pack.version}: ${pack.vehicles.size} vehicles, ${pack.sprites.size} sprite sheets, all good")
+    val rules = pack.industries.sumOf { it.production.orEmpty().size + (if (it.open != null) 1 else 0) + (if (it.closes != null) 1 else 0) }
+    println("${pack.id} ${pack.version}: ${pack.vehicles.size} vehicles, ${pack.houses.size} buildings, ${pack.industries.size} industries, $rules rules, ${pack.sprites.size} sprite sheets, all good")
     return true
 }
 
@@ -75,9 +78,10 @@ private fun report(f: File, problems: List<String>) {
     for (p in problems) println("  $p")
 }
 
-/** Only what a pack is made of goes in: the two data files and the sprite sheets. */
+/** Only what a pack is made of goes in: the data files and the sprite sheets. */
 private fun zip(dir: File, out: File): Boolean {
-    val files = files(dir).filterKeys { it == "manifest.json" || it == "vehicles.json" || (it.startsWith("sprites/") && it.endsWith(".png")) }
+    val data = setOf("manifest.json", "vehicles.json", "houses.json", "industries.json")
+    val files = files(dir).filterKeys { it in data || (it.startsWith("sprites/") && it.endsWith(".png")) }
     ZipOutputStream(out.outputStream()).use { z ->
         for ((name, bytes) in files.toSortedMap()) {
             z.putNextEntry(ZipEntry(name))

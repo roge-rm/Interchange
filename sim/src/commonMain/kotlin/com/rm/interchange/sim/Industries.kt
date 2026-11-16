@@ -136,7 +136,7 @@ private fun industryCount(g: NewGame): Int {
 /** Places a new map's industries: every kind of the start year once if it'll go, then more by region. */
 internal fun generateIndustries(world: World) = with(world) {
     val year = settings.startYear
-    val kinds = roster.industries.filter { year >= it.from && year < it.until && it.weight(settings.region) > 0 }
+    val kinds = roster.industries.filter { it.enabled && year >= it.from && year < it.until && it.weight(settings.region) > 0 }
     if (kinds.isEmpty()) return
     val want = industryCount(settings)
     // One of each first, so every chain can be made, then the rest by how common each is here.
@@ -177,7 +177,7 @@ internal fun World.placeIndustry(kind: IndustryKind): Boolean {
                 else -> { x = sx; y = sy - rng.below(h) }
             }
         }
-        if (industryFits(kind, x, y, w, h, turn)) {
+        if (industryFits(kind, x, y, w, h, turn) && (kind.open == null || kind.open.eval(IndustryInputs(this, kind, null, x, y, turn)) != 0L)) {
             buildIndustry(kind, x, y, turn)
             return true
         }
@@ -272,7 +272,7 @@ internal fun World.industriesDay(made: HashMap<Int, IntArray>, shut: Set<Int> = 
         // And a month's worth of its own over the month, more or less by the season and the weather.
         val season = kind.seasons[Calendar.month(startYear, day)] * weatherShare(ind) / 100
         for (c in 0 until Cargo.COUNT) {
-            val month = kind.produces[c] * ind.level / 16 * season / 100
+            val month = monthlyAmount(ind, kind, c, season)
             if (month > 0) out[c] += (month * 8 + rng.below(240)) / 240
         }
         for (c in 0 until Cargo.COUNT) {
@@ -312,7 +312,7 @@ internal fun World.industriesMonth() {
         // day length serving one shows as soon as at day length 1 while the rest of the map changes no faster.
         // At most one month in three, so a long day length fully served doesn't change every month.
         val chance = minOf((100 + (settings.dayLength - 1) * share) * 10 / CHANGE_ODDS, MOST_CHANGE)
-        if (kind.produces.any { it > 0 } && rng.below(1000) < chance) {
+        if (kind.primary && rng.below(1000) < chance) {
             // Well served it's likelier to grow, badly served likelier to shrink: even at a fifth carried.
             val up = rng.below(100) < minOf(UP_MOST, UP_UNSERVED + share / 2)
             if (up && ind.level < MAX_LEVEL) {
@@ -335,10 +335,12 @@ internal fun World.industriesMonth() {
         ind.moved.fill(0)
         ind.broughtLastMonth = ind.broughtThisMonth
         ind.broughtThisMonth = 0
+        // A pack's rule closing it, worked out on the month just gone.
+        if (!ind.closed && kind.closes != null && kind.closes.eval(IndustryInputs(this, kind, ind, ind.x, ind.y, ind.turn)) != 0L) closeIndustry(ind)
     }
     // New industries, more often on bigger maps.
     if (settings.industries > 0 && rng.below(OPEN_ODDS * 256 * 256 / (width * height).coerceAtLeast(1) + 1) == 0) {
-        val kinds = roster.industries.filter { year >= it.from && year < it.until && it.weight(settings.region) > 0 }
+        val kinds = roster.industries.filter { it.enabled && year >= it.from && year < it.until && it.weight(settings.region) > 0 }
         if (kinds.isNotEmpty()) {
             val total = kinds.sumOf { it.weight(settings.region) }
             var roll = rng.below(total)
@@ -367,10 +369,10 @@ private const val PROSPECT_FAILS = 3
 internal fun World.fundIndustry(company: Company, c: Command.FundIndustry) {
     val kind = roster.industries.getOrNull(c.kind) ?: return
     val year = Calendar.year(startYear, day)
-    if (year < kind.from || year >= kind.until) return
+    if (!kind.enabled || year < kind.from || year >= kind.until) return
     val cost = price(fundCost(kind))
     if (company.money < cost) return
-    val prospect = kind.produces.any { it > 0 } && kind.accepts == 0
+    val prospect = kind.primary && kind.accepts == 0
     if (prospect && rng.below(PROSPECT_FAILS) == 0) {
         spend(company, Books.CONSTRUCTION, cost)
         tell(News.PROSPECTING_FAILED, kind.id)
@@ -455,6 +457,68 @@ fun World.weatherShare(ind: Industry): Int {
         }
     }
     return 100
+}
+
+/**
+ * What [ind] makes of cargo [c] this month: its kind's amount by its level and [season] (percent, the weather in it),
+ * or what the pack's rule for it gives, from 0 to [MOST_BY_RULE].
+ */
+internal fun World.monthlyAmount(ind: Industry, kind: IndustryKind, c: Int, season: Int): Int {
+    val usual = kind.produces[c] * ind.level / 16 * season / 100
+    val rule = kind.production[c] ?: return usual
+    return rule.eval(IndustryInputs(this, kind, ind, ind.x, ind.y, ind.turn, usual.toLong())).coerceIn(0L, MOST_BY_RULE.toLong()).toInt()
+}
+
+/** The most a rule makes an industry make of a cargo in a month. */
+const val MOST_BY_RULE = 100_000
+
+/**
+ * What a pack's rules read for an industry of [kind] at ([x], [y]) turned by [turn]: [ind] itself, or null for one not
+ * opened yet, which reads as level 16 with nothing brought, carried or served. [base] is the usual monthly amount where
+ * a rule is for one cargo, or null for all its cargo together.
+ */
+internal class IndustryInputs(val world: World, val kind: IndustryKind, val ind: Industry?, val x: Int, val y: Int, val turn: Int, val base: Long? = null) : RuleInputs {
+    override fun read(n: Int): Long = with(world) {
+        val i = index(x, y)
+        when (n) {
+            Rule.MONTH -> Calendar.month(startYear, day).toLong()
+            Rule.YEAR -> Calendar.year(startYear, day).toLong()
+            Rule.LEVEL -> (ind?.level ?: 16).toLong()
+            Rule.BASE -> base ?: run {
+                val month = Calendar.month(startYear, day)
+                val season = if (ind == null) kind.seasons[month] else kind.seasons[month] * weatherShare(ind) / 100
+                (0 until Cargo.COUNT).sumOf { c -> (kind.produces[c] * (ind?.level ?: 16) / 16 * season / 100).toLong() }
+            }
+            Rule.CARRIED -> {
+                val made = ind?.madeLastMonth?.sum() ?: 0
+                if (made == 0) 0L else (ind!!.movedLastMonth.sum().toLong() * 100 / made).coerceAtMost(100)
+            }
+            Rule.WET -> (weather.wet[i].toInt() and 255).toLong()
+            Rule.SNOW -> (weather.snow[i].toInt() and 255).toLong()
+            Rule.MUD -> mud(i).toLong()
+            Rule.ICE -> {
+                // The thickest ice on the water next to it, as [iceBound] reads it.
+                var most = 0
+                for (wy in y - 1..y + kind.along(turn)) for (wx in x - 1..x + kind.across(turn)) {
+                    if (inside(wx, wy) && isWater(wx, wy)) most = maxOf(most, weather.ice[index(wx, wy)].toInt() and 255)
+                }
+                most.toLong()
+            }
+            Rule.STATIONS -> {
+                if (ind == null) return 0L
+                if (catchmentDirty) workOutCatchment()
+                val cargo = kind.outputs or kind.accepts
+                industryStations[ind.id].orEmpty().count { sid ->
+                    val st = stations.getOrNull(sid) ?: return@count false
+                    (0 until Cargo.COUNT).any { c -> cargo and (1 shl c) != 0 && st.lastCall[c] >= 0 }
+                }.toLong()
+            }
+            else -> 0L
+        }
+    }
+
+    /** What's been brought: all of it together last month, for any cargo it takes. */
+    override fun brought(c: Int): Long = if (ind != null && kind.takes(c)) ind.broughtLastMonth.toLong() else 0L
 }
 
 /** Ice on the water, in cm, that shuts a port or harbour. */

@@ -1,0 +1,14 @@
+{
+  "houses": [
+    {
+      "id": "general_store",
+      "name": { "en": "General store", "fr": "Magasin général" },
+      "from": 1850,
+      "until": 1960,
+      "residents": 4,
+      "jobs": 6,
+      "zones": ["outskirts", "suburbs"],
+      "weight": 3
+    }
+  ]
+}

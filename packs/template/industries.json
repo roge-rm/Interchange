@@ -1,0 +1,18 @@
+{
+  "industries": [
+    {
+      "id": "salmon_cannery",
+      "name": { "en": "Salmon Cannery", "fr": "Conserverie de saumon" },
+      "from": 1870,
+      "until": 2100,
+      "regions": { "rockies": 4, "maritimes": 2, "north": 1, "prairies": 0 },
+      "water": true,
+      "weather": ["ice"],
+      "layout": ["salmon_dock salmon_dock", "salmon_cannery fish_shed"],
+      "parts": { "salmon_dock": "salmon_dock", "salmon_cannery": "salmon_cannery" },
+      "produces": { "fish": 60 },
+      "production": { "fish": "pick(month, 0, 0, 0, 20, 60, 120, 160, 140, 80, 30, 0, 0) * level / 16 * (ice > 15 ? 0 : 1)" },
+      "open": "year < 1960 || stations > 0"
+    }
+  ]
+}

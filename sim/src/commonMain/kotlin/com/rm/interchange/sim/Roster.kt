@@ -118,6 +118,10 @@ class House(
     val weight: Int,
     /** A statue and the like: put up when a company pays for it, never built, rebuilt or pulled down by the town. */
     val monument: Boolean = false,
+    /** Its drawing from a pack, a place in [Roster.sprites], or -1 for one the game draws itself. */
+    val sprite: Int = -1,
+    /** Turned off by a pack: kept so ids stay put, but no town builds it. */
+    val enabled: Boolean = true,
 ) {
     fun name(language: String) = names[language] ?: names["en"] ?: key
 }
@@ -147,9 +151,20 @@ class IndustryKind(
     val water: Boolean = false,
     /** How the weather changes it, as bits: [CROPS], [THAW], [ICE]. */
     val weather: Int = 0,
+    /** Turned off by a pack: kept so ids stay put, but no new ones open. */
+    val enabled: Boolean = true,
+    /** Drawings from packs for layout parts, by part name, as places in [Roster.sprites]; parts not here the game draws itself. */
+    val parts: Map<String, Int> = emptyMap(),
+    /** By cargo number, a rule for its monthly amount in place of the usual, or null. */
+    val production: Array<Rule?> = arrayOfNulls(Cargo.COUNT),
+    /** A rule that's 0 where and when one can't open, and one that closes it at the month when it isn't 0. */
+    val open: Rule? = null,
+    val closes: Rule? = null,
 ) {
-    /** The cargo it makes from what's brought, as bits: what it makes but has no monthly amount of its own for. */
-    val converts: Int = (0 until Cargo.COUNT).fold(0) { m, c -> if (outputs and (1 shl c) != 0 && produces[c] == 0) m or (1 shl c) else m }
+    /** The cargo it makes from what's brought, as bits: what it makes but has no monthly amount or rule of its own for. */
+    val converts: Int = (0 until Cargo.COUNT).fold(0) { m, c -> if (outputs and (1 shl c) != 0 && produces[c] == 0 && production[c] == null) m or (1 shl c) else m }
+    /** Makes cargo of its own each month. */
+    val primary get() = produces.any { it > 0 } || production.any { it != null }
     fun name(language: String) = names[language] ?: names["en"] ?: key
     val width get() = layout[0].size
     val height get() = layout.size
@@ -171,7 +186,7 @@ class IndustryKind(
     }
 }
 
-/** A vehicle drawing: the sheet [name] in pack [pack]. */
+/** A drawing of a vehicle, a town building or an industry part: the sheet [name] in pack [pack]. */
 data class SpriteRef(val pack: String, val name: String)
 
 /** Everything that can run on the track in one game, from its packs in order, base first. */
@@ -206,6 +221,12 @@ class Roster(
             class Spec(val key: String, var def: VehicleDef, var sprite: SpriteRef?, var offWire: SpriteRef?, var enabled: Boolean = true)
             val specs = ArrayList<Spec>()
             val byKey = HashMap<String, Spec>()
+            class HouseSpec(val key: String, var def: HouseDef, var sprite: SpriteRef?, var enabled: Boolean = true)
+            class IndustrySpec(val key: String, var def: IndustryDef, val parts: HashMap<String, SpriteRef>, var enabled: Boolean = true)
+            val houseSpecs = ArrayList<HouseSpec>()
+            val houseByKey = HashMap<String, HouseSpec>()
+            val industrySpecs = ArrayList<IndustrySpec>()
+            val industryByKey = HashMap<String, IndustrySpec>()
             val seen = HashSet<String>()
             fun qualify(pack: Pack, ref: String) = if (':' in ref) ref else "${pack.id}:$ref"
             for (pack in packs) {
@@ -228,7 +249,40 @@ class Roster(
                         old.offWire = offWire
                     } else if (offWire != null) old.offWire = offWire
                 }
-                for (d in pack.disables) byKey[qualify(pack, d)]?.let { it.enabled = false } ?: run { problems += "${pack.id} turns off $d, which isn't there" }
+                for (h in pack.houses) {
+                    val sprite = h.sprite?.let { SpriteRef(pack.id, it) }
+                    if (h.replaces == null) {
+                        val k = HouseSpec(qualify(pack, h.id), h, sprite)
+                        houseSpecs += k
+                        houseByKey[k.key] = k
+                        continue
+                    }
+                    val old = houseByKey[qualify(pack, h.replaces)] ?: run { problems += "${pack.id}:${h.id} replaces ${h.replaces}, which isn't there"; continue }
+                    old.def = mergeHouse(old.def, h)
+                    if (sprite != null) old.sprite = sprite
+                }
+                for (d in pack.industries) {
+                    val parts = d.parts.orEmpty().mapValues { SpriteRef(pack.id, it.value) }
+                    if (d.replaces == null) {
+                        val k = IndustrySpec(qualify(pack, d.id), d, HashMap(parts))
+                        industrySpecs += k
+                        industryByKey[k.key] = k
+                        continue
+                    }
+                    val old = industryByKey[qualify(pack, d.replaces)] ?: run { problems += "${pack.id}:${d.id} replaces ${d.replaces}, which isn't there"; continue }
+                    old.def = mergeIndustry(old.def, d)
+                    old.parts.putAll(parts)
+                }
+                for (d in pack.disables) {
+                    val k = qualify(pack, d)
+                    val v = byKey[k]
+                    val h = houseByKey[k]
+                    val ind = industryByKey[k]
+                    if (v == null && h == null && ind == null) problems += "${pack.id} turns off $d, which isn't there"
+                    v?.enabled = false
+                    h?.enabled = false
+                    ind?.enabled = false
+                }
             }
             val sprites = ArrayList<SpriteRef>()
             val spriteIds = HashMap<SpriteRef, Int>()
@@ -262,22 +316,51 @@ class Roster(
                     range = d.range ?: 0, runway = d.runway?.let { Runways.NAMES.indexOf(it) } ?: Runways.REGIONAL, floats = d.floats ?: false,
                 )
             }
-            val houses = packs.flatMap { p -> p.houses.map { p.id to it } }.mapIndexed { i, (pack, h) ->
-                House(i, "$pack:${h.id}", h.names, h.from, h.until, h.residents, h.jobs, h.zones, h.minPopulation, h.weight, h.monument)
+            fun spriteId(ref: SpriteRef) = spriteIds.getOrPut(ref) { sprites += ref; sprites.size - 1 }
+            val houses = houseSpecs.mapIndexed { i, s ->
+                val h = s.def
+                House(
+                    i, s.key, h.names!!, h.from!!, h.until!!, h.residents!!, h.jobs!!, h.zones!!, h.minPopulation ?: 0, h.weight ?: 1, h.monument ?: false,
+                    sprite = s.sprite?.let { spriteId(it) } ?: -1, enabled = s.enabled,
+                )
             }
-            val industries = packs.flatMap { p -> p.industries.map { p.id to it } }.mapIndexed { i, (pack, d) ->
+            val baseParts = packs.firstOrNull { it.id == Packs.BASE_ID }?.industries.orEmpty().flatMap { it.layout.orEmpty().flatten() }.toSet()
+            val industries = industrySpecs.mapIndexed { i, s ->
+                val d = s.def
+                val layout = d.layout!!
+                val produces = d.produces.orEmpty()
+                for (part in layout.flatten().toSet()) if (part !in s.parts && part !in baseParts) problems += "${s.key}: part \"$part\" has no drawing in its pack or the base pack"
+                for (cg in d.production.orEmpty().keys) if (cg !in produces) problems += "${s.key}: production: \"$cg\" should be in \"produces\" too"
                 IndustryKind(
-                    i, "$pack:${d.id}", d.names, d.from, d.until, d.regions, d.ground, d.layout,
-                    IntArray(Cargo.COUNT) { c -> d.produces[Cargo.IDS[c]] ?: 0 },
-                    d.accepts.fold(0) { m, cg -> Cargo.of(cg).let { if (it >= 0) m or (1 shl it) else m } },
-                    d.produces.keys.fold(0) { m, cg -> Cargo.of(cg).let { if (it >= 0) m or (1 shl it) else m } },
-                    d.seasons.toIntArray(), d.water,
-                    d.weather.fold(0) { m, r -> IndustryKind.WEATHER.indexOf(r).let { if (it >= 0) m or (1 shl it) else m } },
+                    i, s.key, d.names!!, d.from!!, d.until!!, d.regions.orEmpty(), d.ground.orEmpty(), layout,
+                    IntArray(Cargo.COUNT) { c -> produces[Cargo.IDS[c]] ?: 0 },
+                    d.accepts.orEmpty().fold(0) { m, cg -> Cargo.of(cg).let { if (it >= 0) m or (1 shl it) else m } },
+                    produces.keys.fold(0) { m, cg -> Cargo.of(cg).let { if (it >= 0) m or (1 shl it) else m } },
+                    (d.seasons ?: List(12) { 100 }).toIntArray(), d.water ?: false,
+                    d.weather.orEmpty().fold(0) { m, r -> IndustryKind.WEATHER.indexOf(r).let { if (it >= 0) m or (1 shl it) else m } },
+                    enabled = s.enabled,
+                    parts = s.parts.entries.sortedBy { it.key }.associate { it.key to spriteId(it.value) },
+                    production = Array(Cargo.COUNT) { c -> d.production?.get(Cargo.IDS[c]) },
+                    open = d.open, closes = d.closes,
                 )
             }
             if (problems.isNotEmpty()) throw BadPack(problems)
             return Roster(packs.map { it.ref }, engines, sprites, houses, industries)
         }
+
+        /** [old] with whatever [h] gives in its place. */
+        private fun mergeHouse(old: HouseDef, h: HouseDef) = HouseDef(
+            old.id, h.names ?: old.names, h.from ?: old.from, h.until ?: old.until, h.residents ?: old.residents, h.jobs ?: old.jobs,
+            h.zones ?: old.zones, h.minPopulation ?: old.minPopulation, h.weight ?: old.weight, h.monument ?: old.monument,
+            null, h.sprite ?: old.sprite,
+        )
+
+        /** [old] with whatever [d] gives in its place. Its parts are merged where the drawings are found. */
+        private fun mergeIndustry(old: IndustryDef, d: IndustryDef) = IndustryDef(
+            old.id, d.names ?: old.names, d.from ?: old.from, d.until ?: old.until, d.regions ?: old.regions, d.ground ?: old.ground,
+            d.layout ?: old.layout, d.produces ?: old.produces, d.accepts ?: old.accepts, d.seasons ?: old.seasons, d.water ?: old.water,
+            d.weather ?: old.weather, null, null, d.production ?: old.production, d.open ?: old.open, d.closes ?: old.closes,
+        )
 
         /** [old] with whatever [v] gives in its place. */
         private fun merge(old: VehicleDef, v: VehicleDef, pack: Pack) = VehicleDef(
