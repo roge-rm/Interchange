@@ -328,6 +328,8 @@ class StationView(
     val waited: IntArray = IntArray(Cargo.MAX) { -1 },
     val boarded: IntArray = IntArray(Cargo.MAX),
     val gaveUp: IntArray = IntArray(Cargo.MAX),
+    /** Its service score, 0 to 100 (50 makes as many passengers as before), -1 before it's worked out or with nowhere to go. */
+    val service: Int = -1,
 )
 
 /**
@@ -436,6 +438,8 @@ class WorldView(
     /** With the risk asked for, the player's tiles the next days' snow would slow or stop, and which (1 slows, 2 stops). */
     val riskTiles: IntArray = IntArray(0),
     val riskLevels: ByteArray = ByteArray(0),
+    /** The town pairs whose travel is carried least, the most not carried first; empty unless the network is asked for. */
+    val demand: List<DemandView> = emptyList(),
 )
 
 /**
@@ -571,7 +575,7 @@ fun World.view(company: Int = 0, withReserved: Boolean = false, withNetwork: Boo
         StationView(
             s.id, s.name, s.tiles.size, IntArray(Cargo.MAX) { s.waiting(it) }, list, s.rating.copyOf(), served, s.owner, mx, my, s.waypoint,
             IntArray(Cargo.MAX) { c -> if (s.boardedLastMonth[c] == 0) -1 else (s.waitedLastMonth[c] / s.boardedLastMonth[c]).toInt() },
-            s.boardedLastMonth.copyOf(), s.gaveUpLastMonth.copyOf(),
+            s.boardedLastMonth.copyOf(), s.gaveUpLastMonth.copyOf(), s.service,
         )
     }
     val signalViews = signals.entries.sortedBy { it.key }.map { (k, s) ->
@@ -669,6 +673,7 @@ fun World.view(company: Int = 0, withReserved: Boolean = false, withNetwork: Boo
         priorityRoad.keys.filter { priorityRoad[it] == company }.sorted().toIntArray(),
         risk?.first ?: IntArray(0),
         risk?.second ?: ByteArray(0),
+        if (withNetwork) demand else emptyList(),
     )
 }
 

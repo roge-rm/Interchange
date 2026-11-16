@@ -127,14 +127,24 @@ class World(settings: NewGame, val roster: Roster = Roster.BASE, generate: Boole
     /** The people round each station, and for each cargo the next stop from each station towards each it can reach. Not saved. */
     internal val stationPeople = HashMap<Int, Int>()
     internal var nextHops: Array<HashMap<Int, HashMap<Int, Int>>> = Array(Cargo.MAX) { HashMap() }
+    /** For each cargo, the whole way's cost in ticks from each station to each it can reach, as [nextHops] has it. Not saved. */
+    internal var routeCosts: Array<HashMap<Int, HashMap<Int, Int>>> = Array(Cargo.MAX) { HashMap() }
     /**
      * Each link's journey time in ticks as vehicles have run it, keyed [linkKey], and the copy of it taken each week
      * that [workOutLinks] goes by, so the way only changes at the weekly rework or when orders change. Both saved.
      */
     internal val linkTimes = HashMap<Long, Int>()
     internal val linkCosts = HashMap<Long, Int>()
-    /** What ran on each link this month and last, keyed [linkKey], for the screen only. Saved and left out of the checksum. */
+    /**
+     * What ran on each link this month and last, keyed [linkKey]. Saved and left out of the checksum: the game reads
+     * it only for the weekly link costs, which are in it.
+     */
     internal val linkStats = HashMap<Long, LinkStats>()
+    /** Passengers delivered from each station to each, keyed [linkKey] by where they started, this month and last. Saved, for the screen only. */
+    internal val tripsMonth = HashMap<Long, Int>()
+    internal val tripsLast = HashMap<Long, Int>()
+    /** The town pairs whose travel is carried least, worked out monthly by [demandMonth]. Saved, for the screen only. */
+    internal var demand: List<DemandView> = emptyList()
     /** Each sharing group's service and timetable, keyed [serviceKey]. Saved. */
     internal val services = HashMap<Int, Service>()
     /** The stations reaching each industry, and the industries each station reaches, by id. Not saved. */
@@ -558,6 +568,8 @@ class World(settings: NewGame, val roster: Roster = Roster.BASE, generate: Boole
         for (s in stations) if (s != null) {
             for (c in s.cargo) for (p in c) { mix(p.dest.toLong()); mix(p.count.toLong()); mix(p.credit) }
             for (c in 0 until cargoCount) mix(s.rating[c].toLong())
+            // Only once worked out, so a world with no service yet keeps its checksum.
+            if (s.service >= 0) mix(700L + s.service)
         }
         for (k in signals.keys.sorted()) mix(k.toLong() * 31 + signals.getValue(k))
         for (k in stationTiles.keys.sorted()) mix(k.toLong() * 31 + stationTiles.getValue(k))

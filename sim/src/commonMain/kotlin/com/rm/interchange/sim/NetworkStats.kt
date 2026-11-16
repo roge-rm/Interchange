@@ -3,7 +3,8 @@ package com.rm.interchange.sim
 /*
  * What each link and station did, for the screen: departures, capacity and load leaving on each link, ticks vehicles
  * stood held on it, and how long what boarded at each station waited. Counted as vehicles run, rolled over each month,
- * saved, and never read by the game, so they stay out of the checksum.
+ * saved, and left out of the checksum. The game reads only links' departures and held ticks, for the weekly link
+ * costs, which are in the checksum.
  */
 
 /** A month on a link: departures, capacity and load leaving on it by cargo, and ticks held on the runs that ended on it. */
@@ -90,6 +91,9 @@ internal fun World.networkStatsMonth() {
         s.month.clear()
         if (s.last.empty) it.remove()
     }
+    tripsLast.clear()
+    tripsLast.putAll(tripsMonth)
+    tripsMonth.clear()
     for (s in stations) {
         if (s == null) continue
         s.waitedTicks.copyInto(s.waitedLastMonth)
@@ -185,6 +189,9 @@ class LinkView(
     val load: IntArray,
     val vehicleModes: IntArray,
     val vehicleIds: IntArray,
+    /** In ticks, worked out now as the weekly link costs are: the wait for it, half the time between departures, and its reliability charge. */
+    val wait: Int = 0,
+    val reliability: Int = 0,
 )
 
 /**
@@ -214,6 +221,7 @@ internal fun World.linkViews(): List<LinkView> {
             }
         }
     }
+    val charges = linkCharges()
     for (key in linkStats.keys) {
         val owner = stations.getOrNull((key shr 16).toInt())?.owner ?: continue
         if ((owner to key) !in found) found[owner to key] = Building()
@@ -221,13 +229,14 @@ internal fun World.linkViews(): List<LinkView> {
     return found.keys.sortedWith(compareBy<Pair<Int, Long>> { it.first }.thenBy { it.second }).map { id ->
         val (company, key) = id
         val l = found.getValue(id)
+        val charge = charges[key]
         val last = linkStats[key]?.last
         val time = linkTimes[key]
         LinkView(
             (key shr 16).toInt(), (key and 0xffff).toInt(), company, l.modes, time ?: l.guess, time != null,
             last?.runs ?: 0, if (last == null || last.runs == 0) 0 else (last.lost / last.runs).toInt(), last?.departures ?: 0,
             last?.capacity?.copyOf() ?: IntArray(Cargo.MAX), last?.load?.copyOf() ?: IntArray(Cargo.MAX),
-            l.modesList.toIntArray(), l.ids.toIntArray(),
+            l.modesList.toIntArray(), l.ids.toIntArray(), charge?.get(0) ?: 0, charge?.get(1) ?: 0,
         )
     }
 }

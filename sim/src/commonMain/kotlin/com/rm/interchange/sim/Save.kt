@@ -16,7 +16,7 @@ package com.rm.interchange.sim
  */
 object Save {
     private val MAGIC = "ICHG".encodeToByteArray()
-    const val VERSION = 67
+    const val VERSION = 68
 
     /** A vehicle's [built] day as saved by [version]: work days from 36, calendar days before. */
     private fun World.builtOut(built: Int, version: Int) = if (version >= 36) built else built / settings.dayLength
@@ -336,6 +336,16 @@ object Save {
                 val keys = warned.keys.sorted()
                 w.uvar(keys.size.toLong())
                 for (k in keys) { w.long(k); w.int(warned.getValue(k)) }
+            }
+            if (version >= 68) {
+                for (st in stations) if (st != null) w.int(st.service)
+                for (trips in listOf(tripsMonth, tripsLast)) {
+                    val keys = trips.keys.sorted()
+                    w.uvar(keys.size.toLong())
+                    for (k in keys) { w.long(k); w.int(trips.getValue(k)) }
+                }
+                w.uvar(demand.size.toLong())
+                for (d in demand) { w.int(d.townA); w.int(d.townB); w.int(d.potential); w.int(d.carried); w.bool(d.served) }
             }
         }
         val body = Squeeze.pack(w.toByteArray())
@@ -847,6 +857,24 @@ object Save {
                 val n = r.uvar()
                 if (n !in 0..r.left / 2L) throw BadData("too many warnings")
                 repeat(n.toInt()) { warned[r.long()] = r.int() }
+            }
+            // Before 68 no service scores, trips or demand: stations go as before until the month turns.
+            if (version >= 68) {
+                for (st in stations) if (st != null) st.service = r.int().coerceIn(-1, 100)
+                for (trips in listOf(tripsMonth, tripsLast)) {
+                    // Each takes two bytes at the least.
+                    val n = r.uvar()
+                    if (n !in 0..minOf(r.left / 2L, stations.size.toLong() * stations.size)) throw BadData("too many trips")
+                    repeat(n.toInt()) { trips[r.long()] = r.int().coerceAtLeast(0) }
+                }
+                val n = r.uvar()
+                if (n !in 0..DEMAND_TOP.toLong()) throw BadData("too many demand pairs")
+                demand = List(n.toInt()) {
+                    val a = r.int()
+                    val b = r.int()
+                    if (a !in towns.indices || b !in towns.indices) throw BadData("bad demand pair")
+                    DemandView(a, b, r.int().coerceAtLeast(0), r.int().coerceAtLeast(0), r.bool())
+                }
             }
             // A conditional order with a test there isn't or a jump past the end is left out, as are orders past
             // the most a vehicle takes, as a command would.

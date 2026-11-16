@@ -41,6 +41,8 @@ class Station(val id: Int, var owner: Int, var name: String, val signX: Int, val
     val waitedLastMonth = LongArray(Cargo.MAX)
     val boardedLastMonth = IntArray(Cargo.MAX)
     val gaveUpLastMonth = IntArray(Cargo.MAX)
+    /** Its service score, 0 to 100, worked out monthly by [serviceScore]; -1 before then or when it reaches nowhere. */
+    var service = -1
 }
 
 /** Every tile the station has, for its catchment. */

@@ -178,7 +178,7 @@ class AutomationTest {
 
     @Test
     fun save65KeepsTheSettingAndStep() {
-        assertEquals(67, Save.VERSION)
+        assertEquals(68, Save.VERSION)
         for (level in listOf(Breakdowns.NONE, Breakdowns.REDUCED)) {
             val w = busLine(level, buses = 2)
             breakdownsOver(w, 60)

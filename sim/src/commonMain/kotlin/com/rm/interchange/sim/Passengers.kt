@@ -150,18 +150,28 @@ internal fun World.workOutLinks() {
     }
     val keys = Array(Cargo.MAX) { c -> sets[c].toLongArray().also { it.sort() } }
     val tables = ArrayList<HashMap<Int, HashMap<Int, Int>>>()
+    val costTables = ArrayList<HashMap<Int, HashMap<Int, Int>>>()
     for (c in 0 until cargoCount) {
         val same = (0 until c).firstOrNull { keys[it].contentEquals(keys[c]) }
-        tables += if (same != null) tables[same] else routes(keys[c], guess)
+        if (same != null) {
+            tables += tables[same]
+            costTables += costTables[same]
+        } else {
+            val costs = HashMap<Int, HashMap<Int, Int>>()
+            tables += routes(keys[c], guess, costs)
+            costTables += costs
+        }
     }
     nextHops = Array(Cargo.MAX) { tables.getOrElse(it) { HashMap() } }
+    routeCosts = Array(Cargo.MAX) { costTables.getOrElse(it) { HashMap() } }
 }
 
 /**
  * The next stop from each station towards each it can reach over the links [keys] (sorted), by Dijkstra: each link
- * costs its journey time and a change, ties going to the lower station id.
+ * costs its journey time with the wait for it and a change, ties going to the lower station id. The whole way's cost
+ * from each to each goes in [costsOut].
  */
-private fun World.routes(keys: LongArray, guess: Map<Long, Int>): HashMap<Int, HashMap<Int, Int>> {
+private fun World.routes(keys: LongArray, guess: Map<Long, Int>, costsOut: HashMap<Int, HashMap<Int, Int>>): HashMap<Int, HashMap<Int, Int>> {
     val hops = HashMap<Int, HashMap<Int, Int>>()
     if (keys.isEmpty()) return hops
     // The stations in the links, by id, numbered in that order.
@@ -203,8 +213,13 @@ private fun World.routes(keys: LongArray, guess: Map<Long, Int>): HashMap<Int, H
             }
         }
         val map = HashMap<Int, Int>()
-        for (i in 0 until n) if (i != from && first[i] >= 0) map[ids[i]] = ids[first[i]]
+        val costMap = HashMap<Int, Int>()
+        for (i in 0 until n) if (i != from && first[i] >= 0) {
+            map[ids[i]] = ids[first[i]]
+            costMap[ids[i]] = dist[i]
+        }
         hops[ids[from]] = map
+        costsOut[ids[from]] = costMap
     }
     return hops
 }
@@ -224,13 +239,62 @@ internal fun World.timeLink(from: Int, to: Int, ticks: Long) {
 /** The most one run counts for, as a multiple of the link's time before it. */
 const val SAMPLE_MOST = 4
 
-/** Each week: the way goes by the journey times measured so far, until the next week, worked out again if they changed. */
+/**
+ * Each week: the way goes by the journey times measured so far with each link's wait and reliability charge, until
+ * the next week, worked out again if they changed.
+ */
 internal fun World.linksWeek() {
-    if (linkCosts == linkTimes) return
+    val charges = linkCharges()
+    val next = HashMap<Long, Int>()
+    for ((k, t) in linkTimes) next[k] = (t.toLong() + (charges[k]?.sum() ?: 0)).coerceAtMost(MAX_LINK_TICKS.toLong()).toInt()
+    if (linkCosts == next) return
     linkCosts.clear()
-    linkCosts.putAll(linkTimes)
+    linkCosts.putAll(next)
     linksDirty = true
 }
+
+/**
+ * What each link costs on top of its journey time, in ticks, by [linkKey]: the wait for it, half the time between
+ * departures over the month, and its reliability charge, the ticks held a run and how late on average the vehicles
+ * running it are. Links with no departures yet have no wait.
+ */
+internal fun World.linkCharges(): HashMap<Long, IntArray> {
+    val out = HashMap<Long, IntArray>()
+    val monthTicks = 30L * dayTicks
+    for ((k, st) in linkStats) {
+        // This month's so far counts for a line new this month.
+        val departures = maxOf(st.last.departures, st.month.departures)
+        val wait = if (departures == 0) 0 else (minOf(monthTicks / departures, WAIT_MOST_DAYS.toLong() * Calendar.TICKS_PER_DAY) / 2).toInt()
+        val lost = if (st.last.runs == 0) 0 else (st.last.lost / st.last.runs).coerceAtMost(MAX_LINK_TICKS.toLong()).toInt()
+        if (wait > 0 || lost > 0) out[k] = intArrayOf(wait, lost)
+    }
+    // Lateness of the vehicles on each link, each counted once a link.
+    val late = HashMap<Long, LongArray>()
+    for (v in carriers()) {
+        val stops = v.orders.filter { isStop(it) }
+        if (stops.size < 2) continue
+        val seen = HashSet<Long>()
+        for (k in stops.indices) {
+            val a = Order.station(stops[k])
+            val b = Order.station(stops[(k + 1) % stops.size])
+            val key = linkKey(a, b)
+            if (a == b || !seen.add(key)) continue
+            val l = late.getOrPut(key) { LongArray(2) }
+            l[0] += v.late.coerceAtLeast(0).toLong()
+            l[1]++
+        }
+    }
+    for ((k, l) in late) {
+        val ticks = (l[0] / l[1]).toInt()
+        if (ticks == 0) continue
+        val c = out.getOrPut(k) { IntArray(2) }
+        c[1] = (c[1].toLong() + ticks).coerceAtMost(MAX_LINK_TICKS.toLong()).toInt()
+    }
+    return out
+}
+
+/** The most days between departures a link's wait goes by: one a month, a wait of half that. */
+const val WAIT_MOST_DAYS = 30
 
 /** Forgets the journey times of links to and from station [id], and vehicles' leaving it. */
 internal fun World.dropLinkTimes(id: Int) {
@@ -238,6 +302,8 @@ internal fun World.dropLinkTimes(id: Int) {
     linkTimes.keys.removeAll(gone)
     linkCosts.keys.removeAll(gone)
     linkStats.keys.removeAll(gone)
+    tripsMonth.keys.removeAll(gone)
+    tripsLast.keys.removeAll(gone)
     for (list in listOf<List<Carrier?>>(trains, roadVehicles, ships, aircraft)) for (v in list) if (v != null && v.leftFrom == id) {
         v.leftFrom = -1
         v.leftAt = -1
@@ -309,6 +375,9 @@ internal fun World.passengersDay() {
         val m = made.getValue(sid)
         m[Cargo.PASSENGERS] = m[Cargo.PASSENGERS] * travel / 100 * outings(s) / 100
         m[Cargo.MAIL] = m[Cargo.MAIL] * post / 100
+        // And more or fewer by how good the service from here is.
+        m[Cargo.PASSENGERS] = m[Cargo.PASSENGERS] * serviceFactor(s, Cargo.PASSENGERS) / 100
+        m[Cargo.MAIL] = m[Cargo.MAIL] * serviceFactor(s, Cargo.MAIL) / 100
         for (cg in 0 until cargoCount) m[cg] = (m[cg] * s.rating[cg] + rng.below(255)) / 255
     }
     for ((sid, f) in freight) {
@@ -321,14 +390,16 @@ internal fun World.passengersDay() {
             val n = minOf(made.getValue(sid)[cg], MAX_WAITING - s.waiting(cg))
             if (n <= 0) continue
             val reachable = nextHops[cg][sid]?.keys?.sorted().orEmpty()
-            // Where it can go: stations that take it, people for passengers and mail weighed by how many, freight
-            // by nearness alone.
+            // Where it can go: stations that take it, people for passengers and mail weighed by how many over how
+            // long the way takes, freight by nearness alone.
             // Never to another industry of a kind that made it here, so grain doesn't go round from elevator to elevator.
             val makers = stationIndustries[sid].orEmpty().map { industries[it] }.filter { roster.industries[it.kind].outputs and (1 shl cg) != 0 }.map { it.kind }.toSet()
             val reach = reachable.filter { d -> accepts(stations[d]!!, cg) && takerAt(stations[d]!!, cg)?.kind?.let { it in makers } != true }
             val people = cg == Cargo.PASSENGERS || cg == Cargo.MAIL
+            val costs = routeCosts[cg][sid]
             val weights = IntArray(reach.size) { i ->
-                (if (people) (stationPeople[reach[i]] ?: 0) + 20 else 64) * 256 / (stationDistance(sid, reach[i]) + 8)
+                if (people) ((stationPeople[reach[i]] ?: 0) + 20) * 256 / (costTiles(costs?.get(reach[i]) ?: 0) + 8)
+                else 64 * 256 / (stationDistance(sid, reach[i]) + 8)
             }
             val total = weights.sum()
             if (total == 0) {
@@ -518,6 +589,7 @@ internal fun World.callAt(t: Carrier, s: Station, o: Int = 0) {
                         ind.broughtThisMonth += p.count
                     }
                     delivered(company.id, c, p.count, from, s, taker)
+                    if (c == Cargo.PASSENGERS) linkKey(from.id, s.id).let { k -> tripsMonth[k] = (tripsMonth[k] ?: 0) + p.count }
                     // The legs before were credited to the trains that carried them; this one gets the rest.
                     t.profitThisYear += full - p.credit
                 }
@@ -609,6 +681,8 @@ fun fare(table: CargoTable, c: Int, n: Int, from: Station, to: Station, days: In
 internal fun World.passengersMonth() {
     networkStatsMonth()
     servicesMonth()
+    serviceMonth()
+    demandMonth()
     for (t in towns) {
         t.servedLastMonth = t.servedThisMonth
         t.servedThisMonth = 0
