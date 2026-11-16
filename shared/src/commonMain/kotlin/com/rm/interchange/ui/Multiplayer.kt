@@ -34,12 +34,14 @@ import com.rm.interchange.net.CompanyInfo
 import com.rm.interchange.net.LanDiscovery
 import com.rm.interchange.net.Message
 import com.rm.interchange.net.Player
+import com.rm.interchange.net.ChatEvent
 import com.rm.interchange.net.Reject
 import com.rm.interchange.net.Wire
 import com.rm.interchange.platform.Network
 import com.rm.interchange.res.*
 import com.rm.interchange.server.Cancelled
 import com.rm.interchange.server.ChatLine
+import com.rm.interchange.server.Reconnect
 import com.rm.interchange.server.GameThread
 import com.rm.interchange.server.Host
 import com.rm.interchange.server.Refused
@@ -119,6 +121,7 @@ fun MultiplayerWindow(settings: Settings, onJoined: (Remote, World) -> Unit, onC
     var choice by remember { mutableStateOf(Message.NEW_COMPANY) }
     var asked by remember { mutableStateOf(false) }
     var password by remember { mutableStateOf("") }
+    var rejoining by remember { mutableStateOf<Int?>(null) }
     var askedCompany by remember { mutableStateOf(false) }
     var companyPassword by remember { mutableStateOf("") }
     // Set while packs are downloading, to stop them.
@@ -165,7 +168,7 @@ fun MultiplayerWindow(settings: Settings, onJoined: (Remote, World) -> Unit, onC
     fun where(address: String, port: Int) = if (port == LanDiscovery.GAME_PORT) address else "$address:$port"
 
     /** Asks the game what companies it has, to pick one. */
-    fun look(address: String, port: Int, name: String) {
+    fun look(address: String, port: Int, name: String, thenJoin: Int? = null) {
         if (busy != null || address.isBlank()) return
         settings.save()
         busy = lookingText
@@ -178,6 +181,7 @@ fun MultiplayerWindow(settings: Settings, onJoined: (Remote, World) -> Unit, onC
                         asked = false; password = ""; askedCompany = false; companyPassword = ""
                     }
                     looked = Looked(address, port, name, m.companies, m.players, m.packs)
+                    rejoining = thenJoin
                 }.onFailure { e ->
                     error = if ((e as? Refused)?.reason == Reject.VERSION) otherVersion else cantReach.replace("%s", where(address, port))
                 }
@@ -291,6 +295,13 @@ fun MultiplayerWindow(settings: Settings, onJoined: (Remote, World) -> Unit, onC
         }
     }
 
+    // Set by Rejoin: once the game has been looked at, joins as the company played before.
+    LaunchedEffect(rejoining, looked, busy) {
+        val game = looked
+        val co = rejoining
+        if (co != null && game != null && busy == null) { rejoining = null; join(game, co) }
+    }
+
     Window(stringResource(Res.string.multiplayer), onClose, Glyph.People) {
         Field(settings.playerName, stringResource(Res.string.your_name), { settings.playerName = it.take(Host.NAME_MOST) })
         val game = looked
@@ -319,6 +330,12 @@ fun MultiplayerWindow(settings: Settings, onJoined: (Remote, World) -> Unit, onC
         } else {
             if (error != null) Text(error ?: "", color = c.bad, style = KitType.Body)
             busy?.let { Text(it, color = c.textDim, style = KitType.Body) }
+
+            val last = settings.rejoin
+            if (last.address.isNotBlank()) {
+                ListRow(Glyph.Play, stringResource(Res.string.rejoin), listOfNotNull(last.server.takeIf { it.isNotBlank() }, where(last.address, last.port)).joinToString(" · "),
+                    if (busy == null) ({ look(last.address, last.port, last.server.ifBlank { where(last.address, last.port) }, last.company) }) else null)
+            }
 
             Head(stringResource(Res.string.games_nearby))
             if (heard.isEmpty()) Text(stringResource(Res.string.looking_for_games), color = c.textDim, style = KitType.Body)
@@ -458,6 +475,15 @@ fun ChatWindow(read: () -> List<ChatLine>, say: (String) -> Unit, onClose: () ->
     Window(stringResource(Res.string.chat), onClose, Glyph.Chat) {
         if (lines.isEmpty()) Text(stringResource(Res.string.no_chat), color = c.textDim, style = KitType.Body)
         for (l in lines) {
+            if (l.event != 0) {
+                val text = when (l.event) {
+                    ChatEvent.JOINED -> stringResource(Res.string.chat_joined, l.name)
+                    ChatEvent.LEFT -> stringResource(Res.string.chat_left, l.name)
+                    else -> stringResource(Res.string.chat_back, l.name)
+                }
+                Text(text, color = c.textDim, style = KitType.Body)
+                continue
+            }
             Text(
                 buildAnnotatedString {
                     withStyle(SpanStyle(color = if (l.company >= 0) companyColour(l.company) else c.textDim, fontWeight = FontWeight.SemiBold)) { append(l.name) }
@@ -479,12 +505,48 @@ fun ChatWindow(read: () -> List<ChatLine>, say: (String) -> Unit, onClose: () ->
     }
 }
 
-/** The game on the other end can't be reached any more; closing goes back to the title screen. */
+/**
+ * The game on the other end can't be reached: while [state] is trying again, the try and when the next is; once it's
+ * given up, why, with a way to [onTryAgain] where that could help. Closing goes back to the title screen.
+ */
 @Composable
-fun LostWindow(onClose: () -> Unit) {
+fun LostWindow(state: Reconnect.State?, onTryAgain: () -> Unit, onClose: () -> Unit) {
     val c = LocalColors.current
-    Window(stringResource(Res.string.connection_lost), onClose, Glyph.People) {
-        Text(stringResource(Res.string.connection_lost_line), color = c.text, style = KitType.Body)
-        BigButton(stringResource(Res.string.title_screen), primary = true, glyph = Glyph.Exit, onClick = onClose)
+    when (state) {
+        is Reconnect.State.Trying -> Window(stringResource(Res.string.reconnecting), onClose, Glyph.People) {
+            // Ticks so the seconds count down.
+            val seconds by produceState(state.secondsToNext(), state) {
+                while (true) { value = state.secondsToNext(); delay(250) }
+            }
+            Text(stringResource(Res.string.reconnect_try, state.tries), color = c.text, style = KitType.Body)
+            Text(
+                if (seconds > 0) stringResource(Res.string.reconnect_next, seconds) else stringResource(Res.string.reconnect_now),
+                color = c.textDim, style = KitType.Body,
+            )
+            BigButton(stringResource(Res.string.cancel), primary = true, glyph = Glyph.Remove, onClick = onClose)
+        }
+        else -> Window(stringResource(Res.string.connection_lost), onClose, Glyph.People) {
+            val gave = state as? Reconnect.State.GaveUp
+            val why = when (gave?.reason) {
+                null -> stringResource(Res.string.connection_lost_line)
+                Reconnect.TIMED_OUT -> stringResource(Res.string.reconnect_timed_out)
+                Reconnect.CANT_LOAD -> stringResource(Res.string.cant_load, gave.detail)
+                Reject.VERSION -> stringResource(Res.string.refused_version)
+                Reject.PASSWORD -> stringResource(Res.string.needs_password)
+                Reject.COMPANY_PASSWORD -> stringResource(Res.string.needs_company_password)
+                Reject.FULL -> stringResource(Res.string.refused_full)
+                Reject.NO_COMPANY -> stringResource(Res.string.refused_company)
+                Reject.KICKED -> stringResource(Res.string.refused_kicked)
+                Reject.CLOSED -> stringResource(Res.string.reconnect_closed)
+                else -> stringResource(Res.string.reconnect_gave_up)
+            }
+            Text(why, color = c.text, style = KitType.Body)
+            if (gave != null && gave.reason in setOf(Reconnect.TIMED_OUT, Reconnect.CANT_LOAD, Reject.FULL)) {
+                BigButton(stringResource(Res.string.try_again), primary = true, glyph = Glyph.Play, onClick = onTryAgain)
+                BigButton(stringResource(Res.string.title_screen), glyph = Glyph.Exit, onClick = onClose)
+            } else {
+                BigButton(stringResource(Res.string.title_screen), primary = true, glyph = Glyph.Exit, onClick = onClose)
+            }
+        }
     }
 }

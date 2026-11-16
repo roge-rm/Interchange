@@ -26,6 +26,7 @@ import kotlinx.coroutines.flow.first
 import androidx.compose.runtime.State
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.getValue
+import androidx.compose.material3.Text
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateMapOf
@@ -263,6 +264,10 @@ private fun Root(settings: Settings) {
     // Joining again after the connection dropped, and where it's got to; kept after giving up, for the reason.
     var reconnect by remember { mutableStateOf<Reconnect?>(null) }
     var reconnectState by remember { mutableStateOf<Reconnect.State?>(null) }
+    // Counts rejoins, to say "Back in the game" for a few seconds.
+    var backCount by remember { mutableIntStateOf(0) }
+    var backShown by remember { mutableStateOf(false) }
+    LaunchedEffect(backCount) { if (backCount > 0) { backShown = true; delay(3000); backShown = false } }
     // A connection that dropped while the app was in the background, joined again once it's shown.
     var droppedAway by remember { mutableStateOf<Remote?>(null) }
     var shown by remember { mutableStateOf(true) }
@@ -502,6 +507,7 @@ private fun Root(settings: Settings) {
                 is Reconnect.State.Back -> {
                     reconnect = null
                     reconnectState = null
+                    backCount++
                     joined(st.remote, st.world, again = true)
                     return@LaunchedEffect
                 }
@@ -859,11 +865,17 @@ private fun Root(settings: Settings) {
             runner?.let { r -> ServiceWindow(r, id, { showVehicle.value = it; openService.value = null; window = null }) { openService.value = null } }
         }
         // Over the game only: a new game being set up stays, and the window waits for the game to come back.
-        if ((lost || reconnect != null) && screen == Screen.Playing) LostWindow {
+        if ((lost || reconnect != null) && screen == Screen.Playing) LostWindow(reconnectState, onTryAgain = {
+            val remote = runner?.remote
+            if (remote != null) { lost = false; startReconnect(remote) }
+        }) {
             lost = false
             stopGame()
             window = null
             screen = Screen.Title
+        }
+        if (backShown) Box(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing).padding(12.dp), contentAlignment = Alignment.TopCenter) {
+            ChromeBox { Text(stringResource(Res.string.back_in_game), color = LocalColors.current.text, style = KitType.Body, modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp)) }
         }
     } }
 }
