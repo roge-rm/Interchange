@@ -67,7 +67,8 @@ class RivalTest {
             v.profitLastYear = -100
             n++
         }
-        // Sent to the garage one at a time, a look apart, with a trip or two called off and sent again from the far end.
+        // Sent to the garage to be sold one at a time, a look apart, between trips in for a service, and the route given up
+        // at a look after the last.
         w.days(30 * (n + 4))
         assertTrue(route !in r.routes, "the route is still run")
         assertTrue(w.roadVehicles.none { it != null && it.owner == r.company && it.orders.isNotEmpty() && Order.station(it.orders[0]) == route.a }, "its vehicles weren't sold")
@@ -200,8 +201,10 @@ class RivalTest {
         val on = w.trains.filterNotNull().filter { it.owner == r.company }
         assertEquals(2, on.size)
         // Three work years: each is serviced in turn, never going twice the service time without, and both keep calling.
+        // Calls counted at each station it calls at after the other, so one again at the same end isn't counted.
         val calls = IntArray(2)
         val last = IntArray(2) { -1 }
+        val lastOut = LongArray(2)
         var longest = 0
         var leastReliable = 10_000
         repeat(Calendar.TICKS_PER_DAY * 365 * 3) {
@@ -209,7 +212,8 @@ class RivalTest {
             for ((k, t) in on.withIndex()) {
                 // The line only just pays: neither is let lose a year and be sent in to be sold.
                 t.profitLastYear = maxOf(t.profitLastYear, 0)
-                if (t.order != last[k]) { calls[k]++; last[k] = t.order }
+                if (t.leftFrom >= 0 && t.leftFrom != last[k]) { calls[k]++; last[k] = t.leftFrom }
+                if (t.running && !t.inDepot) lastOut[k] = w.tick
                 longest = maxOf(longest, w.workDay - t.serviced)
                 leastReliable = minOf(leastReliable, t.reliability)
             }
@@ -217,7 +221,9 @@ class RivalTest {
         assertTrue(longest <= SERVICE_DAYS * 2, "went $longest work days without a service")
         assertTrue(leastReliable >= 5000, "reliability fell to $leastReliable")
         assertTrue(calls.all { it >= 24 }, "calls ${calls.toList()}")
-        assertTrue(on.all { it.running && !it.inDepot }, "a train stopped")
+        // Each out running lately: one in the depot at the end has only just gone in, or waits for the other to clear the platform.
+        assertTrue(on.all { it.running }, "a train stopped")
+        assertTrue(lastOut.all { w.tick - it <= Calendar.TICKS_PER_DAY * 30L }, "a train in the depot since ${lastOut.map { (w.tick - it) / Calendar.TICKS_PER_DAY }} days")
     }
 
     @Test

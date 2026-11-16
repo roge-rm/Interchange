@@ -408,6 +408,9 @@ private fun World.railPlow(): Engine? {
     return roster.available(year, false).filter { it.plow == Plows.WEDGE }.minByOrNull { it.id }
 }
 
+/** Work days a train held in its depot after a service waits before it calls at the near end first. */
+private const val HELD_DAYS = 4
+
 /** The middle of January, as a day of the year. */
 private const val JANUARY = 15
 
@@ -1065,6 +1068,18 @@ internal fun World.growRail(c: Company, route: RivalRoute, payback: Int, ranLast
     } else addLoop(c, route)
 }
 
+/**
+ * [n] of [wagon] behind [e] with the plow of the day ahead, a wagon fewer at a time till it fits [platforms] and [e]
+ * pulls it, or without the plow if even one wagon won't do.
+ */
+private fun World.withPlow(e: Engine, wagon: Engine, n: Int, cargo: Int, platforms: Int): RailTrain {
+    val plow = railPlow() ?: return RailTrain(e, wagon, n, null)
+    val room = platforms * 16 - e.length - (roster.getOrNull(e.tender)?.length ?: 0) - plow.length
+    var k = minOf(n, room / wagon.length)
+    while (k > 1 && !pulls(e, wagon, k, cargo, plow)) k--
+    return if (k >= 1 && pulls(e, wagon, k, cargo, plow)) RailTrain(e, wagon, k, plow) else RailTrain(e, wagon, n, null)
+}
+
 /** Buys another train for [route] like the one on it, or the best of the day that fits if that's no longer sold. Whether it did. */
 internal fun World.addTrain(c: Company, route: RivalRoute): Boolean {
     val first = trainsOn(c, route).firstOrNull() ?: return false
@@ -1074,7 +1089,7 @@ internal fun World.addTrain(c: Company, route: RivalRoute): Boolean {
     val e = roster[first.engine]
     val w = roster[cargoWagon(first)]
     val n = first.formation.count { it.model == w.id }
-    val train = if (year >= e.from && year < e.until && year >= w.from && year < w.until) RailTrain(e, w, n, railPlow())
+    val train = if (year >= e.from && year < e.until && year >= w.from && year < w.until) withPlow(e, w, n, route.cargo, minOf(a.tiles.size, b.tiles.size))
     else railTrains(route.cargo, n * w.capacity, minOf(a.tiles.size, b.tiles.size)).maxByOrNull { it.wagon.capacity * it.wagons * it.engine.speed(false) } ?: return false
     val before = trains.size
     buyTrain(c, route, train)
@@ -1096,10 +1111,10 @@ internal fun World.unblockDepot(c: Company, route: RivalRoute) {
         for (t in on) if (!t.service) apply(Command.TrainOrder(c.id, t.id, Command.TrainOrder.SERVICE))
         return
     }
-    // One held in the depot on its way to the far end calls at the near end first, so it comes out as soon as the
-    // platform is clear.
+    // One held in the depot a while on its way to the far end calls at the near end first, so it comes out as soon as
+    // the platform is clear.
     for (t in on) {
-        if (!t.inDepot || !t.running || tick > t.lostUntil || t.orders.size != 2) continue
+        if (!t.inDepot || !t.running || tick > t.lostUntil || workDay - t.serviced < HELD_DAYS || t.orders.size != 2) continue
         val next = t.orders[t.order % 2]
         val other = t.orders[(t.order + 1) % 2]
         if (Order.station(next) != route.a && Order.station(other) == route.a) apply(Command.TrainOrder(c.id, t.id, Command.TrainOrder.ORDERS, intArrayOf(other, next)))
