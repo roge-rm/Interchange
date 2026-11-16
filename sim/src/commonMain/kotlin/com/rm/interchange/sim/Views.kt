@@ -433,14 +433,18 @@ class WorldView(
     /** The player's priority track and road, by tile. */
     val priorityTrack: IntArray = IntArray(0),
     val priorityRoad: IntArray = IntArray(0),
+    /** With the risk asked for, the player's tiles the next days' snow would slow or stop, and which (1 slows, 2 stops). */
+    val riskTiles: IntArray = IntArray(0),
+    val riskLevels: ByteArray = ByteArray(0),
 )
 
 /**
  * What the screen shows a player of [company]: their payments and money, and everything on the map, and with
  * [withReserved] the pieces trains hold, and with [withNetwork] the links and why cargo can't get where it's going. With
- * [forecastAt] a tile, the forecast there.
+ * [forecastAt] a tile, the forecast there, and with [withRisk] the tiles of the company's lines the coming snow would slow or stop.
  */
-fun World.view(company: Int = 0, withReserved: Boolean = false, withNetwork: Boolean = false, forecastAt: Int = -1): WorldView {
+fun World.view(company: Int = 0, withReserved: Boolean = false, withNetwork: Boolean = false, forecastAt: Int = -1, withRisk: Boolean = false): WorldView {
+    val risk = if (withRisk) snowRisk(company) else null
     val cars = ArrayList<Float>()
     val curves = DrawCache.carCurves(this)
     val pose = FloatArray(3)
@@ -663,6 +667,8 @@ fun World.view(company: Int = 0, withReserved: Boolean = false, withNetwork: Boo
         news.filter { it.kind in News.WARN_SNOW..News.WARN_COLD && Warning.company(it.about) == company },
         priorityTrack.keys.filter { priorityTrack[it] == company }.sorted().toIntArray(),
         priorityRoad.keys.filter { priorityRoad[it] == company }.sorted().toIntArray(),
+        risk?.first ?: IntArray(0),
+        risk?.second ?: ByteArray(0),
     )
 }
 

@@ -135,6 +135,7 @@ import com.rm.interchange.sim.approvalLevel
 import com.rm.interchange.map.rememberTownLabels
 import com.rm.interchange.sim.World
 import com.rm.interchange.sim.WorldView
+import com.rm.interchange.sim.Warning
 import com.rm.interchange.sim.SIGNAL_SPACING_MAX
 import com.rm.interchange.sim.SIGNAL_SPACING_MIN
 import com.rm.interchange.sim.Signals
@@ -997,6 +998,11 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
     var signalKind by remember { mutableIntStateOf(0) }
     var signalSpacing by remember { mutableIntStateOf(4) }
     var signalPlan by remember { mutableStateOf<Command.SignalRun?>(null) }
+    var priorityPlan by remember { mutableStateOf<Command.Priority?>(null) }
+    val riskView = remember { mutableStateOf(runner.riskView) }
+    LaunchedEffect(runner) {
+        while (true) withFrameNanos { if (runner.riskView !== riskView.value) riskView.value = runner.riskView }
+    }
     var bridgeStyle by remember { mutableIntStateOf(0) }
     var bridgePlan by remember { mutableStateOf<Command.Bridge?>(null) }
     // The tray folds to its line once something's built, to show more of the map.
@@ -1216,7 +1222,7 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
                 get() = editor && tool in EDITOR_DRAGS
             override val drags: Boolean
                 get() = pick == null && copyPick.value == null && addingStops == null && addingRoadStops == null && addingCraftStops == null && (editing ||
-                    tool == Tool.Track || tool == Tool.Wires || tool == Tool.Signals || tool == Tool.Station || tool == Tool.Bridge || tool == Tool.Road || tool == Tool.TramRails || tool == Tool.Canal || tool == Tool.Clear || tool == Tool.Remove || tool == Tool.Level || tool == Tool.Trees)
+                    tool == Tool.Track || tool == Tool.Wires || tool == Tool.Signals || tool == Tool.PriorityTrack || tool == Tool.PriorityRoad || tool == Tool.Station || tool == Tool.Bridge || tool == Tool.Road || tool == Tool.TramRails || tool == Tool.Canal || tool == Tool.Clear || tool == Tool.Remove || tool == Tool.Level || tool == Tool.Trees)
             override fun tap(at: Pick) {
                 val ground = world.index(at.tileX, at.tileY)
                 pick?.let { it.onTile(ground); return }
@@ -1325,6 +1331,7 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
                     Tool.Signals -> if (removing) signalAt(world, me, at, signalled = true)?.let { runner.request(Command.SignalRun(me, at.tileX, at.tileY, at.tileX, at.tileY, it.piece, Signals.PLACED[signalKind], signalSpacing, true)); built() }
                         else signalAt(world, me, at)?.let { runner.request(it.copy(kind = Signals.PLACED[signalKind])); built() }
                     Tool.Waypoint -> { runner.request(Command.Waypoint(me, at.tileX, at.tileY)); built() }
+                    Tool.PriorityTrack, Tool.PriorityRoad -> priorityRun(me, at, at, tool == Tool.PriorityRoad, !removing).let { runner.request(it); built() }
                     Tool.Tunnel -> { runner.request(Command.Tunnel(me, at.tileX, at.tileY)); built() }
                     Tool.SnowShed, Tool.SnowFence -> { runner.request(Command.SnowWorks(me, at.tileX, at.tileY, shed = tool == Tool.SnowShed)); built() }
                     Tool.Station -> buildStation(stationPlan(me, at, at, stationAlongX))
@@ -1372,6 +1379,7 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
                     Tool.Level -> levelPlan = Command.Level(me, s.tileX, s.tileY, at.tileX, at.tileY, level)
                     Tool.Trees -> treePlan = Command.PlantTrees(me, s.tileX, s.tileY, at.tileX, at.tileY)
                     Tool.Signals -> signalPlan = signalRun(me, s, at, Signals.PLACED[signalKind], signalSpacing, removing)
+                    Tool.PriorityTrack, Tool.PriorityRoad -> priorityPlan = priorityRun(me, s, at, tool == Tool.PriorityRoad, !removing)
                     else -> plan = railFor(s, at)
                 }
             }
@@ -1396,6 +1404,7 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
                 levelPlan?.let { runner.request(it); built() }
                 treePlan?.let { runner.request(it); built() }
                 // A drag that stays on one tile is a tap on it.
+                priorityPlan?.let { runner.request(it); built() }
                 signalPlan?.let { if (it.sx == it.ex && it.sy == it.ey) start?.let { s -> tap(s) } else { runner.request(it); built() } }
                 dragCancel()
             }
@@ -1410,6 +1419,7 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
                 levelPlan = null
                 treePlan = null
                 signalPlan = null
+                priorityPlan = null
                 areaPlan = null
                 dragAt = null
                 start = null
@@ -1454,7 +1464,7 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
 
         MapView(
             world, sheets, view, { frame.value }, input, { moving(runner) }, Modifier.fillMaxSize(),
-            overlay = plan?.let { p -> { painter -> drawTrackPlan(world, painter, p) } }
+            overlay = drawLit(world, view, worldView.value, riskView.value, settings.priority || tool == Tool.PriorityTrack || tool == Tool.PriorityRoad, settings.risk, plan?.let { p -> { painter -> drawTrackPlan(world, painter, p) } }
                 ?: (stationPlan ?: stationHeld?.first)?.let { p -> { painter -> drawStationPlan(world, painter, p) } }
                 ?: bridgePlan?.let { p -> { painter -> drawBridgePlan(world, painter, p) } }
                 ?: roadPlan?.let { p -> { painter -> drawRoadPlan(world, painter, p) } }
@@ -1464,12 +1474,13 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
                 ?: levelPlan?.let { p -> { painter -> drawAreaPlan(world, painter, intArrayOf(p.x0, p.y0, p.x1, p.y1), removing = false) } }
                 ?: treePlan?.let { p -> { painter -> drawAreaPlan(world, painter, intArrayOf(p.x0, p.y0, p.x1, p.y1), removing = false) } }
                 ?: signalPlan?.let { p -> { painter -> drawSignalPlan(world, painter, p) } }
+                ?: priorityPlan?.let { p -> { painter -> drawPriorityPlan(world, painter, p) } }
                 ?: areaPlan?.let { a ->
                     // An industry shows red where it won't fit.
                     val bad = tool == Tool.Lower || tool == Tool.ClearTrees || (tool == Tool.PlaceIndustry && !world.industryFitsAt(industryKind, a[0], a[1], industryTurn))
                     val draw: DrawScope.(LandPainter) -> Unit = { painter -> drawAreaPlan(world, painter, a, removing = bad) }
                     draw
-                },
+                }),
             label = dragAt?.takeIf { dragText != null }?.let { at -> { drawDragLabel(world, view, measurer, dragText!!, shortOf, at) } },
             page = c.page,
             loading = remember(c) { LoadingLook(rail = c.textDim, train = c.accent, trim = c.text, text = c.textDim, style = KitType.Dim) },
@@ -1504,7 +1515,7 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
         StatusStrip(
             onMenu,
             paused, { paused = !paused; runner.paused = paused }, speed, { speed = (speed + 1) % SPEEDS.size; runner.speed = SPEEDS[speed] },
-            settings.grid || settings.heights || settings.snow || settings.condition || settings.reserved, onOverlays,
+            settings.grid || settings.heights || settings.snow || settings.condition || settings.reserved || settings.priority || settings.risk, onOverlays,
             if (editor) stringResource(Res.string.editor) else weekdayDate(day, world.startYear),
             money(money), money < 0,
             { view.askTurn(-1) }, { view.askTurn(1) }, onMap, onFinances,
@@ -1582,6 +1593,7 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
                         view.focusX = n.about % world.width + 0.5f
                         view.focusY = n.about / world.width + 0.5f
                     }
+                    if (n.kind in News.WARN_SNOW..News.WARN_COLD) warnPlace(world, n.about)?.let { (x, y) -> view.focusX = x; view.focusY = y }
                     if (n.kind == News.CRASH) world.crashFor(n.about)?.let { k ->
                         view.focusX = k.tile % world.width + 0.5f
                         view.focusY = k.tile / world.width + 0.5f
@@ -1709,7 +1721,7 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
             when (val sel = selected) {
                 is Selection.Tile -> InspectCard(world, sel.x, sel.y, onTown, { selected = null }, cardSize)
                 Selection.Weather -> wv?.weather?.let { w ->
-                    WeatherCard(world, w, view.focusX.toInt().coerceIn(0, world.width - 1), view.focusY.toInt().coerceIn(0, world.height - 1), { selected = null }, cardSize)
+                    WeatherCard(world, w, view.focusX.toInt().coerceIn(0, world.width - 1), view.focusY.toInt().coerceIn(0, world.height - 1), wv.forecast, { selected = null }, cardSize)
                 }
                 is Selection.Train -> {
                     val t = wv?.trains?.firstOrNull { it.id == sel.id }
@@ -1780,6 +1792,7 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
                     Tool.Track -> if (removing) stringResource(Res.string.cost_lift, money(world.price(Prices.TRACK_REMOVE))) else stringResource(Res.string.cost_track, money(world.price(Prices.TRACK)), money(world.price(Prices.FOUNDATION)))
                     Tool.Signals -> stringResource(Res.string.cost_signal, money(world.price(Prices.SIGNAL)))
                     Tool.Waypoint -> stringResource(Res.string.cost_waypoint, money(world.price(Prices.SIGNAL)))
+                    Tool.PriorityTrack, Tool.PriorityRoad -> worldView.value?.company?.let { stringResource(Res.string.priority_count, it.priorityTiles, money(it.priorityMonth)) }
                     Tool.Bridge -> stringResource(Res.string.cost_tile, money(world.price(Spans.COST[bridgeStyle])))
                     Tool.Wires, Tool.TramRails -> stringResource(Res.string.cost_tile, money(world.price(Prices.WIRE)))
                     Tool.Road -> stringResource(Res.string.cost_tile, money(world.price(Surface.COST[roadSurface])))
@@ -1861,9 +1874,10 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
                     }
                     else -> {}
                 }
-                ToolTray(tool, { tool = it; refusal = Refusal.NONE; plan = null; stationPlan = null; stationHeld = null; signalPlan = null; levelPlan = null; treePlan = null; removing = false }, trayDetail, folded, { folded = it }, layout.compact, trayWidth, options = trackOptions, editor = editor, warning = editor && refused || !editor && refusedHere) {
+                ToolTray(tool, { tool = it; refusal = Refusal.NONE; plan = null; stationPlan = null; stationHeld = null; signalPlan = null; priorityPlan = null; levelPlan = null; treePlan = null; removing = false }, trayDetail, folded, { folded = it }, layout.compact, trayWidth, options = trackOptions, editor = editor, warning = editor && refused || !editor && refusedHere) {
                     if (tool == Tool.PlaceIndustry) TrayToggle(Glyph.TurnRight, stringResource(Res.string.turn_industry), industryTurn != 0) { industryTurn = (industryTurn + 1) % 4 }
                     if (tool == Tool.Track || tool == Tool.Wires || tool == Tool.Signals || tool == Tool.Road || tool == Tool.TramRails || tool == Tool.Canal) TrayToggle(Glyph.Lift, stringResource(Res.string.remove_track), removing) { removing = !removing }
+                    if (tool == Tool.PriorityTrack || tool == Tool.PriorityRoad) TrayToggle(Glyph.Lift, stringResource(Res.string.priority_clear), removing) { removing = !removing }
                     if (tool == Tool.Airport && airportKind != Airports.SEAPLANE && airportKind != Airports.HELIPORT) TrayToggle(Glyph.TurnRight, stringResource(Res.string.runway_other_way), !runwayAlongX) { runwayAlongX = !runwayAlongX }
                     if (tool == Tool.Station) {
                         // PieceX runs down-right, world X while the map is unturned, and the two swap on a quarter turn.
@@ -1899,6 +1913,18 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
         }
         LaunchedEffect(runner, wantsNetwork) { runner.showNetwork = wantsNetwork }
         DisposableEffect(runner) { onDispose { runner.showNetwork = false } }
+        // The forecast is worked out only while the weather card is open, the snow risk only while it's shown.
+        val weatherOpen = selected == Selection.Weather
+        LaunchedEffect(runner, weatherOpen) {
+            if (!weatherOpen) { runner.forecastAt = -1; return@LaunchedEffect }
+            while (true) {
+                withFrameNanos {
+                    runner.forecastAt = world.index(view.focusX.toInt().coerceIn(0, world.width - 1), view.focusY.toInt().coerceIn(0, world.height - 1))
+                }
+            }
+        }
+        LaunchedEffect(runner, settings.risk) { runner.showRisk = settings.risk && me >= 0 }
+        DisposableEffect(runner) { onDispose { runner.forecastAt = -1; runner.showRisk = false } }
     }
 }
 
@@ -2142,6 +2168,13 @@ internal fun newsText(world: World, n: News): String {
     if (n.kind == News.SCENARIO_WON || n.kind == News.SCENARIO_LOST) {
         val title = world.scenario?.title?.ifBlank { null } ?: stringResource(Res.string.untitled)
         return stringResource(if (n.kind == News.SCENARIO_WON) Res.string.news_scenario_won else Res.string.news_scenario_lost, title)
+    }
+    if (n.kind in News.WARN_SNOW..News.WARN_COLD) {
+        if (Warning.company(n.about) != me) return ""
+        val place = world.towns.getOrNull(Warning.town(n.about))?.name ?: stringResource(Res.string.warn_line)
+        val days = Warning.days(n.about).coerceAtLeast(1)
+        val when_ = pluralStringResource(Res.plurals.warn_when, days, days)
+        return stringResource(when (n.kind) { News.WARN_SNOW -> Res.string.news_warn_snow; News.WARN_ICE -> Res.string.news_warn_ice; News.WARN_STORM -> Res.string.news_warn_storm; else -> Res.string.news_warn_cold }, place, when_)
     }
     if (n.kind == News.PROSPECTING_FAILED) return stringResource(Res.string.news_prospect_failed, world.roster.industries.getOrNull(n.about)?.name(languageCode()) ?: "")
     if (n.kind == News.WASHOUT || n.kind == News.FIRE || n.kind == News.AVALANCHE) return stringResource(when (n.kind) { News.FIRE -> Res.string.news_fire; News.AVALANCHE -> Res.string.news_avalanche; else -> Res.string.news_washout })

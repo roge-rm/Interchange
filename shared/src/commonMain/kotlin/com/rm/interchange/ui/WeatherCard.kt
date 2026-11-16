@@ -5,7 +5,17 @@ import org.jetbrains.compose.resources.stringResource
 import org.jetbrains.compose.resources.stringArrayResource
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.width
+import androidx.compose.material3.Text
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.unit.dp
+import com.rm.interchange.sim.Calendar
 import com.rm.interchange.sim.Climate
+import com.rm.interchange.sim.Confidence
+import com.rm.interchange.sim.ForecastDay
 import com.rm.interchange.sim.Front
 import com.rm.interchange.sim.Sky
 import com.rm.interchange.sim.WeatherView
@@ -54,7 +64,7 @@ fun daylightMinutes(latitude: Int, doy: Int): Int {
 
 /** The weather where the map is looking: the sky, temperature, wind, what's on the ground, the season and the daylight. */
 @Composable
-fun WeatherCard(world: World, wv: WeatherView, x: Int, y: Int, onClose: () -> Unit, modifier: Modifier = Modifier) {
+fun WeatherCard(world: World, wv: WeatherView, x: Int, y: Int, forecast: List<ForecastDay>, onClose: () -> Unit, modifier: Modifier = Modifier) {
     val sky = skyHere(world, wv, x, y)
     val skies = stringArrayResource(Res.array.skies)
     val seasons = stringArrayResource(Res.array.seasons)
@@ -89,6 +99,30 @@ fun WeatherCard(world: World, wv: WeatherView, x: Int, y: Int, onClose: () -> Un
         InfoRow(stringResource(Res.string.season), seasons.getOrElse(Climate.season(region, wv.year, wv.doy)) { "" }, Glyph.Tree)
         InfoRow(stringResource(Res.string.daylight), stringResource(Res.string.hours_minutes, light / 60, light % 60), Glyph.Sun)
         if (drift >= 5) InfoRow(stringResource(Res.string.warmer_than_1900), degreesExact(drift), Glyph.Thermometer)
+        if (forecast.isNotEmpty()) {
+            Head(stringResource(Res.string.weather_forecast), Glyph.Calendar)
+            for (d in forecast) ForecastRow(world.startYear, d)
+        }
+    }
+}
+
+/** One forecast day: the weekday, high and low, what falls, and a mark of how sure it is, one to three dots. */
+@Composable
+private fun ForecastRow(startYear: Int, d: ForecastDay) {
+    val c = LocalColors.current
+    val weekdays = stringArrayResource(Res.array.weekdays)
+    val falls = when {
+        d.snowfall > 0 -> stringResource(Res.string.forecast_snow, d.snowfall)
+        d.freezing && d.precipitation >= 100 -> stringResource(Res.string.forecast_freezing)
+        d.rain > 0 -> stringResource(Res.string.forecast_rain, d.rain)
+        else -> stringResource(Res.string.forecast_dry)
+    }
+    val sure = when (d.confidence) { Confidence.HIGH -> "●●●"; Confidence.FAIR -> "●●○"; else -> "●○○" }
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(KitSpace.Gap)) {
+        Text(weekdays.getOrElse(Calendar.weekday(startYear, d.day)) { "" }, color = c.textDim, style = KitType.Body, modifier = Modifier.width(44.dp))
+        Text(degrees(d.high) + " " + degrees(d.low), color = c.text, style = KitType.Value, modifier = Modifier.width(84.dp))
+        Text(falls, color = c.text, style = KitType.Body, modifier = Modifier.weight(1f))
+        Text(sure, color = c.textDim, style = KitType.Body)
     }
 }
 

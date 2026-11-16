@@ -497,6 +497,28 @@
     <string name="tool_snow_shed">Snow shed</string>
     <string name="tool_snow_fence">Snow fence</string>
     <string name="news_avalanche">An avalanche buries the line</string>
+    <!-- Forecasts and priorities. -->
+    <string name="weather_forecast">Next five days</string>
+    <string name="forecast_snow">%1$d cm snow</string>
+    <string name="forecast_rain">%1$d mm rain</string>
+    <string name="forecast_freezing">Freezing rain</string>
+    <string name="forecast_dry">Dry</string>
+    <string name="warn_line">Your line</string>
+    <string name="news_warn_snow">%1$s: heavy snow %2$s</string>
+    <string name="news_warn_ice">%1$s: ice closes the harbour %2$s</string>
+    <string name="news_warn_storm">%1$s: storm holds the ships %2$s</string>
+    <string name="news_warn_cold">%1$s: deep cold %2$s</string>
+    <plurals name="warn_when">
+        <item quantity="one">tomorrow</item>
+        <item quantity="other">in %1$d days</item>
+    </plurals>
+    <string name="tool_priority_track">Priority track</string>
+    <string name="tool_priority_road">Priority road</string>
+    <string name="priority_clear">Clear priority</string>
+    <string name="priority_count">%1$d tiles, %2$s a month</string>
+    <string name="priority_overlay">Priority</string>
+    <string name="snow_risk">Snow risk</string>
+    <string name="book_priority">Priority work</string>
     <string name="depot_needs_wires">Hang wires over this depot for electric engines to get out</string>
     <string name="needs_wires">Can't leave: no wires over the depot</string>
     <string name="garage">Garage</string>

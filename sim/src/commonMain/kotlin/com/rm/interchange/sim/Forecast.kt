@@ -243,6 +243,33 @@ internal fun World.warnDay() {
     warned.entries.removeAll { it.value < today }
 }
 
+/**
+ * The tiles of [company]'s track and roads that the next [days] days' snow would slow or stop, with how: a tile in
+ * the first array, its level (1 slows, 2 stops) in the same place of the second. Track slows from [Weather.DEEP]
+ * and stops from [Weather.BLOCKING]; roads slow from [DEEP_ROAD_SNOW] and stop from [Weather.BLOCKING].
+ */
+fun World.snowRisk(company: Int, days: Int = WARN_DAYS): Pair<IntArray, ByteArray> {
+    if (!settings.weather) return IntArray(0) to ByteArray(0)
+    val o = outlook(days)
+    val tiles = ArrayList<Int>()
+    val levels = ArrayList<Byte>()
+    for (y in 0 until height) for (x in 0 until width) {
+        val i = index(x, y)
+        val onTrack = track[i].toInt() != 0 && owner[i].toInt() == company
+        val onRoad = road[i].toInt() != 0 && roadOwner[i].toInt() == company && !isWater(x, y)
+        if (!onTrack && !onRoad) continue
+        val deepest = forecastTile(o, x, y, 0).maxOf { it.snow }
+        val level = when {
+            deepest >= Weather.BLOCKING -> 2
+            onTrack && deepest >= Weather.DEEP -> 1
+            !onTrack && deepest >= DEEP_ROAD_SNOW -> 1
+            else -> 0
+        }
+        if (level > 0) { tiles += i; levels += level.toByte() }
+    }
+    return tiles.toIntArray() to levels.toByteArray()
+}
+
 /** Snow on track, in cm, a warning is given for: near [Weather.BLOCKING], where trains slow hard and may stick. */
 const val WARN_SNOW = 60
 /** Days ahead warnings look. */

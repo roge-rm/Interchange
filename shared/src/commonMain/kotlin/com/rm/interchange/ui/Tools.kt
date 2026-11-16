@@ -39,6 +39,7 @@ enum class Tool(
     SnowFence(ToolGroup.Rail, Res.string.tool_snow_fence, Glyph.Fence, ready = true),
     Bridge(ToolGroup.Rail, Res.string.tool_bridge, Glyph.Bridge, ready = true),
     Tunnel(ToolGroup.Rail, Res.string.tool_tunnel, Glyph.Tunnel, ready = true),
+    PriorityTrack(ToolGroup.Rail, Res.string.tool_priority_track, Glyph.Flag, ready = true),
 
     Road(ToolGroup.Road, Res.string.tool_road, Glyph.Road, ready = true),
     RoadStop(ToolGroup.Road, Res.string.tool_stops, Glyph.RoadStop, ready = true),
@@ -46,6 +47,7 @@ enum class Tool(
     OneWay(ToolGroup.Road, Res.string.tool_one_way, Glyph.OneWay, ready = true),
     TramRails(ToolGroup.Road, Res.string.tool_tram, Glyph.Rail, ready = true),
     SaltDepot(ToolGroup.Road, Res.string.tool_salt, Glyph.Dome, ready = true),
+    PriorityRoad(ToolGroup.Road, Res.string.tool_priority_road, Glyph.Flag, ready = true),
     RoadBridge(ToolGroup.Road, Res.string.tool_bridge, Glyph.Bridge),
     RoadTunnel(ToolGroup.Road, Res.string.tool_tunnel, Glyph.Tunnel),
 

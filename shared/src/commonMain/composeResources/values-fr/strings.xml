@@ -480,6 +480,28 @@
     <string name="tool_snow_shed">Paraneige</string>
     <string name="tool_snow_fence">Clôture à neige</string>
     <string name="news_avalanche">Une avalanche ensevelit la voie</string>
+    <!-- Prévisions et priorités. -->
+    <string name="weather_forecast">Cinq prochains jours</string>
+    <string name="forecast_snow">%1$d cm de neige</string>
+    <string name="forecast_rain">%1$d mm de pluie</string>
+    <string name="forecast_freezing">Pluie verglaçante</string>
+    <string name="forecast_dry">Sec</string>
+    <string name="warn_line">Votre ligne</string>
+    <string name="news_warn_snow">%1$s : forte neige %2$s</string>
+    <string name="news_warn_ice">%1$s : la glace ferme le port %2$s</string>
+    <string name="news_warn_storm">%1$s : tempête, navires retenus %2$s</string>
+    <string name="news_warn_cold">%1$s : grand froid %2$s</string>
+    <plurals name="warn_when">
+        <item quantity="one">demain</item>
+        <item quantity="other">dans %1$d jours</item>
+    </plurals>
+    <string name="tool_priority_track">Voie prioritaire</string>
+    <string name="tool_priority_road">Route prioritaire</string>
+    <string name="priority_clear">Retirer la priorité</string>
+    <string name="priority_count">%1$d cases, %2$s par mois</string>
+    <string name="priority_overlay">Priorité</string>
+    <string name="snow_risk">Risque de neige</string>
+    <string name="book_priority">Travaux prioritaires</string>
     <string name="depot_needs_wires">Posez la caténaire au-dessus de ce dépôt pour que les locomotives électriques puissent sortir</string>
     <string name="needs_wires">Ne peut pas sortir : pas de caténaire au-dessus du dépôt</string>
     <string name="garage">Garage</string>

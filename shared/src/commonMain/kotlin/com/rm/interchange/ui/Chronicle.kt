@@ -117,6 +117,8 @@ private fun storyGlyph(world: World, t: Story): Glyph = when (t.kind) {
     News.WASHOUT -> Glyph.Water
     News.FIRE -> Glyph.Fire
     News.AVALANCHE -> Glyph.Heights
+    News.WARN_SNOW, News.WARN_COLD -> Glyph.Snow
+    News.WARN_ICE, News.WARN_STORM -> Glyph.Water
     News.SLID -> Glyph.Road
     News.DIVERTED -> Glyph.Air
     News.SUBSIDY_OFFERED, News.SUBSIDY_AWARDED -> Glyph.Money
@@ -140,6 +142,7 @@ private fun storyPlace(world: World, t: Story): Pair<Float, Float>? = when (t.ki
     News.INDUSTRY_OPENS, News.INDUSTRY_CLOSES, News.PRODUCTION_UP, News.PRODUCTION_DOWN ->
         world.industries.getOrNull(t.about)?.let { it.x + 1f to it.y + 1f }
     News.WASHOUT, News.FIRE, News.AVALANCHE -> t.about % world.width + 0.5f to t.about / world.width + 0.5f
+    News.WARN_SNOW, News.WARN_ICE, News.WARN_STORM, News.WARN_COLD -> warnPlace(world, t.about)
     News.SUBSIDY_OFFERED, News.SUBSIDY_AWARDED -> subsidyStart(world, t.about)
     News.GOAL_MET, News.GOAL_FAILED -> goalPlace(world, t.about)
     News.CRASH -> world.crashFor(t.about)?.let { it.tile % world.width + 0.5f to it.tile / world.width + 0.5f }

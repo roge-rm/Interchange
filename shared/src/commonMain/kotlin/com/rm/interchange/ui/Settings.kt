@@ -19,6 +19,9 @@ class Settings {
     var snow by mutableStateOf(false)
     /** Track coloured by its condition. */
     var condition by mutableStateOf(false)
+    /** Priority track and road, and the next days' snow risk on the company's lines, lit over the map. */
+    var priority by mutableStateOf(false)
+    var risk by mutableStateOf(false)
     /** The track trains hold paths through, lit over the map. */
     var reserved by mutableStateOf(false)
     /** Master, the world, and tools and news, each from 0 to 100. A missing line stays at 100. */
@@ -46,7 +49,7 @@ class Settings {
     val autosaveDays get() = AUTOSAVE_DAYS[autosave.coerceIn(0, AUTOSAVE_DAYS.size - 1)]
 
     fun save() {
-        files.write(FILE, ("language=$language\nautosave=$autosave\ngrid=$grid\nheights=$heights\nsnow=$snow\ncondition=$condition\nreserved=$reserved\n" +
+        files.write(FILE, ("language=$language\nautosave=$autosave\ngrid=$grid\nheights=$heights\nsnow=$snow\ncondition=$condition\nreserved=$reserved\npriority=$priority\nrisk=$risk\n" +
             "sound=$sound\nworld=$world\ntools=$tools\n" +
             "player=${playerName.replace('\n', ' ')}\naddress=${lastAddress.replace('\n', ' ')}\nclient=$client\n" +
             "checklist=$checklist\nchecklistGame=$checklistGame\nchecklistTicks=$checklistTicks\n" +
@@ -74,6 +77,8 @@ class Settings {
                     "snow" -> s.snow = v == "true"
                     "condition" -> s.condition = v == "true"
                     "reserved" -> s.reserved = v == "true"
+                    "priority" -> s.priority = v == "true"
+                    "risk" -> s.risk = v == "true"
                     "sound" -> v.toIntOrNull()?.let { s.sound = it.coerceIn(0, 100) }
                     "world" -> v.toIntOrNull()?.let { s.world = it.coerceIn(0, 100) }
                     "tools" -> v.toIntOrNull()?.let { s.tools = it.coerceIn(0, 100) }

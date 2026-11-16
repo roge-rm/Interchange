@@ -505,6 +505,10 @@ private fun OverlayToggles(settings: Settings) {
     }
     Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         TogglePill(stringResource(Res.string.reserved_track), settings.reserved, Modifier.weight(1f).fillMaxHeight()) { settings.reserved = it; settings.save() }
+        TogglePill(stringResource(Res.string.priority_overlay), settings.priority, Modifier.weight(1f).fillMaxHeight()) { settings.priority = it; settings.save() }
+    }
+    Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        TogglePill(stringResource(Res.string.snow_risk), settings.risk, Modifier.weight(1f).fillMaxHeight()) { settings.risk = it; settings.save() }
         Spacer(Modifier.weight(1f))
     }
 }
@@ -677,6 +681,7 @@ fun FinanceWindow(runner: com.rm.interchange.server.GameThread, onClose: () -> U
             Res.string.book_interest to com.rm.interchange.sim.Books.INTEREST,
             Res.string.book_sold to com.rm.interchange.sim.Books.TRAINS_SOLD,
             Res.string.book_upkeep to com.rm.interchange.sim.Books.UPKEEP,
+            Res.string.book_priority to com.rm.interchange.sim.Books.PRIORITY,
         )
         @Composable
         fun line(label: String, a: String, b: String, strong: Boolean = false, colour: androidx.compose.ui.graphics.Color = c.text) {
