@@ -1641,7 +1641,7 @@ internal fun World.payRunningCosts() {
     for (t in trains) {
         if (t == null || t.inDepot && !t.running || t.wreckedFor > 0) continue
         val c = companies.getOrNull(t.owner) ?: continue
-        val yearly = price(t.carEngines.sumOf { roster[it].running })
+        val yearly = if (settings.eraCosts) t.carEngines.sumOf { running(roster[it]) } else price(t.carEngines.sumOf { roster[it].running })
         c.runningOwed += yearly
         val today = c.runningOwed / 365
         spend(c, Books.RUNNING, today)

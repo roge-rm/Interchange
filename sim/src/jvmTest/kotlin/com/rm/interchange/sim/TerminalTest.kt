@@ -10,7 +10,7 @@ import kotlin.test.assertTrue
 class TerminalTest {
     /** Stations A, B and C along a line with a depot and a train, houses only by C, nothing stepped. */
     private fun world(handling: Boolean = true): World {
-        val w = World(NewGame(64, 64, 1, 1900, towns = 0, industries = 0, weather = false, handling = handling))
+        val w = World(NewGame(64, 64, 1, 1900, towns = 0, industries = 0, weather = false, handling = handling, eraCosts = false))
         for (i in w.corners.indices) w.corners[i] = 3
         w.companies[0].money = 10_000_000
         w.apply(Command.Depot(0, 2, 10, Track.XP))
@@ -51,7 +51,7 @@ class TerminalTest {
         val g = NewGame(128, 128, 6, 1930, Region.MIXED, towns = 8, industries = 6, rivals = 2, rivalLevel = RivalLevel.HARD)
         val old = Save.read(Save.write(World(g), version = 69))
         assertFalse(old.settings.handling)
-        val off = Save.read(Save.write(World(g.copy(handling = false))))
+        val off = Save.read(Save.write(World(g.copy(handling = false, eraCosts = false))))
         assertEquals(off.checksum(), old.checksum())
         while (old.day < 365) { old.step(); off.step() }
         assertEquals(off.checksum(), old.checksum())

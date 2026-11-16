@@ -215,8 +215,8 @@ internal fun World.buildCanal(company: Company, c: Command.Canal) {
         val i = index(x, y)
         if (c.remove) {
             if (!canals.contains(i) || owner[i].toInt() != company.id || ships.any { it != null && !it.inDepot && shipTile(it) == i }) continue
-            if (company.money < price(Prices.CLEAR)) return
-            spend(company, Books.CONSTRUCTION, price(Prices.CLEAR))
+            if (company.money < build(Prices.CLEAR, Mix.LABOUR, i)) return
+            spend(company, Books.CONSTRUCTION, build(Prices.CLEAR, Mix.LABOUR, i))
             canals.remove(i)
             owner[i] = -1
             weather.ice[i] = 0
@@ -224,7 +224,7 @@ internal fun World.buildCanal(company: Company, c: Command.Canal) {
             continue
         }
         if (!isFlat(x, y) || !clearLand(i)) continue
-        val cost = price(CANAL_COST) + treeCost(i)
+        val cost = build(CANAL_COST, Mix.CANAL, i) + treeCost(i)
         if (company.money < cost) return
         spend(company, Books.CONSTRUCTION, cost)
         fellTrees(company, i)
@@ -249,7 +249,7 @@ internal fun World.buildLock(company: Company, c: Command.Lock) {
         n == e && w == s && kotlin.math.abs(n - w) == 1 -> Track.Y
         else -> return
     }
-    val cost = price(LOCK_DOLLARS) + treeCost(i)
+    val cost = build(LOCK_DOLLARS, Mix.LOCK, i) + treeCost(i)
     if (company.money < cost) return
     spend(company, Books.CONSTRUCTION, cost)
     fellTrees(company, i)
@@ -265,7 +265,7 @@ internal fun World.buildDock(company: Company, c: Command.Dock) {
     val i = index(c.x, c.y)
     if (!clearLand(i)) return
     val facing = waterSide(c.x, c.y)
-    if (facing < 0 || townRefuses(company, c.x, c.y) || company.money < price(DOCK_COST) + treeCost(i)) return
+    if (facing < 0 || townRefuses(company, c.x, c.y) || company.money < build(DOCK_COST, Mix.DOCK, i) + treeCost(i)) return
     var station: Station? = null
     for (y in c.y - 1..c.y + 1) for (x in c.x - 1..c.x + 1) {
         if (station != null || !inside(x, y)) continue
@@ -273,7 +273,7 @@ internal fun World.buildDock(company: Company, c: Command.Dock) {
         val id = stationTiles[n] ?: roadStops[n] ?: docks[n] ?: airportTiles[n]?.let { airports[it]?.station } ?: continue
         station = stations.getOrNull(id)?.takeIf { it.owner == company.id && !it.waypoint }
     }
-    spend(company, Books.CONSTRUCTION, price(DOCK_COST) + fellTrees(company, i))
+    spend(company, Books.CONSTRUCTION, build(DOCK_COST, Mix.DOCK, i) + fellTrees(company, i))
     val s = station ?: Station(stations.size, company.id, stationName(c.x, c.y), c.x, c.y).also { stations += it }
     s.docks += i
     docks[i] = s.id
@@ -290,8 +290,8 @@ internal fun World.buildShipyard(company: Company, c: Command.Shipyard) {
     val i = index(c.x, c.y)
     if (!clearLand(i)) return
     val facing = waterSide(c.x, c.y)
-    if (facing < 0 || company.money < price(SHIPYARD_COST) + treeCost(i)) return
-    spend(company, Books.CONSTRUCTION, price(SHIPYARD_COST) + fellTrees(company, i))
+    if (facing < 0 || company.money < build(SHIPYARD_COST, Mix.SHIPYARD, i) + treeCost(i)) return
+    spend(company, Books.CONSTRUCTION, build(SHIPYARD_COST, Mix.SHIPYARD, i) + fellTrees(company, i))
     val d = Depot(depots.size, company.id, i, facing, Depots.SHIPYARD).also { it.built = Calendar.year(startYear, day) }
     depots += d
     depotTiles[i] = d.id
@@ -304,8 +304,8 @@ internal fun World.buildShipyard(company: Company, c: Command.Shipyard) {
 internal fun World.buildBuoy(company: Company, c: Command.Buoy) {
     if (!inside(c.x, c.y)) return
     val i = index(c.x, c.y)
-    if (!isWater(c.x, c.y) || buoys.containsKey(i) || industryOf[i].toInt() != 0 || company.money < price(BUOY_COST)) return
-    spend(company, Books.CONSTRUCTION, price(BUOY_COST))
+    if (!isWater(c.x, c.y) || buoys.containsKey(i) || industryOf[i].toInt() != 0 || company.money < build(BUOY_COST, Mix.BUOY)) return
+    spend(company, Books.CONSTRUCTION, build(BUOY_COST, Mix.BUOY))
     val s = Station(stations.size, company.id, stationName(c.x, c.y), c.x, c.y, waypoint = true)
     stations += s
     s.docks += i
@@ -816,7 +816,7 @@ internal fun World.shipsDay() {
     for (v in ships) {
         if (v == null || v.inDepot && !v.running) continue
         val c = companies.getOrNull(v.owner) ?: continue
-        c.runningOwed += price(v.info.running)
+        c.runningOwed += running(v.info)
         val today = c.runningOwed / 365
         spend(c, Books.RUNNING, today)
         v.profitThisYear -= today
@@ -872,9 +872,9 @@ fun World.canalCost(company: Company, c: Command.Canal): Pair<Long, Int> {
         val y = c.sy + dy * k
         val i = index(x, y)
         if (c.remove) {
-            if (canals.contains(i) && owner[i].toInt() == company.id) { cost += price(Prices.CLEAR); count++ }
+            if (canals.contains(i) && owner[i].toInt() == company.id) { cost += build(Prices.CLEAR, Mix.LABOUR, i); count++ }
         } else if (isFlat(x, y) && clearLand(i)) {
-            cost += price(CANAL_COST) + treeCost(i)
+            cost += build(CANAL_COST, Mix.CANAL, i) + treeCost(i)
             count++
         }
     }

@@ -152,7 +152,7 @@ data class Heartbeat(val pingMillis: Long = 2_000, val timeoutMillis: Int = 10_0
  */
 object Wire {
     /** The version of the protocol and the sim together; players and servers must match. */
-    const val PROTOCOL = 106
+    const val PROTOCOL = 107
 
     private const val HELLO = 1
     private const val REQUEST = 2

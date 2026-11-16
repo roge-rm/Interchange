@@ -481,8 +481,8 @@ internal fun World.snowWorks(company: Company, c: Command.SnowWorks) {
         val t = track[i].toInt()
         if (owner[i].toInt() != company.id || (t != Track.X && t != Track.Y) || stationTiles.containsKey(i) || depotTiles.containsKey(i) || spanHeads.containsKey(i)) return
         if (sheds.remove(i)) { shedYears.remove(i); touched(c.x, c.y); return }
-        if (company.money < price(SHED_COST)) return
-        spend(company, Books.CONSTRUCTION, price(SHED_COST))
+        if (company.money < woodBuild(SHED_COST, Mix.SHED, i)) return
+        spend(company, Books.CONSTRUCTION, woodBuild(SHED_COST, Mix.SHED, i))
         sheds += i
         shedYears[i] = Calendar.year(startYear, day)
         weather.snow[i] = 0
@@ -490,8 +490,8 @@ internal fun World.snowWorks(company: Company, c: Command.SnowWorks) {
         if (fences.remove(i)) { fenceCoverCache = null; touched(c.x, c.y); return }
         if (track[i].toInt() != 0 || isWater(c.x, c.y) || house[i].toInt() != 0 || industryOf[i].toInt() != 0 || road[i].toInt() != 0 ||
             owner[i].toInt() != -1 || stationBuildings.containsKey(i)) return
-        if (company.money < price(FENCE_COST)) return
-        spend(company, Books.CONSTRUCTION, price(FENCE_COST))
+        if (company.money < woodBuild(FENCE_COST, Mix.FENCE, i)) return
+        spend(company, Books.CONSTRUCTION, woodBuild(FENCE_COST, Mix.FENCE, i))
         fences += i
         fenceCoverCache = null
     }

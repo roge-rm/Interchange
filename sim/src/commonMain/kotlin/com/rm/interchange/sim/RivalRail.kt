@@ -488,9 +488,10 @@ private fun World.yearly(c: Company, train: RailTrain, cargo: Int, load: Int, pe
     val late = (there + filling - dist * roster.cargo.pace[cargo] - roster.cargo.grace[cargo]).coerceAtLeast(0)
     val share = (100 - late * roster.cargo.decay[cargo]).coerceAtLeast(33)
     val income = pay(hauled.toLong() * dist * roster.cargo.rate[cargo] * share / 10_000)
-    val running = price(train.engine.running + train.wagon.running * train.wagons + (roster.getOrNull(train.engine.tender)?.running ?: 0) + (train.plow?.running ?: 0))
+    val running = if (!settings.eraCosts) price(train.engine.running + train.wagon.running * train.wagons + (roster.getOrNull(train.engine.tender)?.running ?: 0) + (train.plow?.running ?: 0))
+        else running(train.engine) + running(train.wagon) * train.wagons + (roster.getOrNull(train.engine.tender)?.let { running(it) } ?: 0) + (train.plow?.let { running(it) } ?: 0)
     // Upkeep on the line and both stations, in tenths of a cent a work day.
-    val upkeep = price(tiles.toLong() * Upkeep.TRACK[c.upkeep] * 365 / 1_000)
+    val upkeep = price(tiles.toLong() * Upkeep.TRACK[c.upkeep] * 365 / 1_000) * trackUpkeepFactor() / 1_000
     return income - running - upkeep
 }
 
@@ -824,7 +825,7 @@ private fun World.pays(c: Company, p: RailPick, a: Terminus, b: Terminus, plan: 
     val am = a.mouth(this)
     val bm = b.mouth(this)
     val least = kotlin.math.abs(am % width - bm % width) + kotlin.math.abs(am / width - bm / width) + a.last + b.last
-    val fixed = price(Prices.PLATFORM) * (a.n + b.n) + price(Prices.DEPOT) + price(Prices.SIGNAL) + price(Prices.TRACK) * least
+    val fixed = build(Prices.PLATFORM, Mix.PLATFORM) * (a.n + b.n) + build(Prices.DEPOT, Mix.DEPOT) + build(Prices.SIGNAL, Mix.STEELWORK) + build(Prices.TRACK, Mix.TRACK) * least
     return plan.trains.any { made(c, p, a, b, plan, it, least) * payback >= fixed + trainCost(it) }
 }
 
@@ -853,7 +854,7 @@ private fun World.buildPair(
         var ok = true
         for (k in line.indices) if (!laid[k]) { if (house[line[k] / 64].toInt() != 0) onHouses++ else ok = false }
         if (!ok || n == 0 && onHouses == 0) return null
-        cost += each + price(Prices.TRACK) * onHouses
+        cost += each + build(Prices.TRACK, Mix.TRACK) * onHouses
     }
     var ok = true
     for (span in spans) {
@@ -875,7 +876,7 @@ private fun World.buildPair(
     if (loose && passengers && trains.all { oneWay(it, tiles, path) * 2 > GIVE_UP_DAYS }) {
         train = trains.maxBy { made(c, p, a, b, plan, it, tiles, path, giveUp = false) * years - trainCost(it) }
     }
-    cost += price(Prices.PLATFORM) * (a.n + b.n) + price(Prices.DEPOT) + price(Prices.TRACK) + price(Prices.SIGNAL) + trainCost(train)
+    cost += build(Prices.PLATFORM, Mix.PLATFORM) * (a.n + b.n) + build(Prices.DEPOT, Mix.DEPOT) + build(Prices.TRACK, Mix.TRACK) + build(Prices.SIGNAL, Mix.STEELWORK) + trainCost(train)
     if (payback > 0 && made(c, p, a, b, plan, train, tiles, path) * payback < cost) return null
     if (!afford(c, cost * 6 / 5)) return Tried.POOR
     // One that doesn't build, as the map changed while it searched, goes on to the next pair.
@@ -1197,7 +1198,7 @@ internal fun World.addLoop(c: Company, route: RivalRoute): Boolean {
             val beside = (LOOP_LONG until LOOP_LONG * 2).map { tiles[it] }
             if (beside.any { t -> !inside(t % width, t / width) || !railFree(t) || !isFlat(t % width, t / width) || heightAt(t % width, t / width) != h }) continue
             if (beside.any { t -> chebyshev(t % width, t / width, line[i] % width, line[i] / width) > LOOP_LONG }) continue
-            val cost = price(Prices.TRACK) * (LOOP_LONG + 2) + price(Prices.SIGNAL) * 4 + beside.sumOf { treeCost(it) }
+            val cost = build(Prices.TRACK, Mix.TRACK) * (LOOP_LONG + 2) + build(Prices.SIGNAL, Mix.STEELWORK) * 4 + beside.sumOf { treeCost(it) }
             if (!inHand(c, cost)) return false
             return layLoop(c, route, loop)
         }

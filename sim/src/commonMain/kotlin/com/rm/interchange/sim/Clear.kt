@@ -96,7 +96,7 @@ fun World.demolishCost(company: Int, i: Int): Long {
     if (t.approval[company] <= APPROVAL_REFUSES) return -1
     val h = roster.houses.getOrNull(houseOf(house[i].toInt())) ?: return -1
     if (h.monument) return -1
-    return price(Prices.DEMOLISH_PER_PERSON) * maxOf(1, h.residents + h.jobs)
+    return build(Prices.DEMOLISH_PER_PERSON, Mix.DEMOLISH, i) * maxOf(1, h.residents + h.jobs)
 }
 
 /** Pulls down the town building on tile ([x], [y]), if its town thinks well enough of [company] to let it. */

@@ -135,7 +135,7 @@ private fun World.bridgeSurvey(company: Company, c: Command.Bridge): Long {
         if (topCorner(x, y) > h) return -Refusal.HILL.toLong()
         if (deck.containsKey(i) || spanHeads.containsKey(i) || stationTiles.containsKey(i) || depotTiles.containsKey(i) || house[i].toInt() != 0 || industryOf[i].toInt() != 0 ||
             stationBuildings.containsKey(i)) return -Refusal.IN_THE_WAY.toLong()
-        cost += price(Spans.COST[c.style])
+        cost += build(Spans.COST[c.style], Mix.SPANS[c.style], i)
     }
     val top = deckHeight(c, toward, len, h)
     if (top < 0) return -Refusal.NOTHING_TO_SPAN.toLong()
@@ -146,7 +146,7 @@ private fun World.bridgeSurvey(company: Company, c: Command.Bridge): Long {
         val i = index(x, y)
         if ((track[i].toInt() != 0 || road[i].toInt() != 0) && top <= topCorner(x, y)) return -Refusal.IN_THE_WAY.toLong()
     }
-    return cost + 2 * price(Prices.TRACK) + treeCost(index(c.x0, c.y0)) + treeCost(index(c.x1, c.y1))
+    return cost + build(Prices.TRACK, Mix.TRACK, index(c.x0, c.y0)) + build(Prices.TRACK, Mix.TRACK, index(c.x1, c.y1)) + treeCost(index(c.x0, c.y0)) + treeCost(index(c.x1, c.y1))
 }
 
 /** The highest corner of tile ([x], [y]), in steps. */
@@ -246,7 +246,7 @@ private fun World.rises(x: Int, y: Int): Int {
 /** What a tunnel from portal ([x], [y]) would cost, or -1. */
 fun World.tunnelCost(company: Company, x: Int, y: Int): Long {
     val s = tunnelFrom(company, x, y) ?: return -1
-    return s.length * price(Spans.COST[Spans.TUNNEL]) + 2 * price(Prices.TRACK)
+    return s.length * build(Spans.COST[Spans.TUNNEL], Mix.SPANS[Spans.TUNNEL]) + build(Prices.TRACK, Mix.TRACK, index(s.x0, s.y0)) + build(Prices.TRACK, Mix.TRACK, index(s.x1, s.y1))
 }
 
 internal fun World.buildTunnel(company: Company, c: Command.Tunnel) {
@@ -338,12 +338,12 @@ internal fun World.wire(company: Company, c: Command.Wire) {
         val has = wires[i].toInt()
         if (c.remove == (has and piece == 0)) continue
         if (!c.remove) {
-            if (company.money < price(Prices.WIRE)) return
-            spend(company, Books.CONSTRUCTION, price(Prices.WIRE))
+            if (company.money < build(Prices.WIRE, Mix.WIRE, i)) return
+            spend(company, Books.CONSTRUCTION, build(Prices.WIRE, Mix.WIRE, i))
         }
         wires[i] = (if (c.remove) has and piece.inv() else has or piece).toByte()
         // A span from this head is wired with it.
-        spanHeads[i]?.let { id -> spans[id]?.let { s -> if (s.wired == c.remove) { if (!c.remove) spend(company, Books.CONSTRUCTION, price(Prices.WIRE) * s.length); s.wired = !c.remove } } }
+        spanHeads[i]?.let { id -> spans[id]?.let { s -> if (s.wired == c.remove) { if (!c.remove) spend(company, Books.CONSTRUCTION, build(Prices.WIRE, Mix.WIRE) * s.length); s.wired = !c.remove } } }
         touched(i % width, i / width)
     }
     networkChanged()

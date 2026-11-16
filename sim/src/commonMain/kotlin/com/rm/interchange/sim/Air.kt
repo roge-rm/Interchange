@@ -226,7 +226,7 @@ private fun World.airportSite(company: Company, c: Command.Airport): AirportSite
         }
     }
     if (townRefuses(company, c.x, c.y)) return AirportSite(Refusal.TOWN)
-    val cost = price(Airports.COST[kind]) + tiles.sumOf { treeCost(it) }
+    val cost = build(Airports.COST[kind], Mix.AIRPORT, if (inside(c.x, c.y)) index(c.x, c.y) else -1) + tiles.sumOf { treeCost(it) }
     if (company.money < cost) return AirportSite(Refusal.MONEY)
     return AirportSite(Refusal.NONE, axis, tiles)
 }
@@ -248,7 +248,7 @@ internal fun World.buildAirport(company: Company, c: Command.Airport) {
         val id = stationTiles[n] ?: roadStops[n] ?: docks[n] ?: continue
         station = stations.getOrNull(id)?.takeIf { it.owner == company.id && !it.waypoint && it.aero.isEmpty() }
     }
-    spend(company, Books.CONSTRUCTION, price(Airports.COST[kind]))
+    spend(company, Books.CONSTRUCTION, build(Airports.COST[kind], Mix.AIRPORT, if (inside(c.x, c.y)) index(c.x, c.y) else -1))
     for (t in tiles) fellTrees(company, t)
     val s = station ?: Station(stations.size, company.id, stationName(c.x, c.y), c.x, c.y).also { stations += it }
     val d = Depot(depots.size, company.id, hangarTile(kind, c.x, c.y, axis), 0, Depots.HANGAR).also { it.built = Calendar.year(startYear, day) }
@@ -313,13 +313,13 @@ internal fun World.upgradeAirport(company: Company, c: Command.AirportUpgrade) {
     val year = Calendar.year(startYear, day)
     when (c.what) {
         0 -> {
-            if (a.ils || year < ILS_FROM || Airports.CLASS[a.kind] < Runways.REGIONAL || company.money < price(ILS_COST)) return
-            spend(company, Books.CONSTRUCTION, price(ILS_COST))
+            if (a.ils || year < ILS_FROM || Airports.CLASS[a.kind] < Runways.REGIONAL || company.money < build(ILS_COST, Mix.STEELWORK)) return
+            spend(company, Books.CONSTRUCTION, build(ILS_COST, Mix.STEELWORK))
             a.ils = true
         }
         1 -> {
-            if (a.deice || year < DEICE_FROM || a.kind == Airports.SEAPLANE || company.money < price(DEICE_COST)) return
-            spend(company, Books.CONSTRUCTION, price(DEICE_COST))
+            if (a.deice || year < DEICE_FROM || a.kind == Airports.SEAPLANE || company.money < build(DEICE_COST, Mix.STEELWORK)) return
+            spend(company, Books.CONSTRUCTION, build(DEICE_COST, Mix.STEELWORK))
             a.deice = true
         }
     }
@@ -1526,7 +1526,7 @@ internal fun World.aircraftDay() {
     for (v in aircraft) {
         if (v == null || v.inDepot && !v.running || v.wreckedFor > 0) continue
         val c = companies.getOrNull(v.owner) ?: continue
-        c.runningOwed += price(v.info.running)
+        c.runningOwed += running(v.info)
         val today = c.runningOwed / 365
         spend(c, Books.RUNNING, today)
         v.profitThisYear -= today

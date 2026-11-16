@@ -192,8 +192,8 @@ internal fun World.buildRail(company: Company, c: Command.Rail) {
         if (othersBuilding(company.id, i)) continue
         if (c.remove) {
             if (has and piece == 0 || owner[i].toInt() != company.id || trainOnTile(i)) continue
-            if (company.money < price(Prices.TRACK_REMOVE)) return
-            spend(company, Books.CONSTRUCTION, price(Prices.TRACK_REMOVE))
+            if (company.money < build(Prices.TRACK_REMOVE, Mix.LABOUR, i)) return
+            spend(company, Books.CONSTRUCTION, build(Prices.TRACK_REMOVE, Mix.LABOUR, i))
             track[i] = (has and piece.inv()).toByte()
             wires[i] = (wires[i].toInt() and piece.inv()).toByte()
             signals.remove(pieceKey(i, piece))
@@ -207,7 +207,7 @@ internal fun World.buildRail(company: Company, c: Command.Rail) {
         } else {
             if (has and piece != 0 || (has != 0 && owner[i].toInt() != company.id)) continue
             if (!piecesFit(x, y, has or piece) || !roomUnder(i)) continue
-            val cost = price(Prices.TRACK) + treeCost(i) + if (!needsFoundation(x, y, has) && needsFoundation(x, y, has or piece)) price(Prices.FOUNDATION) else 0
+            val cost = build(Prices.TRACK, Mix.TRACK, i) + treeCost(i) + if (!needsFoundation(x, y, has) && needsFoundation(x, y, has or piece)) build(Prices.FOUNDATION, Mix.FOUNDATION, i, true) else 0
             if (company.money < cost) return
             spend(company, Books.CONSTRUCTION, cost)
             fellTrees(company, i)
@@ -342,7 +342,7 @@ private fun World.railJoins(c: Command.Rail, line: IntArray, laid: BooleanArray,
         val y = t / width
         // A curve in place of a straight just laid costs nothing more.
         val pieces = Track.PIECES.count { to and it != 0 && from and it == 0 } - Track.PIECES.count { removed and it != 0 }
-        val cost = price(Prices.TRACK) * maxOf(0, pieces) + if (!needsFoundation(x, y, from) && needsFoundation(x, y, to)) price(Prices.FOUNDATION) else 0
+        val cost = build(Prices.TRACK, Mix.TRACK, t) * maxOf(0, pieces) + if (!needsFoundation(x, y, from) && needsFoundation(x, y, to)) build(Prices.FOUNDATION, Mix.FOUNDATION, t, true) else 0
         out += Join(t, from, to, cost)
         joined[t] = to
     }
@@ -411,7 +411,7 @@ private fun World.railStubs(c: Command.Rail, line: IntArray, trackOf: (Int) -> I
             }
             if (stub) to = to and p.inv()
         }
-        if (to != from) out += Join(t, from, to, price(Prices.TRACK_REMOVE) * Track.PIECES.count { from and it != 0 && to and it == 0 })
+        if (to != from) out += Join(t, from, to, build(Prices.TRACK_REMOVE, Mix.LABOUR, t) * Track.PIECES.count { from and it != 0 && to and it == 0 })
     }
     return out
 }
@@ -428,10 +428,10 @@ fun World.railCost(c: Command.Rail): Pair<Long, Int> {
         val i = entry / 64
         val piece = entry % 64
         n++
-        if (c.remove) { cost += price(Prices.TRACK_REMOVE); continue }
+        if (c.remove) { cost += build(Prices.TRACK_REMOVE, Mix.LABOUR, i); continue }
         val has = planned[i] ?: track[i].toInt()
-        cost += price(Prices.TRACK) + (if (has == 0) treeCost(i) else 0)
-        if (!needsFoundation(i % width, i / width, has) && needsFoundation(i % width, i / width, has or piece)) cost += price(Prices.FOUNDATION)
+        cost += build(Prices.TRACK, Mix.TRACK, i) + (if (has == 0) treeCost(i) else 0)
+        if (!needsFoundation(i % width, i / width, has) && needsFoundation(i % width, i / width, has or piece)) cost += build(Prices.FOUNDATION, Mix.FOUNDATION, i, true)
         planned[i] = has or piece
     }
     return cost + planJoins(c).sumOf { it.cost } to n

@@ -68,16 +68,16 @@ fun World.crossable(i: Int, piece: Int): Boolean {
 /** What laying [c] would cost, or -1 if none of it can be done. */
 fun World.roadCost(company: Company, c: Command.Road): Long {
     val tiles = roadLine(c) ?: return -1
-    if (c.remove) return tiles.size * price(Prices.TRACK_REMOVE)
+    if (c.remove) return tiles.sumOf { (i, _) -> build(Prices.TRACK_REMOVE, Mix.LABOUR, i) }
     if (c.surface !in Surface.DIRT..Surface.HIGHWAY || Calendar.year(startYear, day) < Surface.FROM[c.surface]) return -1
-    return tiles.sumOf { (i, bits) -> price(Surface.COST[c.surface]) + treeCost(i) + foundationCost(i, (road[i].toInt() and 15) or bits) }
+    return tiles.sumOf { (i, bits) -> build(Surface.COST[c.surface], Mix.SURFACES[c.surface], i) + treeCost(i) + foundationCost(i, (road[i].toInt() and 15) or bits) }
 }
 
 /** What road [bits] on tile [i] would add for a foundation the tile doesn't have yet. */
 private fun World.foundationCost(i: Int, bits: Int): Long {
     val x = i % width
     val y = i / width
-    return if (track[i].toInt() == 0 && !needsFoundation(x, y, 0) && needsFoundation(x, y, roadPieces(bits))) price(Prices.FOUNDATION) else 0L
+    return if (track[i].toInt() == 0 && !needsFoundation(x, y, 0) && needsFoundation(x, y, roadPieces(bits))) build(Prices.FOUNDATION, Mix.FOUNDATION, i, true) else 0L
 }
 
 /**
@@ -137,8 +137,8 @@ internal fun World.buildRoad(company: Company, c: Command.Road) {
         val has = road[i].toInt()
         if (c.remove) {
             if (roadOwner[i].toInt() != company.id || has and bits == 0 || roadStops.containsKey(i) || trainOnTile(i) || roadVehicleOn(i)) continue
-            if (company.money < price(Prices.TRACK_REMOVE)) return
-            spend(company, Books.CONSTRUCTION, price(Prices.TRACK_REMOVE))
+            if (company.money < build(Prices.TRACK_REMOVE, Mix.LABOUR, i)) return
+            spend(company, Books.CONSTRUCTION, build(Prices.TRACK_REMOVE, Mix.LABOUR, i))
             val left = has and bits.inv()
             road[i] = (if (left and 15 == 0) 0 else left).toByte()
             if (left and 15 == 0) { roadKind[i] = 0; roadOwner[i] = -1; roadLifted(i) }
@@ -160,7 +160,7 @@ internal fun World.buildRoad(company: Company, c: Command.Road) {
         val surface = if (has != 0) maxOf(c.surface, surfaceAt(i)) else c.surface
         val upgrading = has != 0 && surface > surfaceAt(i)
         if (has and 15 == joined && !upgrading) continue
-        val cost = price(Surface.COST[c.surface]) + treeCost(i) + if (t == 0) foundationCost(i, joined) else 0L
+        val cost = build(Surface.COST[c.surface], Mix.SURFACES[c.surface], i) + treeCost(i) + if (t == 0) foundationCost(i, joined) else 0L
         if (company.money < cost) return
         spend(company, Books.CONSTRUCTION, cost)
         fellTrees(company, i)
@@ -183,8 +183,8 @@ private fun World.tramRails(company: Company, tiles: List<Int>, remove: Boolean)
         val has = roadKind[i].toInt() and TRAM != 0
         if (has != remove) continue
         if (!remove) {
-            if (company.money < price(Prices.WIRE)) return
-            spend(company, Books.CONSTRUCTION, price(Prices.WIRE))
+            if (company.money < build(Prices.WIRE, Mix.WIRE, i)) return
+            spend(company, Books.CONSTRUCTION, build(Prices.WIRE, Mix.WIRE, i))
         }
         roadKind[i] = (roadKind[i].toInt() xor TRAM).toByte()
         touched(i % width, i / width)
@@ -217,7 +217,7 @@ internal fun World.buildRoadStop(company: Company, c: Command.RoadStop) {
     val owned = roadOwner[i].toInt()
     if (owned >= 0 && owned != company.id) return
     if (townRefuses(company, c.x, c.y)) return
-    if (company.money < price(Prices.ROAD_STOP)) return
+    if (company.money < build(Prices.ROAD_STOP, Mix.ROAD_STOP, i)) return
     var station: Station? = null
     for (y in c.y - 1..c.y + 1) for (x in c.x - 1..c.x + 1) {
         if (station != null || !inside(x, y)) continue
@@ -225,7 +225,7 @@ internal fun World.buildRoadStop(company: Company, c: Command.RoadStop) {
         val id = stationTiles[n] ?: roadStops[n] ?: continue
         station = stations.getOrNull(id)?.takeIf { it.owner == company.id && !it.waypoint }
     }
-    spend(company, Books.CONSTRUCTION, price(Prices.ROAD_STOP))
+    spend(company, Books.CONSTRUCTION, build(Prices.ROAD_STOP, Mix.ROAD_STOP, i))
     val s = station ?: Station(stations.size, company.id, stationName(c.x, c.y), c.x, c.y).also { stations += it }
     s.stops += i
     roadStops[i] = s.id
@@ -247,8 +247,8 @@ internal fun World.buildGarage(company: Company, c: Command.Garage) {
     val joined = road[n].toInt() and 15 or roadBit(Track.opposite(c.edge))
     // Onto road vehicles can drive along: not another garage's own bit of road.
     if (road[n].toInt() == 0 || !roadFits(nx, ny, joined) || track[n].toInt() != 0 || roadStops.containsKey(n) || depotTiles.containsKey(n)) return
-    if (company.money < price(Prices.DEPOT) + treeCost(i)) return
-    spend(company, Books.CONSTRUCTION, price(Prices.DEPOT) + fellTrees(company, i))
+    if (company.money < build(Prices.DEPOT, Mix.DEPOT, i) + treeCost(i)) return
+    spend(company, Books.CONSTRUCTION, build(Prices.DEPOT, Mix.DEPOT, i) + fellTrees(company, i))
     clearOwnBuilding(company.id, i)
     val d = Depot(depots.size, company.id, i, c.edge, Depots.ROAD).also { it.built = Calendar.year(startYear, day) }
     depots += d

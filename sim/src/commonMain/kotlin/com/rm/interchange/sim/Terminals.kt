@@ -65,7 +65,7 @@ internal fun World.equipStation(company: Company, c: Command.Equip) {
         s.equipment = s.equipment and bit.inv()
         scrap(company, Equipment.COST[c.part])
     } else {
-        val cost = price(Equipment.COST[c.part])
+        val cost = build(Equipment.COST[c.part], Mix.EQUIPMENT)
         if (s.equipment and bit != 0 || company.money < cost) return
         spend(company, Books.CONSTRUCTION, cost)
         s.equipment = s.equipment or bit
@@ -207,7 +207,7 @@ class HandlingView(val rates: Array<IntArray>, val equipment: Int, val cost: Lon
 fun World.handlingView(id: Int): HandlingView? = stations.getOrNull(id)?.let { handlingView(it, equipmentPrices()) }
 
 /** Each part's cost now and upkeep a month now, shared by every station's [HandlingView] in a view. */
-internal fun World.equipmentPrices() = LongArray(Equipment.COUNT) { price(Equipment.COST[it]) } to LongArray(Equipment.COUNT) { price(Equipment.UPKEEP[it]) }
+internal fun World.equipmentPrices() = LongArray(Equipment.COUNT) { build(Equipment.COST[it], Mix.EQUIPMENT) } to LongArray(Equipment.COUNT) { price(Equipment.UPKEEP[it]) }
 
 internal fun World.handlingView(s: Station, prices: Pair<LongArray, LongArray>): HandlingView? {
     if (!settings.handling) return null

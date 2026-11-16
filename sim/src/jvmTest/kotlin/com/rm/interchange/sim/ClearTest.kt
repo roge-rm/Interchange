@@ -55,7 +55,7 @@ class ClearTest {
 
     @Test
     fun aTownBuildingComesDownForAPriceAndTheTownMinds() {
-        val w = World(NewGame(64, 64, 1, 1900, Region.MIXED, towns = 1, industries = 0))
+        val w = World(NewGame(64, 64, 1, 1900, Region.MIXED, towns = 1, industries = 0, eraCosts = false))
         w.companies[0].money = 1_000_000
         val i = w.house.indices.first { w.house[it].toInt() != 0 }
         val t = w.towns[w.townOf[i].toInt()]

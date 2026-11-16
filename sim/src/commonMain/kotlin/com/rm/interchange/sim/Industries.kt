@@ -110,6 +110,8 @@ class News(val kind: Int, val about: Int, val tick: Long) {
         const val CONTRACT_MISSED = 35
         const val CONTRACT_FAILED = 36
         const val CONTRACT_DONE = 37
+        /** A fuel shock with era costs on; [News.about] is its place in [EraCosts.SHOCKS]. */
+        const val FUEL_SHOCK = 38
     }
 }
 
@@ -529,7 +531,7 @@ internal fun World.fundIndustry(company: Company, c: Command.FundIndustry) {
     val kind = roster.industries.getOrNull(c.kind) ?: return
     val year = Calendar.year(startYear, day)
     if (!kind.enabled || year < kind.from || year >= kind.until) return
-    val cost = price(fundCost(kind))
+    val cost = build(fundCost(kind), Mix.INDUSTRY)
     if (company.money < cost) return
     val prospect = kind.primary && kind.accepts == 0
     if (prospect && rng.below(PROSPECT_FAILS) == 0) {

@@ -16,7 +16,7 @@ package com.rm.interchange.sim
  */
 object Save {
     private val MAGIC = "ICHG".encodeToByteArray()
-    const val VERSION = 70
+    const val VERSION = 71
 
     /** A vehicle's [built] day as saved by [version]: work days from 36, calendar days before. */
     private fun World.builtOut(built: Int, version: Int) = if (version >= 36) built else built / settings.dayLength
@@ -36,6 +36,7 @@ object Save {
             if (version >= 65) w.int(g.breakdowns)
             if (version >= 69) { w.bool(g.stockpiles); w.bool(g.contracts) }
             if (version >= 70) w.bool(g.handling)
+            if (version >= 71) w.bool(g.eraCosts)
             w.uvar(roster.packs.size.toLong())
             for (p in roster.packs) { w.string(p.id); w.int(p.version); w.long(p.hash) }
             w.uvar(roster.engines.size.toLong())
@@ -990,6 +991,8 @@ object Save {
             contracts = version >= 69 && r.bool(),
             // And without handling.
             handling = version >= 70 && r.bool(),
+            // And with costs as they were.
+            eraCosts = version >= 71 && r.bool(),
         )
         if (settings.width !in 16..4096 || settings.height !in 16..4096) throw BadData("map size out of range")
         return settings

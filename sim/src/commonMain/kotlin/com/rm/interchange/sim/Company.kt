@@ -227,6 +227,7 @@ internal fun World.companiesYear() {
         if (!e.enabled || e.from != year || e.kind == VehicleKind.WAGON || e.kind == VehicleKind.TENDER) continue
         tell(News.NEW_VEHICLE, e.id)
     }
+    fuelShockNews()
     if (settings.inflation && Calendar.year(startYear, day) <= startYear + INFLATION_YEARS) {
         costScale += costScale * 2 / 100
         payScale += payScale * 15 / 1000

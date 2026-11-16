@@ -48,6 +48,7 @@ fun newGameSettings(env: Map<String, String>, chosen: Map<String, String> = empt
         stockpiles = on("INTERCHANGE_STOCKPILES"),
         contracts = on("INTERCHANGE_CONTRACTS"),
         handling = on("INTERCHANGE_HANDLING"),
+        eraCosts = on("INTERCHANGE_ERA_COSTS"),
     )
 }
 

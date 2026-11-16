@@ -278,7 +278,7 @@ private fun World.buildShipLine(r: Rival, c: Company, p: ShipPick, k: Int, job: 
         roster.industries[from.kind].produces[p.cargo] * from.level / 16 / 2
     }
     val dist = kotlin.math.abs(sx - siteB % width) + kotlin.math.abs(sy - siteB / width)
-    val built = price(DOCK_COST) * 2 + price(SHIPYARD_COST)
+    val built = build(DOCK_COST, Mix.DOCK) * 2 + build(SHIPYARD_COST, Mix.SHIPYARD)
     // The ship that pays best, if any does.
     var model: Engine? = null
     var margin = 0L
@@ -357,7 +357,7 @@ internal fun World.craftMargin(model: Engine, cargo: Int, load: Int, tiles: Int,
     val ways = if (cargo == Cargo.PASSENGERS) 2 else 1
     val income = pay(hauled.toLong() * dist * roster.cargo.rate[cargo] * share / 10_000) * ways
     val up = price(upkeep * 365 / 1_000)
-    return (income - price(model.running) * n - up) * payback - (built + price(model.cost) * n)
+    return (income - running(model) * n - up) * payback - (built + price(model.cost) * n)
 }
 
 /** Adds a ship to [route] once a full load waits for one, while what it runs pays. */
@@ -401,8 +401,8 @@ internal fun World.growAir(c: Company, route: RivalRoute) {
     val year = Calendar.year(startYear, day)
     // Landing aids at a line of two or more, de-icing at three, from money in hand.
     for (p in listOf(pa, pb)) {
-        if (on.size >= 2 && !p.ils && year >= ILS_FROM && Airports.CLASS[p.kind] >= Runways.REGIONAL && inHand(c, price(ILS_COST) * 2)) apply(Command.AirportUpgrade(c.id, p.id, 0))
-        if (on.size >= 3 && !p.deice && year >= DEICE_FROM && settings.weather && inHand(c, price(DEICE_COST) * 2)) apply(Command.AirportUpgrade(c.id, p.id, 1))
+        if (on.size >= 2 && !p.ils && year >= ILS_FROM && Airports.CLASS[p.kind] >= Runways.REGIONAL && inHand(c, build(ILS_COST, Mix.STEELWORK) * 2)) apply(Command.AirportUpgrade(c.id, p.id, 0))
+        if (on.size >= 3 && !p.deice && year >= DEICE_FROM && settings.weather && inHand(c, build(DEICE_COST, Mix.STEELWORK) * 2)) apply(Command.AirportUpgrade(c.id, p.id, 1))
     }
     if (on.size >= MAX_AIRCRAFT) return
     val km = flightKm(pa, pb)
@@ -495,7 +495,7 @@ private fun World.tryAir(r: Rival, c: Company, t1: Town, t2: Town, d: Int, kinds
     val most = (if (settings.rivalLevel == RivalLevel.EASY) maxLoan() / 2 else maxLoan()) * (2 + r.borrow) / 4
     val load = minOf(t1.population, t2.population) / AIR_SHARE
     for (kind in kinds) {
-        val built = price(Airports.COST[kind]) * 2
+        val built = build(Airports.COST[kind], Mix.AIRPORT) * 2
         // Too dear even with the cheapest aircraft, borrowing all it may: a smaller kind.
         val cheapest = aircraftFor(Cargo.PASSENGERS, kind, 0).minOfOrNull { it.cost } ?: continue
         if (c.money + (most - c.loan) < (built + price(cheapest)) * 6 / 5 + price(Prices.LOAN_STEP) * 2) continue

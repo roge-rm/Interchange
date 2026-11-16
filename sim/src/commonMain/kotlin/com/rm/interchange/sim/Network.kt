@@ -149,8 +149,7 @@ internal fun World.buildStation(company: Company, c: Command.Station) {
         tiles += i
     }
     // Platforms on sloping land stand on a foundation, level with the highest corner; their track has to meet any already next door.
-    val sloping = tiles.count { !isFlat(it % width, it / width) }
-    val cost = price(Prices.PLATFORM) * tiles.size + price(Prices.FOUNDATION) * sloping + tiles.sumOf { treeCost(it) }
+    val cost = tiles.sumOf { build(Prices.PLATFORM, Mix.PLATFORM, it) + if (isFlat(it % width, it / width)) 0L else build(Prices.FOUNDATION, Mix.FOUNDATION, it, true) } + tiles.sumOf { treeCost(it) }
     if (company.money < cost) return
     for (i in tiles) stationTiles[i] = -1
     val fits = tiles.all { i ->
@@ -366,8 +365,8 @@ internal fun World.buildDepot(company: Company, c: Command.Depot) {
     if (trackAt(c.x, c.y) != 0 || stationTiles.containsKey(i) || depotTiles.containsKey(i) || townBuilt(i) || othersBuilding(company.id, i)) return
     val piece = Track.straight(c.edge)
     if (!piecesFit(c.x, c.y, piece)) return
-    if (company.money < price(Prices.DEPOT) + treeCost(i)) return
-    spend(company, Books.CONSTRUCTION, price(Prices.DEPOT) + fellTrees(company, i))
+    if (company.money < build(Prices.DEPOT, Mix.DEPOT, i) + treeCost(i)) return
+    spend(company, Books.CONSTRUCTION, build(Prices.DEPOT, Mix.DEPOT, i) + fellTrees(company, i))
     clearOwnBuilding(company.id, i)
     val d = Depot(depots.size, company.id, i, c.edge).also { it.built = Calendar.year(startYear, day) }
     depots += d
@@ -393,8 +392,8 @@ internal fun World.placeSignal(company: Company, c: Command.Signal) {
     val base = had?.let { when (Signals.kind(it)) { Signals.ONE_WAY -> Signals.TWO_WAY; Signals.ONE_WAY_PATH -> Signals.PATH; else -> Signals.kind(it) } }
     when {
         had == null -> {
-            if (company.money < price(Prices.SIGNAL)) return
-            spend(company, Books.CONSTRUCTION, price(Prices.SIGNAL))
+            if (company.money < build(Prices.SIGNAL, Mix.STEELWORK)) return
+            spend(company, Books.CONSTRUCTION, build(Prices.SIGNAL, Mix.STEELWORK))
             signals[key] = Signals.pack(c.facing, kind)
         }
         Signals.facing(had) != c.facing -> signals[key] = Signals.pack(c.facing, Signals.kind(had))
@@ -447,7 +446,7 @@ fun World.planSignals(c: Command.SignalRun): List<SignalSpot> {
 /** What a [Command.SignalRun] would cost: the price of a signal for each tile that gets a new one, and how many. */
 fun World.signalRunCost(c: Command.SignalRun): Pair<Long, Int> {
     val n = planSignals(c).count { signals[pieceKey(index(it.x, it.y), it.piece)] == null }
-    return price(Prices.SIGNAL) * n to n
+    return build(Prices.SIGNAL, Mix.STEELWORK) * n to n
 }
 
 /**
@@ -489,8 +488,8 @@ internal fun World.buildWaypoint(company: Company, c: Command.Waypoint) {
     val i = index(c.x, c.y)
     val t = track[i].toInt()
     if (owner[i].toInt() != company.id || (t != Track.X && t != Track.Y) || !isFlat(c.x, c.y) || stationTiles.containsKey(i) || depotTiles.containsKey(i)) return
-    if (company.money < price(Prices.SIGNAL)) return
-    spend(company, Books.CONSTRUCTION, price(Prices.SIGNAL))
+    if (company.money < build(Prices.SIGNAL, Mix.STEELWORK)) return
+    spend(company, Books.CONSTRUCTION, build(Prices.SIGNAL, Mix.STEELWORK))
     val s = Station(stations.size, company.id, stationName(c.x, c.y), c.x, c.y, waypoint = true)
     s.tiles += i
     stations += s

@@ -21,8 +21,8 @@ class World(settings: NewGame, val roster: Roster = Roster.BASE, generate: Boole
     var settings = settings
         private set
 
-    /** A map with no towns and fair weather, for tests that lay their own track. */
-    constructor(width: Int, height: Int, seed: Long, startYear: Int = 1850) : this(NewGame(width, height, seed, startYear, towns = 0, industries = 0, weather = false))
+    /** A map with no towns and fair weather and costs by inflation alone, for tests that lay their own track. */
+    constructor(width: Int, height: Int, seed: Long, startYear: Int = 1850) : this(NewGame(width, height, seed, startYear, towns = 0, industries = 0, weather = false, eraCosts = false))
 
     val width get() = settings.width
     val height get() = settings.height
@@ -92,6 +92,8 @@ class World(settings: NewGame, val roster: Roster = Roster.BASE, generate: Boole
     /** How each tile's weather looked last, by [weatherLook], to know which chunks to draw again. Not saved. */
     internal var weatherLooks: ShortArray? = null
     internal var weatherViewCache: WeatherView? = null
+    /** [pricesView] as of a day. */
+    internal var pricesViewCache: Pair<Int, PricesView>? = null
     private var lookDay = -1
     private var look = Climate.SUMMER
 
@@ -606,6 +608,8 @@ class World(settings: NewGame, val roster: Roster = Roster.BASE, generate: Boole
                 mix(k.count.toLong()); mix(k.lastCount.toLong()); mix(k.met.toLong()); mix(k.misses.toLong()); mix(if (k.started) 1L else 0L)
             }
         }
+        // Era costs only when on, so older games keep their checksum.
+        if (settings.eraCosts) mix(910L)
         // Equipment only with handling, so older games keep their checksum.
         if (settings.handling) {
             mix(900L)

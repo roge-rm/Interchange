@@ -9,7 +9,7 @@ import kotlin.test.assertTrue
 class LandToolsTest {
     /** Flat meadow at height 3, no trees, costs as printed. */
     private fun flat(): World {
-        val w = World(NewGame(64, 64, 1, 1900, towns = 0, industries = 0, inflation = false, weather = false))
+        val w = World(NewGame(64, 64, 1, 1900, towns = 0, industries = 0, inflation = false, weather = false, eraCosts = false))
         for (i in w.corners.indices) w.corners[i] = 3
         w.trees.fill(0)
         w.ground.fill(Ground.MEADOW.toByte())
@@ -161,7 +161,7 @@ class LandToolsTest {
 
     @Test
     fun theEditorStillLevelsAndPlantsForNothing() {
-        val w = World.newEditor(NewGame(64, 64, 1, 1900, towns = 0, industries = 0, inflation = false, weather = false))
+        val w = World.newEditor(NewGame(64, 64, 1, 1900, towns = 0, industries = 0, inflation = false, weather = false, eraCosts = false))
         for (i in w.corners.indices) w.corners[i] = 3
         w.trees.fill(0)
         w.ground.fill(Ground.MEADOW.toByte())

@@ -13,7 +13,7 @@ class InfrastructureUpkeepTest {
 
     /** Flat land a step up with a lake from x = 10 to 49, y = 10 to 29, and company 0's [build] on it, without inflation. */
     private fun site(dayLength: Int, build: Set<String> = parts): World {
-        val w = World(NewGame(64, 64, 1, 1965, sea = 0, trees = 0, towns = 0, industries = 0, inflation = false, weather = false, dayLength = dayLength))
+        val w = World(NewGame(64, 64, 1, 1965, sea = 0, trees = 0, towns = 0, industries = 0, inflation = false, weather = false, dayLength = dayLength, eraCosts = false))
         for (y in 0..64) for (x in 0..64) w.corners[w.corner(x, y)] = if (x in 10..50 && y in 10..30) 0 else 1
         w.shoreChanged()
         w.companies[0].money = 100_000_000

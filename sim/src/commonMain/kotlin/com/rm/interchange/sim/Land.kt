@@ -101,6 +101,12 @@ internal fun generateLand(world: World) {
 
 private fun smooth(t: Int): Int = t * t * (768 - 2 * t) / 65536
 
+/** What moving [corners] a step each costs, each priced on the tile it's the top left corner of. */
+private fun World.terraformCost(corners: Collection<Int>): Long {
+    if (!settings.eraCosts) return price(Prices.TERRAFORM) * corners.size
+    return corners.sumOf { c -> build(Prices.TERRAFORM, Mix.LABOUR, index(minOf(c % (width + 1), width - 1), minOf(c / (width + 1), height - 1))) }
+}
+
 /**
  * Moves corner ([cx], [cy]) a step and pushes the corners round it along so
  * none is more than a step from its neighbours. Nothing moves if any tile it
@@ -132,7 +138,7 @@ internal fun World.terraform(company: Company, cx: Int, cy: Int, up: Boolean) {
             }
         }
     }
-    val cost = price(Prices.TERRAFORM) * changed.size
+    val cost = terraformCost(changed.keys)
     if (company.money < cost) return
     for ((c, h) in changed) {
         val x = c % (width + 1)
@@ -161,7 +167,7 @@ internal fun World.terraform(company: Company, cx: Int, cy: Int, up: Boolean) {
 internal fun World.levelLand(company: Company, c: Command.Level) {
     val changed = terrainChanges(c.x0, c.y0, c.x1, c.y1, Command.EditTerrain.LEVEL, c.height) ?: return
     if (changed.isEmpty()) return
-    val cost = price(Prices.TERRAFORM) * changed.size
+    val cost = terraformCost(changed.keys)
     if (company.money < cost) return
     spend(company, Books.CONSTRUCTION, cost)
     applyTerrainChanges(changed)
@@ -172,7 +178,7 @@ fun World.levelCost(c: Command.Level): Pair<Long, Int> {
     val changed = terrainChanges(c.x0, c.y0, c.x1, c.y1, Command.EditTerrain.LEVEL, c.height) ?: return 0L to 0
     val box = area(c.x0, c.y0, c.x1, c.y1) ?: return 0L to 0
     val n = (box[2] - box[0] + 1) * (box[3] - box[1] + 1)
-    return price(Prices.TERRAFORM) * changed.size to n
+    return terraformCost(changed.keys) to n
 }
 
 /**
@@ -184,7 +190,7 @@ internal fun World.plantTrees(company: Company, c: Command.PlantTrees) {
     var n = 0
     for (y in ay..by) for (x in ax..bx) if (canPlantTree(x, y)) n++
     if (n == 0) return
-    val cost = price(Prices.TREE) * n
+    val cost = build(Prices.TREE, Mix.LABOUR) * n
     if (company.money < cost) return
     spend(company, Books.CONSTRUCTION, cost)
     for (y in ay..by) for (x in ax..bx) if (canPlantTree(x, y)) plantTree(x, y)
@@ -195,5 +201,5 @@ fun World.plantCost(c: Command.PlantTrees): Pair<Long, Int> {
     val (ax, ay, bx, by) = area(c.x0, c.y0, c.x1, c.y1) ?: return 0L to 0
     var n = 0
     for (y in ay..by) for (x in ax..bx) if (canPlantTree(x, y)) n++
-    return price(Prices.TREE) * n to n
+    return build(Prices.TREE, Mix.LABOUR) * n to n
 }

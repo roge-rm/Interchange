@@ -139,13 +139,15 @@ internal fun World.trackDay() {
     val wind = weather.windFrom
     val tracks = Array(bands) { IntArray(MAX_COMPANIES) }
     val roads = Array(bands) { LongArray(MAX_COMPANIES) }
+    val eraWires = settings.eraCosts
     parallelBandsIndexed(height, bands) { b, from, until ->
         for (y in from until until) for (x in 0 until width) {
             val i = index(x, y)
             val t = track[i].toInt()
             if (t != 0) {
                 val o = owner[i].toInt()
-                if (o in 0 until MAX_COMPANIES) tracks[b][o]++
+                // With era costs a wired tile counts twice, its wires kept up like its track.
+                if (o in 0 until MAX_COMPANIES) tracks[b][o] += if (eraWires && wires[i].toInt() != 0) 2 else 1
             }
             if (road[i].toInt() != 0) {
                 val o = roadOwner[i].toInt()
@@ -235,11 +237,12 @@ private fun World.countUpkeep() {
     val bands = Workers.threads * 4
     val tracks = Array(bands) { IntArray(MAX_COMPANIES) }
     val roads = Array(bands) { LongArray(MAX_COMPANIES) }
+    val eraWires = settings.eraCosts
     parallelBandsIndexed(height, bands) { b, from, until ->
         for (i in from * width until until * width) {
             if (track[i].toInt() != 0) {
                 val o = owner[i].toInt()
-                if (o in 0 until MAX_COMPANIES) tracks[b][o]++
+                if (o in 0 until MAX_COMPANIES) tracks[b][o] += if (eraWires && wires[i].toInt() != 0) 2 else 1
             }
             if (road[i].toInt() != 0 && roadEdges(i) != 0) {
                 val o = roadOwner[i].toInt()
@@ -268,9 +271,12 @@ internal fun World.upkeepDay() {
     for (i in locks.keys) { val o = owner[i].toInt(); if (o in 0 until MAX_COMPANIES) owed[o] += Upkeep.CANAL.toLong() }
     for (a in airports) if (a != null && a.owner in 0 until MAX_COMPANIES) owed[a.owner] += Upkeep.AIRPORT[a.kind].toLong()
     val pri = if (priorityTrack.isEmpty() && priorityRoad.isEmpty()) null else priorityOwedToday()
+    val trackClimate = trackUpkeepFactor()
+    val roadClimate = roadUpkeepFactor()
     for (c in companies) {
         if (c.id !in 0 until MAX_COMPANIES) continue
-        c.upkeepOwed += c.trackTiles.toLong() * Upkeep.TRACK[c.upkeep] + c.roadUpkeep + owed[c.id]
+        c.upkeepOwed += if (settings.eraCosts) c.trackTiles.toLong() * Upkeep.TRACK[c.upkeep] * trackClimate / 1_000 + c.roadUpkeep * roadClimate / 1_000 + owed[c.id]
+        else c.trackTiles.toLong() * Upkeep.TRACK[c.upkeep] + c.roadUpkeep + owed[c.id]
         val dollars = price(c.upkeepOwed / 1_000)
         c.upkeepOwed %= 1_000
         if (dollars > 0) spend(c, Books.UPKEEP, dollars)

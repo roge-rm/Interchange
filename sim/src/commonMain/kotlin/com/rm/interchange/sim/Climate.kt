@@ -66,6 +66,16 @@ object Climate {
         return month * 100 * (100 + wetter) / 100 / 30
     }
 
+    /** [region]'s July normal and its year-round mean, before drift, in tenths. */
+    fun july(region: Region): Int = TEMPERATURE[region.ordinal][6]
+    fun mean(region: Region): Int = TEMPERATURE[region.ordinal].sum() / 12
+
+    /** [region]'s precipitation over [year], in mm, wetter after 1970 as [precipitation] has it. */
+    fun yearPrecipitation(region: Region, year: Int): Int {
+        val wetter = if (year > 1970) minOf(year - 1970, 200) / 10 else 0
+        return PRECIPITATION[region.ordinal].sum() * (100 + wetter) / 100
+    }
+
     /**
      * How much warmer than the normals year [year] is, in tenths: the tail of
      * the cold 1800s, level through the middle of the 1900s, then warming

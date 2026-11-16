@@ -1056,8 +1056,8 @@ private fun World.roadPays(model: Engine, cargo: Int, load: Int, path: IntArray,
     val income = pay(hauled.toLong() * dist * roster.cargo.rate[cargo] * share / 10_000) * ways
     // Upkeep on its new road and two stops, in tenths of a cent a work day.
     val fresh = path.count { road[tileOf(it)].toInt() == 0 }
-    val upkeep = price((fresh.toLong() * Upkeep.ROAD[surface] + 2 * Upkeep.STOP) * 365 / 1_000)
-    return (income - price(model.running) * n - upkeep) * payback >= built + price(model.cost) * n
+    val upkeep = price((fresh.toLong() * Upkeep.ROAD[surface] + 2 * Upkeep.STOP) * 365 / 1_000) * roadUpkeepFactor() / 1_000
+    return (income - running(model) * n - upkeep) * payback >= built + price(model.cost) * n
 }
 
 /**
@@ -1071,7 +1071,7 @@ internal fun World.tryFreight(r: Rival, c: Company, from: Industry, to: Industry
     val surface = Surface.entries(year).firstOrNull { Surface.SPEED[it] >= model.speed } ?: Surface.entries(year).last()
     val runs = runs(c.id, path, surface)
     val roadCost = runs.sumOf { roadCost(c, it).coerceAtLeast(0) }
-    val cost = roadCost + price(Prices.ROAD_STOP) * 2 + price(Prices.DEPOT) + price(model.cost) * 2
+    val cost = roadCost + build(Prices.ROAD_STOP, Mix.ROAD_STOP) * 2 + build(Prices.DEPOT, Mix.DEPOT) + price(model.cost) * 2
     val month = roster.industries[from.kind].produces[cargo] * from.level / 16
     if (!roadPays(model, cargo, month / 2, path, surface, cost - price(model.cost) * 2, payback)) return Tried.CANT
     // Where the stops and garage go is found before anything's spent.
@@ -1113,7 +1113,7 @@ internal fun World.tryFreightToTown(r: Rival, c: Company, from: Industry, to: To
     val year = Calendar.year(startYear, day)
     val surface = Surface.entries(year).firstOrNull { Surface.SPEED[it] >= model.speed } ?: Surface.entries(year).last()
     val runs = runs(c.id, path, surface)
-    val cost = runs.sumOf { roadCost(c, it).coerceAtLeast(0) } + price(Prices.ROAD_STOP) * 2 + price(Prices.DEPOT) + price(model.cost) * 2
+    val cost = runs.sumOf { roadCost(c, it).coerceAtLeast(0) } + build(Prices.ROAD_STOP, Mix.ROAD_STOP) * 2 + build(Prices.DEPOT, Mix.DEPOT) + price(model.cost) * 2
     val laid = laidEdges(path)
     val joined = joinedBy(path, laid)
     val siteA = stopSiteBy(c, from, path, true, laid, joined, -1) ?: return Tried.CANT
@@ -1162,7 +1162,7 @@ internal fun World.tryRoute(r: Rival, c: Company, t1: Town, t2: Town, model: Eng
     val surface = Surface.entries(year).firstOrNull { Surface.SPEED[it] >= model.speed } ?: Surface.entries(year).last()
     val runs = runs(c.id, path, surface)
     val roadCost = runs.sumOf { roadCost(c, it).coerceAtLeast(0) }
-    val cost = roadCost + price(Prices.ROAD_STOP) * 2 + price(Prices.DEPOT) + price(model.cost) * 2
+    val cost = roadCost + build(Prices.ROAD_STOP, Mix.ROAD_STOP) * 2 + build(Prices.DEPOT, Mix.DEPOT) + price(model.cost) * 2
     // What a stop in the middle of the smaller town gets a month, each way.
     if (!roadPays(model, Cargo.PASSENGERS, minOf(t1.population, t2.population) / 3, path, surface, cost - price(model.cost) * 2, payback)) return Tried.CANT
     // Where the stops and garage go is found before anything's spent.
@@ -1243,7 +1243,7 @@ private fun World.tryFeeder(r: Rival, c: Company, t: Town, s: Station): Tried {
     val year = Calendar.year(startYear, day)
     val surface = Surface.entries(year).firstOrNull { Surface.SPEED[it] >= model.speed } ?: Surface.entries(year).last()
     val runs = runs(c.id, path, surface)
-    val cost = runs.sumOf { roadCost(c, it).coerceAtLeast(0) } + price(Prices.ROAD_STOP) * 2 + price(Prices.DEPOT) + price(model.cost) * 2
+    val cost = runs.sumOf { roadCost(c, it).coerceAtLeast(0) } + build(Prices.ROAD_STOP, Mix.ROAD_STOP) * 2 + build(Prices.DEPOT, Mix.DEPOT) + price(model.cost) * 2
     if (!inHand(c, cost)) return Tried.POOR
     for (run in runs) apply(run)
     apply(Command.RoadStop(c.id, last % width, last / width))

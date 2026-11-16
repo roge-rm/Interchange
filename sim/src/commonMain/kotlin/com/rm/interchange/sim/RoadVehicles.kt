@@ -780,7 +780,7 @@ internal fun World.roadVehiclesDay() {
     for (v in roadVehicles) {
         if (v == null || v.inDepot && !v.running || v.wreckedFor > 0) continue
         val c = companies.getOrNull(v.owner) ?: continue
-        c.runningOwed += price(v.info.running)
+        c.runningOwed += running(v.info)
         val today = c.runningOwed / 365
         spend(c, Books.RUNNING, today)
         v.profitThisYear -= today
