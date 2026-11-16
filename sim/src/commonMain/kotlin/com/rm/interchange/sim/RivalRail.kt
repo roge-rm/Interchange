@@ -398,8 +398,18 @@ private fun World.railRuns(company: Int, path: IntArray): List<Command.Rail> {
 /** Whether tiles [a] and [b] are side by side, not a bridge's two heads. */
 private fun World.next(a: Int, b: Int) = chebyshev(a % width, a / width, b % width, b / width) == 1
 
-/** A train for [cargo] that fits a platform: the engine and wagons of the day, and how many wagons. */
-private class RailTrain(val engine: Engine, val wagon: Engine, val wagons: Int)
+/** A train for [cargo] that fits a platform: the engine and wagons of the day, how many wagons, and a snow plow ahead of the engine or none. */
+private class RailTrain(val engine: Engine, val wagon: Engine, val wagons: Int, val plow: Engine?)
+
+/** The wedge plow a computer company fits its trains with where the snow lies in winter: weather on and a January normal below freezing. */
+private fun World.railPlow(): Engine? {
+    val year = Calendar.year(startYear, day)
+    if (!settings.weather || Climate.normal(settings.region, year, JANUARY) >= 0) return null
+    return roster.available(year, false).filter { it.plow == Plows.WEDGE }.minByOrNull { it.id }
+}
+
+/** The middle of January, as a day of the year. */
+private const val JANUARY = 15
 
 /**
  * The trains that could run for [cargo], about [load] of it at a time and no longer than [platforms]: the wagon of the
@@ -410,21 +420,22 @@ private fun World.railTrains(cargo: Int, load: Int, platforms: Int, loose: Boole
     val year = Calendar.year(startYear, day)
     val wagon = roster.available(year, false).filter { cargo in it.cargoes && it.capacity > 0 && it.plow == Plows.NONE }
         .maxWithOrNull(compareBy<Engine> { it.capacity * 16 / it.length }.thenBy { -it.id }) ?: return emptyList()
-    fun fits(e: Engine) = platforms * 16 - e.length - (roster.getOrNull(e.tender)?.length ?: 0)
+    val plow = railPlow()
+    fun fits(e: Engine) = platforms * 16 - e.length - (roster.getOrNull(e.tender)?.length ?: 0) - (plow?.length ?: 0)
     val out = ArrayList<RailTrain>()
     for (e in roster.available(year, true)) {
         if (e.traction == Traction.ELECTRIC || fits(e) < wagon.length) continue
         var n = ((load + wagon.capacity - 1) / wagon.capacity).coerceIn(1, fits(e) / wagon.length)
         if (loose) {
             // Loaded weight in tonnes against power, a horsepower a tonne.
-            fun tonnes() = e.weight + (roster.getOrNull(e.tender)?.weight ?: 0) + n * (wagon.weight + wagon.capacity)
+            fun tonnes() = e.weight + (roster.getOrNull(e.tender)?.weight ?: 0) + (plow?.weight ?: 0) + n * (wagon.weight + wagon.capacity)
             while (n > 1 && e.power(false) < tonnes()) n--
-            if (e.power(false) >= tonnes()) out += RailTrain(e, wagon, n)
+            if (e.power(false) >= tonnes()) out += RailTrain(e, wagon, n, plow)
             continue
         }
-        while (n > 1 && !pulls(e, wagon, n, cargo)) n--
+        while (n > 1 && !pulls(e, wagon, n, cargo, plow)) n--
         // Shorter ones too, as a few cars may pay better than many half empty.
-        if (pulls(e, wagon, n, cargo)) for (k in n downTo 1) out += RailTrain(e, wagon, k)
+        if (pulls(e, wagon, n, cargo, plow)) for (k in n downTo 1) out += RailTrain(e, wagon, k, plow)
     }
     return out
 }
@@ -433,11 +444,11 @@ private fun World.railTrains(cargo: Int, load: Int, platforms: Int, loose: Boole
 internal fun World.railCarries(cargo: Int): Boolean = railTrains(cargo, 1, PLATFORMS).isNotEmpty()
 
 /**
- * Whether [e], off the wires, can start [n] of [wagon] loaded with [cargo] on a half percent grade and hold 70% of its
- * top speed up it, as the balance tables reckon a train.
+ * Whether [e], off the wires, can start [n] of [wagon] loaded with [cargo] and any [plow] on a half percent grade and
+ * hold 70% of its top speed up it, as the balance tables reckon a train.
  */
-private fun World.pulls(e: Engine, wagon: Engine, n: Int, cargo: Int): Boolean {
-    val tender = roster.getOrNull(e.tender)?.weight ?: 0
+private fun World.pulls(e: Engine, wagon: Engine, n: Int, cargo: Int, plow: Engine?): Boolean {
+    val tender = (roster.getOrNull(e.tender)?.weight ?: 0) + (plow?.weight ?: 0)
     // Kilograms, and newtons for the grade.
     val mass = (e.weight + tender + n * (wagon.weight + wagon.capacity * Cargo.KG[cargo] / 1000)).toLong() * 1000
     val grade = mass * 981 / 100 * 5 / 1000
@@ -474,7 +485,7 @@ private fun World.yearly(c: Company, train: RailTrain, cargo: Int, load: Int, pe
     val late = (there + filling - dist * Cargo.PACE[cargo] - Cargo.GRACE[cargo]).coerceAtLeast(0)
     val share = (100 - late * Cargo.DECAY[cargo]).coerceAtLeast(33)
     val income = pay(hauled.toLong() * dist * Cargo.RATE[cargo] * share / 10_000)
-    val running = price(train.engine.running + train.wagon.running * train.wagons + (roster.getOrNull(train.engine.tender)?.running ?: 0))
+    val running = price(train.engine.running + train.wagon.running * train.wagons + (roster.getOrNull(train.engine.tender)?.running ?: 0) + (train.plow?.running ?: 0))
     // Upkeep on the line and both stations, in tenths of a cent a work day.
     val upkeep = price(tiles.toLong() * Upkeep.TRACK[c.upkeep] * 365 / 1_000)
     return income - running - upkeep
@@ -497,7 +508,7 @@ private fun World.bendSixteenths(path: IntArray, train: RailTrain): Int {
     val top = train.engine.speed(false)
     val steps = IntArray(path.size) { k -> step(path[k] / 16, Track.index(Track.pieceOf((path[k] / 4) % 4, path[k] % 4)), (path[k] / 4) % 4) }
     val caps = bendCaps(steps)
-    val tender = roster.getOrNull(train.engine.tender)?.length ?: 0
+    val tender = (roster.getOrNull(train.engine.tender)?.length ?: 0) + (train.plow?.length ?: 0)
     val cars = (train.engine.length + tender + train.wagon.length * train.wagons + 15) / 16
     val held = IntArray(path.size)
     for (i in caps.indices) {
@@ -594,8 +605,8 @@ private fun World.caught(i: Int): Boolean {
     return false
 }
 
-/** What [t] costs, its tender with it. */
-private fun World.trainCost(t: RailTrain): Long = price(t.engine.cost + t.wagon.cost * t.wagons + (roster.getOrNull(t.engine.tender)?.cost ?: 0))
+/** What [t] costs, its tender and plow with it. */
+private fun World.trainCost(t: RailTrain): Long = price(t.engine.cost + t.wagon.cost * t.wagons + (roster.getOrNull(t.engine.tender)?.cost ?: 0) + (t.plow?.cost ?: 0))
 
 /**
  * Joins sites [sa] and [sb] by a railway carrying [cargo], [load] a month of freight or the passengers its stations
@@ -886,10 +897,11 @@ private fun World.buildRail(
     val bN = b.platform(this, b.n)
     apply(Command.Station(c.id, a1 % width, a1 / width, aN % width, aN / width, axisA))
     apply(Command.Station(c.id, b1 % width, b1 / width, bN % width, bN / width, axisB))
-    // The depot, and the signal tile between it and the platforms.
+    // The depot, and the signal tile between it and the platforms: a path signal, so a train coming out to the first
+    // station needs only its platform clear.
     val lead = a.at(this, 1)
     apply(Command.Rail(c.id, lead % width, lead / width, lead % width, lead / width, axisA, remove = false))
-    apply(Command.Signal(c.id, lead % width, lead / width, axisA, a.out))
+    apply(Command.Signal(c.id, lead % width, lead / width, axisA, a.out, Signals.PATH))
     val before = depots.size
     apply(Command.Depot(c.id, a.x, a.y, a.out))
     val sa = stationTiles[a1]?.let { stations[it] }
@@ -910,12 +922,16 @@ private fun World.buildRail(
     return route
 }
 
-/** Buys a train for [route] in its depot and sets it going: full at the first station for freight, coming back empty. */
+/**
+ * Buys a train for [route] in its depot, its plow fitted ahead of the engine, and sets it going: full at the first
+ * station for freight, coming back empty.
+ */
 private fun World.buyTrain(c: Company, route: RivalRoute, train: RailTrain) {
     val before = trains.size
     apply(Command.BuyTrain(c.id, route.depot, train.engine.id, train.wagon.id, train.wagons, route.cargo))
     if (trains.size == before) return
     val id = trains.size - 1
+    train.plow?.let { p -> trains[id]?.let { apply(Command.EditTrain(c.id, id, listOf(TrainCar(p.id)) + it.formation)) } }
     val orders = if (route.freight) intArrayOf(route.a or Order.FULL_LOAD, route.b or Order.NO_LOAD) else intArrayOf(route.a, route.b)
     apply(Command.TrainOrder(c.id, id, Command.TrainOrder.ORDERS, orders))
     apply(Command.TrainOrder(c.id, id, Command.TrainOrder.START_STOP))
@@ -1015,6 +1031,10 @@ internal fun World.railExtras(c: Company, route: RivalRoute): Set<Int> {
     return out
 }
 
+/** The wagon [t] carries its cargo in, past any plow. */
+private fun World.cargoWagon(t: Train): Int =
+    t.formation.firstOrNull { roster[it.model].kind == VehicleKind.WAGON && roster[it.model].plow == Plows.NONE }?.model ?: t.wagon
+
 /** The trains running [route]. */
 private fun World.trainsOn(c: Company, route: RivalRoute) =
     trains.filter { it != null && it.owner == c.id && onRoute(it, route) }.map { it!! }
@@ -1030,7 +1050,7 @@ internal fun World.growRail(c: Company, route: RivalRoute, payback: Int, ranLast
     if (on.size > 1 && on.any { it.service } || on.any { it.toDepot || it.inDepot && !it.running || ranLastYear(it.built) && it.profitLastYear < 0 }) return
     val a = stations.getOrNull(route.a) ?: return
     val b = stations.getOrNull(route.b) ?: return
-    val capacity = first.wagons * roster[first.wagon].capacity
+    val capacity = roster[cargoWagon(first)].let { w -> first.formation.count { it.model == w.id } * w.capacity }
     val waiting = if (route.freight) a.waiting(route.cargo) else maxOf(a.waiting(route.cargo), b.waiting(route.cargo))
     if (waiting < capacity) return
     // What each train made in a work year: last year's, or this year's once it's a few months of work in.
@@ -1052,9 +1072,10 @@ internal fun World.addTrain(c: Company, route: RivalRoute): Boolean {
     val b = stations.getOrNull(route.b) ?: return false
     val year = Calendar.year(startYear, day)
     val e = roster[first.engine]
-    val w = roster[first.wagon]
-    val train = if (year >= e.from && year < e.until && year >= w.from && year < w.until) RailTrain(e, w, first.wagons)
-    else railTrains(route.cargo, first.wagons * w.capacity, minOf(a.tiles.size, b.tiles.size)).maxByOrNull { it.wagon.capacity * it.wagons * it.engine.speed(false) } ?: return false
+    val w = roster[cargoWagon(first)]
+    val n = first.formation.count { it.model == w.id }
+    val train = if (year >= e.from && year < e.until && year >= w.from && year < w.until) RailTrain(e, w, n, railPlow())
+    else railTrains(route.cargo, n * w.capacity, minOf(a.tiles.size, b.tiles.size)).maxByOrNull { it.wagon.capacity * it.wagons * it.engine.speed(false) } ?: return false
     val before = trains.size
     buyTrain(c, route, train)
     return trains.size > before
@@ -1074,6 +1095,14 @@ internal fun World.unblockDepot(c: Company, route: RivalRoute) {
         // Down to one train, it's serviced as any is.
         for (t in on) if (!t.service) apply(Command.TrainOrder(c.id, t.id, Command.TrainOrder.SERVICE))
         return
+    }
+    // One held in the depot on its way to the far end calls at the near end first, so it comes out as soon as the
+    // platform is clear.
+    for (t in on) {
+        if (!t.inDepot || !t.running || tick > t.lostUntil || t.orders.size != 2) continue
+        val next = t.orders[t.order % 2]
+        val other = t.orders[(t.order + 1) % 2]
+        if (Order.station(next) != route.a && Order.station(other) == route.a) apply(Command.TrainOrder(c.id, t.id, Command.TrainOrder.ORDERS, intArrayOf(other, next)))
     }
     val lead = leadTile(c, route)
     saleTurn(c, on, lead)

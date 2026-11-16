@@ -67,8 +67,8 @@ class RivalTest {
             v.profitLastYear = -100
             n++
         }
-        // Sent to the garage one at a time, a look apart.
-        w.days(30 * (n + 2))
+        // Sent to the garage one at a time, a look apart, with a trip or two called off and sent again from the far end.
+        w.days(30 * (n + 4))
         assertTrue(route !in r.routes, "the route is still run")
         assertTrue(w.roadVehicles.none { it != null && it.owner == r.company && it.orders.isNotEmpty() && Order.station(it.orders[0]) == route.a }, "its vehicles weren't sold")
         assertTrue(w.stations.getOrNull(route.a) == null || r.routes.any { it.a == route.a || it.b == route.a }, "its stop is still there")
@@ -217,8 +217,26 @@ class RivalTest {
         assertTrue(longest <= SERVICE_DAYS * 2, "went $longest work days without a service")
         assertTrue(leastReliable >= 5000, "reliability fell to $leastReliable")
         assertTrue(calls.all { it >= 24 }, "calls ${calls.toList()}")
-        // One may be in the depot at the end, still running, waiting for its way out.
-        assertTrue(on.all { it.running }, "a train stopped")
+        assertTrue(on.all { it.running && !it.inDepot }, "a train stopped")
+    }
+
+    @Test
+    fun aRivalsTrainGetsAPlowWhereTheSnowLies() {
+        val w = World(NewGame(160, 160, 1, 1930, Region.MIXED, towns = 3, industries = 0, rivals = 1))
+        val r = w.rivals[0]
+        w.companies[r.company].money = 10_000_000
+        r.thinkOn = Int.MAX_VALUE
+        railFor(w, r) ?: error("no line to test with")
+        val t = w.trains.filterNotNull().single { it.owner == r.company }
+        assertEquals(Plows.WEDGE, t.plow)
+        assertEquals(Plows.WEDGE, w.roster[t.formation[0].model].plow)
+        // Without weather it runs without one.
+        val dry = World(NewGame(160, 160, 1, 1930, Region.MIXED, towns = 3, industries = 0, rivals = 1, weather = false))
+        val dr = dry.rivals[0]
+        dry.companies[dr.company].money = 10_000_000
+        dr.thinkOn = Int.MAX_VALUE
+        railFor(dry, dr) ?: error("no line to test with")
+        assertEquals(Plows.NONE, dry.trains.filterNotNull().single { it.owner == dr.company }.plow)
     }
 
     @Test
