@@ -143,6 +143,9 @@ class World(settings: NewGame, val roster: Roster = Roster.BASE, generate: Boole
     /** Passengers delivered from each station to each, keyed [linkKey] by where they started, this month and last. Saved, for the screen only. */
     internal val tripsMonth = HashMap<Long, Int>()
     internal val tripsLast = HashMap<Long, Int>()
+    /** Flows delivered this month and last, by [flowKey], [FLOW_FIELDS] sums each; with handling, for the screen only. */
+    internal val flowsMonth = HashMap<Long, LongArray>()
+    internal val flowsLast = HashMap<Long, LongArray>()
     /** The town pairs whose travel is carried least, worked out monthly by [demandMonth]. Saved, for the screen only. */
     internal var demand: List<DemandView> = emptyList()
     /** Each sharing group's service and timetable, keyed [serviceKey]. Saved. */
@@ -407,6 +410,7 @@ class World(settings: NewGame, val roster: Roster = Roster.BASE, generate: Boole
             is Command.Loan -> loanCommand(company, command)
             is Command.FundIndustry -> fundIndustry(company, command)
             is Command.AcceptContract -> acceptContract(company, command.contract)
+            is Command.Equip -> equipStation(company, command)
             is Command.TownAction -> townAction(company, command)
             is Command.BuyCompany -> buyCompany(company, command)
             is Command.RenameCompany -> renameCompany(company, command.name)
@@ -601,6 +605,11 @@ class World(settings: NewGame, val roster: Roster = Roster.BASE, generate: Boole
                 mix(k.until.toLong()); mix(k.reward); mix(k.penalty); mix(k.status.toLong()); mix(k.company.toLong()); mix(k.offerUntil.toLong())
                 mix(k.count.toLong()); mix(k.lastCount.toLong()); mix(k.met.toLong()); mix(k.misses.toLong()); mix(if (k.started) 1L else 0L)
             }
+        }
+        // Equipment only with handling, so older games keep their checksum.
+        if (settings.handling) {
+            mix(900L)
+            for (s in stations) if (s != null && s.equipment != 0) { mix(s.id.toLong()); mix(s.equipment.toLong()) }
         }
         for (k in roadStops.keys.sorted()) mix(k.toLong() * 31 + roadStops.getValue(k))
         for (k in saltDepots.sorted()) mix(k.toLong() * 7)

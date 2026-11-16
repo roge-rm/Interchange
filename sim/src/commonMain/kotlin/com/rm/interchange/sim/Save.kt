@@ -16,7 +16,7 @@ package com.rm.interchange.sim
  */
 object Save {
     private val MAGIC = "ICHG".encodeToByteArray()
-    const val VERSION = 69
+    const val VERSION = 70
 
     /** A vehicle's [built] day as saved by [version]: work days from 36, calendar days before. */
     private fun World.builtOut(built: Int, version: Int) = if (version >= 36) built else built / settings.dayLength
@@ -35,6 +35,7 @@ object Save {
             if (version >= 38) w.bool(g.collisions)
             if (version >= 65) w.int(g.breakdowns)
             if (version >= 69) { w.bool(g.stockpiles); w.bool(g.contracts) }
+            if (version >= 70) w.bool(g.handling)
             w.uvar(roster.packs.size.toLong())
             for (p in roster.packs) { w.string(p.id); w.int(p.version); w.long(p.hash) }
             w.uvar(roster.engines.size.toLong())
@@ -53,8 +54,8 @@ object Save {
                 val given = start != null && human(c.id) && !c.gone
                 w.int(c.id); w.string(c.name); w.long(if (given) start!!.money + start.loan else c.money); w.long(c.runningOwed)
                 w.long(if (given) start!!.loan else c.loan); w.long(c.monthIn); w.long(c.monthOut)
-                // The priority line of the books from 67.
-                val books = if (version >= 67) Books.COUNT else 7
+                // The priority line of the books from 67, handling from 70.
+                val books = if (version >= 70) Books.COUNT else if (version >= 67) 8 else 7
                 for (k in 0 until books) w.long(c.thisYear[k])
                 for (k in 0 until books) w.long(c.lastYear[k])
                 w.int(c.upkeep); w.long(if (version >= 33) c.upkeepOwed else c.upkeepOwed / 10)
@@ -71,7 +72,7 @@ object Save {
                 w.int(s.owner); w.string(s.name); w.int(s.signX); w.int(s.signY); w.bool(s.waypoint); w.ints(s.tiles.toIntArray()); w.ints(s.stops.toIntArray())
                 w.ints(s.docks.toIntArray()); w.ints(s.aero.toIntArray())
                 if (version >= 47) { w.int(s.building); w.int(s.buildingYear); w.int(s.buildingFacing) }
-                writeCargo(w, s.cargo)
+                writeCargo(w, s.cargo, version)
                 cargoInts(s.rating); w.uvar(kinds.toLong()); for (c in 0 until kinds) w.long(s.lastCall[c]); cargoInts(s.lastSpeed)
             }
             w.uvar(depots.size.toLong())
@@ -97,7 +98,7 @@ object Save {
                 w.bool(r != null)
                 if (r != null) w.ints(r)
                 w.int(t.routeAt); w.bool(t.turnRound); w.long(t.lostUntil)
-                writeCargo(w, t.cargo); w.long(t.profitThisYear); w.long(t.profitLastYear)
+                writeCargo(w, t.cargo, version); w.long(t.profitThisYear); w.long(t.profitLastYear)
                 w.int(t.shared)
                 w.int(builtOut(t.built, version)); w.int(t.serviced); w.int(t.reliability); w.int(t.breakdowns); w.int(t.brokenFor); w.bool(t.servicing); w.bool(t.service)
                 if (version >= 28) w.bool(t.snowbound)
@@ -149,7 +150,7 @@ object Save {
                 if (version >= 43) { w.int(v.gap); w.long(v.departed) }
                 if (version >= 45) w.int(v.group)
                 w.bool(v.inDepot); w.bool(v.running); w.int(v.waiting); w.int(v.at); w.int(v.along); w.int(v.speed)
-                writeCargo(w, v.cargo); w.long(v.profitThisYear); w.long(v.profitLastYear)
+                writeCargo(w, v.cargo, version); w.long(v.profitThisYear); w.long(v.profitLastYear)
                 w.ints(v.orders.toIntArray()); w.int(v.order); w.bool(v.toDepot)
                 val r = v.route
                 w.bool(r != null)
@@ -356,6 +357,14 @@ object Save {
                     w.int(k.status); w.int(k.company); w.int(k.offerUntil); w.int(k.count); w.int(k.lastCount); w.int(k.met); w.int(k.misses); w.bool(k.started)
                 }
             }
+            if (version >= 70) {
+                for (st in stations) if (st != null) w.int(st.equipment)
+                for (flows in listOf(flowsMonth, flowsLast)) {
+                    val keys = flows.keys.sorted()
+                    w.uvar(keys.size.toLong())
+                    for (k in keys) { w.long(k); for (x in flows.getValue(k)) w.uvar(x.coerceAtLeast(0)) }
+                }
+            }
         }
         val body = Squeeze.pack(w.toByteArray())
         val out = ByteWriter(body.size + 16)
@@ -431,7 +440,7 @@ object Save {
                 if (version >= 8) {
                     c.loan = r.long(); c.monthIn = r.long(); c.monthOut = r.long()
                     // Upkeep was booked from version 14.
-                    val books = if (version >= 67) Books.COUNT else if (version >= 14) 7 else 6
+                    val books = if (version >= 70) Books.COUNT else if (version >= 67) 8 else if (version >= 14) 7 else 6
                     for (k in 0 until books) c.thisYear[k] = r.long()
                     for (k in 0 until books) c.lastYear[k] = r.long()
                     // Upkeep owed is in tenths of a cent from version 33, cents before.
@@ -901,6 +910,16 @@ object Save {
                     contracts += k
                 }
             }
+            // Before 70 no equipment or flows.
+            if (version >= 70) {
+                for (st in stations) if (st != null) st.equipment = r.int() and ((1 shl Equipment.COUNT) - 1)
+                for (flows in listOf(flowsMonth, flowsLast)) {
+                    // Each takes five bytes at the least.
+                    val n = r.uvar()
+                    if (n !in 0..r.left / 5L) throw BadData("too many flows")
+                    repeat(n.toInt()) { flows[r.long()] = LongArray(FLOW_FIELDS) { r.uvar() } }
+                }
+            }
             // A conditional order with a test there isn't or a jump past the end is left out, as are orders past
             // the most a vehicle takes, as a command would.
             for (list in listOf<List<Carrier?>>(trains, roadVehicles, ships, aircraft)) for (v in list) {
@@ -966,6 +985,8 @@ object Save {
             // Games from before stockpiles go on without them, and without contracts.
             stockpiles = version >= 69 && r.bool(),
             contracts = version >= 69 && r.bool(),
+            // And without handling.
+            handling = version >= 70 && r.bool(),
         )
         if (settings.width !in 16..4096 || settings.height !in 16..4096) throw BadData("map size out of range")
         return settings
@@ -1002,7 +1023,7 @@ object Save {
             if (version >= 43) { w.int(v.gap); w.long(v.departed) }
             if (version >= 45) w.int(v.group)
             w.bool(v.inDepot); w.bool(v.running); w.int(v.waiting); w.int(v.x); w.int(v.y); w.int(v.heading); w.int(v.speed); w.int(v.lockWait); w.bool(v.fogged)
-            writeCargo(w, v.cargo); w.long(v.profitThisYear); w.long(v.profitLastYear)
+            writeCargo(w, v.cargo, version); w.long(v.profitThisYear); w.long(v.profitLastYear)
             w.ints(v.orders.toIntArray()); w.int(v.order); w.bool(v.toDepot)
             val r = v.route
             w.bool(r != null)
@@ -1028,7 +1049,7 @@ object Save {
             w.bool(v.inDepot); w.bool(v.running); w.int(v.waiting); w.int(v.x); w.int(v.y); w.int(v.altitude); w.int(if (version >= 53) v.heading else (v.heading + 16) shr 5 and 7); w.int(v.speed)
             if (version >= 53) { w.int(v.landing); w.int(v.route); w.int(v.node); w.int(v.stand) }
             w.int(v.state); w.int(v.at); w.int(v.holding); w.int(v.gear); w.bool(v.seasonalGear)
-            writeCargo(w, v.cargo); w.long(v.profitThisYear); w.long(v.profitLastYear)
+            writeCargo(w, v.cargo, version); w.long(v.profitThisYear); w.long(v.profitLastYear)
             w.ints(v.orders.toIntArray()); w.int(v.order); w.bool(v.toDepot)
             w.int(builtOut(v.built, version)); w.int(v.serviced); w.int(v.reliability); w.int(v.breakdowns); w.int(v.brokenFor)
             w.bool(v.servicing); w.bool(v.service)
@@ -1096,13 +1117,16 @@ object Save {
     }
 
     /** Lots by cargo, up to the last cargo with any. */
-    private fun writeCargo(w: ByteWriter, cargo: Array<ArrayList<Packet>>) {
+    private fun writeCargo(w: ByteWriter, cargo: Array<ArrayList<Packet>>, version: Int) {
         val kinds = cargo.indexOfLast { it.isNotEmpty() } + 1
         w.uvar(kinds.toLong())
         for (c in 0 until kinds) {
             val lots = cargo[c]
             w.uvar(lots.size.toLong())
-            for (p in lots) { w.int(p.dest); w.int(p.origin); w.int(p.count); w.long(p.since); w.long(p.credit); w.int(p.boarded); w.long(p.waitingFrom) }
+            for (p in lots) {
+                w.int(p.dest); w.int(p.origin); w.int(p.count); w.long(p.since); w.long(p.credit); w.int(p.boarded); w.long(p.waitingFrom)
+                if (version >= 70) { w.uvar(p.waited.coerceAtLeast(0)); w.uvar(p.handled.coerceAtLeast(0)); w.uvar(p.charged.coerceAtLeast(0)) }
+            }
         }
     }
 
@@ -1115,6 +1139,7 @@ object Save {
             repeat(n) {
                 val p = Packet(r.int(), r.int(), r.int(), r.long(), r.long(), r.int())
                 if (version >= 7) p.waitingFrom = r.long()
+                if (version >= 70) { p.waited = r.uvar(); p.handled = r.uvar(); p.charged = r.uvar() }
                 if (c < limit && c < into.size) into[c] += p
             }
         }

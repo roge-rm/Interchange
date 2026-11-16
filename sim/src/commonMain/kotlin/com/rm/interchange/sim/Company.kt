@@ -67,7 +67,9 @@ object Books {
     const val UPKEEP = 6
     /** Priority track and road, and digging trains out of snow on it. */
     const val PRIORITY = 7
-    const val COUNT = 8
+    /** Handling charges for transfers, paid out and taken in at the company's stations. */
+    const val HANDLING = 8
+    const val COUNT = 9
 }
 
 /** Months of money kept for the finance graphs. */

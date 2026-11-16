@@ -144,6 +144,8 @@ class CargoDef(
     val towns: Boolean?,
     /** False for cargo that spoils in an industry's store. */
     val keeps: Boolean? = null,
+    /** Its [Handling] class, or null for general freight. */
+    val handling: Int? = null,
 )
 
 /** How far into a town a building stands, as bits, from the outskirts in to the centre. */
@@ -281,6 +283,9 @@ object Packs {
                     f.int("rate", 1, 1000, need = fresh), f.int("grace", 0, 365, need = fresh), f.int("decay", 0, 100, need = fresh),
                     f.int("pace", 1, 10, need = fresh), f.int("fast", 0, 400), f.int("kg", 1, 100_000, need = fresh), colour, f.bool("towns"),
                     f.bool("keeps"),
+                    f.string("handling")?.let { h ->
+                        Handling.KEYS.indexOf(h).takeIf { it >= 0 } ?: run { problems += "${f.where}: \"handling\" should be one of ${Handling.KEYS.joinToString()}"; null }
+                    },
                 )
                 f.done()
             }

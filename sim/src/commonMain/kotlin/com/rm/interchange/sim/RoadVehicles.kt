@@ -488,9 +488,14 @@ private fun World.driveRoadVehicle(v: RoadVehicle, on: HashMap<Int, ArrayList<Ro
                 else -> true
             }
             if (s != null && !v.toDepot && !due && !loaded()) {
-                loadAt(v, s)
+                val handled = loadTimed(v, s)
                 if (!loaded()) {
-                    v.waiting = FULL_LOAD_RETRY
+                    v.waiting = FULL_LOAD_RETRY + handled
+                    return
+                }
+                // Full: it stays while what it took on is handled.
+                if (handled > 0) {
+                    v.waiting = handled
                     return
                 }
             }

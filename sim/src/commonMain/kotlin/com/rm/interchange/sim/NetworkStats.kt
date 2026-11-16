@@ -94,6 +94,7 @@ internal fun World.networkStatsMonth() {
     tripsLast.clear()
     tripsLast.putAll(tripsMonth)
     tripsMonth.clear()
+    flowsMonthEnd()
     for (s in stations) {
         if (s == null) continue
         s.waitedTicks.copyInto(s.waitedLastMonth)

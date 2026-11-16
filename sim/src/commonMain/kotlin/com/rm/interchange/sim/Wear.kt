@@ -262,6 +262,7 @@ internal fun World.upkeepDay() {
     for (s in stations) {
         if (s == null || s.waypoint || s.owner !in 0 until MAX_COMPANIES) continue
         owed[s.owner] += s.stops.size.toLong() * Upkeep.STOP + s.docks.size.toLong() * Upkeep.DOCK
+        if (s.equipment != 0) owed[s.owner] += stationEquipmentUpkeep(s)
     }
     for (i in canals) { val o = owner[i].toInt(); if (o in 0 until MAX_COMPANIES) owed[o] += Upkeep.CANAL.toLong() }
     for (i in locks.keys) { val o = owner[i].toInt(); if (o in 0 until MAX_COMPANIES) owed[o] += Upkeep.CANAL.toLong() }

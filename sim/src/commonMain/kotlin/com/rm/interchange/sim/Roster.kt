@@ -257,7 +257,7 @@ class Roster(
                         cargoIds[c.id] = kinds.size
                         kinds += CargoKind(
                             kinds.size, c.id, pack.id, c.names!!, c.units!!, c.rate!!, c.grace!!, c.decay!!, c.pace!!, c.fast ?: 0, c.kg!!,
-                            c.towns ?: false, c.colour!!, c.keeps ?: true,
+                            c.towns ?: false, c.colour!!, c.keeps ?: true, c.handling ?: Handling.GENERAL,
                         )
                         continue
                     }
@@ -266,6 +266,7 @@ class Roster(
                     kinds[at] = CargoKind(
                         at, o.key, o.pack, c.names ?: o.names, c.units ?: o.units, c.rate ?: o.rate, c.grace ?: o.grace, c.decay ?: o.decay,
                         c.pace ?: o.pace, c.fast ?: o.fast, c.kg ?: o.kg, c.towns ?: o.towns, c.colour ?: o.colour, c.keeps ?: o.keeps,
+                        c.handling ?: o.handling,
                     )
                 }
                 for (v in pack.vehicles) {

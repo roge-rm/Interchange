@@ -246,6 +246,9 @@ sealed interface Command {
         override fun hashCode() = company * 31 + pixels.contentHashCode()
     }
 
+    /** Builds terminal equipment [part], an [Equipment] part, at [station], or with [remove] takes it away. */
+    data class Equip(override val company: Int, val station: Int, val part: Int, val remove: Boolean = false) : Command
+
     /** Takes on [contract], its place in [World.contracts], if it's still on offer. */
     data class AcceptContract(override val company: Int, val contract: Int) : Command
 

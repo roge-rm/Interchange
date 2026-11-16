@@ -735,7 +735,7 @@ private fun World.profitAWorkYear(c: Company): Long {
 }
 
 /** A year's books after running costs, upkeep and interest. */
-private fun made(y: LongArray) = y[Books.INCOME] + y[Books.RUNNING] + y[Books.UPKEEP] + y[Books.PRIORITY] + y[Books.INTEREST]
+private fun made(y: LongArray) = y[Books.INCOME] + y[Books.RUNNING] + y[Books.UPKEEP] + y[Books.PRIORITY] + y[Books.HANDLING] + y[Books.INTEREST]
 
 /**
  * Whether rival [c] owes the bank and lost money on what it runs last year and still does, so it pays back what it

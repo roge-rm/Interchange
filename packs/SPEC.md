@@ -209,6 +209,7 @@ In a game with stockpiles on, an industry keeps a store of each cargo it takes a
 | colour | yes | Its colour in the game's lists and charts, `"#rrggbb"`. |
 | towns | no | `true` if towns take it at stations with 60 or more people round them, as they take goods. Otherwise only industries that accept it take it. |
 | keeps | no | `false` for cargo that spoils in an industry's store, as livestock, food and fish do. `true` if not given. |
+| handling | no | How stations handle it, for handling time and charges: `people`, `bulk`, `general`, `liquid` or `livestock`. `general` if not given. |
 
 New cargo come after the base pack's 20, in pack order and then in file order. A game can have 32 cargo at most, so 12 from packs. A cargo's place can't change once a game is saved: a saved game only loads with packs giving the same cargo in the same order.
 

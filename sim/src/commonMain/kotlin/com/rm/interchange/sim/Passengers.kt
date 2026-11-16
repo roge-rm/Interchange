@@ -24,9 +24,16 @@ package com.rm.interchange.sim
  * it's [waitingFrom] less [since], which doesn't grow while it waits.
  * [credit] is what its earlier legs have been credited to the trains that
  * carried them; [boarded] is the station it got on its present train at, and
- * [waitingFrom] when it started waiting at the station it's at.
+ * [waitingFrom] when it started waiting at the station it's at. With handling
+ * on, [waited] and [handled] are unit-ticks spent waiting at stations before
+ * it boarded and being handled, and [charged] the transfer charges paid on it
+ * in cents, for the flow stats.
  */
-class Packet(val dest: Int, val origin: Int, var count: Int, val since: Long, var credit: Long = 0, var boarded: Int = -1, var waitingFrom: Long = since)
+class Packet(val dest: Int, val origin: Int, var count: Int, val since: Long, var credit: Long = 0, var boarded: Int = -1, var waitingFrom: Long = since) {
+    var waited = 0L
+    var handled = 0L
+    var charged = 0L
+}
 
 /** How far from its platforms a station gathers from, in tiles each way. */
 const val CATCHMENT = 4
@@ -328,14 +335,16 @@ fun World.nextHop(from: Int, dest: Int, c: Int = Cargo.PASSENGERS): Int {
  * Adds [n] to station [s]'s cargo [c] for [dest], with the lot from the same place already waiting if there is one
  * and it's been on board as long. [since] is the tick its time on board started from: now for new cargo.
  */
-internal fun World.addWaiting(s: Station, c: Int, dest: Int, origin: Int, n: Int, since: Long, credit: Long = 0) {
-    if (n <= 0) return
+internal fun World.addWaiting(s: Station, c: Int, dest: Int, origin: Int, n: Int, since: Long, credit: Long = 0): Packet? {
+    if (n <= 0) return null
     val aboard = tick - since
     val same = s.cargo[c].firstOrNull { it.dest == dest && it.origin == origin && it.waitingFrom - it.since == aboard }
     if (same != null) {
         same.count += n
         same.credit += credit
-    } else s.cargo[c] += Packet(dest, origin, n, since, credit, -1, tick)
+        return same
+    }
+    return Packet(dest, origin, n, since, credit, -1, tick).also { s.cargo[c] += it }
 }
 
 /**
@@ -388,7 +397,7 @@ internal fun World.passengersDay() {
     for (sid in made.keys.sorted()) {
         val s = stations.getOrNull(sid) ?: continue
         for (cg in 0 until cargoCount) {
-            val n = minOf(made.getValue(sid)[cg], MAX_WAITING - s.waiting(cg))
+            val n = minOf(made.getValue(sid)[cg], (if (settings.handling) waitCap(s, cg) else MAX_WAITING) - s.waiting(cg))
             if (n <= 0) continue
             val reachable = nextHops[cg][sid]?.keys?.sorted().orEmpty()
             // Where it can go: stations that take it, people for passengers and mail weighed by how many over how
@@ -421,8 +430,10 @@ internal fun World.passengersDay() {
     for (s in stations) {
         if (s == null) continue
         for (cg in 0 until cargoCount) {
-            s.cargo[cg].removeAll { p ->
-                val old = tick - p.waitingFrom > GIVE_UP_DAYS * Calendar.TICKS_PER_DAY.toLong()
+            // Stored freight never gives up.
+            val most = if (settings.handling) giveUpTicks(s, cg) else GIVE_UP_DAYS * Calendar.TICKS_PER_DAY.toLong()
+            if (most >= 0) s.cargo[cg].removeAll { p ->
+                val old = tick - p.waitingFrom > most
                 if (old) s.gaveUp[cg] += p.count
                 old
             }
@@ -449,7 +460,8 @@ internal fun World.ratingTarget(s: Station, c: Int): Int {
         days <= 52 -> 25
         else -> 0
     }
-    val waiting = s.waiting(c)
+    // Stored freight counts for less, so a full warehouse doesn't spoil the rating.
+    val waiting = if (settings.handling && stores(s, c)) s.waiting(c) / Handling.STORE_TIMES else s.waiting(c)
     r += when {
         waiting <= 100 -> 40
         waiting <= 300 -> 30
@@ -552,7 +564,8 @@ internal fun World.nextStop(t: Carrier): Int {
  * and their leg is credited to the train, then on get those whose next stop
  * is the train's. An order to unload sets everything down, paid where the
  * station takes it; one to transfer sets everything down to change trains;
- * one not to load takes nothing on.
+ * one not to load takes nothing on. With handling on the stop takes longer by
+ * what's moved and cargo set down to change pays a charge.
  */
 internal fun World.callAt(t: Carrier, s: Station, o: Int = 0) {
     if (t.orders.getOrNull(t.order)?.let { Order.station(it) } == s.id) reachOrder(t)
@@ -572,7 +585,10 @@ internal fun World.callAt(t: Carrier, s: Station, o: Int = 0) {
     val unload = Order.has(o, Order.UNLOAD)
     val transfer = Order.has(o, Order.TRANSFER)
     var paid = 0L
+    val tally = if (settings.handling) CallTally() else null
+    var charges = 0L
     for (c in 0 until cargoCount) {
+        val cl = roster.cargo.handling[c]
         val stay = ArrayList<Packet>()
         for (p in t.cargo[c]) {
             val from = stations.getOrNull(p.origin)
@@ -588,10 +604,16 @@ internal fun World.callAt(t: Carrier, s: Station, o: Int = 0) {
                     taker?.let { bring(it, c, p.count) }
                     delivered(company.id, c, p.count, from, s, taker)
                     if (c == Cargo.PASSENGERS) linkKey(from.id, s.id).let { k -> tripsMonth[k] = (tripsMonth[k] ?: 0) + p.count }
+                    if (tally != null) {
+                        tally.move(cl, p, p.count)
+                        tally.delivered += p
+                        tally.deliveredFrom += from.id
+                        tally.deliveredCargo += c
+                    }
                     // The legs before were credited to the trains that carried them; this one gets the rest.
                     t.profitThisYear += full - p.credit
                 }
-                arrived -> {}
+                arrived -> tally?.let { it.moved[cl] += p.count }
                 transfer || unload || (p.dest >= 0 && nextHop(s.id, p.dest, c) != next) -> {
                     // Changing here: the leg it's done on this train is this train's, up to what the whole journey will pay.
                     val boarded = stations.getOrNull(p.boarded)
@@ -600,7 +622,16 @@ internal fun World.callAt(t: Carrier, s: Station, o: Int = 0) {
                     val whole = if (from != null && dest != null) pay(fare(roster.cargo, c, p.count, from, dest, days(p), ticks(p))) else leg
                     val credit = minOf(leg, maxOf(0L, whole - p.credit))
                     t.profitThisYear += credit
-                    addWaiting(s, c, p.dest, p.origin, p.count, p.since, p.credit + credit)
+                    val lot = addWaiting(s, c, p.dest, p.origin, p.count, p.since, p.credit + credit)
+                    if (tally != null && lot != null) {
+                        val cents = transferCharge(cl, p.count)
+                        charges += cents
+                        // What it had waited and been handled and charged so far goes with it.
+                        lot.waited += p.waited
+                        lot.handled += p.handled
+                        lot.charged += p.charged + cents
+                        tally.move(cl, lot, p.count)
+                    }
                 }
                 else -> stay += p
             }
@@ -612,11 +643,36 @@ internal fun World.callAt(t: Carrier, s: Station, o: Int = 0) {
         earn(company, Books.INCOME, paid)
         payments += Payment(s.places.first(), paid, tick, company.id)
     }
-    if (!Order.has(o, Order.NO_LOAD)) loadAt(t, s)
+    if (!Order.has(o, Order.NO_LOAD)) loadAt(t, s, tally)
+    if (tally != null) {
+        // The charges go to the station's owner when it's someone else's.
+        val dollars = charges / 100
+        if (dollars > 0) {
+            spend(company, Books.HANDLING, dollars)
+            t.profitThisYear -= dollars
+            companies.getOrNull(s.owner)?.takeIf { it.id != company.id && !it.gone }?.let { earn(it, Books.HANDLING, dollars) }
+        }
+        val ticks = handlingTicks(t, s, tally)
+        settleCall(tally, ticks, s.id)
+        t.waiting += ticks
+    }
 }
 
-/** Train [t] at station [s] takes on what's waiting for its next stop, as much as it has room for. */
-internal fun World.loadAt(t: Carrier, s: Station) {
+/** [loadAt] with handling time, for a vehicle waiting to fill up: the ticks loading took, 0 without handling. */
+internal fun World.loadTimed(t: Carrier, s: Station): Int {
+    if (!settings.handling) {
+        loadAt(t, s)
+        return 0
+    }
+    val tally = CallTally()
+    loadAt(t, s, tally)
+    val ticks = handlingTicks(t, s, tally)
+    settleCall(tally, ticks, s.id)
+    return ticks
+}
+
+/** Train [t] at station [s] takes on what's waiting for its next stop, as much as it has room for, counted in [tally]. */
+internal fun World.loadAt(t: Carrier, s: Station, tally: CallTally? = null) {
     val next = nextStop(t)
     for (c in 0 until cargoCount) {
         // Trucks go half loaded on the spring thaw's load limits.
@@ -642,7 +698,21 @@ internal fun World.loadAt(t: Carrier, s: Station) {
             }
             // A share of the lot's credit goes with those who board, and its time on board carries on from where it was.
             val credit = p.credit * take / p.count
-            t.cargo[c] += Packet(p.dest, p.origin, take, tick - (p.waitingFrom - p.since), credit, s.id)
+            val on = Packet(p.dest, p.origin, take, tick - (p.waitingFrom - p.since), credit, s.id)
+            if (tally != null) {
+                // Its share of the lot's waiting, handling and charges, and its wait here.
+                val waited = p.waited * take / p.count
+                val handled = p.handled * take / p.count
+                val charged = p.charged * take / p.count
+                on.waited = waited + (tick - p.waitingFrom) * take
+                on.handled = handled
+                on.charged = charged
+                p.waited -= waited
+                p.handled -= handled
+                p.charged -= charged
+                tally.move(roster.cargo.handling[c], on, take)
+            }
+            t.cargo[c] += on
             p.count -= take
             p.credit -= credit
             room -= take

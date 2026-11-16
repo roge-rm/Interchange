@@ -43,6 +43,8 @@ class Station(val id: Int, var owner: Int, var name: String, val signX: Int, val
     val gaveUpLastMonth = IntArray(Cargo.MAX)
     /** Its service score, 0 to 100, worked out monthly by [serviceScore]; -1 before then or when it reaches nowhere. */
     var service = -1
+    /** Its terminal equipment, as bits by [Equipment] part. */
+    var equipment = 0
 }
 
 /** Every tile the station has, for its catchment. */
@@ -610,6 +612,7 @@ const val STATION_SPREAD = 12
 internal fun World.dropStation(id: Int) {
     stations[id]?.let { dropStationBuilding(it) }
     stations[id] = null
+    dropFlows(id)
     for (t in carriers()) if (removeOrders(t) { Order.station(it) == id }) {
         ordersChanged(t)
         settleOrder(t)

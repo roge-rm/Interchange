@@ -209,9 +209,14 @@ internal fun World.waitForLoad(v: Carrier, o: Int): Boolean {
     }
     val s = stations.getOrNull(Order.station(o)) ?: return false
     if (loaded()) return false
-    loadAt(v, s)
-    if (loaded()) return false
-    v.waiting = FULL_LOAD_RETRY
+    val handled = loadTimed(v, s)
+    if (loaded()) {
+        // Full: it stays while what it took on is handled.
+        if (handled == 0) return false
+        v.waiting = handled
+        return true
+    }
+    v.waiting = FULL_LOAD_RETRY + handled
     return true
 }
 

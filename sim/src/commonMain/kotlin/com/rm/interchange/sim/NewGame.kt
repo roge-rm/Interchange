@@ -59,6 +59,8 @@ data class NewGame(
     val stockpiles: Boolean = true,
     /** Industries and towns offer delivery contracts, with stockpiles on. */
     val contracts: Boolean = true,
+    /** Stops take longer by what's handled, stations can buy terminal equipment and transfers pay a handling charge. */
+    val handling: Boolean = true,
 ) {
     companion object {
         val DAY_LENGTHS = intArrayOf(1, 2, 4, 6, 10, 16)

@@ -89,6 +89,7 @@ internal fun World.restart(c: Company, news: Boolean = true) {
     c.upkeepOwed = 0
     c.priorityOwed = 0
     dropPriority(c.id)
+    dropEquipmentOf(c.id)
     c.thisYear.fill(0)
     c.lastYear.fill(0)
     c.history.clear()
@@ -114,6 +115,8 @@ internal fun World.takeOver(from: Company, to: Company) {
         if (roadOwner[i] == a) { roadOwner[i] = b; touched(i % width, i / width) }
     }
     for (g in goals) g.count[from.id] = 0
+    // Terminal equipment doesn't go with the stations.
+    dropEquipmentOf(from.id)
     for (s in stations) if (s != null && s.owner == from.id) s.owner = to.id
     for (d in depots) if (d != null && d.owner == from.id) d.owner = to.id
     for (s in spans) if (s != null && s.owner == from.id) s.owner = to.id
@@ -164,6 +167,7 @@ internal fun World.dissolve(c: Company) {
     for (v in aircraft) if (v != null && v.owner == c.id) aircraft[v.id] = null
     for (groups in c.groups) groups.clear()
     c.upgrades.clear()
+    dropEquipmentOf(c.id)
     c.orderBackups.fill(null)
     // With nothing standing on them, Clear takes up what's on each of its tiles; the bank pays.
     c.money = Long.MAX_VALUE / 4

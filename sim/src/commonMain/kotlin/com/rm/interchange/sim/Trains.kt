@@ -733,9 +733,14 @@ private fun World.drive(t: Train) {
                 else -> true
             }
             if (s != null && !loaded() && !due) {
-                loadAt(t, s)
+                val handled = loadTimed(t, s)
                 if (!loaded()) {
-                    t.waiting = FULL_LOAD_RETRY
+                    t.waiting = FULL_LOAD_RETRY + handled
+                    return
+                }
+                // Full: it stays while what it took on is handled.
+                if (handled > 0) {
+                    t.waiting = handled
                     return
                 }
             }
