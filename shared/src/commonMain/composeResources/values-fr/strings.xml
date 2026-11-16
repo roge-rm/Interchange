@@ -340,6 +340,13 @@
     <string name="company_gone">Rachetée ou en faillite</string>
     <string name="company_for_sale">À vendre</string>
     <string name="company_based">Basée à %1$s</string>
+    <string name="company_based_style">Basée à %1$s, %2$s</string>
+    <string-array name="company_styles">
+        <item>Général</item>
+        <item>Fret</item>
+        <item>Maritime</item>
+        <item>Aérien</item>
+    </string-array>
     <string name="buy_company_sure_for">L’acheter pour %1$s ?</string>
     <string name="stat_value">Valeur</string>
     <string name="stat_money">Argent</string>

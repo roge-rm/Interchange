@@ -744,7 +744,9 @@ fun CompaniesWindow(world: World, onGo: (Float, Float) -> Unit, send: (com.rm.in
             val vehicles = world.trains.count { it?.owner == co.id } + world.roadVehicles.count { it?.owner == co.id } +
                 world.ships.count { it?.owner == co.id } + world.aircraft.count { it?.owner == co.id }
             val stations = world.stations.count { it != null && it.owner == co.id && !it.waypoint }
-            val home = world.rivals.firstOrNull { it.company == co.id }?.let { world.towns.getOrNull(it.home) }
+            val rival = world.rivals.firstOrNull { it.company == co.id }
+            val home = rival?.let { world.towns.getOrNull(it.home) }
+            val styles = stringArrayResource(Res.array.company_styles)
             val takeover = co.id != me && world.canTakeOver(co)
             val forSale = world.forSale(co)
             val price = if (takeover) world.takeoverPrice(co) else world.salePrice(co)
@@ -752,7 +754,7 @@ fun CompaniesWindow(world: World, onGo: (Float, Float) -> Unit, send: (com.rm.in
                 co.gone -> stringResource(Res.string.company_gone)
                 forSale -> stringResource(Res.string.company_for_sale)
                 co.id == me -> stringResource(Res.string.your_company)
-                home != null -> stringResource(Res.string.company_based, home.name)
+                home != null -> stringResource(Res.string.company_based_style, home.name, styles.getOrElse(rival.style) { "" })
                 else -> null
             }
             val tint = if (co.gone) null else com.rm.interchange.map.companyColour(co.id)

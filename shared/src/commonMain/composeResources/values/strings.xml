@@ -357,6 +357,13 @@
     <string name="company_gone">Bought out or gone under</string>
     <string name="company_for_sale">For sale</string>
     <string name="company_based">Based in %1$s</string>
+    <string name="company_based_style">Based in %1$s, %2$s</string>
+    <string-array name="company_styles">
+        <item>General</item>
+        <item>Freight</item>
+        <item>Shipping</item>
+        <item>Airline</item>
+    </string-array>
     <string name="buy_company_sure_for">Buy it for %1$s?</string>
     <string name="stat_value">Value</string>
     <string name="stat_money">Money</string>
