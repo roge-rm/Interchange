@@ -119,6 +119,9 @@ class TrainView(
     val days: Int = 0,
     /** The depot it's in when [inDepot]: its own, or one it turned in. */
     val shed: Int = depot,
+    /** Its service's id in [WorldView.services], -1 for none, and ticks it's running late, less than 0 early. */
+    val serviceId: Int = -1,
+    val late: Int = 0,
 )
 
 /** A bus, truck or streetcar as the screen shows it. */
@@ -167,6 +170,9 @@ class RoadVehicleView(
     val value: Long = 0,
     val nextService: Int = -1,
     val renewOff: Boolean = false,
+    /** Its service's id in [WorldView.services], -1 for none, and ticks it's running late, less than 0 early. */
+    val serviceId: Int = -1,
+    val late: Int = 0,
 )
 
 /** A ship as the screen shows it. */
@@ -213,6 +219,9 @@ class ShipView(
     val value: Long = 0,
     val nextService: Int = -1,
     val renewOff: Boolean = false,
+    /** Its service's id in [WorldView.services], -1 for none, and ticks it's running late, less than 0 early. */
+    val serviceId: Int = -1,
+    val late: Int = 0,
 )
 
 /** An aircraft as the screen shows it. */
@@ -262,6 +271,9 @@ class AircraftView(
     val value: Long = 0,
     val nextService: Int = -1,
     val renewOff: Boolean = false,
+    /** Its service's id in [WorldView.services], -1 for none, and ticks it's running late, less than 0 early. */
+    val serviceId: Int = -1,
+    val late: Int = 0,
 )
 
 /** An airport as the screen shows it. */
@@ -370,6 +382,8 @@ class WorldView(
     val depotTowns: Map<Int, Int> = emptyMap(),
     /** The links every company's vehicles run, by company and key; empty unless asked for. */
     val links: List<LinkView> = emptyList(),
+    /** The player's services, by key. */
+    val services: List<ServiceView> = emptyList(),
 )
 
 /**
@@ -479,7 +493,7 @@ fun World.view(company: Int = 0, withReserved: Boolean = false, withNetwork: Boo
             at = if (t.waiting > 0 && !t.inDepot) t.steps.lastOrNull()?.let { stationAt(stepTile(it))?.id } ?: -1 else -1,
             x = tx, y = ty, gap = t.gap, wagonCargo = t.wagonCargo, group = t.group, formation = t.formation.toList(), topSpeed = t.topSpeed, dieselSpeed = t.dieselSpeed,
             curveKmh = t.curveKmh, value = value(t), days = (workDay - t.built).coerceAtLeast(0), nextService = nextService(t.service, t.serviced), renewOff = t.renewOff,
-            shed = t.shedIn,
+            shed = t.shedIn, serviceId = serviceOf(t)?.key ?: -1, late = t.late,
         )
     }
     // Made once, and only if one of the player's stations has a destination to give a reason for.
@@ -538,6 +552,7 @@ fun World.view(company: Int = 0, withReserved: Boolean = false, withNetwork: Boo
                 at = if (v.waiting > 0 && !v.inDepot) roadStops[roadStepTile(v.at)] ?: -1 else -1,
                 x = rx, y = ry, shared = v.shared, gap = v.gap, group = v.group,
                 value = roadValue(v), nextService = nextService(v.service, v.serviced), renewOff = v.renewOff,
+                serviceId = serviceOf(v)?.key ?: -1, late = v.late,
             )
         },
         ships.filterNotNull().map { v ->
@@ -555,6 +570,7 @@ fun World.view(company: Int = 0, withReserved: Boolean = false, withNetwork: Boo
                 at = if (v.waiting > 0 && !v.inDepot) shipTile(v).let { t -> stations.firstOrNull { it != null && !it.waypoint && t in berths(it.id) }?.id } ?: -1 else -1,
                 x = sx, y = sy, shared = v.shared, gap = v.gap, group = v.group,
                 value = craftValue(v.price, v.built, v.info.life), nextService = nextService(v.service, v.serviced), renewOff = v.renewOff,
+                serviceId = serviceOf(v)?.key ?: -1, late = v.late,
             )
         },
         aircraft.filterNotNull().map { v ->
@@ -571,6 +587,7 @@ fun World.view(company: Int = 0, withReserved: Boolean = false, withNetwork: Boo
                 at = if (v.state == Flight.GATE && !v.inDepot) airports.getOrNull(v.at)?.station ?: -1 else -1,
                 x = ax, y = ay, shared = v.shared, gap = v.gap, group = v.group,
                 value = if (v.wreckedFor > 0) 0 else craftValue(v.price, v.built, v.info.life), nextService = nextService(v.service, v.serviced), renewOff = v.renewOff,
+                serviceId = serviceOf(v)?.key ?: -1, late = v.late,
             )
         },
         airports.filterNotNull().map { AirportView(it.id, it.station, it.kind, it.x, it.y, it.w, it.h, it.axis, it.depot, it.ils, it.deice) },
@@ -582,6 +599,7 @@ fun World.view(company: Int = 0, withReserved: Boolean = false, withNetwork: Boo
         sheds.map { shedYears[it] ?: 0 }.toIntArray(),
         depots.filter { it != null && it.owner == company && (it.kind == Depots.RAIL || it.kind == Depots.ROAD) }.associate { it!!.id to nearestTown(it.tile) },
         if (withNetwork) linkViews() else emptyList(),
+        serviceViews(company),
     )
 }
 

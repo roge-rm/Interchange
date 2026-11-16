@@ -41,6 +41,7 @@ internal fun World.inheritOrders(company: Company, kind: Int, made: Carrier?) {
         is Ship -> { made.order = 0; made.route = null }
         is Aircraft -> made.order = 0
     }
+    restartTimetable(made)
     company.orderBackups[kind] = null
     linksDirty = true
 }

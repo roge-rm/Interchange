@@ -150,6 +150,10 @@ class Train(
     override var leftFrom = -1
     override var leftAt = -1L
     override var heldTicks = 0
+    override var orderLeft = -1
+    override var orderLeftAt = -1L
+    override var orderReachedAt = -1L
+    override var late = 0
 
     /** The stations it calls at in turn, and what to do at each, packed by [Order]. */
     override val orders = ArrayList<Int>()
@@ -337,6 +341,7 @@ internal fun World.trainCommand(company: Company, c: Command.TrainOrder) {
                 g.order = 0
                 dropRoute(g)
                 g.aside = -1
+                ordersChanged(g)
             }
         }
         Command.TrainOrder.GAP -> {
@@ -352,6 +357,7 @@ internal fun World.trainCommand(company: Company, c: Command.TrainOrder) {
             // Depot orders an electric train can't take are dropped for the whole group, as ORDERS would.
             val orders = if (!t.electric) other.orders else other.orders.filter { !Order.isDepot(it) || depots.getOrNull(Order.depot(it))?.let { d -> depotWired(d) } == true }
             val group = if (orders.size == other.orders.size) listOf(t) else trains.filter { it != null && (it.shared == other.shared || it === t) }
+            val was = t.shared
             t.shared = other.shared
             t.gap = other.gap
             for (g in group) {
@@ -361,9 +367,17 @@ internal fun World.trainCommand(company: Company, c: Command.TrainOrder) {
                 g.order = 0
                 dropRoute(g)
                 g.aside = -1
+                ordersChanged(g)
             }
+            restartTimetable(t)
+            if (was != t.shared) pruneService(Command.CopyVehicle.TRAIN, was)
         }
-        Command.TrainOrder.UNSHARE -> t.shared = -1
+        Command.TrainOrder.UNSHARE -> {
+            val was = t.shared
+            t.shared = -1
+            restartTimetable(t)
+            pruneService(Command.CopyVehicle.TRAIN, was)
+        }
         Command.TrainOrder.TO_DEPOT -> {
             if (!t.inDepot) {
                 t.toDepot = !t.toDepot
@@ -402,6 +416,7 @@ internal fun World.trainCommand(company: Company, c: Command.TrainOrder) {
             trains[t.id] = null
             pruneVehicleGroup(t.owner, Command.CopyVehicle.TRAIN, t.group)
             rememberOrders(company, Command.CopyVehicle.TRAIN, t, backup)
+            pruneService(Command.CopyVehicle.TRAIN, t.shared)
         }
     }
 }
@@ -782,6 +797,7 @@ private fun World.drive(t: Train) {
     // Going via a station: once the nose is in it, on to the next order without stopping.
     val o = t.orders.getOrNull(t.order % t.orders.size.coerceAtLeast(1)) ?: 0
     if ((Order.has(o, Order.VIA) || stations.getOrNull(Order.station(o))?.waypoint == true) && stationTiles[stepTile(t.steps.last())] == Order.station(o)) {
+        reachOrder(t)
         nextOrder(t)
         dropRoute(t)
         t.aside = -1
@@ -1514,6 +1530,8 @@ private fun World.enterDepot(t: Train) {
     val d = depots.getOrNull(t.goalDepot)
     if (d == null || depotTiles[stepTile(t.steps.last())] != d.id) return
     val o = if (t.toDepot) null else t.current?.takeIf { Order.depot(it) == d.id }
+    // Sent in by the player: back on time when it comes out.
+    if (t.toDepot && !t.servicing) restartTimetable(t)
     t.depot = d.id
     t.inDepot = true
     // A stop in a depot isn't part of the link's journey time.
@@ -1530,6 +1548,7 @@ private fun World.enterDepot(t: Train) {
         serviced(t)
     }
     if (o != null) {
+        reachOrder(t)
         if (Order.depotKind(o) == Order.DEPOT_STOP) t.running = false
         nextOrder(t)
     }
@@ -1636,6 +1655,7 @@ internal fun World.nextOrder(t: Train) {
     val n = t.orders.size
     if (n == 0) return
     repeat(n) {
+        passOrder(t)
         t.order = (t.order + 1) % n
         val o = t.orders[t.order]
         if (Order.isDepot(o)) {

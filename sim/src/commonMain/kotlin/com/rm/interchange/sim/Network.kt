@@ -606,7 +606,7 @@ const val STATION_SPREAD = 12
 internal fun World.dropStation(id: Int) {
     stations[id]?.let { dropStationBuilding(it) }
     stations[id] = null
-    for (t in carriers()) t.orders.removeAll { Order.station(it) == id }
+    for (t in carriers()) if (t.orders.removeAll { Order.station(it) == id }) ordersChanged(t)
     dropLinkTimes(id)
 }
 

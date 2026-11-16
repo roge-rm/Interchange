@@ -131,6 +131,8 @@ class World(settings: NewGame, val roster: Roster = Roster.BASE, generate: Boole
     internal val linkCosts = HashMap<Long, Int>()
     /** What ran on each link this month and last, keyed [linkKey], for the screen only. Saved and left out of the checksum. */
     internal val linkStats = HashMap<Long, LinkStats>()
+    /** Each sharing group's service and timetable, keyed [serviceKey]. Saved. */
+    internal val services = HashMap<Int, Service>()
     /** The stations reaching each industry, and the industries each station reaches, by id. Not saved. */
     internal val industryStations = HashMap<Int, ArrayList<Int>>()
     internal val stationIndustries = HashMap<Int, ArrayList<Int>>()
@@ -358,6 +360,7 @@ class World(settings: NewGame, val roster: Roster = Roster.BASE, generate: Boole
             is Command.RemoveArea -> removeArea(company, command)
             is Command.CopyVehicle -> copyVehicle(company, command)
             is Command.CreateGroup -> createGroup(company, command)
+            is Command.ServiceOrder -> serviceCommand(company, command)
             is Command.BuyTrain -> {
                 for (i in 0 until command.count.coerceAtMost(MAX_AT_ONCE)) {
                     val sizeBefore = trains.size
@@ -406,6 +409,7 @@ class World(settings: NewGame, val roster: Roster = Roster.BASE, generate: Boole
             // On a calendar day tick it runs after the weather and trackDay below.
             if (tick % dayTicks != 0L) trackWorkDay()
             upkeepDay()
+            servicesDay()
             if (workDay % 7 == 0) linksWeek()
             passengersDay()
             payments.removeAll { tick - it.tick > PAYMENT_TICKS }
@@ -508,6 +512,15 @@ class World(settings: NewGame, val roster: Roster = Roster.BASE, generate: Boole
         for (k in linkTimes.keys.sorted()) { mix(k); mix(linkTimes.getValue(k).toLong()) }
         for (k in linkCosts.keys.sorted()) { mix(k); mix(linkCosts.getValue(k).toLong()) }
         for (list in listOf<List<Carrier?>>(trains, roadVehicles, ships, aircraft)) for (v in list) if (v != null) { mix(v.leftFrom.toLong()); mix(v.leftAt) }
+        for (list in listOf<List<Carrier?>>(trains, roadVehicles, ships, aircraft)) for (v in list) if (v != null) {
+            mix(v.orderLeft.toLong()); mix(v.orderLeftAt); mix(v.orderReachedAt); mix(v.late.toLong())
+        }
+        for (k in services.keys.sorted()) {
+            val sv = services.getValue(k)
+            mix(k.toLong()); mix(sv.owner.toLong()); mix(if (sv.timetabled) 1L else 0L)
+            for (ch in sv.name) mix(ch.code.toLong())
+            for (a in listOf(sv.orders, sv.planTravel, sv.planWait, sv.measuredTravel, sv.measuredWait)) { mix(a.size.toLong()); for (x in a) mix(x.toLong()) }
+        }
         for (s in stations) if (s != null) {
             for (c in s.cargo) for (p in c) { mix(p.dest.toLong()); mix(p.count.toLong()); mix(p.credit) }
             for (r in s.rating) mix(r.toLong())

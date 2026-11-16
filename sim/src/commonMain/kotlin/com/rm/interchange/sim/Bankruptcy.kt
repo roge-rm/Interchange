@@ -119,6 +119,7 @@ internal fun World.takeOver(from: Company, to: Company) {
     for (v in roadVehicles) if (v != null && v.owner == from.id) v.owner = to.id
     for (v in ships) if (v != null && v.owner == from.id) v.owner = to.id
     for (v in aircraft) if (v != null && v.owner == from.id) v.owner = to.id
+    for (sv in services.values) if (sv.owner == from.id) sv.owner = to.id
     for (s in subsidies) if (s.company == from.id) s.company = to.id
     to.trackTiles += from.trackTiles
     to.roadUpkeep += from.roadUpkeep

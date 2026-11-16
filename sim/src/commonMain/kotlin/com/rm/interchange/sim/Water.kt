@@ -41,6 +41,10 @@ class Ship(
     override var leftFrom = -1
     override var leftAt = -1L
     override var heldTicks = 0
+    override var orderLeft = -1
+    override var orderLeftAt = -1L
+    override var orderReachedAt = -1L
+    override var late = 0
     override var renewAsked = NEVER_ASKED
     override var renewFailed = false
     override var renewOff = false
@@ -418,6 +422,7 @@ internal fun World.shipCommand(company: Company, c: Command.CraftOrder) {
                 g.orders.clear()
                 for (o in c.stations) if (stations.getOrNull(Order.station(o))?.owner == company.id) g.orders += o and Order.VIA.inv()
                 g.order = 0
+                ordersChanged(g)
                 g.route = null
             }
         }
@@ -431,14 +436,22 @@ internal fun World.shipCommand(company: Company, c: Command.CraftOrder) {
             val other = ships.getOrNull(c.stations.firstOrNull() ?: -1) ?: return
             if (other.owner != company.id || other.id == v.id) return
             if (other.shared < 0) other.shared = other.id
+            val was = v.shared
             v.shared = other.shared
             v.gap = other.gap
             v.orders.clear()
             v.orders += other.orders
             v.order = 0
             v.route = null
+            restartTimetable(v)
+            if (was != v.shared) pruneService(Command.CopyVehicle.SHIP, was)
         }
-        Command.TrainOrder.UNSHARE -> v.shared = -1
+        Command.TrainOrder.UNSHARE -> {
+            val was = v.shared
+            v.shared = -1
+            restartTimetable(v)
+            pruneService(Command.CopyVehicle.SHIP, was)
+        }
         Command.TrainOrder.TO_DEPOT -> if (!v.inDepot) { v.toDepot = !v.toDepot; v.servicing = false; v.route = null }
         Command.TrainOrder.SELL -> if (v.inDepot) {
             val backup = OrderBackup(ArrayList(v.orders), v.gap)
@@ -446,6 +459,7 @@ internal fun World.shipCommand(company: Company, c: Command.CraftOrder) {
             ships[v.id] = null
             pruneVehicleGroup(v.owner, Command.CopyVehicle.SHIP, v.group)
             rememberOrders(company, Command.CopyVehicle.SHIP, v, backup)
+            pruneService(Command.CopyVehicle.SHIP, v.shared)
         }
         Command.TrainOrder.SERVICE -> v.service = !v.service
         Command.TrainOrder.AUTORENEW -> v.renewOff = !v.renewOff
@@ -515,6 +529,7 @@ private fun World.sail(v: Ship) {
             if (o != null && shipTile(v) in berths(Order.station(o))) {
                 if (!v.toDepot && !due && waitForLoad(v, o)) return
                 if (waitForGap(v, due)) return
+                passOrder(v)
                 v.order = (v.order + 1) % v.orders.size
             }
             v.route = null
@@ -602,6 +617,8 @@ private fun World.arriveShip(v: Ship) {
         val s = stations.getOrNull(target) ?: return
         if (tile !in berths(target)) return
         if (s.waypoint) {
+            reachOrder(v)
+            passOrder(v)
             v.order = (v.order + 1) % v.orders.size.coerceAtLeast(1)
             return
         }
@@ -611,6 +628,8 @@ private fun World.arriveShip(v: Ship) {
     } else if (target == -1) {
         val d = depots.getOrNull(v.depot) ?: return
         if (tile != shipyardWater(d)) return
+        // Sent in by the player: back on time when it comes out.
+        if (v.toDepot && !v.servicing) restartTimetable(v)
         v.inDepot = true
         v.leftFrom = -1
         v.running = false

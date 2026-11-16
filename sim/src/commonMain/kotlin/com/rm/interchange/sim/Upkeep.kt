@@ -100,6 +100,7 @@ internal fun World.noDepot(t: Train) {
  */
 internal fun World.depotGone(d: Depot) {
     for (v in carriers()) if (v.orders.removeAll { Order.depot(it) == d.id }) {
+        ordersChanged(v)
         if (v is Train) dropRoute(v)
         if (v is RoadVehicle) v.route = null
     }

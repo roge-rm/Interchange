@@ -45,6 +45,10 @@ internal fun World.replaceTrain(company: Company, old: Train, model: Int?) {
     made.leftFrom = old.leftFrom
     made.leftAt = old.leftAt
     made.heldTicks = old.heldTicks
+    made.orderLeft = old.orderLeft
+    made.orderLeftAt = old.orderLeftAt
+    made.orderReachedAt = old.orderReachedAt
+    made.late = old.late
     made.order = old.order
     made.toDepot = old.toDepot
     made.route = old.route
@@ -105,6 +109,10 @@ internal fun World.replaceRoadVehicle(company: Company, old: RoadVehicle, model:
     made.leftFrom = old.leftFrom
     made.leftAt = old.leftAt
     made.heldTicks = old.heldTicks
+    made.orderLeft = old.orderLeft
+    made.orderLeftAt = old.orderLeftAt
+    made.orderReachedAt = old.orderReachedAt
+    made.late = old.late
     made.inDepot = old.inDepot
     made.running = old.running
     made.waiting = old.waiting
@@ -163,6 +171,10 @@ internal fun World.replaceShip(company: Company, old: Ship, model: Int?) {
     made.leftFrom = old.leftFrom
     made.leftAt = old.leftAt
     made.heldTicks = old.heldTicks
+    made.orderLeft = old.orderLeft
+    made.orderLeftAt = old.orderLeftAt
+    made.orderReachedAt = old.orderReachedAt
+    made.late = old.late
     made.renewAsked = old.renewAsked
     made.renewFailed = old.renewFailed
     made.renewOff = old.renewOff
@@ -221,6 +233,10 @@ internal fun World.replaceAircraft(company: Company, old: Aircraft, model: Int?)
     made.leftFrom = old.leftFrom
     made.leftAt = old.leftAt
     made.heldTicks = old.heldTicks
+    made.orderLeft = old.orderLeft
+    made.orderLeftAt = old.orderLeftAt
+    made.orderReachedAt = old.orderReachedAt
+    made.late = old.late
     made.renewAsked = old.renewAsked
     made.renewFailed = old.renewFailed
     made.renewOff = old.renewOff

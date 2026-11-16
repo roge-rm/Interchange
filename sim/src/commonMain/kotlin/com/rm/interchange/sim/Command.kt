@@ -177,6 +177,24 @@ sealed interface Command {
 
     data class CreateGroup(override val company: Int, val kind: Int, val vehicle: Int, val name: String) : Command
 
+    /**
+     * Acts on the service of vehicle [vehicle] of [kind] ([CopyVehicle]'s kinds), making one for a vehicle that has
+     * none: [values] carries the timetable on (1) or off, or an order and its planned travel and wait in ticks, -1
+     * to keep one as it is.
+     */
+    class ServiceOrder(override val company: Int, val kind: Int, val vehicle: Int, val what: Int, val values: IntArray = IntArray(0), val name: String = "") : Command {
+        companion object {
+            /** A service for a vehicle not sharing, a service of one. */
+            const val START = 0
+            const val NAME = 1
+            const val TIMETABLE = 2
+            /** Plans each order's times from what was measured. */
+            const val AUTOFILL = 3
+            const val CLEAR = 4
+            const val PLAN = 5
+        }
+    }
+
     /** Pays for a new industry of [kind] somewhere on the map: built for sure if it takes cargo, prospected if not. */
     data class FundIndustry(override val company: Int, val kind: Int) : Command
 

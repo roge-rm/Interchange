@@ -101,6 +101,10 @@ class Aircraft(
     override var leftFrom = -1
     override var leftAt = -1L
     override var heldTicks = 0
+    override var orderLeft = -1
+    override var orderLeftAt = -1L
+    override var orderReachedAt = -1L
+    override var late = 0
     override var renewAsked = NEVER_ASKED
     override var renewFailed = false
     override var renewOff = false
@@ -355,6 +359,7 @@ internal fun World.aircraftCommand(company: Company, c: Command.CraftOrder) {
                 g.orders.clear()
                 for (o in c.stations) if (stations.getOrNull(Order.station(o))?.owner == company.id) g.orders += o and Order.VIA.inv()
                 g.order = 0
+                ordersChanged(g)
             }
         }
         Command.TrainOrder.GAP -> {
@@ -367,13 +372,21 @@ internal fun World.aircraftCommand(company: Company, c: Command.CraftOrder) {
             val other = aircraft.getOrNull(c.stations.firstOrNull() ?: -1) ?: return
             if (other.owner != company.id || other.id == v.id || other.wreckedFor > 0) return
             if (other.shared < 0) other.shared = other.id
+            val was = v.shared
             v.shared = other.shared
             v.gap = other.gap
             v.orders.clear()
             v.orders += other.orders
             v.order = 0
+            restartTimetable(v)
+            if (was != v.shared) pruneService(Command.CopyVehicle.AIRCRAFT, was)
         }
-        Command.TrainOrder.UNSHARE -> v.shared = -1
+        Command.TrainOrder.UNSHARE -> {
+            val was = v.shared
+            v.shared = -1
+            restartTimetable(v)
+            pruneService(Command.CopyVehicle.AIRCRAFT, was)
+        }
         Command.TrainOrder.TO_DEPOT -> if (!v.inDepot) {
             v.toDepot = !v.toDepot
             v.servicing = false
@@ -386,6 +399,7 @@ internal fun World.aircraftCommand(company: Company, c: Command.CraftOrder) {
             aircraft[v.id] = null
             pruneVehicleGroup(v.owner, Command.CopyVehicle.AIRCRAFT, v.group)
             rememberOrders(company, Command.CopyVehicle.AIRCRAFT, v, backup)
+            pruneService(Command.CopyVehicle.AIRCRAFT, v.shared)
         }
         Command.TrainOrder.SERVICE -> v.service = !v.service
         Command.TrainOrder.AUTORENEW -> v.renewOff = !v.renewOff
@@ -963,7 +977,10 @@ private fun World.atGate(v: Aircraft) {
                 if (waitForGap(v, due)) return
             }
             v.holding = 0
-            if (v.orders.isNotEmpty() && !v.toDepot) v.order = (v.order + 1) % v.orders.size
+            if (v.orders.isNotEmpty() && !v.toDepot) {
+                passOrder(v)
+                v.order = (v.order + 1) % v.orders.size
+            }
             // Due a service or a change of gear: from this stop to the nearest hangar, then on to its next order.
             if (due) forService(v)
         }
@@ -981,6 +998,7 @@ private fun World.atGate(v: Aircraft) {
     val dest = airportOf(target)
     // Somewhere it can't land at all, or out of its range from here: on to the next order.
     if (dest == null || !dest.serves(v.info) || here != null && tooFar(v, here, dest)) {
+        passOrder(v)
         v.order = (v.order + 1) % v.orders.size
         v.holding = -1
         v.waiting = Calendar.TICKS_PER_DAY / 4
@@ -1209,7 +1227,10 @@ private fun World.cruise(v: Aircraft) {
     val dest = destination(v)
     if (dest == null || !dest.serves(v.info)) {
         // Its airport's gone, or it can't land there: on to the next stop, or home.
-        if (target >= 0 && v.orders.size > 1) v.order = (v.order + 1) % v.orders.size else v.toDepot = true
+        if (target >= 0 && v.orders.size > 1) {
+            passOrder(v)
+            v.order = (v.order + 1) % v.orders.size
+        } else v.toDepot = true
         return
     }
     v.speed = minOf(v.speed + v.maxSpeed / 40 + 16, v.maxSpeed)
@@ -1276,6 +1297,7 @@ private fun World.hold(v: Aircraft) {
     }
     if (v.holding > HOLD_TICKS && v.orders.size > 1 && target >= 0) {
         // Diverted: on to its next stop with what it carries.
+        passOrder(v)
         v.order = (v.order + 1) % v.orders.size
         v.state = Flight.CRUISE
         // A wreck closing the airport has its own news.
@@ -1418,6 +1440,8 @@ private fun World.callHere(v: Aircraft, a: Airport) {
 }
 
 private fun World.intoHangar(v: Aircraft) {
+    // Sent in by the player: back on time when it comes out.
+    if (v.toDepot && !v.servicing) restartTimetable(v)
     v.inDepot = true
     v.leftFrom = -1
     v.stand = -1

@@ -60,6 +60,14 @@ interface Carrier {
     var leftAt: Long
     /** Ticks it has stood held by a signal or another vehicle since [leftAt], for the link's stats. */
     var heldTicks: Int
+    /**
+     * For its service's timetable: the order it last left and the tick, -1 if it hasn't left one it was timed at,
+     * the tick it reached its order now, -1 while on its way, and ticks it's running late, less than 0 early.
+     */
+    var orderLeft: Int
+    var orderLeftAt: Long
+    var orderReachedAt: Long
+    var late: Int
     var waiting: Int
     fun capacity(c: Int): Int
     /** Its top speed, in km/h, for station ratings. */
@@ -113,6 +121,10 @@ class RoadVehicle(
     override var leftFrom = -1
     override var leftAt = -1L
     override var heldTicks = 0
+    override var orderLeft = -1
+    override var orderLeftAt = -1L
+    override var orderReachedAt = -1L
+    override var late = 0
     val info get() = roster[model]
     var inDepot = true
     var running = false
@@ -256,6 +268,7 @@ internal fun World.roadVehicleCommand(company: Company, c: Command.RoadOrder) {
                 g.orders += orders
                 g.order = 0
                 g.route = null
+                ordersChanged(g)
             }
         }
         Command.TrainOrder.GAP -> {
@@ -268,14 +281,22 @@ internal fun World.roadVehicleCommand(company: Company, c: Command.RoadOrder) {
             val other = roadVehicles.getOrNull(c.stations.firstOrNull() ?: -1) ?: return
             if (other.owner != company.id || other.id == v.id || other.wreckedFor > 0) return
             if (other.shared < 0) other.shared = other.id
+            val was = v.shared
             v.shared = other.shared
             v.gap = other.gap
             v.orders.clear()
             v.orders += other.orders
             v.order = 0
             v.route = null
+            restartTimetable(v)
+            if (was != v.shared) pruneService(Command.CopyVehicle.ROAD, was)
         }
-        Command.TrainOrder.UNSHARE -> v.shared = -1
+        Command.TrainOrder.UNSHARE -> {
+            val was = v.shared
+            v.shared = -1
+            restartTimetable(v)
+            pruneService(Command.CopyVehicle.ROAD, was)
+        }
         Command.TrainOrder.TO_DEPOT -> if (!v.inDepot) { v.toDepot = !v.toDepot; v.servicing = false; v.route = null }
         Command.TrainOrder.TURN -> if (!v.inDepot) turnAround(v)
         Command.TrainOrder.SELL -> if (v.inDepot) {
@@ -284,6 +305,7 @@ internal fun World.roadVehicleCommand(company: Company, c: Command.RoadOrder) {
             roadVehicles[v.id] = null
             pruneVehicleGroup(v.owner, Command.CopyVehicle.ROAD, v.group)
             rememberOrders(company, Command.CopyVehicle.ROAD, v, backup)
+            pruneService(Command.CopyVehicle.ROAD, v.shared)
         }
         Command.TrainOrder.SERVICE -> v.service = !v.service
         Command.TrainOrder.AUTORENEW -> v.renewOff = !v.renewOff
@@ -545,6 +567,8 @@ private fun World.arrive(v: RoadVehicle) {
     } else if (target == -1 && depotTiles[tile] == v.goalDepot) {
         // On a depot order it's serviced and goes on to its next order, set going again unless told to stop there.
         val o = if (v.toDepot) null else v.current?.takeIf { Order.depot(it) == depotTiles[tile] }
+        // Sent in by the player: back on time when it comes out.
+        if (v.toDepot && !v.servicing) restartTimetable(v)
         v.depot = v.goalDepot
         v.inDepot = true
         v.leftFrom = -1
@@ -560,6 +584,7 @@ private fun World.arrive(v: RoadVehicle) {
             fitTires(v)
         }
         if (o != null) {
+            reachOrder(v)
             if (Order.depotKind(o) == Order.DEPOT_STOP) v.running = false
             nextRoadOrder(v)
         }
@@ -683,6 +708,7 @@ private fun World.nextRoadOrder(v: RoadVehicle) {
     val n = v.orders.size
     if (n == 0) return
     repeat(n) {
+        passOrder(v)
         v.order = (v.order + 1) % n
         val o = v.orders[v.order]
         if (Order.isDepot(o)) {

@@ -63,8 +63,18 @@ object Order {
     }
 }
 
-/** Holds a loaded vehicle until the latest departure on its list is far enough behind it. */
+/**
+ * Holds a loaded vehicle while it's early on its service's timetable, then until the latest departure on its list
+ * is far enough behind it.
+ */
 internal fun World.waitForGap(v: Carrier, due: Boolean): Boolean {
+    if (!due) {
+        val early = timetableHold(v)
+        if (early > 0) {
+            v.waiting = early
+            return true
+        }
+    }
     if (!due && v.gap > 0 && v.shared >= 0) {
         val group: List<Carrier?> = when (v) {
             is Train -> trains

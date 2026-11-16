@@ -483,6 +483,7 @@ internal fun World.nextStop(t: Carrier): Int {
  * one not to load takes nothing on.
  */
 internal fun World.callAt(t: Carrier, s: Station, o: Int = 0) {
+    if (t.orders.getOrNull(t.order)?.let { Order.station(it) } == s.id) reachOrder(t)
     // The link it has just run, timed from when it left its last stop, unless it left out a stop on the way.
     if (t.leftFrom >= 0 && t.leftAt >= 0 && t.leftFrom != s.id && stopBefore(t) == t.leftFrom) {
         timeLink(t.leftFrom, s.id, tick - t.leftAt)

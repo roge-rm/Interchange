@@ -16,7 +16,7 @@ package com.rm.interchange.sim
  */
 object Save {
     private val MAGIC = "ICHG".encodeToByteArray()
-    const val VERSION = 60
+    const val VERSION = 61
 
     /** A vehicle's [built] day as saved by [version]: work days from 36, calendar days before. */
     private fun World.builtOut(built: Int, version: Int) = if (version >= 36) built else built / settings.dayLength
@@ -280,6 +280,17 @@ object Save {
                     w.long(st.waitedLastMonth[c]); w.int(st.boardedLastMonth[c]); w.int(st.gaveUpLastMonth[c])
                 }
                 for (list in listOf<List<Carrier?>>(trains, roadVehicles, ships, aircraft)) for (v in list) if (v != null) w.int(v.heldTicks)
+            }
+            if (version >= 61) {
+                w.uvar(services.size.toLong())
+                for (k in services.keys.sorted()) {
+                    val s = services.getValue(k)
+                    w.int(s.kind); w.int(s.shared); w.int(s.owner); w.string(s.name); w.bool(s.timetabled)
+                    w.ints(s.orders); w.ints(s.planTravel); w.ints(s.planWait); w.ints(s.measuredTravel); w.ints(s.measuredWait)
+                }
+                for (list in listOf<List<Carrier?>>(trains, roadVehicles, ships, aircraft)) for (v in list) if (v != null) {
+                    w.int(v.orderLeft); w.long(v.orderLeftAt); w.long(v.orderReachedAt); w.int(v.late)
+                }
             }
         }
         val body = Squeeze.pack(w.toByteArray())
@@ -672,6 +683,30 @@ object Save {
                     st.waitedLastMonth[c] = r.long().coerceAtLeast(0); st.boardedLastMonth[c] = r.int().coerceAtLeast(0); st.gaveUpLastMonth[c] = r.int().coerceAtLeast(0)
                 }
                 for (list in listOf<List<Carrier?>>(trains, roadVehicles, ships, aircraft)) for (v in list) if (v != null) v.heldTicks = r.int().coerceAtLeast(0)
+            }
+            // Before 61 there were no services: sharing groups start with none, every vehicle on time.
+            if (version >= 61) {
+                // A service takes well over eight bytes, and there's at most one a vehicle.
+                val vehicles = trains.size.toLong() + roadVehicles.size + ships.size + aircraft.size
+                val n = r.uvar()
+                if (n !in 0..minOf(r.left / 8L, vehicles)) throw BadData("too many services")
+                repeat(n.toInt()) {
+                    val s = Service(r.int(), r.int(), r.int())
+                    if (s.kind !in 0..3 || s.shared !in 0 until (1 shl 28)) throw BadData("bad service")
+                    s.name = capName(r.string(), SERVICE_NAME_MOST)
+                    s.timetabled = r.bool()
+                    s.orders = r.ints()
+                    val times = Array(4) { r.ints() }
+                    if (times.any { it.size != s.orders.size }) throw BadData("bad service times")
+                    s.planTravel = IntArray(s.orders.size) { times[0][it].coerceIn(0, MAX_LINK_TICKS) }
+                    s.planWait = IntArray(s.orders.size) { times[1][it].coerceIn(0, MAX_LINK_TICKS) }
+                    s.measuredTravel = IntArray(s.orders.size) { times[2][it].coerceIn(-1, MAX_LINK_TICKS) }
+                    s.measuredWait = IntArray(s.orders.size) { times[3][it].coerceIn(-1, MAX_LINK_TICKS) }
+                    services[s.key] = s
+                }
+                for (list in listOf<List<Carrier?>>(trains, roadVehicles, ships, aircraft)) for (v in list) if (v != null) {
+                    v.orderLeft = r.int(); v.orderLeftAt = r.long(); v.orderReachedAt = r.long(); v.late = r.int().coerceIn(-LATE_MOST, LATE_MOST)
+                }
             }
         }
         // Vehicles' built day was a calendar day before 36, a work day since.
