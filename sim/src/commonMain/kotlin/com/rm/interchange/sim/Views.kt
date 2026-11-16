@@ -447,6 +447,8 @@ class WorldView(
     val contracts: List<ContractView> = emptyList(),
     /** Era price indices, fuel prices and their history, null with era costs off. */
     val prices: PricesView? = null,
+    /** Whether handling is on in this game, for the books to leave out its rows when it's off. */
+    val handling: Boolean = true,
 )
 
 /**
@@ -686,6 +688,7 @@ fun World.view(company: Int = 0, withReserved: Boolean = false, withNetwork: Boo
         if (withNetwork) demand else emptyList(),
         contractViews(company),
         pricesView(),
+        settings.handling,
     )
 }
 

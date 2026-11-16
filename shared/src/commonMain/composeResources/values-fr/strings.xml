@@ -290,7 +290,7 @@
     <string name="last_year">L'an dernier</string>
     <string name="book_income">Voyageurs et marchandises</string>
     <string name="book_construction">Construction</string>
-    <string name="book_new_trains">Nouveaux trains</string>
+    <string name="book_new_trains">Nouveaux véhicules</string>
     <string name="book_running">Frais d'exploitation</string>
     <string name="book_interest">Intérêts</string>
     <string name="book_sold">Trains vendus</string>
@@ -960,9 +960,9 @@
     <string name="head_wanted_trips">Les gens veulent aller</string>
     <string name="demand_towns">%1$s vers %2$s</string>
     <string name="service_score">Service</string>
-    <string name="service_good">Bon, +%1$d % de passagers</string>
+    <string name="service_good">Bon, +%1$d % de voyageurs</string>
     <string name="service_fair">Moyen</string>
-    <string name="service_poor">Faible, %1$d % de passagers</string>
+    <string name="service_poor">Faible, %1$d % de voyageurs</string>
     <string name="days_tenths">%1$d,%2$d jours</string>
     <string name="days_tenths_about">Environ %1$d,%2$d jours</string>
     <string name="waited_days">Attente de %1$d,%2$d jours</string>

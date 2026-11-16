@@ -819,7 +819,7 @@ private fun Root(settings: Settings) {
             }
             Win.Chronicle -> runner?.game?.world?.let { w -> ChronicleWindow(w, { x, y -> goTo.value = x to y; window = null }) { window = null } }
             Win.Subsidies -> runner?.game?.world?.let { w -> SubsidiesWindow(w, { x, y -> goTo.value = x to y; window = null }) { window = null } }
-            Win.Contracts -> runner?.game?.world?.let { w -> ContractsWindow(w, { x, y -> goTo.value = x to y; window = null }, { runner?.request(it) }) { window = null } }
+            Win.Contracts -> runner?.let { r -> r.game?.world?.let { w -> ContractsWindow(r, w, { x, y -> goTo.value = x to y; window = null }, { runner?.request(it) }) { window = null } } }
             Win.Goals -> runner?.game?.world?.let { w ->
                 if (editing) CompositionLocalProvider(LocalSheets provides sheets) {
                     EditorGoalsWindow(w, goalDraft, { goalDraft = it }, { slot -> picking = slot; window = null }, { runner?.request(it) }) { window = null }
@@ -1919,7 +1919,8 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
                 modifier = trayWidth, editor = editor,
             )
         }
-        if (overview) OverviewWindow(runner, view, mapSize, overviewOptions, world.roster, { mode, id ->
+        // The map's sheets, for the vehicle pictures in the link window.
+        if (overview) CompositionLocalProvider(LocalSheets provides sheets) { OverviewWindow(runner, view, mapSize, overviewOptions, world.roster, { mode, id ->
             val wv = networkView.value ?: worldView.value
             val at = when (mode) {
                 ShowVehicle.TRAIN -> wv?.trains?.firstOrNull { it.id == id }?.let { it.x to it.y }
@@ -1932,7 +1933,7 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
                 showVehicle.value = ShowVehicle(mode, id, at.first, at.second)
                 onCloseOverview()
             }
-        }, onCloseOverview)
+        }, onCloseOverview) }
         // The game thread builds the network part of the view only while something here shows it.
         val wantsNetwork = (overview && (overviewOptions.links.value || overviewOptions.link.value != null || overviewOptions.demand.value || overviewOptions.pair.value != null)) || townOpen || when (selected) {
             is Selection.Station, is Selection.Train, is Selection.RoadVehicle, is Selection.Ship, is Selection.Aircraft -> true

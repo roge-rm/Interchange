@@ -676,6 +676,9 @@ fun FinanceWindow(runner: com.rm.interchange.server.GameThread, onClose: () -> U
     val prices by produceState(runner.view?.prices, runner) {
         while (true) androidx.compose.runtime.withFrameNanos { value = runner.view?.prices }
     }
+    val handling by produceState(runner.view?.handling ?: true, runner) {
+        while (true) androidx.compose.runtime.withFrameNanos { value = runner.view?.handling ?: true }
+    }
     val co = company ?: return
     Window(stringResource(Res.string.finances), onClose, Glyph.Graph) {
         InfoRow(stringResource(Res.string.stat_money), money(co.money), valueColour = if (co.money < 0) c.bad else null)
@@ -707,7 +710,12 @@ fun FinanceWindow(runner: com.rm.interchange.server.GameThread, onClose: () -> U
             }
         }
         line("", stringResource(Res.string.this_year), stringResource(Res.string.last_year), colour = c.textDim)
-        for ((label, k) in rows) line(stringResource(label), money(co.thisYear[k]), money(co.lastYear[k]))
+        val handlingRows = setOf(com.rm.interchange.sim.Books.HANDLING, com.rm.interchange.sim.Books.HANDLING_IN)
+        for ((label, k) in rows) {
+            // With handling off its rows are left out, unless they hold money.
+            if (!handling && k in handlingRows && co.thisYear[k] == 0L && co.lastYear[k] == 0L) continue
+            line(stringResource(label), money(co.thisYear[k]), money(co.lastYear[k]))
+        }
         val total = co.thisYear.sum()
         line(stringResource(Res.string.book_total), money(total), money(co.lastYear.sum()), strong = true, colour = if (total < 0) c.bad else c.good)
         Head(stringResource(Res.string.track_upkeep))
