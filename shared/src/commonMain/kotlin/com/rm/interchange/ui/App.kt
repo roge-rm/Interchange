@@ -1130,7 +1130,7 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
                     val station = world.stationTiles[tile] ?: world.stationBuildings[tile]
                         ?: world.depotTiles[tile]?.takeIf { world.depots.getOrNull(it)?.let { d -> d.owner == me && d.kind == Depots.RAIL } == true }?.let { Order.toDepot(it) }
                     val t = worldView.value?.trains?.firstOrNull { it.id == id }
-                    if (station != null && t != null) runner.request(Command.TrainOrder(me, id, Command.TrainOrder.ORDERS, t.orders + station))
+                    if (station != null && t != null && t.orders.size < Order.ORDERS_MOST) runner.request(Command.TrainOrder(me, id, Command.TrainOrder.ORDERS, t.orders + station))
                     return
                 }
                 addingRoadStops?.let { id ->
@@ -1138,7 +1138,7 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
                     val station = world.roadStops[tile] ?: world.stationTiles[tile] ?: world.stationBuildings[tile]
                         ?: world.depotTiles[tile]?.takeIf { world.depots.getOrNull(it)?.let { d -> d.owner == me && d.kind == Depots.ROAD } == true }?.let { Order.toDepot(it) }
                     val v = worldView.value?.roadVehicles?.firstOrNull { it.id == id }
-                    if (station != null && v != null) runner.request(Command.RoadOrder(me, id, Command.TrainOrder.ORDERS, v.orders + station))
+                    if (station != null && v != null && v.orders.size < Order.ORDERS_MOST) runner.request(Command.RoadOrder(me, id, Command.TrainOrder.ORDERS, v.orders + station))
                     return
                 }
                 addingCraftStops?.let { (air, id) ->
@@ -1146,7 +1146,7 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
                     else world.docks[tile] ?: world.buoys[tile]
                     if (station != null) {
                         val orders = if (air) worldView.value?.aircraft?.firstOrNull { it.id == id }?.orders else worldView.value?.ships?.firstOrNull { it.id == id }?.orders
-                        if (orders != null) runner.request(Command.CraftOrder(me, air, id, Command.TrainOrder.ORDERS, orders + station))
+                        if (orders != null && orders.size < Order.ORDERS_MOST) runner.request(Command.CraftOrder(me, air, id, Command.TrainOrder.ORDERS, orders + station))
                     }
                     return
                 }

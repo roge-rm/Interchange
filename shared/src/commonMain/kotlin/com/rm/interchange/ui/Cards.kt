@@ -121,7 +121,7 @@ fun TrainCard(
         var sharing by remember(t.id) { mutableStateOf(false) }
         val others = view.trains.filter { it.id != t.id && it.owner == me }
         ButtonTiles(listOfNotNull(
-            addStopsTile(addingStops, onAddStops),
+            addStopsTile(addingStops, t.orders.size >= Order.ORDERS_MOST, onAddStops),
             when {
                 shared -> TileButton(Glyph.Layers, stringResource(Res.string.stop_sharing)) { order(Command.TrainOrder.UNSHARE) }
                 others.isNotEmpty() -> TileButton(Glyph.Layers, stringResource(Res.string.share_orders), lit = sharing) { sharing = !sharing }

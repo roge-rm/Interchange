@@ -237,6 +237,40 @@ class SpacingTest {
         assertEquals(255, Order.condTarget(o))
     }
 
+    @Test
+    fun spacingWithNoIntervalYetKeepsTheGapHold() {
+        val w = line(2)
+        w.order(0, Command.TrainOrder.ORDERS, 0, 1)
+        w.order(1, Command.TrainOrder.SHARE, 0)
+        w.order(0, Command.TrainOrder.GAP, 2)
+        w.service(0, Command.ServiceOrder.SPACED, 1)
+        w.run(10)
+        val s = assertNotNull(w.serviceOf(0))
+        assertTrue(s.spaced)
+        // Both stopped, so there's no interval: the gap after the other's departure still holds.
+        assertEquals(0L, w.interval(s))
+        val (a, b) = w.roadVehicles[0]!! to w.roadVehicles[1]!!
+        assertTrue(a.gap > 0)
+        b.departed = w.tick
+        assertTrue(w.waitForGap(a, due = false))
+        assertTrue(a.waiting > 0)
+    }
+
+    @Test
+    fun orderListsStopAtTheMost() {
+        val w = line(1)
+        // Orders past the most are left out, and a jump to the last one kept still fits.
+        val raw = IntArray(300) { it % 2 }.also {
+            it[0] = Order.cond(Order.IF_ALWAYS, Order.EQUAL, 0, 255)
+        }
+        w.order(0, Command.TrainOrder.ORDERS, *raw)
+        val v = w.roadVehicles[0]!!
+        assertEquals(Order.ORDERS_MOST, v.orders.size)
+        assertEquals(255, Order.condTarget(v.orders[0]))
+        // A conditional order isn't a stop.
+        assertEquals(1, Order.stops(listOf(0, Order.cond(Order.IF_ALWAYS, Order.EQUAL, 0, 0))))
+    }
+
     /**
      * Rail along y 10 with station 0 at x 10..13 and station 1 at x 40..43, a road along y 11 with a stop at x 12
      * joining station 0 and one at x 28, station 2. A train and a bus, each a service, stopped.

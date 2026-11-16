@@ -57,6 +57,8 @@ object Order {
     const val COND_VALUE_MOST = 4095
     /** Conditional orders jump by an 8-bit order index. */
     const val COND_TARGET_MOST = 255
+    /** The most orders a vehicle takes, so every jump fits in its 8 bits. */
+    const val ORDERS_MOST = COND_TARGET_MOST + 1
 
     /** The station order [o] goes to, or -1 for a depot or conditional order. */
     fun station(o: Int) = if (o and DEPOT != 0) -1 else o and 0xffff
@@ -99,14 +101,14 @@ object Order {
     /**
      * [orders] each passed through [keep], left out where it gives null, with the conditional orders' jumps moved to
      * follow: one to an order left out goes to the order after it. A conditional order jumping past the end is left
-     * out, and with no other order left none of them are kept.
+     * out, as is every order past [ORDERS_MOST], and with no other order left none of them are kept.
      */
     fun remapped(orders: List<Int>, keep: (Int) -> Int? = { it }): List<Int> {
         val n = orders.size
         val kept = arrayOfNulls<Int>(n)
         for (i in 0 until n) {
             val o = orders[i]
-            kept[i] = if (isCond(o) && condTarget(o) >= n) null else keep(o)
+            kept[i] = if (i >= ORDERS_MOST || isCond(o) && condTarget(o) >= n) null else keep(o)
         }
         // Where each old index lands: the next kept order at or after it.
         val at = IntArray(n + 1)
@@ -128,6 +130,8 @@ object Order {
         for (k in 0 until n) Order.station(orders[(from + k).mod(n)]).let { if (it >= 0) return it }
         return -1
     }
+    /** How many of [orders] go to a station: depot and conditional orders aren't stops. */
+    fun stops(orders: List<Int>) = orders.count { station(it) >= 0 }
     fun has(o: Int, flag: Int) = o and flag != 0
     fun waitDays(o: Int) = (o ushr 20) and 0xff
     fun withWait(o: Int, days: Int) = (o and (0xff shl 20).inv()) or (days.coerceIn(0, MAX_WAIT_DAYS) shl 20)
@@ -156,7 +160,8 @@ internal fun World.waitForGap(v: Carrier, due: Boolean): Boolean {
             return true
         }
     }
-    if (!due && v.gap > 0 && v.shared >= 0 && serviceOf(v)?.spaced != true) {
+    // Spacing stands in for the gap hold only once it knows its interval.
+    if (!due && v.gap > 0 && v.shared >= 0 && serviceOf(v)?.let { it.spaced && interval(it) > 0 } != true) {
         val group: List<Carrier?> = when (v) {
             is Train -> trains
             is RoadVehicle -> roadVehicles

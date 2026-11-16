@@ -155,7 +155,7 @@ private fun Facility(glyph: Glyph, label: String, has: Boolean, year: Int, from:
 @Composable
 private fun CraftOrders(view: WorldView, roster: Roster, id: Int, orders: IntArray, order: Int, glyph: Glyph, group: Int, gap: Int, others: List<SharedOrderChoice>, adding: Boolean, onAdd: () -> Unit, send: (Int, IntArray) -> Unit, service: TileButton, serviceLine: @Composable () -> Unit) {
     Head(stringResource(Res.string.orders))
-    SharedOrdersControls(view, roster, id, group, gap, others, adding, onAdd, send, service, serviceLine) {
+    SharedOrdersControls(view, roster, id, group, gap, others, adding, orders.size >= Order.ORDERS_MOST, onAdd, send, service, serviceLine) {
         OrdersList(view, id, orders, order, OrderFlags.CRAFT, glyph) { send(Command.TrainOrder.ORDERS, it) }
     }
     Box(Modifier.height(KitSpace.Tight))

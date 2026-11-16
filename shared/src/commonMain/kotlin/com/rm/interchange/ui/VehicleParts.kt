@@ -422,7 +422,7 @@ fun OrdersList(view: WorldView, vehicle: Int, orders: IntArray, order: Int, flag
         }
     }
     // A condition needs orders to jump between, and the list can only grow by so much.
-    if (orders.size < Order.COND_TARGET_MOST) {
+    if (orders.size < Order.ORDERS_MOST) {
         ActionButton(stringResource(Res.string.add_condition)) { send(orders + newCondition(), stopAt(orders + newCondition(), orders.size)) }
     }
 }
@@ -484,10 +484,10 @@ private fun OrderEditor(view: WorldView, o: Int, flags: OrderFlags, at: Int, cou
     }
 }
 
-/** The button under a vehicle's orders that starts and ends adding stops by tapping stations on the map. */
+/** The button under a vehicle's orders that starts and ends adding stops by tapping stations on the map, gone when [full]. */
 @Composable
-fun addStopsTile(adding: Boolean, onClick: () -> Unit) =
-    TileButton(Glyph.Plus, stringResource(if (adding) Res.string.done_adding else Res.string.add_stops), lit = adding, onClick = onClick)
+fun addStopsTile(adding: Boolean, full: Boolean, onClick: () -> Unit) =
+    if (full && !adding) null else TileButton(Glyph.Plus, stringResource(if (adding) Res.string.done_adding else Res.string.add_stops), lit = adding, onClick = onClick)
 
 /**
  * A vehicle's card while stops are added from the map: its [title], its [orders] in a short list that keeps the

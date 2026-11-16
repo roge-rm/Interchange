@@ -605,7 +605,7 @@ private fun holdsStand(w: Aircraft, a: Airport, s: Int) = !w.inDepot && w.at == 
  */
 private fun World.standFor(a: Airport, v: Aircraft): Int {
     val first = freeStand(a, v)
-    if (first < 0 || v.heli || v.toDepot || v.orders.size < 2) return first
+    if (first < 0 || v.heli || v.toDepot || Order.stops(v.orders) < 2) return first
     val next = airportOf(Order.nextStation(v.orders, v.order + 1))
     val join = Taxiways.spur(a.kind, endFor(a, takeOffTowards(a, next)))[0]
     val st = Taxiways.STANDS[a.kind]
@@ -1227,7 +1227,7 @@ private fun World.cruise(v: Aircraft) {
     val dest = destination(v)
     if (dest == null || !dest.serves(v.info)) {
         // Its airport's gone, or it can't land there: on to the next stop, or home.
-        if (target >= 0 && v.orders.size > 1) {
+        if (target >= 0 && Order.stops(v.orders) > 1) {
             passOrder(v)
             stepOrder(v)
         } else v.toDepot = true
@@ -1295,7 +1295,7 @@ private fun World.hold(v: Aircraft) {
         // A runway in use soon frees: that never makes it divert.
         if (why == "busy") v.holding -= 16
     }
-    if (v.holding > HOLD_TICKS && v.orders.size > 1 && target >= 0) {
+    if (v.holding > HOLD_TICKS && Order.stops(v.orders) > 1 && target >= 0) {
         // Diverted: on to its next stop with what it carries.
         passOrder(v)
         stepOrder(v)

@@ -34,6 +34,7 @@ internal fun SharedOrdersControls(
     gap: Int,
     others: List<SharedOrderChoice>,
     adding: Boolean,
+    full: Boolean,
     onAdd: () -> Unit,
     order: (Int, IntArray) -> Unit,
     service: TileButton,
@@ -46,7 +47,7 @@ internal fun SharedOrdersControls(
     stops()
     var sharing by remember(id) { mutableStateOf(false) }
     ButtonTiles(listOfNotNull(
-        addStopsTile(adding, onAdd),
+        addStopsTile(adding, full, onAdd),
         when {
             shared -> TileButton(Glyph.Layers, stringResource(Res.string.stop_sharing)) { order(Command.TrainOrder.UNSHARE, IntArray(0)) }
             others.isNotEmpty() -> TileButton(Glyph.Layers, stringResource(Res.string.share_orders), lit = sharing) { sharing = !sharing }

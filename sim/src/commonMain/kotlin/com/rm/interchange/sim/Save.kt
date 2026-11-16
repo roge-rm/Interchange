@@ -754,16 +754,18 @@ object Save {
                 for (j in c.values.indices) c.values[j] = r.int().coerceIn(0, Order.COND_VALUE_MOST)
                 for (j in c.valueNames.indices) c.valueNames[j] = capName(r.string(), COMPANY_VALUE_NAME_MOST)
             }
-            // A conditional order with a test there isn't or a jump past the end is left out, as a command would.
+            // A conditional order with a test there isn't or a jump past the end is left out, as are orders past
+            // the most a vehicle takes, as a command would.
             for (list in listOf<List<Carrier?>>(trains, roadVehicles, ships, aircraft)) for (v in list) {
-                if (v == null || v.orders.none { Order.isCond(it) }) continue
+                if (v == null || v.orders.size <= Order.ORDERS_MOST && v.orders.none { Order.isCond(it) }) continue
                 val kept = Order.remapped(v.orders) { if (Order.isCond(it)) Order.cleanCond(it) else it }
                 if (kept != v.orders) { v.orders.clear(); v.orders += kept }
+                if (v.orders.isNotEmpty() && v.order !in v.orders.indices) v.order = v.order.mod(v.orders.size)
                 settleOrder(v)
             }
             for (c in companies) for (j in c.orderBackups.indices) {
                 val b = c.orderBackups[j] ?: continue
-                if (b.orders.any { Order.isCond(it) }) {
+                if (b.orders.size > Order.ORDERS_MOST || b.orders.any { Order.isCond(it) }) {
                     val kept = Order.remapped(b.orders) { if (Order.isCond(it)) Order.cleanCond(it) else it }
                     b.orders.clear(); b.orders += kept
                 }
