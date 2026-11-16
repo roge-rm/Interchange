@@ -32,11 +32,11 @@ class ReconnectTest {
     @AfterTest
     fun stopAll() = stops.asReversed().forEach { it() }
 
-    private fun hosting(): Pair<GameThread, Host> {
+    private fun hosting(maxBacklog: Long = Host.MAX_BACKLOG): Pair<GameThread, Host> {
         val runner = GameThread({ World(NewGame(64, 64, 7, 1930, Region.MIXED, towns = 2, industries = 2, rivals = 1)) })
         runner.speed = 4
         runner.start()
-        val host = Host(runner, "Test", port = 0, hostName = "Host", announce = false, beat = beat)
+        val host = Host(runner, "Test", port = 0, hostName = "Host", announce = false, beat = beat, maxBacklog = maxBacklog)
         host.start()
         stops += { host.stop(); runner.stop() }
         return runner to host
@@ -95,10 +95,61 @@ class ReconnectTest {
         val second = join(host, "a", "Ann", company)
         assertEquals(company, second.company)
         eventually("the first connection was closed") { first.lost != null }
+        // Told why, so it doesn't join again and knock the second off.
+        assertEquals(Reject.REPLACED, first.ended)
+        assertFalse(first.dropped)
         Thread.sleep(200)
         assertEquals(1, host.players.count { it.name == "Ann" })
         // Back, and never said to have left.
         assertEquals(listOf(ChatEvent.JOINED to "Ann", ChatEvent.BACK to "Ann"), events(host.chat))
+    }
+
+    @Test
+    fun aRefusedSecondHelloLeavesTheFirstAlone() {
+        val (_, host) = hosting()
+        Thread.sleep(200)
+        val first = join(host, "a", "Ann")
+        val refused = runCatching { join(host, "a", "Ann", 15) }.exceptionOrNull()
+        assertEquals(Reject.NO_COMPANY, assertIs<Refused>(refused).reason)
+        Thread.sleep(300)
+        assertEquals(null, first.lost)
+        assertEquals(1, host.players.count { it.name == "Ann" })
+        assertEquals(listOf(ChatEvent.JOINED to "Ann"), events(host.chat))
+    }
+
+    @Test
+    fun aPlayerTooFarBehindIsToldWhy() {
+        // Any player with anything waiting to go out is too far behind.
+        val (_, host) = hosting(maxBacklog = -1)
+        Thread.sleep(200)
+        val ann = join(host, "a", "Ann")
+        eventually("Ann was let go") { ann.lost != null }
+        assertEquals(Reject.TOO_SLOW, ann.ended)
+        assertFalse(ann.dropped)
+    }
+
+    @Test
+    fun aRestartIsJoinedAgainAfterAWait() {
+        val (_, host) = hosting()
+        Thread.sleep(200)
+        val ann = join(host, "a", "Ann")
+        val wes = join(host, "w", "Wes", Message.SPECTATE)
+        host.stop(Reject.RESTARTING)
+        eventually("the game stopped") { ann.lost != null && wes.lost != null }
+        assertEquals(Reject.RESTARTING, ann.ended)
+        assertTrue(ann.dropped)
+        assertTrue(wes.dropped)
+        val again = Reconnect.of(ann, { Save.read(it.welcome!!.save) }, quick, 10_000, beat = beat, restartWait = 2_000)
+        assertTrue(again.restarting)
+        // A new game, so a new company; one watching keeps watching.
+        assertEquals(Message.NEW_COMPANY, again.hello.join)
+        assertEquals(Message.SPECTATE, Reconnect.of(wes, { Save.read(it.welcome!!.save) }).hello.join)
+        again.start()
+        Thread.sleep(200)
+        val waiting = assertIs<Reconnect.State.Trying>(again.state)
+        assertEquals(1, waiting.tries)
+        assertTrue(waiting.secondsToNext() > 0)
+        again.cancel()
     }
 
     @Test

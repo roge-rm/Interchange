@@ -1,6 +1,7 @@
 package com.rm.interchange.dedicated
 
 import com.rm.interchange.net.LanDiscovery
+import com.rm.interchange.net.Reject
 import com.rm.interchange.server.Game
 import com.rm.interchange.server.GameThread
 import com.rm.interchange.server.Host
@@ -350,9 +351,10 @@ class Server(
                 r.runner.onAutosave = { bytes -> keep(bytes, r.host) }
                 throw IllegalStateException("couldn't save this game first, so it carries on: $e")
             }
-            r.host.say("Starting a new game. Join again in a moment.", from = "Server")
+            r.host.say("Starting a new game. Players join it again in a moment.", from = "Server")
             now = null
-            r.host.stop()
+            // Players' games join the new one again by themselves after a few seconds.
+            r.host.stop(Reject.RESTARTING)
             r.runner.stop()
             Thread({
                 synchronized(swap) {

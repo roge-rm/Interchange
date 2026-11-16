@@ -1,6 +1,7 @@
 package com.rm.interchange.dedicated
 
 import com.rm.interchange.net.Message
+import com.rm.interchange.net.Reject
 import com.rm.interchange.server.ChatLine
 import com.rm.interchange.server.Remote
 import com.rm.interchange.sim.Packs
@@ -92,7 +93,13 @@ class ServerTest {
     fun aNewGameReplacesTheOldOne() {
         server.open()
         server.save()
+        val alice = Remote.join("127.0.0.1", server.gamePort!!, Message.Hello(0, "a", "Alice", "", Message.NEW_COMPANY, ""))
+        remote = alice
         server.newGame(mapOf("seed" to "9"))
+        // Told it's restarting, so her game joins the new one.
+        eventually("Alice let go") { alice.lost != null }
+        assertEquals(Reject.RESTARTING, alice.ended)
+        assertTrue(alice.dropped)
         eventually("the new game") { !status("making").boolean }
         assertEquals("9", status("seed").content)
         assertTrue(File(state, "game.ichg.old").exists())

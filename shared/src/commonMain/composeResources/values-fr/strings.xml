@@ -605,6 +605,8 @@
     <string name="reconnect_gave_up">Impossible de revenir dans la partie.</string>
     <string name="reconnect_timed_out">La partie est injoignable depuis 3 minutes.</string>
     <string name="reconnect_closed">L'hôte a fermé la partie.</string>
+    <string name="reconnect_replaced">La partie a été rejointe depuis un autre appareil.</string>
+    <string name="reconnect_too_slow">Cet appareil a pris trop de retard sur la partie.</string>
     <string name="try_again">Réessayer</string>
     <string name="back_in_game">De retour dans la partie</string>
     <string name="chat_joined">%1$s s'est joint</string>

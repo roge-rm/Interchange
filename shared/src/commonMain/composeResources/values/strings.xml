@@ -622,6 +622,8 @@
     <string name="reconnect_gave_up">Couldn't get back in.</string>
     <string name="reconnect_timed_out">The game couldn't be reached for 3 minutes.</string>
     <string name="reconnect_closed">The host closed the game.</string>
+    <string name="reconnect_replaced">This game was joined from another device.</string>
+    <string name="reconnect_too_slow">This device fell too far behind the game.</string>
     <string name="try_again">Try again</string>
     <string name="back_in_game">Back in the game</string>
     <string name="chat_joined">%1$s joined</string>

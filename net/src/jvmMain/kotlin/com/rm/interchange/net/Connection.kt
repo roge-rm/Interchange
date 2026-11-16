@@ -66,6 +66,16 @@ class Connection(private val socket: Socket, private val beat: Heartbeat = Heart
         }.apply { isDaemon = true }.start()
     }
 
+    /** Drops what's waiting to go out, sends [m] then closes; for a player too far behind to get it otherwise. */
+    fun closeWith(m: Message, why: String) {
+        if (closed.get()) return
+        val dropped = ArrayList<ByteArray>()
+        out.drainTo(dropped)
+        waiting.addAndGet(-dropped.sumOf { it.size.toLong() })
+        send(m)
+        close(why)
+    }
+
     private fun read() {
         try {
             val input = DataInputStream(BufferedInputStream(socket.getInputStream(), 1 shl 16))
@@ -132,7 +142,12 @@ class Connection(private val socket: Socket, private val beat: Heartbeat = Heart
         /** Connects to [host] on [port], or throws [IOException]. */
         fun connect(host: String, port: Int, timeoutMillis: Int = 10_000, beat: Heartbeat = Heartbeat()): Connection {
             val s = Socket()
-            s.connect(InetSocketAddress(host, port), timeoutMillis)
+            try {
+                s.connect(InetSocketAddress(host, port), timeoutMillis)
+            } catch (e: Exception) {
+                try { s.close() } catch (_: IOException) {}
+                throw e
+            }
             return Connection(s, beat)
         }
     }

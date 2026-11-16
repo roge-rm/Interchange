@@ -123,6 +123,12 @@ object Reject {
     const val NO_PACK = 7
     /** Sent to everyone in when the host closes the game. */
     const val CLOSED = 8
+    /** The same client joined again on another connection, so this one is let go. */
+    const val REPLACED = 9
+    /** Fell too far behind on reading what the game sends, so they're let go. */
+    const val TOO_SLOW = 10
+    /** The server is starting a new game; join again in a few seconds. */
+    const val RESTARTING = 11
 }
 
 /** What a [Message.Chat] from the host says happened to a player; 0 for a line someone said. */

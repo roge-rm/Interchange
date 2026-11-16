@@ -334,7 +334,7 @@ fun MultiplayerWindow(settings: Settings, onJoined: (Remote, World) -> Unit, onC
             val last = settings.rejoin
             if (last.address.isNotBlank()) {
                 ListRow(Glyph.Play, stringResource(Res.string.rejoin), listOfNotNull(last.server.takeIf { it.isNotBlank() }, where(last.address, last.port)).joinToString(" · "),
-                    if (busy == null) ({ look(last.address, last.port, last.server.ifBlank { where(last.address, last.port) }, last.company) }) else null)
+                    if (busy == null) ({ look(last.address, last.port, last.server.ifBlank { where(last.address, last.port) }, last.company.takeIf { it >= 0 } ?: Message.SPECTATE) }) else null)
             }
 
             Head(stringResource(Res.string.games_nearby))
@@ -538,10 +538,12 @@ fun LostWindow(state: Reconnect.State?, onTryAgain: () -> Unit, onClose: () -> U
                 Reject.NO_COMPANY -> stringResource(Res.string.refused_company)
                 Reject.KICKED -> stringResource(Res.string.refused_kicked)
                 Reject.CLOSED -> stringResource(Res.string.reconnect_closed)
+                Reject.REPLACED -> stringResource(Res.string.reconnect_replaced)
+                Reject.TOO_SLOW -> stringResource(Res.string.reconnect_too_slow)
                 else -> stringResource(Res.string.reconnect_gave_up)
             }
             Text(why, color = c.text, style = KitType.Body)
-            if (gave != null && gave.reason in setOf(Reconnect.TIMED_OUT, Reconnect.CANT_LOAD, Reject.FULL)) {
+            if (gave != null && gave.reason in setOf(Reconnect.TIMED_OUT, Reconnect.CANT_LOAD, Reject.FULL, Reject.TOO_SLOW)) {
                 BigButton(stringResource(Res.string.try_again), primary = true, glyph = Glyph.Play, onClick = onTryAgain)
                 BigButton(stringResource(Res.string.title_screen), glyph = Glyph.Exit, onClick = onClose)
             } else {

@@ -44,6 +44,7 @@ import com.rm.interchange.map.MapOverlays
 import com.rm.interchange.map.Moving
 import com.rm.interchange.map.vehicleAt
 import com.rm.interchange.map.NO_VEHICLE
+import com.rm.interchange.net.Message
 import com.rm.interchange.map.BuildingArt
 import com.rm.interchange.map.Sheets
 import com.rm.interchange.map.rememberPackedSheets
@@ -421,7 +422,7 @@ private fun Root(settings: Settings) {
         val keepWindow = window
         val view = kept.shown
         stopGame()
-        settings.rejoin = LastGame(remote.host, remote.port, remote.company, remote.server)
+        settings.rejoin = LastGame(remote.host, remote.port, if (remote.company >= 0) remote.company else Message.SPECTATE, remote.server)
         settings.save()
         if (again) {
             kept.carry = view
@@ -491,8 +492,11 @@ private fun Root(settings: Settings) {
         val remote = r.remote ?: return@LaunchedEffect
         while (remote.lost == null) delay(500)
         if (runner !== r) return@LaunchedEffect
-        if (!remote.dropped) lost = true
-        else if (shown) startReconnect(remote)
+        if (!remote.dropped) {
+            // The lost window says why the server ended it, if it said.
+            if (remote.ended != 0) reconnectState = Reconnect.State.GaveUp(remote.ended)
+            lost = true
+        } else if (shown) startReconnect(remote)
         else droppedAway = remote
     }
     LaunchedEffect(shown, droppedAway) {
@@ -508,7 +512,8 @@ private fun Root(settings: Settings) {
                     reconnect = null
                     reconnectState = null
                     backCount++
-                    joined(st.remote, st.world, again = true)
+                    // A new game the server started is a different world, so the view starts afresh.
+                    joined(st.remote, st.world, again = !again.restarting)
                     return@LaunchedEffect
                 }
                 is Reconnect.State.GaveUp -> {

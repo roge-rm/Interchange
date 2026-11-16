@@ -66,8 +66,8 @@ class Remote private constructor(
         private set
 
     /**
-     * After joining, the [Reject] reason the server gave for ending it: [Reject.KICKED] or [Reject.CLOSED]; 0 if it
-     * gave none.
+     * After joining, the [Reject] reason the server gave for ending it, such as [Reject.KICKED], [Reject.CLOSED] or
+     * [Reject.RESTARTING]; 0 if it gave none.
      */
     @Volatile var ended: Int = 0
         private set
@@ -78,9 +78,9 @@ class Remote private constructor(
 
     /**
      * Whether the connection ended without us leaving, being kicked or the game closing, as when the network went
-     * away or the server stopped answering; worth joining again.
+     * away, the server stopped answering or it's starting a new game; worth joining again.
      */
-    val dropped: Boolean get() = lost != null && ended == 0 && !left
+    val dropped: Boolean get() = lost != null && (ended == 0 || ended == Reject.RESTARTING) && !left
 
     @Volatile private var refused: Int = 0
     private val answered = CountDownLatch(1)

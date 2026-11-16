@@ -36,8 +36,9 @@ import java.util.concurrent.atomic.AtomicInteger
  * download it from here first.
  *
  * A player whose connection drops keeps their company. A [Message.Hello] from
- * a client already in replaces their old session, so a player who reconnects
- * before the old connection has timed out isn't in twice.
+ * a client already in replaces their old session once it's let in, so a player
+ * who reconnects before the old connection has timed out isn't in twice; the
+ * old one is told [Reject.REPLACED].
  *
  * Network threads only read and pass things on; everything touching the world
  * runs on the game thread.
@@ -63,6 +64,8 @@ class Host(
     private val packBytes: (PackRef) -> ByteArray? = { null },
     /** How often players are pinged and how long one can go quiet before they're let go. */
     beat: Heartbeat = Heartbeat(),
+    /** Bytes waiting to go to a player before they're let go; lower in tests. */
+    private val maxBacklog: Long = MAX_BACKLOG,
 ) {
     private class Session(val connection: Connection) {
         @Volatile var name = ""
@@ -131,11 +134,12 @@ class Host(
         log("Hosting $name on port $port")
     }
 
-    fun stop() {
+    /** Closes the game, telling everyone in why: [Reject.CLOSED], or [Reject.RESTARTING] for a new game they can join. */
+    fun stop(reason: Int = Reject.CLOSED) {
         closed = true
         listener.close()
         for (s in sessions) {
-            if (s.joined) s.connection.send(Message.Rejected(Reject.CLOSED))
+            if (s.joined) s.connection.send(Message.Rejected(reason))
             s.connection.close("server closed")
         }
         runner.onGameThread { g -> g.broadcast = null }
@@ -269,19 +273,13 @@ class Host(
             else -> 0
         }
         if (reason != 0) return refuse(s, reason)
-        // The same client on an older connection, perhaps one that went quiet without closing, is let go first.
-        if (hello.client.isNotEmpty()) for (o in sessions) if (o !== s && o.client == hello.client) {
-            o.replaced = true
-            o.joined = false
-            sessions.remove(o)
-            o.connection.close("replaced")
-            log("${o.name} joined again, closing their old connection")
-        }
-        val back = hello.client.isNotEmpty() && !seen.add(hello.client)
-        if (sessions.count { it.joined } >= MAX_PLAYERS) return refuse(s, Reject.FULL)
-        s.name = hello.name.take(NAME_MOST).ifBlank { "Player" }
-        s.client = hello.client
+        // The same client on an older connection doesn't count, as it's let go once this one is let in.
+        val same = { o: Session -> o !== s && hello.client.isNotEmpty() && o.client == hello.client }
+        if (sessions.count { it.joined && !same(it) } >= MAX_PLAYERS) return refuse(s, Reject.FULL)
         promised.values.removeAll { it < g.frame }
+        // A company nobody played yet, from [free], or a slot for a new one; -1 for neither.
+        var unplayed = -1
+        var slot = -1
         val company = when {
             hello.join == Message.SPECTATE -> -1
             hello.join >= 0 -> when {
@@ -292,14 +290,32 @@ class Host(
             }
             else -> {
                 free.removeAll { !playable(w, it) }
-                (free.removeFirstOrNull() ?: newSlot(w).let { slot ->
+                unplayed = free.firstOrNull() ?: -1
+                if (unplayed < 0) {
+                    slot = newSlot(w)
                     if (slot < 0) return refuse(s, Reject.FULL)
-                    promised[slot] = g.frame + Game.DELAY
-                    g.request(Command.NewCompany(slot, ""))
-                    slot
-                }).also { forget(it, g) }
+                }
+                if (unplayed >= 0) unplayed else slot
             }
         }
+        // Let in: the same client on an older connection, perhaps one that went quiet without closing, is let go.
+        for (o in sessions) if (same(o)) {
+            o.replaced = true
+            o.joined = false
+            sessions.remove(o)
+            o.connection.send(Message.Rejected(Reject.REPLACED))
+            o.connection.close("replaced")
+            log("${o.name} joined again, closing their old connection")
+        }
+        val back = hello.client.isNotEmpty() && !seen.add(hello.client)
+        s.name = hello.name.take(NAME_MOST).ifBlank { "Player" }
+        s.client = hello.client
+        if (unplayed >= 0) free.removeAt(0)
+        if (slot >= 0) {
+            promised[slot] = g.frame + Game.DELAY
+            g.request(Command.NewCompany(slot, ""))
+        }
+        if (unplayed >= 0 || slot >= 0) forget(company, g)
         s.company = company
         if (company >= 0) claims[hello.client] = company
         welcome(s, g)
@@ -369,8 +385,8 @@ class Host(
         }
         for (s in sessions) {
             if (!s.joined) continue
-            if (s.connection.backlog > MAX_BACKLOG) {
-                s.connection.close("too far behind")
+            if (s.connection.backlog > maxBacklog) {
+                s.connection.closeWith(Message.Rejected(Reject.TOO_SLOW), "too far behind")
                 continue
             }
             s.connection.send(m)

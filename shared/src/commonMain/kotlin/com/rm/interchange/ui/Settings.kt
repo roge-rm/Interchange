@@ -32,7 +32,7 @@ class Settings {
     var client = ""
     /**
      * The last game joined, for rejoining it from the multiplayer screen: its address and port, the company played
-     * there (-1 watching) and the server's name; an empty address for none. No password is kept.
+     * there (-2, Message.SPECTATE, watching) and the server's name; an empty address for none. No password is kept.
      */
     var rejoin by mutableStateOf(LastGame("", 0, -1, ""))
     /** The first-route checklist in new games. Turned off when it's dismissed or done. */
@@ -99,5 +99,5 @@ class Settings {
     }
 }
 
-/** A game joined: where it is, the company played there (-1 watching) and the server's name. */
+/** A game joined: where it is, the company played there (-2, Message.SPECTATE, watching) and the server's name. */
 data class LastGame(val address: String, val port: Int, val company: Int, val server: String)
