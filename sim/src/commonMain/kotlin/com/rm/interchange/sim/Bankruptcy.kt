@@ -81,6 +81,7 @@ internal fun World.buyCompany(buyer: Company, c: Command.BuyCompany) {
  * clean, every town thinking of it as of a stranger. A statue it had stays up as the town's own.
  */
 internal fun World.restart(c: Company, news: Boolean = true) {
+    if (contracts.isNotEmpty()) cancelContractsOf(c.id)
     c.gone = false
     c.trouble = 0
     startFunds(c)
@@ -124,6 +125,7 @@ internal fun World.takeOver(from: Company, to: Company) {
     for (v in aircraft) if (v != null && v.owner == from.id) { v.owner = to.id; v.group = -1 }
     for (sv in services.values) if (sv.owner == from.id) sv.owner = to.id
     for (s in subsidies) if (s.company == from.id) s.company = to.id
+    if (contracts.isNotEmpty()) cancelContractsOf(from.id)
     to.trackTiles += from.trackTiles
     to.roadUpkeep += from.roadUpkeep
     from.trackTiles = 0
@@ -177,6 +179,7 @@ internal fun World.dissolve(c: Company) {
     c.gone = true
     c.trouble = 0
     for (s in subsidies) if (s.company == c.id) s.months = 0
+    if (contracts.isNotEmpty()) cancelContractsOf(c.id)
     rivals.removeAll { it.company == c.id }
     roadsChanged()
     catchmentDirty = true

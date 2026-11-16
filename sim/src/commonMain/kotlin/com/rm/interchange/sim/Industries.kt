@@ -42,6 +42,8 @@ class Industry(
     /** With stockpiles, by cargo: what's been brought this month and last. */
     val broughtBy = IntArray(Cargo.MAX)
     val broughtByLast = IntArray(Cargo.MAX)
+    /** With stockpiles and a recipe, work owed in tonnes: builds by [workRate] a work day until a whole batch fits. */
+    var work = 0
 }
 
 /** Something that happened in the world worth telling the player, by kind, with the industry or town it's about. */
@@ -345,9 +347,14 @@ private fun World.workStores(ind: Industry, kind: IndustryKind, out: IntArray) {
     }
     val rate = workRate(ind)
     if (kind.hasRecipe) {
-        var batches = maxOf(1, rate / kind.recipeIn.sum())
+        // Work left over carries to the next day, so a batch bigger than a day's rate still comes at the rate over
+        // time; held to a day's rate and most of a batch, so it doesn't build up while the stores are empty.
+        val batch = kind.recipeIn.sum()
+        ind.work = minOf(ind.work + rate, rate + batch - 1)
+        var batches = ind.work / batch
         for (c in 0 until cargoCount) if (kind.recipeIn[c] > 0) batches = minOf(batches, ind.store[c] / kind.recipeIn[c])
         if (batches <= 0) return
+        ind.work -= batches * batch
         for (c in 0 until cargoCount) {
             ind.store[c] -= batches * kind.recipeIn[c]
             out[c] += batches * kind.recipeOut[c]
@@ -553,6 +560,9 @@ internal fun World.clearIndustryTiles(ind: Industry) {
 /** Shuts [ind] down: its tiles cleared, its stations no longer reaching it. */
 internal fun World.closeIndustry(ind: Industry) {
     ind.closed = true
+    ind.store.fill(0)
+    ind.stock.fill(0)
+    ind.work = 0
     clearIndustryTiles(ind)
     catchmentDirty = true
     tell(News.INDUSTRY_CLOSES, ind.id)

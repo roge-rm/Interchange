@@ -2135,7 +2135,8 @@ private fun IndustryCard(world: World, ind: Industry, x: Int, y: Int, onClose: (
                 Head(stringResource(Res.string.head_stores), Glyph.Package)
                 for (cg in stored) {
                     val n = stock.stores.getOrElse(cg) { 0 }
-                    val share = if (stock.storeCap > 0) n.toFloat() / stock.storeCap else 0f
+                    // One delivery can take a store past its cap, so the bar stops at full.
+                    val share = if (stock.storeCap > 0) (n.toFloat() / stock.storeCap).coerceIn(0f, 1f) else 0f
                     CargoRow(cg, Numbers.grouped(n.toLong()), share = 1f - share, percent = stringResource(Res.string.percent, (share * 100).toInt()))
                 }
                 val recipe = (0 until Cargo.MAX).filter { stock.recipeIn.getOrElse(it) { 0 } > 0 }
@@ -2144,7 +2145,7 @@ private fun IndustryCard(world: World, ind: Industry, x: Int, y: Int, onClose: (
                     val out = (0 until Cargo.MAX).filter { stock.recipeOut.getOrElse(it) { 0 } > 0 }
                     InfoRow(stringResource(Res.string.recipe_label), stringResource(Res.string.recipe_line, recipe.joinToString(" + ") { part(stock.recipeIn, it) }, out.joinToString(" + ") { part(stock.recipeOut, it) }), Glyph.Factory)
                 }
-                InfoRow(stringResource(Res.string.rate_label), Numbers.grouped(stock.rate.toLong()), Glyph.Speed)
+                InfoRow(stringResource(Res.string.rate_label), stringResource(Res.string.rate_line, Numbers.grouped(stock.rate.toLong())), Glyph.Speed)
             }
             val waiting = (0 until Cargo.MAX).filter { stock.stock.getOrElse(it) { 0 } > 0 }
             if (waiting.isNotEmpty()) {
@@ -2152,7 +2153,7 @@ private fun IndustryCard(world: World, ind: Industry, x: Int, y: Int, onClose: (
                 for (cg in waiting) {
                     val n = stock.stock[cg]
                     val cap = stock.stockCaps.getOrElse(cg) { 0 }
-                    val share = if (cap > 0) n.toFloat() / cap else 0f
+                    val share = if (cap > 0) (n.toFloat() / cap).coerceIn(0f, 1f) else 0f
                     CargoRow(cg, Numbers.grouped(n.toLong()), share = 1f - share, percent = stringResource(Res.string.percent, (share * 100).toInt()))
                 }
             }

@@ -78,6 +78,21 @@ class StockpileTest {
     }
 
     @Test
+    fun aRecipeBiggerThanADaysWorkComesAtTheRateOverTime() {
+        val w = world("base:steel_mill")
+        val mill = w.industries[0]
+        // A work rate of 1 a day against a batch of 3: one batch every third day, not one a day.
+        mill.level = 0
+        assertEquals(1, workRate(mill))
+        w.bring(mill, Cargo.IRON_ORE, 80)
+        w.bring(mill, Cargo.COAL, 40)
+        repeat(30) { day(w) }
+        assertEquals(20, mill.made[Cargo.STEEL])
+        assertEquals(60, mill.store[Cargo.IRON_ORE])
+        assertEquals(30, mill.store[Cargo.COAL])
+    }
+
+    @Test
     fun aFullStoreStopsTakingThatCargo() {
         val w = world("base:steel_mill")
         val mill = w.industries[0]
@@ -179,6 +194,42 @@ class StockpileTest {
         nextMonth(w)
         assertEquals(90, k.count)
         assertEquals(Contract.FAILED, k.status)
+    }
+
+    @Test
+    fun aCompanyStartingAgainOrBoughtLosesItsContractsWithoutPenalty() {
+        val w = world("base:steel_mill")
+        val k = contract(w)
+        val before = w.companies[0].thisYear[Books.INCOME]
+        w.restart(w.companies[0])
+        assertEquals(Contract.CANCELLED, k.status)
+        repeat(4) { nextMonth(w) }
+        assertEquals(0L, w.companies[0].thisYear[Books.INCOME] - before)
+        w.apply(Command.NewCompany(1, "Other"))
+        val bought = contract(w)
+        w.takeOver(w.companies[0], w.companies[1])
+        assertEquals(Contract.CANCELLED, bought.status)
+        w.restart(w.companies[0])
+        val gone = contract(w)
+        w.dissolve(w.companies[0])
+        assertEquals(Contract.CANCELLED, gone.status)
+    }
+
+    @Test
+    fun coalToATownStationByAnIndustryCountsForTheTownsContract() {
+        val w = world("base:steel_mill")
+        w.towns += Town(0, "Ayton", 12, 8, 3)
+        val s = w.stations[0]!!
+        assertEquals(0, w.stationTown(s)?.id)
+        val k = Contract(Cargo.COAL, -1, 0, 100, 3, Contract.WINTER, 0, 5_000, 10_000)
+        k.offerUntil = Int.MAX_VALUE
+        w.contracts += k
+        w.apply(Command.AcceptContract(0, 0))
+        // The mill there takes the coal and is paid for it; the town's contract counts it too.
+        w.delivered(0, Cargo.COAL, 70, s, s, w.industries[0])
+        assertEquals(70, k.count)
+        w.delivered(1, Cargo.COAL, 50, s, s, w.industries[0])
+        assertEquals(70, k.count)
     }
 
     @Test

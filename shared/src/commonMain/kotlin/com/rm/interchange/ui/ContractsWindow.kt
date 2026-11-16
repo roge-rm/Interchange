@@ -53,13 +53,14 @@ fun ContractsWindow(world: World, onGo: (Float, Float) -> Unit, send: (Command) 
         if (offers.isEmpty() && mine.isEmpty()) Text(stringResource(Res.string.no_contracts), color = c.textDim, style = KitType.Body)
         if (offers.isNotEmpty()) Head(stringResource(Res.string.contracts_offers))
         for (k in offers) {
-            val reward = if (k.season == Contract.BY_DATE) k.reward * k.months else k.reward
             val terms = when (k.season) {
-                Contract.BY_DATE -> stringResource(Res.string.contract_offer_date, money(reward), money(k.penalty))
+                Contract.BY_DATE -> stringResource(Res.string.contract_offer_date, money(k.reward), money(k.penalty))
                 Contract.WINTER -> stringResource(Res.string.contract_offer_winter, k.months, money(k.reward), money(k.penalty))
                 else -> stringResource(Res.string.contract_offer_line, k.months, money(k.reward), money(k.penalty))
             }
-            val ends = stringResource(Res.string.month_year, months.getOrElse(k.offerMonth) { "" }, k.offerYear)
+            // The last month it's open: it lapses at the start of offerMonth.
+            val last = k.offerYear * 12 + k.offerMonth - 1
+            val ends = stringResource(Res.string.month_year, months.getOrElse(last % 12) { "" }, last / 12)
             val place = contractMapPlace(world, k.id)
             Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 ListRow(Glyph.Package, contractText(world, k), terms + "\n" + stringResource(Res.string.contract_offer_ends, ends), place?.let { p -> { onGo(p.first, p.second) } })

@@ -55,7 +55,7 @@ class Contract(
         const val FAILED = 3
         /** Offered and nobody took it. */
         const val LAPSED = 4
-        /** Its industry closed; no penalty. */
+        /** Its industry closed, or its company went under, was bought or started again; no penalty. */
         const val CANCELLED = 5
     }
 }
@@ -69,7 +69,7 @@ private fun World.monthIndex(day: Int) = Calendar.year(startYear, day) * 12 + Ca
 /** Whether [month] (0 is January) is one a [Contract.WINTER] contract counts. */
 private fun winter(month: Int) = month >= 10 || month <= 2
 
-/** [n] of cargo [c] delivered by [company] to industry [taker], or else town [town]: counted for its running contracts. */
+/** [n] of cargo [c] delivered by [company] to industry [taker] if one takes it, at a station serving [town]: counted for its running contracts. */
 internal fun World.contractDelivered(company: Int, c: Int, n: Int, town: Town?, taker: Industry?) {
     for (k in contracts) {
         if (k.status != Contract.RUNNING || k.company != company || k.cargo != c) continue
@@ -140,6 +140,11 @@ private fun World.fail(i: Int, k: Contract, company: Company) {
 /** Industry [ind] has closed: its offers and running contracts end, without a penalty. */
 internal fun World.cancelContractsFor(ind: Industry) {
     for (k in contracts) if (k.industry == ind.id && (k.status == Contract.OFFERED || k.status == Contract.RUNNING)) k.status = Contract.CANCELLED
+}
+
+/** Company [id] has gone under, been bought or starts again: its running contracts end, without a penalty. */
+internal fun World.cancelContractsOf(id: Int) {
+    for (k in contracts) if (k.status == Contract.RUNNING && k.company == id) k.status = Contract.CANCELLED
 }
 
 /** [company] accepts contract [index], if it's still offered and its company is a player's. */

@@ -856,7 +856,7 @@
     <string name="contract_offer_line">%1$d months, pays %2$s a month, penalty %3$s</string>
     <string name="contract_offer_winter">%1$d months, November to March, pays %2$s a month, penalty %3$s</string>
     <string name="contract_offer_date">Pays %1$s, penalty %2$s</string>
-    <string name="contract_offer_ends">Offer ends %1$s</string>
+    <string name="contract_offer_ends">Open to the end of %1$s</string>
     <string name="contract_progress">%1$s of %2$s, %3$d met, %4$d missed</string>
     <string name="contract_progress_total">%1$s of %2$s so far</string>
     <string name="news_contract_offered">Contract offered: %1$s</string>
@@ -868,7 +868,8 @@
     <string name="head_stock">Waiting for pickup</string>
     <string name="recipe_label">Recipe</string>
     <string name="recipe_line">%1$s to %2$s</string>
-    <string name="rate_label">Works up to a day</string>
+    <string name="rate_label">Work rate</string>
+    <string name="rate_line">Up to %1$s t a day</string>
 
     <plurals name="open_in_days">
         <item quantity="one">Open in %1$d day</item>

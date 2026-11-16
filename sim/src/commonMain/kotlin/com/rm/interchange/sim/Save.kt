@@ -349,7 +349,7 @@ object Save {
                 for (d in demand) { w.int(d.townA); w.int(d.townB); w.int(d.potential); w.int(d.carried); w.bool(d.served) }
             }
             if (version >= 69) {
-                for (ind in industries) { cargoInts(ind.store); cargoInts(ind.stock); cargoInts(ind.broughtBy); cargoInts(ind.broughtByLast) }
+                for (ind in industries) { cargoInts(ind.store); cargoInts(ind.stock); cargoInts(ind.broughtBy); cargoInts(ind.broughtByLast); w.int(ind.work) }
                 w.uvar(contracts.size.toLong())
                 for (k in contracts) {
                     w.int(k.cargo); w.int(k.industry); w.int(k.town); w.int(k.amount); w.int(k.months); w.int(k.season); w.int(k.until); w.long(k.reward); w.long(k.penalty)
@@ -888,7 +888,7 @@ object Save {
             // Before 69 no stores, stocks or contracts.
             if (version >= 69) {
                 fun into(a: IntArray) = r.ints().let { v -> for (c in 0 until minOf(v.size, Cargo.MAX)) a[c] = v[c].coerceAtLeast(0) }
-                for (ind in industries) { into(ind.store); into(ind.stock); into(ind.broughtBy); into(ind.broughtByLast) }
+                for (ind in industries) { into(ind.store); into(ind.stock); into(ind.broughtBy); into(ind.broughtByLast); ind.work = r.int().coerceAtLeast(0) }
                 // Each takes seventeen bytes at the least.
                 val n = r.uvar()
                 if (n !in 0..r.left / 17L) throw BadData("too many contracts")

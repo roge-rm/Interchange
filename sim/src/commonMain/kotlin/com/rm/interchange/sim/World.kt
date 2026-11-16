@@ -594,6 +594,7 @@ class World(settings: NewGame, val roster: Roster = Roster.BASE, generate: Boole
         if (settings.stockpiles) {
             mix(if (settings.contracts) 801L else 800L)
             for (ind in industries) for (c in 0 until cargoCount) { mix(ind.store[c].toLong()); mix(ind.stock[c].toLong()); mix(ind.broughtBy[c].toLong()); mix(ind.broughtByLast[c].toLong()) }
+            for (ind in industries) mix(ind.work.toLong())
             mix(contracts.size.toLong())
             for (k in contracts) {
                 mix(k.cargo.toLong()); mix(k.industry.toLong()); mix(k.town.toLong()); mix(k.amount.toLong()); mix(k.months.toLong()); mix(k.season.toLong())
