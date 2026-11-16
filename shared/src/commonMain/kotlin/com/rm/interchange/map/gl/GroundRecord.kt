@@ -1,6 +1,7 @@
 package com.rm.interchange.map.gl
 
 import com.rm.interchange.map.Atlas
+import com.rm.interchange.map.StaticCells
 import kotlin.math.roundToInt
 
 /**
@@ -145,10 +146,11 @@ internal const val CELL_INTS = 8
 internal const val CELLS_ACROSS = 512
 
 /** Rows of a cell table each level of [sheet] takes. */
-internal fun cellRows(sheet: Int) = (cellCount(sheet) + CELLS_ACROSS - 1) / CELLS_ACROSS
+internal fun cellRows(sheet: Int) =
+    if (sheet == SpriteRecorder.SHADOW) (cellCount(sheet) + CELLS_ACROSS - 1) / CELLS_ACROSS else StaticCells.LIMIT / CELLS_ACROSS
 
 /** How many cells [sheet] ([SpriteRecorder.STATIC] or [SpriteRecorder.SHADOW]) has. */
-internal fun cellCount(sheet: Int) = (if (sheet == SpriteRecorder.SHADOW) Atlas.SHADOW_RECTS.size else Atlas.STATIC_RECTS.size) / 6
+internal fun cellCount(sheet: Int) = (if (sheet == SpriteRecorder.SHADOW) Atlas.SHADOW_RECTS.size else StaticCells.rects.size) / 6
 
 /**
  * Every cell of [sheet] at [level] as the sprite shaders read it, [CELL_INTS] ints each: sheet x, row in its page and
@@ -173,13 +175,13 @@ internal fun cellRects(sheet: Int, level: Int, pages: AtlasPages): IntArray {
             out[o + 6] = q[r + 5] / shrink
         } else {
             val lr = (cell * Atlas.LEVELS + level) * 6
-            val q = Atlas.STATIC_LEVEL_RECTS
+            val q = StaticCells.levelRects
             out[o] = q[lr]
             sy = q[lr + 1]
             out[o + 3] = q[lr + 2]
             out[o + 4] = q[lr + 3]
-            out[o + 5] = Atlas.STATIC_RECTS[r + 4] / shrink + q[lr + 4]
-            out[o + 6] = Atlas.STATIC_RECTS[r + 5] / shrink + q[lr + 5]
+            out[o + 5] = StaticCells.rects[r + 4] / shrink + q[lr + 4]
+            out[o + 6] = StaticCells.rects[r + 5] / shrink + q[lr + 5]
         }
         out[o + 1] = pages.rowIn(sy)
         out[o + 2] = pages.layerOf(sy)

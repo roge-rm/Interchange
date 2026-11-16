@@ -249,7 +249,18 @@ A vehicle's sheet:
 - Draw at full size with a clear background. Soft shadows are fine. The game cuts out what's drawn, so empty space costs nothing, but keep everything inside its cell.
 - Draw once at this size; the game makes the smaller zoom levels itself.
 
-Town buildings and industry parts use the same sheet, one tile's building to a sheet, standing on the tile with its middle at (128, 160). Every cell has to have something in it.
+A town building's or industry part's sheet draws one tile's building, standing on the tile with its middle at (128, 160), at the same size as a vehicle. Only cells 1 to 4 are used and have to have something in them; leave the rest empty. The cell is the edge of the view the building's front faces:
+
+| Cell | Edge | Front faces, on screen |
+|---|---|---|
+| 1 | XM | up and to the left |
+| 2 | XP | down and to the right |
+| 3 | YM | up and to the right |
+| 4 | YP | down and to the left |
+
+A town building faces the road it was built beside, an industry part the way its industry is turned. When the player turns the view, the game picks the cell for the edge it now faces, so a building facing XP shows cell 2, 4, 1 and 3 as the view turns once, twice, three times and back. You draw the four looks; the game does the rest. A building with the same look from every side can draw the same in all four. Pack buildings have no separate shadow, so draw a soft one in the cell if you want one, and snow isn't laid on them.
+
+`tools/template_buildings.py` draws the template's sheets to this, with an arrow on the roof pointing the way each cell faces. `packtool look my-pack look.png` draws a pack's buildings on their tiles at each cell and each turn so you can check them.
 
 The base pack's sheets, made by `tools/gen_tiles.py` from Blender renders, are the best guide to size and style.
 

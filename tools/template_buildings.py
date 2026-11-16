@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
-"""Draws the template pack's placeholder building sheets: a plain block on its tile in every cell.
+"""Draws the template pack's placeholder building sheets: a plain block on its tile in cells 1 to 4.
 
-Each cell gets its own shade so the cells can be told apart in the game. Run from the repo root:
+Cells follow packs/SPEC.md: cell 1 is a building facing the view's upper left edge (XM), 2 the lower right (XP),
+3 the upper right (YM), 4 the lower left (YP). A dark arrow on the roof points the way it faces. Run from the repo root:
     python3 tools/template_buildings.py
 """
 from PIL import Image, ImageDraw
@@ -32,12 +33,27 @@ def block(d, ox, oy, walls, roof, h, k):
     d.polygon([up(n), up(e), up(s), up(w)], fill=shade(roof, k))
 
 
+# Where each edge's middle is from the tile's middle, in half widths and half heights: XM, XP, YM, YP.
+EDGE_MIDDLE = [(-0.5, -0.5), (0.5, 0.5), (0.5, -0.5), (-0.5, 0.5)]
+
+
+def arrow(d, ox, oy, h, edge):
+    # A triangle on the roof's middle, its point towards the edge the building faces.
+    hw, hh = 100, 50
+    cx, cy = ox + STAND_X, oy + STAND_Y - h
+    tx, ty = EDGE_MIDDLE[edge]
+    tip = (cx + tx * hw * 1.4, cy + ty * hh * 1.4)
+    px, py = -ty * 0.5, tx * 0.5
+    d.polygon([tip, (cx + px * hw * 0.5, cy + py * hh * 1.0), (cx - px * hw * 0.5, cy - py * hh * 1.0)], fill=(40, 30, 30))
+
+
 def main():
     for name, (walls, roof, h) in SHEETS.items():
         img = Image.new("RGBA", (CELL * 4, CELL * 4), (0, 0, 0, 0))
         d = ImageDraw.Draw(img)
-        for c in range(16):
-            block(d, c % 4 * CELL, c // 4 * CELL, walls, roof, h, 0.7 + 0.3 * (c % 4) / 3)
+        for c in range(4):
+            block(d, c * CELL, 0, walls, roof, h, 1.0)
+            arrow(d, c * CELL, 0, h, c)
         img.save(f"packs/template/sprites/{name}.png", optimize=True)
 
 

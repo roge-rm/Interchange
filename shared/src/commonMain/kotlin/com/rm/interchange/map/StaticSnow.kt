@@ -2,11 +2,11 @@ package com.rm.interchange.map
 
 /**
  * Restore four two-bit snow values per byte, the first pixel in the low bits, into [pixels] from [from] until [to].
- * [from] is a multiple of 4, so strips can run on different threads at once.
+ * [from] is a multiple of 4, so strips can run on different threads at once. The mask covers the first [size] pixels.
  */
-internal fun restoreStaticSnow(pixels: IntArray, snow: ByteArray, from: Int = 0, to: Int = pixels.size) {
-    require(snow.size == (pixels.size + 3) / 4) { "Static snow mask does not match its colour sheet" }
-    require(from and 3 == 0 && from <= to && to <= pixels.size)
+internal fun restoreStaticSnow(pixels: IntArray, snow: ByteArray, from: Int = 0, to: Int = pixels.size, size: Int = pixels.size) {
+    require(snow.size == (size + 3) / 4) { "Static snow mask does not match its colour sheet" }
+    require(from and 3 == 0 && from <= to && to <= size && size <= pixels.size)
     // A byte at a time, four pixels each, as this runs interpreted on a fresh install.
     var i = from
     var b = from shr 2

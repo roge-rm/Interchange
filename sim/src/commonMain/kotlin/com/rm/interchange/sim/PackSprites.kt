@@ -34,11 +34,14 @@ object PackSprites {
     private const val ANCHOR_X = Packs.STAND_X
     private const val ANCHOR_Y = Packs.STAND_Y - Packs.CELL / 4
 
-    /** What's wrong with a sprite sheet, if anything. */
-    fun problems(p: Picture): List<String> {
+    /** The cells a building's sheet has to draw: one for each edge of the view it can face. The rest may be empty. */
+    const val BUILDING_CELLS = 4
+
+    /** What's wrong with a sprite sheet, if anything; only its first [cells] cells have to hold a drawing. */
+    fun problems(p: Picture, cells: Int = 16): List<String> {
         if (p.width != SIZE || p.height != SIZE) return listOf("should be $SIZE by $SIZE pixels, not ${p.width} by ${p.height}")
         val out = ArrayList<String>()
-        for (c in 0 until 16) {
+        for (c in 0 until cells) {
             val box = box(p, c)
             if (box == null) { out += "cell ${c + 1} is empty"; continue }
             val (l, t, r, b) = box

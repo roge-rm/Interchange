@@ -52,12 +52,14 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.rm.interchange.map.Atlas
+import com.rm.interchange.map.StaticCells
 import com.rm.interchange.map.Zoom
 import com.rm.interchange.map.Sheets
 import com.rm.interchange.res.Res
 import com.rm.interchange.res.cargoes
 import com.rm.interchange.res.percent
 import com.rm.interchange.sim.Engine
+import com.rm.interchange.sim.House
 import com.rm.interchange.sim.IndustryKind
 import org.jetbrains.compose.resources.stringArrayResource
 import org.jetbrains.compose.resources.stringResource
@@ -701,21 +703,21 @@ private fun DrawScope.levelFor(w0: Int, h0: Int, least: Int = 0): Pair<Int, Floa
 
 /**
  * Static sprite [sprite], [w0] by [h0] at level 0, drawn from [image] at [level] scaled by [scale] and centred. The
- * sheet holds it trimmed, moved in from its box as [Atlas.STATIC_LEVEL_RECTS] says.
+ * sheet holds it trimmed, moved in from its box as [StaticCells.levelRects] says.
  */
 private fun DrawScope.drawSprite(image: ImageBitmap, sprite: Int, w0: Int, h0: Int, level: Int, scale: Float) {
     val shrink = 1 shl level
     val lr = (sprite * Atlas.LEVELS + level) * 6
-    val sw = Atlas.STATIC_LEVEL_RECTS[lr + 2]
-    val sh = Atlas.STATIC_LEVEL_RECTS[lr + 3]
+    val sw = StaticCells.levelRects[lr + 2]
+    val sh = StaticCells.levelRects[lr + 3]
     if (sw == 0 || sh == 0) return
     val dw = (w0 * scale).toInt()
     val dh = (h0 * scale).toInt()
     val f = shrink * scale
-    val left = ((size.width - dw) / 2).toInt() + Atlas.STATIC_LEVEL_RECTS[lr + 4] * f
-    val top = ((size.height - dh) / 2).toInt() + Atlas.STATIC_LEVEL_RECTS[lr + 5] * f
+    val left = ((size.width - dw) / 2).toInt() + StaticCells.levelRects[lr + 4] * f
+    val top = ((size.height - dh) / 2).toInt() + StaticCells.levelRects[lr + 5] * f
     drawImage(
-        image, IntOffset(Atlas.STATIC_LEVEL_RECTS[lr], Atlas.STATIC_LEVEL_RECTS[lr + 1]), IntSize(sw, sh),
+        image, IntOffset(StaticCells.levelRects[lr], StaticCells.levelRects[lr + 1]), IntSize(sw, sh),
         IntOffset(left.toInt(), top.toInt()), IntSize((sw * f).toInt(), (sh * f).toInt()),
         filterQuality = FilterQuality.Medium,
     )
@@ -723,22 +725,27 @@ private fun DrawScope.drawSprite(image: ImageBitmap, sprite: Int, w0: Int, h0: I
 
 /** [e]'s drawing from the map's sheets, scaled to fit the box and centred, or [turned] round; blank until its sheet is unpacked. */
 @Composable
-fun VehiclePicture(e: Engine, modifier: Modifier, turned: Boolean = false) {
+fun VehiclePicture(e: Engine, modifier: Modifier, turned: Boolean = false) =
+    SheetPicture(e.sprite, if (turned) (PICTURE_CELL + 4) % 8 else PICTURE_CELL, modifier)
+
+/** Cell [cell] of the roster's sprite [sprite] from the map's sheets, scaled to fit the box and centred; blank until its sheet is unpacked. */
+@Composable
+fun SheetPicture(sprite: Int, cell: Int, modifier: Modifier) {
     val sheets = LocalSheets.current
     // The sheet last drawn, kept so the picture doesn't blink if Sheets lets it go while this stays on screen.
-    val held = remember(e.sprite) { arrayOfNulls<ImageBitmap>(6) }
+    val held = remember(sprite) { arrayOfNulls<ImageBitmap>(6) }
     Canvas(modifier) {
         sheets ?: return@Canvas
         // Read here so the picture draws again once the sheet below is unpacked.
         sheets.revision.intValue
-        val rects = sheets.vehicleRects(e.sprite) ?: return@Canvas
-        val r = (if (turned) (PICTURE_CELL + 4) % 8 else PICTURE_CELL) * 6
+        val rects = sheets.vehicleRects(sprite) ?: return@Canvas
+        val r = cell * 6
         val w0 = rects[r + 2]
         val h0 = rects[r + 3]
         if (w0 == 0 || h0 == 0) return@Canvas
         val (level, scale) = levelFor(w0, h0, Zoom.SHARPEST)
-        val image = sheets.vehicle(e.sprite, level)?.also { held[level] = it } ?: held[level] ?: return@Canvas
-        val at = sheets.vehicleRects(e.sprite, level) ?: return@Canvas
+        val image = sheets.vehicle(sprite, level)?.also { held[level] = it } ?: held[level] ?: return@Canvas
+        val at = sheets.vehicleRects(sprite, level) ?: return@Canvas
         // The level's own rect, placed where it sits in level 0's, which is centred.
         val f = 1 shl level
         val sw = at[r + 2]
@@ -754,17 +761,17 @@ fun VehiclePicture(e: Engine, modifier: Modifier, turned: Boolean = false) {
     }
 }
 
-/** Static sprite [sprite] (a place in [Atlas.STATIC_RECTS]), scaled to fit the box and centred; blank until its sheet is unpacked. */
+/** Static sprite [sprite] (a place in [StaticCells.rects]), scaled to fit the box and centred; blank until its sheet is unpacked. */
 @Composable
 fun StaticPicture(sprite: Int, modifier: Modifier) {
     val sheets = LocalSheets.current
     Canvas(modifier) {
         sheets ?: return@Canvas
         sheets.revision.intValue
-        if (sprite < 0 || sprite * 6 + 3 >= Atlas.STATIC_RECTS.size) return@Canvas
+        if (sprite < 0 || sprite * 6 + 3 >= StaticCells.rects.size) return@Canvas
         val r = sprite * 6
-        val w0 = Atlas.STATIC_RECTS[r + 2]
-        val h0 = Atlas.STATIC_RECTS[r + 3]
+        val w0 = StaticCells.rects[r + 2]
+        val h0 = StaticCells.rects[r + 3]
         if (w0 == 0 || h0 == 0) return@Canvas
         // Level 2 at the sharpest, as Sheets keeps it for pictures.
         val (level, scale) = levelFor(w0, h0, least = 2)
@@ -779,14 +786,27 @@ private const val PICTURE_FACING = 3
 /** An industry of [kind], as the biggest drawn piece of its layout; blank if none of its pieces are drawn. */
 @Composable
 fun IndustryPicture(kind: IndustryKind, modifier: Modifier) {
+    val sheets = LocalSheets.current
+    // A pack's own piece, the biggest, if the industry has any.
+    val own = kind.parts.values.maxByOrNull { s -> sheets?.vehicleRects(s)?.let { it[PICTURE_FACING * 6 + 2] * it[PICTURE_FACING * 6 + 3] } ?: 0 }
+    if (own != null) {
+        SheetPicture(own, PICTURE_FACING, modifier)
+        return
+    }
     val sprite = remember(kind) {
         kind.layout.flatten().distinct()
             .map { Atlas.PART_KEYS.indexOf(it) }
             .filter { it >= 0 }
             .map { Atlas.PART[it * 4 + PICTURE_FACING] }
-            .maxByOrNull { Atlas.STATIC_RECTS[it * 6 + 2] * Atlas.STATIC_RECTS[it * 6 + 3] } ?: -1
+            .maxByOrNull { StaticCells.rects[it * 6 + 2] * StaticCells.rects[it * 6 + 3] } ?: -1
     }
     StaticPicture(sprite, modifier)
+}
+
+/** A town building from a pack, by its drawing. */
+@Composable
+fun HousePicture(house: House, modifier: Modifier) {
+    if (house.sprite >= 0) SheetPicture(house.sprite, PICTURE_FACING, modifier) else HousePicture(house.key, modifier)
 }
 
 /** A town building, by its key in the base pack's houses.json; blank for one the game has no drawing of. */

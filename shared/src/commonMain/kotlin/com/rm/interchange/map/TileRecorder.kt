@@ -371,8 +371,11 @@ internal class TileRecorder(
         }
         world.industryAt(tile)?.let { ind ->
             val kind = world.roster.industries[ind.kind]
-            val art = partArt(kind.part(wx - ind.x, wy - ind.y, ind.turn))
+            val part = kind.part(wx - ind.x, wy - ind.y, ind.turn)
             val base = maxOf(maxOf(cornerHeight(vx, vy), cornerHeight(vx + 1, vy)), maxOf(cornerHeight(vx + 1, vy + 1), cornerHeight(vx, vy + 1)))
+            val own = kind.parts[part]
+            if (own != null) return if (shadow) NO_ART else art(packCell(own, viewEdge(INDUSTRY_FACING[ind.turn])), base)
+            val art = partArt(part)
             return if (art >= 0) art((if (shadow) Atlas.PART_SHADOW else Atlas.PART)[art * 4 + viewEdge(INDUSTRY_FACING[ind.turn])], base) else NO_ART
         }
         world.stationBuildingAt(tile)?.let { st ->
@@ -381,8 +384,11 @@ internal class TileRecorder(
         }
         val built = world.house[tile].toInt()
         if (built != 0) {
-            val art = houseArt(houseOf(built))
+            val kind = houseOf(built)
+            val art = houseArt(kind)
             val base = maxOf(maxOf(cornerHeight(vx, vy), cornerHeight(vx + 1, vy)), maxOf(cornerHeight(vx + 1, vy + 1), cornerHeight(vx, vy + 1)))
+            val own = world.roster.houses.getOrNull(kind)?.sprite ?: -1
+            if (own >= 0) return if (shadow) NO_ART else art(packCell(own, viewEdge(houseFacing(built))), base)
             return if (art >= 0) art((if (shadow) Atlas.HOUSE_SHADOW else Atlas.HOUSE)[art * 4 + viewEdge(houseFacing(built))], base) else NO_ART
         }
         return NOTHING
@@ -717,12 +723,12 @@ internal class TileRecorder(
         val r = cell * 6
         // The sprite as packed at this level, trimmed in from its box by dx and dy.
         val lr = (cell * Atlas.LEVELS + level) * 6
-        val sx = Atlas.STATIC_LEVEL_RECTS[lr]
-        val sy = Atlas.STATIC_LEVEL_RECTS[lr + 1]
-        val w = Atlas.STATIC_LEVEL_RECTS[lr + 2]
-        val h = Atlas.STATIC_LEVEL_RECTS[lr + 3]
-        val left = (ax + Atlas.STATIC_RECTS[r + 4] / shrink).toInt() + Atlas.STATIC_LEVEL_RECTS[lr + 4]
-        val top = (ay + Atlas.STATIC_RECTS[r + 5] / shrink).toInt() + Atlas.STATIC_LEVEL_RECTS[lr + 5]
+        val sx = StaticCells.levelRects[lr]
+        val sy = StaticCells.levelRects[lr + 1]
+        val w = StaticCells.levelRects[lr + 2]
+        val h = StaticCells.levelRects[lr + 3]
+        val left = (ax + StaticCells.rects[r + 4] / shrink).toInt() + StaticCells.levelRects[lr + 4]
+        val top = (ay + StaticCells.rects[r + 5] / shrink).toInt() + StaticCells.levelRects[lr + 5]
         recorder?.add(SpriteRecorder.STATIC, left, top, w, h, sx, sy, snow, cell, anchor(ax - originX), anchor(ay - originY), if (snowTile < 0) -1 else (snowTile % world.width) or (snowTile / world.width shl 16))
     }
 
@@ -910,6 +916,19 @@ internal class TileRecorder(
     }
 
     private fun houseArt(h: Int) = houseArts.getOrElse(h) { -1 }
+
+    /** Each pack drawing's place among [com.rm.interchange.sim.Roster.buildingSprites]. */
+    private val buildingPlace = HashMap<Int, Int>().also { m -> world.roster.buildingSprites.forEachIndexed { i, s -> m[s] = i } }
+
+    /**
+     * Pack drawing [sprite]'s cell for view edge [edge] on the static sheet, or -1 if it has none (the game's drawings
+     * for its buildings aren't set, or there were too many).
+     */
+    private fun packCell(sprite: Int, edge: Int): Int {
+        val at = buildingPlace[sprite] ?: return -1
+        val cell = StaticCells.BASE + at * 4 + edge
+        return if ((at + 1) * 4 <= StaticCells.ROOM && cell < StaticCells.count) cell else -1
+    }
 
     /** An industry piece's place in [Atlas.PART_KEYS], or -1 for one the game has no drawing of. */
     private val partArts = HashMap<String, Int>()

@@ -46,12 +46,12 @@ internal class Cover(private val world: World, private val view: View, private v
             for (k in first until first + cache.count(at) * 3 step 3) {
                 val cell = sprites[k].toInt()
                 val r = cell * 6
-                val w = Atlas.STATIC_RECTS[r + 2] / shrink
-                val h = Atlas.STATIC_RECTS[r + 3] / shrink
+                val w = StaticCells.rects[r + 2] / shrink
+                val h = StaticCells.rects[r + 3] / shrink
                 if (w == 0 || h == 0) continue
                 // As the tile recorder lays it, from its anchor, the recorder's view point 0, 0 being the screen's.
-                val left = ox + (sprites[k + 1] + Atlas.STATIC_RECTS[r + 4] / shrink) * scale
-                val top = oy + (sprites[k + 2] + Atlas.STATIC_RECTS[r + 5] / shrink) * scale
+                val left = ox + (sprites[k + 1] + StaticCells.rects[r + 4] / shrink) * scale
+                val top = oy + (sprites[k + 2] + StaticCells.rects[r + 5] / shrink) * scale
                 if (left > nr || left + w * scale < nl || top > nb || top + h * scale < nt) continue
                 columnRects(cell, w, h, left, top, scale, 0) { l, t, rr, bb, _ -> add(l, t, rr, bb) }
             }
@@ -80,12 +80,12 @@ internal class Cover(private val world: World, private val view: View, private v
             val cell = (b shr 32).toInt()
             val base = b.toInt()
             val r = cell * 6
-            val w = Atlas.STATIC_RECTS[r + 2] / shrink
-            val h = Atlas.STATIC_RECTS[r + 3] / shrink
+            val w = StaticCells.rects[r + 2] / shrink
+            val h = StaticCells.rects[r + 3] / shrink
             if (w == 0 || h == 0) continue
             // As the tile recorder lays it: from the tile's top corner at its height.
-            val left = view.screenX(bx.toFloat(), by.toFloat(), width) + Atlas.STATIC_RECTS[r + 4] / shrink * scale
-            val top = view.screenY(bx.toFloat(), by.toFloat(), base.toFloat(), height) + Atlas.STATIC_RECTS[r + 5] / shrink * scale
+            val left = view.screenX(bx.toFloat(), by.toFloat(), width) + StaticCells.rects[r + 4] / shrink * scale
+            val top = view.screenY(bx.toFloat(), by.toFloat(), base.toFloat(), height) + StaticCells.rects[r + 5] / shrink * scale
             if (left > nr || left + w * scale < nl || top > nb || top + h * scale < nt) continue
             if (!take(by * view.viewWidth + bx)) continue
             columnRects(cell, w, h, left, top, scale, bx + by, add)
@@ -119,12 +119,17 @@ internal class Cover(private val world: World, private val view: View, private v
         internal fun columnsAhead(level: Int, sheets: LevelSheets): HashMap<Int, IntArray> {
             val out = HashMap<Int, IntArray>()
             val shrink = 1 shl level
-            for (cell in 0 until Atlas.STATIC_RECTS.size / 6) {
-                val w = Atlas.STATIC_RECTS[cell * 6 + 2] / shrink
-                val h = Atlas.STATIC_RECTS[cell * 6 + 3] / shrink
+            for (cell in 0 until StaticCells.rects.size / 6) {
+                val w = StaticCells.rects[cell * 6 + 2] / shrink
+                val h = StaticCells.rects[cell * 6 + 3] / shrink
                 if (w > 0 && h > 0) out[cell] = columnsOf(level, sheets, cell, w, h)
             }
             return out
+        }
+
+        /** Lets go of the columns of the cells a game's buildings add, for the next game's. */
+        internal fun forgetColumns() {
+            for (m in COLUMNS) m.keys.removeAll { it >= StaticCells.BASE }
         }
 
         /** Keeps [columns] from [columnsAhead], so [level]'s sheet pixels needn't be read again. Main thread. */
@@ -133,12 +138,12 @@ internal class Cover(private val world: World, private val view: View, private v
         private fun columnsOf(level: Int, sheets: LevelSheets, cell: Int, w: Int, h: Int): IntArray {
             // The sprite is packed trimmed, dx and dy in from its box of w by h.
             val lr = (cell * Atlas.LEVELS + level) * 6
-            val sx = Atlas.STATIC_LEVEL_RECTS[lr]
-            val sy = Atlas.STATIC_LEVEL_RECTS[lr + 1]
-            val tw = Atlas.STATIC_LEVEL_RECTS[lr + 2]
-            val th = Atlas.STATIC_LEVEL_RECTS[lr + 3]
-            val dx = Atlas.STATIC_LEVEL_RECTS[lr + 4]
-            val dy = Atlas.STATIC_LEVEL_RECTS[lr + 5]
+            val sx = StaticCells.levelRects[lr]
+            val sy = StaticCells.levelRects[lr + 1]
+            val tw = StaticCells.levelRects[lr + 2]
+            val th = StaticCells.levelRects[lr + 3]
+            val dx = StaticCells.levelRects[lr + 4]
+            val dy = StaticCells.levelRects[lr + 5]
             val src = sheets.static
             val sw = sheets.staticWidth
             return IntArray(w * 2) { k ->

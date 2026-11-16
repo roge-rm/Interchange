@@ -1,6 +1,7 @@
 package com.rm.interchange.map.gl
 
 import com.rm.interchange.map.Atlas
+import com.rm.interchange.map.StaticCells
 import com.rm.interchange.map.TileRecorder
 import com.rm.interchange.map.CurveArt
 import com.rm.interchange.map.Zoom
@@ -69,7 +70,7 @@ internal class SpriteRecorder(private val shiftX: Int = 0, private val shiftY: I
         /** Whether [cell] of [sheet] is empty at level 0, and so at every level. */
         fun blank(sheet: Int, cell: Int): Boolean {
             val (w, h) = if (sheet == SHADOW) Atlas.SHADOW_RECTS[cell * 6 + 2] to Atlas.SHADOW_RECTS[cell * 6 + 3]
-            else Atlas.STATIC_LEVEL_RECTS[cell * Atlas.LEVELS * 6 + 2] to Atlas.STATIC_LEVEL_RECTS[cell * Atlas.LEVELS * 6 + 3]
+            else StaticCells.levelRects[cell * Atlas.LEVELS * 6 + 2] to StaticCells.levelRects[cell * Atlas.LEVELS * 6 + 3]
             return w <= 0 || h <= 0
         }
         const val STATIC = 0

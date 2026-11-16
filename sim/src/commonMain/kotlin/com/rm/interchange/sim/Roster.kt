@@ -197,6 +197,11 @@ class Roster(
     val houses: List<House> = emptyList(),
     val industries: List<IndustryKind> = emptyList(),
 ) {
+    /** The places in [sprites] that houses and industry parts draw with, each once and in order: the map gives each four cells of its static sheet. */
+    val buildingSprites: List<Int> by lazy {
+        (houses.map { it.sprite } + industries.flatMap { it.parts.values }).filter { it >= 0 }.distinct().sorted()
+    }
+
     operator fun get(id: Int) = engines[id]
     fun getOrNull(id: Int) = engines.getOrNull(id)
 

@@ -1,6 +1,7 @@
 package com.rm.interchange.map.gl
 
 import com.rm.interchange.map.Atlas
+import com.rm.interchange.map.StaticCells
 
 /**
  * A sheet [width] by [height] cut into the layers of a texture array no bigger than [maxSize] each way. Pages
@@ -42,7 +43,7 @@ internal class AtlasPages(val width: Int, val height: Int, val tallest: Int, max
         /** The tallest static sprite at [level], in that level's pixels. */
         fun tallestStatic(level: Int): Int {
             var m = 0
-            for (cell in 0 until Atlas.STATIC_LEVEL_RECTS.size / (6 * Atlas.LEVELS)) m = maxOf(m, Atlas.STATIC_LEVEL_RECTS[(cell * Atlas.LEVELS + level) * 6 + 3])
+            for (cell in 0 until StaticCells.levelRects.size / (6 * Atlas.LEVELS)) m = maxOf(m, StaticCells.levelRects[(cell * Atlas.LEVELS + level) * 6 + 3])
             return m
         }
 

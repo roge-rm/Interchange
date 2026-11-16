@@ -122,6 +122,7 @@ class Sheets(private val packed: PackedSheets, private val scope: CoroutineScope
     @OptIn(ExperimentalResourceApi::class)
     private suspend fun CoroutineScope.decodeLevel(level: Int, done: BooleanArray): LevelSheets {
         warmWebp(packed.ground[Atlas.LEVELS - 1])
+        val art = buildings
         fun pixels(bytes: ByteArray): Pair<IntArray, Int> {
             val image = bytes.decodeToImageBitmap()
             val out = IntArray(image.width * image.height)
@@ -130,10 +131,21 @@ class Sheets(private val packed: PackedSheets, private val scope: CoroutineScope
         }
         val ground = async { pixels(packed.ground[level]).first.also { done[0] = true } }
         val static = async {
-            val (static, width) = pixels(packed.static[level])
+            val image = packed.static[level].decodeToImageBitmap()
+            val width = image.width
+            val own = width * image.height
+            // Rows under the base sheet's hold the buildings' cells, which the snow mask doesn't cover.
+            val static = IntArray(width * (art?.rowsAt(level, image.height) ?: image.height))
+            image.readPixels(static, 0, 0, width, image.height)
             done[1] = true
             packed.staticSnow[level]?.let { snow ->
-                strips(static.size, STRIPS).map { r -> launch { restoreStaticSnow(static, snow, r.first, r.last + 1) } }.joinAll()
+                strips(own, STRIPS).map { r -> launch { restoreStaticSnow(static, snow, r.first, r.last + 1, own) } }.joinAll()
+            }
+            art?.paint(level, static, width) { png ->
+                val sheet = png.decodeToImageBitmap()
+                val out = IntArray(sheet.width * sheet.height)
+                sheet.readPixels(out, 0, 0, sheet.width, sheet.height)
+                out to sheet.width
             }
             done[2] = true
             static to width
@@ -220,6 +232,30 @@ class Sheets(private val packed: PackedSheets, private val scope: CoroutineScope
         // Levels sharper than the renderer draws aren't held.
         val levels = Array(Atlas.LEVELS) { l -> ((i * Atlas.LEVELS + l) * Atlas.VEHICLE_STRIDE).let { Atlas.VEHICLE_RECTS.copyOfRange(it, it + Atlas.VEHICLE_STRIDE) } }
         return VehicleSource(levels[0], levels) { level -> packed.vehicles[i][level].takeIf { it.isNotEmpty() } }
+    }
+
+    /** The drawings of the game's pack houses and industry parts, or null; they go on the static sheet's extra rows. */
+    private var buildings: BuildingArt? = null
+
+    /**
+     * Uses [art] for the game's pack buildings. A different set of drawings unpacks the levels again, so call it
+     * before the map is drawn.
+     */
+    fun useBuildings(art: BuildingArt?) {
+        val old = buildings
+        if (art == null && old == null) return
+        if (art != null && art.same(old)) return
+        for (l in 0 until Atlas.LEVELS) decoding[l]?.cancel()
+        buildings = art
+        StaticCells.set(art)
+        for (l in 0 until Atlas.LEVELS) {
+            levels[l] = null
+            unpacking[l] = false
+            decoding[l] = null
+        }
+        statics.fill(null)
+        staticsUnpacking.fill(false)
+        revision.intValue++
     }
 
     /** The drawings of a game's vehicles, by their place in its roster's sprites. */

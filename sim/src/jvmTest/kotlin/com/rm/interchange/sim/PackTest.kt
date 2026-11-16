@@ -92,9 +92,11 @@ class PackTest {
         val pack = Packs.read(files)
         val roster = Roster.build(listOf(Packs.BASE, pack))
         assertTrue(roster.engines.size > Roster.BASE.engines.size)
+        val buildings = pack.houses.mapNotNull { it.sprite }.toSet() + pack.industries.flatMap { it.parts.orEmpty().values }
+        assertTrue(buildings.isNotEmpty())
         for ((name, png) in pack.sprites) {
             val p = JvmPictures.decode(png)
-            assertEquals(emptyList(), PackSprites.problems(p), name)
+            assertEquals(emptyList(), PackSprites.problems(p, if (name in buildings) PackSprites.BUILDING_CELLS else 16), name)
         }
     }
 

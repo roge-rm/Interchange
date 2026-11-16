@@ -43,6 +43,7 @@ import com.rm.interchange.map.MapOverlays
 import com.rm.interchange.map.Moving
 import com.rm.interchange.map.vehicleAt
 import com.rm.interchange.map.NO_VEHICLE
+import com.rm.interchange.map.BuildingArt
 import com.rm.interchange.map.Sheets
 import com.rm.interchange.map.rememberPackedSheets
 import androidx.compose.runtime.rememberCoroutineScope
@@ -810,6 +811,12 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
             if (ref.pack == Packs.BASE_ID) sheets.baseVehicle(ref.name)
             else InstalledPacks.rects(ref.pack, ref.name)?.let { rects -> VehicleSource(rects) { level -> InstalledPacks.sheet(ref.pack, ref.name, level) } }
         })
+        // Pack houses and industry parts go on the static sheet, so they're set before the map draws.
+        val own = world.roster.buildingSprites.map { world.roster.sprites[it] }
+        sheets.useBuildings(
+            if (own.isEmpty()) null
+            else BuildingArt(world.roster.buildingSprites, own.map { "${it.pack}/${it.name}" }, own.map { InstalledPacks.rects(it.pack, it.name) }) { i, level -> InstalledPacks.sheet(own[i].pack, own[i].name, level) },
+        )
     }
     val view = remember {
         // Over the biggest town, or the dry land nearest the middle if there are none.

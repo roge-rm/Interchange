@@ -30,9 +30,9 @@ class CoverTest {
         // Every column solid top to bottom, so the sheet's pixels aren't needed.
         val full = HashMap<Int, IntArray>()
         val shrink = 1 shl LEVEL
-        for (cell in 0 until Atlas.STATIC_RECTS.size / 6) {
-            val w = Atlas.STATIC_RECTS[cell * 6 + 2] / shrink
-            val h = Atlas.STATIC_RECTS[cell * 6 + 3] / shrink
+        for (cell in 0 until StaticCells.rects.size / 6) {
+            val w = StaticCells.rects[cell * 6 + 2] / shrink
+            val h = StaticCells.rects[cell * 6 + 3] / shrink
             if (w > 0 && h > 0) full[cell] = IntArray(w * 2) { if (it % 2 == 0) 0 else h - 1 }
         }
         Cover.takeColumns(LEVEL, full)

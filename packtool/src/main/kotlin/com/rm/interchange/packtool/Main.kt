@@ -20,12 +20,15 @@ private const val USAGE = """packtool check PACK [--with PACK]...
     Checks a pack, a .ichpack zip or a folder, and says everything wrong with it.
     --with names packs it needs besides the base pack, in order.
 packtool zip FOLDER OUT.ichpack
-    Zips a pack's folder up, after checking it."""
+    Zips a pack's folder up, after checking it.
+packtool look PACK OUT.png
+    Draws the pack's buildings, as the map shows them on their tiles at each edge and each turn of the view."""
 
 fun main(args: Array<String>) {
     val ok = when (args.firstOrNull()) {
         "check" -> args.size >= 2 && check(File(args[1]), args.drop(2).chunked(2).map { (flag, path) -> require(flag == "--with") { USAGE }; File(path) })
         "zip" -> args.size == 3 && check(File(args[1]), emptyList()) && zip(File(args[1]), File(args[2]))
+        "look" -> args.size == 3 && look(load(File(args[1]), base = true), File(args[2]))
         else -> { println(USAGE); false }
     }
     exitProcess(if (ok) 0 else 1)
@@ -53,6 +56,7 @@ private fun check(f: File, with: List<File>): Boolean {
         problems += e.problems
     }
     // Rules are parsed as the pack is read, so a bad one is already listed above.
+    val buildingSheets = pack.houses.mapNotNull { it.sprite }.toSet() + pack.industries.flatMap { it.parts.orEmpty().values }
     val used = pack.vehicles.flatMap { listOfNotNull(it.sprite, it.spriteOffWire) }.toSet() +
         pack.houses.mapNotNull { it.sprite } + pack.industries.flatMap { it.parts.orEmpty().values }
     for ((name, png) in pack.sprites) {
@@ -63,7 +67,7 @@ private fun check(f: File, with: List<File>): Boolean {
             problems += "sprites/$name.png can't be read as a PNG"
             continue
         }
-        val wrong = PackSprites.problems(picture)
+        val wrong = PackSprites.problems(picture, if (name in buildingSheets) PackSprites.BUILDING_CELLS else 16)
         problems += wrong.map { "sprites/$name.png: $it" }
         if (wrong.isEmpty()) PackSprites.pack(picture)
     }
@@ -93,7 +97,7 @@ private fun zip(dir: File, out: File): Boolean {
     return true
 }
 
-private object JvmPictures : Pictures {
+internal object JvmPictures : Pictures {
     override fun decode(png: ByteArray): Picture {
         val img = ImageIO.read(ByteArrayInputStream(png)) ?: error("not a picture")
         val p = Picture(img.width, img.height)
