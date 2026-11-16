@@ -1553,14 +1553,27 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
         }
 
         // On the left edge, mid-height, where no strip, tool bar or card sits.
-        val wantChecklist = remember(world) {
-            me >= 0 && !world.editor && world.scenario == null &&
-                world.stations.none { it?.owner == me } && world.trains.none { it?.owner == me } && world.roadVehicles.none { it?.owner == me } &&
-                world.ships.none { it?.owner == me } && world.aircraft.none { it?.owner == me }
+        // It starts in a game where we've nothing on the map yet, and goes on in that game, loaded again or resynced,
+        // with what it had ticked. Only the last game it started in is kept.
+        var wantChecklist by remember(runner, world, me) { mutableStateOf(false) }
+        LaunchedEffect(runner, world, me, settings.checklist) {
+            if (me < 0 || !settings.checklist) return@LaunchedEffect
+            // Not in the editor, a scenario or the campaign.
+            val (key, fresh) = mapRead(runner) { w ->
+                if (w.editor || w.scenario != null) null else checklistKey(w, me) to startingOut(w, me)
+            } ?: return@LaunchedEffect
+            if (fresh) {
+                settings.checklistGame = key
+                settings.checklistTicks = 0
+                settings.save()
+            }
+            wantChecklist = key == settings.checklistGame
         }
         if (wantChecklist && settings.checklist) {
             FirstRouteChecklist(
-                runner, worldView.value, me, folded = layout.compact, onHide = { settings.checklist = false; settings.save() },
+                runner, worldView.value, me, folded = layout.compact, saved = settings.checklistTicks,
+                onTicks = { settings.checklistTicks = it; settings.save() },
+                onHide = { settings.checklist = false; settings.checklistGame = ""; settings.save() },
                 modifier = Modifier.align(Alignment.CenterStart).windowInsetsPadding(safe.only(WindowInsetsSides.Start)).padding(gap),
             )
         }

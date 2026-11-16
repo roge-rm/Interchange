@@ -12,6 +12,7 @@ package com.rm.interchange.sim
 
 /** Marks the blocks and every route for working out again, after track, a station, a depot or a signal changes. */
 internal fun World.networkChanged() {
+    layoutVersion++
     blocksDirty = true
     catchmentDirty = true
     linksDirty = true
@@ -25,6 +26,7 @@ internal fun World.networkChanged() {
 
 /** Marks the blocks for working out again without touching routes, as when a world has just been loaded. */
 internal fun World.networkChangedKeepingRoutes() {
+    layoutVersion++
     blocksDirty = true
     catchmentDirty = true
     linksDirty = true

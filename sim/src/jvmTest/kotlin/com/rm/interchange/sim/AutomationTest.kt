@@ -49,6 +49,72 @@ class AutomationTest {
         assertFalse(w.companies.last().autorenew)
     }
 
+    /** Flat land, money for company 0, and its two stations on row 10, at x 10 to 13 and 36 to 39. */
+    private fun twoStations(): World {
+        val w = World(64, 64, 1, startYear = 1900)
+        for (i in w.corners.indices) w.corners[i] = 3
+        w.companies[0].money = 10_000_000
+        w.apply(Command.Rail(0, 10, 10, 13, 10, Track.X, remove = false))
+        w.apply(Command.Rail(0, 36, 10, 39, 10, Track.X, remove = false))
+        w.apply(Command.Station(0, 10, 10, 13, 10, Track.X))
+        w.apply(Command.Station(0, 36, 10, 39, 10, Track.X))
+        return w
+    }
+
+    @Test
+    fun stationsAreJoinedOnlyByOwnTrackThatConnects() {
+        val w = twoStations()
+        assertFalse(w.stationsJoined(0))
+        // Track alongside, touching both stations' rows but never meeting them, doesn't join them.
+        w.apply(Command.Rail(0, 10, 11, 39, 11, Track.X, remove = false))
+        assertFalse(w.stationsJoined(0))
+        w.apply(Command.Rail(0, 14, 10, 24, 10, Track.X, remove = false))
+        assertFalse(w.stationsJoined(0))
+        // A rival's track filling the gap doesn't count.
+        w.apply(Command.NewCompany(1, "Other"))
+        w.companies[1].money = 10_000_000
+        val before = w.layoutVersion
+        w.apply(Command.Rail(1, 25, 10, 35, 10, Track.X, remove = false))
+        assertNotEquals(before, w.layoutVersion)
+        assertFalse(w.stationsJoined(0))
+        assertFalse(w.stationsJoined(1))
+    }
+
+    @Test
+    fun stationsJoinedByTrackOrRoad() {
+        val w = twoStations()
+        w.apply(Command.Rail(0, 14, 10, 35, 10, Track.X, remove = false))
+        assertTrue(w.stationsJoined(0))
+        val bus = busLine(start = false)
+        assertTrue(bus.stationsJoined(0))
+        // Two stops on roads with a gap between them are joined once the gap is filled.
+        val apart = World(NewGame(64, 64, 1, 1965, towns = 0, industries = 0, weather = false))
+        for (i in apart.corners.indices) apart.corners[i] = 3
+        apart.companies[0].money = 10_000_000
+        apart.apply(Command.Road(0, 5, 20, 20, 20, Surface.PAVED, remove = false))
+        apart.apply(Command.Road(0, 22, 20, 40, 20, Surface.PAVED, remove = false))
+        apart.apply(Command.RoadStop(0, 8, 20))
+        apart.apply(Command.RoadStop(0, 38, 20))
+        assertFalse(apart.stationsJoined(0))
+        apart.apply(Command.Road(0, 20, 20, 22, 20, Surface.PAVED, remove = false))
+        assertTrue(apart.stationsJoined(0))
+    }
+
+    @Test
+    fun aPlayerInAGoneRivalsSlotHasAutorenewOff() {
+        val w = World(NewGame(128, 128, 7, 1930, Region.MIXED, towns = 3, industries = 0, rivals = 1))
+        val rival = w.companies[w.rivals.first().company]
+        rival.renewMonths = 6
+        rival.renewFloor = 5000
+        w.dissolve(rival)
+        assertTrue(rival.gone)
+        w.apply(Command.NewCompany(rival.id, "Taken"))
+        assertFalse(rival.gone)
+        assertFalse(rival.autorenew)
+        assertEquals(Autorenew.MONTHS_DEFAULT, rival.renewMonths)
+        assertEquals(0L, rival.renewFloor)
+    }
+
     @Test
     fun aBoughtVehicleTakesKeptOrdersOnlyWithInherit() {
         val w = busLine(start = false)

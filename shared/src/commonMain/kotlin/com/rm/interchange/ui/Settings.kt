@@ -32,6 +32,9 @@ class Settings {
     var client = ""
     /** The first-route checklist in new games. Turned off when it's dismissed or done. */
     var checklist by mutableStateOf(true)
+    /** The game the checklist is going in, as [checklistKey] gives it, and the steps ticked there, a bit each. */
+    var checklistGame = ""
+    var checklistTicks = 0
     /** The campaign chapters won, by id. */
     var chaptersWon by mutableStateOf(emptySet<String>())
 
@@ -41,7 +44,7 @@ class Settings {
         files.write(FILE, ("language=$language\nautosave=$autosave\ngrid=$grid\nheights=$heights\nsnow=$snow\ncondition=$condition\nreserved=$reserved\n" +
             "sound=$sound\nworld=$world\ntools=$tools\n" +
             "player=${playerName.replace('\n', ' ')}\naddress=${lastAddress.replace('\n', ' ')}\nclient=$client\n" +
-            "checklist=$checklist\n" +
+            "checklist=$checklist\nchecklistGame=$checklistGame\nchecklistTicks=$checklistTicks\n" +
             "chapters=${chaptersWon.sorted().joinToString(",")}\n").encodeToByteArray())
     }
 
@@ -71,6 +74,8 @@ class Settings {
                     "address" -> s.lastAddress = v
                     "client" -> s.client = v
                     "checklist" -> s.checklist = v != "false"
+                    "checklistGame" -> s.checklistGame = v
+                    "checklistTicks" -> v.toIntOrNull()?.let { s.checklistTicks = it }
                     "chapters" -> s.chaptersWon = v.split(",").filter { it.isNotBlank() }.toSet()
                 }
             }

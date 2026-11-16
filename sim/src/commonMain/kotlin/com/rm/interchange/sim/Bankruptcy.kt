@@ -194,6 +194,10 @@ internal fun World.newCompany(c: Command.NewCompany) {
         companies.getOrNull(id)?.gone == true -> {
             companies[id].name = name()
             giveInsignia(companies[id])
+            // A player taking a gone rival's slot starts with autorenew off, as a new company does.
+            companies[id].autorenew = false
+            companies[id].renewMonths = Autorenew.MONTHS_DEFAULT
+            companies[id].renewFloor = 0L
             restart(companies[id], news = false)
         }
         else -> return

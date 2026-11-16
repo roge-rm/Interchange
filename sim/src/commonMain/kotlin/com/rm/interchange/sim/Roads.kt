@@ -270,6 +270,7 @@ const val ICE_ROAD_CM = 35
 
 /** Road vehicle routes and who's where are worked out again before the next move. */
 internal fun World.roadsChanged() {
+    layoutVersion++
     roadNetDirty = true
     for (v in roadVehicles) v?.route = null
 }

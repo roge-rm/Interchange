@@ -143,6 +143,8 @@ class World(settings: NewGame, val roster: Roster = Roster.BASE, generate: Boole
     internal val upgradesDue = ArrayList<Long>()
     /** Recent payments, for the screen. Not part of the game. */
     val payments = ArrayList<Payment>()
+    /** Goes up each time track, stations or roads change, so the screen knows when to look at them again. Not part of the game. */
+    var layoutVersion = 0L
 
     val companies = mutableListOf(Company(0, "Company", Prices.startMoney(settings.startYear)))
 
