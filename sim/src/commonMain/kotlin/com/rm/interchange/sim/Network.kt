@@ -531,6 +531,7 @@ internal fun World.clearTile(company: Company, c: Command.Clear) {
         depots[d.id] = null
         depotGone(d)
         road[i] = 0; roadKind[i] = 0; roadOwner[i] = -1
+        roadLifted(i)
         val n = index(c.x + Track.dx(d.edge), c.y + Track.dy(d.edge))
         road[n] = (road[n].toInt() and roadBit(Track.opposite(d.edge)).inv()).toByte()
         touched(c.x, c.y)
@@ -560,6 +561,7 @@ internal fun World.clearTile(company: Company, c: Command.Clear) {
     sheds.remove(i)
     shedYears.remove(i)
     owner[i] = -1
+    trackLifted(i)
     touched(c.x, c.y)
     networkChanged()
 }

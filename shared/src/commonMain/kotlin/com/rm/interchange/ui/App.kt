@@ -1544,7 +1544,7 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
         )
 
         // Under the strip, the latest news for a few seconds after it comes; a tap goes to where it happened.
-        val latest = worldView.value?.news?.lastOrNull()
+        val latest = worldView.value?.news?.lastOrNull { newsForMe(it, me) }
         var shown by remember(world) { mutableStateOf<News?>(null) }
         var seen by remember(world) { mutableStateOf<News?>(null) }
         LaunchedEffect(latest) {
@@ -2129,6 +2129,13 @@ internal fun newsCompany(world: World, n: News): com.rm.interchange.sim.Company?
     News.GOAL_MET -> world.companies.getOrNull(world.goals.getOrNull(n.about)?.by ?: -1)
     News.CRASH -> world.companies.getOrNull(world.crashFor(n.about)?.vehicles?.firstOrNull()?.owner ?: -1)
     else -> null
+}
+
+/** Whether news [n] has anything to say to company [me]: another company's weather warning and its own start don't. */
+internal fun newsForMe(n: News, me: Int): Boolean = when (n.kind) {
+    in News.WARN_SNOW..News.WARN_COLD -> Warning.company(n.about) == me
+    News.COMPANY_STARTED -> n.about != me
+    else -> true
 }
 
 /** What a piece of news says. */

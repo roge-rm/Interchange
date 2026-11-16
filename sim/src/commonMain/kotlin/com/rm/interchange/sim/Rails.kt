@@ -199,6 +199,7 @@ internal fun World.buildRail(company: Company, c: Command.Rail) {
             signals.remove(pieceKey(i, piece))
             if (track[i].toInt() == 0) {
                 owner[i] = -1
+                trackLifted(i)
                 // A snow shed stands over track; with none left it goes too.
                 sheds.remove(i)
                 shedYears.remove(i)

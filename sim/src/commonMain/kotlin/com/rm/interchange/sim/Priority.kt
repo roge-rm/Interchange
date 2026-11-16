@@ -45,8 +45,25 @@ private fun World.priorityFits(i: Int, company: Int, road: Boolean): Boolean =
     if (road) this.road[i].toInt() != 0 && roadOwner[i].toInt() == company && roadEdges(i) != 0
     else track[i].toInt() != 0 && owner[i].toInt() == company
 
-/** How many tiles of track and road [company] has made priority. */
-fun World.priorityCount(company: Int): Int = priorityTrack.values.count { it == company } + priorityRoad.values.count { it == company }
+/** How many tiles of track and road [company] has made priority, counting only marks still on its own track or road. */
+fun World.priorityCount(company: Int): Int {
+    var n = 0
+    for ((i, o) in priorityTrack) if (o == company && priorityFits(i, o, false)) n++
+    for ((i, o) in priorityRoad) if (o == company && priorityFits(i, o, true)) n++
+    return n
+}
+
+/** Drops the priority mark on tile [i]'s track as the track is lifted, so track laid there again starts unmarked. */
+internal fun World.trackLifted(i: Int) { priorityTrack.remove(i) }
+
+/** Drops the priority mark on tile [i]'s road as the road is lifted. */
+internal fun World.roadLifted(i: Int) { priorityRoad.remove(i) }
+
+/** Drops every priority mark [company] has, as it goes under, is bought or starts again. */
+internal fun World.dropPriority(company: Int) {
+    priorityTrack.entries.removeAll { it.value == company }
+    priorityRoad.entries.removeAll { it.value == company }
+}
 
 /** Whether tile [i]'s track is priority for its owner. */
 fun World.priorityTrackAt(i: Int): Boolean = priorityTrack[i]?.let { it == owner[i].toInt() } ?: false
@@ -57,7 +74,7 @@ fun World.priorityRoadAt(i: Int): Boolean = priorityRoad[i]?.let { it == roadOwn
 /**
  * The calendar day's priority work, after the track's: marks on track or road that's gone or changed hands are
  * dropped, and crews dig out each train that's stood [DIG_DAYS] days snowbound against its company's
- * priority track, clearing up to [DIG_TILES] tiles of it ahead, for [DIG_COST].
+ * priority track, clearing up to [DIG_TILES] tiles of it ahead, for [DIG_COST] when there was snow to clear.
  */
 internal fun World.priorityDay() {
     if (priorityTrack.isNotEmpty()) for (k in priorityTrack.keys.sorted()) if (!priorityFits(k, priorityTrack.getValue(k), false)) priorityTrack.remove(k)
@@ -66,36 +83,42 @@ internal fun World.priorityDay() {
         if (t == null) continue
         if (!t.snowbound || t.inDepot || t.wreckedFor > 0 || t.steps.isEmpty() || priorityTrack.isEmpty()) { t.dugDays = 0; continue }
         val ahead = nextFrom(t, t.steps.last(), t.routeAt)
-        if (ahead < 0 || priorityTrack[stepTile(ahead)] != t.owner) { t.dugDays = 0; continue }
+        if (ahead < 0 || !ownPriority(stepTile(ahead), t.owner)) { t.dugDays = 0; continue }
         t.dugDays++
         if (t.dugDays < DIG_DAYS) continue
         t.dugDays = 0
         var cur = t.steps.last()
         var at = t.routeAt
+        var cleared = false
         for (k in 0 until DIG_TILES) {
             val next = nextFrom(t, cur, at)
             if (next < 0) break
             val n = stepTile(next)
-            if (priorityTrack[n] != t.owner) break
-            if (stepLevel(next) == 0) weather.snow[n] = 0
+            if (!ownPriority(n, t.owner)) break
+            if (stepLevel(next) == 0 && weather.snow[n].toInt() != 0) { weather.snow[n] = 0; cleared = true }
             cur = next
             at++
         }
-        companies.getOrNull(t.owner)?.let { spend(it, Books.PRIORITY, price(DIG_COST)) }
+        if (cleared) companies.getOrNull(t.owner)?.let { spend(it, Books.PRIORITY, price(DIG_COST)) }
     }
 }
 
-/** What each company's priority tiles cost this work day, in tenths of a cent, by company id. */
+/** Whether tile [i]'s track is priority and [company]'s own. */
+private fun World.ownPriority(i: Int, company: Int) = priorityTrackAt(i) && owner[i].toInt() == company
+
+/** What each company's priority tiles cost this work day, in tenths of a cent, by company id; marks no longer on its own track or road cost nothing. */
 internal fun World.priorityOwedToday(): LongArray {
     val owed = LongArray(MAX_COMPANIES)
-    for (o in priorityTrack.values) if (o in 0 until MAX_COMPANIES) owed[o] += PRIORITY_TRACK
-    for (o in priorityRoad.values) if (o in 0 until MAX_COMPANIES) owed[o] += PRIORITY_ROAD
+    for ((i, o) in priorityTrack) if (o in 0 until MAX_COMPANIES && priorityFits(i, o, false)) owed[o] += PRIORITY_TRACK
+    for ((i, o) in priorityRoad) if (o in 0 until MAX_COMPANIES && priorityFits(i, o, true)) owed[o] += PRIORITY_ROAD
     return owed
 }
 
 /** What [company]'s priority tiles cost a month of work days, in dollars now. */
 fun World.priorityMonth(company: Int): Long {
-    val tenths = priorityTrack.values.count { it == company } * PRIORITY_TRACK + priorityRoad.values.count { it == company } * PRIORITY_ROAD
+    var tenths = 0L
+    for ((i, o) in priorityTrack) if (o == company && priorityFits(i, o, false)) tenths += PRIORITY_TRACK
+    for ((i, o) in priorityRoad) if (o == company && priorityFits(i, o, true)) tenths += PRIORITY_ROAD
     return price(tenths * WORK_DAYS_A_MONTH / 1_000)
 }
 

@@ -86,6 +86,8 @@ internal fun World.restart(c: Company, news: Boolean = true) {
     startFunds(c)
     c.runningOwed = 0
     c.upkeepOwed = 0
+    c.priorityOwed = 0
+    dropPriority(c.id)
     c.thisYear.fill(0)
     c.lastYear.fill(0)
     c.history.clear()
@@ -126,6 +128,7 @@ internal fun World.takeOver(from: Company, to: Company) {
     to.roadUpkeep += from.roadUpkeep
     from.trackTiles = 0
     from.roadUpkeep = 0
+    dropPriority(from.id)
     to.money += from.money - from.loan
     from.money = 0
     from.loan = 0
@@ -166,6 +169,7 @@ internal fun World.dissolve(c: Company) {
         if (owns(c.id, i)) clearTile(c, Command.Clear(c.id, i % width, i / width))
         if (roadOwner[i].toInt() == c.id) { roadOwner[i] = -1; touched(i % width, i / width) }
     }
+    dropPriority(c.id)
     c.money = 0
     c.loan = 0
     c.trackTiles = 0

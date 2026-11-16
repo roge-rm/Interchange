@@ -86,6 +86,63 @@ class ForecastTest {
         assertTrue(u(w.weather.snow[w.index(8, 20)]) >= WARN_SNOW, "the snow didn't come")
     }
 
+    @Test
+    fun warningsOnABigNetworkAreGroupedByCellAndTheSameOnACopy() {
+        val w = World(NewGame(128, 128, 1, 1900, Region.NORTH, towns = 4, industries = 0))
+        w.companies[0].money = 1_000_000_000
+        for (y in 4 until 124 step 3) w.apply(Command.Rail(0, 2, y, 125, y, Track.X, remove = false))
+        val laid = (0 until w.width * w.height).count { w.track[it].toInt() != 0 && w.owner[it].toInt() == 0 }
+        assertTrue(laid > 2_000, "only $laid tiles laid")
+        for (i in 0 until w.width * w.height) w.weather.snow[i] = 0
+        w.weather.fronts.clear()
+        w.weather.anomaly = -100
+        w.weather.fronts += Front(Front.LOW, -40 * 256, 64 * 256, 60 * 256, 0, 20, 6000, 0, 10, false)
+        val found = w.warnFound(w.outlook(WARN_DAYS))!!
+        assertTrue(found.isNotEmpty(), "nothing found")
+        // At most one finding per kind and cell, so naming towns is bounded by the map, not the line.
+        val cells = (w.width / WARN_CELL) * (w.height / WARN_CELL)
+        assertTrue(found.size <= 4 * cells, "${found.size} findings")
+        val copy = Save.read(Save.write(w))
+        w.warnDay()
+        copy.warnDay()
+        fun told(x: World) = x.news.filter { it.kind in News.WARN_SNOW..News.WARN_COLD }.map { it.kind to it.about }
+        assertTrue(told(w).isNotEmpty())
+        assertEquals(told(w), told(copy))
+        assertEquals(w.warned, copy.warned)
+    }
+
+    @Test
+    fun aLapsedWarningIsNotToldAgainForAFewDays() {
+        val w = World(NewGame(64, 64, 1, 1900, Region.NORTH, towns = 0, industries = 0))
+        for (i in w.corners.indices) w.corners[i] = 3
+        w.companies[0].money = 10_000_000
+        w.apply(Command.Rail(0, 5, 20, 58, 20, Track.X, remove = false))
+        for (i in 0 until w.width * w.height) w.weather.snow[i] = 0
+        w.weather.fronts.clear()
+        w.weather.anomaly = -100
+        val low = Front(Front.LOW, -30 * 256, 22 * 256, 16 * 256, 0, 12, 6000, 0, 10, false)
+        w.weather.fronts += low.copy()
+        fun warnings() = w.news.count { it.kind == News.WARN_SNOW }
+        w.warnDay()
+        assertEquals(1, warnings())
+        // Gone for a day, then back: not told again.
+        w.weather.fronts.clear()
+        w.warnDay()
+        assertEquals(1, w.warned.size)
+        for (k in w.warned.keys) w.warned[k] = w.day - 2
+        w.weather.fronts += low.copy()
+        w.warnDay()
+        assertEquals(1, warnings())
+        // Gone longer than the quiet days: dropped, and told when it comes back.
+        for (k in w.warned.keys) w.warned[k] = w.day - WARN_QUIET - 1
+        w.weather.fronts.clear()
+        w.warnDay()
+        assertTrue(w.warned.isEmpty())
+        w.weather.fronts += low.copy()
+        w.warnDay()
+        assertEquals(2, warnings())
+    }
+
     private fun line(): World {
         val w = World(NewGame(64, 64, 1, 1850, towns = 0, industries = 0, weather = false))
         for (i in w.corners.indices) w.corners[i] = 3
@@ -130,6 +187,26 @@ class ForecastTest {
         w.apply(Command.Rail(0, 3, 10, 9, 10, Track.X, remove = true))
         w.priorityDay()
         assertTrue(w.priorityTrack.keys.none { it / w.width == 10 })
+    }
+
+    @Test
+    fun onlyLiveMarksAreChargedAndCountedAndALiftedTileLosesItsMark() {
+        val w = line()
+        w.apply(Command.Priority(0, 3, 10, 20, 10, Track.X, road = false, on = true))
+        assertEquals(18, w.priorityCount(0))
+        // Lifted and laid again the same day, the tiles come back unmarked.
+        w.apply(Command.Rail(0, 3, 10, 9, 10, Track.X, remove = true))
+        w.apply(Command.Rail(0, 3, 10, 9, 10, Track.X, remove = false))
+        assertEquals(11, w.priorityCount(0))
+        assertTrue((3..9).none { w.priorityTrack.containsKey(w.index(it, 10)) })
+        // A mark left on a tile with no track isn't counted or charged.
+        w.priorityTrack[w.index(50, 50)] = 0
+        assertEquals(11, w.priorityCount(0))
+        assertEquals(11 * PRIORITY_TRACK, w.priorityOwedToday()[0])
+        w.companies[0].priorityOwed = 500
+        w.restart(w.companies[0], news = false)
+        assertEquals(0L, w.companies[0].priorityOwed)
+        assertTrue(w.priorityTrack.isEmpty())
     }
 
     @Test
@@ -185,6 +262,24 @@ class ForecastTest {
         assertTrue(u(left.weather.snow[left.index(25, 10)]) >= Weather.BLOCKING, "dug out without priority")
         assertTrue(before - dug.companies[0].thisYear[Books.PRIORITY] >= dug.price(DIG_COST), "not charged")
         assertTrue(!dug.trains[0]!!.snowbound)
+    }
+
+    @Test
+    fun aDigOutWithNoSnowToClearCostsNothing() {
+        val w = line()
+        w.apply(Command.Priority(0, 3, 10, 39, 10, Track.X, road = false, on = true))
+        w.apply(Command.BuyTrain(0, 0, 0, 18, 3))
+        w.apply(Command.TrainOrder(0, 0, Command.TrainOrder.ORDERS, intArrayOf(0, 1)))
+        w.apply(Command.TrainOrder(0, 0, Command.TrainOrder.START_STOP))
+        w.weather.snow[w.index(25, 10)] = 250.toByte()
+        val t = w.trains[0]!!
+        var ticks = 0
+        while (!t.snowbound && ticks++ < 20_000) w.step()
+        assertTrue(t.snowbound, "never stuck")
+        for (x in 0 until w.width) w.weather.snow[w.index(x, 10)] = 0
+        val before = w.companies[0].thisYear[Books.PRIORITY]
+        repeat(DIG_DAYS) { w.priorityDay() }
+        assertEquals(before, w.companies[0].thisYear[Books.PRIORITY])
     }
 
     @Test

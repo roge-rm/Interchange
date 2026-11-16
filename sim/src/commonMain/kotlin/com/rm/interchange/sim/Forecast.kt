@@ -166,20 +166,59 @@ object Warning {
 /**
  * Once a day, after the weather: for each player's company, its track and roads, its road and air strips and its
  * docks against the next [WARN_DAYS] days, news of heavy snow coming, ice closing a harbour, a storm holding ships
- * and deep cold, one item per kind and nearest town, told once while it stands. It makes news only.
+ * and deep cold, one item per kind and nearest town, told once while it stands and not again till it's been gone
+ * [WARN_QUIET] days. It makes news only.
  */
 internal fun World.warnDay() {
     if (!settings.weather) return
+    val found = warnFound(outlook(WARN_DAYS)) ?: return
+    // The soonest of each kind for each company and town, the town taken from the middle of each cell.
+    val towns = HashMap<Int, Int>()
+    val soonest = HashMap<Long, Int>()
+    for ((k, days) in found) {
+        val cell = (k and 0xFFFFFFFFL).toInt()
+        val town = towns.getOrPut(cell) { nearestTown(warnCellMiddle(cell)).let { if (it < 0) Warning.NO_TOWN else it } }
+        val key = (k and 0xFFFFFFFFL.inv()) or town.toLong()
+        val was = soonest[key]
+        if (was == null || days < was) soonest[key] = days
+    }
+    val today = day
+    for (key in soonest.keys.sorted()) {
+        // Told when it's first seen; kept while it's seen, and for a while after, so one that comes and goes isn't told again.
+        if (!warned.containsKey(key)) {
+            tell((key ushr 40).toInt(), Warning.pack((key and 0xFFFF).toInt(), soonest.getValue(key), ((key ushr 32) and 0xFF).toInt()))
+        }
+        warned[key] = today
+    }
+    warned.entries.removeAll { today - it.value > WARN_QUIET }
+}
+
+/** The cells [warnFound] groups by across, and the tile in the middle of [cell]. */
+private fun World.warnCells() = (width + WARN_CELL - 1) / WARN_CELL
+private fun World.warnCellMiddle(cell: Int): Int {
+    val cx = cell % warnCells()
+    val cy = cell / warnCells()
+    return index(minOf(width - 1, cx * WARN_CELL + WARN_CELL / 2), minOf(height - 1, cy * WARN_CELL + WARN_CELL / 2))
+}
+
+/**
+ * What [warnDay] finds through [o], as the soonest days off for each kind, company and [WARN_CELL] cell, keyed
+ * kind shl 40, company shl 32 and the cell. Null with no player's company. Read-only.
+ */
+internal fun World.warnFound(o: Outlook): HashMap<Long, Int>? {
     val players = companies.filter { !it.gone && human(it.id) }.map { it.id }
-    if (players.isEmpty()) return
+    if (players.isEmpty()) return null
     val mine = BooleanArray(MAX_COMPANIES)
     for (p in players) if (p in 0 until MAX_COMPANIES) mine[p] = true
-    val o = outlook(WARN_DAYS)
     val shore = shoreDistances()
+    val cells = warnCells()
+    fun key(kind: Int, company: Int, i: Int): Long =
+        (kind.toLong() shl 40) or (company.toLong() shl 32) or ((i / width / WARN_CELL) * cells + (i % width) / WARN_CELL).toLong()
+    fun HashMap<Long, Int>.note(k: Long, days: Int) { val was = this[k]; if (was == null || days < was) this[k] = days }
     val bands = Workers.threads * 4
-    // Each finding as kind, company, tile and days off.
-    val found = Array(bands) { ArrayList<IntArray>() }
+    val found = Array(bands) { HashMap<Long, Int>() }
     parallelBandsIndexed(height, bands) { b, from, until ->
+        val mineHere = found[b]
         for (y in from until until) for (x in 0 until width) {
             val i = index(x, y)
             val tc = if (track[i].toInt() != 0) owner[i].toInt() else -1
@@ -192,25 +231,23 @@ internal fun World.warnDay() {
             val deep = if (onTrack) WARN_SNOW else DEEP_ROAD_SNOW
             if (now < deep) {
                 val d = days.indexOfFirst { it.snow >= deep }
-                if (d >= 0) found[b] += intArrayOf(News.WARN_SNOW, if (onTrack) tc else rc, i, d + 1)
+                if (d >= 0) mineHere.note(key(News.WARN_SNOW, if (onTrack) tc else rc, i), d + 1)
             }
-            if (onTrack) {
-                val today = skyAt(x, y).temperature
-                if (today >= DEEP_COLD) {
-                    val d = days.indexOfFirst { (it.high + it.low) / 2 < DEEP_COLD }
-                    if (d >= 0) found[b] += intArrayOf(News.WARN_COLD, tc, i, d + 1)
-                }
+            // Only for a real drop on the way, so a day hovering round the line doesn't tell it.
+            if (onTrack && skyAt(x, y).temperature >= DEEP_COLD + COLD_MARGIN) {
+                val d = days.indexOfFirst { (it.high + it.low) / 2 < DEEP_COLD }
+                if (d >= 0) mineHere.note(key(News.WARN_COLD, tc, i), d + 1)
             }
         }
     }
-    val all = ArrayList<IntArray>()
-    for (b in 0 until bands) all += found[b]
+    val all = HashMap<Long, Int>()
+    for (b in 0 until bands) for ((k, d) in found[b]) all.note(k, d)
     for (a in airports) {
         if (a == null || a.kind != Airports.STRIP || a.owner !in 0 until MAX_COMPANIES || !mine[a.owner]) continue
         for (i in a.tiles(this)) {
             if ((weather.snow[i].toInt() and 255) >= STRIP_SNOW) continue
             val d = forecastTile(o, i % width, i / width, 0).indexOfFirst { it.snow >= STRIP_SNOW }
-            if (d >= 0) all += intArrayOf(News.WARN_SNOW, a.owner, i, d + 1)
+            if (d >= 0) all.note(key(News.WARN_SNOW, a.owner, i), d + 1)
         }
     }
     val storm = (0 until o.days).firstOrNull { o.wind[it] >= STORM_WIND }
@@ -218,62 +255,61 @@ internal fun World.warnDay() {
         if (s == null || s.owner !in 0 until MAX_COMPANIES || !mine[s.owner] || s.docks.isEmpty()) continue
         for (berth in berths(s.id)) {
             if (!inside(berth % width, berth / width)) continue
-            if (storm != null && weather.wind < STORM_WIND) all += intArrayOf(News.WARN_STORM, s.owner, berth, storm + 1)
+            if (storm != null && weather.wind < STORM_WIND) all.note(key(News.WARN_STORM, s.owner, berth), storm + 1)
             if ((weather.ice[berth].toInt() and 255) < SHIP_ICE) {
                 val d = forecastTile(o, berth % width, berth / width, shore[berth].toInt()).indexOfFirst { it.ice >= SHIP_ICE }
-                if (d >= 0) all += intArrayOf(News.WARN_ICE, s.owner, berth, d + 1)
+                if (d >= 0) all.note(key(News.WARN_ICE, s.owner, berth), d + 1)
             }
         }
     }
-    // The soonest of each kind for each company and town, told in that order.
-    val soonest = HashMap<Long, Int>()
-    for (f in all) {
-        val key = (f[0].toLong() shl 40) or (f[1].toLong() shl 32) or nearestTown(f[2]).let { if (it < 0) Warning.NO_TOWN else it }.toLong()
-        val was = soonest[key]
-        if (was == null || f[3] < was) soonest[key] = f[3]
-    }
-    val today = day
-    for (key in soonest.keys.sorted()) {
-        // Told when it's first seen; kept while it's seen each day after.
-        if (!warned.containsKey(key)) {
-            tell((key ushr 40).toInt(), Warning.pack((key and 0xFFFF).toInt(), soonest.getValue(key), ((key ushr 32) and 0xFF).toInt()))
-        }
-        warned[key] = today
-    }
-    warned.entries.removeAll { it.value < today }
+    return all
 }
 
 /**
  * The tiles of [company]'s track and roads that the next [days] days' snow would slow or stop, with how: a tile in
  * the first array, its level (1 slows, 2 stops) in the same place of the second. Track slows from [Weather.DEEP]
- * and stops from [Weather.BLOCKING]; roads slow from [DEEP_ROAD_SNOW] and stop from [Weather.BLOCKING].
+ * and stops from [Weather.BLOCKING]; roads slow from [DEEP_ROAD_SNOW] and stop from [Weather.BLOCKING]. Read-only,
+ * worked out in bands across the workers.
  */
 fun World.snowRisk(company: Int, days: Int = WARN_DAYS): Pair<IntArray, ByteArray> {
     if (!settings.weather) return IntArray(0) to ByteArray(0)
     val o = outlook(days)
-    val tiles = ArrayList<Int>()
-    val levels = ArrayList<Byte>()
-    for (y in 0 until height) for (x in 0 until width) {
-        val i = index(x, y)
-        val onTrack = track[i].toInt() != 0 && owner[i].toInt() == company
-        val onRoad = road[i].toInt() != 0 && roadOwner[i].toInt() == company && !isWater(x, y)
-        if (!onTrack && !onRoad) continue
-        val deepest = forecastTile(o, x, y, 0).maxOf { it.snow }
-        val level = when {
-            deepest >= Weather.BLOCKING -> 2
-            onTrack && deepest >= Weather.DEEP -> 1
-            !onTrack && deepest >= DEEP_ROAD_SNOW -> 1
-            else -> 0
+    val bands = Workers.threads * 4
+    val tiles = Array(bands) { ArrayList<Int>() }
+    val levels = Array(bands) { ArrayList<Byte>() }
+    parallelBandsIndexed(height, bands) { b, from, until ->
+        for (y in from until until) for (x in 0 until width) {
+            val i = index(x, y)
+            val onTrack = track[i].toInt() != 0 && owner[i].toInt() == company
+            val onRoad = road[i].toInt() != 0 && roadOwner[i].toInt() == company && !isWater(x, y)
+            if (!onTrack && !onRoad) continue
+            val deepest = forecastTile(o, x, y, 0).maxOf { it.snow }
+            val level = when {
+                deepest >= Weather.BLOCKING -> 2
+                onTrack && deepest >= Weather.DEEP -> 1
+                !onTrack && deepest >= DEEP_ROAD_SNOW -> 1
+                else -> 0
+            }
+            if (level > 0) { tiles[b] += i; levels[b] += level.toByte() }
         }
-        if (level > 0) { tiles += i; levels += level.toByte() }
     }
-    return tiles.toIntArray() to levels.toByteArray()
+    // Bands in order, so the tiles come out as a single walk would give them.
+    val out = ArrayList<Int>()
+    val outLevels = ArrayList<Byte>()
+    for (b in 0 until bands) { out += tiles[b]; outLevels += levels[b] }
+    return out.toIntArray() to outLevels.toByteArray()
 }
 
 /** Snow on track, in cm, a warning is given for: near [Weather.BLOCKING], where trains slow hard and may stick. */
 const val WARN_SNOW = 60
 /** Days ahead warnings look. */
 const val WARN_DAYS = 3
+/** Days a warning that's lapsed is kept before it can be told again. */
+const val WARN_QUIET = 5
+/** Tenths of a degree today has to be above [DEEP_COLD] for deep cold coming to be told. */
+const val COLD_MARGIN = 30
+/** Tiles across a square cell warnings are grouped by before naming the nearest town. */
+const val WARN_CELL = 16
 /** Half a day's swing round its mean heat, in tenths of a degree: clear, and under cloud. */
 const val DAY_SWING = 50
 const val DAY_SWING_WET = 25

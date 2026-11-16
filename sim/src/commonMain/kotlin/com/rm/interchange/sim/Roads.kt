@@ -141,7 +141,7 @@ internal fun World.buildRoad(company: Company, c: Command.Road) {
             spend(company, Books.CONSTRUCTION, price(Prices.TRACK_REMOVE))
             val left = has and bits.inv()
             road[i] = (if (left and 15 == 0) 0 else left).toByte()
-            if (left and 15 == 0) { roadKind[i] = 0; roadOwner[i] = -1 }
+            if (left and 15 == 0) { roadKind[i] = 0; roadOwner[i] = -1; roadLifted(i) }
             touched(x, y)
             continue
         }

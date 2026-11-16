@@ -57,6 +57,7 @@ private fun World.clearRoad(company: Company, x: Int, y: Int) {
     road[i] = 0
     roadKind[i] = 0
     roadOwner[i] = -1
+    roadLifted(i)
     for (e in 0 until 4) {
         if (bits and roadBit(e) == 0) continue
         val nx = x + Track.dx(e)
