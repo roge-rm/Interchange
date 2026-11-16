@@ -223,7 +223,7 @@ fun DepotCard(view: WorldView, roster: Roster, depot: Int, year: Int, funds: Lon
                     e == null -> NoneOnSale(roster, VehicleKind.ENGINE, year)
                     else -> BuyList(
                         engines, e.id, -1, price, { engineId = it },
-                        costOf = { it.cost + (tender(it)?.cost ?: 0) }, runningOf = { it.running + (tender(it)?.running ?: 0) },
+                        costOf = { it.cost + (tender(it)?.cost ?: 0) }, runningOf = { it.running + (tender(it)?.running ?: 0) }, tenderOf = ::tender,
                     ) {}
                 }
             },

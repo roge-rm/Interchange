@@ -33,7 +33,7 @@ import org.jetbrains.compose.resources.stringResource
 private val HEADLINES = setOf(
     News.INDUSTRY_OPENS, News.INDUSTRY_CLOSES, News.WASHOUT, News.FIRE, News.AVALANCHE, News.SUBSIDY_AWARDED,
     News.COMPANY_FOR_SALE, News.COMPANY_BOUGHT, News.COMPANY_BANKRUPT, News.COMPANY_RESTARTED, News.NEW_VEHICLE,
-    News.GOAL_MET, News.GOAL_FAILED, News.CONTRACT_FAILED, News.SCENARIO_WON, News.SCENARIO_LOST, News.CRASH,
+    News.GOAL_MET, News.GOAL_FAILED, News.CONTRACT_FAILED, News.FUEL_SHOCK, News.SCENARIO_WON, News.SCENARIO_LOST, News.CRASH,
 )
 
 /** The most months the chronicle shows at once, newest first. */
@@ -131,6 +131,7 @@ private fun storyGlyph(world: World, t: Story): Glyph = when (t.kind) {
     }
     News.GOAL_MET, News.GOAL_FAILED -> world.goals.getOrNull(t.about)?.let { goalGlyph(it.kind) } ?: Glyph.Flag
     in News.CONTRACT_OFFERED..News.CONTRACT_DONE -> Glyph.Package
+    News.FUEL_SHOCK -> Glyph.Fire
     News.SCENARIO_WON -> Glyph.Trophy
     News.SCENARIO_LOST -> Glyph.Flag
     News.CRASH -> Glyph.Alert

@@ -36,6 +36,9 @@ import org.jetbrains.compose.resources.stringResource
 /** How tall a buying list gets before it scrolls, set from the screen's height. */
 val LocalBuyListHeight = staticCompositionLocalOf { 320.dp }
 
+/** Today's prices from the game's view, or null with era costs off; buying lists split running costs by it. */
+val LocalPrices = staticCompositionLocalOf<com.rm.interchange.sim.PricesView?> { null }
+
 
 /** What [e] is carrying in the list: [cargo] if it's one of its choices, else its first, and how many others it could unless [choosing]. */
 @Composable
@@ -76,7 +79,7 @@ private const val FOR_GOOD = 2100
  * [selected] one is lit and offers its cargo choices, if it has more than one.
  */
 @Composable
-private fun ModelRow(e: Engine, cost: Long, running: Long, selected: Boolean, cargo: Int, onSelect: () -> Unit, onCargo: (Int) -> Unit) {
+private fun ModelRow(e: Engine, cost: Long, running: Long, fuel: Long, selected: Boolean, cargo: Int, onSelect: () -> Unit, onCargo: (Int) -> Unit) {
     val lang = languageCode()
     // Picked, the row and its cargo choices scroll into sight, once they're laid out.
     val sight = remember { BringIntoViewRequester() }
@@ -96,7 +99,7 @@ private fun ModelRow(e: Engine, cost: Long, running: Long, selected: Boolean, ca
             e.type(lang).takeIf { it.isNotEmpty() && it != e.name(lang) },
             stringResource(Res.string.on_sale_until, e.until - 1).takeIf { e.until < FOR_GOOD },
         ).joinToString(SEP),
-        lineEnd = stringResource(Res.string.a_year, money(running)),
+        lineEnd = if (fuel > 0) stringResource(Res.string.a_year_fuel, money(running), money(fuel)) else stringResource(Res.string.a_year, money(running)),
         stats = statsText(e, if (selected) cargo else -1, selected),
         selected = selected,
         onClick = onSelect,
@@ -114,13 +117,18 @@ private fun ModelRow(e: Engine, cost: Long, running: Long, selected: Boolean, ca
 @Composable
 fun BuyList(
     models: List<Engine>, selected: Int, cargo: Int, price: (Long) -> Long, onSelect: (Int) -> Unit,
-    costOf: (Engine) -> Long = { it.cost }, runningOf: (Engine) -> Long = { it.running }, onCargo: (Int) -> Unit,
+    costOf: (Engine) -> Long = { it.cost }, runningOf: (Engine) -> Long = { it.running }, tenderOf: (Engine) -> Engine? = { null }, onCargo: (Int) -> Unit,
 ) {
+    // With era costs on, running is the fixed part and the fuel at today's price, a tender's fuel with its engine's.
+    val prices = LocalPrices.current
     Column(
         Modifier.fillMaxWidth().heightIn(max = LocalBuyListHeight.current).verticalScroll(rememberScrollState()).selectableGroup(),
         verticalArrangement = Arrangement.spacedBy(KitSpace.Gap),
     ) {
-        for (e in models) ModelRow(e, price(costOf(e)), price(runningOf(e)), e.id == selected, cargo, { onSelect(e.id) }) { onCargo(it) }
+        for (e in models) {
+            val split = prices?.let { p -> p.running(e).let { a -> tenderOf(e)?.let { t -> p.running(t).let { b -> longArrayOf(a[0] + b[0], a[1] + b[1]) } } ?: a } }
+            ModelRow(e, price(costOf(e)), split?.get(0) ?: price(runningOf(e)), split?.get(1) ?: 0L, e.id == selected, cargo, { onSelect(e.id) }) { onCargo(it) }
+        }
     }
 }
 

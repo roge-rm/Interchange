@@ -188,9 +188,10 @@ fun NewGameScreen(packs: List<Pack>, onStart: (NewGame, List<Pack>) -> Unit, onB
     var breakdowns by remember { mutableIntStateOf(com.rm.interchange.sim.Breakdowns.NEW_GAME) }
     var stockpiles by remember { mutableStateOf(true) }
     var contracts by remember { mutableStateOf(true) }
+    var eraCosts by remember { mutableStateOf(true) }
     var handling by remember { mutableStateOf(true) }
     var off by remember { mutableStateOf(emptySet<String>()) }
-    val settings = NewGame(width, height, seed, year, region, sea, hills, trees, towns, industries, inflation, weather, dayLength, rivals, sharing, rivalLevel, townGrowth, goals, collisions, breakdowns = breakdowns, stockpiles = stockpiles, contracts = contracts && stockpiles, handling = handling)
+    val settings = NewGame(width, height, seed, year, region, sea, hills, trees, towns, industries, inflation, weather, dayLength, rivals, sharing, rivalLevel, townGrowth, goals, collisions, breakdowns = breakdowns, stockpiles = stockpiles, contracts = contracts && stockpiles, handling = handling, eraCosts = eraCosts)
     // The map's the same whatever the goals and growth, so changing them doesn't make it again.
     val land = settings.copy(townGrowth = com.rm.interchange.sim.TownGrowth.NORMAL, goals = com.rm.interchange.sim.GoalSet.NONE, breakdowns = com.rm.interchange.sim.Breakdowns.NORMAL)
     val chosen = packs.filter { it.id !in off }
@@ -303,7 +304,7 @@ fun NewGameScreen(packs: List<Pack>, onStart: (NewGame, List<Pack>) -> Unit, onB
             Text(stringResource(Res.string.breakdowns_setting), color = c.text, style = KitType.Label)
             FillChips((0..2).toList(), breakdowns, { breakdownNames.getOrElse(it) { "$it" } }) { breakdowns = it }
         }
-        // The seven switches, four to a row where wide, else two and two.
+        // The eight switches, four to a row where wide, else two and two.
         val toggles = listOf<@Composable (Modifier) -> Unit>(
             { m -> TogglePill(stringResource(Res.string.inflation), inflation, m) { inflation = it } },
             { m -> TogglePill(stringResource(Res.string.weather), weather, m) { weather = it } },
@@ -311,6 +312,7 @@ fun NewGameScreen(packs: List<Pack>, onStart: (NewGame, List<Pack>) -> Unit, onB
             { m -> TogglePill(stringResource(Res.string.collisions), collisions, m) { collisions = it } },
             { m -> TogglePill(stringResource(Res.string.stockpiles), stockpiles, m) { stockpiles = it } },
             { m -> TogglePill(stringResource(Res.string.contracts), contracts && stockpiles, m) { contracts = it } },
+            { m -> TogglePill(stringResource(Res.string.era_costs), eraCosts, m) { eraCosts = it } },
             { m -> TogglePill(stringResource(Res.string.handling), handling, m) { handling = it } },
         )
         for (row in toggles.chunked(if (wide) 4 else 2)) {
@@ -671,6 +673,9 @@ fun FinanceWindow(runner: com.rm.interchange.server.GameThread, onClose: () -> U
     val company by produceState(runner.view?.company, runner) {
         while (true) androidx.compose.runtime.withFrameNanos { value = runner.view?.company }
     }
+    val prices by produceState(runner.view?.prices, runner) {
+        while (true) androidx.compose.runtime.withFrameNanos { value = runner.view?.prices }
+    }
     val co = company ?: return
     Window(stringResource(Res.string.finances), onClose, Glyph.Graph) {
         InfoRow(stringResource(Res.string.stat_money), money(co.money), valueColour = if (co.money < 0) c.bad else null)
@@ -711,6 +716,57 @@ fun FinanceWindow(runner: com.rm.interchange.server.GameThread, onClose: () -> U
         if (co.history.size >= 2) {
             Head(stringResource(Res.string.money_graph))
             MoneyGraph(co.history, Modifier.fillMaxWidth().height(120.dp))
+        }
+        prices?.let { PricesSection(it) }
+    }
+}
+
+/** The line colours of the price chart: labour, steel, concrete, land, then coal, diesel, electricity, aviation fuel and bunker fuel. */
+private val PRICE_COLOURS = listOf(
+    androidx.compose.ui.graphics.Color(0xFFE0A030), androidx.compose.ui.graphics.Color(0xFF7A8CA0), androidx.compose.ui.graphics.Color(0xFFB0A090),
+    androidx.compose.ui.graphics.Color(0xFF6AAA5A), androidx.compose.ui.graphics.Color(0xFF555555), androidx.compose.ui.graphics.Color(0xFFD05A3A),
+    androidx.compose.ui.graphics.Color(0xFF4A90D9), androidx.compose.ui.graphics.Color(0xFF9A70C8), androidx.compose.ui.graphics.Color(0xFF30A8A8),
+)
+
+/** Each price as a percent of what it was in the first year, with a chart of them over the years so far. */
+@Composable
+private fun PricesSection(p: com.rm.interchange.sim.PricesView) {
+    val c = LocalColors.current
+    Head(stringResource(Res.string.prices))
+    val names = listOf(
+        Res.string.price_labour, Res.string.price_steel, Res.string.price_concrete, Res.string.price_land,
+        Res.string.price_coal, Res.string.price_diesel, Res.string.price_electric, Res.string.price_aviation, Res.string.price_bunker,
+    )
+    // Percent of the first year for each of the nine, by year point.
+    val lines = p.indexHistory.toList() + p.fuelHistory.toList()
+    val now = p.indices.toList() + p.fuels.toList()
+    for ((k, name) in names.withIndex()) {
+        val first = lines[k].firstOrNull()?.takeIf { it > 0 } ?: 1
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Box(Modifier.size(10.dp).background(PRICE_COLOURS[k]))
+            Text(stringResource(name), color = c.text, style = KitType.ListLine, modifier = Modifier.weight(1f))
+            Text("${now[k] * 100 / first}%", color = c.text, style = KitType.ListLine)
+        }
+    }
+    if (p.years.size >= 2) PriceGraph(lines, Modifier.fillMaxWidth().height(100.dp))
+}
+
+/** Every price as a line of its percent of the first year, on one scale. */
+@Composable
+private fun PriceGraph(lines: List<IntArray>, modifier: Modifier) {
+    val c = LocalColors.current
+    androidx.compose.foundation.Canvas(modifier) {
+        val ratios = lines.map { l -> val first = l[0].coerceAtLeast(1); FloatArray(l.size) { l[it].toFloat() / first } }
+        val most = ratios.maxOf { it.max() }.coerceAtLeast(1.1f)
+        val least = ratios.minOf { it.min() }.coerceAtMost(0.9f)
+        val n = lines[0].size
+        val step = size.width / (n - 1).coerceAtLeast(1)
+        fun y(v: Float) = size.height * (1f - (v - least) / (most - least))
+        drawLine(c.chromeEdge, androidx.compose.ui.geometry.Offset(0f, y(1f)), androidx.compose.ui.geometry.Offset(size.width, y(1f)), 1.dp.toPx())
+        for ((k, r) in ratios.withIndex()) {
+            val path = androidx.compose.ui.graphics.Path()
+            for (i in 0 until n) if (i == 0) path.moveTo(0f, y(r[0])) else path.lineTo(i * step, y(r[i]))
+            drawPath(path, PRICE_COLOURS[k], style = androidx.compose.ui.graphics.drawscope.Stroke(1.5.dp.toPx()))
         }
     }
 }

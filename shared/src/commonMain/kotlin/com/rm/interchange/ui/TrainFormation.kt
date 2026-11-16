@@ -100,6 +100,7 @@ internal fun TrainFormationEditor(
                 models, chosen.id, cargo, price, { model = it; cargo = -1 },
                 costOf = { it.cost + (roster.getOrNull(it.tender)?.cost ?: 0) },
                 runningOf = { it.running + (roster.getOrNull(it.tender)?.running ?: 0) },
+                tenderOf = { roster.getOrNull(it.tender) },
             ) { cargo = it }
             val room = if (wagons) draft.count { roster[it.model].kind == VehicleKind.WAGON } < MAX_WAGONS
                 else draft.count { roster[it.model].pulls } < MAX_LOCOMOTIVES

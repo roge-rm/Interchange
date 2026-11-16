@@ -145,6 +145,11 @@ import com.rm.interchange.sim.Signals
 import com.rm.interchange.sim.signalRunCost
 import com.rm.interchange.sim.Surface
 import com.rm.interchange.sim.saltDepotCost
+import com.rm.interchange.sim.Mix
+import com.rm.interchange.sim.CostMark
+import com.rm.interchange.sim.build
+import com.rm.interchange.sim.costMark
+import com.rm.interchange.sim.woodBuild
 import com.rm.interchange.sim.Airports
 import com.rm.interchange.sim.Depots
 import com.rm.interchange.sim.Order
@@ -1440,7 +1445,7 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
     // A player who just joined may be drawn a frame or two before their company is made; costs go by the first till then.
     val company = world.companies.getOrNull(me) ?: world.companies[0]
     val dragged: Pair<Int, Long>? = plan?.let { p ->
-        if (tool == Tool.Wires) Track.line(world, p.sx, p.sy, p.ex, p.ey, p.first)?.let { it.size to it.size * world.price(Prices.WIRE) }
+        if (tool == Tool.Wires) Track.line(world, p.sx, p.sy, p.ex, p.ey, p.first)?.let { it.size to it.size * world.build(Prices.WIRE, Mix.WIRE, world.index(p.sx, p.sy)) }
         else world.railCost(p).let { (cost, n) -> if (cost < 0) null else n to cost }
     } ?: roadPlan?.let { p -> world.roadCost(company, p).takeIf { it >= 0 }?.let { (maxOf(kotlin.math.abs(p.ex - p.sx), kotlin.math.abs(p.ey - p.sy)) + 1) to it } }
         ?: canalPlan?.let { p -> world.canalCost(company, p).let { (cost, n) -> n to cost } }
@@ -1449,7 +1454,7 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
         ?: levelPlan?.let { p -> world.levelCost(p).let { (cost, n) -> n to cost } }
         ?: treePlan?.let { p -> world.plantCost(p).let { (cost, n) -> n to cost } }
         ?: signalPlan?.takeIf { !it.remove }?.let { p -> world.signalRunCost(p).let { (cost, n) -> n to cost } }
-        ?: stationPlan?.let { p -> ((kotlin.math.abs(p.x1 - p.x0) + 1) * (kotlin.math.abs(p.y1 - p.y0) + 1)).let { n -> n to n * world.price(Prices.PLATFORM) } }
+        ?: stationPlan?.let { p -> ((kotlin.math.abs(p.x1 - p.x0) + 1) * (kotlin.math.abs(p.y1 - p.y0) + 1)).let { n -> n to n * world.build(Prices.PLATFORM, Mix.PLATFORM, world.index(p.x0, p.y0)) } }
         ?: bridgePlan?.let { p -> world.bridgeCost(company, p).takeIf { it >= 0 }?.let { (maxOf(kotlin.math.abs(p.x1 - p.x0), kotlin.math.abs(p.y1 - p.y0)) + 1) to it } }
     // Building's free in the editor.
     val dragText = if (editor) null else dragged?.takeIf { it.first > 0 }?.let { (n, cost) ->
@@ -1726,7 +1731,7 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
             // Measured after the tools below it, a card gets the height they leave.
             val cardSize = trayWidth.weight(1f, fill = false)
             val wv = worldView.value
-            CompositionLocalProvider(LocalSheets provides sheets, LocalBuyListHeight provides listHeight, LocalNetwork provides networkView.value) {
+            CompositionLocalProvider(LocalSheets provides sheets, LocalBuyListHeight provides listHeight, LocalPrices provides wv?.prices, LocalNetwork provides networkView.value) {
             when (val sel = selected) {
                 is Selection.Tile -> InspectCard(world, sel.x, sel.y, onTown, { selected = null }, cardSize)
                 Selection.Weather -> wv?.weather?.let { w ->
@@ -1797,31 +1802,39 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
             }
             if (tool.group != ToolGroup.Inspect && addingStops == null && addingRoadStops == null && addingCraftStops == null) {
                 val refusedHere = refusal != Refusal.NONE && (tool == Tool.Bridge || tool == Tool.Airport)
+                // Costs are quoted for the tile at the middle of the screen, with a mark when its cold or the season raises them.
+                val here = world.index(view.focusX.toInt().coerceIn(0, world.width - 1), view.focusY.toInt().coerceIn(0, world.height - 1))
+                val mark = world.costMark(here)
+                val footings = tool == Tool.Track || tool == Tool.Station || tool == Tool.Depot || tool == Tool.Garage || tool == Tool.RoadStop || tool == Tool.Road || tool == Tool.Airport
+                val markText = listOfNotNull(
+                    stringResource(Res.string.cost_frost).takeIf { mark and CostMark.FROST != 0 && footings },
+                    stringResource(Res.string.cost_winter).takeIf { mark and CostMark.WINTER != 0 },
+                ).joinToString(" ").ifEmpty { null }
                 val detail = if (editor) (if (refused) stringResource(Res.string.cant_edit_here) else null) else if (refusedHere) stringResource(refusalText(refusal)) else when (tool) {
-                    Tool.Track -> if (removing) stringResource(Res.string.cost_lift, money(world.price(Prices.TRACK_REMOVE))) else stringResource(Res.string.cost_track, money(world.price(Prices.TRACK)), money(world.price(Prices.FOUNDATION)))
-                    Tool.Signals -> stringResource(Res.string.cost_signal, money(world.price(Prices.SIGNAL)))
-                    Tool.Waypoint -> stringResource(Res.string.cost_waypoint, money(world.price(Prices.SIGNAL)))
+                    Tool.Track -> if (removing) stringResource(Res.string.cost_lift, money(world.build(Prices.TRACK_REMOVE, Mix.LABOUR, here))) else stringResource(Res.string.cost_track, money(world.build(Prices.TRACK, Mix.TRACK, here)), money(world.build(Prices.FOUNDATION, Mix.FOUNDATION, here, true)))
+                    Tool.Signals -> stringResource(Res.string.cost_signal, money(world.build(Prices.SIGNAL, Mix.STEELWORK)))
+                    Tool.Waypoint -> stringResource(Res.string.cost_waypoint, money(world.build(Prices.SIGNAL, Mix.STEELWORK)))
                     Tool.PriorityTrack, Tool.PriorityRoad -> worldView.value?.company?.let { stringResource(Res.string.priority_count, it.priorityTiles, money(it.priorityMonth)) }
-                    Tool.Bridge -> stringResource(Res.string.cost_tile, money(world.price(Spans.COST[bridgeStyle])))
-                    Tool.Wires, Tool.TramRails -> stringResource(Res.string.cost_tile, money(world.price(Prices.WIRE)))
-                    Tool.Road -> stringResource(Res.string.cost_tile, money(world.price(Surface.COST[roadSurface])))
-                    Tool.RoadStop -> money(world.price(Prices.ROAD_STOP))
-                    Tool.Garage -> money(world.price(Prices.DEPOT))
+                    Tool.Bridge -> stringResource(Res.string.cost_tile, money(world.build(Spans.COST[bridgeStyle], Mix.SPANS[bridgeStyle], here)))
+                    Tool.Wires, Tool.TramRails -> stringResource(Res.string.cost_tile, money(world.build(Prices.WIRE, Mix.WIRE, here)))
+                    Tool.Road -> stringResource(Res.string.cost_tile, money(world.build(Surface.COST[roadSurface], Mix.SURFACES[roadSurface], here)))
+                    Tool.RoadStop -> money(world.build(Prices.ROAD_STOP, Mix.ROAD_STOP, here))
+                    Tool.Garage -> money(world.build(Prices.DEPOT, Mix.DEPOT, here))
                     Tool.SaltDepot -> money(world.price(world.saltDepotCost()))
-                    Tool.Canal -> if (removing) stringResource(Res.string.cost_tile, money(world.price(Prices.CLEAR))) else stringResource(Res.string.cost_tile, money(world.price(CANAL_COST)))
-                    Tool.Lock -> money(world.price(LOCK_DOLLARS))
-                    Tool.Dock -> money(world.price(DOCK_COST))
-                    Tool.Shipyard -> money(world.price(SHIPYARD_COST))
-                    Tool.Buoy -> money(world.price(BUOY_COST))
-                    Tool.Airport -> money(world.price(Airports.COST[airportKind]))
-                    Tool.SnowShed -> stringResource(Res.string.cost_tile, money(world.price(SHED_COST)))
-                    Tool.SnowFence -> stringResource(Res.string.cost_tile, money(world.price(FENCE_COST)))
-                    Tool.Tunnel -> stringResource(Res.string.cost_tile, money(world.price(Spans.COST[Spans.TUNNEL])))
-                    Tool.Station -> stringResource(Res.string.cost_tile, money(world.price(Prices.PLATFORM)))
-                    Tool.Depot -> money(world.price(Prices.DEPOT))
-                    Tool.Raise, Tool.Lower, Tool.Level -> stringResource(Res.string.cost_corner, money(world.price(Prices.TERRAFORM)))
+                    Tool.Canal -> if (removing) stringResource(Res.string.cost_tile, money(world.build(Prices.CLEAR, Mix.LABOUR, here))) else stringResource(Res.string.cost_tile, money(world.build(CANAL_COST, Mix.CANAL, here)))
+                    Tool.Lock -> money(world.build(LOCK_DOLLARS, Mix.LOCK, here))
+                    Tool.Dock -> money(world.build(DOCK_COST, Mix.DOCK, here))
+                    Tool.Shipyard -> money(world.build(SHIPYARD_COST, Mix.SHIPYARD, here))
+                    Tool.Buoy -> money(world.build(BUOY_COST, Mix.BUOY))
+                    Tool.Airport -> money(world.build(Airports.COST[airportKind], Mix.AIRPORT, here))
+                    Tool.SnowShed -> stringResource(Res.string.cost_tile, money(world.woodBuild(SHED_COST, Mix.SHED, here)))
+                    Tool.SnowFence -> stringResource(Res.string.cost_tile, money(world.woodBuild(FENCE_COST, Mix.FENCE, here)))
+                    Tool.Tunnel -> stringResource(Res.string.cost_tile, money(world.build(Spans.COST[Spans.TUNNEL], Mix.SPANS[Spans.TUNNEL])))
+                    Tool.Station -> stringResource(Res.string.cost_tile, money(world.build(Prices.PLATFORM, Mix.PLATFORM, here)))
+                    Tool.Depot -> money(world.build(Prices.DEPOT, Mix.DEPOT, here))
+                    Tool.Raise, Tool.Lower, Tool.Level -> stringResource(Res.string.cost_corner, money(world.build(Prices.TERRAFORM, Mix.LABOUR, here)))
                     Tool.Remove -> stringResource(Res.string.cost_back, money(world.price(Prices.TRACK) / 2), money(world.price(Prices.PLATFORM) / 2))
-                    Tool.Clear, Tool.Trees -> stringResource(Res.string.cost_clear, money(world.price(Prices.TREE)))
+                    Tool.Clear, Tool.Trees -> stringResource(Res.string.cost_clear, money(world.build(Prices.TREE, Mix.LABOUR)))
                     else -> null
                 }
                 val pieceNames = listOf(Res.string.piece_x, Res.string.piece_y, Res.string.piece_n, Res.string.piece_e, Res.string.piece_s, Res.string.piece_w).map { stringResource(it) }
@@ -1838,7 +1851,7 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
                     Tool.Signals -> if (removing) null else signalKinds.getOrNull(signalKind)
                     else -> null
                 }
-                val trayDetail = listOfNotNull(picked.takeUnless { refusedHere }, detail).joinToString(stringResource(Res.string.list_join)).ifEmpty { null }
+                val trayDetail = listOfNotNull(picked.takeUnless { refusedHere }, detail, markText.takeIf { detail != null && !editor && !refusedHere }).joinToString(stringResource(Res.string.list_join)).ifEmpty { null }
                 val trackOptions = mutableListOf<@Composable RowScope.() -> Unit>()
                 when (tool) {
                     Tool.PlaceIndustry -> trackOptions += { CompositionLocalProvider(LocalSheets provides sheets) { IndustryKinds(world, industryKind) { industryKind = it } } }
@@ -2225,6 +2238,7 @@ internal fun newsText(world: World, n: News): String {
             else -> stringResource(Res.string.news_contract_done, text)
         }
     }
+    if (n.kind == News.FUEL_SHOCK) return stringResource(Res.string.news_fuel_shock, com.rm.interchange.sim.EraCosts.SHOCKS.getOrElse(n.about) { 0 })
     if (n.kind == News.SCENARIO_WON || n.kind == News.SCENARIO_LOST) {
         val title = world.scenario?.title?.ifBlank { null } ?: stringResource(Res.string.untitled)
         return stringResource(if (n.kind == News.SCENARIO_WON) Res.string.news_scenario_won else Res.string.news_scenario_lost, title)

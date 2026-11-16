@@ -202,7 +202,7 @@ fun World.build(base: Long, mix: IntArray, i: Int = -1, foundation: Boolean = fa
 }
 
 /** A snow shed or fence of [mix] now, cheaper where wood is local. */
-internal fun World.woodBuild(base: Long, mix: IntArray, i: Int): Long {
+fun World.woodBuild(base: Long, mix: IntArray, i: Int): Long {
     val cost = build(base, mix, i)
     if (!settings.eraCosts) return cost
     return cost * (if (EraCosts.woodLocal(settings.region)) EraCosts.WOOD_LOCAL else EraCosts.WOOD_FAR) / 1_000
