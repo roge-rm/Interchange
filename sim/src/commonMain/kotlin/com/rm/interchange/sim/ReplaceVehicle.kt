@@ -75,6 +75,7 @@ internal fun World.rebuildTrain(old: Train, cars: List<TrainCar>): Train {
     made.leave = old.leave
     made.lostUntil = old.lostUntil
     made.snowbound = old.snowbound
+    made.dugDays = old.dugDays
     made.headOn = old.headOn
     made.stuck = old.stuck
     made.aside = old.aside

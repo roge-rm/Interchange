@@ -16,7 +16,7 @@ package com.rm.interchange.sim
  */
 object Save {
     private val MAGIC = "ICHG".encodeToByteArray()
-    const val VERSION = 66
+    const val VERSION = 67
 
     /** A vehicle's [built] day as saved by [version]: work days from 36, calendar days before. */
     private fun World.builtOut(built: Int, version: Int) = if (version >= 36) built else built / settings.dayLength
@@ -52,8 +52,10 @@ object Save {
                 val given = start != null && human(c.id) && !c.gone
                 w.int(c.id); w.string(c.name); w.long(if (given) start!!.money + start.loan else c.money); w.long(c.runningOwed)
                 w.long(if (given) start!!.loan else c.loan); w.long(c.monthIn); w.long(c.monthOut)
-                for (v in c.thisYear) w.long(v)
-                for (v in c.lastYear) w.long(v)
+                // The priority line of the books from 67.
+                val books = if (version >= 67) Books.COUNT else 7
+                for (k in 0 until books) w.long(c.thisYear[k])
+                for (k in 0 until books) w.long(c.lastYear[k])
                 w.int(c.upkeep); w.long(if (version >= 33) c.upkeepOwed else c.upkeepOwed / 10)
                 w.uvar(c.history.size.toLong())
                 for (h in c.history) for (v in h) w.long(v)
@@ -323,6 +325,18 @@ object Save {
                 }
                 for (list in listOf<List<Carrier?>>(trains, roadVehicles, ships, aircraft)) for (v in list) if (v != null) { w.int(v.upgradeWhy); w.bool(v.upgradeTold) }
             }
+            if (version >= 67) {
+                for (map in listOf(priorityTrack, priorityRoad)) {
+                    val keys = map.keys.sorted()
+                    w.ints(keys.toIntArray()); w.ints(keys.map { map.getValue(it) }.toIntArray())
+                }
+                for (c in companies) w.long(c.priorityOwed)
+                for (t in trains) if (t != null) w.int(t.dugDays)
+                // Warnings standing, so a copy doesn't tell them again.
+                val keys = warned.keys.sorted()
+                w.uvar(keys.size.toLong())
+                for (k in keys) { w.long(k); w.int(warned.getValue(k)) }
+            }
         }
         val body = Squeeze.pack(w.toByteArray())
         val out = ByteWriter(body.size + 16)
@@ -398,7 +412,7 @@ object Save {
                 if (version >= 8) {
                     c.loan = r.long(); c.monthIn = r.long(); c.monthOut = r.long()
                     // Upkeep was booked from version 14.
-                    val books = if (version >= 14) Books.COUNT else 6
+                    val books = if (version >= 67) Books.COUNT else if (version >= 14) 7 else 6
                     for (k in 0 until books) c.thisYear[k] = r.long()
                     for (k in 0 until books) c.lastYear[k] = r.long()
                     // Upkeep owed is in tenths of a cent from version 33, cents before.
@@ -815,6 +829,24 @@ object Save {
                     v.upgradeWhy = r.int().let { if (it in UpgradeWhy.NONE..UpgradeWhy.MOST) it else UpgradeWhy.NONE }
                     v.upgradeTold = r.bool()
                 }
+            }
+            // Before 67 there were no priority tiles.
+            if (version >= 67) {
+                for (map in listOf(priorityTrack, priorityRoad)) {
+                    val keys = r.ints()
+                    val owners = r.ints()
+                    if (keys.size != owners.size) throw BadData("bad priority tiles")
+                    for (k in keys.indices) {
+                        if (keys[k] !in 0 until width * height || owners[k] !in 0 until MAX_COMPANIES) throw BadData("bad priority tile")
+                        map[keys[k]] = owners[k]
+                    }
+                }
+                for (c in companies) c.priorityOwed = r.long()
+                for (t in trains) if (t != null) t.dugDays = r.int().coerceAtLeast(0)
+                // Each takes two bytes at the least.
+                val n = r.uvar()
+                if (n !in 0..r.left / 2L) throw BadData("too many warnings")
+                repeat(n.toInt()) { warned[r.long()] = r.int() }
             }
             // A conditional order with a test there isn't or a jump past the end is left out, as are orders past
             // the most a vehicle takes, as a command would.

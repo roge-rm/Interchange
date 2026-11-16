@@ -82,6 +82,7 @@ object Codec {
     private const val BUY_TRAINS_INHERIT = 69
     private const val BUY_ROAD_VEHICLES_INHERIT = 70
     private const val BUY_CRAFTS_INHERIT = 71
+    private const val PRIORITY = 72
 
     /** The most goals a [Command.SetGoals] may carry. */
     const val MOST_GOALS = 100
@@ -123,6 +124,7 @@ object Codec {
             is Command.CraftOrder -> { w.byte(CRAFT_ORDER); w.int(c.company); w.bool(c.aircraft); w.int(c.vehicle); w.int(c.what); w.ints(c.stations) }
             is Command.SnowWorks -> { w.byte(SNOW_WORKS); w.int(c.company); w.int(c.x); w.int(c.y); w.bool(c.shed) }
             is Command.SetUpkeep -> { w.byte(UPKEEP); w.int(c.company); w.int(c.level) }
+            is Command.Priority -> { w.byte(PRIORITY); w.int(c.company); w.int(c.sx); w.int(c.sy); w.int(c.ex); w.int(c.ey); w.int(c.first); w.bool(c.road); w.bool(c.on) }
             is Command.SetAutorenew -> { w.byte(AUTORENEW); w.int(c.company); w.bool(c.on); w.int(c.months); w.long(c.floor) }
             is Command.Wire -> { w.byte(WIRE); w.int(c.company); w.int(c.sx); w.int(c.sy); w.int(c.ex); w.int(c.ey); w.int(c.first); w.bool(c.remove) }
             is Command.Clear -> { w.byte(CLEAR); w.int(c.company); w.int(c.x); w.int(c.y) }
@@ -203,6 +205,7 @@ object Codec {
         BRIDGE -> Command.Bridge(r.int(), r.int(), r.int(), r.int(), r.int(), r.int())
         TUNNEL -> Command.Tunnel(r.int(), r.int(), r.int())
         UPKEEP -> Command.SetUpkeep(r.int(), r.int())
+        PRIORITY -> Command.Priority(r.int(), r.int(), r.int(), r.int(), r.int(), r.int(), r.bool(), r.bool())
         AUTORENEW -> Command.SetAutorenew(r.int(), r.bool(), r.int(), r.long())
         SNOW_WORKS -> Command.SnowWorks(r.int(), r.int(), r.int(), r.bool())
         SALT_DEPOT -> Command.SaltDepot(r.int(), r.int(), r.int())

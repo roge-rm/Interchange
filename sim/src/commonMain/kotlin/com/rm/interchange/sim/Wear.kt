@@ -90,6 +90,7 @@ internal fun World.trackWorkDay() {
     val doy = Calendar.dayOfYear(startYear, day)
     val salt = (tick / Calendar.TICKS_PER_DAY).toInt() * 977 + seedBits
     val fronts = weather.fronts.toList()
+    val priority = priorityTrack.isNotEmpty()
     parallelBands(height) { from, until ->
         for (y in from until until) for (x in 0 until width) {
             val i = index(x, y)
@@ -110,11 +111,14 @@ internal fun World.trackWorkDay() {
                     }
                 }
             }
+            // Priority track is mended first, a bigger share, and kept off a slow order.
+            val first = priority && priorityTrackAt(i)
             if (c < 255) {
                 val level = companies.getOrNull(owner[i].toInt())?.upkeep ?: Upkeep.NORMAL
-                val mend = (255 - c) * Upkeep.TRACK_MEND[level]
+                val mend = (255 - c) * (if (first) maxOf(PRIORITY_MEND, Upkeep.TRACK_MEND[level]) else Upkeep.TRACK_MEND[level])
                 c += mend / 1024 + if (cellDice(x, y, salt + 5) * 4 < mend % 1024) 1 else 0
             }
+            if (first && c < PRIORITY_FLOOR) c = PRIORITY_FLOOR
             condition[i] = c.coerceIn(0, 255).toByte()
         }
     }
@@ -262,12 +266,21 @@ internal fun World.upkeepDay() {
     for (i in canals) { val o = owner[i].toInt(); if (o in 0 until MAX_COMPANIES) owed[o] += Upkeep.CANAL.toLong() }
     for (i in locks.keys) { val o = owner[i].toInt(); if (o in 0 until MAX_COMPANIES) owed[o] += Upkeep.CANAL.toLong() }
     for (a in airports) if (a != null && a.owner in 0 until MAX_COMPANIES) owed[a.owner] += Upkeep.AIRPORT[a.kind].toLong()
+    val pri = if (priorityTrack.isEmpty() && priorityRoad.isEmpty()) null else priorityOwedToday()
     for (c in companies) {
         if (c.id !in 0 until MAX_COMPANIES) continue
         c.upkeepOwed += c.trackTiles.toLong() * Upkeep.TRACK[c.upkeep] + c.roadUpkeep + owed[c.id]
         val dollars = price(c.upkeepOwed / 1_000)
         c.upkeepOwed %= 1_000
         if (dollars > 0) spend(c, Books.UPKEEP, dollars)
+        // Priority tiles on their own line of the books.
+        val extra = pri?.get(c.id) ?: 0L
+        if (extra > 0 || c.priorityOwed != 0L) {
+            c.priorityOwed += extra
+            val more = price(c.priorityOwed / 1_000)
+            c.priorityOwed %= 1_000
+            if (more > 0) spend(c, Books.PRIORITY, more)
+        }
     }
 }
 

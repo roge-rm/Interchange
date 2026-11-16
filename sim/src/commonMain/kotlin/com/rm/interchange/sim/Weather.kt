@@ -181,10 +181,7 @@ internal fun World.weatherDay(today: Int = day) {
         f.y += f.dy
         f.life--
     }
-    w.fronts.removeAll { f ->
-        val r = f.radius * 256
-        f.life <= 0 || f.x > width * 256 + r || f.x < -2 * r || f.y > height * 256 + r || f.y < -r
-    }
+    w.fronts.removeAll { frontGone(it) }
 
     // Keep the map's precipitation near the normals: sample it on a coarse grid and bring in another front when it's been dry.
     val target = Climate.precipitation(region, year, doy)
@@ -207,7 +204,7 @@ internal fun World.weatherDay(today: Int = day) {
     // The wind at the middle of the map: spread from calm to twice the region's mean, stronger round a storm. Westerly, from the south-east side ahead of a low and the north-west behind.
     val mx = width / 2
     val my = height / 2
-    val mean = when (region) { Region.PRAIRIES -> 24; Region.MARITIMES -> 21; Region.NORTH -> 19; else -> 15 }
+    val mean = windMean(region)
     var wind = rng.below(2 * mean + 1)
     var from = prevailing()
     var most = 0
@@ -287,7 +284,7 @@ private fun World.newFog() {
 }
 
 /** How far each water tile is from land, up to [Weather.FAR], spreading out from the shore a ring at a time. */
-private fun World.shoreDistances(): ByteArray {
+internal fun World.shoreDistances(): ByteArray {
     weather.shore?.let { return it }
     val far = ByteArray(width * height) { Weather.FAR.toByte() }
     val first = ArrayList<Int>()
@@ -340,6 +337,7 @@ private fun World.tileWeather(year: Int, doy: Int, today: Int) {
     fun dither(hundredths: Int, x: Int, y: Int) = ditherBy(hundredths, x, y, salt)
     val cover = fenceCover()
     val wind = w.wind
+    val priority = priorityRoad.isNotEmpty()
     val bands = Workers.threads * 4
     val slides = Array(bands) { ArrayList<Int>() }
     parallelBandsIndexed(height, bands) { band, from, until ->
@@ -412,7 +410,7 @@ private fun World.tileWeather(year: Int, doy: Int, today: Int) {
                 if (road[i].toInt() != 0 && snow > 2 && (p == 0 || snow >= DEEP_ROAD_SNOW)) {
                     val owned = roadOwner[i].toInt() >= 0
                     val town = if (owned) null else towns.getOrNull(townOf[i].toInt())
-                    val busy = if (owned) COUNTRY_PLOW else if (town != null && town.population > 5000) 128 else 70
+                    val busy = if (owned) (if (priority && priorityRoadAt(i)) PRIORITY_PLOW else COUNTRY_PLOW) else if (town != null && town.population > 5000) 128 else 70
                     if (cellDice(x, y, salt + 7) < busy) snow = if (plows) 2 else snow * 2 / 3
                 }
                 if (sheds.contains(i)) snow = 0

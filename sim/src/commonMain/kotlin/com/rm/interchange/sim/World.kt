@@ -183,6 +183,11 @@ class World(settings: NewGame, val roster: Roster = Roster.BASE, generate: Boole
     val shedYears = HashMap<Int, Int>()
     internal var fenceCoverCache: BooleanArray? = null
     val closed = HashMap<Int, Int>()
+    /** Priority track and road by tile, to the company that marked it. */
+    val priorityTrack = HashMap<Int, Int>()
+    val priorityRoad = HashMap<Int, Int>()
+    /** Weather warnings told and still standing, by kind, company and town, to the day last seen. Saved for the news, left out of the checksum. */
+    internal val warned = HashMap<Long, Int>()
 
     /** Track pieces wired for electric engines, as [Track] bits, on the ground; bridges and tunnels are wired whole. */
     val wires = ByteArray(width * height)
@@ -364,6 +369,7 @@ class World(settings: NewGame, val roster: Roster = Roster.BASE, generate: Boole
             is Command.CraftOrder -> if (command.aircraft) aircraftCommand(company, command) else shipCommand(company, command)
             is Command.SnowWorks -> snowWorks(company, command)
             is Command.SetUpkeep -> company.upkeep = command.level.coerceIn(Upkeep.LOW, Upkeep.HIGH)
+            is Command.Priority -> setPriority(company, command)
             is Command.SetAutorenew -> setAutorenew(company, command)
             is Command.Upgrade -> upgradeCommand(company, command)
             is Command.SetUpgrade -> setUpgrade(company, command.on)
@@ -436,7 +442,9 @@ class World(settings: NewGame, val roster: Roster = Roster.BASE, generate: Boole
             airSkies.clear()
             trackDay()
             if (tick % Calendar.TICKS_PER_DAY == 0L) trackWorkDay()
+            priorityDay()
             weatherLooks()
+            warnDay()
             roadsDay()
             townsDay()
             rivalsDay()
@@ -559,6 +567,13 @@ class World(settings: NewGame, val roster: Roster = Roster.BASE, generate: Boole
         for (k in closed.keys.sorted()) mix(k.toLong() * 31 + closed.getValue(k))
         for (k in kinks.keys.sorted()) mix(k.toLong() * 31 + kinks.getValue(k))
         for (k in fences.sorted()) mix(k.toLong())
+        // Only once there are some, so an old game's checksum stays as it was.
+        if (priorityTrack.isNotEmpty() || priorityRoad.isNotEmpty()) {
+            mix(300L + priorityTrack.size); for (k in priorityTrack.keys.sorted()) mix(k.toLong() * 17 + priorityTrack.getValue(k))
+            mix(400L + priorityRoad.size); for (k in priorityRoad.keys.sorted()) mix(k.toLong() * 19 + priorityRoad.getValue(k))
+        }
+        for (c in companies) if (c.priorityOwed != 0L) { mix(500L + c.id); mix(c.priorityOwed) }
+        for (t in trains) if (t != null && t.dugDays != 0) { mix(600L + t.id); mix(t.dugDays.toLong()) }
         for (k in roadStops.keys.sorted()) mix(k.toLong() * 31 + roadStops.getValue(k))
         for (k in saltDepots.sorted()) mix(k.toLong() * 7)
         for (v in roadVehicles) if (v != null) { mix(v.depot.toLong()); mix(v.noDepotUntil); mix(v.wreckedFor.toLong()); mix(v.leave.toLong()) }

@@ -179,6 +179,8 @@ class Train(
     var lostUntil = 0L
     /** Stuck in a drift, so the news is told once. */
     var snowbound = false
+    /** Calendar days it's stood snowbound against priority track, for [priorityDay] to dig it out. */
+    var dugDays = 0
     /** Ticks it's stood held by a standing train coming the other way, counted every [HEAD_ON_CHECK] ticks. */
     var headOn = 0
     /** Held head-on with no way round, so the news is told once. */
@@ -1275,7 +1277,7 @@ const val CURVE_TIGHT_KMH = 60
 const val CURVE_GENTLE_KMH = 100
 
 /** The step after [cur]: the route's, if it has one there, else where plain track leads with no choice to make. */
-private fun World.nextFrom(t: Train, cur: Int, at: Int): Int {
+internal fun World.nextFrom(t: Train, cur: Int, at: Int): Int {
     val r = t.route
     // Standing aside, it stops where its way into the loop or siding ends.
     if (t.aside >= 0 && (r == null || at >= r.size)) return -1

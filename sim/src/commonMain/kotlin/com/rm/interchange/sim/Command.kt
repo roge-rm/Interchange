@@ -79,6 +79,16 @@ sealed interface Command {
     /** Hangs wires over a line of track, as [Rail]'s line goes, or takes them down; a bridge or tunnel on the line is wired whole. */
     data class Wire(override val company: Int, val sx: Int, val sy: Int, val ex: Int, val ey: Int, val first: Int, val remove: Boolean) : Command
 
+    /**
+     * Marks the company's own track along the line [Rail] would lay as priority, or with [road] its own road along a
+     * straight line as [Road] lays it; with [on] false clears it.
+     */
+    data class Priority(
+        override val company: Int,
+        val sx: Int, val sy: Int, val ex: Int, val ey: Int,
+        val first: Int, val road: Boolean, val on: Boolean,
+    ) : Command
+
     /** Lays road of [surface] along a straight line, or lifts the company's own. */
     data class Road(override val company: Int, val sx: Int, val sy: Int, val ex: Int, val ey: Int, val surface: Int, val remove: Boolean, val tram: Boolean = false) : Command
 

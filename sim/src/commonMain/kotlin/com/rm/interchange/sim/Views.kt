@@ -369,6 +369,9 @@ class CompanyView(
     val renewFloor: Long = 0,
     /** Upgrades by its rules on. */
     val upgrade: Boolean = true,
+    /** Its priority tiles, track and road together, and what they cost a month of work days, in dollars. */
+    val priorityTiles: Int = 0,
+    val priorityMonth: Long = 0,
 )
 
 /** The weather as the screen shows it: copies of the fronts, the air and the wind, as of the start of [day]. */
@@ -423,13 +426,21 @@ class WorldView(
     val keptOrders: List<KeptOrdersView> = emptyList(),
     /** How often vehicles break down in this game, a [Breakdowns] level. */
     val breakdowns: Int = Breakdowns.NORMAL,
+    /** The next days' weather at the place asked for, tomorrow first; empty unless asked for. */
+    val forecast: List<ForecastDay> = emptyList(),
+    /** Weather warnings for the player's lines, from the recent news, newest last. */
+    val warnings: List<News> = emptyList(),
+    /** The player's priority track and road, by tile. */
+    val priorityTrack: IntArray = IntArray(0),
+    val priorityRoad: IntArray = IntArray(0),
 )
 
 /**
  * What the screen shows a player of [company]: their payments and money, and everything on the map, and with
- * [withReserved] the pieces trains hold, and with [withNetwork] the links and why cargo can't get where it's going.
+ * [withReserved] the pieces trains hold, and with [withNetwork] the links and why cargo can't get where it's going. With
+ * [forecastAt] a tile, the forecast there.
  */
-fun World.view(company: Int = 0, withReserved: Boolean = false, withNetwork: Boolean = false): WorldView {
+fun World.view(company: Int = 0, withReserved: Boolean = false, withNetwork: Boolean = false, forecastAt: Int = -1): WorldView {
     val cars = ArrayList<Float>()
     val curves = DrawCache.carCurves(this)
     val pose = FloatArray(3)
@@ -576,7 +587,7 @@ fun World.view(company: Int = 0, withReserved: Boolean = false, withNetwork: Boo
     for (v in roadVehicles) if (v != null && v.wreckedFor > 0) wrecks += VehicleView.key(VehicleView.ROAD, v.id)
     for (v in aircraft) if (v != null && v.wreckedFor > 0) wrecks += VehicleView.key(VehicleView.AIRCRAFT, v.id)
     return WorldView(VehicleView(tick, cars.toFloatArray(), wrecks), trainViews, stationViews, signalViews, depotViews, townViews, payments.filter { it.company == company }, news.toList(),
-        companies.getOrNull(company)?.let { c -> CompanyView(c.money, c.loan, maxLoan(), c.thisYear.copyOf(), c.lastYear.copyOf(), c.history.map { it.copyOf() }, c.upkeep, c.autorenew, c.renewMonths, c.renewFloor, c.upgrade) }, tick, weatherView(),
+        companies.getOrNull(company)?.let { c -> CompanyView(c.money, c.loan, maxLoan(), c.thisYear.copyOf(), c.lastYear.copyOf(), c.history.map { it.copyOf() }, c.upkeep, c.autorenew, c.renewMonths, c.renewFloor, c.upgrade, priorityCount(c.id), priorityMonth(c.id)) }, tick, weatherView(),
         stations.filterNotNull().filter { it.waypoint }.flatMap { it.tiles }.toIntArray(),
         spans.filterNotNull().map { SpanView(it.tunnel, it.style, it.x0, it.y0, it.x1, it.y1, it.height) },
         sheds.toIntArray(), fences.toIntArray(),
@@ -648,6 +659,10 @@ fun World.view(company: Int = 0, withReserved: Boolean = false, withNetwork: Boo
         upgradeViews(company),
         keptOrderViews(company),
         settings.breakdowns,
+        if (forecastAt in 0 until width * height) forecast(forecastAt % width, forecastAt / width) else emptyList(),
+        news.filter { it.kind in News.WARN_SNOW..News.WARN_COLD && Warning.company(it.about) == company },
+        priorityTrack.keys.filter { priorityTrack[it] == company }.sorted().toIntArray(),
+        priorityRoad.keys.filter { priorityRoad[it] == company }.sorted().toIntArray(),
     )
 }
 

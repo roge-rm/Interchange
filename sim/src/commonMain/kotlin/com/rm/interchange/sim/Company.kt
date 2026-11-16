@@ -28,6 +28,8 @@ class Company(val id: Int, var name: String, var money: Long) {
     /** Its tiles of track, and what its roads cost a work day in tenths of a cent, as counted on the last calendar day. */
     var trackTiles = 0
     var roadUpkeep = 0L
+    /** What its priority tiles owe short of a dollar, in tenths of a cent. */
+    var priorityOwed = 0L
     /** Months running it's been unable to pay its way, even borrowing all it can. */
     var trouble = 0
     /** Bought out or gone under: it owns nothing and does nothing. Kept so ids stay put. */
@@ -63,7 +65,9 @@ object Books {
     const val INTEREST = 4
     const val TRAINS_SOLD = 5
     const val UPKEEP = 6
-    const val COUNT = 7
+    /** Priority track and road, and digging trains out of snow on it. */
+    const val PRIORITY = 7
+    const val COUNT = 8
 }
 
 /** Months of money kept for the finance graphs. */

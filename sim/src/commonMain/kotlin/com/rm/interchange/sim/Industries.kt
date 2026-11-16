@@ -91,6 +91,11 @@ class News(val kind: Int, val about: Int, val tick: Long) {
         const val RENEW_FAILED = 27
         /** A vehicle an upgrade rule couldn't upgrade, the reason on it; [News.about] as for [RENEW_FAILED]. */
         const val UPGRADE_FAILED = 28
+        /** Weather coming on a player's line: heavy snow, ice closing a harbour, a storm holding ships, deep cold; [News.about] packed by [Warning]. */
+        const val WARN_SNOW = 29
+        const val WARN_ICE = 30
+        const val WARN_STORM = 31
+        const val WARN_COLD = 32
     }
 }
 

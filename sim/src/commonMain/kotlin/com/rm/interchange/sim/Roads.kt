@@ -290,9 +290,13 @@ internal fun World.roadsDay() {
         val x0 = d % width
         val y0 = d / width
         var spread = 0
-        for (y in y0 - SALT_REACH..y0 + SALT_REACH) for (x in x0 - SALT_REACH..x0 + SALT_REACH) {
+        // Priority road is reached from twice as far.
+        val reach = if (priorityRoad.isEmpty()) SALT_REACH else PRIORITY_SALT_REACH
+        for (y in y0 - reach..y0 + reach) for (x in x0 - reach..x0 + reach) {
             if (!inside(x, y)) continue
             val i = index(x, y)
+            val near = kotlin.math.abs(x - x0) <= SALT_REACH && kotlin.math.abs(y - y0) <= SALT_REACH
+            if (!near && !priorityRoadAt(i)) continue
             if (roadEdges(i) == 0 || roadOwner[i].toInt() != c.id || !salted.add(i)) continue
             val ice = weather.ice[i].toInt() and 255
             val snow = weather.snow[i].toInt() and 255
@@ -369,8 +373,9 @@ fun World.sanded(i: Int): Boolean {
     val owner = roadOwner[i].toInt()
     val x = i % width
     val y = i / width
+    val reach = if (priorityRoadAt(i)) PRIORITY_SALT_REACH else SALT_REACH
     for (d in saltDepots) {
-        if (roadOwner[d].toInt() == owner && kotlin.math.abs(d % width - x) <= SALT_REACH && kotlin.math.abs(d / width - y) <= SALT_REACH) return true
+        if (roadOwner[d].toInt() == owner && kotlin.math.abs(d % width - x) <= reach && kotlin.math.abs(d / width - y) <= reach) return true
     }
     return false
 }
@@ -378,6 +383,8 @@ fun World.sanded(i: Int): Boolean {
 /** Salt from this year, sand before; how far a depot's trucks spread it, in tiles; and what a tile of salt spread costs a work day, in tenths of a cent, and what sand costs. */
 const val SALT_FROM = 1950
 const val SALT_REACH = 8
+/** How far a depot's trucks go for priority road, in tiles. */
+const val PRIORITY_SALT_REACH = 16
 const val SALT_COST = 50L
 const val SAND_COST = 20L
 /**
