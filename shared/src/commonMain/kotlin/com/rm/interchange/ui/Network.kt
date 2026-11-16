@@ -88,6 +88,9 @@ fun LinkWindow(network: WorldView, roster: Roster, link: LinkView, onVehicle: (I
         if (link.runs > 0) InfoRow(stringResource(Res.string.link_held), daysText(link.lostPerRun), Glyph.Signal,
             valueColour = if (link.heldLong()) c.warn else null)
         InfoRow(stringResource(Res.string.link_departures), Numbers.grouped(link.departures.toLong()), Glyph.Up)
+        if (link.wait > 0) InfoRow(stringResource(Res.string.link_wait), daysText(link.wait), Glyph.Calendar)
+        if (link.reliability > 0) InfoRow(stringResource(Res.string.link_reliability), daysText(link.reliability), Glyph.Signal,
+            valueColour = if (link.reliability * 4 > link.ticks) c.warn else null)
         Head(stringResource(Res.string.head_link_load), Glyph.Package)
         val cargoes = (0 until Cargo.MAX).filter { link.capacity.getOrElse(it) { 0 } > 0 }
         if (cargoes.isEmpty()) Text(stringResource(Res.string.link_no_departures), color = c.textDim, style = KitType.Body)
@@ -108,4 +111,45 @@ fun LinkWindow(network: WorldView, roster: Roster, link: LinkView, onVehicle: (I
             if (row != null) PictureRow(row.first, picture = { VehiclePicture(row.second, it) }, line = row.third, onClick = { onVehicle(mode, id) })
         }
     }
+}
+
+/** The pairs of towns whose travel isn't carried well that [town] is one of, the most unmet first. */
+fun demandOf(network: WorldView?, town: Int): List<DemandView> =
+    network?.demand.orEmpty().filter { it.townA == town || it.townB == town }.sortedByDescending { it.unmet }
+
+private fun townName(network: WorldView, id: Int) = network.towns.firstOrNull { it.id == id }?.name.orEmpty()
+
+/** A pair of towns: how many trips a month people want, what was carried last month, and whether there's a way. */
+@Composable
+fun DemandWindow(network: WorldView, d: DemandView, onClose: () -> Unit) {
+    val c = LocalColors.current
+    Window(stringResource(Res.string.demand_towns, townName(network, d.townA), townName(network, d.townB)), onClose, Glyph.Briefcase) {
+        InfoRow(stringResource(Res.string.demand_potential), Numbers.grouped(d.potential.toLong()), Glyph.People)
+        InfoRow(stringResource(Res.string.demand_carried), Numbers.grouped(d.carried.toLong()), Glyph.Up)
+        if (d.served) InfoRow(stringResource(Res.string.demand_best_trip), stringResource(Res.string.demand_has_trip), Glyph.Links)
+        else InfoRow(stringResource(Res.string.demand_best_trip), whyText(WhyNot.NO_SERVICE) ?: stringResource(Res.string.demand_no_trip), Glyph.Links, valueColour = c.bad)
+    }
+}
+
+/** The places people in a town want to go that aren't served well, for its window; nothing without the network view. */
+@Composable
+fun TownDemand(network: WorldView?, town: Int) {
+    val c = LocalColors.current
+    val wanted = demandOf(network, town).take(5)
+    if (wanted.isEmpty() || network == null) return
+    Head(stringResource(Res.string.head_wanted_trips), Glyph.Briefcase)
+    for (d in wanted) {
+        val other = if (d.townA == town) d.townB else d.townA
+        InfoRow(townName(network, other), Numbers.grouped(d.unmet.toLong()), Glyph.People,
+            valueColour = if (d.served) c.warn else c.bad)
+    }
+}
+
+/** A station's service score as a word and what it does to its passengers, or null before it's worked out. */
+@Composable
+fun serviceText(score: Int): String? = when {
+    score < 0 -> null
+    score >= 60 -> stringResource(Res.string.service_good, score - 50)
+    score <= 40 -> stringResource(Res.string.service_poor, score - 50)
+    else -> stringResource(Res.string.service_fair)
 }

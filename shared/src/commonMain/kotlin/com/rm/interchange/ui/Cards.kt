@@ -269,6 +269,10 @@ fun StationCard(view: WorldView, roster: Roster, s: StationView, onVehicle: (Veh
     val lang = languageCode()
     Card(stationName(view, s.id), onClose, modifier) {
         if (s.platforms > 0) InfoRow(stringResource(Res.string.platform_tiles_label), s.platforms.toString(), Glyph.Station)
+        serviceText(s.service)?.let {
+            InfoRow(stringResource(Res.string.service_score), it, Glyph.Signal,
+                valueColour = if (s.service >= 60) c.good else if (s.service <= 40) c.warn else null)
+        }
         // Each cargo it deals in, with how much is waiting and its rating; passengers and mail always.
         Head(stringResource(Res.string.head_waiting))
         // Also what the vehicles calling here could load, before any has.

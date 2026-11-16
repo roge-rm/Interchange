@@ -82,6 +82,9 @@ internal class OverviewOptions {
     val links = mutableStateOf(false)
     /** The link whose window is open, by its company and its from and to stations. */
     val link = mutableStateOf<Triple<Int, Int, Int>?>(null)
+    val demand = mutableStateOf(false)
+    /** The pair of towns whose card is open, by their ids. */
+    val pair = mutableStateOf<Pair<Int, Int>?>(null)
 }
 
 internal suspend fun <T> mapRead(runner: GameThread, read: (World) -> T): T = suspendCancellableCoroutine { continuation ->
@@ -109,18 +112,23 @@ internal fun OverviewWindow(runner: GameThread, view: View, viewport: Size, opti
     var coverage by options.coverage
     var linksOn by options.links
     var openLink by options.link
+    var demandOn by options.demand
+    var openPair by options.pair
     // The game thread builds the links every half second while they're asked for, so they're read as often.
     val network = remember(runner) { mutableStateOf(runner.networkView) }
     val links = remember(runner) { mutableStateOf<List<LinkView>>(emptyList()) }
-    // The link window closes with the map.
-    DisposableEffect(options) { onDispose { options.link.value = null } }
-    LaunchedEffect(runner, linksOn, openLink) {
-        while (linksOn || openLink != null) {
+    val demand = remember(runner) { mutableStateOf<List<DemandView>>(emptyList()) }
+    // The link and demand windows close with the map.
+    DisposableEffect(options) { onDispose { options.link.value = null; options.pair.value = null } }
+    LaunchedEffect(runner, linksOn, openLink, demandOn, openPair) {
+        while (linksOn || openLink != null || demandOn || openPair != null) {
             network.value = runner.networkView
             links.value = network.value?.links.orEmpty()
+            demand.value = network.value?.demand.orEmpty()
             delay(500)
         }
         links.value = emptyList()
+        demand.value = emptyList()
     }
     LaunchedEffect(runner) {
         while (true) {
@@ -171,6 +179,7 @@ internal fun OverviewWindow(runner: GameThread, view: View, viewport: Size, opti
                     MapTile(Glyph.Graph, stringResource(Res.string.map_cargo_flow), flow, tile) { flow = !flow }
                     MapTile(Glyph.People, stringResource(Res.string.map_coverage), coverage, tile) { coverage = !coverage }
                     MapTile(Glyph.Links, stringResource(Res.string.map_links), linksOn, tile) { linksOn = !linksOn }
+                    MapTile(Glyph.Briefcase, stringResource(Res.string.map_demand), demandOn, tile) { demandOn = !demandOn }
                 }
             }
             val companyPicker: @Composable (Modifier) -> Unit = { modifier ->
@@ -192,8 +201,9 @@ internal fun OverviewWindow(runner: GameThread, view: View, viewport: Size, opti
             }
             val map: @Composable (Modifier) -> Unit = { modifier ->
                 Box(modifier) {
-                    OverviewCanvas(current, traffic, view, viewport, options, filter, Modifier.fillMaxSize(), links,
-                        onIndustry = { selectedIndustry = it }, onLink = { openLink = Triple(it.owner, it.from, it.to) })
+                    OverviewCanvas(current, traffic, view, viewport, options, filter, Modifier.fillMaxSize(), links, demand,
+                        onIndustry = { selectedIndustry = it }, onLink = { openLink = Triple(it.owner, it.from, it.to) },
+                        onDemand = { openPair = it.townA to it.townB })
                     if (flow) {
                         val onBoard = current?.data?.info?.flows.orEmpty().filter { (filter < 0 || it.owner == filter) && (cargo < 0 || it.cargo == cargo) }.sumOf { it.count }
                         val loadLabel = stringResource(Res.string.map_on_board)
@@ -215,6 +225,14 @@ internal fun OverviewWindow(runner: GameThread, view: View, viewport: Size, opti
                         // The mark drawn on a link held over a quarter of its journey.
                         Box(Modifier.size(9.dp).clip(RoundedCornerShape(5.dp)).background(c.text).padding(1.5.dp).clip(RoundedCornerShape(4.dp)).background(c.bad))
                         Text(stringResource(Res.string.link_held_legend), color = c.textDim, style = KitType.Dim, maxLines = 1)
+                    }
+                    if (demandOn) Row(Modifier.align(Alignment.BottomStart).padding(6.dp).clip(RoundedCornerShape(6.dp))
+                        .background(c.chrome.copy(alpha = 0.92f)).padding(6.dp),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
+                        for ((colour, label) in listOf(c.bad to stringResource(Res.string.demand_unserved), c.warn to stringResource(Res.string.demand_served_poorly))) {
+                            Box(Modifier.size(6.dp).clip(RoundedCornerShape(3.dp)).background(colour))
+                            Text(label, color = colour.let { c.textDim }, style = KitType.Dim, maxLines = 1)
+                        }
                     }
                     if (coverage) Row(Modifier.align(Alignment.BottomCenter).padding(6.dp).clip(RoundedCornerShape(6.dp))
                         .background(c.chrome.copy(alpha = 0.92f)).padding(6.dp),
@@ -271,6 +289,9 @@ internal fun OverviewWindow(runner: GameThread, view: View, viewport: Size, opti
     // A link gone since it was tapped closes its window once the links are there without it.
     LaunchedEffect(openLink, shownNetwork) { if (openLink != null && shownNetwork != null && shownLink == null) openLink = null }
     if (shownNetwork != null && shownLink != null) LinkWindow(shownNetwork, roster, shownLink, onVehicle) { openLink = null }
+    val shownPair = openPair?.let { (a, b) -> shownNetwork?.demand?.firstOrNull { it.townA == a && it.townB == b } }
+    LaunchedEffect(openPair, shownNetwork) { if (openPair != null && shownNetwork != null && shownPair == null) openPair = null }
+    if (shownNetwork != null && shownPair != null) DemandWindow(shownNetwork, shownPair) { openPair = null }
     current?.data?.industries?.firstOrNull { it.place.id == selectedIndustry }?.let { industry ->
         val info = industry.info
         val slot = if (filter < 0) OVERVIEW_ALL else filter

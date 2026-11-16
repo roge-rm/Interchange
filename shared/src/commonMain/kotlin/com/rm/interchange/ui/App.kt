@@ -719,7 +719,7 @@ private fun Root(settings: Settings) {
                     Box(Modifier.fillMaxSize().background(LocalColors.current.page))
                 } else {
                     Playing(r, s, settings, kept, pick, copyPick, onMenu = { saved = false; window = Win.Menu }, onOverlays = { window = Win.Overlays }, onFinances = { window = Win.Finances }, onTown = { town = it; window = Win.Town }, goTo = goTo, showVehicle = showVehicle,
-                        onMap = { window = Win.Map }, overview = window == Win.Map, onCloseOverview = { window = null },
+                        onMap = { window = Win.Map }, overview = window == Win.Map, townOpen = window == Win.Town, onCloseOverview = { window = null },
                         onChat = if (inMultiplayer) ({ window = Win.Chat }) else null, chatUnread = lastChat != null && lastChat !== readChat)
                 }
             }
@@ -842,7 +842,10 @@ private fun Root(settings: Settings) {
                 }
             }
             Win.Outcome -> runner?.game?.world?.let { w -> OutcomeWindow(w, { window = null }, ::toTitle) }
-            Win.Town -> runner?.game?.world?.let { w -> w.towns.getOrNull(town)?.let { t -> TownWindow(w, t, { runner?.request(it) }) { window = null } } }
+            Win.Town -> runner?.game?.world?.let { w -> w.towns.getOrNull(town)?.let { t ->
+                val net = remember(runner) { mutableStateOf(runner?.networkView) }
+                LaunchedEffect(runner) { while (true) { net.value = runner?.networkView; delay(500) } }
+                TownWindow(w, t, net.value, { runner?.request(it) }) { window = null } } }
             Win.Multiplayer -> MultiplayerWindow(settings, ::joined) { window = null }
             Win.Players -> runner?.let { r ->
                 PlayersWindow(
@@ -888,7 +891,7 @@ private fun Root(settings: Settings) {
 
 /** A game being played: waits for the world to be made, then shows it. */
 @Composable
-private fun Playing(runner: GameThread, sheets: Sheets, settings: Settings, kept: KeptView, pick: MapPick?, copyPick: MutableState<CopyPick?>, onMenu: () -> Unit, onOverlays: () -> Unit, onFinances: () -> Unit, onTown: (Int) -> Unit, goTo: MutableState<Pair<Float, Float>?>, showVehicle: MutableState<ShowVehicle?>, onChat: (() -> Unit)?, chatUnread: Boolean, onMap: () -> Unit, overview: Boolean, onCloseOverview: () -> Unit) {
+private fun Playing(runner: GameThread, sheets: Sheets, settings: Settings, kept: KeptView, pick: MapPick?, copyPick: MutableState<CopyPick?>, onMenu: () -> Unit, onOverlays: () -> Unit, onFinances: () -> Unit, onTown: (Int) -> Unit, goTo: MutableState<Pair<Float, Float>?>, showVehicle: MutableState<ShowVehicle?>, onChat: (() -> Unit)?, chatUnread: Boolean, onMap: () -> Unit, overview: Boolean, townOpen: Boolean, onCloseOverview: () -> Unit) {
     var world by remember(runner) { mutableStateOf<World?>(null) }
     // Redraws every display frame, and picks up the world once it's made, or when a server sends it again.
     val frame = remember(runner) { mutableLongStateOf(0L) }
@@ -909,11 +912,11 @@ private fun Playing(runner: GameThread, sheets: Sheets, settings: Settings, kept
         Box(Modifier.fillMaxSize().background(LocalColors.current.page))
         return
     }
-    key(runner, w) { CompositionLocalProvider(LocalCargo provides w.roster.cargo) { GameScreen(runner, w, sheets, frame, settings, kept, pick, copyPick, onMenu, onOverlays, onFinances, onTown, goTo, showVehicle, onChat, chatUnread, onMap, overview, onCloseOverview) } }
+    key(runner, w) { CompositionLocalProvider(LocalCargo provides w.roster.cargo) { GameScreen(runner, w, sheets, frame, settings, kept, pick, copyPick, onMenu, onOverlays, onFinances, onTown, goTo, showVehicle, onChat, chatUnread, onMap, overview, townOpen, onCloseOverview) } }
 }
 
 @Composable
-private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: State<Long>, settings: Settings, kept: KeptView, pick: MapPick?, copyPick: MutableState<CopyPick?>, onMenu: () -> Unit, onOverlays: () -> Unit, onFinances: () -> Unit, onTown: (Int) -> Unit, goTo: MutableState<Pair<Float, Float>?>, showVehicle: MutableState<ShowVehicle?>, onChat: (() -> Unit)?, chatUnread: Boolean, onMap: () -> Unit, overview: Boolean, onCloseOverview: () -> Unit) {
+private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: State<Long>, settings: Settings, kept: KeptView, pick: MapPick?, copyPick: MutableState<CopyPick?>, onMenu: () -> Unit, onOverlays: () -> Unit, onFinances: () -> Unit, onTown: (Int) -> Unit, goTo: MutableState<Pair<Float, Float>?>, showVehicle: MutableState<ShowVehicle?>, onChat: (() -> Unit)?, chatUnread: Boolean, onMap: () -> Unit, overview: Boolean, townOpen: Boolean, onCloseOverview: () -> Unit) {
     val me = runner.company
     val c = LocalColors.current
     // The drawings of this game's vehicles: the base pack's come with the app, the others from their packs.
@@ -1907,7 +1910,7 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
             }
         }, onCloseOverview)
         // The game thread builds the network part of the view only while something here shows it.
-        val wantsNetwork = (overview && (overviewOptions.links.value || overviewOptions.link.value != null)) || when (selected) {
+        val wantsNetwork = (overview && (overviewOptions.links.value || overviewOptions.link.value != null || overviewOptions.demand.value || overviewOptions.pair.value != null)) || townOpen || when (selected) {
             is Selection.Station, is Selection.Train, is Selection.RoadVehicle, is Selection.Ship, is Selection.Aircraft -> true
             else -> false
         }

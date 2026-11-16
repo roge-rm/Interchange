@@ -26,7 +26,8 @@ import kotlin.math.ln
 
 @Composable
 internal fun OverviewCanvas(image: MapImage?, traffic: State<List<OverviewVehicle>>, view: View, viewport: Size,
-    options: OverviewOptions, owner: Int, modifier: Modifier, links: State<List<LinkView>>, onIndustry: (Int) -> Unit, onLink: (LinkView) -> Unit) {
+    options: OverviewOptions, owner: Int, modifier: Modifier, links: State<List<LinkView>>, demand: State<List<DemandView>>,
+    onIndustry: (Int) -> Unit, onLink: (LinkView) -> Unit, onDemand: (DemandView) -> Unit) {
     val c = LocalColors.current
     val camera = options.camera
     val measurer = rememberTextMeasurer(cacheSize = 256)
@@ -34,6 +35,7 @@ internal fun OverviewCanvas(image: MapImage?, traffic: State<List<OverviewVehicl
     val latestImage by rememberUpdatedState(image)
     val latestIndustry by rememberUpdatedState(onIndustry)
     val latestLink by rememberUpdatedState(onLink)
+    val latestDemand by rememberUpdatedState(onDemand)
     val cameraRevision = remember(view) { mutableIntStateOf(0) }
     val shape = RoundedCornerShape(10.dp)
     Canvas(modifier.onSizeChanged { camera.resize(Size(it.width.toFloat(), it.height.toFloat()), view.mapWidth, view.mapHeight) }.clip(shape).background(c.page).border(1.dp, c.chromeEdge, shape)
@@ -71,8 +73,11 @@ internal fun OverviewCanvas(image: MapImage?, traffic: State<List<OverviewVehicl
                     } else null
                     val link = if (industry == null && data != null && options.links.value) linkNear(data, shownLinks(links.value, options, owner), down.position,
                         Size(size.width.toFloat(), size.height.toFloat()), camera, 12.dp.toPx()) else null
+                    val pair = if (industry == null && link == null && data != null && options.demand.value) demandNear(data, shownDemand(demand.value), down.position,
+                        Size(size.width.toFloat(), size.height.toFloat()), camera, 12.dp.toPx()) else null
                     if (industry != null) latestIndustry(industry.place.id)
                     else if (link != null) latestLink(link)
+                    else if (pair != null) latestDemand(pair)
                     else {
                         view.focusX = (at.x * view.mapWidth).coerceIn(0f, view.mapWidth.toFloat())
                         view.focusY = (at.y * view.mapHeight).coerceIn(0f, view.mapHeight.toFloat())
@@ -136,6 +141,13 @@ internal fun OverviewCanvas(image: MapImage?, traffic: State<List<OverviewVehicl
                     drawCircle(c.text, 4.5.dp.toPx(), mid)
                     drawCircle(c.bad, 3.dp.toPx(), mid)
                 }
+            }
+            if (options.demand.value) for (d in shownDemand(demand.value)) {
+                val (a, b) = demandEnds(data, d, ::point) ?: continue
+                val width = demandWidth(d).dp.toPx()
+                val colour = if (d.served) c.warn else c.bad
+                drawLine(c.page, a, b, width + 2.dp.toPx())
+                drawLine(colour, a, b, width, pathEffect = if (d.served) null else PathEffect.dashPathEffect(floatArrayOf(10.dp.toPx(), 6.dp.toPx())))
             }
             if (options.coverage.value) {
                 for (p in data.towns) halo(p, data.info.towns[p.id][slot])
@@ -237,6 +249,39 @@ private fun Density.linkNear(data: MapSnapshot, links: List<LinkView>, tap: Offs
         if (distance < bestDistance) {
             bestDistance = distance
             best = link
+        }
+    }
+    return best
+}
+
+/** The pairs the layer shows: all of them, as the view keeps only the top few. */
+internal fun shownDemand(demand: List<DemandView>): List<DemandView> = demand
+
+/** A demand line's width in dp, wider with more unmet. */
+private fun demandWidth(d: DemandView): Float = (1.5f + ln(1.0 + d.unmet).toFloat() / 2).coerceAtMost(8f)
+
+private fun demandEnds(data: MapSnapshot, d: DemandView, point: (Float, Float) -> Offset): Pair<Offset, Offset>? {
+    val a = data.towns.firstOrNull { it.id == d.townA } ?: return null
+    val b = data.towns.firstOrNull { it.id == d.townB } ?: return null
+    return point(a.x, a.y) to point(b.x, b.y)
+}
+
+/** The pair whose line passes nearest [tap] on a canvas of [size], if one's within [reach] pixels. */
+private fun demandNear(data: MapSnapshot, pairs: List<DemandView>, tap: Offset, size: Size, camera: OverviewCamera, reach: Float): DemandView? {
+    val scale = maxOf(size.width / data.width, size.height / data.height) * camera.zoom
+    val origin = Offset(size.width / 2 - camera.x * data.width * scale, size.height / 2 - camera.y * data.height * scale)
+    var best: DemandView? = null
+    var bestDistance = reach
+    for (d in pairs) {
+        val (a, b) = demandEnds(data, d) { x, y -> origin + Offset(x * scale, y * scale) } ?: continue
+        val ab = b - a
+        val length = ab.x * ab.x + ab.y * ab.y
+        if (length < 1f) continue
+        val t = (((tap - a).x * ab.x + (tap - a).y * ab.y) / length).coerceIn(0f, 1f)
+        val distance = (tap - (a + ab * t)).getDistance()
+        if (distance < bestDistance) {
+            bestDistance = distance
+            best = d
         }
     }
     return best

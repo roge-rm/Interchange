@@ -1,5 +1,6 @@
 package com.rm.interchange.ui
 
+import com.rm.interchange.sim.WorldView
 import com.rm.interchange.sim.townActionCost
 import com.rm.interchange.sim.townActionOpen
 import com.rm.interchange.sim.salePrice
@@ -823,7 +824,7 @@ private fun RenameCompany(world: World, own: com.rm.interchange.sim.Company, sen
  * pay for, at today's prices. Paying closes it.
  */
 @Composable
-fun TownWindow(world: World, t: com.rm.interchange.sim.Town, send: (com.rm.interchange.sim.Command) -> Unit, onClose: () -> Unit) {
+fun TownWindow(world: World, t: com.rm.interchange.sim.Town, network: WorldView?, send: (com.rm.interchange.sim.Command) -> Unit, onClose: () -> Unit) {
     val me = LocalCompany.current
     val levels = stringArrayResource(Res.array.approval_levels)
     val actions = stringArrayResource(Res.array.town_actions)
@@ -848,6 +849,7 @@ fun TownWindow(world: World, t: com.rm.interchange.sim.Town, send: (com.rm.inter
                 InfoRow(stringResource(Res.string.exclusive_for, name), stringResource(Res.string.days_left, (t.exclusiveDays + dayLength - 1) / dayLength), Glyph.Exclusive)
             }
         }
+        TownDemand(network, t.id)
         if (world.settings.townGrowth == com.rm.interchange.sim.TownGrowth.SUPPLIED) TownNeeds(world, t)
         Head(stringResource(Res.string.town_pay_for))
         val money = world.companies.getOrNull(me)?.money ?: 0L
