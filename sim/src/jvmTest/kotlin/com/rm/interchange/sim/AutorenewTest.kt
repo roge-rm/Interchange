@@ -339,7 +339,10 @@ class AutorenewTest {
         }
         assertTrue(on.all { w.trains.getOrNull(it.id) === it && it.built >= mark }, "renewed: ${on.map { it.built >= mark }}")
         assertEquals(1, inAtOnce, "both went in at once")
-        assertTrue(on.none { it.service }, "servicing turned back on")
+        // Renewing leaves servicing off. The line's next service can fall in the year, so one due a service may have
+        // it on for its turn.
+        assertTrue(on.all { !it.service || w.due(true, it.serviced) }, "servicing turned back on")
+        assertTrue(on.count { it.service } <= 1, "both serviced at once")
         // The line kept running.
         w.days(60)
         assertTrue(calls.all { it >= 6 }, "calls ${calls.toList()}")
