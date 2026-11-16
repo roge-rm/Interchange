@@ -5,7 +5,7 @@ package com.rm.interchange.sim
  * can add to the game. packs/SPEC.md is the standard; this reads it.
  *
  * A pack is a zip of manifest.json, vehicles.json, houses.json,
- * industries.json and sprites/<name>.png. The game's own are the base pack,
+ * industries.json, cargo.json and sprites/<name>.png. The game's own are the base pack,
  * in the same format.
  */
 
@@ -119,6 +119,26 @@ class IndustryDef(
     val closes: Rule? = null,
 )
 
+/**
+ * A cargo as a pack gives it, its numbers as in [Cargo] and [colour] as
+ * 0xrrggbb. Only [id] is sure to be there: one that [replaces] another gives
+ * just what it changes.
+ */
+class CargoDef(
+    val id: String,
+    val replaces: String?,
+    val names: Map<String, String>?,
+    val units: Map<String, String>?,
+    val rate: Int?,
+    val grace: Int?,
+    val decay: Int?,
+    val pace: Int?,
+    val fast: Int?,
+    val kg: Int?,
+    val colour: Int?,
+    val towns: Boolean?,
+)
+
 /** How far into a town a building stands, as bits, from the outskirts in to the centre. */
 object Zones {
     const val OUTSKIRTS = 1
@@ -145,6 +165,7 @@ class Pack(
     /** The sprite sheets by name, as PNG. */
     val sprites: Map<String, ByteArray>,
     val hash: Long,
+    val cargo: List<CargoDef> = emptyList(),
 ) {
     val ref get() = PackRef(id, version, hash)
     fun name(language: String) = names[language] ?: names["en"] ?: id
@@ -153,7 +174,7 @@ class Pack(
 
 object Packs {
     /** The newest pack format this game reads. */
-    const val FORMAT = 2
+    const val FORMAT = 3
     const val BASE_ID = "base"
 
     /** Sprite sheets: four by four cells, each [CELL] pixels square at the sharpest level. */
@@ -171,6 +192,7 @@ object Packs {
 
     private val ID = Regex("[a-z0-9][a-z0-9_-]{0,31}")
     private val LANGUAGES = setOf("en", "fr")
+    private val COLOUR = Regex("#[0-9a-fA-F]{6}")
 
     /** The game's own vehicles. */
     val BASE: Pack by lazy {
@@ -198,6 +220,7 @@ object Packs {
         val vehiclesBytes = inner["vehicles.json"] ?: byteArrayOf()
         val housesBytes = inner["houses.json"] ?: byteArrayOf()
         val industriesBytes = inner["industries.json"] ?: byteArrayOf()
+        val cargoBytes = inner["cargo.json"] ?: byteArrayOf()
 
         fun json(name: String, bytes: ByteArray): Any? = try {
             Json.parse(bytes.decodeToString())
@@ -223,6 +246,38 @@ object Packs {
         val needs = m.strings("needs") ?: emptyList()
         val disables = m.strings("disables") ?: emptyList()
         m.done()
+
+        val cargo = ArrayList<CargoDef>()
+        if (format < 3 && cargoBytes.isNotEmpty()) problems += "manifest.json: a pack with cargo.json needs \"format\": 3"
+        if (cargoBytes.isNotEmpty()) {
+            val root = json("cargo.json", cargoBytes)
+            val list = (root as? Map<*, *>)?.get("cargo") as? List<*>
+            if (root != null && list == null) problems += "cargo.json should be { \"cargo\": [ ... ] }"
+            val seen = HashSet<String>()
+            list?.forEachIndexed { n, item ->
+                val map = item as? Map<*, *> ?: run { problems += "cargo.json, cargo ${n + 1} should be an object { }"; return@forEachIndexed }
+                val f = Fields("cargo.json, cargo ${n + 1}", map, problems)
+                val cid = f.string("id", need = true) ?: ""
+                f.where = "cargo.json, \"$cid\""
+                if (cid.isNotEmpty() && !ID.matches(cid)) problems += "${f.where}: id should be lower case letters, digits, - and _"
+                if (!seen.add(cid)) problems += "${f.where}: id is used twice"
+                val replaces = f.string("replaces")
+                val fresh = replaces == null
+                val colour = f.string("colour", need = fresh)?.let { c ->
+                    if (COLOUR.matches(c)) c.substring(1).toInt(16) else { problems += "${f.where}: \"colour\" should be \"#rrggbb\""; null }
+                }
+                cargo += CargoDef(
+                    cid, replaces, f.words("name", need = fresh), f.words("unit", need = fresh),
+                    f.int("rate", 1, 1000, need = fresh), f.int("grace", 0, 365, need = fresh), f.int("decay", 0, 100, need = fresh),
+                    f.int("pace", 1, 10, need = fresh), f.int("fast", 0, 400), f.int("kg", 1, 100_000, need = fresh), colour, f.bool("towns"),
+                )
+                f.done()
+            }
+        }
+        // Cargo this pack can name: the base pack's and its own, and if it needs other packs, theirs too, which only the roster knows.
+        val ownCargo = cargo.filter { it.replaces == null }.map { it.id }.toSet()
+        val othersCargo = needs.any { it != BASE_ID }
+        fun knownCargo(cg: String) = othersCargo || Cargo.of(cg) >= 0 || cg in ownCargo
 
         val vehicles = ArrayList<VehicleDef>()
         if (vehiclesBytes.isNotEmpty()) {
@@ -295,7 +350,7 @@ object Packs {
                 if (def.traction != null && def.traction !in Traction.NAMES) problems += "$at: traction should be ${Traction.NAMES.joinToString(", ")}"
                 if (def.tender != null && kind != null && kind != VehicleKind.ENGINE) problems += "$at: only engines have a tender"
                 if (def.capacity != null && def.capacity > 0 && def.carries == null) problems += "$at: capacity without carries"
-                for (cg in def.carries.orEmpty()) if (Cargo.of(cg) < 0) problems += "$at: unknown cargo \"$cg\" (${Cargo.IDS.joinToString()})"
+                for (cg in def.carries.orEmpty()) if (!knownCargo(cg)) problems += "$at: unknown cargo \"$cg\" (${(Cargo.IDS + ownCargo).joinToString()})"
                 if (!spritesElsewhere && def.sprite != null && "sprites/${def.sprite}.png" !in inner) problems += "$at: sprites/${def.sprite}.png is missing"
                 if (!spritesElsewhere && def.spriteOffWire != null && "sprites/${def.spriteOffWire}.png" !in inner) problems += "$at: sprites/${def.spriteOffWire}.png is missing"
                 if (def.spriteOffWire != null && def.traction != null && def.traction != "dual") problems += "$at: only dual-mode engines have a drawing off the wires"
@@ -374,7 +429,7 @@ object Packs {
                 }
                 val produces = f.intMap("produces", 0, 100_000)
                 val accepts = f.strings("accepts")
-                for (cg in produces?.keys.orEmpty() + accepts.orEmpty()) if (Cargo.of(cg) < 0) problems += "$at: unknown cargo \"$cg\""
+                for (cg in produces?.keys.orEmpty() + accepts.orEmpty()) if (!knownCargo(cg)) problems += "$at: unknown cargo \"$cg\""
                 val parts = f.stringMap("parts")
                 for ((part, sheet) in parts.orEmpty()) {
                     if (!ID.matches(part)) problems += "$at: part \"$part\" should be lower case letters, digits, - and _"
@@ -384,12 +439,12 @@ object Packs {
                     if (part !in parts.orEmpty() && part !in baseParts) problems += "$at: part \"$part\" isn't in \"parts\" or the base pack"
                 }
                 val production = f.stringMap("production")?.entries?.mapNotNull { (cg, src) ->
-                    if (Cargo.of(cg) < 0) { problems += "$at: production: unknown cargo \"$cg\""; return@mapNotNull null }
+                    if (!knownCargo(cg)) { problems += "$at: production: unknown cargo \"$cg\""; return@mapNotNull null }
                     if (fresh && (produces?.get(cg) ?: 0) <= 0) problems += "$at: production: \"$cg\" should be in \"produces\" too, above 0"
-                    rule(at, "production $cg", src, problems)?.let { cg to it }
+                    rule(at, "production $cg", src, problems, ::knownCargo)?.let { cg to it }
                 }?.toMap()
-                val open = f.string("open")?.let { rule(at, "open", it, problems) }
-                val closes = f.string("closes")?.let { rule(at, "closes", it, problems) }
+                val open = f.string("open")?.let { rule(at, "open", it, problems, ::knownCargo) }
+                val closes = f.string("closes")?.let { rule(at, "closes", it, problems, ::knownCargo) }
                 val weather = f.strings("weather")
                 weather.orEmpty().filter { it !in IndustryKind.WEATHER }.forEach { problems += "$at: unknown weather rule \"$it\"" }
                 val def = IndustryDef(
@@ -406,12 +461,14 @@ object Packs {
         }
         if (problems.isNotEmpty()) throw BadPack(problems)
         val sprites = inner.filterKeys { it.startsWith("sprites/") && it.endsWith(".png") }.mapKeys { it.key.removePrefix("sprites/").removeSuffix(".png") }
-        return Pack(id, version, names, descriptions, author, licence, needs, disables, vehicles, houses, industries, sprites, hash(manifestBytes, vehiclesBytes, housesBytes, industriesBytes))
+        // cargo.json is hashed only when there is one, so packs without it keep their hash.
+        val hash = if (cargoBytes.isEmpty()) hash(manifestBytes, vehiclesBytes, housesBytes, industriesBytes) else hash(manifestBytes, vehiclesBytes, housesBytes, industriesBytes, cargoBytes)
+        return Pack(id, version, names, descriptions, author, licence, needs, disables, vehicles, houses, industries, sprites, hash, cargo)
     }
 
     /** [source] parsed as a rule, or null with its problem noted, at its column. */
-    private fun rule(at: String, field: String, source: String, problems: MutableList<String>): Rule? = try {
-        Rule.parse(source)
+    private fun rule(at: String, field: String, source: String, problems: MutableList<String>, known: (String) -> Boolean): Rule? = try {
+        Rule.parse(source, known)
     } catch (e: BadRule) {
         problems += "$at: $field, column ${e.column}: ${e.what}"
         null

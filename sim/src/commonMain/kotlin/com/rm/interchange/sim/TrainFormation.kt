@@ -78,7 +78,7 @@ internal fun World.editTrain(company: Company, c: Command.EditTrain) {
     }
     val draft = Train(roster, train.id, train.owner, train.engine, train.wagon, 0, train.depot, formation = c.cars)
     // Cars may be changed with cargo aboard only when every packet still fits.
-    if ((0 until Cargo.COUNT).any { train.load(it) > draft.capacity(it) }) return
+    if ((0 until cargoCount).any { train.load(it) > draft.capacity(it) }) return
     val cost = trainFormationCost(roster, train.formation, c.cars, workDay - train.built, ::price)
     if (cost > 0 && cost > company.money) return
     if (cost >= 0) spend(company, Books.NEW_TRAINS, cost) else earn(company, Books.TRAINS_SOLD, -cost)

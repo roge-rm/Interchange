@@ -67,13 +67,13 @@ fun World.overviewInfo(): OverviewInfo {
         (covered[t][c].toLong() * 100 / total[t].coerceAtLeast(1)).toInt().coerceIn(0, 100)
     val industryInfo = industries.filter { !it.closed }.map { ind ->
         val kind = roster.industries[ind.kind]
-        val waiting = Array(MAX_COMPANIES + 1) { IntArray(Cargo.COUNT) }
+        val waiting = Array(MAX_COMPANIES + 1) { IntArray(Cargo.MAX) }
         val service = IntArray(MAX_COMPANIES + 1)
         for (sid in industryStations[ind.id].orEmpty()) {
             val s = stations.getOrNull(sid) ?: continue
             if (s.owner !in 0 until MAX_COMPANIES) continue
             var active = false
-            for (c in 0 until Cargo.COUNT) {
+            for (c in 0 until cargoCount) {
                 if ((kind.outputs or kind.accepts) and (1 shl c) != 0 && called(s, c)) active = true
                 if (kind.outputs and (1 shl c) == 0) continue
                 val n = s.waiting(c)
@@ -91,7 +91,7 @@ fun World.overviewInfo(): OverviewInfo {
         // Bound for a depot, its load is on its way to the next station after.
         val to = Order.nextStation(v.orders, v.order % v.orders.size)
         if (stations.getOrNull(to) == null) continue
-        for (c in 0 until Cargo.COUNT) for (p in v.cargo[c]) {
+        for (c in 0 until cargoCount) for (p in v.cargo[c]) {
             val from = if (p.boarded >= 0) p.boarded else p.origin
             if (from == to || stations.getOrNull(from) == null || p.count <= 0) continue
             val leg = Leg(from, to, v.owner, c)

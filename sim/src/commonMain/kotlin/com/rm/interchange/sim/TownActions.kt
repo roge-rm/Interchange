@@ -70,7 +70,7 @@ internal fun World.townAction(company: Company, c: Command.TownAction) {
             val lift = TownActions.AD_LIFT[c.action]
             for (s in stations) {
                 if (s == null || s.owner != company.id || s.waypoint || chebyshev(s.signX, s.signY, t.x, t.y) > reach) continue
-                for (cg in 0 until Cargo.COUNT) s.rating[cg] = minOf(255, s.rating[cg] + lift)
+                for (cg in 0 until cargoCount) s.rating[cg] = minOf(255, s.rating[cg] + lift)
             }
         }
         TownActions.ROAD_WORKS -> t.roadWorks = TownActions.ROAD_WORKS_DAYS

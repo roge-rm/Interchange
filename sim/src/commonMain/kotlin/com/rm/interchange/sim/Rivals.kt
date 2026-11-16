@@ -640,7 +640,7 @@ internal fun World.newFreightRoute(r: Rival, c: Company, payback: Int = ROAD_PAY
         val kind = roster.industries[ind.kind]
         val (cx, cy) = middle(ind)
         if (reach(r, home, cx, cy) > far) continue
-        for (cg in 0 until Cargo.COUNT) {
+        for (cg in 0 until cargoCount) {
             val month = kind.produces[cg] * ind.level / 16
             if (month <= 0 || (ind.id to cg) in served || servedByOthers(ind, cg, c.id)) continue
             val model = bestModel(cg) ?: continue
@@ -701,7 +701,7 @@ private fun World.railJob(r: Rival, c: Company, payback: Int): RailJob? {
         val (cx, cy) = middle(ind)
         val fromHome = reach(r, home, cx, cy)
         if (fromHome > far) continue
-        for (cg in 0 until Cargo.COUNT) {
+        for (cg in 0 until cargoCount) {
             val month = kind.produces[cg] * ind.level / 16
             if (month < RAIL_LEAST || (ind.id to cg) in trucked || servedByOthers(ind, cg, c.id) || !carries(cg)) continue
             var to: Industry? = null
@@ -803,10 +803,10 @@ private fun World.roadPays(model: Engine, cargo: Int, load: Int, path: IntArray,
     val hauled = minOf(n * trips * model.capacity, wanted)
     // Freight waits on board for a full load, half of it the whole time it takes to fill.
     val filling = if (cargo == Cargo.PASSENGERS) 0 else model.capacity * 15 / load.coerceAtLeast(1)
-    val late = (there + filling - dist * Cargo.PACE[cargo] - Cargo.GRACE[cargo]).coerceAtLeast(0)
-    val share = (100 - late * Cargo.DECAY[cargo]).coerceAtLeast(33)
+    val late = (there + filling - dist * roster.cargo.pace[cargo] - roster.cargo.grace[cargo]).coerceAtLeast(0)
+    val share = (100 - late * roster.cargo.decay[cargo]).coerceAtLeast(33)
     val ways = if (cargo == Cargo.PASSENGERS) 2 else 1
-    val income = pay(hauled.toLong() * dist * Cargo.RATE[cargo] * share / 10_000) * ways
+    val income = pay(hauled.toLong() * dist * roster.cargo.rate[cargo] * share / 10_000) * ways
     // Upkeep on its new road and two stops, in tenths of a cent a work day.
     val fresh = path.count { road[tileOf(it)].toInt() == 0 }
     val upkeep = price((fresh.toLong() * Upkeep.ROAD[surface] + 2 * Upkeep.STOP) * 365 / 1_000)

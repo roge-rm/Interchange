@@ -56,6 +56,8 @@ class Engine(
     val floats: Boolean = false,
     /** Its drawing off the wires, a place in [Roster.sprites]: a dual-mode engine's with its pantograph down. */
     val offWireSprite: Int = sprite,
+    /** What it can carry as [Cargo] numbers in its roster; empty for nothing. */
+    val cargoes: IntArray = carries.map { Cargo.of(it) }.filter { it >= 0 }.toIntArray(),
 ) {
     val pulls get() = kind == VehicleKind.ENGINE
     /** Its power and top speed with wires overhead or without them. */
@@ -63,8 +65,6 @@ class Engine(
     fun speed(wired: Boolean) = if (traction == Traction.DUAL && !wired) dieselSpeed else speed
     /** Its drawing with wires overhead or without them. */
     fun sprite(wired: Boolean) = if (wired) sprite else offWireSprite
-    /** What it can carry as [Cargo] numbers; empty for nothing. */
-    val cargoes: IntArray = carries.map { Cargo.of(it) }.filter { it >= 0 }.toIntArray()
     val isTender get() = kind == VehicleKind.TENDER
 
     fun name(language: String) = names[language] ?: names["en"] ?: key
@@ -156,13 +156,13 @@ class IndustryKind(
     /** Drawings from packs for layout parts, by part name, as places in [Roster.sprites]; parts not here the game draws itself. */
     val parts: Map<String, Int> = emptyMap(),
     /** By cargo number, a rule for its monthly amount in place of the usual, or null. */
-    val production: Array<Rule?> = arrayOfNulls(Cargo.COUNT),
+    val production: Array<Rule?> = arrayOfNulls(Cargo.MAX),
     /** A rule that's 0 where and when one can't open, and one that closes it at the month when it isn't 0. */
     val open: Rule? = null,
     val closes: Rule? = null,
 ) {
     /** The cargo it makes from what's brought, as bits: what it makes but has no monthly amount or rule of its own for. */
-    val converts: Int = (0 until Cargo.COUNT).fold(0) { m, c -> if (outputs and (1 shl c) != 0 && produces[c] == 0 && production[c] == null) m or (1 shl c) else m }
+    val converts: Int = (0 until Cargo.MAX).fold(0) { m, c -> if (outputs and (1 shl c) != 0 && produces[c] == 0 && production[c] == null) m or (1 shl c) else m }
     /** Makes cargo of its own each month. */
     val primary get() = produces.any { it > 0 } || production.any { it != null }
     fun name(language: String) = names[language] ?: names["en"] ?: key
@@ -196,6 +196,8 @@ class Roster(
     val sprites: List<SpriteRef>,
     val houses: List<House> = emptyList(),
     val industries: List<IndustryKind> = emptyList(),
+    /** The game's cargo, base first, then each pack's new ones in order. */
+    val cargo: CargoTable = CargoTable.BASE,
 ) {
     /** The places in [sprites] that houses and industry parts draw with, each once and in order: the map gives each four cells of its static sheet. */
     val buildingSprites: List<Int> by lazy {
@@ -238,9 +240,29 @@ class Roster(
             val industryByKey = HashMap<String, IndustrySpec>()
             val seen = HashSet<String>()
             fun qualify(pack: Pack, ref: String) = if (':' in ref) ref else "${pack.id}:$ref"
+            val kinds = ArrayList(Cargo.BASE)
+            val cargoIds = kinds.associateTo(HashMap()) { it.key to it.id }
             for (pack in packs) {
                 if (!seen.add(pack.id)) { problems += "${pack.id} is on twice"; continue }
                 for (need in pack.needs) if (need !in seen) problems += "${pack.id} needs $need before it"
+                for (c in pack.cargo) {
+                    if (c.replaces == null) {
+                        if (c.id in cargoIds) { problems += "${pack.id}: cargo ${c.id} is there already"; continue }
+                        if (kinds.size >= Cargo.MAX) { problems += "${pack.id}: cargo ${c.id} is past the ${Cargo.MAX} cargo a game can have"; continue }
+                        cargoIds[c.id] = kinds.size
+                        kinds += CargoKind(
+                            kinds.size, c.id, pack.id, c.names!!, c.units!!, c.rate!!, c.grace!!, c.decay!!, c.pace!!, c.fast ?: 0, c.kg!!,
+                            c.towns ?: false, c.colour!!,
+                        )
+                        continue
+                    }
+                    val at = cargoIds[c.replaces] ?: run { problems += "${pack.id}: cargo ${c.id} replaces ${c.replaces}, which isn't there"; continue }
+                    val o = kinds[at]
+                    kinds[at] = CargoKind(
+                        at, o.key, o.pack, c.names ?: o.names, c.units ?: o.units, c.rate ?: o.rate, c.grace ?: o.grace, c.decay ?: o.decay,
+                        c.pace ?: o.pace, c.fast ?: o.fast, c.kg ?: o.kg, c.towns ?: o.towns, c.colour ?: o.colour,
+                    )
+                }
                 for (v in pack.vehicles) {
                     val sprite = v.sprite?.let { SpriteRef(pack.id, it) }
                     val offWire = v.spriteOffWire?.let { SpriteRef(pack.id, it) }
@@ -293,6 +315,9 @@ class Roster(
                     ind?.enabled = false
                 }
             }
+            val cargo = CargoTable(kinds)
+            /** The number of cargo [key], with a problem noted for [at] if no pack gives it. */
+            fun cargoOf(at: String, key: String): Int = cargo.of(key).also { if (it < 0) problems += "$at: unknown cargo \"$key\" (${cargo.keys.joinToString()})" }
             val sprites = ArrayList<SpriteRef>()
             val spriteIds = HashMap<SpriteRef, Int>()
             val ids = specs.withIndex().associate { (i, s) -> s.key to i }
@@ -323,6 +348,7 @@ class Roster(
                     tram = d.tram ?: false,
                     icebreaker = d.icebreaker ?: 0, hovercraft = d.hovercraft ?: false,
                     range = d.range ?: 0, runway = d.runway?.let { Runways.NAMES.indexOf(it) } ?: Runways.REGIONAL, floats = d.floats ?: false,
+                    cargoes = d.carries.orEmpty().map { cargoOf(s.key, it) }.filter { it >= 0 }.toIntArray(),
                 )
             }
             fun spriteId(ref: SpriteRef) = spriteIds.getOrPut(ref) { sprites += ref; sprites.size - 1 }
@@ -341,23 +367,26 @@ class Roster(
                 for (part in layout.flatten().toSet()) if (part !in s.parts && part !in baseParts) problems += "${s.key}: part \"$part\" has no drawing in its pack or the base pack"
                 // Rivals and subsidies go by the produces amount, so a cargo made by a rule needs one.
                 for (cg in d.production.orEmpty().keys) if ((produces[cg] ?: 0) <= 0) problems += "${s.key}: production: \"$cg\" should be in \"produces\" too, above 0"
+                val named = (produces.keys + d.accepts.orEmpty() + d.production.orEmpty().keys).toSortedSet()
+                for (rule in listOfNotNull(d.open, d.closes) + d.production.orEmpty().values) named += rule.cargoes
+                for (cg in named) cargoOf(s.key, cg)
                 IndustryKind(
                     i, s.key, d.names!!, d.from!!, d.until!!, d.regions.orEmpty(), d.ground.orEmpty(), layout,
-                    IntArray(Cargo.COUNT) { c -> produces[Cargo.IDS[c]] ?: 0 },
-                    d.accepts.orEmpty().fold(0) { m, cg -> Cargo.of(cg).let { if (it >= 0) m or (1 shl it) else m } },
-                    produces.keys.fold(0) { m, cg -> Cargo.of(cg).let { if (it >= 0) m or (1 shl it) else m } },
+                    IntArray(Cargo.MAX) { c -> cargo.getOrNull(c)?.let { produces[it.key] } ?: 0 },
+                    d.accepts.orEmpty().fold(0) { m, cg -> cargo.of(cg).let { if (it >= 0) m or (1 shl it) else m } },
+                    produces.keys.fold(0) { m, cg -> cargo.of(cg).let { if (it >= 0) m or (1 shl it) else m } },
                     (d.seasons ?: List(12) { 100 }).toIntArray(), d.water ?: false,
                     d.weather.orEmpty().fold(0) { m, r -> IndustryKind.WEATHER.indexOf(r).let { if (it >= 0) m or (1 shl it) else m } },
                     enabled = s.enabled,
                     parts = s.parts.entries.sortedBy { it.key }.associate { it.key to spriteId(it.value) },
-                    production = Array(Cargo.COUNT) { c -> d.production?.get(Cargo.IDS[c]) },
+                    production = Array(Cargo.MAX) { c -> cargo.getOrNull(c)?.let { d.production?.get(it.key) } },
                     open = d.open, closes = d.closes,
                 )
             }
             if (houses.size > MOST_HOUSES) problems += "These packs have ${houses.size} town buildings, more than the $MOST_HOUSES a game can hold"
             if (industries.size > MOST_INDUSTRIES) problems += "These packs have ${industries.size} industries, more than the $MOST_INDUSTRIES a game can hold"
             if (problems.isNotEmpty()) throw BadPack(problems)
-            return Roster(packs.map { it.ref }, engines, sprites, houses, industries)
+            return Roster(packs.map { it.ref }, engines, sprites, houses, industries, cargo)
         }
 
         /** [old] with whatever [h] gives in its place. */

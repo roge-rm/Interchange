@@ -25,10 +25,10 @@ class Industry(
     /** What it makes, as sixteenths of its kind's monthly amount. */
     var level = 16
     /** By cargo: made this month and last, and how much of it went to stations. */
-    val made = IntArray(Cargo.COUNT)
-    val madeLastMonth = IntArray(Cargo.COUNT)
-    val moved = IntArray(Cargo.COUNT)
-    val movedLastMonth = IntArray(Cargo.COUNT)
+    val made = IntArray(Cargo.MAX)
+    val madeLastMonth = IntArray(Cargo.MAX)
+    val moved = IntArray(Cargo.MAX)
+    val movedLastMonth = IntArray(Cargo.MAX)
     /** Cargo brought to it, waiting to be made into its own. */
     var brought = 0
     /** What's been brought this month and last, all cargo together. */
@@ -265,20 +265,20 @@ internal fun World.industriesDay(made: HashMap<Int, IntArray>, shut: Set<Int> = 
     for (ind in industries) {
         if (ind.closed) continue
         val kind = roster.industries[ind.kind]
-        val out = IntArray(Cargo.COUNT)
+        val out = IntArray(Cargo.MAX)
         // What's brought, made into what it makes of it, the same amount shared among those; taken and gone at one
         // that makes nothing of it, as a port ships it away.
         val n = ind.brought
         ind.brought = 0
-        val kinds = (0 until Cargo.COUNT).filter { kind.converts and (1 shl it) != 0 }
+        val kinds = (0 until cargoCount).filter { kind.converts and (1 shl it) != 0 }
         if (kinds.isNotEmpty()) for ((k, c) in kinds.withIndex()) out[c] += n / kinds.size + if (k < n % kinds.size) 1 else 0
         // And a month's worth of its own over the month, more or less by the season and the weather.
         val season = kind.seasons[Calendar.month(startYear, day)] * weatherShare(ind) / 100
-        for (c in 0 until Cargo.COUNT) {
+        for (c in 0 until cargoCount) {
             val month = monthlyAmount(ind, kind, c, season)
             if (month > 0) out[c] += (month * 8 + rng.below(240)) / 240
         }
-        for (c in 0 until Cargo.COUNT) {
+        for (c in 0 until cargoCount) {
             if (out[c] == 0) continue
             ind.made[c] += out[c]
             // The two best rated stations that have had a train for it, sharing by their ratings.
@@ -291,7 +291,7 @@ internal fun World.industriesDay(made: HashMap<Int, IntArray>, shut: Set<Int> = 
                 val share = out[c] * s.rating[c] / total
                 val got = (share * s.rating[c] + rng.below(255)) / 255
                 if (got <= 0) continue
-                made.getOrPut(s.id) { IntArray(Cargo.COUNT) }[c] += got
+                made.getOrPut(s.id) { IntArray(Cargo.MAX) }[c] += got
                 ind.moved[c] += got
             }
         }
@@ -501,7 +501,7 @@ internal class IndustryInputs(val world: World, val kind: IndustryKind, val ind:
             Rule.BASE -> base ?: run {
                 val month = Calendar.month(startYear, day)
                 val season = if (ind == null) kind.seasons[month] else kind.seasons[month] * weatherShare(ind) / 100
-                (0 until Cargo.COUNT).sumOf { c -> (kind.produces[c] * (ind?.level ?: 16) / 16 * season / 100).toLong() }
+                (0 until world.cargoCount).sumOf { c -> (kind.produces[c] * (ind?.level ?: 16) / 16 * season / 100).toLong() }
             }
             Rule.CARRIED -> {
                 val made = ind?.madeLastMonth?.sum() ?: 0
@@ -524,7 +524,7 @@ internal class IndustryInputs(val world: World, val kind: IndustryKind, val ind:
                 val cargo = kind.outputs or kind.accepts
                 industryStations[ind.id].orEmpty().count { sid ->
                     val st = stations.getOrNull(sid) ?: return@count false
-                    (0 until Cargo.COUNT).any { c -> cargo and (1 shl c) != 0 && st.lastCall[c] >= 0 }
+                    (0 until world.cargoCount).any { c -> cargo and (1 shl c) != 0 && st.lastCall[c] >= 0 }
                 }.toLong()
             }
             else -> 0L
@@ -533,6 +533,7 @@ internal class IndustryInputs(val world: World, val kind: IndustryKind, val ind:
 
     /** What's been brought: all of it together last month, for any cargo it takes. */
     override fun brought(c: Int): Long = if (ind != null && kind.takes(c)) ind.broughtLastMonth.toLong() else 0L
+    override fun cargo(key: String) = world.roster.cargo.of(key)
 }
 
 /** Ice on the water, in cm, that shuts a port or harbour. */

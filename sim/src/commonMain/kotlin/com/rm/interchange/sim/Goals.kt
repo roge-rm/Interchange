@@ -239,7 +239,7 @@ private fun World.townGoals(dice: Rng, n: Int): List<Goal> {
 private fun World.deliveryGoals(dice: Rng, n: Int): List<Goal> {
     var made = 0
     for (ind in industries) if (!ind.closed) made = made or roster.industries[ind.kind].outputs
-    val takers = industries.filter { !it.closed && (0 until Cargo.COUNT).any { c -> made and (1 shl c) != 0 && roster.industries[it.kind].takes(c) } }
+    val takers = industries.filter { !it.closed && (0 until cargoCount).any { c -> made and (1 shl c) != 0 && roster.industries[it.kind].takes(c) } }
     val out = ArrayList<Goal>()
     val big = towns.maxByOrNull { it.population }
     if (big != null && (n > 1 || takers.isEmpty())) {
@@ -251,7 +251,7 @@ private fun World.deliveryGoals(dice: Rng, n: Int): List<Goal> {
     while (out.size < n && takers.isNotEmpty() && tries-- > 0) {
         val ind = takers[dice.below(takers.size)]
         if (out.any { it.industry == ind.id }) continue
-        val cargoes = (0 until Cargo.COUNT).filter { c -> made and (1 shl c) != 0 && roster.industries[ind.kind].takes(c) }
+        val cargoes = (0 until cargoCount).filter { c -> made and (1 shl c) != 0 && roster.industries[ind.kind].takes(c) }
         val c = cargoes[dice.below(cargoes.size)]
         val end = workDeadline(dice)
         out += Goal(Goal.DELIVER, roundTo(workYears(end) * deliverAYear(startYear), 50), end, cargo = c, industry = ind.id, from = startYear)

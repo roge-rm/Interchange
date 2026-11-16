@@ -128,14 +128,14 @@ internal fun World.isStop(o: Int): Boolean {
  */
 internal fun World.workOutLinks() {
     linksDirty = false
-    val sets = Array(Cargo.COUNT) { HashSet<Long>() }
+    val sets = Array(Cargo.MAX) { HashSet<Long>() }
     // A link no vehicle has timed yet goes by its distance at the top speed of the fastest running it.
     val guess = HashMap<Long, Int>()
     for (t in carriers()) {
         // Depot orders and stations run through are left out: a stop links to the next stop on.
         val stops = t.orders.filter { isStop(it) }
         if (stops.size < 2) continue
-        val carries = (0 until Cargo.COUNT).filter { t.capacity(it) > 0 }
+        val carries = (0 until cargoCount).filter { t.capacity(it) > 0 }
         if (carries.isEmpty()) continue
         for (k in stops.indices) {
             if (Order.has(stops[k], Order.NO_LOAD)) continue
@@ -148,13 +148,13 @@ internal fun World.workOutLinks() {
             for (c in carries) sets[c] += key
         }
     }
-    val keys = Array(Cargo.COUNT) { c -> sets[c].toLongArray().also { it.sort() } }
+    val keys = Array(Cargo.MAX) { c -> sets[c].toLongArray().also { it.sort() } }
     val tables = ArrayList<HashMap<Int, HashMap<Int, Int>>>()
-    for (c in 0 until Cargo.COUNT) {
+    for (c in 0 until cargoCount) {
         val same = (0 until c).firstOrNull { keys[it].contentEquals(keys[c]) }
         tables += if (same != null) tables[same] else routes(keys[c], guess)
     }
-    nextHops = Array(Cargo.COUNT) { tables[it] }
+    nextHops = Array(Cargo.MAX) { tables.getOrElse(it) { HashMap() } }
 }
 
 /**
@@ -297,7 +297,7 @@ internal fun World.passengersDay() {
         val people = h.residents + h.jobs
         val passengers = (people * 8 + rng.below(256)) / 256
         val mail = (people * 2 + rng.below(256)) / 256
-        val m = made.getOrPut(sid) { IntArray(Cargo.COUNT) }
+        val m = made.getOrPut(sid) { IntArray(Cargo.MAX) }
         m[Cargo.PASSENGERS] += passengers
         m[Cargo.MAIL] += mail
     }
@@ -309,15 +309,15 @@ internal fun World.passengersDay() {
         val m = made.getValue(sid)
         m[Cargo.PASSENGERS] = m[Cargo.PASSENGERS] * travel / 100 * outings(s) / 100
         m[Cargo.MAIL] = m[Cargo.MAIL] * post / 100
-        for (cg in 0 until Cargo.COUNT) m[cg] = (m[cg] * s.rating[cg] + rng.below(255)) / 255
+        for (cg in 0 until cargoCount) m[cg] = (m[cg] * s.rating[cg] + rng.below(255)) / 255
     }
     for ((sid, f) in freight) {
-        val m = made.getOrPut(sid) { IntArray(Cargo.COUNT) }
-        for (cg in 0 until Cargo.COUNT) m[cg] += f[cg]
+        val m = made.getOrPut(sid) { IntArray(Cargo.MAX) }
+        for (cg in 0 until cargoCount) m[cg] += f[cg]
     }
     for (sid in made.keys.sorted()) {
         val s = stations.getOrNull(sid) ?: continue
-        for (cg in 0 until Cargo.COUNT) {
+        for (cg in 0 until cargoCount) {
             val n = minOf(made.getValue(sid)[cg], MAX_WAITING - s.waiting(cg))
             if (n <= 0) continue
             val reachable = nextHops[cg][sid]?.keys?.sorted().orEmpty()
@@ -348,7 +348,7 @@ internal fun World.passengersDay() {
     val statues = nearStatues()
     for (s in stations) {
         if (s == null) continue
-        for (cg in 0 until Cargo.COUNT) {
+        for (cg in 0 until cargoCount) {
             s.cargo[cg].removeAll { p ->
                 val old = tick - p.waitingFrom > GIVE_UP_DAYS * Calendar.TICKS_PER_DAY.toLong()
                 if (old) s.gaveUp[cg] += p.count
@@ -407,7 +407,7 @@ internal fun World.accepts(s: Station, c: Int): Boolean {
 }
 
 /** Whether towns take cargo [c]: goods, food, fuel and lumber, and coal for heating homes until oil and gas take over. */
-internal fun World.townWants(c: Int) = Cargo.townWants(c) || (c == Cargo.COAL && Calendar.year(startYear, day) < COAL_HEATING_UNTIL)
+internal fun World.townWants(c: Int) = roster.cargo.towns[c] || (c == Cargo.COAL && Calendar.year(startYear, day) < COAL_HEATING_UNTIL)
 
 /**
  * What coal or fuel brought to a town for heating pays on the day, in percent
@@ -500,14 +500,14 @@ internal fun World.callAt(t: Carrier, s: Station, o: Int = 0) {
     val unload = Order.has(o, Order.UNLOAD)
     val transfer = Order.has(o, Order.TRANSFER)
     var paid = 0L
-    for (c in 0 until Cargo.COUNT) {
+    for (c in 0 until cargoCount) {
         val stay = ArrayList<Packet>()
         for (p in t.cargo[c]) {
             val from = stations.getOrNull(p.origin)
             val arrived = !transfer && (p.dest == s.id || ((p.dest == -1 || unload) && p.origin != s.id && accepts(s, c)))
             when {
                 arrived && from != null -> {
-                    var full = subsidised(company.id, c, from, s, pay(fare(c, p.count, from, s, days(p), ticks(p))))
+                    var full = subsidised(company.id, c, from, s, pay(fare(roster.cargo, c, p.count, from, s, days(p), ticks(p))))
                     val taker = takerAt(s, c)
                     // Coal and fuel for a town's homes pay more in the cold.
                     if ((c == Cargo.COAL || c == Cargo.FUEL) && taker == null) full = full * heating(s) / 100
@@ -526,8 +526,8 @@ internal fun World.callAt(t: Carrier, s: Station, o: Int = 0) {
                     // Changing here: the leg it's done on this train is this train's, up to what the whole journey will pay.
                     val boarded = stations.getOrNull(p.boarded)
                     val dest = stations.getOrNull(p.dest)
-                    val leg = if (boarded != null && boarded.id != s.id) pay(fare(c, p.count, boarded, s, days(p), ticks(p))) else 0L
-                    val whole = if (from != null && dest != null) pay(fare(c, p.count, from, dest, days(p), ticks(p))) else leg
+                    val leg = if (boarded != null && boarded.id != s.id) pay(fare(roster.cargo, c, p.count, boarded, s, days(p), ticks(p))) else 0L
+                    val whole = if (from != null && dest != null) pay(fare(roster.cargo, c, p.count, from, dest, days(p), ticks(p))) else leg
                     val credit = minOf(leg, maxOf(0L, whole - p.credit))
                     t.profitThisYear += credit
                     addWaiting(s, c, p.dest, p.origin, p.count, p.since, p.credit + credit)
@@ -548,7 +548,7 @@ internal fun World.callAt(t: Carrier, s: Station, o: Int = 0) {
 /** Train [t] at station [s] takes on what's waiting for its next stop, as much as it has room for. */
 internal fun World.loadAt(t: Carrier, s: Station) {
     val next = nextStop(t)
-    for (c in 0 until Cargo.COUNT) {
+    for (c in 0 until cargoCount) {
         // Trucks go half loaded on the spring thaw's load limits.
         val capacity = if (t is RoadVehicle && c > Cargo.MAIL && loadLimits()) t.capacity(c) / 2 else t.capacity(c)
         if (capacity > 0) {
@@ -587,17 +587,17 @@ internal fun World.loadAt(t: Carrier, s: Station) {
  * 40 km/h, or two days a tile for freight that keeps) and within that cargo's
  * grace, then less each day after, down to a third. Passengers, mail and goods
  * carried faster than a train pay more, up to [Cargo.FAST] percent, by their
- * pace over [ticks] on board.
+ * pace over [ticks] on board. [table] is the game's cargo.
  */
-fun fare(c: Int, n: Int, from: Station, to: Station, days: Int, ticks: Long = days.toLong() * Calendar.TICKS_PER_DAY): Long {
+fun fare(table: CargoTable, c: Int, n: Int, from: Station, to: Station, days: Int, ticks: Long = days.toLong() * Calendar.TICKS_PER_DAY): Long {
     val dist = kotlin.math.abs(from.signX - to.signX) + kotlin.math.abs(from.signY - to.signY)
-    val quick = dist * Cargo.PACE[c] + Cargo.GRACE[c]
-    val share = (100 - maxOf(0, days - quick) * Cargo.DECAY[c]).coerceAtLeast(33)
+    val quick = dist * table.pace[c] + table.grace[c]
+    val share = (100 - maxOf(0, days - quick) * table.decay[c]).coerceAtLeast(33)
     // Tiles a day on board, in hundredths, from the ticks so a short hop isn't rounded down to a day or none.
     val pace = (dist.toLong() * 100 * Calendar.TICKS_PER_DAY / ticks.coerceAtLeast(1)).toInt()
     val span = (Cargo.FAST_TO - Cargo.FAST_FROM) * 100
-    val fast = Cargo.FAST[c] * (pace - Cargo.FAST_FROM * 100).coerceIn(0, span) / span
-    return n.toLong() * dist * Cargo.RATE[c] * (share + fast) / 10_000
+    val fast = table.fast[c] * (pace - Cargo.FAST_FROM * 100).coerceIn(0, span) / span
+    return n.toLong() * dist * table.rate[c] * (share + fast) / 10_000
 }
 
 /**
@@ -620,7 +620,7 @@ internal fun World.passengersMonth() {
             val near = stations.filter { s -> s != null && s.owner == c.id && maxOf(kotlin.math.abs(s.signX - t.x), kotlin.math.abs(s.signY - t.y)) <= TOWN_AREA }
             val a = t.approval[c.id]
             t.approval[c.id] = if (near.isEmpty()) a - (a - START_APPROVAL).coerceIn(-5, 5) else {
-                val percent = near.sumOf { s -> s!!.rating.sum() * 100 / (255 * Cargo.COUNT) } / near.size
+                val percent = near.sumOf { s -> (0 until cargoCount).sumOf { s!!.rating[it] } * 100 / (255 * cargoCount) } / near.size
                 a + when {
                     percent >= 70 -> 20
                     percent >= 50 -> 10

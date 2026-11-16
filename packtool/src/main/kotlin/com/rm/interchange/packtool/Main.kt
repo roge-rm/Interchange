@@ -22,7 +22,8 @@ private const val USAGE = """packtool check PACK [--with PACK]...
 packtool zip FOLDER OUT.ichpack
     Zips a pack's folder up, after checking it.
 packtool look PACK OUT.png
-    Draws the pack's buildings, as the map shows them on their tiles at each edge and each turn of the view."""
+    Lists the pack's cargo with their colours, and draws its buildings as the map shows them on their tiles at each
+    edge and each turn of the view."""
 
 fun main(args: Array<String>) {
     val ok = when (args.firstOrNull()) {
@@ -50,10 +51,18 @@ private fun check(f: File, with: List<File>): Boolean {
         report(f, e.problems)
         return false
     }
-    try {
+    val roster = try {
         Roster.build(if (pack.id == Packs.BASE_ID) listOf(pack) else listOf(Packs.BASE) + with.map { load(it) } + pack)
     } catch (e: BadPack) {
         problems += e.problems
+        null
+    }
+    // New cargo nothing carries or makes can't be part of a game, so say so, though the pack still loads.
+    val warnings = ArrayList<String>()
+    if (roster != null) for (c in pack.cargo.filter { it.replaces == null }) {
+        val id = roster.cargo.of(c.id)
+        if (roster.engines.none { it.enabled && id in it.cargoes }) warnings += "cargo.json, \"${c.id}\": no vehicle carries it"
+        if (roster.industries.none { it.enabled && it.outputs and (1 shl id) != 0 }) warnings += "cargo.json, \"${c.id}\": no industry makes it"
     }
     // Rules are parsed as the pack is read, so a bad one is already listed above.
     val buildingSheets = pack.houses.mapNotNull { it.sprite }.toSet() + pack.industries.flatMap { it.parts.orEmpty().values }
@@ -72,8 +81,9 @@ private fun check(f: File, with: List<File>): Boolean {
         if (wrong.isEmpty()) PackSprites.pack(picture)
     }
     if (problems.isNotEmpty()) { report(f, problems); return false }
+    for (w in warnings) println("  warning: $w")
     val rules = pack.industries.sumOf { it.production.orEmpty().size + (if (it.open != null) 1 else 0) + (if (it.closes != null) 1 else 0) }
-    println("${pack.id} ${pack.version}: ${pack.vehicles.size} vehicles, ${pack.houses.size} buildings, ${pack.industries.size} industries, $rules rules, ${pack.sprites.size} sprite sheets, all good")
+    println("${pack.id} ${pack.version}: ${pack.vehicles.size} vehicles, ${pack.houses.size} buildings, ${pack.industries.size} industries, ${pack.cargo.size} cargo, $rules rules, ${pack.sprites.size} sprite sheets, all good")
     return true
 }
 
@@ -84,7 +94,7 @@ private fun report(f: File, problems: List<String>) {
 
 /** Only what a pack is made of goes in: the data files and the sprite sheets. */
 private fun zip(dir: File, out: File): Boolean {
-    val data = setOf("manifest.json", "vehicles.json", "houses.json", "industries.json")
+    val data = setOf("manifest.json", "vehicles.json", "houses.json", "industries.json", "cargo.json")
     val files = files(dir).filterKeys { it in data || (it.startsWith("sprites/") && it.endsWith(".png")) }
     ZipOutputStream(out.outputStream()).use { z ->
         for ((name, bytes) in files.toSortedMap()) {

@@ -39,8 +39,8 @@ class Town(
     var mailThisMonth = 0
     var mailLastMonth = 0
     /** Cargo delivered to it by cargo, this month and last: at stations it's the nearest town to, and not taken by an industry there. */
-    val delivered = IntArray(Cargo.COUNT)
-    val deliveredLastMonth = IntArray(Cargo.COUNT)
+    val delivered = IntArray(Cargo.MAX)
+    val deliveredLastMonth = IntArray(Cargo.MAX)
     /** What it thinks of each company, from -1000 to 1000, by company id; it starts out thinking well of them. */
     val approval = IntArray(MAX_COMPANIES) { START_APPROVAL }
     /** Calendar days left of road works someone paid for, holding road vehicles to a crawl on its streets. */

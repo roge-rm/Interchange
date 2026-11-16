@@ -1,0 +1,16 @@
+{
+  "cargo": [
+    {
+      "id": "maple_syrup",
+      "name": { "en": "Maple syrup", "fr": "Sirop d'érable" },
+      "unit": { "en": "casks", "fr": "barils" },
+      "rate": 46,
+      "grace": 20,
+      "decay": 1,
+      "pace": 2,
+      "kg": 300,
+      "colour": "#b5651d",
+      "towns": true
+    }
+  ]
+}

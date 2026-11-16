@@ -279,7 +279,7 @@ private fun World.setGoals(list: List<Goal>) {
     if (list.size > Codec.MOST_GOALS) return
     for (g in list) {
         if (g.kind !in 0 until Goal.KINDS || g.amount <= 0 || g.deadline !in NewGame.FIRST_YEAR..NewGame.LAST_YEAR + 100) return
-        if (g.cargo !in -1 until Cargo.COUNT || g.town !in -1 until towns.size || g.town2 !in -1 until towns.size) return
+        if (g.cargo !in -1 until cargoCount || g.town !in -1 until towns.size || g.town2 !in -1 until towns.size) return
         if (g.industry !in -1 until industries.size) return
     }
     goals.clear()

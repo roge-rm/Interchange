@@ -13,6 +13,18 @@
       "produces": { "fish": 60 },
       "production": { "fish": "pick(month, 0, 0, 0, 20, 60, 120, 160, 140, 80, 30, 0, 0) * level / 16 * (ice > 15 ? 0 : 1)" },
       "open": "year < 1960 || stations > 0"
+    },
+    {
+      "id": "sugar_shack",
+      "name": { "en": "Sugar Shack", "fr": "Cabane à sucre" },
+      "from": 1850,
+      "until": 2100,
+      "regions": { "mixed": 3, "shield": 2, "maritimes": 2, "prairies": 0, "rockies": 0, "north": 0 },
+      "ground": ["forest"],
+      "layout": ["sugar_shack"],
+      "parts": { "sugar_shack": "sugar_shack" },
+      "produces": { "maple_syrup": 40 },
+      "production": { "maple_syrup": "pick(month, 0, 0, 90, 150, 0, 0, 0, 0, 0, 0, 0, 0) * level / 16" }
     }
   ]
 }

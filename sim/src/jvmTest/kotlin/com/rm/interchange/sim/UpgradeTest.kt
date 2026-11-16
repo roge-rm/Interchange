@@ -364,7 +364,7 @@ class UpgradeTest {
 
     @Test
     fun saveKeepsRulesAndStaysInStep() {
-        assertEquals(63, Save.VERSION)
+        assertEquals(64, Save.VERSION)
         val w = bus(start = false)
         val to = otherBuses(w).first()
         w.apply(Command.SetAutorenew(0, true, -6, w.companies[0].money + 1_000_000))

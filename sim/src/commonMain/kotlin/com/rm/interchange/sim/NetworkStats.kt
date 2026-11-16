@@ -9,8 +9,8 @@ package com.rm.interchange.sim
 /** A month on a link: departures, capacity and load leaving on it by cargo, and ticks held on the runs that ended on it. */
 class LinkMonth {
     var departures = 0
-    val capacity = IntArray(Cargo.COUNT)
-    val load = IntArray(Cargo.COUNT)
+    val capacity = IntArray(Cargo.MAX)
+    val load = IntArray(Cargo.MAX)
     var lost = 0L
     var runs = 0
 
@@ -66,7 +66,7 @@ internal fun World.countDeparture(v: Carrier) {
     if (to < 0 || to == v.leftFrom) return
     val m = linkStats.getOrPut(linkKey(v.leftFrom, to)) { LinkStats() }.month
     m.departures++
-    for (c in 0 until Cargo.COUNT) {
+    for (c in 0 until cargoCount) {
         val cap = v.capacity(c)
         if (cap == 0) continue
         m.capacity[c] += cap
@@ -226,7 +226,7 @@ internal fun World.linkViews(): List<LinkView> {
         LinkView(
             (key shr 16).toInt(), (key and 0xffff).toInt(), company, l.modes, time ?: l.guess, time != null,
             last?.runs ?: 0, if (last == null || last.runs == 0) 0 else (last.lost / last.runs).toInt(), last?.departures ?: 0,
-            last?.capacity?.copyOf() ?: IntArray(Cargo.COUNT), last?.load?.copyOf() ?: IntArray(Cargo.COUNT),
+            last?.capacity?.copyOf() ?: IntArray(Cargo.MAX), last?.load?.copyOf() ?: IntArray(Cargo.MAX),
             l.modesList.toIntArray(), l.ids.toIntArray(),
         )
     }

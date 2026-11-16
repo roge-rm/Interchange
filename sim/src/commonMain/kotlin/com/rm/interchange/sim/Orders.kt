@@ -200,7 +200,7 @@ private fun sentToDepot(v: Carrier) = when (v) {
 /** Ships and aircraft retry loading before considering their departure gap. */
 internal fun World.waitForLoad(v: Carrier, o: Int): Boolean {
     fun loaded(): Boolean {
-        val carries = (0 until Cargo.COUNT).filter { v.capacity(it) > 0 }
+        val carries = (0 until cargoCount).filter { v.capacity(it) > 0 }
         return when {
             Order.has(o, Order.FULL_LOAD) -> carries.all { v.load(it) >= v.capacity(it) }
             Order.has(o, Order.FULL_LOAD_ANY) -> carries.isEmpty() || carries.any { v.load(it) >= v.capacity(it) }
@@ -262,7 +262,7 @@ private fun World.condValueOf(v: Carrier, what: Int): Int {
         Order.IF_LOAD -> {
             var load = 0L
             var room = 0L
-            for (c in 0 until Cargo.COUNT) { load += v.load(c); room += v.capacity(c) }
+            for (c in 0 until cargoCount) { load += v.load(c); room += v.capacity(c) }
             if (room <= 0) 0 else (load * 100 / room).toInt()
         }
         Order.IF_AGE -> (workDay - built).coerceAtLeast(0) / 365

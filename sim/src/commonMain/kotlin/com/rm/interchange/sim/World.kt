@@ -15,6 +15,8 @@ package com.rm.interchange.sim
  * [roster] is what can run on the track, from the game's content packs.
  */
 class World(settings: NewGame, val roster: Roster = Roster.BASE, generate: Boolean = true) {
+    /** The cargo in play, ids 0 until this; arrays by cargo run to [Cargo.MAX]. */
+    val cargoCount = roster.cargo.size
     /** How the world was made; only its start year can change, in the editor before the first day's run. */
     var settings = settings
         private set
@@ -122,7 +124,7 @@ class World(settings: NewGame, val roster: Roster = Roster.BASE, generate: Boole
     internal var railTickStates = RAIL_TICK_STATES
     /** The people round each station, and for each cargo the next stop from each station towards each it can reach. Not saved. */
     internal val stationPeople = HashMap<Int, Int>()
-    internal var nextHops: Array<HashMap<Int, HashMap<Int, Int>>> = Array(Cargo.COUNT) { HashMap() }
+    internal var nextHops: Array<HashMap<Int, HashMap<Int, Int>>> = Array(Cargo.MAX) { HashMap() }
     /**
      * Each link's journey time in ticks as vehicles have run it, keyed [linkKey], and the copy of it taken each week
      * that [workOutLinks] goes by, so the way only changes at the weekly rework or when orders change. Both saved.
@@ -518,9 +520,9 @@ class World(settings: NewGame, val roster: Roster = Roster.BASE, generate: Boole
         for (f in weather.fronts) { mix(f.x.toLong()); mix(f.y.toLong()); mix(f.life.toLong()) }
         for (t in towns) { mix(t.population.toLong()); mix(t.growIn.toLong()); mix(t.servedThisMonth.toLong()); for (a in t.approval) mix(a.toLong())
             mix(t.roadWorks.toLong()); mix(t.funded.toLong()); mix(t.exclusive.toLong()); mix(t.exclusiveDays.toLong()); for (a in t.statue) mix(a.toLong()) }
-        for (t in towns) { mix(t.mailThisMonth.toLong()); mix(t.mailLastMonth.toLong()); mix(t.servedLastMonth.toLong()); for (v in t.delivered) mix(v.toLong()); for (v in t.deliveredLastMonth) mix(v.toLong()) }
+        for (t in towns) { mix(t.mailThisMonth.toLong()); mix(t.mailLastMonth.toLong()); mix(t.servedLastMonth.toLong()); for (c in 0 until cargoCount) mix(t.delivered[c].toLong()); for (c in 0 until cargoCount) mix(t.deliveredLastMonth[c].toLong()) }
         for (g in goals) { mix(g.kind.toLong()); mix(g.amount); mix(g.deadline.toLong()); mix(g.status.toLong()); mix(g.by.toLong()); mix(g.doneYear.toLong()); mix(g.doneMonth.toLong()); mix(g.cargo.toLong()); mix(g.town.toLong()); mix(g.town2.toLong()); mix(g.industry.toLong()); mix(g.from.toLong()); for (v in g.count) mix(v) }
-        for (ind in industries) { mix(if (ind.closed) 1L else 0L); mix(ind.level.toLong()); mix(ind.brought.toLong()); for (m in ind.made) mix(m.toLong()) }
+        for (ind in industries) { mix(if (ind.closed) 1L else 0L); mix(ind.level.toLong()); mix(ind.brought.toLong()); for (c in 0 until cargoCount) mix(ind.made[c].toLong()) }
         for (k in linkTimes.keys.sorted()) { mix(k); mix(linkTimes.getValue(k).toLong()) }
         for (k in linkCosts.keys.sorted()) { mix(k); mix(linkCosts.getValue(k).toLong()) }
         for (list in listOf<List<Carrier?>>(trains, roadVehicles, ships, aircraft)) for (v in list) if (v != null) { mix(v.leftFrom.toLong()); mix(v.leftAt) }
@@ -538,7 +540,7 @@ class World(settings: NewGame, val roster: Roster = Roster.BASE, generate: Boole
         }
         for (s in stations) if (s != null) {
             for (c in s.cargo) for (p in c) { mix(p.dest.toLong()); mix(p.count.toLong()); mix(p.credit) }
-            for (r in s.rating) mix(r.toLong())
+            for (c in 0 until cargoCount) mix(s.rating[c].toLong())
         }
         for (k in signals.keys.sorted()) mix(k.toLong() * 31 + signals.getValue(k))
         for (k in stationTiles.keys.sorted()) mix(k.toLong() * 31 + stationTiles.getValue(k))

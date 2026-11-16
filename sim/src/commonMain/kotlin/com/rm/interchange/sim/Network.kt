@@ -22,11 +22,11 @@ class Station(val id: Int, var owner: Int, var name: String, val signX: Int, val
     val docks = ArrayList<Int>()
     val aero = ArrayList<Int>()
     /** Lots waiting, oldest first, by cargo. */
-    val cargo = Array(Cargo.COUNT) { ArrayList<Packet>() }
+    val cargo = Array(Cargo.MAX) { ArrayList<Packet>() }
     /** How well it serves each cargo, 0 to 255, and when a train last called that could take it and how fast that train goes. */
-    val rating = IntArray(Cargo.COUNT) { START_RATING }
-    val lastCall = LongArray(Cargo.COUNT) { -1 }
-    val lastSpeed = IntArray(Cargo.COUNT)
+    val rating = IntArray(Cargo.MAX) { START_RATING }
+    val lastCall = LongArray(Cargo.MAX) { -1 }
+    val lastSpeed = IntArray(Cargo.MAX)
     /** Its station building's tile, or -1; the year it went up, for its style; the edge of its tile that faces the platform. */
     var building = -1
     var buildingYear = 0
@@ -35,12 +35,12 @@ class Station(val id: Int, var owner: Int, var name: String, val signX: Int, val
      * By cargo, this month and last: ticks waited by what boarded, summed over each one, how many boarded, and how
      * many gave up waiting. For the screen only.
      */
-    val waitedTicks = LongArray(Cargo.COUNT)
-    val boarded = IntArray(Cargo.COUNT)
-    val gaveUp = IntArray(Cargo.COUNT)
-    val waitedLastMonth = LongArray(Cargo.COUNT)
-    val boardedLastMonth = IntArray(Cargo.COUNT)
-    val gaveUpLastMonth = IntArray(Cargo.COUNT)
+    val waitedTicks = LongArray(Cargo.MAX)
+    val boarded = IntArray(Cargo.MAX)
+    val gaveUp = IntArray(Cargo.MAX)
+    val waitedLastMonth = LongArray(Cargo.MAX)
+    val boardedLastMonth = IntArray(Cargo.MAX)
+    val gaveUpLastMonth = IntArray(Cargo.MAX)
 }
 
 /** Every tile the station has, for its catchment. */

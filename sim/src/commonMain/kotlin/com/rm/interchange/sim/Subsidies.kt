@@ -67,7 +67,7 @@ private fun World.freightSubsidy(): Subsidy? {
     repeat(10) {
         val a = makers[rng.below(makers.size)]
         val kind = roster.industries[a.kind]
-        val cargoes = (0 until Cargo.COUNT).filter { kind.produces[it] > 0 }
+        val cargoes = (0 until cargoCount).filter { kind.produces[it] > 0 }
         val c = cargoes[rng.below(cargoes.size)]
         // Not one already served.
         if (industryStations[a.id].orEmpty().any { stations.getOrNull(it)?.let { s -> s.lastCall[c] >= 0 } == true }) return@repeat

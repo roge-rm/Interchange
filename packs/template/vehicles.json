@@ -43,6 +43,22 @@
       "capacity": 55
     },
     {
+      "id": "syrup_car",
+      "kind": "wagon",
+      "name": { "en": "Syrup car", "fr": "Wagon à sirop" },
+      "plural": { "en": "Syrup cars", "fr": "Wagons à sirop" },
+      "type": { "en": "Box car", "fr": "Wagon couvert" },
+      "from": 1880,
+      "until": 2050,
+      "weight": 14,
+      "cost": 2400,
+      "running": 220,
+      "length": 8,
+      "carries": "maple_syrup",
+      "capacity": 50,
+      "sprite": "ore_car"
+    },
+    {
       "id": "van",
       "replaces": "base:caboose",
       "name": { "en": "Van", "fr": "Fourgon" },

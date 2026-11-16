@@ -453,7 +453,7 @@ internal fun World.railCarries(cargo: Int): Boolean = railTrains(cargo, 1, PLATF
 private fun World.pulls(e: Engine, wagon: Engine, n: Int, cargo: Int, plow: Engine?): Boolean {
     val tender = (roster.getOrNull(e.tender)?.weight ?: 0) + (plow?.weight ?: 0)
     // Kilograms, and newtons for the grade.
-    val mass = (e.weight + tender + n * (wagon.weight + wagon.capacity * Cargo.KG[cargo] / 1000)).toLong() * 1000
+    val mass = (e.weight + tender + n * (wagon.weight + wagon.capacity * roster.cargo.kg[cargo] / 1000)).toLong() * 1000
     val grade = mass * 981 / 100 * 5 / 1000
     val slip = e.tractive * 1000L
     val units = maxOf(10, e.speed(false) * 7 / 10) * 65536 / 2700
@@ -485,9 +485,9 @@ private fun World.yearly(c: Company, train: RailTrain, cargo: Int, load: Int, pe
     val dist = kotlin.math.abs(from % width - to % width) + kotlin.math.abs(from / width - to / width)
     // Freight waits on board for a full load, half of it the whole time it takes to fill.
     val filling = if (cargo == Cargo.PASSENGERS) 0 else capacity * 15 / load.coerceAtLeast(1)
-    val late = (there + filling - dist * Cargo.PACE[cargo] - Cargo.GRACE[cargo]).coerceAtLeast(0)
-    val share = (100 - late * Cargo.DECAY[cargo]).coerceAtLeast(33)
-    val income = pay(hauled.toLong() * dist * Cargo.RATE[cargo] * share / 10_000)
+    val late = (there + filling - dist * roster.cargo.pace[cargo] - roster.cargo.grace[cargo]).coerceAtLeast(0)
+    val share = (100 - late * roster.cargo.decay[cargo]).coerceAtLeast(33)
+    val income = pay(hauled.toLong() * dist * roster.cargo.rate[cargo] * share / 10_000)
     val running = price(train.engine.running + train.wagon.running * train.wagons + (roster.getOrNull(train.engine.tender)?.running ?: 0) + (train.plow?.running ?: 0))
     // Upkeep on the line and both stations, in tenths of a cent a work day.
     val upkeep = price(tiles.toLong() * Upkeep.TRACK[c.upkeep] * 365 / 1_000)
@@ -1520,7 +1520,7 @@ internal fun World.readRailJob(r: ByteReader): RailJob {
         }
     }
     val picks = List(count(10_000, "rail picks")) {
-        RailPick(r.int(), r.int(), r.int(), r.int(), site(), site()).also { if (it.cargo !in 0 until Cargo.COUNT) throw BadData("bad rail cargo") }
+        RailPick(r.int(), r.int(), r.int(), r.int(), site(), site()).also { if (it.cargo !in 0 until cargoCount) throw BadData("bad rail cargo") }
     }
     val j = RailJob(picks, r.int(), r.bool())
     j.running = r.int(); j.from = r.int(); j.opensLeft = r.int(); j.pick = r.int()

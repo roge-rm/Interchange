@@ -136,7 +136,7 @@ class RoadVehicle(
     var at = 0
     var along = 0
     var speed = 0
-    override val cargo = Array(Cargo.COUNT) { ArrayList<Packet>() }
+    override val cargo = Array(Cargo.MAX) { ArrayList<Packet>() }
     override var profitThisYear = 0L
     var profitLastYear = 0L
     override val orders = ArrayList<Int>()
@@ -453,14 +453,14 @@ internal fun World.wreckRoad(v: RoadVehicle) {
 private fun World.roadCapacity(v: RoadVehicle, c: Int) = if (c > Cargo.MAIL && loadLimits()) v.capacity(c) / 2 else v.capacity(c)
 
 /** Whether [v] has all it can carry, or all the spring load limits let it. */
-private fun World.roadFull(v: RoadVehicle): Boolean = (0 until Cargo.COUNT).all { c ->
+private fun World.roadFull(v: RoadVehicle): Boolean = (0 until cargoCount).all { c ->
     v.load(c) >= roadCapacity(v, c)
 }
 
 /** Full of at least one cargo under the current load limits, or unable to carry any cargo. */
 private fun World.roadAnyFull(v: RoadVehicle): Boolean {
     var carries = false
-    for (c in 0 until Cargo.COUNT) {
+    for (c in 0 until cargoCount) {
         val capacity = roadCapacity(v, c)
         if (capacity > 0) {
             carries = true

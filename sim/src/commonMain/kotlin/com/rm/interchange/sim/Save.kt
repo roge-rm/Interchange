@@ -16,7 +16,7 @@ package com.rm.interchange.sim
  */
 object Save {
     private val MAGIC = "ICHG".encodeToByteArray()
-    const val VERSION = 63
+    const val VERSION = 64
 
     /** A vehicle's [built] day as saved by [version]: work days from 36, calendar days before. */
     private fun World.builtOut(built: Int, version: Int) = if (version >= 36) built else built / settings.dayLength
@@ -39,6 +39,10 @@ object Save {
             for (e in roster.engines) w.string(e.key)
             w.uvar(roster.houses.size.toLong())
             for (h in roster.houses) w.string(h.key)
+            // The cargo by id from 64, checked on loading as they can't be remapped; 20 before.
+            val kinds = if (version >= 64) cargoCount else Cargo.COUNT
+            if (version >= 64) { w.uvar(kinds.toLong()); for (k in roster.cargo.keys) w.string(k) }
+            fun cargoInts(a: IntArray) = w.ints(a.copyOf(kinds))
             w.long(tick)
             w.long(rng.state)
             w.uvar(companies.size.toLong())
@@ -64,7 +68,7 @@ object Save {
                 w.ints(s.docks.toIntArray()); w.ints(s.aero.toIntArray())
                 if (version >= 47) { w.int(s.building); w.int(s.buildingYear); w.int(s.buildingFacing) }
                 writeCargo(w, s.cargo)
-                w.ints(s.rating); w.uvar(s.lastCall.size.toLong()); for (v in s.lastCall) w.long(v); w.ints(s.lastSpeed)
+                cargoInts(s.rating); w.uvar(kinds.toLong()); for (c in 0 until kinds) w.long(s.lastCall[c]); cargoInts(s.lastSpeed)
             }
             w.uvar(depots.size.toLong())
             for (d in depots) {
@@ -111,7 +115,7 @@ object Save {
             w.uvar(industries.size.toLong())
             for (ind in industries) {
                 w.int(ind.kind); w.int(ind.x); w.int(ind.y); w.int(ind.turn); w.int(ind.town); w.int(ind.level); w.int(ind.brought)
-                w.ints(ind.made); w.ints(ind.madeLastMonth); w.ints(ind.moved); w.ints(ind.movedLastMonth)
+                cargoInts(ind.made); cargoInts(ind.madeLastMonth); cargoInts(ind.moved); cargoInts(ind.movedLastMonth)
                 w.int(ind.broughtThisMonth); w.int(ind.broughtLastMonth); w.bool(ind.closed)
             }
             w.shorts(industryOf)
@@ -196,7 +200,7 @@ object Save {
             // Which ice roads were open at the last roads' day, so a copy doesn't drop every route on its first.
             if (version >= 28) { val open = iceRoadsOpen; w.bool(open != null); if (open != null) w.bytes(ByteArray(open.size) { if (open[it]) 1 else 0 }) }
             if (version >= 29) {
-                for (t in towns) { w.int(t.mailThisMonth); w.int(t.mailLastMonth); w.ints(t.delivered); w.ints(t.deliveredLastMonth) }
+                for (t in towns) { w.int(t.mailThisMonth); w.int(t.mailLastMonth); cargoInts(t.delivered); cargoInts(t.deliveredLastMonth) }
                 w.uvar(goals.size.toLong())
                 for (g in goals) {
                     w.int(g.kind); w.long(g.amount); w.int(g.deadline); w.int(g.cargo); w.int(g.town); w.int(g.town2); w.int(g.industry); w.int(g.from)
@@ -264,18 +268,19 @@ object Save {
                 for (list in listOf<List<Carrier?>>(trains, roadVehicles, ships, aircraft)) for (v in list) if (v != null) { w.int(v.leftFrom); w.long(v.leftAt) }
             }
             if (version >= 60) {
+                if (version >= 64) w.uvar(kinds.toLong())
                 w.uvar(linkStats.size.toLong())
                 for (k in linkStats.keys.sorted()) {
                     w.long(k)
                     val l = linkStats.getValue(k)
                     for (m in listOf(l.month, l.last)) {
                         w.int(m.departures)
-                        for (c in 0 until Cargo.COUNT) { w.int(m.capacity[c]); w.int(m.load[c]) }
+                        for (c in 0 until kinds) { w.int(m.capacity[c]); w.int(m.load[c]) }
                         w.long(m.lost)
                         w.int(m.runs)
                     }
                 }
-                for (st in stations) if (st != null) for (c in 0 until Cargo.COUNT) {
+                for (st in stations) if (st != null) for (c in 0 until kinds) {
                     w.long(st.waitedTicks[c]); w.int(st.boarded[c]); w.int(st.gaveUp[c])
                     w.long(st.waitedLastMonth[c]); w.int(st.boardedLastMonth[c]); w.int(st.gaveUpLastMonth[c])
                 }
@@ -368,6 +373,13 @@ object Save {
             val keys = List(r.uvar().toInt().also { if (it > 4095) throw BadData("too many buildings") }) { r.string() }
             IntArray(keys.size) { houseIds[keys[it]] ?: throw BadData("${keys[it]} is no longer in its pack") }
         }
+        // Cargo ids can't be remapped, so the packs have to give the same cargo in the same order.
+        if (version >= 64) {
+            val n = r.uvar()
+            if (n !in 0..minOf(r.left.toLong(), Cargo.MAX.toLong())) throw BadData("too many kinds of cargo")
+            val saved = List(n.toInt()) { r.string() }
+            if (saved != roster.cargo.keys) throw BadData("this game's packs give different cargo now: saved with ${saved.joinToString()}, the packs give ${roster.cargo.keys.joinToString()}")
+        }
         val world = World(settings, roster, generate = false)
         with(world) {
             tick = r.long()
@@ -404,14 +416,14 @@ object Save {
                 when {
                     version >= 5 -> readCargo(r, s.cargo, version)
                     // Before journeys, what waited could go anywhere.
-                    version == 4 -> r.ints().forEachIndexed { c, n -> if (c < Cargo.COUNT && n > 0) s.cargo[c] += Packet(-1, id, n, 0) }
+                    version == 4 -> r.ints().forEachIndexed { c, n -> if (c < Cargo.MAX && n > 0) s.cargo[c] += Packet(-1, id, n, 0) }
                 }
                 if (version >= 6) {
-                    r.ints().let { a -> a.copyInto(s.rating, endIndex = minOf(a.size, Cargo.COUNT)) }
+                    r.ints().let { a -> a.copyInto(s.rating, endIndex = minOf(a.size, Cargo.MAX)) }
                     // Version 6 had passengers and mail only, and no count.
                     val calls = if (version >= 7) r.uvar().toInt().also { if (it > 64) throw BadData("too many kinds of cargo") } else 2
-                    for (c in 0 until calls) r.long().let { v -> if (c < Cargo.COUNT) s.lastCall[c] = v }
-                    r.ints().let { a -> a.copyInto(s.lastSpeed, endIndex = minOf(a.size, Cargo.COUNT)) }
+                    for (c in 0 until calls) r.long().let { v -> if (c < Cargo.MAX) s.lastCall[c] = v }
+                    r.ints().let { a -> a.copyInto(s.lastSpeed, endIndex = minOf(a.size, Cargo.MAX)) }
                 }
                 stations += s
             }
@@ -473,7 +485,7 @@ object Save {
                     val load = r.ints()
                     val at = r.ints()
                     val since = LongArray(load.size) { r.long() }
-                    for (c in load.indices) if (c < Cargo.COUNT && load[c] > 0) t.cargo[c] += Packet(-1, at.getOrElse(c) { -1 }, load[c], since[c], 0, at.getOrElse(c) { -1 })
+                    for (c in load.indices) if (c < Cargo.MAX && load[c] > 0) t.cargo[c] += Packet(-1, at.getOrElse(c) { -1 }, load[c], since[c], 0, at.getOrElse(c) { -1 })
                     t.profitThisYear = r.long(); t.profitLastYear = r.long()
                 }
                 trains += t
@@ -510,7 +522,7 @@ object Save {
                     val kind = kindRemap.getOrNull(r.int()) ?: throw BadData("an industry of an unknown kind")
                     val ind = Industry(id, kind, r.int(), r.int(), r.int(), r.int())
                     ind.level = r.int(); ind.brought = r.int()
-                    fun into(a: IntArray) = r.ints().let { v -> v.copyInto(a, endIndex = minOf(v.size, Cargo.COUNT)) }
+                    fun into(a: IntArray) = r.ints().let { v -> v.copyInto(a, endIndex = minOf(v.size, Cargo.MAX)) }
                     into(ind.made); into(ind.madeLastMonth); into(ind.moved); into(ind.movedLastMonth)
                     ind.broughtThisMonth = r.int(); ind.broughtLastMonth = r.int(); ind.closed = r.bool()
                     industries += ind
@@ -610,7 +622,7 @@ object Save {
             if (version >= 29) {
                 for (t in towns) {
                     t.mailThisMonth = r.int(); t.mailLastMonth = r.int()
-                    for (into in listOf(t.delivered, t.deliveredLastMonth)) r.ints().let { a -> a.copyInto(into, endIndex = minOf(a.size, Cargo.COUNT)) }
+                    for (into in listOf(t.delivered, t.deliveredLastMonth)) r.ints().let { a -> a.copyInto(into, endIndex = minOf(a.size, Cargo.MAX)) }
                 }
                 repeat(r.uvar().toInt().also { if (it > 1000) throw BadData("too many goals") }) {
                     val kind = r.int().also { if (it !in 0 until Goal.KINDS) throw BadData("a goal of an unknown kind") }
@@ -683,6 +695,7 @@ object Save {
             }
             // Before 60 no stats were kept: links and stations start with none.
             if (version >= 60) {
+                val kinds = if (version >= 64) r.uvar().also { if (it != cargoCount.toLong()) throw BadData("bad cargo stats") }.toInt() else Cargo.COUNT
                 // Each link's stats take well over eight bytes.
                 val n = r.uvar()
                 if (n !in 0..minOf(r.left / 8L, stations.size.toLong() * stations.size)) throw BadData("too many link stats")
@@ -691,12 +704,12 @@ object Save {
                     linkStats[r.long()] = l
                     for (m in listOf(l.month, l.last)) {
                         m.departures = r.int().coerceAtLeast(0)
-                        for (c in 0 until Cargo.COUNT) { m.capacity[c] = r.int().coerceAtLeast(0); m.load[c] = r.int().coerceAtLeast(0) }
+                        for (c in 0 until kinds) { m.capacity[c] = r.int().coerceAtLeast(0); m.load[c] = r.int().coerceAtLeast(0) }
                         m.lost = r.long().coerceAtLeast(0)
                         m.runs = r.int().coerceAtLeast(0)
                     }
                 }
-                for (st in stations) if (st != null) for (c in 0 until Cargo.COUNT) {
+                for (st in stations) if (st != null) for (c in 0 until kinds) {
                     st.waitedTicks[c] = r.long().coerceAtLeast(0); st.boarded[c] = r.int().coerceAtLeast(0); st.gaveUp[c] = r.int().coerceAtLeast(0)
                     st.waitedLastMonth[c] = r.long().coerceAtLeast(0); st.boardedLastMonth[c] = r.int().coerceAtLeast(0); st.gaveUpLastMonth[c] = r.int().coerceAtLeast(0)
                 }
@@ -971,9 +984,12 @@ object Save {
         settleAirports(version)
     }
 
+    /** Lots by cargo, up to the last cargo with any. */
     private fun writeCargo(w: ByteWriter, cargo: Array<ArrayList<Packet>>) {
-        w.uvar(cargo.size.toLong())
-        for (lots in cargo) {
+        val kinds = cargo.indexOfLast { it.isNotEmpty() } + 1
+        w.uvar(kinds.toLong())
+        for (c in 0 until kinds) {
+            val lots = cargo[c]
             w.uvar(lots.size.toLong())
             for (p in lots) { w.int(p.dest); w.int(p.origin); w.int(p.count); w.long(p.since); w.long(p.credit); w.int(p.boarded); w.long(p.waitingFrom) }
         }

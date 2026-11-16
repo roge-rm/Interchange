@@ -137,7 +137,7 @@ class Aircraft(
     var stand = -1
     var gear = Gear.WHEELS
     var seasonalGear = true
-    override val cargo = Array(Cargo.COUNT) { ArrayList<Packet>() }
+    override val cargo = Array(Cargo.MAX) { ArrayList<Packet>() }
     override var profitThisYear = 0L
     var profitLastYear = 0L
     override val orders = ArrayList<Int>()

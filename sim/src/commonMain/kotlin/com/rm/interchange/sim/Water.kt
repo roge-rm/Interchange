@@ -63,7 +63,7 @@ class Ship(
     var lockWait = 0
     /** Slowed by fog today, with no radar. */
     var fogged = false
-    override val cargo = Array(Cargo.COUNT) { ArrayList<Packet>() }
+    override val cargo = Array(Cargo.MAX) { ArrayList<Packet>() }
     override var profitThisYear = 0L
     var profitLastYear = 0L
     override val orders = ArrayList<Int>()

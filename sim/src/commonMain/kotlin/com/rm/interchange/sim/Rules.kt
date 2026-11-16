@@ -16,10 +16,12 @@ interface RuleInputs {
     fun read(n: Int): Long
     /** What's been brought of cargo [c] last month. */
     fun brought(c: Int): Long
+    /** The number of cargo [key] in this game, or -1. */
+    fun cargo(key: String): Int = Cargo.of(key)
 }
 
 /** A parsed expression; [source] is the text it came from. */
-class Rule private constructor(val source: String, private val root: Node) {
+class Rule private constructor(val source: String, private val root: Node, /** The cargo it names in brought(). */ val cargoes: Set<String>) {
     fun eval(inputs: RuleInputs): Long = root.eval(inputs)
 
     override fun toString() = source
@@ -36,8 +38,9 @@ class Rule private constructor(val source: String, private val root: Node) {
         override fun eval(i: RuleInputs) = i.read(n)
     }
 
-    private class Brought(val c: Int) : Node() {
-        override fun eval(i: RuleInputs) = i.brought(c)
+    /** Cargo by key, as its number depends on the game's packs. */
+    private class Brought(val key: String) : Node() {
+        override fun eval(i: RuleInputs) = i.cargo(key).let { c -> if (c < 0) 0L else i.brought(c) }
     }
 
     private class Unary(val op: Char, val a: Node) : Node() {
@@ -112,20 +115,21 @@ class Rule private constructor(val source: String, private val root: Node) {
         const val MAX_DEPTH = 32
         const val MAX_NODES = 256
 
-        /** [source] parsed, or a [BadRule] saying where it's wrong. */
-        fun parse(source: String): Rule {
+        /** [source] parsed, or a [BadRule] saying where it's wrong; [known] says which cargo names brought() may use. */
+        fun parse(source: String, known: (String) -> Boolean = { Cargo.of(it) >= 0 }): Rule {
             if (source.length > MAX_LENGTH) throw BadRule(MAX_LENGTH + 1, "longer than $MAX_LENGTH characters")
-            val p = Parser(source)
+            val p = Parser(source, known)
             val root = p.choose(0)
             p.space()
             if (p.at < source.length) throw BadRule(p.at + 1, "unexpected \"${source[p.at]}\"")
-            return Rule(source, root)
+            return Rule(source, root, p.cargoes)
         }
     }
 
-    private class Parser(val s: String) {
+    private class Parser(val s: String, val known: (String) -> Boolean) {
         var at = 0
         var nodes = 0
+        val cargoes = HashSet<String>()
 
         fun space() {
             while (at < s.length && s[at].isWhitespace()) at++
@@ -210,10 +214,10 @@ class Rule private constructor(val source: String, private val root: Node) {
                     val cs = at
                     while (at < s.length && (s[at].isLetterOrDigit() || s[at] == '_')) at++
                     val cargo = s.substring(cs, at)
-                    val c = Cargo.of(cargo)
-                    if (c < 0) throw BadRule(cs + 1, "unknown cargo \"$cargo\"")
+                    if (cargo.isEmpty() || !known(cargo)) throw BadRule(cs + 1, "unknown cargo \"$cargo\"")
                     if (!take(")")) throw BadRule(at + 1, "expected \")\"")
-                    return node(Brought(c))
+                    cargoes += cargo
+                    return node(Brought(cargo))
                 }
                 val args = ArrayList<Node>()
                 if (!take(")")) {

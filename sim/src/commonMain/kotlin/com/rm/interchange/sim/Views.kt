@@ -71,8 +71,8 @@ class TrainView(
     val waiting: Boolean,
     val lost: Boolean,
     /** What it's carrying and has room for, by [Cargo]. */
-    val load: IntArray = IntArray(Cargo.COUNT),
-    val capacity: IntArray = IntArray(Cargo.COUNT),
+    val load: IntArray = IntArray(Cargo.MAX),
+    val capacity: IntArray = IntArray(Cargo.MAX),
     val profitThisYear: Long = 0,
     val profitLastYear: Long = 0,
     /** The group of trains it shares its orders with, or -1. */
@@ -312,11 +312,11 @@ class StationView(
     val id: Int,
     val name: String,
     val platforms: Int,
-    val waiting: IntArray = IntArray(Cargo.COUNT),
+    val waiting: IntArray = IntArray(Cargo.MAX),
     /** Where what's waiting is going, the most first. */
     val going: List<GoingView> = emptyList(),
     /** Its rating for each cargo, 0 to 255. */
-    val rating: IntArray = IntArray(Cargo.COUNT),
+    val rating: IntArray = IntArray(Cargo.MAX),
     /** The cargo it deals in, as bits: what's waiting or what a train has called for. */
     val served: Int = 0,
     /** The company it's for, and the middle of its tiles on the map, for its sign. */
@@ -325,9 +325,9 @@ class StationView(
     val y: Float = 0f,
     val waypoint: Boolean = false,
     /** Last month, by cargo: the average ticks what boarded had waited, -1 if none boarded, how many boarded, and how many gave up. */
-    val waited: IntArray = IntArray(Cargo.COUNT) { -1 },
-    val boarded: IntArray = IntArray(Cargo.COUNT),
-    val gaveUp: IntArray = IntArray(Cargo.COUNT),
+    val waited: IntArray = IntArray(Cargo.MAX) { -1 },
+    val boarded: IntArray = IntArray(Cargo.MAX),
+    val gaveUp: IntArray = IntArray(Cargo.MAX),
 )
 
 /**
@@ -521,7 +521,7 @@ fun World.view(company: Int = 0, withReserved: Boolean = false, withNetwork: Boo
         TrainView(
             t.id, t.name, t.engine, t.wagon, t.wagons, t.depot, t.inDepot, t.running, t.toDepot,
             t.orders.toIntArray(), t.order, t.speed / 16 * 2700 / 4096, t.waiting > 0, t.running && !t.inDepot && t.lostUntil > tick,
-            IntArray(Cargo.COUNT) { t.load(it) }, IntArray(Cargo.COUNT) { t.capacity(it) }, t.profitThisYear, t.profitLastYear, t.shared,
+            IntArray(Cargo.MAX) { t.load(it) }, IntArray(Cargo.MAX) { t.capacity(it) }, t.profitThisYear, t.profitLastYear, t.shared,
             age(t), t.reliability / 100, t.brokenFor > 0, t.breakdowns, t.service, t.servicing, price(t.price) - value(t), age(t) >= t.life,
             t.inDepot && t.electric && depots.getOrNull(t.shedIn)?.let { !depotWired(it) } == true,
             owner = t.owner, wrecked = t.wreckedFor > 0, number = t.number,
@@ -536,7 +536,7 @@ fun World.view(company: Int = 0, withReserved: Boolean = false, withNetwork: Boo
     val whyGraph by lazy { whyGraph() }
     val stationViews = stations.filterNotNull().map { s ->
         val going = HashMap<Int, IntArray>()
-        for (c in 0 until Cargo.COUNT) for (p in s.cargo[c]) going.getOrPut(p.dest) { IntArray(Cargo.COUNT) }[c] += p.count
+        for (c in 0 until cargoCount) for (p in s.cargo[c]) going.getOrPut(p.dest) { IntArray(Cargo.MAX) }[c] += p.count
         val list = going.entries.sortedWith(compareByDescending<Map.Entry<Int, IntArray>> { it.value.sum() }.thenBy { it.key }).mapIndexed { i, (d, n) ->
             // The way shown is the one for the cargo most of them are.
             val most = n.indices.maxBy { n[it] }
@@ -545,13 +545,13 @@ fun World.view(company: Int = 0, withReserved: Boolean = false, withNetwork: Boo
             GoingView(d, if (hop >= 0 && hop != d) hop else -1, n, why)
         }
         var served = 0
-        for (c in 0 until Cargo.COUNT) if (s.lastCall[c] >= 0 || s.waiting(c) > 0) served = served or (1 shl c)
+        for (c in 0 until cargoCount) if (s.lastCall[c] >= 0 || s.waiting(c) > 0) served = served or (1 shl c)
         val places = s.places
         val mx = if (places.isEmpty()) s.signX + 0.5f else places.sumOf { it % width } / places.size.toFloat() + 0.5f
         val my = if (places.isEmpty()) s.signY + 0.5f else places.sumOf { it / width } / places.size.toFloat() + 0.5f
         StationView(
-            s.id, s.name, s.tiles.size, IntArray(Cargo.COUNT) { s.waiting(it) }, list, s.rating.copyOf(), served, s.owner, mx, my, s.waypoint,
-            IntArray(Cargo.COUNT) { c -> if (s.boardedLastMonth[c] == 0) -1 else (s.waitedLastMonth[c] / s.boardedLastMonth[c]).toInt() },
+            s.id, s.name, s.tiles.size, IntArray(Cargo.MAX) { s.waiting(it) }, list, s.rating.copyOf(), served, s.owner, mx, my, s.waypoint,
+            IntArray(Cargo.MAX) { c -> if (s.boardedLastMonth[c] == 0) -1 else (s.waitedLastMonth[c] / s.boardedLastMonth[c]).toInt() },
             s.boardedLastMonth.copyOf(), s.gaveUpLastMonth.copyOf(),
         )
     }

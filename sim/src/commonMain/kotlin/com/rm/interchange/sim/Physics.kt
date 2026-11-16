@@ -22,7 +22,7 @@ const val CRAWL = 73
 /** What the whole train weighs now, its load too, in kg. */
 fun Train.massKg(): Long {
     var kg = carEngines.sumOf { roster[it].weight.toLong() } * 1000
-    for (c in 0 until Cargo.COUNT) kg += load(c).toLong() * Cargo.KG[c]
+    for (c in 0 until roster.cargo.size) kg += load(c).toLong() * roster.cargo.kg[c]
     return kg
 }
 

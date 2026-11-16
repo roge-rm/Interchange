@@ -115,7 +115,7 @@ class Train(
     var speed = 0
 
     /** What it's carrying, as lots by [Cargo]. */
-    override val cargo = Array(Cargo.COUNT) { ArrayList<Packet>() }
+    override val cargo = Array(Cargo.MAX) { ArrayList<Packet>() }
     /** Fares less running costs, this year and last, in dollars. */
     override var profitThisYear = 0L
     var profitLastYear = 0L
@@ -124,12 +124,12 @@ class Train(
     override fun capacity(c: Int) = carEngines.indices.sumOf { i -> if (carCargoes[i] == c) roster[carEngines[i]].capacity else 0 }
 
     /** Full of everything it can carry. */
-    fun full() = (0 until Cargo.COUNT).all { load(it) >= capacity(it) }
+    fun full() = (0 until roster.cargo.size).all { load(it) >= capacity(it) }
 
     /** Full of at least one cargo it can carry, or unable to carry any cargo. */
     fun anyFull(): Boolean {
         var carries = false
-        for (c in 0 until Cargo.COUNT) {
+        for (c in 0 until roster.cargo.size) {
             val capacity = capacity(c)
             if (capacity > 0) {
                 carries = true
@@ -1672,7 +1672,7 @@ internal fun World.nextOrder(t: Train) {
 /** Whether [t] has something to set down at station [id], or something waiting there it could carry. */
 internal fun World.somethingAt(t: Carrier, id: Int): Boolean {
     val s = stations.getOrNull(id) ?: return false
-    for (c in 0 until Cargo.COUNT) {
+    for (c in 0 until cargoCount) {
         if (t.cargo[c].any { it.dest == id || (it.dest == -1 && it.origin != id && accepts(s, c)) }) return true
         if (t.capacity(c) > 0 && s.waiting(c) > 0) return true
     }

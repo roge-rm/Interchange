@@ -1,8 +1,8 @@
 # Interchange content packs
 
-A content pack adds things to Interchange: trains and the wagons they haul, road vehicles, ships, aircraft, town buildings and industries. Anyone can make one. The game's own are a pack too, the base pack, in this same format.
+A content pack adds things to Interchange: trains and the wagons they haul, road vehicles, ships, aircraft, town buildings, industries and cargo. Anyone can make one. The game's own are a pack too, the base pack, in this same format.
 
-This is format 2. A pack with only vehicles can say format 1, so older versions of the game load it too; one with town buildings or industries needs format 2. Start from the template pack in `packs/template`, which has one of each thing a pack can do.
+This is format 3. A pack with only vehicles can say format 1, so older versions of the game load it too; one with town buildings or industries needs format 2, and one with cargo format 3. Start from the template pack in `packs/template`, which has one of each thing a pack can do.
 
 ## What's in a pack
 
@@ -12,9 +12,10 @@ A pack is a zip file named `something.ichpack` holding:
 - `vehicles.json`, the vehicles it adds or changes
 - `houses.json`, the town buildings it adds or changes
 - `industries.json`, the industries it adds or changes
+- `cargo.json`, the cargo it adds or changes
 - `sprites/NAME.png`, a sprite sheet for each drawing
 
-Each of the three data files can be left out.
+Each of the data files can be left out.
 
 The files can sit at the top of the zip or in one folder inside it. Anything else in the zip is left alone.
 
@@ -24,7 +25,7 @@ Text is UTF-8 JSON. Every name, description and type comes in English and can co
 
 ```json
 {
-  "format": 2,
+  "format": 3,
   "id": "prairie-lines",
   "version": 3,
   "name": { "en": "Prairie lines", "fr": "Lignes des Prairies" },
@@ -38,7 +39,7 @@ Text is UTF-8 JSON. Every name, description and type comes in English and can co
 
 | Field | Needed | What it is |
 |---|---|---|
-| format | yes | The pack format, 1 or 2. A game won't load a pack made for a newer format. |
+| format | yes | The pack format, 1 to 3. A game won't load a pack made for a newer format. |
 | id | yes | Lower case letters, digits, `-` and `_`, up to 32. Keep it the same for every version. `base` is the game's own. |
 | version | yes | A whole number. Raise it each time you share a new version. |
 | name | yes | The pack's name in each language. |
@@ -81,7 +82,7 @@ Each vehicle:
 | cost | yes | Dollars to buy. |
 | running | yes | Dollars a year to run. |
 | length | yes | Sixteenths of a tile, 1 to 16. Draw it to match. |
-| carries, capacity | no | The cargo a wagon carries and how much. Cargo ids: `passengers`, `mail`, `timber`, `lumber`, `grain`, `coal`, `iron_ore`, `steel`, `goods`, `oil`, `fuel`, `livestock`, `food`, `fish`, `paper`, `potash`, `nickel_ore`, `nickel`, `bauxite`, `aluminium`. A passenger weighs 90 kg with their bags, mail 50 kg a bag, livestock half a tonne a head, the rest a tonne each. |
+| carries, capacity | no | The cargo a wagon carries and how much. Cargo ids: `passengers`, `mail`, `timber`, `lumber`, `grain`, `coal`, `iron_ore`, `steel`, `goods`, `oil`, `fuel`, `livestock`, `food`, `fish`, `paper`, `potash`, `nickel_ore`, `nickel`, `bauxite`, `aluminium`. A passenger weighs 90 kg with their bags, mail 50 kg a bag, livestock half a tonne a head, the rest a tonne each. Cargo from cargo.json can be named too. |
 | tender | no | An engine's tender: a tender's id in this pack, or `pack:id` in another. |
 | sprite | no | Its sprite sheet, `sprites/NAME.png`. Leave it out to use the vehicle's id. Vehicles can share one. |
 | sprite_off_wire | no | Dual-mode engines: the sprite sheet drawn off the wires, with the pantograph down. Leave it out to use `sprite` everywhere. |
@@ -152,7 +153,7 @@ Each industry:
 | open | no | A rule worked out where and when one would open: 0 means it can't. |
 | closes | no | A rule worked out on the first of each month: anything but 0 closes it. |
 
-The cargo ids are those under vehicles.json.
+The cargo ids are those under vehicles.json and those from cargo.json.
 
 ```json
 {
@@ -169,6 +170,53 @@ The cargo ids are those under vehicles.json.
 ```
 
 Without rules an industry makes its `produces` amount times its level over 16, times its season and weather in percent. Its level starts at 16 and goes up or down now and then by how much of what it makes is carried. What it makes is shared out over the month's days.
+
+## cargo.json
+
+```json
+{
+  "cargo": [
+    {
+      "id": "maple_syrup",
+      "name": { "en": "Maple syrup", "fr": "Sirop d'érable" },
+      "unit": { "en": "casks", "fr": "barils" },
+      "rate": 46, "grace": 20, "decay": 1, "pace": 2, "kg": 300,
+      "colour": "#b5651d",
+      "towns": true
+    }
+  ]
+}
+```
+
+| Field | Needed | What it is |
+|---|---|---|
+| id | yes | Lower case letters, digits, `-` and `_`. Cargo ids are shared by every pack in a game, without the pack's id in front: two packs can't add the same one. |
+| name | yes | Its name. |
+| unit | yes | A short word for amounts of it, as in "40 casks". |
+| rate | yes | What one pays carried a tile, in cents, 1 to 1000. The base pack's run from 20 (coal, passengers) to 48 (food). |
+| grace | yes | Days it can take over its pace before it pays less, 0 to 365. |
+| decay | yes | How much less it pays a day after that, in percent, 0 to 100. It never pays less than a third. |
+| pace | yes | Days a tile it can take, 1 to 10: 1 for what has to be quick, 2 for freight that keeps. |
+| fast | no | Percent more paid carried much faster than a train, as by air, 0 to 400. 0 if not given. |
+| kg | yes | What one weighs, 1 to 100000. |
+| colour | yes | Its colour in the game's lists and charts, `"#rrggbb"`. |
+| towns | no | `true` if towns take it at stations with 60 or more people round them, as they take goods. Otherwise only industries that accept it take it. |
+
+New cargo come after the base pack's 20, in pack order and then in file order. A game can have 32 cargo at most, so 12 from packs. A cargo's place can't change once a game is saved: a saved game only loads with packs giving the same cargo in the same order.
+
+A vehicle or industry can name the cargo of its own pack, the base pack's, and those of packs it lists in `needs`. Any other name stops the pack loading.
+
+Town needs, heating, passengers and mail stay with the base pack's cargo. Rivals' freight lines, subsidies and delivery goals can pick a pack's cargo, from the industries that make it.
+
+### Changing another pack's cargo
+
+Give `replaces` with the cargo's id and only the fields you change. It keeps its place, so saved games still load:
+
+```json
+{ "id": "dear_coal", "replaces": "coal", "rate": 26 }
+```
+
+Cargo can't be turned off.
 
 ## Rules
 
@@ -274,7 +322,7 @@ packtool/build/install/packtool/bin/packtool check my-pack
 packtool/build/install/packtool/bin/packtool zip my-pack my-pack.ichpack
 ```
 
-`check` takes `--with other.ichpack` for each pack yours needs besides the base pack. It reads every rule and flags sprite sheets nothing uses. `zip` checks a folder and zips what a pack is made of.
+`check` takes `--with other.ichpack` for each pack yours needs besides the base pack. It reads every rule and flags sprite sheets nothing uses, and warns of a new cargo no vehicle carries or no industry makes. `zip` checks a folder and zips what a pack is made of. `look my-pack out.png` lists the pack's cargo with their colours and draws its buildings.
 
 ## In the game
 
