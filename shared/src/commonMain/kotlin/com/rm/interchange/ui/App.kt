@@ -58,6 +58,12 @@ import com.rm.interchange.sim.Traction
 import com.rm.interchange.sim.TrainView
 import com.rm.interchange.sim.VehicleKind
 import com.rm.interchange.sim.Autorenew
+import com.rm.interchange.sim.Aircraft
+import com.rm.interchange.sim.Carrier
+import com.rm.interchange.sim.RoadVehicle
+import com.rm.interchange.sim.Ship
+import com.rm.interchange.sim.Train
+import com.rm.interchange.sim.UpgradeWhy
 import com.rm.interchange.sim.Crash
 import com.rm.interchange.sim.crashFor
 import com.rm.interchange.sim.railCost
@@ -1442,7 +1448,7 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
                     if (n.kind == News.SNOWBOUND || n.kind == News.TRAIN_OLD || n.kind == News.TRAIN_STUCK) selected = Selection.Train(n.about)
                     if (n.kind == News.SLID) selected = Selection.RoadVehicle(n.about)
                     if (n.kind == News.DIVERTED) selected = Selection.Aircraft(n.about)
-                    if (n.kind == News.RENEW_FAILED) {
+                    if (n.kind == News.RENEW_FAILED || n.kind == News.UPGRADE_FAILED) {
                         val id = n.about and ((1 shl Autorenew.KIND_SHIFT) - 1)
                         selected = when (n.about shr Autorenew.KIND_SHIFT) {
                             Autorenew.TRAIN -> Selection.Train(id)
@@ -2000,15 +2006,27 @@ internal fun newsText(world: World, n: News): String {
         val name = craft?.name?.takeIf { it.isNotEmpty() } ?: stringResource(Res.string.aircraft_n, craft?.number?.takeIf { it > 0 } ?: n.about + 1)
         return stringResource(Res.string.news_diverted, name)
     }
-    if (n.kind == News.RENEW_FAILED) {
+    if (n.kind == News.RENEW_FAILED || n.kind == News.UPGRADE_FAILED) {
         val id = n.about and ((1 shl Autorenew.KIND_SHIFT) - 1)
-        val name = when (n.about shr Autorenew.KIND_SHIFT) {
-            Autorenew.TRAIN -> world.trains.getOrNull(id)?.takeIf { it.owner == me }?.let { it.name.ifEmpty { stringResource(Res.string.train_n, if (it.number > 0) it.number else id + 1) } }
-            Autorenew.ROAD -> world.roadVehicles.getOrNull(id)?.takeIf { it.owner == me }?.let { it.name.ifEmpty { stringResource(Res.string.road_vehicle_n, if (it.number > 0) it.number else id + 1) } }
-            Autorenew.SHIP -> world.ships.getOrNull(id)?.takeIf { it.owner == me }?.let { it.name.ifEmpty { stringResource(Res.string.ship_n, if (it.number > 0) it.number else id + 1) } }
-            else -> world.aircraft.getOrNull(id)?.takeIf { it.owner == me }?.let { it.name.ifEmpty { stringResource(Res.string.aircraft_n, if (it.number > 0) it.number else id + 1) } }
-        } ?: return ""
-        return stringResource(Res.string.news_renew_failed, name)
+        val v: Carrier = when (n.about shr Autorenew.KIND_SHIFT) {
+            Autorenew.TRAIN -> world.trains.getOrNull(id)
+            Autorenew.ROAD -> world.roadVehicles.getOrNull(id)
+            Autorenew.SHIP -> world.ships.getOrNull(id)
+            else -> world.aircraft.getOrNull(id)
+        }?.takeIf { it.owner == me } ?: return ""
+        val name = when (v) {
+            is Train -> v.name.ifEmpty { stringResource(Res.string.train_n, if (v.number > 0) v.number else id + 1) }
+            is RoadVehicle -> v.name.ifEmpty { stringResource(Res.string.road_vehicle_n, if (v.number > 0) v.number else id + 1) }
+            is Ship -> v.name.ifEmpty { stringResource(Res.string.ship_n, if (v.number > 0) v.number else id + 1) }
+            is Aircraft -> v.name.ifEmpty { stringResource(Res.string.aircraft_n, if (v.number > 0) v.number else id + 1) }
+            else -> return ""
+        }
+        // The reason kept is the one the news was about till it changes.
+        return when {
+            n.kind == News.RENEW_FAILED -> stringResource(Res.string.news_renew_failed, name)
+            v.upgradeWhy > UpgradeWhy.OK -> stringResource(Res.string.news_upgrade_failed, name, upgradeWhyText(v.upgradeWhy))
+            else -> stringResource(Res.string.news_upgrade_failed_was, name)
+        }
     }
     if (n.kind == News.SLID) {
         if (world.roadVehicles.getOrNull(n.about)?.owner != me) return ""

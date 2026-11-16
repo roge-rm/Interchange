@@ -131,7 +131,7 @@ private fun storyGlyph(world: World, t: Story): Glyph = when (t.kind) {
     News.SCENARIO_WON -> Glyph.Trophy
     News.SCENARIO_LOST -> Glyph.Flag
     News.CRASH -> Glyph.Alert
-    News.RENEW_FAILED -> Glyph.Renew
+    News.RENEW_FAILED, News.UPGRADE_FAILED -> Glyph.Renew
     else -> Glyph.Briefcase
 }
 

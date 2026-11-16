@@ -45,13 +45,14 @@ fun upgradeWhyText(why: Int): String = stringResource(when (why) {
 /** Whether a vehicle's autorenew switch is worth showing: the company renews, or has upgrade rules. */
 fun companyRenews(view: WorldView) = view.company?.let { it.autorenew || (it.upgrade && view.upgrades.isNotEmpty()) } == true
 
-/** On a card: what a rule would make this vehicle, or in amber why it can't. */
+/** On a card: what a rule would make this vehicle, or in amber why it can't, or that it isn't serviced. */
 @Composable
-fun UpgradeLine(roster: Roster, upgradeTo: Int, why: Int) {
+fun UpgradeLine(roster: Roster, upgradeTo: Int, why: Int, service: Boolean) {
     if (upgradeTo < 0) return
     val name = roster.engines.getOrNull(upgradeTo)?.name(languageCode()) ?: return
     val c = LocalColors.current
-    if (why == UpgradeWhy.NONE || why == UpgradeWhy.OK) Text(stringResource(Res.string.upgrades_to, name), color = c.textDim, style = KitType.Dim)
+    if (!service) Text(stringResource(Res.string.upgrade_blocked, name, stringResource(Res.string.why_servicing_off)), color = c.warn, style = KitType.Dim)
+    else if (why == UpgradeWhy.NONE || why == UpgradeWhy.OK) Text(stringResource(Res.string.upgrades_to, name), color = c.textDim, style = KitType.Dim)
     else Text(stringResource(Res.string.upgrade_blocked, name, upgradeWhyText(why)), color = c.warn, style = KitType.Dim)
 }
 

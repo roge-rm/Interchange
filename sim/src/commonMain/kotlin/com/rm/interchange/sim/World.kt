@@ -331,6 +331,7 @@ class World(settings: NewGame, val roster: Roster = Roster.BASE, generate: Boole
                     buyRoadVehicle(company, command)
                     if (roadVehicles.size == sizeBefore) break
                     inheritOrders(company, Command.CopyVehicle.ROAD, roadVehicles.getOrNull(sizeBefore))
+                    roadVehicles.getOrNull(sizeBefore)?.let { refreshUpgrade(it) }
                 }
             }
             is Command.RoadOrder -> roadVehicleCommand(company, command)
@@ -350,6 +351,8 @@ class World(settings: NewGame, val roster: Roster = Roster.BASE, generate: Boole
                     if (ships.size == shipsBefore && aircraft.size == aircraftBefore) break
                     if (ships.size > shipsBefore) inheritOrders(company, Command.CopyVehicle.SHIP, ships.getOrNull(shipsBefore))
                     if (aircraft.size > aircraftBefore) inheritOrders(company, Command.CopyVehicle.AIRCRAFT, aircraft.getOrNull(aircraftBefore))
+                    ships.getOrNull(shipsBefore)?.let { refreshUpgrade(it) }
+                    aircraft.getOrNull(aircraftBefore)?.let { refreshUpgrade(it) }
                 }
             }
             is Command.CraftOrder -> if (command.aircraft) aircraftCommand(company, command) else shipCommand(company, command)
@@ -372,6 +375,7 @@ class World(settings: NewGame, val roster: Roster = Roster.BASE, generate: Boole
                     buyTrain(company, command)
                     if (trains.size == sizeBefore) break
                     inheritOrders(company, Command.CopyVehicle.TRAIN, trains.getOrNull(sizeBefore))
+                    trains.getOrNull(sizeBefore)?.let { refreshUpgrade(it) }
                 }
             }
             is Command.EditTrain -> editTrain(company, command)

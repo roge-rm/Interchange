@@ -313,7 +313,10 @@ internal fun World.roadVehicleCommand(company: Company, c: Command.RoadOrder) {
             pruneService(Command.CopyVehicle.ROAD, v.shared)
         }
         Command.TrainOrder.SERVICE -> v.service = !v.service
-        Command.TrainOrder.AUTORENEW -> v.renewOff = !v.renewOff
+        Command.TrainOrder.AUTORENEW -> {
+            v.renewOff = !v.renewOff
+            refreshUpgrade(v)
+        }
         Command.TrainOrder.RENEW -> if (v.inDepot) {
             val cost = price(v.price) - roadValue(v)
             if (company.money < cost) return

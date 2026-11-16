@@ -129,7 +129,7 @@ fun RoadVehicleCard(view: WorldView, roster: Roster, v: RoadVehicleView, year: I
                 replacing = false
             }
         }
-        UpgradeLine(roster, v.upgradeTo, v.upgradeWhy)
+        UpgradeLine(roster, v.upgradeTo, v.upgradeWhy, v.service)
         SwitchRow(stringResource(Res.string.servicing), v.service) { order(Command.TrainOrder.SERVICE) }
         if (!horses) SwitchRow(stringResource(Res.string.seasonal_tires), v.seasonalTires) { order(Command.RoadOrder.TIRES) }
         VehicleMapControls(companyRenews(view), v.renewOff, v.x, v.y, onShow) { order(Command.TrainOrder.AUTORENEW) }

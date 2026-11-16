@@ -464,7 +464,10 @@ internal fun World.shipCommand(company: Company, c: Command.CraftOrder) {
             pruneService(Command.CopyVehicle.SHIP, v.shared)
         }
         Command.TrainOrder.SERVICE -> v.service = !v.service
-        Command.TrainOrder.AUTORENEW -> v.renewOff = !v.renewOff
+        Command.TrainOrder.AUTORENEW -> {
+            v.renewOff = !v.renewOff
+            refreshUpgrade(v)
+        }
         Command.TrainOrder.RENEW -> if (v.inDepot) {
             val cost = price(v.price) - craftValue(v.price, v.built, v.info.life)
             if (company.money < cost) return

@@ -229,7 +229,7 @@ fun ShipCard(view: WorldView, roster: Roster, v: ShipView, year: Int, funds: Lon
             },
             order = { order(it) },
         ) {
-            UpgradeLine(roster, v.upgradeTo, v.upgradeWhy)
+            UpgradeLine(roster, v.upgradeTo, v.upgradeWhy, v.service)
             SwitchRow(stringResource(Res.string.servicing), v.service) { order(Command.TrainOrder.SERVICE) }
             VehicleMapControls(companyRenews(view), v.renewOff, v.x, v.y, onShow) { order(Command.TrainOrder.AUTORENEW) }
         }
@@ -290,7 +290,7 @@ fun AircraftCard(view: WorldView, roster: Roster, v: AircraftView, year: Int, fu
             },
             order = { order(it) },
         ) {
-            UpgradeLine(roster, v.upgradeTo, v.upgradeWhy)
+            UpgradeLine(roster, v.upgradeTo, v.upgradeWhy, v.service)
             SwitchRow(stringResource(Res.string.servicing), v.service) { order(Command.TrainOrder.SERVICE) }
             if (e.floats) SwitchRow(stringResource(Res.string.seasonal_gear), v.seasonalGear) { order(Command.CraftOrder.GEAR) }
             VehicleMapControls(companyRenews(view), v.renewOff, v.x, v.y, onShow) { order(Command.TrainOrder.AUTORENEW) }

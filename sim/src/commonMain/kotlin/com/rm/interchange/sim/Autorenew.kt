@@ -99,7 +99,10 @@ private fun World.payRenewal(v: Carrier, kind: Int, cost: Long): Boolean {
 
 /** Train [t], in for a service: upgraded if a rule says, else renewed if it's due and its company can pay. */
 internal fun World.autorenew(t: Train) {
-    if (upgradeAtService(t)) return
+    if (!upgradeAtService(t)) renewAtService(t)
+}
+
+private fun World.renewAtService(t: Train) {
     if (!renewDue(t) || !payRenewal(t, Autorenew.TRAIN, renewCost(t))) return
     t.built = workDay
     t.serviced = workDay
@@ -107,7 +110,10 @@ internal fun World.autorenew(t: Train) {
 }
 
 internal fun World.autorenew(v: RoadVehicle) {
-    if (upgradeAtService(v)) return
+    if (!upgradeAtService(v)) renewAtService(v)
+}
+
+private fun World.renewAtService(v: RoadVehicle) {
     if (!renewDue(v) || !payRenewal(v, Autorenew.ROAD, renewCost(v))) return
     v.built = workDay
     v.serviced = workDay
@@ -115,7 +121,10 @@ internal fun World.autorenew(v: RoadVehicle) {
 }
 
 internal fun World.autorenew(v: Ship) {
-    if (upgradeAtService(v)) return
+    if (!upgradeAtService(v)) renewAtService(v)
+}
+
+private fun World.renewAtService(v: Ship) {
     if (!renewDue(v) || !payRenewal(v, Autorenew.SHIP, renewCost(v))) return
     v.built = workDay
     v.serviced = workDay
@@ -123,11 +132,24 @@ internal fun World.autorenew(v: Ship) {
 }
 
 internal fun World.autorenew(v: Aircraft) {
-    if (upgradeAtService(v)) return
+    if (!upgradeAtService(v)) renewAtService(v)
+}
+
+private fun World.renewAtService(v: Aircraft) {
     if (!renewDue(v) || !payRenewal(v, Autorenew.AIRCRAFT, renewCost(v))) return
     v.built = workDay
     v.serviced = workDay
     v.reliability = v.info.reliability * 100
+}
+
+/** [v], in for a service this tick: renewed if it's due and its company can pay. */
+internal fun World.renewAtService(v: Carrier) {
+    when (v) {
+        is Train -> renewAtService(v)
+        is RoadVehicle -> renewAtService(v)
+        is Ship -> renewAtService(v)
+        is Aircraft -> renewAtService(v)
+    }
 }
 
 /** Sets [company]'s autorenew from [c]: on or off, its work months from a vehicle's life, and the money it keeps. */

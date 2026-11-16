@@ -115,10 +115,11 @@ internal fun World.takeOver(from: Company, to: Company) {
     for (d in depots) if (d != null && d.owner == from.id) d.owner = to.id
     for (s in spans) if (s != null && s.owner == from.id) s.owner = to.id
     for (p in airports) if (p != null && p.owner == from.id) p.owner = to.id
-    for (t in trains) if (t != null && t.owner == from.id) t.owner = to.id
-    for (v in roadVehicles) if (v != null && v.owner == from.id) v.owner = to.id
-    for (v in ships) if (v != null && v.owner == from.id) v.owner = to.id
-    for (v in aircraft) if (v != null && v.owner == from.id) v.owner = to.id
+    // Groups stay with the old company, so its vehicles leave theirs; ids would name the buyer's groups.
+    for (t in trains) if (t != null && t.owner == from.id) { t.owner = to.id; t.group = -1 }
+    for (v in roadVehicles) if (v != null && v.owner == from.id) { v.owner = to.id; v.group = -1 }
+    for (v in ships) if (v != null && v.owner == from.id) { v.owner = to.id; v.group = -1 }
+    for (v in aircraft) if (v != null && v.owner == from.id) { v.owner = to.id; v.group = -1 }
     for (sv in services.values) if (sv.owner == from.id) sv.owner = to.id
     for (s in subsidies) if (s.company == from.id) s.company = to.id
     to.trackTiles += from.trackTiles

@@ -903,4 +903,7 @@
     <string name="why_airport">Un aéroport ne peut pas l\'accueillir</string>
     <string name="why_tram">Tramway et autobus ne se remplacent pas</string>
     <string name="why_other">Non permis</string>
+    <string name="why_servicing_off">Entretien désactivé</string>
+    <string name="news_upgrade_failed">Mise à niveau de %1$s impossible : %2$s</string>
+    <string name="news_upgrade_failed_was">Mise à niveau de %1$s impossible</string>
 </resources>

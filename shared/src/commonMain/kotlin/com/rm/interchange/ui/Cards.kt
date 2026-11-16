@@ -180,7 +180,7 @@ fun TrainCard(
                 replacing = false
             }
         }
-        UpgradeLine(roster, t.upgradeTo, t.upgradeWhy)
+        UpgradeLine(roster, t.upgradeTo, t.upgradeWhy, t.service)
         SwitchRow(stringResource(Res.string.servicing), t.service) { order(Command.TrainOrder.SERVICE) }
         VehicleMapControls(companyRenews(view), t.renewOff, t.x, t.y, onShow) { order(Command.TrainOrder.AUTORENEW) }
     }

@@ -920,4 +920,7 @@
     <string name="why_airport">An airport can\'t take it</string>
     <string name="why_tram">Streetcar or bus differs</string>
     <string name="why_other">Not allowed</string>
+    <string name="why_servicing_off">Servicing is off</string>
+    <string name="news_upgrade_failed">Can\'t upgrade %1$s: %2$s</string>
+    <string name="news_upgrade_failed_was">Couldn\'t upgrade %1$s</string>
 </resources>

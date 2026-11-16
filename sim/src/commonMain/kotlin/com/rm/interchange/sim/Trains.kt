@@ -388,7 +388,10 @@ internal fun World.trainCommand(company: Company, c: Command.TrainOrder) {
                 dropRoute(t)
             }
         }
-        Command.TrainOrder.AUTORENEW -> t.renewOff = !t.renewOff
+        Command.TrainOrder.AUTORENEW -> {
+            t.renewOff = !t.renewOff
+            refreshUpgrade(t)
+        }
         Command.TrainOrder.SERVICE -> {
             t.service = !t.service
             if (!t.service && t.servicing) {

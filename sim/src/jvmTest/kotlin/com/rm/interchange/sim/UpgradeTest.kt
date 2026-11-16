@@ -170,6 +170,44 @@ class UpgradeTest {
     }
 
     @Test
+    fun oneQueuedForAnUpgradeThatThenCantBeIsRenewedInstead() {
+        val w = bus(start = false)
+        val to = otherBuses(w).first()
+        w.apply(Command.SetAutorenew(0, true, -6, 0))
+        w.apply(Command.Upgrade(0, road, newLook(w).id, to.id))
+        val v = w.roadVehicles[0]!!
+        v.built = w.workDay - v.info.life * 365 * 2
+        w.autorenew(v)
+        assertEquals(1, w.upgradesDue.size)
+        // The rule goes before the end of the tick, so the upgrade can't happen there.
+        w.apply(Command.Upgrade(0, road, newLook(w).id, to.id, remove = true))
+        w.upgradeDue()
+        assertEquals(newLook(w).id, w.roadVehicles[0]!!.model)
+        assertEquals(w.workDay, w.roadVehicles[0]!!.built)
+    }
+
+    @Test
+    fun vehiclesTakenOverLeaveTheirGroups() {
+        val w = bus(start = false)
+        val to = otherBuses(w).first()
+        w.apply(Command.CopyVehicle(0, road, 0, 0))
+        w.apply(Command.CreateGroup(0, road, 0, "Town"))
+        val group = w.roadVehicles[0]!!.group
+        w.apply(Command.Upgrade(0, road, newLook(w).id, to.id, group))
+        val other = Company(1, "Other", 1_000_000)
+        w.companies += other
+        other.groups[road] += VehicleGroup(group, "Theirs")
+        val theirs = w.roadVehicles[1]!!
+        theirs.owner = 1
+        theirs.group = group
+        w.takeOver(other, w.companies[0])
+        assertEquals(0, theirs.owner)
+        assertEquals(-1, theirs.group)
+        assertEquals(-1, w.upgradeTo(theirs))
+        assertEquals(to.id, w.upgradeTo(w.roadVehicles[0]!!))
+    }
+
+    @Test
     fun anElectricEngineOverUnwiredStationsHasNoWires() {
         val w = railLine(1965, { steamEngines(it).first() }, { wagons(it).first() })
         val electric = w.roster.engines.first { it.kind == VehicleKind.ENGINE && it.traction == Traction.ELECTRIC && w.onSale(it) }

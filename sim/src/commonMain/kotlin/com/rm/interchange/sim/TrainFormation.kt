@@ -87,6 +87,7 @@ internal fun World.editTrain(company: Company, c: Command.EditTrain) {
     train.route = null
     train.aside = -1
     train.renewFailed = false
+    refreshUpgrade(train)
     linksDirty = true
 }
 

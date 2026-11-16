@@ -150,11 +150,16 @@ private fun World.shortestPlatform(s: Station): Int {
 /** What [trainWhy] asks of where [t] goes: wires over its depot and its stations, and its shortest platform. */
 internal class TrainPlaces(val wired: Boolean, val shortest: Int)
 
-/** Its depot is the one it's in, or its home; some platform of each station in its orders, waypoints included, needs wires. */
+/**
+ * Wires are needed over its home depot, the one it's in, each depot in its orders and some platform of each station
+ * in its orders, waypoints included.
+ */
 internal fun World.trainPlaces(t: Train): TrainPlaces {
     val stations = orderStations(t).mapNotNull { stations.getOrNull(it) }.filter { it.tiles.isNotEmpty() }
-    val d = depots.getOrNull(if (t.inDepot) t.shedIn else t.depot)
-    val wired = d != null && depotWired(d) && stations.all { stationWired(it) }
+    val home = depots.getOrNull(t.depot)
+    val inside = if (t.inDepot) depots.getOrNull(t.shedIn) else null
+    val wired = home != null && depotWired(home) && (inside == null || depotWired(inside)) &&
+        t.orders.all { o -> depots.getOrNull(Order.depot(o))?.let { depotWired(it) } != false } && stations.all { stationWired(it) }
     return TrainPlaces(wired, stations.filter { !it.waypoint }.minOfOrNull { shortestPlatform(it) } ?: Int.MAX_VALUE)
 }
 
@@ -278,7 +283,15 @@ internal fun World.upgradeAtService(v: Carrier): Boolean {
     return true
 }
 
-/** Rebuilds the vehicles [upgradeAtService] put down this tick, in the order they came in, if still in a depot and paid for. */
+private fun inDepot(v: Carrier) = when (v) {
+    is Train -> v.inDepot
+    is RoadVehicle -> v.inDepot
+    is Ship -> v.inDepot
+    is Aircraft -> v.inDepot
+    else -> false
+}
+
+/** Rebuilds the vehicles [upgradeAtService] put down this tick, in the order they came in, if still in a depot and paid for; else renews them if due. */
 internal fun World.upgradeDue() {
     if (upgradesDue.isEmpty()) return
     val due = upgradesDue.toLongArray()
@@ -288,28 +301,28 @@ internal fun World.upgradeDue() {
         val c = companies.getOrNull(v.owner) ?: continue
         val why = upgradeState(v)
         noteUpgrade(v, why, true)
-        if (why != UpgradeWhy.OK) continue
+        // Something earlier this tick, like another upgrade's cost, stopped it: renewed instead, as it would have been.
+        if (why != UpgradeWhy.OK || !inDepot(v)) {
+            renewAtService(v)
+            continue
+        }
         val made: Carrier = when (v) {
             is Train -> {
-                if (!v.inDepot) continue
                 val cars = upgradedCars(c, v) ?: continue
                 val cost = trainSwapCost(v, cars)
                 rebuildTrain(v, cars).also { trains[v.id] = it; spend(c, Books.NEW_TRAINS, cost) }
             }
             is RoadVehicle -> {
-                if (!v.inDepot) continue
                 val e = roster[c.upgradeTo(Command.CopyVehicle.ROAD, v.group, v.model)]
                 val cost = price(e.cost) - roadValue(v)
                 rebuildRoadVehicle(v, e).also { roadVehicles[v.id] = it; spend(c, Books.NEW_TRAINS, cost) }
             }
             is Ship -> {
-                if (!v.inDepot) continue
                 val e = roster[c.upgradeTo(Command.CopyVehicle.SHIP, v.group, v.model)]
                 val cost = craftSwapCost(v.price, v.built, v.info.life, e)
                 rebuildShip(v, e).also { ships[v.id] = it; spend(c, Books.NEW_TRAINS, cost) }
             }
             is Aircraft -> {
-                if (!v.inDepot) continue
                 val e = roster[c.upgradeTo(Command.CopyVehicle.AIRCRAFT, v.group, v.model)]
                 val cost = craftSwapCost(v.price, v.built, v.info.life, e)
                 rebuildAircraft(v, e).also { aircraft[v.id] = it; spend(c, Books.NEW_TRAINS, cost) }
