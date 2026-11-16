@@ -141,6 +141,31 @@ class TravelDemandTest {
     }
 
     @Test
+    fun aQuietStationKeepsItsPassengersNearTheMiddle() {
+        // Station A making about one passenger a day or less, held at a score, the train in the depot. A rounded step
+        // of its own would cut each lone passenger at 45 and never add one at 55.
+        fun made(score: Int, days: Int): Int {
+            val w = line()
+            w.train(0, 2)
+            var n = 0
+            repeat(days) {
+                w.stations[0]!!.service = score
+                w.passengersDay()
+                n += w.stations[0]!!.waiting(Cargo.PASSENGERS)
+                w.stations[0]!!.cargo[Cargo.PASSENGERS].clear()
+            }
+            return n
+        }
+        val month = made(45, 30)
+        val monthMid = made(50, 30)
+        val mid = made(50, 120)
+        val high = made(55, 120)
+        println("TRAVEL quiet station made at 45 $month and 50 $monthMid in a month, at 50 $mid and 55 $high in 120 days")
+        assertTrue(month > 0 && month >= monthMid * 3 / 4, "$month $monthMid")
+        assertTrue(high > mid, "$mid $high")
+    }
+
+    @Test
     fun demandShowsAnUnservedPairAndDropsWhenCarried() {
         val w = line()
         w.towns[0].population = 5000

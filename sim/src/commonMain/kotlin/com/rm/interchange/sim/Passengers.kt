@@ -264,7 +264,7 @@ internal fun World.linkCharges(): HashMap<Long, IntArray> {
     for ((k, st) in linkStats) {
         // This month's so far counts for a line new this month.
         val departures = maxOf(st.last.departures, st.month.departures)
-        val wait = if (departures == 0) 0 else (minOf(monthTicks / departures, WAIT_MOST_DAYS.toLong() * Calendar.TICKS_PER_DAY) / 2).toInt()
+        val wait = if (departures == 0) 0 else (minOf(monthTicks / departures, WAIT_MOST_DAYS.toLong() * dayTicks) / 2).toInt()
         val lost = if (st.last.runs == 0) 0 else (st.last.lost / st.last.runs).coerceAtMost(MAX_LINK_TICKS.toLong()).toInt()
         if (wait > 0 || lost > 0) out[k] = intArrayOf(wait, lost)
     }
@@ -293,7 +293,7 @@ internal fun World.linkCharges(): HashMap<Long, IntArray> {
     return out
 }
 
-/** The most days between departures a link's wait goes by: one a month, a wait of half that. */
+/** The most game days between departures a link's wait goes by, at any day length: one a month, a wait of half that. */
 const val WAIT_MOST_DAYS = 30
 
 /** Forgets the journey times of links to and from station [id], and vehicles' leaving it. */
@@ -375,10 +375,11 @@ internal fun World.passengersDay() {
         val m = made.getValue(sid)
         m[Cargo.PASSENGERS] = m[Cargo.PASSENGERS] * travel / 100 * outings(s) / 100
         m[Cargo.MAIL] = m[Cargo.MAIL] * post / 100
-        // And more or fewer by how good the service from here is.
-        m[Cargo.PASSENGERS] = m[Cargo.PASSENGERS] * serviceFactor(s, Cargo.PASSENGERS) / 100
-        m[Cargo.MAIL] = m[Cargo.MAIL] * serviceFactor(s, Cargo.MAIL) / 100
-        for (cg in 0 until cargoCount) m[cg] = (m[cg] * s.rating[cg] + rng.below(255)) / 255
+        // And more or fewer by how good the service from here is, in the same rounded step so a quiet station
+        // isn't cut to nothing.
+        for (cg in 0 until cargoCount) {
+            m[cg] = ((m[cg].toLong() * s.rating[cg] * serviceFactor(s, cg) + 100L * rng.below(255)) / (255 * 100)).toInt()
+        }
     }
     for ((sid, f) in freight) {
         val m = made.getOrPut(sid) { IntArray(Cargo.MAX) }

@@ -236,7 +236,7 @@ internal fun World.linkViews(): List<LinkView> {
             (key shr 16).toInt(), (key and 0xffff).toInt(), company, l.modes, time ?: l.guess, time != null,
             last?.runs ?: 0, if (last == null || last.runs == 0) 0 else (last.lost / last.runs).toInt(), last?.departures ?: 0,
             last?.capacity?.copyOf() ?: IntArray(Cargo.MAX), last?.load?.copyOf() ?: IntArray(Cargo.MAX),
-            l.modesList.toIntArray(), l.ids.toIntArray(), charge?.get(0) ?: 0, charge?.get(1) ?: 0,
+            l.modesList.toIntArray(), l.ids.toIntArray(), if (time == null) 0 else charge?.get(0) ?: 0, if (time == null) 0 else charge?.get(1) ?: 0,
         )
     }
 }
