@@ -117,7 +117,12 @@ class IndustryDef(
     /** A rule that's 0 where and when it can't open, and one that closes it at the month when it isn't 0. */
     val open: Rule? = null,
     val closes: Rule? = null,
+    /** What it makes in whole batches from its stores, in place of a tonne for a tonne. */
+    val recipe: RecipeDef? = null,
 )
+
+/** A batch: [inputs] taken from the stores, by cargo id, make [makes]. */
+class RecipeDef(val inputs: Map<String, Int>, val makes: Map<String, Int>)
 
 /**
  * A cargo as a pack gives it, its numbers as in [Cargo] and [colour] as
@@ -137,6 +142,8 @@ class CargoDef(
     val kg: Int?,
     val colour: Int?,
     val towns: Boolean?,
+    /** False for cargo that spoils in an industry's store. */
+    val keeps: Boolean? = null,
 )
 
 /** How far into a town a building stands, as bits, from the outskirts in to the centre. */
@@ -187,6 +194,9 @@ object Packs {
     // Limits, so a broken or hostile zip can't fill the phone.
     const val MAX_FILE = 16 shl 20
     const val MAX_TOTAL = 64 shl 20
+    /** The most of a cargo a recipe takes or makes in a batch. */
+    const val RECIPE_MOST = 100
+
     /** The most tiles an industry's layout has each way. */
     const val MAX_LAYOUT = 5
 
@@ -270,6 +280,7 @@ object Packs {
                     cid, replaces, f.words("name", need = fresh), f.words("unit", need = fresh),
                     f.int("rate", 1, 1000, need = fresh), f.int("grace", 0, 365, need = fresh), f.int("decay", 0, 100, need = fresh),
                     f.int("pace", 1, 10, need = fresh), f.int("fast", 0, 400), f.int("kg", 1, 100_000, need = fresh), colour, f.bool("towns"),
+                    f.bool("keeps"),
                 )
                 f.done()
             }
@@ -447,12 +458,18 @@ object Packs {
                 val closes = f.string("closes")?.let { rule(at, "closes", it, problems, ::knownCargo) }
                 val weather = f.strings("weather")
                 weather.orEmpty().filter { it !in IndustryKind.WEATHER }.forEach { problems += "$at: unknown weather rule \"$it\"" }
+                val recipe = f.recipe()
+                for (cg in recipe?.inputs?.keys.orEmpty() + recipe?.makes?.keys.orEmpty()) if (!knownCargo(cg)) problems += "$at: recipe: unknown cargo \"$cg\""
+                if (fresh && recipe != null) {
+                    for (cg in recipe.inputs.keys) if (cg !in accepts.orEmpty()) problems += "$at: recipe: \"$cg\" should be in \"accepts\" too"
+                    for (cg in recipe.makes.keys) if (produces?.get(cg) != 0) problems += "$at: recipe: \"$cg\" should be in \"produces\" too, at 0"
+                }
                 val def = IndustryDef(
                     iid, f.words("name", need = fresh), f.int("from", 1700, 2300, need = fresh), f.int("until", 1700, 2300, need = fresh),
                     regions ?: if (fresh) emptyMap() else null, ground ?: if (fresh) emptyList() else null, layout,
                     produces ?: if (fresh) emptyMap() else null, accepts ?: if (fresh) emptyList() else null,
                     f.seasons(fresh), f.bool("water") ?: if (fresh) false else null, weather ?: if (fresh) emptyList() else null,
-                    replaces, parts, production, open, closes,
+                    replaces, parts, production, open, closes, recipe,
                 )
                 f.done()
                 if (def.from != null && def.until != null && def.from >= def.until) problems += "$at: from should be before until"
@@ -501,6 +518,25 @@ object Packs {
             if (m == null || m.values.any { it !is Long }) { problems += "$where: \"$k\" should be { \"name\": whole number }"; return null }
             if (m.values.any { (it as Long) !in lo.toLong()..hi.toLong() }) problems += "$where: \"$k\" should be from $lo to $hi each"
             return m.entries.associate { it.key as String to (it.value as Long).coerceIn(lo.toLong(), hi.toLong()).toInt() }
+        }
+
+        /** { "inputs": { "cargo": n }, "makes": { "cargo": n } }, each from 1 to [RECIPE_MOST], neither empty. */
+        fun recipe(): RecipeDef? {
+            val v = get("recipe", false) ?: return null
+            val m = v as? Map<*, *>
+            fun part(k: String): Map<String, Int>? {
+                val p = m?.get(k) as? Map<*, *>
+                if (p == null || p.isEmpty() || p.values.any { it !is Long }) return null
+                return p.entries.associate { it.key as String to (it.value as Long).coerceIn(0L, Int.MAX_VALUE.toLong()).toInt() }
+            }
+            val inputs = part("inputs")
+            val makes = part("makes")
+            if (m == null || inputs == null || makes == null || m.keys.any { it != "inputs" && it != "makes" }) {
+                problems += "$where: \"recipe\" should be { \"inputs\": { \"cargo\": n }, \"makes\": { \"cargo\": n } }"
+                return null
+            }
+            if ((inputs.values + makes.values).any { it !in 1..RECIPE_MOST }) problems += "$where: \"recipe\" amounts should be from 1 to $RECIPE_MOST"
+            return RecipeDef(inputs, makes)
         }
 
         /** { "name": "text" }. */

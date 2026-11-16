@@ -16,7 +16,7 @@ package com.rm.interchange.sim
  */
 object Save {
     private val MAGIC = "ICHG".encodeToByteArray()
-    const val VERSION = 68
+    const val VERSION = 69
 
     /** A vehicle's [built] day as saved by [version]: work days from 36, calendar days before. */
     private fun World.builtOut(built: Int, version: Int) = if (version >= 36) built else built / settings.dayLength
@@ -34,6 +34,7 @@ object Save {
             if (version >= 29) { w.int(g.townGrowth.ordinal); w.int(g.goals.ordinal) }
             if (version >= 38) w.bool(g.collisions)
             if (version >= 65) w.int(g.breakdowns)
+            if (version >= 69) { w.bool(g.stockpiles); w.bool(g.contracts) }
             w.uvar(roster.packs.size.toLong())
             for (p in roster.packs) { w.string(p.id); w.int(p.version); w.long(p.hash) }
             w.uvar(roster.engines.size.toLong())
@@ -346,6 +347,14 @@ object Save {
                 }
                 w.uvar(demand.size.toLong())
                 for (d in demand) { w.int(d.townA); w.int(d.townB); w.int(d.potential); w.int(d.carried); w.bool(d.served) }
+            }
+            if (version >= 69) {
+                for (ind in industries) { cargoInts(ind.store); cargoInts(ind.stock); cargoInts(ind.broughtBy); cargoInts(ind.broughtByLast) }
+                w.uvar(contracts.size.toLong())
+                for (k in contracts) {
+                    w.int(k.cargo); w.int(k.industry); w.int(k.town); w.int(k.amount); w.int(k.months); w.int(k.season); w.int(k.until); w.long(k.reward); w.long(k.penalty)
+                    w.int(k.status); w.int(k.company); w.int(k.offerUntil); w.int(k.count); w.int(k.lastCount); w.int(k.met); w.int(k.misses); w.bool(k.started)
+                }
             }
         }
         val body = Squeeze.pack(w.toByteArray())
@@ -876,6 +885,22 @@ object Save {
                     DemandView(a, b, r.int().coerceAtLeast(0), r.int().coerceAtLeast(0), r.bool())
                 }
             }
+            // Before 69 no stores, stocks or contracts.
+            if (version >= 69) {
+                fun into(a: IntArray) = r.ints().let { v -> for (c in 0 until minOf(v.size, Cargo.MAX)) a[c] = v[c].coerceAtLeast(0) }
+                for (ind in industries) { into(ind.store); into(ind.stock); into(ind.broughtBy); into(ind.broughtByLast) }
+                // Each takes seventeen bytes at the least.
+                val n = r.uvar()
+                if (n !in 0..r.left / 17L) throw BadData("too many contracts")
+                repeat(n.toInt()) {
+                    val k = Contract(r.int(), r.int(), r.int(), r.int(), r.int(), r.int(), r.int(), r.long(), r.long())
+                    if (k.cargo !in 0 until cargoCount || k.industry !in -1 until industries.size || k.town !in -1 until towns.size) throw BadData("bad contract")
+                    k.status = r.int().coerceIn(Contract.OFFERED, Contract.CANCELLED); k.company = r.int(); k.offerUntil = r.int()
+                    k.count = r.int(); k.lastCount = r.int(); k.met = r.int(); k.misses = r.int(); k.started = r.bool()
+                    if (k.status == Contract.RUNNING && k.company !in companies.indices) throw BadData("bad contract")
+                    contracts += k
+                }
+            }
             // A conditional order with a test there isn't or a jump past the end is left out, as are orders past
             // the most a vehicle takes, as a command would.
             for (list in listOf<List<Carrier?>>(trains, roadVehicles, ships, aircraft)) for (v in list) {
@@ -938,6 +963,9 @@ object Save {
             collisions = version >= 38 && r.bool(),
             // Games from before the setting break down as they always did.
             breakdowns = if (version >= 65) r.int().coerceIn(Breakdowns.NONE, Breakdowns.NORMAL) else Breakdowns.NORMAL,
+            // Games from before stockpiles go on without them, and without contracts.
+            stockpiles = version >= 69 && r.bool(),
+            contracts = version >= 69 && r.bool(),
         )
         if (settings.width !in 16..4096 || settings.height !in 16..4096) throw BadData("map size out of range")
         return settings

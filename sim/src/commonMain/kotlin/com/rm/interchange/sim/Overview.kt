@@ -82,7 +82,7 @@ fun World.overviewInfo(): OverviewInfo {
             }
             if (active) { service[s.owner] = 100; service[OVERVIEW_ALL] = 100 }
         }
-        OverviewIndustry(ind.id, ind.madeLastMonth.copyOf(), ind.movedLastMonth.copyOf(), ind.brought, waiting, service)
+        OverviewIndustry(ind.id, ind.madeLastMonth.copyOf(), ind.movedLastMonth.copyOf(), ind.brought + ind.store.sum(), waiting, service)
     }
     data class Leg(val from: Int, val to: Int, val owner: Int, val cargo: Int)
     val counts = linkedMapOf<Leg, Long>()

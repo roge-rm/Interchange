@@ -147,6 +147,7 @@ Each industry:
 | water | no | `true` for one on the shore, the first row of its layout facing the water. |
 | produces | no | `{ "cargo": amount }`: what it makes each month at its usual level, 0 to 100000 each. Give a cargo 0 to make it only from what's brought. |
 | accepts | no | The cargo it takes, by id. One that takes cargo and has a cargo at 0 in `produces` makes that from what it's brought, a tonne for a tonne. |
+| recipe | no | `{ "inputs": { "cargo": n }, "makes": { "cargo": n } }`: with stockpiles on, it makes in whole batches, each taking `inputs` from its stores and making `makes`, only while every input is in store. Each from 1 to 100. Inputs have to be in `accepts`, and what it makes in `produces` at 0. |
 | seasons | no | Twelve numbers, January first: how much it makes each month, in percent of its usual, 0 to 1000. |
 | weather | no | How the weather changes it: `crops` (makes less in drought or soaked ground), `thaw` (stops in the spring mud), `ice` (shut while the water by it is frozen). |
 | production | no | `{ "cargo": "rule" }`: a rule giving that cargo's monthly amount in place of the usual. The cargo has to be in `produces` too, above 0: rivals and subsidies go by that amount. |
@@ -170,6 +171,12 @@ The cargo ids are those under vehicles.json and those from cargo.json.
 ```
 
 Without rules an industry makes its `produces` amount times its level over 16, times its season and weather in percent. Its level starts at 16 and goes up or down now and then by how much of what it makes is carried. What it makes is shared out over the month's days.
+
+In a game with stockpiles on, an industry keeps a store of each cargo it takes and makes something of. It works up to 64 t a day from its stores at level 16 (more or less by its level), by its recipe or a tonne for a tonne, and stores up to 90 days of that of each cargo; a full store takes no more of that cargo. One that makes nothing of what it takes, like a port, takes it all and it's gone. What no station takes goes into a stock of about a month's worth, a thirtieth of it offered to stations again each day. Cargo that doesn't keep loses a thirtieth a day in store and in stock. Without stockpiles, as in games saved before them, everything brought is made into its own the next day and what no station takes is lost.
+
+```json
+"recipe": { "inputs": { "iron_ore": 2, "coal": 1 }, "makes": { "steel": 2 } }
+```
 
 ## cargo.json
 
@@ -201,6 +208,7 @@ Without rules an industry makes its `produces` amount times its level over 16, t
 | kg | yes | What one weighs, 1 to 100000. |
 | colour | yes | Its colour in the game's lists and charts, `"#rrggbb"`. |
 | towns | no | `true` if towns take it at stations with 60 or more people round them, as they take goods. Otherwise only industries that accept it take it. |
+| keeps | no | `false` for cargo that spoils in an industry's store, as livestock, food and fish do. `true` if not given. |
 
 New cargo come after the base pack's 20, in pack order and then in file order. A game can have 32 cargo at most, so 12 from packs. A cargo's place can't change once a game is saved: a saved game only loads with packs giving the same cargo in the same order.
 
@@ -240,7 +248,8 @@ Brackets `( )` group as usual.
 | `clamp(x, lo, hi)` | `x`, but at least `lo` and at most `hi`. |
 | `abs(x)` | `x` without its sign. |
 | `pick(i, a, b, c, ...)` | The `i`-th of the rest counting from 0: `a` for 0, `b` for 1. Below 0 gives the first, past the end the last. Good for a table by month. |
-| `brought(cargo)` | What was brought to it last month, all cargo together, if it takes `cargo` (a cargo id), else 0. |
+| `brought(cargo)` | What was brought to it of `cargo` (a cargo id) last month, if it takes it, else 0. Without stockpiles, all cargo together. |
+| `stock(cargo)` | What it has of `cargo` now, in its store and its stock. 0 without stockpiles. |
 
 | Name | What it is |
 |---|---|
@@ -254,8 +263,9 @@ Brackets `( )` group as usual.
 | `mud` | How muddy the ground is there, 0 to 255; over 60 is the spring break-up. |
 | `ice` | The thickest ice on the water next to it, in cm; at 15 boats stop. |
 | `stations` | How many stations in reach have had a train for something it makes or takes. |
+| `made` | What it made last month, all cargo together. |
 
-In `open`, worked out for a place it might go, `level` is 16 and `carried`, `stations` and `brought` are 0.
+In `open`, worked out for a place it might go, `level` is 16 and `carried`, `stations`, `made`, `brought` and `stock` are 0.
 
 A `production` rule's answer is kept from 0 to 100000. Its season and weather aren't added on top; use `base` to keep them:
 

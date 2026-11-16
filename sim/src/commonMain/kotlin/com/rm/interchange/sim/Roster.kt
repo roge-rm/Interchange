@@ -160,7 +160,12 @@ class IndustryKind(
     /** A rule that's 0 where and when one can't open, and one that closes it at the month when it isn't 0. */
     val open: Rule? = null,
     val closes: Rule? = null,
+    /** With stockpiles, a batch: what it takes of each cargo from its stores and makes of each, by cargo number; all 0 for none. */
+    val recipeIn: IntArray = IntArray(Cargo.MAX),
+    val recipeOut: IntArray = IntArray(Cargo.MAX),
 ) {
+    /** Makes its cargo in batches by [recipeIn] and [recipeOut]. */
+    val hasRecipe = recipeIn.any { it > 0 }
     /** The cargo it makes from what's brought, as bits: what it makes but has no monthly amount or rule of its own for. */
     val converts: Int = (0 until Cargo.MAX).fold(0) { m, c -> if (outputs and (1 shl c) != 0 && produces[c] == 0 && production[c] == null) m or (1 shl c) else m }
     /** Makes cargo of its own each month. */
@@ -252,7 +257,7 @@ class Roster(
                         cargoIds[c.id] = kinds.size
                         kinds += CargoKind(
                             kinds.size, c.id, pack.id, c.names!!, c.units!!, c.rate!!, c.grace!!, c.decay!!, c.pace!!, c.fast ?: 0, c.kg!!,
-                            c.towns ?: false, c.colour!!,
+                            c.towns ?: false, c.colour!!, c.keeps ?: true,
                         )
                         continue
                     }
@@ -260,7 +265,7 @@ class Roster(
                     val o = kinds[at]
                     kinds[at] = CargoKind(
                         at, o.key, o.pack, c.names ?: o.names, c.units ?: o.units, c.rate ?: o.rate, c.grace ?: o.grace, c.decay ?: o.decay,
-                        c.pace ?: o.pace, c.fast ?: o.fast, c.kg ?: o.kg, c.towns ?: o.towns, c.colour ?: o.colour,
+                        c.pace ?: o.pace, c.fast ?: o.fast, c.kg ?: o.kg, c.towns ?: o.towns, c.colour ?: o.colour, c.keeps ?: o.keeps,
                     )
                 }
                 for (v in pack.vehicles) {
@@ -369,6 +374,11 @@ class Roster(
                 for (cg in d.production.orEmpty().keys) if ((produces[cg] ?: 0) <= 0) problems += "${s.key}: production: \"$cg\" should be in \"produces\" too, above 0"
                 val named = (produces.keys + d.accepts.orEmpty() + d.production.orEmpty().keys).toSortedSet()
                 for (rule in listOfNotNull(d.open, d.closes) + d.production.orEmpty().values) named += rule.cargoes
+                d.recipe?.let { r ->
+                    named += r.inputs.keys + r.makes.keys
+                    for (cg in r.inputs.keys) if (cg !in d.accepts.orEmpty()) problems += "${s.key}: recipe: \"$cg\" should be in \"accepts\" too"
+                    for (cg in r.makes.keys) if (produces[cg] != 0) problems += "${s.key}: recipe: \"$cg\" should be in \"produces\" too, at 0"
+                }
                 for (cg in named) cargoOf(s.key, cg)
                 IndustryKind(
                     i, s.key, d.names!!, d.from!!, d.until!!, d.regions.orEmpty(), d.ground.orEmpty(), layout,
@@ -381,6 +391,8 @@ class Roster(
                     parts = s.parts.entries.sortedBy { it.key }.associate { it.key to spriteId(it.value) },
                     production = Array(Cargo.MAX) { c -> cargo.getOrNull(c)?.let { d.production?.get(it.key) } },
                     open = d.open, closes = d.closes,
+                    recipeIn = IntArray(Cargo.MAX) { c -> cargo.getOrNull(c)?.let { d.recipe?.inputs?.get(it.key) } ?: 0 },
+                    recipeOut = IntArray(Cargo.MAX) { c -> cargo.getOrNull(c)?.let { d.recipe?.makes?.get(it.key) } ?: 0 },
                 )
             }
             if (houses.size > MOST_HOUSES) problems += "These packs have ${houses.size} town buildings, more than the $MOST_HOUSES a game can hold"
@@ -401,6 +413,7 @@ class Roster(
             old.id, d.names ?: old.names, d.from ?: old.from, d.until ?: old.until, d.regions ?: old.regions, d.ground ?: old.ground,
             d.layout ?: old.layout, d.produces ?: old.produces, d.accepts ?: old.accepts, d.seasons ?: old.seasons, d.water ?: old.water,
             d.weather ?: old.weather, null, null, d.production ?: old.production, d.open ?: old.open, d.closes ?: old.closes,
+            d.recipe ?: old.recipe,
         )
 
         /** [old] with whatever [v] gives in its place. */

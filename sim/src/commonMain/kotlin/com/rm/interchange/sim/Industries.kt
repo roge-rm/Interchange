@@ -36,6 +36,12 @@ class Industry(
     var broughtLastMonth = 0
     /** Shut down: its tiles are cleared and it makes and takes nothing. Kept so ids stay put. */
     var closed = false
+    /** With stockpiles, by cargo: what's in store of each it takes, and its stock of what it's made that no station took. */
+    val store = IntArray(Cargo.MAX)
+    val stock = IntArray(Cargo.MAX)
+    /** With stockpiles, by cargo: what's been brought this month and last. */
+    val broughtBy = IntArray(Cargo.MAX)
+    val broughtByLast = IntArray(Cargo.MAX)
 }
 
 /** Something that happened in the world worth telling the player, by kind, with the industry or town it's about. */
@@ -96,6 +102,12 @@ class News(val kind: Int, val about: Int, val tick: Long) {
         const val WARN_ICE = 30
         const val WARN_STORM = 31
         const val WARN_COLD = 32
+        /** A contract offered, a month of one met and one missed, one failed with its penalty, and one run its course; [News.about] is its place in [World.contracts]. */
+        const val CONTRACT_OFFERED = 33
+        const val CONTRACT_MET = 34
+        const val CONTRACT_MISSED = 35
+        const val CONTRACT_FAILED = 36
+        const val CONTRACT_DONE = 37
     }
 }
 
@@ -267,16 +279,19 @@ internal fun World.industryFits(kind: IndustryKind, x: Int, y: Int, w: Int, h: I
  * destinations with everything else made that day. Stations in [shut] get nothing.
  */
 internal fun World.industriesDay(made: HashMap<Int, IntArray>, shut: Set<Int> = emptySet()) {
+    val piles = settings.stockpiles
     for (ind in industries) {
         if (ind.closed) continue
         val kind = roster.industries[ind.kind]
         val out = IntArray(Cargo.MAX)
-        // What's brought, made into what it makes of it, the same amount shared among those; taken and gone at one
-        // that makes nothing of it, as a port ships it away.
-        val n = ind.brought
-        ind.brought = 0
-        val kinds = (0 until cargoCount).filter { kind.converts and (1 shl it) != 0 }
-        if (kinds.isNotEmpty()) for ((k, c) in kinds.withIndex()) out[c] += n / kinds.size + if (k < n % kinds.size) 1 else 0
+        if (piles) workStores(ind, kind, out)
+        else {
+            // What's brought, made into what it makes of it, the same amount shared among those; taken and gone at one
+            // that makes nothing of it, as a port ships it away.
+            val n = ind.brought
+            ind.brought = 0
+            shareOut(kind, n, out)
+        }
         // And a month's worth of its own over the month, more or less by the season and the weather.
         val season = kind.seasons[Calendar.month(startYear, day)] * weatherShare(ind) / 100
         for (c in 0 until cargoCount) {
@@ -284,24 +299,149 @@ internal fun World.industriesDay(made: HashMap<Int, IntArray>, shut: Set<Int> = 
             if (month > 0) out[c] += (month * 8 + rng.below(240)) / 240
         }
         for (c in 0 until cargoCount) {
-            if (out[c] == 0) continue
+            // With stockpiles, a day's share of its stock is offered again with what it made today.
+            val cap = if (piles) stockCap(ind, kind, c) else 0
+            val fromStock = if (piles) minOf(ind.stock[c], maxOf(1, cap / STOCK_DAYS)) else 0
+            val offer = out[c] + fromStock
+            if (offer == 0) continue
             ind.made[c] += out[c]
             // The two best rated stations that have had a train for it, sharing by their ratings.
             val served = industryStations[ind.id].orEmpty().mapNotNull { stations.getOrNull(it) }.filter { it.lastCall[c] >= 0 && it.id !in shut }
                 .sortedWith(compareByDescending<Station> { it.rating[c] }.thenBy { it.id }).take(2)
-            if (served.isEmpty()) continue
-            val total = served.sumOf { it.rating[c] }.coerceAtLeast(1)
-            for (s in served) {
-                // Each gets its share, and of that what its rating lets it have.
-                val share = out[c] * s.rating[c] / total
-                val got = (share * s.rating[c] + rng.below(255)) / 255
-                if (got <= 0) continue
-                made.getOrPut(s.id) { IntArray(Cargo.MAX) }[c] += got
-                ind.moved[c] += got
+            var given = 0
+            if (served.isNotEmpty()) {
+                val total = served.sumOf { it.rating[c] }.coerceAtLeast(1)
+                for (s in served) {
+                    // Each gets its share, and of that what its rating lets it have.
+                    val share = offer * s.rating[c] / total
+                    val got = (share * s.rating[c] + rng.below(255)) / 255
+                    if (got <= 0) continue
+                    made.getOrPut(s.id) { IntArray(Cargo.MAX) }[c] += got
+                    ind.moved[c] += got
+                    given += got
+                }
             }
+            // What no station took goes into its stock, up to about a month's worth.
+            if (piles) ind.stock[c] = minOf(cap, ind.stock[c] + out[c] - given).coerceAtLeast(0)
         }
     }
 }
+
+/** [n] brought to an industry of [kind] made into what it makes from what's brought, shared evenly among those, into [out]. */
+private fun World.shareOut(kind: IndustryKind, n: Int, out: IntArray) {
+    val kinds = (0 until cargoCount).filter { kind.converts and (1 shl it) != 0 }
+    if (kinds.isNotEmpty()) for ((k, c) in kinds.withIndex()) out[c] += n / kinds.size + if (k < n % kinds.size) 1 else 0
+}
+
+/**
+ * With stockpiles, a day's work for [ind] from its stores into [out]: perishables spoil a little in store and stock,
+ * then up to [workRate] is taken from the stores, in whole batches of its recipe, or from each store about evenly
+ * and made a tonne for a tonne.
+ */
+private fun World.workStores(ind: Industry, kind: IndustryKind, out: IntArray) {
+    for (c in 0 until cargoCount) if (!roster.cargo.keeps[c]) {
+        if (ind.store[c] > 0) ind.store[c] -= (ind.store[c] + SPOIL_DAYS - 1) / SPOIL_DAYS
+        if (ind.stock[c] > 0) ind.stock[c] -= (ind.stock[c] + SPOIL_DAYS - 1) / SPOIL_DAYS
+    }
+    val rate = workRate(ind)
+    if (kind.hasRecipe) {
+        var batches = maxOf(1, rate / kind.recipeIn.sum())
+        for (c in 0 until cargoCount) if (kind.recipeIn[c] > 0) batches = minOf(batches, ind.store[c] / kind.recipeIn[c])
+        if (batches <= 0) return
+        for (c in 0 until cargoCount) {
+            ind.store[c] -= batches * kind.recipeIn[c]
+            out[c] += batches * kind.recipeOut[c]
+        }
+        return
+    }
+    val filled = (0 until cargoCount).count { ind.store[it] > 0 }
+    if (filled == 0) return
+    val share = (rate + filled - 1) / filled
+    var left = rate
+    var n = 0
+    for (c in 0 until cargoCount) {
+        val take = minOf(ind.store[c], share, left)
+        if (take <= 0) continue
+        ind.store[c] -= take
+        left -= take
+        n += take
+    }
+    shareOut(kind, n, out)
+}
+
+/** With stockpiles, what [ind] works through a work day from its stores: [WORK_RATE] at level 16, more or less by its level. */
+fun workRate(ind: Industry) = maxOf(1, WORK_RATE * ind.level / 16)
+
+/** With stockpiles, how much of each cargo [ind] stores: [STORE_DAYS] of its [workRate]. */
+fun storeCap(ind: Industry) = workRate(ind) * STORE_DAYS
+
+/**
+ * With stockpiles, how much [ind] keeps in stock of cargo [c] it makes and no station took: about a month's worth, its
+ * own monthly amount and a month's work from its stores, at least [STOCK_LEAST].
+ */
+fun stockCap(ind: Industry, kind: IndustryKind, c: Int): Int {
+    val own = kind.produces[c] * ind.level / 16
+    val worked = if (kind.converts and (1 shl c) != 0) workRate(ind) * STOCK_DAYS else 0
+    return maxOf(STOCK_LEAST, own + worked)
+}
+
+/** Whether an industry of this kind keeps a store of cargo [c]: one it takes and makes something of. A port's goes at once. */
+fun IndustryKind.stores(c: Int) = takes(c) && if (hasRecipe) recipeIn[c] > 0 else converts != 0
+
+/** Whether [ind]'s store of [c] is full, so it takes no more; never without stockpiles. */
+fun World.storeFull(ind: Industry, c: Int) = settings.stockpiles && roster.industries[ind.kind].stores(c) && ind.store[c] >= storeCap(ind)
+
+/** [n] of cargo [c] brought to [ind]: into its store with stockpiles, else to be made into its own tomorrow. */
+internal fun World.bring(ind: Industry, c: Int, n: Int) {
+    ind.broughtThisMonth += n
+    if (!settings.stockpiles) {
+        ind.brought += n
+        return
+    }
+    ind.broughtBy[c] += n
+    if (roster.industries[ind.kind].stores(c)) ind.store[c] += n
+}
+
+/**
+ * An industry's stores and stock for the screen, by cargo: what's in [stores] of the cargo in [stored] (bits), each up
+ * to [storeCap]; what it works a work day, [rate]; its [stock] of what it makes, each up to [stockCaps]; and its recipe,
+ * all 0 for none.
+ */
+class StockView(
+    val stored: Int,
+    val stores: IntArray,
+    val storeCap: Int,
+    val rate: Int,
+    val stock: IntArray,
+    val stockCaps: IntArray,
+    val recipeIn: IntArray,
+    val recipeOut: IntArray,
+)
+
+/** [ind]'s stores and stock, or null without stockpiles. */
+fun World.stockView(ind: Industry): StockView? {
+    if (!settings.stockpiles) return null
+    val kind = roster.industries[ind.kind]
+    val stored = (0 until cargoCount).fold(0) { m, c -> if (kind.stores(c)) m or (1 shl c) else m }
+    return StockView(
+        stored, ind.store.copyOf(), storeCap(ind), workRate(ind), ind.stock.copyOf(),
+        IntArray(Cargo.MAX) { c -> if (c < cargoCount && kind.outputs and (1 shl c) != 0) stockCap(ind, kind, c) else 0 },
+        kind.recipeIn.copyOf(), kind.recipeOut.copyOf(),
+    )
+}
+
+/** Tonnes an industry works from its stores a work day at level 16: about a steady supply's worth, two trains a week. */
+const val WORK_RATE = 64
+
+/** Work days of its rate an industry stores of each cargo, enough to keep a mill going through a winter. */
+const val STORE_DAYS = 90
+
+/** An industry's stock of what it makes: about a month's worth, a thirtieth of it offered to stations again each day. */
+const val STOCK_DAYS = 30
+const val STOCK_LEAST = 100
+
+/** Perishables lose this part of a store or stock a day, rounded up: half gone in about three weeks. */
+const val SPOIL_DAYS = 30
 
 /**
  * The first of each month: what each industry made and moved last month, and
@@ -343,6 +483,10 @@ internal fun World.industriesMonth() {
         ind.moved.fill(0)
         ind.broughtLastMonth = ind.broughtThisMonth
         ind.broughtThisMonth = 0
+        if (settings.stockpiles) {
+            ind.broughtBy.copyInto(ind.broughtByLast)
+            ind.broughtBy.fill(0)
+        }
         // A pack's rule closing it, worked out on the month just gone.
         if (!ind.closed && kind.closes != null && kind.closes.eval(IndustryInputs(this, kind, ind, ind.x, ind.y, ind.turn)) != 0L) closeIndustry(ind)
     }
@@ -413,6 +557,7 @@ internal fun World.closeIndustry(ind: Industry) {
     catchmentDirty = true
     tell(News.INDUSTRY_CLOSES, ind.id)
     failGoalsFor(ind)
+    if (contracts.isNotEmpty()) cancelContractsFor(ind)
 }
 
 /** An industry's level in sixteenths: at most 4 times and at least a quarter of its kind's. */
@@ -442,7 +587,7 @@ const val NEWS_TICKS = Calendar.TICKS_PER_DAY * 10L
 internal fun World.takerAt(s: Station, c: Int): Industry? {
     // Asked at any tick, so on a just loaded copy the reach may not be worked out yet.
     if (catchmentDirty) workOutCatchment()
-    val takers = stationIndustries[s.id].orEmpty().map { industries[it] }.filter { !it.closed && roster.industries[it.kind].takes(c) && !iceBound(it) }
+    val takers = stationIndustries[s.id].orEmpty().map { industries[it] }.filter { !it.closed && roster.industries[it.kind].takes(c) && !iceBound(it) && !storeFull(it, c) }
     if (takers.size > 1 && goals.isNotEmpty()) {
         takers.firstOrNull { t -> goals.any { it.status == Goal.OPEN && it.kind == Goal.DELIVER && it.cargo == c && it.industry == t.id } }?.let { return it }
     }
@@ -523,6 +668,7 @@ internal class IndustryInputs(val world: World, val kind: IndustryKind, val ind:
                 }
                 most.toLong()
             }
+            Rule.MADE -> (ind?.madeLastMonth?.sum() ?: 0).toLong()
             Rule.STATIONS -> {
                 if (ind == null) return 0L
                 if (catchmentDirty) workOutCatchment()
@@ -536,8 +682,15 @@ internal class IndustryInputs(val world: World, val kind: IndustryKind, val ind:
         }
     }
 
-    /** What's been brought: all of it together last month, for any cargo it takes. */
-    override fun brought(c: Int): Long = if (ind != null && kind.takes(c)) ind.broughtLastMonth.toLong() else 0L
+    /** What's been brought last month, for any cargo it takes: of that cargo with stockpiles, else all of it together. */
+    override fun brought(c: Int): Long = when {
+        ind == null || !kind.takes(c) -> 0L
+        world.settings.stockpiles -> ind.broughtByLast[c].toLong()
+        else -> ind.broughtLastMonth.toLong()
+    }
+
+    /** What it has of [c] now, in store and in stock. */
+    override fun stock(c: Int): Long = if (ind == null) 0L else ind.store[c].toLong() + ind.stock[c]
     override fun cargo(key: String) = world.roster.cargo.of(key)
 }
 

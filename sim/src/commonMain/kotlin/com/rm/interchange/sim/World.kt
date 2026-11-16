@@ -166,6 +166,8 @@ class World(settings: NewGame, val roster: Roster = Roster.BASE, generate: Boole
     val subsidies = ArrayList<Subsidy>()
     /** The game's goals, met, failed or open, in the order set. */
     val goals = ArrayList<Goal>()
+    /** Every contract offered, in the order offered, kept so news can still name it. */
+    val contracts = ArrayList<Contract>()
     /** The scenario this game is, or null for an ordinary game. */
     var scenario: Scenario? = null
     /** Made in the scenario editor: time stands still, building is free and the editor's commands work. */
@@ -320,7 +322,7 @@ class World(settings: NewGame, val roster: Roster = Roster.BASE, generate: Boole
             return
         }
         if (editor) {
-            if (command is Command.Loan || command is Command.BuyCompany || command is Command.TownAction || command is Command.FundIndustry) return
+            if (command is Command.Loan || command is Command.BuyCompany || command is Command.TownAction || command is Command.FundIndustry || command is Command.AcceptContract) return
             return free(company) { run(company, command) }
         }
         run(company, command)
@@ -404,6 +406,7 @@ class World(settings: NewGame, val roster: Roster = Roster.BASE, generate: Boole
             is Command.TrainOrder -> trainCommand(company, command)
             is Command.Loan -> loanCommand(company, command)
             is Command.FundIndustry -> fundIndustry(company, command)
+            is Command.AcceptContract -> acceptContract(company, command.contract)
             is Command.TownAction -> townAction(company, command)
             is Command.BuyCompany -> buyCompany(company, command)
             is Command.RenameCompany -> renameCompany(company, command.name)
@@ -469,6 +472,7 @@ class World(settings: NewGame, val roster: Roster = Roster.BASE, generate: Boole
             if (monthStart) {
                 passengersMonth()
                 industriesMonth()
+                contractsMonth()
                 goalsMonth()
                 scenarioCheck()
             }
@@ -586,6 +590,17 @@ class World(settings: NewGame, val roster: Roster = Roster.BASE, generate: Boole
         }
         for (c in companies) if (c.priorityOwed != 0L) { mix(500L + c.id); mix(c.priorityOwed) }
         for (t in trains) if (t != null && t.dugDays != 0) { mix(600L + t.id); mix(t.dugDays.toLong()) }
+        // Stores, stocks and contracts only with stockpiles, so older games keep their checksum.
+        if (settings.stockpiles) {
+            mix(if (settings.contracts) 801L else 800L)
+            for (ind in industries) for (c in 0 until cargoCount) { mix(ind.store[c].toLong()); mix(ind.stock[c].toLong()); mix(ind.broughtBy[c].toLong()); mix(ind.broughtByLast[c].toLong()) }
+            mix(contracts.size.toLong())
+            for (k in contracts) {
+                mix(k.cargo.toLong()); mix(k.industry.toLong()); mix(k.town.toLong()); mix(k.amount.toLong()); mix(k.months.toLong()); mix(k.season.toLong())
+                mix(k.until.toLong()); mix(k.reward); mix(k.penalty); mix(k.status.toLong()); mix(k.company.toLong()); mix(k.offerUntil.toLong())
+                mix(k.count.toLong()); mix(k.lastCount.toLong()); mix(k.met.toLong()); mix(k.misses.toLong()); mix(if (k.started) 1L else 0L)
+            }
+        }
         for (k in roadStops.keys.sorted()) mix(k.toLong() * 31 + roadStops.getValue(k))
         for (k in saltDepots.sorted()) mix(k.toLong() * 7)
         for (v in roadVehicles) if (v != null) { mix(v.depot.toLong()); mix(v.noDepotUntil); mix(v.wreckedFor.toLong()); mix(v.leave.toLong()) }

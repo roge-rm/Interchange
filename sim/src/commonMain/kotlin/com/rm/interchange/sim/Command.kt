@@ -246,6 +246,9 @@ sealed interface Command {
         override fun hashCode() = company * 31 + pixels.contentHashCode()
     }
 
+    /** Takes on [contract], its place in [World.contracts], if it's still on offer. */
+    data class AcceptContract(override val company: Int, val contract: Int) : Command
+
     /** Borrows a step more from the bank, or repays one. */
     data class Loan(override val company: Int, val borrow: Boolean) : Command
 

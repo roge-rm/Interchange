@@ -54,6 +54,9 @@ object Cargo {
     /** What one of each weighs, in kg: a passenger with their bags, a bag of mail, a head of livestock, a tonne of the rest. */
     val KG = intArrayOf(90, 50, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 500, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000)
 
+    /** Whether it keeps in an industry's store; livestock, food and fish spoil there. */
+    fun keeps(c: Int) = c != LIVESTOCK && c != FOOD && c != FISH
+
     /** Each one's colour, 0xrrggbb, for swatches and bars. */
     val COLOUR = intArrayOf(
         0x6FA8DC, 0xE8E6E1, 0x8B5A2B, 0xD9B26F, 0xE6C84F, 0x3A3A3A, 0xA0522D, 0x8A9BA8, 0xC77DBB, 0x222831,
@@ -82,7 +85,7 @@ object Cargo {
         List(COUNT) { c ->
             CargoKind(
                 c, IDS[c], Packs.BASE_ID, mapOf("en" to NAMES_EN[c], "fr" to NAMES_FR[c]), unit(c),
-                RATE[c], GRACE[c], DECAY[c], PACE[c], FAST[c], KG[c], townWants(c), COLOUR[c],
+                RATE[c], GRACE[c], DECAY[c], PACE[c], FAST[c], KG[c], townWants(c), COLOUR[c], keeps(c),
             )
         }
     }
@@ -98,7 +101,8 @@ object Cargo {
  * A kind of cargo as the packs in a game make it: its place [id] in the
  * game's table, the [key] packs name it by, the pack that gave it, and its
  * numbers as in [Cargo]. [towns] is taken by towns of [Cargo.TOWN_GOODS_PEOPLE]
- * and up, as goods are. [colour] is 0xrrggbb.
+ * and up, as goods are. [colour] is 0xrrggbb. Without [keeps] it spoils in an
+ * industry's store.
  */
 class CargoKind(
     val id: Int,
@@ -114,6 +118,7 @@ class CargoKind(
     val kg: Int,
     val towns: Boolean,
     val colour: Int,
+    val keeps: Boolean = true,
 ) {
     fun name(language: String) = names[language] ?: names["en"] ?: key
     fun unit(language: String) = units[language] ?: units["en"] ?: ""
@@ -135,6 +140,7 @@ class CargoTable(val kinds: List<CargoKind>) {
     val fast = IntArray(Cargo.MAX) { kinds.getOrNull(it)?.fast ?: 0 }
     val kg = IntArray(Cargo.MAX) { kinds.getOrNull(it)?.kg ?: 0 }
     val towns = BooleanArray(Cargo.MAX) { kinds.getOrNull(it)?.towns ?: false }
+    val keeps = BooleanArray(Cargo.MAX) { kinds.getOrNull(it)?.keeps ?: true }
 
     operator fun get(c: Int) = kinds[c]
     fun getOrNull(c: Int) = kinds.getOrNull(c)

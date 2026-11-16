@@ -29,8 +29,8 @@ class IndustryTest {
     }
 
     /** A coal mine at one end of a line and a steel mill at the other, placed by hand on flat land. */
-    private fun chain(year: Int = 1900): World {
-        val w = World(96, 64, 1, startYear = year)
+    private fun chain(year: Int = 1900, stockpiles: Boolean = true): World {
+        val w = World(NewGame(96, 64, 1, year, towns = 0, industries = 0, weather = false, stockpiles = stockpiles))
         for (i in w.corners.indices) w.corners[i] = 3
         w.companies[0].money = 10_000_000
         fun put(key: String, x: Int, y: Int) {
@@ -73,7 +73,8 @@ class IndustryTest {
 
     @Test
     fun coalCarriedToTheMillIsMadeIntoSteel() {
-        val w = chain(1905)
+        // Without stockpiles coal alone makes steel, a tonne for a tonne; with them the mill wants ore too.
+        val w = chain(1905, stockpiles = false)
         val hopper = w.roster.engines.first { it.key == "base:hopper" }
         assertTrue(Cargo.COAL in hopper.cargoes)
         w.apply(Command.BuyTrain(0, 0, 4, hopper.id, 5, Cargo.COAL))

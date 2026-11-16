@@ -440,6 +440,8 @@ class WorldView(
     val riskLevels: ByteArray = ByteArray(0),
     /** The town pairs whose travel is carried least, the most not carried first; empty unless the network is asked for. */
     val demand: List<DemandView> = emptyList(),
+    /** Contracts on offer and the player's running ones, offers first; empty without contracts. */
+    val contracts: List<ContractView> = emptyList(),
 )
 
 /**
@@ -674,6 +676,7 @@ fun World.view(company: Int = 0, withReserved: Boolean = false, withNetwork: Boo
         risk?.first ?: IntArray(0),
         risk?.second ?: ByteArray(0),
         if (withNetwork) demand else emptyList(),
+        contractViews(company),
     )
 }
 

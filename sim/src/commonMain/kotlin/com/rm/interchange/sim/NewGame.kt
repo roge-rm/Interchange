@@ -55,6 +55,10 @@ data class NewGame(
     val collisions: Boolean = true,
     /** How often vehicles break down, a [Breakdowns] level. The app and the dedicated server start new games at [Breakdowns.NEW_GAME]. */
     val breakdowns: Int = Breakdowns.NORMAL,
+    /** Industries keep a store of each cargo they take and a stock of what they make, worked through by [industriesDay]. */
+    val stockpiles: Boolean = true,
+    /** Industries and towns offer delivery contracts, with stockpiles on. */
+    val contracts: Boolean = true,
 ) {
     companion object {
         val DAY_LENGTHS = intArrayOf(1, 2, 4, 6, 10, 16)

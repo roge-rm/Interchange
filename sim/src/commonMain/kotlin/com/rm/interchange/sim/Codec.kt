@@ -83,6 +83,7 @@ object Codec {
     private const val BUY_ROAD_VEHICLES_INHERIT = 70
     private const val BUY_CRAFTS_INHERIT = 71
     private const val PRIORITY = 72
+    private const val ACCEPT_CONTRACT = 73
 
     /** The most goals a [Command.SetGoals] may carry. */
     const val MOST_GOALS = 100
@@ -143,6 +144,7 @@ object Codec {
             is Command.BuyTrain -> { w.byte(if (c.inherit) BUY_TRAINS_INHERIT else if (c.count == 1) BUY_TRAIN_CARGO else BUY_TRAINS); w.int(c.company); w.int(c.depot); w.int(c.engine); w.int(c.wagon); w.int(c.wagons); w.int(c.cargo); if (c.count != 1 || c.inherit) w.int(c.count) }
             is Command.Loan -> { w.byte(LOAN); w.int(c.company); w.bool(c.borrow) }
             is Command.FundIndustry -> { w.byte(FUND_INDUSTRY); w.int(c.company); w.int(c.kind) }
+            is Command.AcceptContract -> { w.byte(ACCEPT_CONTRACT); w.int(c.company); w.int(c.contract) }
             is Command.TownAction -> { w.byte(TOWN_ACTION); w.int(c.company); w.int(c.town); w.int(c.action) }
             is Command.BuyCompany -> { w.byte(BUY_COMPANY); w.int(c.company); w.int(c.target) }
             is Command.NewCompany -> { w.byte(NEW_COMPANY); w.int(c.company); w.string(c.name) }
@@ -194,6 +196,7 @@ object Codec {
         BUY_TRAINS_INHERIT -> Command.BuyTrain(r.int(), r.int(), r.int(), r.int(), r.int(), r.int(), r.int(), inherit = true)
         LOAN -> Command.Loan(r.int(), r.bool())
         FUND_INDUSTRY -> Command.FundIndustry(r.int(), r.int())
+        ACCEPT_CONTRACT -> Command.AcceptContract(r.int(), r.int())
         TOWN_ACTION -> Command.TownAction(r.int(), r.int(), r.int())
         BUY_COMPANY -> Command.BuyCompany(r.int(), r.int())
         NEW_COMPANY -> Command.NewCompany(r.int(), r.string())

@@ -10,18 +10,20 @@ package com.rm.interchange.sim
 /** What's wrong with an expression, and the column it's at, from 1. */
 class BadRule(val column: Int, val what: String) : Exception("column $column: $what")
 
-/** What an expression can read: the names in [Rule.NAMES], and what's been brought of a cargo. */
+/** What an expression can read: the names in [Rule.NAMES], and what's been brought and is in stock of a cargo. */
 interface RuleInputs {
     /** The value of name [n], a place in [Rule.NAMES]. */
     fun read(n: Int): Long
     /** What's been brought of cargo [c] last month. */
     fun brought(c: Int): Long
+    /** What it has of cargo [c] now, in store and in stock; 0 without stockpiles. */
+    fun stock(c: Int): Long = 0L
     /** The number of cargo [key] in this game, or -1. */
     fun cargo(key: String): Int = Cargo.of(key)
 }
 
 /** A parsed expression; [source] is the text it came from. */
-class Rule private constructor(val source: String, private val root: Node, /** The cargo it names in brought(). */ val cargoes: Set<String>) {
+class Rule private constructor(val source: String, private val root: Node, /** The cargo it names in brought() and stock(). */ val cargoes: Set<String>) {
     fun eval(inputs: RuleInputs): Long = root.eval(inputs)
 
     override fun toString() = source
@@ -38,9 +40,9 @@ class Rule private constructor(val source: String, private val root: Node, /** T
         override fun eval(i: RuleInputs) = i.read(n)
     }
 
-    /** Cargo by key, as its number depends on the game's packs. */
-    private class Brought(val key: String) : Node() {
-        override fun eval(i: RuleInputs) = i.cargo(key).let { c -> if (c < 0) 0L else i.brought(c) }
+    /** Cargo by key, as its number depends on the game's packs: what's been brought of it, or with [stock] what's in stock. */
+    private class Brought(val key: String, val stock: Boolean) : Node() {
+        override fun eval(i: RuleInputs) = i.cargo(key).let { c -> if (c < 0) 0L else if (stock) i.stock(c) else i.brought(c) }
     }
 
     private class Unary(val op: Char, val a: Node) : Node() {
@@ -96,7 +98,7 @@ class Rule private constructor(val source: String, private val root: Node, /** T
 
     companion object {
         /** The names an expression reads, in the order [RuleInputs.read] takes them. */
-        val NAMES = listOf("month", "year", "level", "base", "carried", "wet", "snow", "mud", "ice", "stations")
+        val NAMES = listOf("month", "year", "level", "base", "carried", "wet", "snow", "mud", "ice", "stations", "made")
         const val MONTH = 0
         const val YEAR = 1
         const val LEVEL = 2
@@ -107,9 +109,10 @@ class Rule private constructor(val source: String, private val root: Node, /** T
         const val MUD = 7
         const val ICE = 8
         const val STATIONS = 9
+        const val MADE = 10
 
         /** The functions, with the fewest and most things they take. */
-        private val FUNCTIONS = mapOf("min" to (2 to 64), "max" to (2 to 64), "clamp" to (3 to 3), "abs" to (1 to 1), "pick" to (2 to 64), "brought" to (1 to 1))
+        private val FUNCTIONS = mapOf("min" to (2 to 64), "max" to (2 to 64), "clamp" to (3 to 3), "abs" to (1 to 1), "pick" to (2 to 64), "brought" to (1 to 1), "stock" to (1 to 1))
 
         const val MAX_LENGTH = 1000
         const val MAX_DEPTH = 32
@@ -209,7 +212,7 @@ class Rule private constructor(val source: String, private val root: Node, /** T
                 if (n >= 0) return node(Name(n))
                 val limits = FUNCTIONS[word] ?: throw BadRule(start + 1, "unknown name \"$word\"")
                 if (!take("(")) throw BadRule(at + 1, "expected \"(\" after $word")
-                if (word == "brought") {
+                if (word == "brought" || word == "stock") {
                     space()
                     val cs = at
                     while (at < s.length && (s[at].isLetterOrDigit() || s[at] == '_')) at++
@@ -217,7 +220,7 @@ class Rule private constructor(val source: String, private val root: Node, /** T
                     if (cargo.isEmpty() || !known(cargo)) throw BadRule(cs + 1, "unknown cargo \"$cargo\"")
                     if (!take(")")) throw BadRule(at + 1, "expected \")\"")
                     cargoes += cargo
-                    return node(Brought(cargo))
+                    return node(Brought(cargo, word == "stock"))
                 }
                 val args = ArrayList<Node>()
                 if (!take(")")) {

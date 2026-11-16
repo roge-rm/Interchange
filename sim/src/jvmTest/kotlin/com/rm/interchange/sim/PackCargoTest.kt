@@ -196,7 +196,8 @@ class PackCargoTest {
 
     @Test
     fun aVersion63SaveLoads() {
-        val w = World(NewGame(64, 64, 3, 1900, towns = 2, industries = 4, weather = false))
+        // Without stockpiles, as an older save loads.
+        val w = World(NewGame(64, 64, 3, 1900, towns = 2, industries = 4, weather = false, stockpiles = false, contracts = false))
         repeat(Calendar.TICKS_PER_DAY * 20) { w.step() }
         val copy = Save.read(Save.write(w, version = 63))
         assertEquals(Cargo.COUNT, copy.cargoCount)

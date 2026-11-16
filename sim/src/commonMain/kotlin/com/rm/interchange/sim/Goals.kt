@@ -98,6 +98,7 @@ fun World.stationTown(s: Station): Town? {
 internal fun World.delivered(company: Int, c: Int, n: Int, from: Station, at: Station, taker: Industry?) {
     val town = if (taker == null) stationTown(at) else null
     if (town != null) town.delivered[c] += n
+    if (contracts.isNotEmpty()) contractDelivered(company, c, n, town, taker)
     if (goals.isEmpty() || company !in 0 until MAX_COMPANIES) return
     val year = Calendar.year(startYear, day)
     for (g in goals) {

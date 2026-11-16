@@ -585,10 +585,7 @@ internal fun World.callAt(t: Carrier, s: Station, o: Int = 0) {
                     if ((c == Cargo.COAL || c == Cargo.FUEL) && taker == null) full = full * heating(s) / 100
                     paid += full
                     // Freight for an industry here goes to it to be made into its own.
-                    taker?.let { ind ->
-                        ind.brought += p.count
-                        ind.broughtThisMonth += p.count
-                    }
+                    taker?.let { bring(it, c, p.count) }
                     delivered(company.id, c, p.count, from, s, taker)
                     if (c == Cargo.PASSENGERS) linkKey(from.id, s.id).let { k -> tripsMonth[k] = (tripsMonth[k] ?: 0) + p.count }
                     // The legs before were credited to the trains that carried them; this one gets the rest.
