@@ -191,10 +191,13 @@ class RivalStyleTest {
 
     @Test
     fun aVersion65SaveLoadsWithGeneralRivalsAndTheSameChecksum() {
-        val w = World(NewGame(128, 128, 7, 1930, Region.MIXED, towns = 3, industries = 3, rivals = 3))
+        // Without the settings a version 65 save loads without.
+        val w = World(NewGame(128, 128, 7, 1930, Region.MIXED, towns = 3, industries = 3, rivals = 3, stockpiles = false, contracts = false, handling = false, eraCosts = false))
         // As a game from before styles had them.
         for (r in w.rivals) { r.style = RivalStyle.GENERAL; r.borrow = 2; r.far = 1; r.freight = false }
         w.days(200)
+        // And from before service scores, which version 68 added.
+        for (s in w.stations) if (s != null) s.service = -1
         val old = Save.read(Save.write(w, version = 65))
         assertTrue(old.rivals.all { it.style == RivalStyle.GENERAL && !it.styled })
         assertEquals(w.checksum(), old.checksum())

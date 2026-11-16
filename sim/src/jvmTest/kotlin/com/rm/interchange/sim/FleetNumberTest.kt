@@ -6,8 +6,10 @@ import kotlin.test.assertNull
 
 class FleetNumberTest {
     /** Two companies, each with a depot, on flat land. */
-    private fun world(): World {
-        val w = World(NewGame(64, 64, 1, 1900, towns = 0, industries = 0, inflation = false, weather = false))
+    /** With [old], made without the settings older saves load without. */
+    private fun world(old: Boolean = false): World {
+        val g = NewGame(64, 64, 1, 1900, towns = 0, industries = 0, inflation = false, weather = false)
+        val w = World(if (old) g.copy(stockpiles = false, contracts = false, handling = false, eraCosts = false) else g)
         for (i in w.corners.indices) w.corners[i] = 3
         w.companies[0].money = 10_000_000
         w.companies += Company(1, "North", 10_000_000)
@@ -90,7 +92,7 @@ class FleetNumberTest {
 
     @Test
     fun anOlderSaveNumbersEachCompanyInOrder() {
-        val w = world()
+        val w = world(old = true)
         buy(w, 0, 0)
         buy(w, 1, 1)
         buy(w, 1, 1)

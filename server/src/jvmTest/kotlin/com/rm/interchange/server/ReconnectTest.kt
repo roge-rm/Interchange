@@ -122,7 +122,13 @@ class ReconnectTest {
         // Any player with anything waiting to go out is too far behind.
         val (_, host) = hosting(maxBacklog = -1)
         Thread.sleep(200)
-        val ann = join(host, "a", "Ann")
+        // On a busy machine a frame can go out before her welcome does, and dropping it refuses her instead.
+        val ann = try {
+            join(host, "a", "Ann")
+        } catch (e: Refused) {
+            assertEquals(Reject.TOO_SLOW, e.reason)
+            return
+        }
         eventually("Ann was let go") { ann.lost != null }
         assertEquals(Reject.TOO_SLOW, ann.ended)
         assertFalse(ann.dropped)

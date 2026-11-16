@@ -18,8 +18,9 @@ class DepartureGapTest {
     }
 
     /** Two vehicles sharing two stops, with the first finishing a real stop's wait. */
-    private fun standing(kind: VehicleKind = VehicleKind.ROAD): Standing {
-        val w = World(64, 64, 1, startYear = 1965)
+    /** With [old], made without the settings older saves load without. */
+    private fun standing(kind: VehicleKind = VehicleKind.ROAD, old: Boolean = false): Standing {
+        val w = if (old) World(NewGame(64, 64, 1, 1965, towns = 0, industries = 0, weather = false, stockpiles = false, contracts = false, handling = false, eraCosts = false)) else World(64, 64, 1, startYear = 1965)
         w.companies[0].money = 100_000_000
         val pair: Pair<Carrier, Carrier> = when (kind) {
             VehicleKind.ENGINE -> {
@@ -261,7 +262,7 @@ class DepartureGapTest {
     @Test
     fun savesKeepGapAndDepartureOnlyFromVersion43() {
         for (kind in kinds) {
-            val f = standing(kind)
+            val f = standing(kind, old = true)
             f.vehicle.departed = 321L
             f.other.departed = 654L
             // Saves before version 47 have no station buildings.

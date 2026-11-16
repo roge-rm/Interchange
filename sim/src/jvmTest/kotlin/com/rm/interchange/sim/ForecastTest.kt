@@ -143,8 +143,10 @@ class ForecastTest {
         assertEquals(2, warnings())
     }
 
-    private fun line(): World {
-        val w = World(NewGame(64, 64, 1, 1850, towns = 0, industries = 0, weather = false))
+    /** With [old], made without the settings older saves load without. */
+    private fun line(old: Boolean = false): World {
+        val g = NewGame(64, 64, 1, 1850, towns = 0, industries = 0, weather = false)
+        val w = World(if (old) g.copy(stockpiles = false, contracts = false, handling = false, eraCosts = false) else g)
         for (i in w.corners.indices) w.corners[i] = 3
         w.companies[0].money = 10_000_000
         w.apply(Command.Depot(0, 2, 10, Track.XP))
@@ -284,7 +286,7 @@ class ForecastTest {
 
     @Test
     fun prioritiesSurviveASaveAndAVersion66SaveLoadsWithNone() {
-        val w = line()
+        val w = line(old = true)
         val plain = Save.read(Save.write(w, version = 66))
         assertEquals(w.checksum(), plain.checksum())
         w.apply(Command.Priority(0, 3, 10, 20, 10, Track.X, road = false, on = true))

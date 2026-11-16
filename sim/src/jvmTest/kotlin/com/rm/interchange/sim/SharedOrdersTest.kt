@@ -6,8 +6,9 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class SharedOrdersTest {
-    private fun road(): World {
-        val w = World(64, 64, 1, startYear = 1965)
+    /** With [old], made without the settings older saves load without. */
+    private fun road(old: Boolean = false): World {
+        val w = if (old) World(NewGame(64, 64, 1, 1965, towns = 0, industries = 0, weather = false, stockpiles = false, contracts = false, handling = false, eraCosts = false)) else World(64, 64, 1, startYear = 1965)
         for (i in w.corners.indices) w.corners[i] = 3
         w.companies[0].money = 10_000_000
         w.apply(Command.Road(0, 5, 20, 40, 20, Surface.PAVED, remove = false))
@@ -26,8 +27,8 @@ class SharedOrdersTest {
         return roadVehicles[id]!!
     }
 
-    private fun lake(): World {
-        val w = World(64, 64, 1, startYear = 1965)
+    private fun lake(old: Boolean = false): World {
+        val w = if (old) World(NewGame(64, 64, 1, 1965, towns = 0, industries = 0, weather = false, stockpiles = false, contracts = false, handling = false, eraCosts = false)) else World(64, 64, 1, startYear = 1965)
         for (y in 0..64) for (x in 0..64) w.corners[w.corner(x, y)] = if (x in 10..50 && y in 10..30) 0 else 1
         w.shoreChanged()
         w.companies[0].money = 100_000_000
@@ -41,8 +42,8 @@ class SharedOrdersTest {
         return w
     }
 
-    private fun airports(): World {
-        val w = World(64, 64, 1, startYear = 1965)
+    private fun airports(old: Boolean = false): World {
+        val w = if (old) World(NewGame(64, 64, 1, 1965, towns = 0, industries = 0, weather = false, stockpiles = false, contracts = false, handling = false, eraCosts = false)) else World(64, 64, 1, startYear = 1965)
         for (y in 0..64) for (x in 0..64) w.corners[w.corner(x, y)] = if (x in 20..30 && y in 50..60) 0 else 1
         w.shoreChanged()
         w.companies[0].money = 100_000_000
@@ -203,7 +204,7 @@ class SharedOrdersTest {
 
     @Test
     fun version41LeavesSharedIdsUnsetAndChecksumMatches() {
-        val road = road()
+        val road = road(old = true)
         repeat(2) { road.buyRoad() }
         road.apply(Command.RoadOrder(0, 0, Command.TrainOrder.ORDERS, intArrayOf(0, 1)))
         road.apply(Command.RoadOrder(0, 1, Command.TrainOrder.SHARE, intArrayOf(0)))
@@ -213,14 +214,14 @@ class SharedOrdersTest {
         assertEquals(listOf(1, 2), roadBack.roadVehicles.map { it!!.number })
         assertEquals(listOf(0, 1), roadBack.roadVehicles[1]!!.orders)
 
-        val water = lake()
+        val water = lake(old = true)
         water.apply(Command.CraftOrder(0, false, 1, Command.TrainOrder.SHARE, intArrayOf(0)))
         val waterBack = Save.read(Save.write(water, version = 41))
         assertEquals(water.checksum(), waterBack.checksum())
         assertEquals(listOf(-1, -1), waterBack.ships.map { it!!.shared })
         assertEquals(listOf(1, 2), waterBack.ships.map { it!!.number })
 
-        val air = airports()
+        val air = airports(old = true)
         air.apply(Command.CraftOrder(0, true, 1, Command.TrainOrder.SHARE, intArrayOf(0)))
         val airBack = Save.read(Save.write(air, version = 41))
         assertEquals(air.checksum(), airBack.checksum())

@@ -15,8 +15,9 @@ class TrainFormationTest {
     private fun model(key: String) = roster.engines.first { it.key == "base:$key" }
     private fun car(key: String, cargo: Int = -1) = TrainCar(model(key).id, cargo)
 
-    private fun line(): World {
-        val w = World(64, 64, 13, startYear = 1955)
+    /** With [old], made without the settings older saves load without. */
+    private fun line(old: Boolean = false): World {
+        val w = if (old) World(NewGame(64, 64, 13, 1955, towns = 0, industries = 0, weather = false, stockpiles = false, contracts = false, handling = false, eraCosts = false)) else World(64, 64, 13, startYear = 1955)
         w.corners.fill(3)
         w.companies[0].money = 100_000_000
         w.apply(Command.Depot(0, 2, 10, Track.XP))
@@ -190,7 +191,7 @@ class TrainFormationTest {
 
     @Test
     fun savingAndCopyingPreserveEveryCarAndRefitAndOldSavesStillLoad() {
-        val w = line()
+        val w = line(old = true)
         val legacy = w.trains[0]!!.formation
         // Saves before version 47 have no station buildings.
         for (s in w.stations) if (s != null) w.dropStationBuilding(s)
