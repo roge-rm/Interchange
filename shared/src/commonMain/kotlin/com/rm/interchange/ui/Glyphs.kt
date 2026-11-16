@@ -28,7 +28,7 @@ enum class Glyph {
     BridgeTrestle, BridgeTruss, BridgeConcrete,
     SignalPath, SignalEntry, SignalExit, SignalCombo, Spacing,
     AdSmall, AdMedium, AdLarge, RoadWorks, Statue, FundBuildings, Exclusive, LandingAids, Deicing,
-    Factory, Money, Newspaper, Briefcase, Exit, Fire, Trophy, Graph, Chevron,
+    Factory, Money, Newspaper, Briefcase, Exit, Fire, Trophy, Graph, Chevron, Links,
 }
 
 /** [glyph] drawn in [tint] on a 24 unit square scaled to fit. */
@@ -271,6 +271,8 @@ private class GlyphPen(val scope: DrawScope, val u: Float, val dx: Float, val dy
             Glyph.Graph -> { open(4f, 3f, 4f, 20f, 21f, 20f); open(7f, 16f, 11f, 11.5f, 14f, 14f, 19.5f, 7f); open(15.5f, 7f, 19.5f, 7f, 19.5f, 11f) }
             // Says a row goes somewhere when tapped.
             Glyph.Chevron -> open(9f, 5f, 16f, 12f, 9f, 19f)
+            // Three stops joined, for the map's links.
+            Glyph.Links -> { line(7.5f, 16.5f, 10.5f, 8f); line(14f, 6.5f, 17f, 15f); line(8f, 18.5f, 16f, 17.5f); circle(6f, 19f, 2.5f); circle(12f, 5f, 2.5f); circle(18.5f, 17.5f, 2.5f) }
         }
     }
 

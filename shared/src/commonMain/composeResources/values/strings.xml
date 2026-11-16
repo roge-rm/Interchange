@@ -837,4 +837,20 @@
     <string name="loading_drawing">Drawing the map</string>
     <string name="loading_trains">Adding trains</string>
     <string name="loading_failed">The map can't be drawn on this device</string>
+    <string name="map_links">Links</string>
+    <string name="link_title">%1$s to %2$s</string>
+    <string name="link_journey">Journey</string>
+    <string name="link_held">Held a run</string>
+    <string name="link_departures">Departures last month</string>
+    <string name="head_link_load">Load last month</string>
+    <string name="link_no_departures">Nothing left on it last month</string>
+    <string name="link_held_legend">Held</string>
+    <string name="days_tenths">%1$d.%2$d days</string>
+    <string name="days_tenths_about">About %1$d.%2$d days</string>
+    <string name="waited_days">Waited %1$d.%2$d days</string>
+    <string name="gave_up_n">%1$s gave up</string>
+    <string name="why_no_service">No service there</string>
+    <string name="why_not_carried">Nothing on the way carries it</string>
+    <string name="why_orders">Orders don't let it go</string>
+    <string name="why_not_accepted">Not taken there</string>
 </resources>

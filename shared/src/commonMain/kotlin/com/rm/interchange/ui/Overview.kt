@@ -79,6 +79,9 @@ internal class OverviewOptions {
     val flows = mutableStateOf(false)
     val cargo = mutableIntStateOf(-1)
     val coverage = mutableStateOf(false)
+    val links = mutableStateOf(false)
+    /** The link whose window is open, by its from and to stations. */
+    val link = mutableStateOf<Pair<Int, Int>?>(null)
 }
 
 internal suspend fun <T> mapRead(runner: GameThread, read: (World) -> T): T = suspendCancellableCoroutine { continuation ->
@@ -87,7 +90,7 @@ internal suspend fun <T> mapRead(runner: GameThread, read: (World) -> T): T = su
 
 /** A square north-up map with compact controls in either orientation. */
 @Composable
-internal fun OverviewWindow(runner: GameThread, view: View, viewport: Size, options: OverviewOptions, onClose: () -> Unit) {
+internal fun OverviewWindow(runner: GameThread, view: View, viewport: Size, options: OverviewOptions, roster: Roster, onVehicle: (Int, Int) -> Unit, onClose: () -> Unit) {
     val c = LocalColors.current
     var image by options.image
     val traffic = remember(runner) { mutableStateOf<List<OverviewVehicle>>(emptyList()) }
@@ -104,6 +107,19 @@ internal fun OverviewWindow(runner: GameThread, view: View, viewport: Size, opti
     var flow by options.flows
     var cargo by options.cargo
     var coverage by options.coverage
+    var linksOn by options.links
+    var openLink by options.link
+    // The game thread builds the links every half second while they're asked for, so they're read as often.
+    val network = remember(runner) { mutableStateOf(runner.networkView) }
+    val links = remember(runner) { mutableStateOf<List<LinkView>>(emptyList()) }
+    LaunchedEffect(runner, linksOn, openLink) {
+        while (linksOn || openLink != null) {
+            network.value = runner.networkView
+            links.value = network.value?.links.orEmpty()
+            delay(500)
+        }
+        links.value = emptyList()
+    }
     LaunchedEffect(runner) {
         while (true) {
             val snapshot = mapRead(runner) { MapSnapshot(it) }
@@ -152,6 +168,7 @@ internal fun OverviewWindow(runner: GameThread, view: View, viewport: Size, opti
                     for (mode in 0..3) MapTile(glyphs[mode], stringResource(labels[mode]), modes and (1 shl mode) != 0, tile) { modes = modes xor (1 shl mode) }
                     MapTile(Glyph.Graph, stringResource(Res.string.map_cargo_flow), flow, tile) { flow = !flow }
                     MapTile(Glyph.People, stringResource(Res.string.map_coverage), coverage, tile) { coverage = !coverage }
+                    MapTile(Glyph.Links, stringResource(Res.string.map_links), linksOn, tile) { linksOn = !linksOn }
                 }
             }
             val companyPicker: @Composable (Modifier) -> Unit = { modifier ->
@@ -173,8 +190,8 @@ internal fun OverviewWindow(runner: GameThread, view: View, viewport: Size, opti
             }
             val map: @Composable (Modifier) -> Unit = { modifier ->
                 Box(modifier) {
-                    OverviewCanvas(current, traffic, view, viewport, options, filter, Modifier.fillMaxSize(),
-                        onIndustry = { selectedIndustry = it })
+                    OverviewCanvas(current, traffic, view, viewport, options, filter, Modifier.fillMaxSize(), links,
+                        onIndustry = { selectedIndustry = it }, onLink = { openLink = it.from to it.to })
                     if (flow) {
                         val onBoard = current?.data?.info?.flows.orEmpty().filter { (filter < 0 || it.owner == filter) && (cargo < 0 || it.cargo == cargo) }.sumOf { it.count }
                         val loadLabel = stringResource(Res.string.map_on_board)
@@ -185,6 +202,17 @@ internal fun OverviewWindow(runner: GameThread, view: View, viewport: Size, opti
                             Text(Numbers.grouped(onBoard), color = c.textDim, style = KitType.Dim,
                                 modifier = Modifier.semantics { contentDescription = "$loadLabel: ${Numbers.grouped(onBoard)}" })
                         }
+                    }
+                    if (linksOn) Row(Modifier.align(Alignment.TopEnd).padding(6.dp).clip(RoundedCornerShape(6.dp))
+                        .background(c.chrome.copy(alpha = 0.92f)).padding(6.dp),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
+                        for ((colour, label) in listOf(c.bad to "0-32%", c.warn to "33-66%", c.good to "67%+")) {
+                            Box(Modifier.size(6.dp).clip(RoundedCornerShape(3.dp)).background(colour))
+                            Text(label, color = c.textDim, style = KitType.Dim, maxLines = 1)
+                        }
+                        // The mark drawn on a link held over a quarter of its journey.
+                        Box(Modifier.size(9.dp).clip(RoundedCornerShape(5.dp)).background(c.text).padding(1.5.dp).clip(RoundedCornerShape(4.dp)).background(c.bad))
+                        Text(stringResource(Res.string.link_held_legend), color = c.textDim, style = KitType.Dim, maxLines = 1)
                     }
                     if (coverage) Row(Modifier.align(Alignment.BottomCenter).padding(6.dp).clip(RoundedCornerShape(6.dp))
                         .background(c.chrome.copy(alpha = 0.92f)).padding(6.dp),
@@ -236,6 +264,14 @@ internal fun OverviewWindow(runner: GameThread, view: View, viewport: Size, opti
         }
     }
     if (showHelp) MapControlsHelp { showHelp = false }
+    openLink?.let { (from, to) ->
+        val shown = network.value
+        val link = shown?.links?.firstOrNull { it.from == from && it.to == to }
+        if (shown == null || link == null) {
+            // Not built yet after a tap, or gone since: wait for the next, or close once the links are there without it.
+            if (shown != null) openLink = null
+        } else LinkWindow(shown, roster, link, onVehicle) { openLink = null }
+    }
     current?.data?.industries?.firstOrNull { it.place.id == selectedIndustry }?.let { industry ->
         val info = industry.info
         val slot = if (filter < 0) OVERVIEW_ALL else filter

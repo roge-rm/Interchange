@@ -40,6 +40,10 @@ class GameThread(private val make: () -> World, val remote: Remote? = null) {
     @Volatile var showReserved = false
     /** Whether [view] has the links and why cargo can't get where it's going, for the network screens; off, they aren't made. */
     @Volatile var showNetwork = false
+    /** The latest view built with the network while [showNetwork] is on, at most every [NETWORK_NANOS]; null while it's off. */
+    @Volatile var networkView: WorldView? = null
+        private set
+    private var networkAt = 0L
     /** What the screen draws and lists, as of the last tick, and the tick before for smoothing moves between them. */
     @Volatile var view: WorldView? = null
         private set
@@ -133,14 +137,23 @@ class GameThread(private val make: () -> World, val remote: Remote? = null) {
 
     private fun publish(g: Game) {
         lastView = view
-        view = g.world.view(company, showReserved, showNetwork)
-        viewAt = System.nanoTime()
+        val now = System.nanoTime()
+        // The links and whyNot cost more than the rest of a view, so they're built only every so often.
+        val network = showNetwork && (networkView == null || now - networkAt >= NETWORK_NANOS)
+        view = g.world.view(company, showReserved, network)
+        if (network) {
+            networkView = view
+            networkAt = now
+        } else if (!showNetwork) networkView = null
+        viewAt = now
         tick = g.world.tick
         day = g.world.day
         money = g.world.companies.getOrNull(company)?.money ?: 0L
     }
 
     companion object {
+        /** How often the network part of the view is built while it's shown: half a second. */
+        const val NETWORK_NANOS = 500_000_000L
         /** The most ticks a follower runs each time round when it isn't behind. */
         const val FOLLOW_TICKS = 64
         const val CATCH_UP_TICKS = 1024

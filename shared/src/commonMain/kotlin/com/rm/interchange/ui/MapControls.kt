@@ -63,9 +63,9 @@ internal fun MapControlsHelp(onClose: () -> Unit) {
         Text(stringResource(Res.string.map_help), color = c.text, style = KitType.Dim)
         val labels = listOf(Res.string.map_rail, Res.string.map_roads, Res.string.map_stations, Res.string.industries,
             Res.string.map_town_names, Res.string.map_company_colours, Res.string.map_trains, Res.string.map_road_vehicles,
-            Res.string.map_ships, Res.string.map_aircraft, Res.string.map_cargo_flow, Res.string.map_coverage)
+            Res.string.map_ships, Res.string.map_aircraft, Res.string.map_cargo_flow, Res.string.map_coverage, Res.string.map_links)
         val glyphs = listOf(Glyph.Rail, Glyph.Road, Glyph.Station, Glyph.Factory, Glyph.Home, Glyph.Flag,
-            Glyph.Train, Glyph.Bus, Glyph.Ship, Glyph.Air, Glyph.Graph, Glyph.People)
+            Glyph.Train, Glyph.Bus, Glyph.Ship, Glyph.Air, Glyph.Graph, Glyph.People, Glyph.Links)
         Grid(labels.indices.toList()) { i ->
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 GlyphIcon(glyphs[i], c.accent, Modifier.size(20.dp))
@@ -81,7 +81,7 @@ internal fun MapControlsHelp(onClose: () -> Unit) {
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 internal fun MapTileGroup(sidebar: Boolean, content: @Composable () -> Unit) {
-    FlowRow(Modifier.fillMaxWidth(), maxItemsInEachRow = if (sidebar) 2 else 6,
+    FlowRow(Modifier.fillMaxWidth(), maxItemsInEachRow = if (sidebar) 2 else 7,
         horizontalArrangement = if (sidebar) Arrangement.spacedBy(10.dp, Alignment.CenterHorizontally) else Arrangement.SpaceBetween,
         verticalArrangement = Arrangement.spacedBy(10.dp)) { content() }
 }

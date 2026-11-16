@@ -5,6 +5,7 @@ import org.jetbrains.compose.resources.stringArrayResource
 import org.jetbrains.compose.resources.stringResource
 import org.jetbrains.compose.resources.pluralStringResource
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.material3.Text
@@ -28,6 +29,8 @@ import com.rm.interchange.sim.Engine
 import com.rm.interchange.sim.VehicleKind
 import com.rm.interchange.sim.Traction
 import com.rm.interchange.sim.Cargo
+import com.rm.interchange.sim.Calendar
+import com.rm.interchange.sim.OverviewVehicle
 import com.rm.interchange.sim.Order
 import com.rm.interchange.sim.Roster
 import com.rm.interchange.sim.MAX_WAGONS
@@ -96,7 +99,7 @@ fun TrainCard(
             (0 until Cargo.COUNT).filter { t.capacity[it] > 0 }.map { VehicleLoad(it, t.load[it], t.capacity[it]) },
             listOfNotNull(
                 stringResource(Res.string.breakdowns) to t.breakdowns.toString(),
-            ) + worthRows(t.value, t.nextService, mine),
+            ) + worthRows(t.value, t.nextService, mine) + linkRows(OverviewVehicle.TRAIN, t.id, t.orders, t.order),
             t.dieselSpeed, t.curveKmh,
         )
         // Someone else's shows what it is but none of the controls, and a wreck is cleared away by itself.
@@ -275,19 +278,33 @@ fun StationCard(view: WorldView, roster: Roster, s: StationView, onVehicle: (Veh
         for (cg in 0 until Cargo.COUNT) {
             if (cg > Cargo.MAIL && (s.served or loadable) and (1 shl cg) == 0) continue
             CargoRow(cg, Numbers.grouped(s.waiting[cg].toLong()), share = s.rating[cg] / 255f, percent = if (s.served and (1 shl cg) == 0) "-" else null)
+            // Last month's average wait for what boarded, and how many gave up, under its cargo's row.
+            val waited = s.waited.getOrElse(cg) { -1 }
+            val gaveUp = s.gaveUp.getOrElse(cg) { 0 }
+            if (waited >= 0 || gaveUp > 0) {
+                val tenths = (waited.coerceAtLeast(0) * 10 + Calendar.TICKS_PER_DAY / 2) / Calendar.TICKS_PER_DAY
+                val line = listOfNotNull(
+                    stringResource(Res.string.waited_days, tenths / 10, tenths % 10).takeIf { waited >= 0 },
+                    stringResource(Res.string.gave_up_n, Numbers.grouped(gaveUp.toLong())).takeIf { gaveUp > 0 },
+                ).joinToString(", ")
+                Text(line, color = c.textDim, style = KitType.Dim, modifier = Modifier.padding(start = 12.dp + KitSpace.Gap))
+            }
         }
         // Where it's going, the most first, and where it'll change on the way.
         if (s.going.isNotEmpty()) {
             Head(stringResource(Res.string.head_going))
             val anywhere = stringResource(Res.string.anywhere)
+            // Why one can't be got to, from the latest view built with the network, for its first few destinations.
+            val why = LocalNetwork.current?.stations?.firstOrNull { it.id == s.id }?.going.orEmpty().associate { it.dest to it.why }
             val names = s.going.take(GOING_SHOWN).map { g ->
-                Triple(
+                GoingCell(
                     if (g.dest < 0) anywhere else stationName(view, g.dest),
                     if (g.via >= 0) stringResource(Res.string.changing_at, stationName(view, g.via)) else null,
                     (0 until Cargo.COUNT).filter { g.counts[it] > 0 }.map { it to g.counts[it] },
+                    if (g.dest >= 0) whyText(why[g.dest] ?: -1) else null,
                 )
             }
-            Grid(names) { (name, via, amounts) -> PlaceCell(name, amounts, via) }
+            Grid(names) { PlaceCell(it.name, it.amounts, it.via, it.why) }
         }
         // Everything with a stop here, each tapped to open it.
         Head(stringResource(Res.string.head_calling))
@@ -332,6 +349,8 @@ private fun CallingRow(name: String, e: Engine, model: String, load: Int, capaci
         onClick = onClick,
     )
 }
+
+private class GoingCell(val name: String, val via: String?, val amounts: List<Pair<Int, Int>>, val why: String?)
 
 /** How many destinations a station's card lists, two to a row. */
 private const val GOING_SHOWN = 8

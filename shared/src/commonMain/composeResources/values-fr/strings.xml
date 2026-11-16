@@ -820,4 +820,20 @@
     <string name="loading_drawing">Dessin de la carte</string>
     <string name="loading_trains">Ajout des trains</string>
     <string name="loading_failed">La carte ne peut pas être dessinée sur cet appareil</string>
+    <string name="map_links">Liaisons</string>
+    <string name="link_title">%1$s vers %2$s</string>
+    <string name="link_journey">Trajet</string>
+    <string name="link_held">Retenu par trajet</string>
+    <string name="link_departures">Départs le mois dernier</string>
+    <string name="head_link_load">Chargement le mois dernier</string>
+    <string name="link_no_departures">Aucun départ le mois dernier</string>
+    <string name="link_held_legend">Retenu</string>
+    <string name="days_tenths">%1$d,%2$d jours</string>
+    <string name="days_tenths_about">Environ %1$d,%2$d jours</string>
+    <string name="waited_days">Attente de %1$d,%2$d jours</string>
+    <string name="gave_up_n">%1$s abandons</string>
+    <string name="why_no_service">Aucun service jusque-là</string>
+    <string name="why_not_carried">Rien en route ne le transporte</string>
+    <string name="why_orders">Les ordres ne le permettent pas</string>
+    <string name="why_not_accepted">Pas accepté là-bas</string>
 </resources>

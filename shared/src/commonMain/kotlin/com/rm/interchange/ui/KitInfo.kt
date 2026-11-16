@@ -363,18 +363,18 @@ fun <T> Grid(items: List<T>, columns: Int = 2, cell: @Composable (T) -> Unit) {
 
 /**
  * A place's [name] on a tile, a dim [line] under it if given, and how much of each cargo goes there, a swatch by each
- * amount; [amounts] are cargo to amount. For a [Grid] of where things are going.
+ * amount; [amounts] are cargo to amount; [warning] under it all in amber. For a [Grid] of where things are going.
  */
 @Composable
 @OptIn(ExperimentalLayoutApi::class)
-fun PlaceCell(name: String, amounts: List<Pair<Int, Int>>, line: String? = null) {
+fun PlaceCell(name: String, amounts: List<Pair<Int, Int>>, line: String? = null, warning: String? = null) {
     val c = LocalColors.current
     val cargoNames = stringArrayResource(Res.array.cargoes)
     val spoken = amounts.joinToString(", ") { (cargo, n) -> "${cargoNames.getOrElse(cargo) { "" }} ${Numbers.grouped(n.toLong())}" }
     Column(
         Modifier.fillMaxSize().clip(RoundedCornerShape(KitSpace.InnerCorner)).background(c.button)
             .padding(horizontal = KitSpace.RowAcross, vertical = KitSpace.RowDown)
-            .semantics(mergeDescendants = true) { contentDescription = listOfNotNull(name, line, spoken).joinToString(", ") },
+            .semantics(mergeDescendants = true) { contentDescription = listOfNotNull(name, line, spoken, warning).joinToString(", ") },
         verticalArrangement = Arrangement.spacedBy(KitSpace.Tight),
     ) {
         Text(name, color = c.text, style = KitType.Body, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -385,6 +385,7 @@ fun PlaceCell(name: String, amounts: List<Pair<Int, Int>>, line: String? = null)
                 Text(Numbers.grouped(n.toLong()), color = c.text, style = KitType.Value, maxLines = 1)
             }
         }
+        if (warning != null) Text(warning, color = c.warn, style = KitType.Dim, maxLines = 2, overflow = TextOverflow.Ellipsis)
     }
 }
 

@@ -23,6 +23,7 @@ import com.rm.interchange.sim.Traction
 import com.rm.interchange.sim.VehicleKind
 import com.rm.interchange.sim.Command
 import com.rm.interchange.sim.Order
+import com.rm.interchange.sim.OverviewVehicle
 import com.rm.interchange.sim.RoadVehicleView
 import com.rm.interchange.sim.Roster
 import com.rm.interchange.sim.WorldView
@@ -91,7 +92,8 @@ fun RoadVehicleCard(view: WorldView, roster: Roster, v: RoadVehicleView, year: I
         VehicleStats(
             v.kmh, e.speed, v.age, false, v.reliability, v.profitThisYear, v.profitLastYear,
             if (v.capacity > 0) listOf(VehicleLoad(v.carries, v.load, v.capacity)) else emptyList(),
-            (if (horses) emptyList() else listOf(stringResource(Res.string.tires) to tires.getOrElse(v.tires) { "" })) + worthRows(v.value, v.nextService, mine),
+            (if (horses) emptyList() else listOf(stringResource(Res.string.tires) to tires.getOrElse(v.tires) { "" })) + worthRows(v.value, v.nextService, mine) +
+                linkRows(OverviewVehicle.ROAD, v.id, v.orders, v.order),
         )
         // Someone else's shows what it is but none of the controls, and a wreck is cleared away by itself.
         if (!mine || v.wrecked) return@Card

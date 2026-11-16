@@ -848,6 +848,11 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
     LaunchedEffect(runner) {
         while (true) withFrameNanos { if (runner.view !== worldView.value) worldView.value = runner.view }
     }
+    // The links and why cargo can't get there, built by the game thread only while a card or the map's links need them.
+    val networkView = remember { mutableStateOf(runner.networkView) }
+    LaunchedEffect(runner) {
+        while (true) withFrameNanos { if (runner.networkView !== networkView.value) networkView.value = runner.networkView }
+    }
 
     var tool by remember { mutableStateOf(Tool.Inspect) }
     // The tool last used in each group, so a group's button opens on it.
@@ -1539,7 +1544,7 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
             // Measured after the tools below it, a card gets the height they leave.
             val cardSize = trayWidth.weight(1f, fill = false)
             val wv = worldView.value
-            CompositionLocalProvider(LocalSheets provides sheets, LocalBuyListHeight provides listHeight) {
+            CompositionLocalProvider(LocalSheets provides sheets, LocalBuyListHeight provides listHeight, LocalNetwork provides networkView.value) {
             when (val sel = selected) {
                 is Selection.Tile -> InspectCard(world, sel.x, sel.y, onTown, { selected = null }, cardSize)
                 Selection.Weather -> wv?.weather?.let { w ->
@@ -1712,7 +1717,27 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
                 modifier = trayWidth, editor = editor,
             )
         }
-        if (overview) OverviewWindow(runner, view, mapSize, overviewOptions, onCloseOverview)
+        if (overview) OverviewWindow(runner, view, mapSize, overviewOptions, world.roster, { mode, id ->
+            val wv = networkView.value ?: worldView.value
+            val at = when (mode) {
+                ShowVehicle.TRAIN -> wv?.trains?.firstOrNull { it.id == id }?.let { it.x to it.y }
+                ShowVehicle.ROAD -> wv?.roadVehicles?.firstOrNull { it.id == id }?.let { it.x to it.y }
+                ShowVehicle.SHIP -> wv?.ships?.firstOrNull { it.id == id }?.let { it.x to it.y }
+                else -> wv?.aircraft?.firstOrNull { it.id == id }?.let { it.x to it.y }
+            }
+            if (at != null) {
+                overviewOptions.link.value = null
+                showVehicle.value = ShowVehicle(mode, id, at.first, at.second)
+                onCloseOverview()
+            }
+        }, onCloseOverview)
+        // The game thread builds the network part of the view only while something here shows it.
+        val wantsNetwork = (overview && (overviewOptions.links.value || overviewOptions.link.value != null)) || when (selected) {
+            is Selection.Station, is Selection.Train, is Selection.RoadVehicle, is Selection.Ship, is Selection.Aircraft -> true
+            else -> false
+        }
+        LaunchedEffect(runner, wantsNetwork) { runner.showNetwork = wantsNetwork }
+        DisposableEffect(runner) { onDispose { runner.showNetwork = false } }
     }
 }
 

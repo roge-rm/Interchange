@@ -26,13 +26,14 @@ import kotlin.math.ln
 
 @Composable
 internal fun OverviewCanvas(image: MapImage?, traffic: State<List<OverviewVehicle>>, view: View, viewport: Size,
-    options: OverviewOptions, owner: Int, modifier: Modifier, onIndustry: (Int) -> Unit) {
+    options: OverviewOptions, owner: Int, modifier: Modifier, links: State<List<LinkView>>, onIndustry: (Int) -> Unit, onLink: (LinkView) -> Unit) {
     val c = LocalColors.current
     val camera = options.camera
     val measurer = rememberTextMeasurer(cacheSize = 256)
     val title = stringResource(Res.string.overview_map)
     val latestImage by rememberUpdatedState(image)
     val latestIndustry by rememberUpdatedState(onIndustry)
+    val latestLink by rememberUpdatedState(onLink)
     val cameraRevision = remember(view) { mutableIntStateOf(0) }
     val shape = RoundedCornerShape(10.dp)
     Canvas(modifier.onSizeChanged { camera.resize(Size(it.width.toFloat(), it.height.toFloat()), view.mapWidth, view.mapHeight) }.clip(shape).background(c.page).border(1.dp, c.chromeEdge, shape)
@@ -68,7 +69,11 @@ internal fun OverviewCanvas(image: MapImage?, traffic: State<List<OverviewVehicl
                         val dy = (it.place.y / data.height - at.y) * size.height / camera.extent.height * camera.zoom
                         dx * dx + dy * dy < 16.dp.toPx() * 16.dp.toPx()
                     } else null
-                    if (industry != null) latestIndustry(industry.place.id) else {
+                    val link = if (industry == null && data != null && options.links.value) linkNear(data, shownLinks(links.value, options, owner), down.position,
+                        Size(size.width.toFloat(), size.height.toFloat()), camera, 12.dp.toPx()) else null
+                    if (industry != null) latestIndustry(industry.place.id)
+                    else if (link != null) latestLink(link)
+                    else {
                         view.focusX = (at.x * view.mapWidth).coerceIn(0f, view.mapWidth.toFloat())
                         view.focusY = (at.y * view.mapHeight).coerceIn(0f, view.mapHeight.toFloat())
                         cameraRevision.intValue++
@@ -118,6 +123,18 @@ internal fun OverviewCanvas(image: MapImage?, traffic: State<List<OverviewVehicl
                         drawLine(colour, tip, back + side, 2.dp.toPx())
                         drawLine(colour, tip, back - side, 2.dp.toPx())
                     }
+                }
+            }
+            if (options.links.value) for (link in shownLinks(links.value, options, owner)) {
+                val (a, b) = linkEnds(data, link, ::point) ?: continue
+                val share = link.share(options.cargo.intValue)
+                val colour = if (share == null) c.textDim else shareColour(share, c)
+                drawLine(c.page, a, b, linkWidth(link, options.cargo.intValue).dp.toPx() + 2.dp.toPx())
+                drawLine(colour, a, b, linkWidth(link, options.cargo.intValue).dp.toPx())
+                if (link.heldLong()) {
+                    val mid = a + (b - a) * 0.5f
+                    drawCircle(c.text, 4.5.dp.toPx(), mid)
+                    drawCircle(c.bad, 3.dp.toPx(), mid)
                 }
             }
             if (options.coverage.value) {
@@ -172,4 +189,55 @@ internal fun OverviewCanvas(image: MapImage?, traffic: State<List<OverviewVehicl
             drawPath(outline, c.accent, style = Stroke(2.dp.toPx()))
         }
     }
+}
+
+/** The links the layer shows: [owner]'s or everyone's, and with a cargo picked only those that had room for it last month. */
+internal fun shownLinks(links: List<LinkView>, options: OverviewOptions, owner: Int): List<LinkView> {
+    val cargo = options.cargo.intValue
+    return links.filter { (owner < 0 || it.owner == owner) && (cargo < 0 || it.capacity.getOrElse(cargo) { 0 } > 0) }
+}
+
+/** A link's line width in dp, wider with more room leaving on it last month. */
+private fun linkWidth(link: LinkView, cargo: Int): Float {
+    val room = if (cargo < 0) link.capacity.sum() else link.capacity.getOrElse(cargo) { 0 }
+    return (1.5f + ln(1.0 + room).toFloat() / 2).coerceAtMost(8f)
+}
+
+/**
+ * Where a link's line runs on screen, from [point] for map positions: between its stations, set off to the right of
+ * the way it goes so the two ways between a pair both show.
+ */
+private fun DrawScope.linkEnds(data: MapSnapshot, link: LinkView, point: (Float, Float) -> Offset): Pair<Offset, Offset>? {
+    val from = data.stationById[link.from] ?: return null
+    val to = data.stationById[link.to] ?: return null
+    return offsetEnds(point(from.x, from.y), point(to.x, to.y), 2.dp.toPx())
+}
+
+private fun offsetEnds(a: Offset, b: Offset, by: Float): Pair<Offset, Offset>? {
+    val delta = b - a
+    val length = delta.getDistance()
+    if (length < 1f) return null
+    val side = Offset(-delta.y, delta.x) / length * by
+    return (a + side) to (b + side)
+}
+
+/** The link whose line passes nearest [tap] on a canvas of [size], if one's within [reach] pixels. */
+private fun Density.linkNear(data: MapSnapshot, links: List<LinkView>, tap: Offset, size: Size, camera: OverviewCamera, reach: Float): LinkView? {
+    val scale = maxOf(size.width / data.width, size.height / data.height) * camera.zoom
+    val origin = Offset(size.width / 2 - camera.x * data.width * scale, size.height / 2 - camera.y * data.height * scale)
+    var best: LinkView? = null
+    var bestDistance = reach
+    for (link in links) {
+        val from = data.stationById[link.from] ?: continue
+        val to = data.stationById[link.to] ?: continue
+        val (a, b) = offsetEnds(origin + Offset(from.x * scale, from.y * scale), origin + Offset(to.x * scale, to.y * scale), 2.dp.toPx()) ?: continue
+        val ab = b - a
+        val t = (((tap - a).x * ab.x + (tap - a).y * ab.y) / (ab.x * ab.x + ab.y * ab.y)).coerceIn(0f, 1f)
+        val distance = (tap - (a + ab * t)).getDistance()
+        if (distance < bestDistance) {
+            bestDistance = distance
+            best = link
+        }
+    }
+    return best
 }

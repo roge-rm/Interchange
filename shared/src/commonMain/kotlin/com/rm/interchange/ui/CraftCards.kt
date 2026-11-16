@@ -30,6 +30,7 @@ import com.rm.interchange.sim.Engine
 import com.rm.interchange.sim.ILS_COST
 import com.rm.interchange.sim.ILS_FROM
 import com.rm.interchange.sim.Order
+import com.rm.interchange.sim.OverviewVehicle
 import com.rm.interchange.sim.Roster
 import com.rm.interchange.sim.Runways
 import com.rm.interchange.sim.ShipView
@@ -197,7 +198,7 @@ fun ShipCard(view: WorldView, roster: Roster, v: ShipView, year: Int, funds: Lon
         VehicleStats(
             v.kmh, e.speed, v.age, false, v.reliability, v.profitThisYear, v.profitLastYear,
             if (v.capacity > 0) listOf(VehicleLoad(v.carries, v.load, v.capacity)) else emptyList(),
-            worthRows(v.value, v.nextService, mine),
+            worthRows(v.value, v.nextService, mine) + linkRows(OverviewVehicle.SHIP, v.id, v.orders, v.order),
         )
         // Someone else's: what it is, but none of the controls.
         if (!mine) return@Card
@@ -256,7 +257,7 @@ fun AircraftCard(view: WorldView, roster: Roster, v: AircraftView, year: Int, fu
             listOfNotNull(
                 (stringResource(Res.string.range) to stringResource(Res.string.km, Numbers.grouped(e.range.toLong()))).takeIf { e.range > 0 },
                 (stringResource(Res.string.gear) to gear.getOrElse(v.gear) { "" }).takeIf { e.floats },
-            ) + worthRows(v.value, v.nextService, mine),
+            ) + worthRows(v.value, v.nextService, mine) + linkRows(OverviewVehicle.AIR, v.id, v.orders, v.order),
         )
         // Someone else's shows what it is but none of the controls, and a wreck is cleared away by itself.
         if (!mine || v.wrecked) return@Card
