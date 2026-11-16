@@ -923,7 +923,7 @@ private fun World.cantLandFor(v: Aircraft, a: Airport): String? {
 }
 
 /** Whether aircraft [v] can leave airport [a] now: not in a storm it can't fly in, and not iced up without de-icing. */
-private fun World.mayLeave(v: Aircraft, a: Airport): Boolean {
+internal fun World.mayLeave(v: Aircraft, a: Airport): Boolean {
     if (weather.wind >= v.info.stormLimit()) return false
     if (airSky(a) and ICING != 0 && !a.deice) return false
     return !wreckAt(a)

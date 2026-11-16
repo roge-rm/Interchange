@@ -89,6 +89,16 @@ private fun World.dockSites(c: Company, t: Town): List<Int> =
 private fun World.shipsFor(cargo: Int): List<Engine> =
     roster.availableOf(VehicleKind.SHIP, Calendar.year(startYear, day)).filter { cargo in it.cargoes && it.capacity > 0 }
 
+/**
+ * Whether a freight ship [e] fills from [load] a month within [SHIP_FILL_MONTHS]; one that takes longer earns in some
+ * years and not others and is sold as a loser.
+ */
+private fun fills(e: Engine, load: Int) = e.capacity <= load * SHIP_FILL_MONTHS
+
+/** Days ship [e] takes there and back over [tiles] of water, and for freight to fill from [load] a month. */
+private fun cycle(e: Engine, town: Boolean, load: Int, tiles: Int): Int =
+    2 * (tiles * KMH_PER_TILE_A_DAY / e.speed.coerceAtLeast(1) + SHIP_ENDS) + if (town) 0 else e.capacity * 30 / load.coerceAtLeast(1)
+
 /** The ship on sale for [cargo] that carries the most the fastest, or null. */
 internal fun World.bestShip(cargo: Int): Engine? =
     shipsFor(cargo).maxWithOrNull(compareBy<Engine> { it.capacity.toLong() * it.speed }.thenBy { -it.id })
@@ -120,7 +130,7 @@ internal fun World.shipJob(r: Rival, c: Company, payback: Int): ShipJob? {
         if (fromHome > reachMost) continue
         for (cg in 0 until cargoCount) {
             val month = kind.produces[cg] * ind.level / 16
-            if (month <= 0 || bestShip(cg) == null || servedByOthers(ind, cg, c.id)) continue
+            if (month <= 0 || shipsFor(cg).none { fills(it, month / 2) } || servedByOthers(ind, cg, c.id)) continue
             if (sites(ind).isEmpty()) break
             // The nearest that takes it on the water.
             var to: Industry? = null
@@ -242,6 +252,8 @@ private fun World.lookForWater(c: Company, job: ShipJob, p: ShipPick): Int {
 private fun World.buildShipLine(r: Rival, c: Company, p: ShipPick, k: Int, job: ShipJob): Tried {
     val siteB = p.sites[k]
     if (berthOf(c, p.site) < 0 || berthOf(c, siteB) < 0) return Tried.CANT
+    // An industry at either end may have closed while the look went on.
+    if (!p.town && (industries.getOrNull(p.from)?.closed != false || industries.getOrNull(p.to)?.closed != false)) return Tried.CANT
     // A shipyard by the first dock, onto water the look reached.
     val seen = job.seen ?: return Tried.CANT
     var yard = -1
@@ -271,6 +283,7 @@ private fun World.buildShipLine(r: Rival, c: Company, p: ShipPick, k: Int, job: 
     var model: Engine? = null
     var margin = 0L
     for (e in shipsFor(p.cargo)) {
+        if (!p.town && !fills(e, load) || cycle(e, p.town, load, job.depth) > SHIP_CYCLE) continue
         val m = craftMargin(e, p.cargo, load, job.depth, dist, built, 2L * Upkeep.DOCK, job.payback, MAX_SHIPS, SHIP_ENDS)
         if (m >= margin) { model = e; margin = m }
     }
@@ -331,9 +344,11 @@ internal fun World.craftMargin(model: Engine, cargo: Int, load: Int, tiles: Int,
     if (payback <= 0) return Long.MAX_VALUE
     // A tile a day at 40-odd km/h.
     val there = tiles * KMH_PER_TILE_A_DAY / model.speed.coerceAtLeast(1) + ends
-    val trips = (365 / (there * 2).coerceAtLeast(1)).coerceAtLeast(1)
-    val wanted = load * 12
     val cap = model.capacity.coerceAtLeast(1)
+    // Freight waits for a full load each trip, about a month for each month's load it holds.
+    val fill = if (cargo == Cargo.PASSENGERS) 0 else cap * 30 / load.coerceAtLeast(1)
+    val trips = (365 / (there * 2 + fill).coerceAtLeast(1)).coerceAtLeast(1)
+    val wanted = load * 12
     val n = ((wanted + trips * cap - 1) / (trips * cap)).coerceIn(1, most)
     val hauled = minOf(n * trips * cap, wanted)
     val filling = if (cargo == Cargo.PASSENGERS) 0 else cap * 15 / load.coerceAtLeast(1)
@@ -395,7 +410,7 @@ internal fun World.growAir(c: Company, route: RivalRoute) {
     val fits = aircraftFor(Cargo.PASSENGERS, kind, km)
     val model = on.firstOrNull { it.carries == Cargo.PASSENGERS }?.info?.takeIf { e -> fits.any { it.id == e.id } } ?: bestAircraft(Cargo.PASSENGERS, kind, km) ?: return
     val people = maxOf(a.waiting(Cargo.PASSENGERS), b.waiting(Cargo.PASSENGERS))
-    if (people >= (model.capacity * 3 / 2).coerceAtLeast(10)) {
+    if (people >= (model.capacity * 2).coerceAtLeast(10)) {
         if (afford(c, price(model.cost) * 2)) buyAircraftOn(c, route, model, Cargo.PASSENGERS)
         return
     }
@@ -405,9 +420,12 @@ internal fun World.growAir(c: Company, route: RivalRoute) {
 }
 
 /** How far apart airports [a] and [b] are, in km. */
-private fun World.flightKm(a: Airport, b: Airport): Long {
-    val dx = (a.x - b.x).toLong()
-    val dy = (a.y - b.y).toLong()
+private fun World.flightKm(a: Airport, b: Airport): Long = flightKm(a.x, a.y, b.x, b.y)
+
+/** How far apart airports with corners at ([ax], [ay]) and ([bx], [by]) are, in km, as an aircraft's range is checked. */
+private fun flightKm(ax: Int, ay: Int, bx: Int, by: Int): Long {
+    val dx = (ax - bx).toLong()
+    val dy = (ay - by).toLong()
     return isqrt(dx * dx + dy * dy) * TILE_METRES / 1000
 }
 
@@ -474,12 +492,17 @@ private fun World.airportNearTown(c: Company, t: Town, kind: Int): Command.Airpo
  * aircraft on sale lands at and that pays within [payback] work years, and one aircraft.
  */
 private fun World.tryAir(r: Rival, c: Company, t1: Town, t2: Town, d: Int, kinds: List<Int>, payback: Int): Tried {
-    val km = d.toLong() * TILE_METRES / 1000
     val most = (if (settings.rivalLevel == RivalLevel.EASY) maxLoan() / 2 else maxLoan()) * (2 + r.borrow) / 4
     val load = minOf(t1.population, t2.population) / AIR_SHARE
     for (kind in kinds) {
         val built = price(Airports.COST[kind]) * 2
-        // The aircraft that pays best here, if any does.
+        // Too dear even with the cheapest aircraft, borrowing all it may: a smaller kind.
+        val cheapest = aircraftFor(Cargo.PASSENGERS, kind, 0).minOfOrNull { it.cost } ?: continue
+        if (c.money + (most - c.loan) < (built + price(cheapest)) * 6 / 5 + price(Prices.LOAN_STEP) * 2) continue
+        val siteA = airportNearTown(c, t1, kind) ?: continue
+        val siteB = airportNearTown(c, t2, kind) ?: continue
+        // The aircraft that pays best and flies from one site to the other, as the aircraft measure it.
+        val km = flightKm(siteA.x, siteA.y, siteB.x, siteB.y)
         var model: Engine? = null
         var margin = 0L
         for (e in aircraftFor(Cargo.PASSENGERS, kind, km)) {
@@ -488,10 +511,7 @@ private fun World.tryAir(r: Rival, c: Company, t1: Town, t2: Town, d: Int, kinds
         }
         if (model == null) continue
         val cost = built + price(model.cost)
-        // Too dear even borrowing all it may: a smaller kind.
         if (c.money + (most - c.loan) < cost * 6 / 5 + price(Prices.LOAN_STEP) * 2) continue
-        val siteA = airportNearTown(c, t1, kind) ?: continue
-        val siteB = airportNearTown(c, t2, kind) ?: continue
         if (!afford(c, cost * 6 / 5)) return Tried.POOR
         apply(siteA)
         val pa = airportTiles[index(siteA.x, siteA.y)]?.let { airports.getOrNull(it) }?.takeIf { it.owner == c.id } ?: return Tried.CANT
@@ -573,6 +593,10 @@ private const val SHIP_STEPS = 600
 /** Days a ship loses at each end, slowing, turning and loading. */
 private const val SHIP_ENDS = 3
 internal const val MAX_SHIPS = 4
+/** Months of a freight line's load its ship may hold at the most. */
+private const val SHIP_FILL_MONTHS = 14
+/** Days a ship may take round a line, filling included, so it delivers at least every other year. */
+private const val SHIP_CYCLE = 730
 /** People a town needs for an airport, tiles apart the ends are at the least, the distance past which it scores no more, and how far from the middle the airport goes. */
 private const val AIR_TOWN = 250
 private const val AIR_MIN = 40
@@ -582,5 +606,5 @@ private const val AIR_TRIES = 3
 /** Days an aircraft loses at each end, taxiing, climbing and loading. */
 private const val AIR_ENDS = 2
 /** Of the smaller town's people, the share flying each way a month. */
-private const val AIR_SHARE = 4
-internal const val MAX_AIRCRAFT = 6
+private const val AIR_SHARE = 5
+internal const val MAX_AIRCRAFT = 3

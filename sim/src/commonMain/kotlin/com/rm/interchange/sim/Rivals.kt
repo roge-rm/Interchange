@@ -226,7 +226,7 @@ private fun World.think(r: Rival, c: Company) {
     // Its vehicles are renewed as they age, keeping two loan steps in hand, but not while it sells to pay its loan.
     c.autorenew = !shedding(c)
     c.renewFloor = price(Prices.LOAN_STEP) * 2
-    shed(c)
+    shed(r, c)
     sellLosers(r, c)
     townWork(r, c)
     for (route in r.routes) growRoute(c, route)
@@ -401,8 +401,8 @@ internal fun World.sellLosers(r: Rival, c: Company) {
     fun routeOf(v: Carrier) = r.routes.firstOrNull { onRoute(v, it) }
     for (v in roadVehicles) if (v != null && v.owner == c.id && v.toDepot && !v.servicing) routeOf(v)?.let { selling += it }
     for (t in trains) if (t != null && t.owner == c.id && t.toDepot && !t.servicing) routeOf(t)?.let { selling += it }
-    for (v in ships) if (v != null && v.owner == c.id && v.toDepot && !v.servicing) routeOf(v)?.let { selling += it }
-    for (v in aircraft) if (v != null && v.owner == c.id && v.toDepot && !v.servicing) routeOf(v)?.let { selling += it }
+    for (v in ships) if (v != null && v.owner == c.id && v.toDepot && !v.servicing) craftRoute(r, v)?.let { selling += it }
+    for (v in aircraft) if (v != null && v.owner == c.id && v.toDepot && !v.servicing) craftRoute(r, v)?.let { selling += it }
     // Its own vehicles only stand stopped in a depot when sent there to be sold.
     for (v in roadVehicles) {
         if (v == null || v.owner != c.id || v.wreckedFor > 0) continue
@@ -427,23 +427,26 @@ internal fun World.sellLosers(r: Rival, c: Company) {
             apply(Command.TrainOrder(c.id, t.id, Command.TrainOrder.TO_DEPOT))
         }
     }
-    // Ships and aircraft as road vehicles, to their shipyard or hangar.
+    // Ships and aircraft on its own lines as road vehicles, to their shipyard or hangar. Others it took over with a
+    // company are left as they were before styles. A ship's year is lumpy, waiting for full loads, so one that lost
+    // last year has till [SHIP_JUDGE] work days into this year to make money.
     for (v in ships) {
         if (v == null || v.owner != c.id) continue
+        val route = craftRoute(r, v) ?: continue
         if (v.inDepot && !v.running) apply(Command.CraftOrder(c.id, false, v.id, Command.TrainOrder.SELL))
-        else if (!v.inDepot && (!v.toDepot || v.servicing) && tick >= v.noDepotUntil && lostAWorkYear(v.built, v.profitThisYear, v.profitLastYear)) {
-            val route = routeOf(v)
-            if (route != null && !selling.add(route)) continue
+        else if (!v.inDepot && (!v.toDepot || v.servicing) && tick >= v.noDepotUntil && lostAWorkYear(v.built, v.profitThisYear, v.profitLastYear) &&
+            workedThisYear() >= SHIP_JUDGE && v.profitThisYear <= 0) {
+            if (!selling.add(route)) continue
             if (v.toDepot) apply(Command.CraftOrder(c.id, false, v.id, Command.TrainOrder.TO_DEPOT))
             apply(Command.CraftOrder(c.id, false, v.id, Command.TrainOrder.TO_DEPOT))
         }
     }
     for (v in aircraft) {
         if (v == null || v.owner != c.id || v.wreckedFor > 0) continue
+        val route = craftRoute(r, v) ?: continue
         if (v.inDepot && !v.running) apply(Command.CraftOrder(c.id, true, v.id, Command.TrainOrder.SELL))
         else if (!v.inDepot && (!v.toDepot || v.servicing) && lostAWorkYear(v.built, v.profitThisYear, v.profitLastYear)) {
-            val route = routeOf(v)
-            if (route != null && !selling.add(route)) continue
+            if (!selling.add(route)) continue
             if (v.toDepot) apply(Command.CraftOrder(c.id, true, v.id, Command.TrainOrder.TO_DEPOT))
             apply(Command.CraftOrder(c.id, true, v.id, Command.TrainOrder.TO_DEPOT))
         }
@@ -500,6 +503,8 @@ internal fun World.sellLosers(r: Rival, c: Company) {
 internal const val JAM_DAYS = 60
 /** Ticks after [unjam] calls off a garage or depot trip before the vehicle is sent to one again, to be sold or serviced. */
 internal const val UNJAM_HOLD = Calendar.TICKS_PER_DAY * 180L
+/** Work days into the year a ship that lost money last year has to make some this year before it's sold. */
+internal const val SHIP_JUDGE = 180
 /** Work days a road route with no vehicles left is held for another company's vehicle on its stop. */
 internal const val HOLD_DAYS = 180
 
@@ -553,9 +558,53 @@ internal fun World.unjam(r: Rival, c: Company) {
             apply(Command.TrainOrder(c.id, t.id, Command.TrainOrder.ORDERS, IntArray(n) { t.orders[(back + it) % n] }))
         }
     }
+    // Ships and aircraft on its own lines. One held by ice it can't get through anywhere on the map, or kept on the
+    // ground by a storm, icing or a wreck on the runway, is held by the weather and its count starts again.
+    // A stuck one going to its shipyard or hangar has the trip called off; one making for its second stop heads back
+    // to its first; one that can't reach its first is sent in to be sold.
+    var thickest = -1
+    fun iced(v: Ship): Boolean {
+        if (thickest < 0) { thickest = 0; for (b in weather.ice) thickest = maxOf(thickest, b.toInt() and 255) }
+        return thickest >= SHIP_ICE && !v.info.hovercraft && thickest > v.info.icebreaker
+    }
+    fun free(v: Carrier, air: Boolean, toDepot: Boolean, hold: () -> Unit) {
+        if (toDepot) {
+            apply(Command.CraftOrder(c.id, air, v.id, Command.TrainOrder.TO_DEPOT))
+            hold()
+        } else if (v.order % v.orders.size.coerceAtLeast(1) != 0) {
+            apply(Command.CraftOrder(c.id, air, v.id, Command.TrainOrder.ORDERS, v.orders.toIntArray()))
+        } else {
+            apply(Command.CraftOrder(c.id, air, v.id, Command.TrainOrder.TO_DEPOT))
+        }
+    }
+    val shipLoading = HashSet<List<Int>>()
+    for (v in ships) if (v != null && v.owner == c.id && !v.inDepot && v.waiting > 0) line(v)?.let { shipLoading += it }
+    for (v in ships) {
+        if (v == null || v.owner != c.id || v.inDepot || !v.running || v.waiting > 0 || v.speed > 0 || v.lockWait > 0) continue
+        if (craftRoute(r, v) == null) continue
+        val key = SHIP_STOOD + v.id
+        if (v.brokenFor > 0) { r.stood[key]?.let { seen[key] = it }; continue }
+        if (line(v) in shipLoading || iced(v)) continue
+        if (!stuck(key)) continue
+        free(v, false, v.toDepot) { v.noDepotUntil = tick + UNJAM_HOLD }
+    }
+    for (v in aircraft) {
+        if (v == null || v.owner != c.id || v.inDepot || !v.running || v.wreckedFor > 0 || v.waiting > 0 || v.speed > 0 || v.altitude > 0) continue
+        if (craftRoute(r, v) == null) continue
+        val key = AIR_STOOD + v.id
+        if (v.brokenFor > 0) { r.stood[key]?.let { seen[key] = it }; continue }
+        val here = airports.getOrNull(v.at)
+        if (here != null && !mayLeave(v, here)) continue
+        if (!stuck(key)) continue
+        free(v, true, v.toDepot) {}
+    }
     r.stood.clear()
     r.stood.putAll(seen)
 }
+
+/** Where ships' and aircraft's ids start in [Rival.stood], past any road vehicle's. */
+private const val SHIP_STOOD = 1 shl 29
+private const val AIR_STOOD = 1 shl 30
 
 /**
  * Takes up the track of [route], a railway given up: its two stations, the shortest run of [c]'s plain track between
@@ -576,6 +625,9 @@ private fun World.takeUpLine(c: Company, route: RivalRoute) {
     fun kept(i: Int) = stationTiles[i]?.let { id -> rivals.any { rv -> rv.company == c.id && rv.routes.any { it.rail && (it.a == id || it.b == id) } } } == true
     for (t in line) if (!kept(t)) clearTile(c, Command.Clear(c.id, t % width, t / width))
 }
+
+/** The line of ships or aircraft [r] built that [v] runs, or null. */
+internal fun craftRoute(r: Rival, v: Carrier): RivalRoute? = r.routes.firstOrNull { (it.ship || it.air) && onRoute(v, it) }
 
 /** Whether [v] runs [route]; a train may have its two stops either way round. */
 internal fun onRoute(v: Carrier, route: RivalRoute): Boolean {
@@ -695,16 +747,16 @@ private fun World.shedding(c: Company): Boolean = !human(c.id) && c.loan > 0 && 
  * A rival in [shedding] sends its least paying vehicle that has run a work year to its depot to be sold, one a look,
  * till what's left pays its interest or the loan is paid off.
  */
-private fun World.shed(c: Company) {
+private fun World.shed(r: Rival, c: Company) {
     if (!shedding(c)) return
     val old = { built: Int -> workDay - built >= 365 }
     val road = roadVehicles.filter { it != null && it.owner == c.id && it.wreckedFor == 0 && !it.inDepot && !it.toDepot && old(it.built) }.map { it!! }
     val rail = trains.filter { it != null && it.owner == c.id && it.wreckedFor == 0 && !it.inDepot && !it.toDepot && old(it.built) }.map { it!! }
     val v = road.minByOrNull { it.profitThisYear + it.profitLastYear }
     val t = rail.minByOrNull { it.profitThisYear + it.profitLastYear }
-    // Ships and aircraft only where it has any, so a rival without keeps to what it did before.
-    val ship = ships.filter { it != null && it.owner == c.id && !it.inDepot && !it.toDepot && old(it.built) }.minByOrNull { it!!.profitThisYear + it.profitLastYear }
-    val plane = aircraft.filter { it != null && it.owner == c.id && it.wreckedFor == 0 && !it.inDepot && !it.toDepot && old(it.built) }.minByOrNull { it!!.profitThisYear + it.profitLastYear }
+    // Ships and aircraft only on its own lines of them, so a rival without keeps to what it did before.
+    val ship = ships.filter { it != null && it.owner == c.id && !it.inDepot && !it.toDepot && old(it.built) && craftRoute(r, it) != null }.minByOrNull { it!!.profitThisYear + it.profitLastYear }
+    val plane = aircraft.filter { it != null && it.owner == c.id && it.wreckedFor == 0 && !it.inDepot && !it.toDepot && old(it.built) && craftRoute(r, it) != null }.minByOrNull { it!!.profitThisYear + it.profitLastYear }
     val craft = listOfNotNull(ship?.let { it.profitThisYear + it.profitLastYear }, plane?.let { it.profitThisYear + it.profitLastYear }).minOrNull()
     val land = listOfNotNull(v?.let { it.profitThisYear + it.profitLastYear }, t?.let { it.profitThisYear + it.profitLastYear }).minOrNull()
     if (craft != null && (land == null || craft < land)) {
