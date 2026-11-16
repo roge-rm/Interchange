@@ -855,4 +855,33 @@
     <string name="days_late">%1$s de retard</string>
     <string name="days_early">%1$s d'avance</string>
     <string name="cond_go_to">Aller à l'ordre %1$d</string>
+    <string name="spacing">Espacement</string>
+    <string name="spacing_interval">Intervalle %1$s</string>
+    <string name="spacing_unknown">Intervalle encore inconnu</string>
+    <string name="connection_add">Ajouter une correspondance</string>
+    <string name="connection_remove">Retirer la correspondance</string>
+    <string name="connection_waits">Attend jusqu'à %1$s le service %2$s</string>
+    <string name="connection_waits_missed">Attend jusqu'à %1$s le service %2$s, %3$d ratées sur %4$d</string>
+    <string name="company_values">Valeurs</string>
+    <string name="value_n">Valeur %1$d</string>
+    <string name="value_less">Moins</string>
+    <string name="value_more">Plus</string>
+    <string name="order_before">Ordre précédent</string>
+    <string name="order_after">Ordre suivant</string>
+    <string name="add_condition">Ajouter une condition</string>
+    <string name="cond_load">Chargement</string>
+    <string name="cond_age">Âge</string>
+    <string name="cond_reliability">Fiabilité</string>
+    <string name="cond_since_service">Depuis l'entretien</string>
+    <string name="cond_always">Toujours</string>
+    <string name="cond_value">Valeur</string>
+    <string-array name="cond_compare">
+        <item>moins de</item><item>au plus</item><item>égal à</item><item>pas égal à</item><item>au moins</item><item>plus de</item>
+    </string-array>
+    <string name="cond_if_load">Si chargement : %1$s %2$s, aller à l'ordre %3$d</string>
+    <string name="cond_if_age">Si âge en années : %1$s %2$s, aller à l'ordre %3$d</string>
+    <string name="cond_if_reliability">Si fiabilité : %1$s %2$s, aller à l'ordre %3$d</string>
+    <string name="cond_if_since_service">Si jours depuis l'entretien : %1$s %2$s, aller à l'ordre %3$d</string>
+    <string name="cond_if_always">Toujours aller à l'ordre %1$d</string>
+    <string name="cond_if_value">Si %1$s : %2$s %3$s, aller à l'ordre %4$d</string>
 </resources>

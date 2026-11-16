@@ -872,4 +872,33 @@
     <string name="days_late">%1$s late</string>
     <string name="days_early">%1$s early</string>
     <string name="cond_go_to">Go to order %1$d</string>
+    <string name="spacing">Spacing</string>
+    <string name="spacing_interval">Interval %1$s</string>
+    <string name="spacing_unknown">Interval not known yet</string>
+    <string name="connection_add">Add a connection</string>
+    <string name="connection_remove">Remove connection</string>
+    <string name="connection_waits">Waits up to %1$s for %2$s</string>
+    <string name="connection_waits_missed">Waits up to %1$s for %2$s, missed %3$d of %4$d</string>
+    <string name="company_values">Values</string>
+    <string name="value_n">Value %1$d</string>
+    <string name="value_less">Less</string>
+    <string name="value_more">More</string>
+    <string name="order_before">Earlier order</string>
+    <string name="order_after">Later order</string>
+    <string name="add_condition">Add a condition</string>
+    <string name="cond_load">Load</string>
+    <string name="cond_age">Age</string>
+    <string name="cond_reliability">Reliability</string>
+    <string name="cond_since_service">Since service</string>
+    <string name="cond_always">Always</string>
+    <string name="cond_value">Value</string>
+    <string-array name="cond_compare">
+        <item>under</item><item>at most</item><item>exactly</item><item>not</item><item>at least</item><item>over</item>
+    </string-array>
+    <string name="cond_if_load">If load is %1$s %2$s, go to order %3$d</string>
+    <string name="cond_if_age">If age in years is %1$s %2$s, go to order %3$d</string>
+    <string name="cond_if_reliability">If reliability is %1$s %2$s, go to order %3$d</string>
+    <string name="cond_if_since_service">If days since service is %1$s %2$s, go to order %3$d</string>
+    <string name="cond_if_always">Always go to order %1$d</string>
+    <string name="cond_if_value">If %1$s is %2$s %3$s, go to order %4$d</string>
 </resources>

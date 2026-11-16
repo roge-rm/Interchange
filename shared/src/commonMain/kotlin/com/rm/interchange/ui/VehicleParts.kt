@@ -322,13 +322,13 @@ private fun OrderRow(number: Int, name: String, line: String?, glyph: Glyph, cur
 
 /**
  * Which stop is open: the [nth] time [place] comes in the orders, so it stays open as stops move or the orders change.
- * A place is a station id, -2 less a depot's id, or a conditional order itself.
+ * A place is a station id, -2 less a depot's id, or [Int.MIN_VALUE] for a conditional order.
  */
 private data class OpenStop(val place: Int, val nth: Int)
 
-/** Where order [o] goes, as an [OpenStop] place. */
+/** Where order [o] goes, as an [OpenStop] place; conditional orders share one, told apart by their count. */
 private fun placeOf(o: Int) = when {
-    Order.isCond(o) -> o
+    Order.isCond(o) -> Int.MIN_VALUE
     Order.isDepot(o) -> -2 - Order.depot(o)
     else -> Order.station(o)
 }
@@ -405,7 +405,7 @@ fun OrdersList(view: WorldView, vehicle: Int, orders: IntArray, order: Int, flag
         OrderRow(
             i + 1,
             when {
-                cond -> stringResource(Res.string.cond_go_to, Order.condTarget(o) + 1)
+                cond -> condText(view, o)
                 depot -> depotName(view, Order.depot(o))
                 else -> s?.name?.takeIf { it.isNotEmpty() } ?: stringResource(Res.string.station_n, Order.station(o) + 1)
             },
@@ -413,15 +413,17 @@ fun OrdersList(view: WorldView, vehicle: Int, orders: IntArray, order: Int, flag
             if (depot || cond) Glyph.Depot else if (s?.waypoint == true) Glyph.Waypoint else stopGlyph,
             current = i == order % orders.size, open = i == at, onClick = { open = if (at == i) null else stopAt(orders, i) },
         ) {
-            OrderEditor(o, flags, i, orders.size, change = { new -> send(orders.copyOf().also { a -> a[i] = new }, open) }, move = { to ->
-                val a = orders.copyOf()
-                a[i] = a[to]
-                a[to] = o
+            OrderEditor(view, o, flags, i, orders.size, change = { new -> send(orders.copyOf().also { a -> a[i] = new }, open) }, move = { to ->
+                val a = ordersSwapped(orders, i, to)
                 send(a, stopAt(a, to))
             }) {
-                send(orders.filterIndexed { j, _ -> j != i }.toIntArray(), null)
+                send(ordersWithout(orders, i), null)
             }
         }
+    }
+    // A condition needs orders to jump between, and the list can only grow by so much.
+    if (orders.size < Order.COND_TARGET_MOST) {
+        ActionButton(stringResource(Res.string.add_condition)) { send(orders + newCondition(), stopAt(orders + newCondition(), orders.size)) }
     }
 }
 
@@ -432,10 +434,11 @@ private val UNLOADING = listOf(0, Order.UNLOAD, Order.TRANSFER)
 
 /** The controls for order [o], at [at] of [count]: its flags, its wait, moving it up or down and removing it. */
 @Composable
-private fun OrderEditor(o: Int, flags: OrderFlags, at: Int, count: Int, change: (Int) -> Unit, move: (Int) -> Unit, remove: () -> Unit) {
+private fun OrderEditor(view: WorldView, o: Int, flags: OrderFlags, at: Int, count: Int, change: (Int) -> Unit, move: (Int) -> Unit, remove: () -> Unit) {
     val c = LocalColors.current
     if (Order.isDepot(o) || Order.isCond(o)) {
-        if (Order.isDepot(o)) {
+        if (Order.isCond(o)) CondEditor(view, o, count, change)
+        else {
             val kinds = Order.DEPOT_KINDS.toList()
             val names = kinds.map { depotKindName(it) }
             SegmentedChoice(kinds, Order.depotKind(o), { names[kinds.indexOf(it)] }, perRow = 3) { change(Order.toDepot(Order.depot(o), it)) }
@@ -514,7 +517,7 @@ fun AddingStopsCard(
             BigButton(
                 stringResource(Res.string.remove_last_stop), glyph = Glyph.Back, enabled = orders.isNotEmpty() && !edits.waiting,
                 modifier = Modifier.weight(1f),
-            ) { edits.send(orders.copyOf(orders.size - 1)) }
+            ) { edits.send(ordersWithout(orders, orders.size - 1)) }
         }
     }
 }

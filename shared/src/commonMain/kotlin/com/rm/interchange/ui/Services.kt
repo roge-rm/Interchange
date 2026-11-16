@@ -24,6 +24,8 @@ import androidx.compose.ui.unit.dp
 import com.rm.interchange.res.*
 import com.rm.interchange.server.GameThread
 import com.rm.interchange.sim.Calendar
+import com.rm.interchange.sim.CONNECTIONS_MOST
+import com.rm.interchange.sim.CONNECTION_WAIT_MOST
 import com.rm.interchange.sim.Command
 import com.rm.interchange.sim.Order
 import com.rm.interchange.sim.ServiceView
@@ -39,6 +41,7 @@ val LocalOpenService = staticCompositionLocalOf<(Int) -> Unit> { {} }
 private const val LATE_WARN = Calendar.TICKS_PER_DAY
 private const val LATE_BAD = 3 * Calendar.TICKS_PER_DAY
 private const val MOST_TENTHS = 3000
+private const val MOST_CONNECTION_TENTHS = CONNECTION_WAIT_MOST * 10 / Calendar.TICKS_PER_DAY
 
 /** [ticks] in tenths of a day, rounded to the nearest, halves away from 0 either side of it. */
 private fun ticksToTenths(ticks: Int): Int =
@@ -95,7 +98,7 @@ fun ServiceLine(view: WorldView, serviceId: Int, late: Int) {
 
 /** Every service the company has. A tap opens it with [onOpen] (the service's id). */
 @Composable
-fun ServicesWindow(runner: GameThread, onOpen: (Int) -> Unit, onClose: () -> Unit) {
+fun ServicesWindow(runner: GameThread, onOpen: (Int) -> Unit, onValues: () -> Unit, onClose: () -> Unit) {
     val view by produceState(runner.view, runner) {
         while (true) androidx.compose.runtime.withFrameNanos { value = runner.view }
     }
@@ -103,6 +106,7 @@ fun ServicesWindow(runner: GameThread, onOpen: (Int) -> Unit, onClose: () -> Uni
     val c = LocalColors.current
     Window(stringResource(Res.string.services), onClose, Glyph.Calendar) {
         if (v.services.isEmpty()) Text(stringResource(Res.string.no_services), color = c.textDim, style = KitType.Body)
+        ButtonTiles(listOf(TileButton(Glyph.Gear, stringResource(Res.string.company_values), onClick = onValues)))
         for (s in v.services) key(s.id) {
             val worst = s.late.maxOrNull() ?: 0
             ListRow(
@@ -171,6 +175,7 @@ fun ServiceWindow(runner: GameThread, id: Int, onVehicle: (ShowVehicle) -> Unit,
                         // A depot, via order or waypoint has no wait to plan.
                         val stands = !Order.isDepot(o) && !Order.has(o, Order.VIA) && v.stations.firstOrNull { it.id == Order.station(o) }?.waypoint != true
                         if (stands) TimeRow(Res.string.service_wait, s.planWait[i], s.measuredWait[i], open == i) { send(Command.ServiceOrder.PLAN, intArrayOf(i, -1, it)) }
+                        if (stands) Connections(v, s, i, open == i) { what, values -> send(what, values) }
                     }
                 },
             )
@@ -179,7 +184,16 @@ fun ServiceWindow(runner: GameThread, id: Int, onVehicle: (ShowVehicle) -> Unit,
             TileButton(Glyph.Down, stringResource(Res.string.autofill)) { send(Command.ServiceOrder.AUTOFILL) },
             TileButton(Glyph.Clear, stringResource(Res.string.clear_times)) { send(Command.ServiceOrder.CLEAR) },
         ))
-        SwitchRow(stringResource(Res.string.timetable), s.timetabled) { send(Command.ServiceOrder.TIMETABLE, intArrayOf(if (it) 1 else 0)) }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(KitSpace.Inline)) {
+            SwitchRow(stringResource(Res.string.timetable), s.timetabled, Modifier.weight(1f)) { send(Command.ServiceOrder.TIMETABLE, intArrayOf(if (it) 1 else 0)) }
+            SwitchRow(stringResource(Res.string.spacing), s.spaced, Modifier.weight(1f)) { send(Command.ServiceOrder.SPACED, intArrayOf(if (it) 1 else 0)) }
+        }
+        if (s.spaced) {
+            Text(
+                if (s.interval > 0) stringResource(Res.string.spacing_interval, daysText(s.interval.toInt())) else stringResource(Res.string.spacing_unknown),
+                color = c.textDim, style = KitType.Dim,
+            )
+        }
         Head(stringResource(Res.string.vehicles), Glyph.Train)
         for (k in s.vehicleIds.indices) key(k) {
             val vid = s.vehicleIds[k]
@@ -208,5 +222,50 @@ private fun TimeRow(label: org.jetbrains.compose.resources.StringResource, plan:
         Text(if (plan > 0) daysText(plan) else "-", color = c.text, style = KitType.Value, maxLines = 1, textAlign = TextAlign.End)
         if (editing) SquareButton(Glyph.Plus, stringResource(Res.string.gap_more), 32.dp, enabled = tenths < MOST_TENTHS) { set(tenthsToTicks(tenths + 1)) }
         Text(if (measured >= 0) daysText(measured) else "-", color = c.textDim, style = KitType.Dim, maxLines = 1, textAlign = TextAlign.End, modifier = Modifier.weight(1f))
+    }
+}
+
+/**
+ * The connections at order [i] of service [s]: each as a line with how many it made, and, when [editing], a stepper of
+ * its most wait, a button to take it off, and a list of the services it could be added for.
+ */
+@Composable
+private fun Connections(v: WorldView, s: ServiceView, i: Int, editing: Boolean, send: (Int, IntArray) -> Unit) {
+    val c = LocalColors.current
+    var picking by remember(s.id, i) { mutableStateOf(false) }
+    val here = s.connections.filter { it.order == i }
+    for (k in here) key(k.other) {
+        val other = v.services.firstOrNull { it.id == k.other }
+        val name = k.otherName.ifEmpty { other?.let { serviceTitle(v, it) } ?: "" }
+        val total = k.made + k.missed
+        val wait = daysText(k.most)
+        val tenths = ticksToTenths(k.most)
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(KitSpace.Gap)) {
+            Text(
+                if (total > 0) stringResource(Res.string.connection_waits_missed, wait, name, k.missed, total) else stringResource(Res.string.connection_waits, wait, name),
+                color = c.textDim, style = KitType.Dim, modifier = Modifier.weight(1f),
+            )
+            if (editing) {
+                SquareButton(Glyph.Minus, stringResource(Res.string.gap_less), 32.dp, enabled = tenths > 1) { send(Command.ServiceOrder.CONNECT, intArrayOf(i, k.other, tenthsToTicks(tenths - 1))) }
+                SquareButton(Glyph.Plus, stringResource(Res.string.gap_more), 32.dp, enabled = tenths < MOST_CONNECTION_TENTHS) { send(Command.ServiceOrder.CONNECT, intArrayOf(i, k.other, tenthsToTicks(tenths + 1))) }
+                SquareButton(Glyph.Remove, stringResource(Res.string.connection_remove), 32.dp) { send(Command.ServiceOrder.DISCONNECT, intArrayOf(i, k.other)) }
+            }
+        }
+    }
+    if (!editing) return
+    val candidates = v.services.filter { o -> o.id != s.id && here.none { it.other == o.id } }
+    if (candidates.isEmpty() || s.connections.size >= CONNECTIONS_MOST) return
+    ActionButton(stringResource(Res.string.connection_add), strong = picking) { picking = !picking }
+    if (picking) for (o in candidates) key(o.id) {
+        ListRow(
+            when (o.kind) {
+                ShowVehicle.TRAIN -> Glyph.Train
+                ShowVehicle.ROAD -> Glyph.Bus
+                ShowVehicle.SHIP -> Glyph.Ship
+                else -> Glyph.Air
+            },
+            serviceTitle(v, o), null,
+            { send(Command.ServiceOrder.CONNECT, intArrayOf(i, o.id, Calendar.TICKS_PER_DAY)); picking = false },
+        )
     }
 }
