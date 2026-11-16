@@ -83,7 +83,11 @@ internal fun World.waitForGap(v: Carrier, due: Boolean): Boolean {
         }
     }
     v.departed = tick
-    if (v.leftFrom >= 0 && v.leftAt < 0) v.leftAt = tick
+    if (v.leftFrom >= 0 && v.leftAt < 0) {
+        v.leftAt = tick
+        v.heldTicks = 0
+        countDeparture(v)
+    }
     return false
 }
 

@@ -284,10 +284,21 @@ class StationView(
     val x: Float = 0f,
     val y: Float = 0f,
     val waypoint: Boolean = false,
+    /** Last month, by cargo: the average ticks what boarded had waited, -1 if none boarded, how many boarded, and how many gave up. */
+    val waited: IntArray = IntArray(Cargo.COUNT) { -1 },
+    val boarded: IntArray = IntArray(Cargo.COUNT),
+    val gaveUp: IntArray = IntArray(Cargo.COUNT),
 )
 
-/** Passengers and mail waiting at a station for [dest] (-1 for anywhere), changing at [via] on the way or -1 if it's the next stop. */
-class GoingView(val dest: Int, val via: Int, val counts: IntArray)
+/**
+ * Passengers and mail waiting at a station for [dest] (-1 for anywhere), changing at [via] on the way or -1 if it's
+ * the next stop. [why] is the [WhyNot] reason the cargo most of them are can't get there, for the first
+ * [GOING_WHY] destinations in a view asked for with the network, -1 otherwise.
+ */
+class GoingView(val dest: Int, val via: Int, val counts: IntArray, val why: Int = -1)
+
+/** How many of a station's destinations, the most waiting first, get a [GoingView.why]. */
+const val GOING_WHY = 5
 
 /** A depot as the screen shows it, to draw over the trains going in and out of it. */
 class DepotView(val tile: Int, val edge: Int, val id: Int = -1, val wired: Boolean = false, val built: Int = 0)
@@ -357,13 +368,15 @@ class WorldView(
     val shedYears: IntArray = IntArray(0),
     /** The town nearest each of the player's rail depots and garages, by depot id, to name them in orders. */
     val depotTowns: Map<Int, Int> = emptyMap(),
+    /** The links the player's vehicles run, by key; empty unless asked for. */
+    val links: List<LinkView> = emptyList(),
 )
 
 /**
  * What the screen shows a player of [company]: their payments and money, and everything on the map, and with
- * [withReserved] the pieces trains hold.
+ * [withReserved] the pieces trains hold, and with [withNetwork] the links and why cargo can't get where it's going.
  */
-fun World.view(company: Int = 0, withReserved: Boolean = false): WorldView {
+fun World.view(company: Int = 0, withReserved: Boolean = false, withNetwork: Boolean = false): WorldView {
     val cars = ArrayList<Float>()
     val curves = DrawCache.carCurves(this)
     val pose = FloatArray(3)
@@ -472,18 +485,23 @@ fun World.view(company: Int = 0, withReserved: Boolean = false): WorldView {
     val stationViews = stations.filterNotNull().map { s ->
         val going = HashMap<Int, IntArray>()
         for (c in 0 until Cargo.COUNT) for (p in s.cargo[c]) going.getOrPut(p.dest) { IntArray(Cargo.COUNT) }[c] += p.count
-        val list = going.entries.sortedWith(compareByDescending<Map.Entry<Int, IntArray>> { it.value.sum() }.thenBy { it.key }).map { (d, n) ->
+        val list = going.entries.sortedWith(compareByDescending<Map.Entry<Int, IntArray>> { it.value.sum() }.thenBy { it.key }).mapIndexed { i, (d, n) ->
             // The way shown is the one for the cargo most of them are.
             val most = n.indices.maxBy { n[it] }
             val hop = if (d >= 0) nextHop(s.id, d, most) else -1
-            GoingView(d, if (hop >= 0 && hop != d) hop else -1, n)
+            val why = if (!withNetwork || d < 0 || i >= GOING_WHY) -1 else whyNot(s.id, d, most)
+            GoingView(d, if (hop >= 0 && hop != d) hop else -1, n, why)
         }
         var served = 0
         for (c in 0 until Cargo.COUNT) if (s.lastCall[c] >= 0 || s.waiting(c) > 0) served = served or (1 shl c)
         val places = s.places
         val mx = if (places.isEmpty()) s.signX + 0.5f else places.sumOf { it % width } / places.size.toFloat() + 0.5f
         val my = if (places.isEmpty()) s.signY + 0.5f else places.sumOf { it / width } / places.size.toFloat() + 0.5f
-        StationView(s.id, s.name, s.tiles.size, IntArray(Cargo.COUNT) { s.waiting(it) }, list, s.rating.copyOf(), served, s.owner, mx, my, s.waypoint)
+        StationView(
+            s.id, s.name, s.tiles.size, IntArray(Cargo.COUNT) { s.waiting(it) }, list, s.rating.copyOf(), served, s.owner, mx, my, s.waypoint,
+            IntArray(Cargo.COUNT) { c -> if (s.boardedLastMonth[c] == 0) -1 else (s.waitedLastMonth[c] / s.boardedLastMonth[c]).toInt() },
+            s.boardedLastMonth.copyOf(), s.gaveUpLastMonth.copyOf(),
+        )
     }
     val signalViews = signals.entries.sortedBy { it.key }.map { (k, s) ->
         val tile = k / 8
@@ -561,6 +579,7 @@ fun World.view(company: Int = 0, withReserved: Boolean = false): WorldView {
         companies.map { c -> c.groups.map { it.toList() } },
         sheds.map { shedYears[it] ?: 0 }.toIntArray(),
         depots.filter { it != null && it.owner == company && (it.kind == Depots.RAIL || it.kind == Depots.ROAD) }.associate { it!!.id to nearestTown(it.tile) },
+        if (withNetwork) linkViews(company) else emptyList(),
     )
 }
 

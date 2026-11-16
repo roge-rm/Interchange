@@ -129,6 +129,8 @@ class World(settings: NewGame, val roster: Roster = Roster.BASE, generate: Boole
      */
     internal val linkTimes = HashMap<Long, Int>()
     internal val linkCosts = HashMap<Long, Int>()
+    /** What ran on each link this month and last, keyed [linkKey], for the screen only. Saved and left out of the checksum. */
+    internal val linkStats = HashMap<Long, LinkStats>()
     /** The stations reaching each industry, and the industries each station reaches, by id. Not saved. */
     internal val industryStations = HashMap<Int, ArrayList<Int>>()
     internal val stationIndustries = HashMap<Int, ArrayList<Int>>()

@@ -58,6 +58,8 @@ interface Carrier {
     /** The station it last called at, or -1, and the tick it left there, -1 while still there: for timing links. */
     var leftFrom: Int
     var leftAt: Long
+    /** Ticks it has stood held by a signal or another vehicle since [leftAt], for the link's stats. */
+    var heldTicks: Int
     var waiting: Int
     fun capacity(c: Int): Int
     /** Its top speed, in km/h, for station ratings. */
@@ -110,6 +112,7 @@ class RoadVehicle(
     override var departed = 0L
     override var leftFrom = -1
     override var leftAt = -1L
+    override var heldTicks = 0
     val info get() = roster[model]
     var inDepot = true
     var running = false
@@ -496,6 +499,8 @@ private fun World.driveRoadVehicle(v: RoadVehicle, on: HashMap<Int, ArrayList<Ro
     if (move <= 0) {
         if (free <= 0) v.speed = 0
         arrive(v)
+        // Queued behind another, at a junction or at a crossing, on its way between stops.
+        if (free <= 0 && v.waiting == 0 && v.leftAt >= 0) v.heldTicks++
         return
     }
     // Ice under summer tires: now and then it slides off into the ditch.

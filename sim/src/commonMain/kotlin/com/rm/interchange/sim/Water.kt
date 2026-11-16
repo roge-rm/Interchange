@@ -40,6 +40,7 @@ class Ship(
     override var departed = 0L
     override var leftFrom = -1
     override var leftAt = -1L
+    override var heldTicks = 0
     override var renewAsked = NEVER_ASKED
     override var renewFailed = false
     override var renewOff = false

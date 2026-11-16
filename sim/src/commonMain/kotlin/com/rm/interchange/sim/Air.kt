@@ -100,6 +100,7 @@ class Aircraft(
     override var departed = 0L
     override var leftFrom = -1
     override var leftAt = -1L
+    override var heldTicks = 0
     override var renewAsked = NEVER_ASKED
     override var renewFailed = false
     override var renewOff = false
@@ -940,7 +941,10 @@ private fun World.fly(v: Aircraft) {
         Flight.GATE -> atGate(v)
         Flight.TAKEOFF -> takeOff(v)
         Flight.CRUISE -> cruise(v)
-        Flight.HOLD -> hold(v)
+        Flight.HOLD -> {
+            if (v.leftAt >= 0) v.heldTicks++
+            hold(v)
+        }
         Flight.LANDING -> land(v)
         Flight.TAXI_OUT, Flight.TAXI_IN -> taxi(v)
     }

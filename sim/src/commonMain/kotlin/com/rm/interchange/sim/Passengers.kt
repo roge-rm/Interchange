@@ -237,6 +237,7 @@ internal fun World.dropLinkTimes(id: Int) {
     val gone = { k: Long -> (k shr 16).toInt() == id || (k and 0xffff).toInt() == id }
     linkTimes.keys.removeAll(gone)
     linkCosts.keys.removeAll(gone)
+    linkStats.keys.removeAll(gone)
     for (list in listOf<List<Carrier?>>(trains, roadVehicles, ships, aircraft)) for (v in list) if (v != null && v.leftFrom == id) {
         v.leftFrom = -1
         v.leftAt = -1
@@ -348,7 +349,14 @@ internal fun World.passengersDay() {
     for (s in stations) {
         if (s == null) continue
         for (cg in 0 until Cargo.COUNT) {
-            s.cargo[cg].removeAll { tick - it.waitingFrom > GIVE_UP_DAYS * Calendar.TICKS_PER_DAY.toLong() }
+            val lots = s.cargo[cg].iterator()
+            while (lots.hasNext()) {
+                val p = lots.next()
+                if (tick - p.waitingFrom > GIVE_UP_DAYS * Calendar.TICKS_PER_DAY.toLong()) {
+                    s.gaveUp[cg] += p.count
+                    lots.remove()
+                }
+            }
             // The rating creeps towards what the service deserves, a little a day.
             val target = (ratingTarget(s, cg) + if (s.id in statues) STATUE_RATING else 0).coerceAtMost(255)
             s.rating[cg] += (target - s.rating[cg]).coerceIn(-RATING_STEP, RATING_STEP)
@@ -462,7 +470,7 @@ private fun World.stopBefore(t: Carrier): Int {
 }
 
 /** The station [t] stops at after the one it's at now, past depot orders and stations it runs through, or -1. */
-private fun World.nextStop(t: Carrier): Int {
+internal fun World.nextStop(t: Carrier): Int {
     if (t.orders.count { isStop(it) } < 2) return -1
     val n = t.orders.size
     for (k in 1..n) t.orders[(t.order + k).mod(n)].let { if (isStop(it)) return Order.station(it) }
@@ -479,9 +487,13 @@ private fun World.nextStop(t: Carrier): Int {
  */
 internal fun World.callAt(t: Carrier, s: Station, o: Int = 0) {
     // The link it has just run, timed from when it left its last stop, unless it left out a stop on the way.
-    if (t.leftFrom >= 0 && t.leftAt >= 0 && t.leftFrom != s.id && stopBefore(t) == t.leftFrom) timeLink(t.leftFrom, s.id, tick - t.leftAt)
+    if (t.leftFrom >= 0 && t.leftAt >= 0 && t.leftFrom != s.id && stopBefore(t) == t.leftFrom) {
+        timeLink(t.leftFrom, s.id, tick - t.leftAt)
+        countRun(t.leftFrom, s.id, t.heldTicks)
+    }
     t.leftFrom = s.id
     t.leftAt = -1
+    t.heldTicks = 0
     val company = companies.getOrNull(t.owner) ?: return
     val next = nextStop(t)
     // Days on board, over every leg so far.
@@ -553,6 +565,8 @@ internal fun World.loadAt(t: Carrier, s: Station) {
             // Only towards where it's going, and never back where it came from.
             if (next == p.origin || (p.dest != -1 && (next < 0 || nextHop(s.id, p.dest, c) != next))) continue
             val take = minOf(room, p.count)
+            s.waitedTicks[c] += (tick - p.waitingFrom) * take
+            s.boarded[c] += take
             // Passengers and mail starting out here count for the town as picked up from it.
             if (p.origin == s.id && (c == Cargo.PASSENGERS || c == Cargo.MAIL)) stationTown(s)?.let { town ->
                 town.servedThisMonth += take
@@ -595,6 +609,7 @@ fun fare(c: Int, n: Int, from: Station, to: Station, days: Int, ticks: Long = da
  * it started for a company with none there.
  */
 internal fun World.passengersMonth() {
+    networkStatsMonth()
     for (t in towns) {
         t.servedLastMonth = t.servedThisMonth
         t.servedThisMonth = 0

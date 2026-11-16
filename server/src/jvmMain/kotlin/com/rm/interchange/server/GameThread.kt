@@ -38,6 +38,8 @@ class GameThread(private val make: () -> World, val remote: Remote? = null) {
     @Volatile var company = 0
     /** Whether [view] lists the pieces trains hold, for drawing them; off, the list isn't made. */
     @Volatile var showReserved = false
+    /** Whether [view] has the links and why cargo can't get where it's going, for the network screens; off, they aren't made. */
+    @Volatile var showNetwork = false
     /** What the screen draws and lists, as of the last tick, and the tick before for smoothing moves between them. */
     @Volatile var view: WorldView? = null
         private set
@@ -131,7 +133,7 @@ class GameThread(private val make: () -> World, val remote: Remote? = null) {
 
     private fun publish(g: Game) {
         lastView = view
-        view = g.world.view(company, showReserved)
+        view = g.world.view(company, showReserved, showNetwork)
         viewAt = System.nanoTime()
         tick = g.world.tick
         day = g.world.day

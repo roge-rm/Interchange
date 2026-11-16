@@ -16,7 +16,7 @@ package com.rm.interchange.sim
  */
 object Save {
     private val MAGIC = "ICHG".encodeToByteArray()
-    const val VERSION = 59
+    const val VERSION = 60
 
     /** A vehicle's [built] day as saved by [version]: work days from 36, calendar days before. */
     private fun World.builtOut(built: Int, version: Int) = if (version >= 36) built else built / settings.dayLength
@@ -262,6 +262,24 @@ object Save {
                     for (k in times.keys.sorted()) { w.long(k); w.int(times.getValue(k)) }
                 }
                 for (list in listOf<List<Carrier?>>(trains, roadVehicles, ships, aircraft)) for (v in list) if (v != null) { w.int(v.leftFrom); w.long(v.leftAt) }
+            }
+            if (version >= 60) {
+                w.uvar(linkStats.size.toLong())
+                for (k in linkStats.keys.sorted()) {
+                    w.long(k)
+                    val l = linkStats.getValue(k)
+                    for (m in listOf(l.month, l.last)) {
+                        w.int(m.departures)
+                        for (c in 0 until Cargo.COUNT) { w.int(m.capacity[c]); w.int(m.load[c]) }
+                        w.long(m.lost)
+                        w.int(m.runs)
+                    }
+                }
+                for (st in stations) if (st != null) for (c in 0 until Cargo.COUNT) {
+                    w.long(st.waitedTicks[c]); w.int(st.boarded[c]); w.int(st.gaveUp[c])
+                    w.long(st.waitedLastMonth[c]); w.int(st.boardedLastMonth[c]); w.int(st.gaveUpLastMonth[c])
+                }
+                for (list in listOf<List<Carrier?>>(trains, roadVehicles, ships, aircraft)) for (v in list) if (v != null) w.int(v.heldTicks)
             }
         }
         val body = Squeeze.pack(w.toByteArray())
@@ -633,6 +651,27 @@ object Save {
                     repeat(n.toInt()) { times[r.long()] = r.int().coerceIn(1, MAX_LINK_TICKS) }
                 }
                 for (list in listOf<List<Carrier?>>(trains, roadVehicles, ships, aircraft)) for (v in list) if (v != null) { v.leftFrom = r.int(); v.leftAt = r.long() }
+            }
+            // Before 60 no stats were kept: links and stations start with none.
+            if (version >= 60) {
+                // Each link's stats take well over eight bytes.
+                val n = r.uvar()
+                if (n !in 0..minOf(r.left / 8L, stations.size.toLong() * stations.size)) throw BadData("too many link stats")
+                repeat(n.toInt()) {
+                    val l = LinkStats()
+                    linkStats[r.long()] = l
+                    for (m in listOf(l.month, l.last)) {
+                        m.departures = r.int().coerceAtLeast(0)
+                        for (c in 0 until Cargo.COUNT) { m.capacity[c] = r.int().coerceAtLeast(0); m.load[c] = r.int().coerceAtLeast(0) }
+                        m.lost = r.long().coerceAtLeast(0)
+                        m.runs = r.int().coerceAtLeast(0)
+                    }
+                }
+                for (st in stations) if (st != null) for (c in 0 until Cargo.COUNT) {
+                    st.waitedTicks[c] = r.long().coerceAtLeast(0); st.boarded[c] = r.int().coerceAtLeast(0); st.gaveUp[c] = r.int().coerceAtLeast(0)
+                    st.waitedLastMonth[c] = r.long().coerceAtLeast(0); st.boardedLastMonth[c] = r.int().coerceAtLeast(0); st.gaveUpLastMonth[c] = r.int().coerceAtLeast(0)
+                }
+                for (list in listOf<List<Carrier?>>(trains, roadVehicles, ships, aircraft)) for (v in list) if (v != null) v.heldTicks = r.int().coerceAtLeast(0)
             }
         }
         // Vehicles' built day was a calendar day before 36, a work day since.

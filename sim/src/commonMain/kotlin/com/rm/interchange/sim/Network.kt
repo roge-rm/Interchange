@@ -31,6 +31,16 @@ class Station(val id: Int, var owner: Int, var name: String, val signX: Int, val
     var building = -1
     var buildingYear = 0
     var buildingFacing = 0
+    /**
+     * By cargo, this month and last: ticks waited by what boarded, summed over each one, how many boarded, and how
+     * many gave up waiting. For the screen only.
+     */
+    val waitedTicks = LongArray(Cargo.COUNT)
+    val boarded = IntArray(Cargo.COUNT)
+    val gaveUp = IntArray(Cargo.COUNT)
+    val waitedLastMonth = LongArray(Cargo.COUNT)
+    val boardedLastMonth = IntArray(Cargo.COUNT)
+    val gaveUpLastMonth = IntArray(Cargo.COUNT)
 }
 
 /** Every tile the station has, for its catchment. */

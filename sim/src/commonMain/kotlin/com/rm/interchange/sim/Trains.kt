@@ -149,6 +149,7 @@ class Train(
     override var departed = 0L
     override var leftFrom = -1
     override var leftAt = -1L
+    override var heldTicks = 0
 
     /** The stations it calls at in turn, and what to do at each, packed by [Order]. */
     override val orders = ArrayList<Int>()
@@ -731,6 +732,7 @@ private fun World.drive(t: Train) {
         // Broken down: it rolls to a stand and waits for the fitters, still held if it was stood at a signal or train.
         t.brokenFor--
         t.held = wasHeld && t.speed == 0
+        if (t.held && t.leftAt >= 0) t.heldTicks++
         t.speed = (t.speed - BRAKE).coerceAtLeast(0)
         if (t.speed > 0) advance(t, t.speed / 16, freeAhead(t).first)
         else if (atDoor(t)) {
@@ -828,6 +830,7 @@ private fun World.drive(t: Train) {
         // At the stopping point.
         t.speed = 0
         t.held = stop == Stop.TRAIN || stop == Stop.SIGNAL
+        if (t.held && t.leftAt >= 0) t.heldTicks++
         if ((stop == Stop.TRAIN || stop == Stop.SIGNAL) && tick % HEAD_ON_CHECK == 0L && headOnWait(t)) return
         when (stop) {
             Stop.SIGNAL -> if (tick % PATH_RETRY == 0L && t.route != null && t.aside < 0 && !choosesHere(t)) {
