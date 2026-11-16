@@ -142,7 +142,12 @@ private fun PackPage(p: Pack, all: List<Pack>, filter: PackKind, lang: String) {
     val problems by produceState<List<String>>(emptyList(), p, all) {
         value = withContext(Dispatchers.Default) {
             try {
-                Roster.build(listOf(Packs.BASE) + p.needs.mapNotNull { n -> all.firstOrNull { it.id == n } } + p)
+                // All it needs, down the chain, each once and without base, in the order the packs are installed.
+                val wanted = HashSet<String>()
+                fun walk(q: Pack) { for (n in q.needs) if (n != Packs.BASE_ID && wanted.add(n)) all.firstOrNull { it.id == n }?.let { walk(it) } }
+                walk(p)
+                val chain = all.filter { it.id in wanted && it.id != p.id }
+                Roster.build(listOf(Packs.BASE) + chain + p)
                 emptyList()
             } catch (e: BadPack) {
                 e.problems

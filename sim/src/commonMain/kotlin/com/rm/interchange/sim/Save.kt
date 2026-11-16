@@ -414,9 +414,9 @@ object Save {
                     if (s.building !in 0 until width * height) { s.building = -1; s.buildingYear = 0; s.buildingFacing = 0 } else stationBuildings[s.building] = id
                 }
                 when {
-                    version >= 5 -> readCargo(r, s.cargo, version)
+                    version >= 5 -> readCargo(r, s.cargo, version, cargoCount)
                     // Before journeys, what waited could go anywhere.
-                    version == 4 -> r.ints().forEachIndexed { c, n -> if (c < Cargo.MAX && n > 0) s.cargo[c] += Packet(-1, id, n, 0) }
+                    version == 4 -> r.ints().forEachIndexed { c, n -> if (c < cargoCount && n > 0) s.cargo[c] += Packet(-1, id, n, 0) }
                 }
                 if (version >= 6) {
                     r.ints().let { a -> a.copyInto(s.rating, endIndex = minOf(a.size, Cargo.MAX)) }
@@ -457,7 +457,7 @@ object Save {
                 t.route = if (r.bool()) r.ints().map(::stepOf).toIntArray() else null
                 t.routeAt = r.int(); t.turnRound = r.bool(); t.lostUntil = r.long()
                 if (version >= 5) {
-                    readCargo(r, t.cargo, version)
+                    readCargo(r, t.cargo, version, cargoCount)
                     t.profitThisYear = r.long(); t.profitLastYear = r.long()
                     if (version >= 9) t.shared = r.int()
                     if (version >= 11) {
@@ -485,7 +485,7 @@ object Save {
                     val load = r.ints()
                     val at = r.ints()
                     val since = LongArray(load.size) { r.long() }
-                    for (c in load.indices) if (c < Cargo.MAX && load[c] > 0) t.cargo[c] += Packet(-1, at.getOrElse(c) { -1 }, load[c], since[c], 0, at.getOrElse(c) { -1 })
+                    for (c in load.indices) if (c < cargoCount && load[c] > 0) t.cargo[c] += Packet(-1, at.getOrElse(c) { -1 }, load[c], since[c], 0, at.getOrElse(c) { -1 })
                     t.profitThisYear = r.long(); t.profitLastYear = r.long()
                 }
                 trains += t
@@ -569,7 +569,7 @@ object Save {
                     if (version < 52 && roadStepEntry(v.at) == roadStepExit(v.at) && !depotTiles.containsKey(roadStepTile(v.at))) {
                         v.along = (v.along.coerceIn(0, 8 * FIX).toLong() * U_TURN_LENGTH / (8 * FIX)).toInt()
                     }
-                    readCargo(r, v.cargo, version); v.profitThisYear = r.long(); v.profitLastYear = r.long()
+                    readCargo(r, v.cargo, version, cargoCount); v.profitThisYear = r.long(); v.profitLastYear = r.long()
                     v.orders += r.ints().toList(); v.order = r.int(); v.toDepot = r.bool()
                     v.route = if (r.bool()) r.ints() else null
                     v.routeAt = r.int(); v.lostUntil = r.long(); v.built = r.int(); v.serviced = r.int(); v.reliability = r.int(); v.breakdowns = r.int(); v.brokenFor = r.int()
@@ -939,7 +939,7 @@ object Save {
             if (version >= 43) { v.gap = r.int(); v.departed = r.long() }
             if (version >= 45) v.group = r.int()
             v.inDepot = r.bool(); v.running = r.bool(); v.waiting = r.int(); v.x = r.int(); v.y = r.int(); v.heading = r.int(); v.speed = r.int(); v.lockWait = r.int(); v.fogged = r.bool()
-            readCargo(r, v.cargo, version); v.profitThisYear = r.long(); v.profitLastYear = r.long()
+            readCargo(r, v.cargo, version, cargoCount); v.profitThisYear = r.long(); v.profitLastYear = r.long()
             v.orders += r.ints().toList(); v.order = r.int(); v.toDepot = r.bool()
             v.route = if (r.bool()) r.ints() else null
             v.routeAt = r.int(); v.lostUntil = r.long(); v.built = r.int(); v.serviced = r.int(); v.reliability = r.int(); v.breakdowns = r.int(); v.brokenFor = r.int()
@@ -973,7 +973,7 @@ object Save {
                 v.heading = (v.heading and 7) * 32
                 if (v.state == Flight.LANDING && v.altitude > 0) v.state = Flight.CRUISE
             }
-            readCargo(r, v.cargo, version); v.profitThisYear = r.long(); v.profitLastYear = r.long()
+            readCargo(r, v.cargo, version, cargoCount); v.profitThisYear = r.long(); v.profitLastYear = r.long()
             v.orders += r.ints().toList(); v.order = r.int(); v.toDepot = r.bool()
             v.built = r.int(); v.serviced = r.int(); v.reliability = r.int(); v.breakdowns = r.int(); v.brokenFor = r.int()
             v.servicing = r.bool(); v.service = r.bool()
@@ -995,7 +995,7 @@ object Save {
         }
     }
 
-    private fun readCargo(r: ByteReader, into: Array<ArrayList<Packet>>, version: Int) {
+    private fun readCargo(r: ByteReader, into: Array<ArrayList<Packet>>, version: Int, limit: Int) {
         val kinds = r.uvar().toInt()
         if (kinds > 64) throw BadData("too many kinds of cargo")
         for (c in 0 until kinds) {
@@ -1004,7 +1004,7 @@ object Save {
             repeat(n) {
                 val p = Packet(r.int(), r.int(), r.int(), r.long(), r.long(), r.int())
                 if (version >= 7) p.waitingFrom = r.long()
-                if (c < into.size) into[c] += p
+                if (c < limit && c < into.size) into[c] += p
             }
         }
     }
