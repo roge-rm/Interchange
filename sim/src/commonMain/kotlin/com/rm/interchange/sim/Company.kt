@@ -36,8 +36,11 @@ class Company(val id: Int, var name: String, var money: Long) {
     var founded = money
     /** Its insignia, [Insignia.BYTES] bytes; see-through all over until it's given one. */
     var insignia = ByteArray(Insignia.BYTES)
-    /** Autorenew on, how many work months from the end of a vehicle's life it's renewed (before if negative), and the money it keeps in hand. */
-    var autorenew = true
+    /**
+     * Autorenew on, how many work months from the end of a vehicle's life it's renewed (before if negative), and the
+     * money it keeps in hand. Off for a player's new company; rivals turn theirs on.
+     */
+    var autorenew = false
     var renewMonths = Autorenew.MONTHS_DEFAULT
     var renewFloor = 0L
     /** Upgrades on, and its upgrade rules, sorted by kind, group and from model. */

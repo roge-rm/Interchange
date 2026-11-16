@@ -35,10 +35,10 @@ class SeveralAtOnceTest {
         })
 
         fun buy(count: Int = 1, destination: Int = depot) = world.apply(when (kind) {
-            Command.CopyVehicle.TRAIN -> Command.BuyTrain(0, destination, model, wagon, 3, Cargo.PAPER, count)
-            Command.CopyVehicle.ROAD -> Command.BuyRoadVehicle(0, destination, model, Cargo.FOOD, count)
-            Command.CopyVehicle.SHIP -> Command.BuyCraft(0, destination, model, Cargo.COAL, count)
-            else -> Command.BuyCraft(0, destination, model, Cargo.MAIL, count)
+            Command.CopyVehicle.TRAIN -> Command.BuyTrain(0, destination, model, wagon, 3, Cargo.PAPER, count, inherit = true)
+            Command.CopyVehicle.ROAD -> Command.BuyRoadVehicle(0, destination, model, Cargo.FOOD, count, inherit = true)
+            Command.CopyVehicle.SHIP -> Command.BuyCraft(0, destination, model, Cargo.COAL, count, inherit = true)
+            else -> Command.BuyCraft(0, destination, model, Cargo.MAIL, count, inherit = true)
         })
 
         fun copy(count: Int, id: Int = 0) = world.apply(Command.CopyVehicle(0, kind, id, depot, count))

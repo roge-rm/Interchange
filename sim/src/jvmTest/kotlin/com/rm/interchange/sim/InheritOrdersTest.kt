@@ -23,12 +23,12 @@ class InheritOrdersTest {
 
         fun vehicle(id: Int = 0): Carrier = vehicles()[id]!!
 
-        fun buy(company: Int = 0, destination: Int = depot) {
+        fun buy(company: Int = 0, destination: Int = depot, inherit: Boolean = true) {
             val cargo = world.roster[if (wagon >= 0) wagon else model].cargoes.first()
             world.apply(when (kind) {
-                Command.CopyVehicle.TRAIN -> Command.BuyTrain(company, destination, model, wagon, 3, cargo)
-                Command.CopyVehicle.ROAD -> Command.BuyRoadVehicle(company, destination, model, cargo)
-                else -> Command.BuyCraft(company, destination, model, cargo)
+                Command.CopyVehicle.TRAIN -> Command.BuyTrain(company, destination, model, wagon, 3, cargo, inherit = inherit)
+                Command.CopyVehicle.ROAD -> Command.BuyRoadVehicle(company, destination, model, cargo, inherit = inherit)
+                else -> Command.BuyCraft(company, destination, model, cargo, inherit = inherit)
             })
         }
 
@@ -439,7 +439,7 @@ class InheritOrdersTest {
 
     @Test
     fun saleAndPurchaseCanBeSeparatedBySaving() {
-        assertEquals(64, Save.VERSION)
+        assertEquals(65, Save.VERSION)
         for (kind in kinds) for (shared in listOf(false, true)) {
             val f = fleet(kind)
             if (shared) f.copy()

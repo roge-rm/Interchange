@@ -931,7 +931,7 @@ private fun World.buildRail(
  */
 private fun World.buyTrain(c: Company, route: RivalRoute, train: RailTrain) {
     val before = trains.size
-    apply(Command.BuyTrain(c.id, route.depot, train.engine.id, train.wagon.id, train.wagons, route.cargo))
+    apply(Command.BuyTrain(c.id, route.depot, train.engine.id, train.wagon.id, train.wagons, route.cargo, inherit = true))
     if (trains.size == before) return
     val id = trains.size - 1
     train.plow?.let { p -> trains[id]?.let { apply(Command.EditTrain(c.id, id, listOf(TrainCar(p.id)) + it.formation)) } }

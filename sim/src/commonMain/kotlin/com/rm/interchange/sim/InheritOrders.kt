@@ -45,3 +45,24 @@ internal fun World.inheritOrders(company: Company, kind: Int, made: Carrier?) {
     company.orderBackups[kind] = null
     linksDirty = true
 }
+
+/**
+ * Orders kept from the last vehicle of [kind] (a [Command.CopyVehicle] kind) sold, which a buy with inherit gives the
+ * next one: the orders as a vehicle has them, how many stop at a station, and those stations' names in order.
+ */
+class KeptOrdersView(val kind: Int, val orders: IntArray, val stops: Int, val stations: List<String>)
+
+/** Company [company]'s kept orders, by kind. */
+internal fun World.keptOrderViews(company: Int): List<KeptOrdersView> {
+    val c = companies.getOrNull(company) ?: return emptyList()
+    val out = ArrayList<KeptOrdersView>()
+    for (kind in c.orderBackups.indices) {
+        val b = c.orderBackups[kind] ?: continue
+        // A survivor sharing the sold one's orders is what a buy would take them from.
+        val orders = sharedSurvivor(kind, company, b.shared, -1)?.orders ?: b.orders
+        // Stops only: depot, conditional and pass-through orders left out.
+        val names = orders.filter { Order.station(it) >= 0 && it and Order.VIA == 0 }.mapNotNull { stations.getOrNull(Order.station(it))?.name }
+        out += KeptOrdersView(kind, orders.toIntArray(), names.size, names)
+    }
+    return out
+}

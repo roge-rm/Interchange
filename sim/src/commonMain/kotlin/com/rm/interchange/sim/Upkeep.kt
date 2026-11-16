@@ -52,7 +52,7 @@ internal fun World.trainsDay() {
                 val y = stepTile(t.steps.last()) / width
                 if (skyAt(x, y).temperature < DEEP_COLD) odds *= 2
             }
-            if (rng.below(BREAKDOWN_ODDS) < odds) {
+            if (breaksDown(odds)) {
                 t.brokenFor = Calendar.TICKS_PER_DAY * (1 + rng.below(2))
                 t.breakdowns++
             }
@@ -135,3 +135,13 @@ const val NO_DEPOT_RETRY = Calendar.TICKS_PER_DAY * 30L
 const val DEEP_COLD = -250
 /** A day's chance of a breakdown is (100% less reliability) in this. */
 const val BREAKDOWN_ODDS = 150_000
+
+/**
+ * Whether a vehicle with [odds] in [BREAKDOWN_ODDS] breaks down today, by the game's [Breakdowns] setting. Normal and
+ * reduced take one draw each, reduced out of twice the odds so half as many; none takes no draw.
+ */
+internal fun World.breaksDown(odds: Int): Boolean = when (settings.breakdowns) {
+    Breakdowns.NONE -> false
+    Breakdowns.REDUCED -> rng.below(BREAKDOWN_ODDS * 2) < odds
+    else -> rng.below(BREAKDOWN_ODDS) < odds
+}

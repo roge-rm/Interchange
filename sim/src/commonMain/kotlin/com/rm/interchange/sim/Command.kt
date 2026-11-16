@@ -91,8 +91,8 @@ sealed interface Command {
     /** A garage for road vehicles, its door at [edge] onto a road. */
     data class Garage(override val company: Int, val x: Int, val y: Int, val edge: Int) : Command
 
-    /** Buys road vehicle [model] in a garage, set to carry [cargo] if it can. */
-    data class BuyRoadVehicle(override val company: Int, val depot: Int, val model: Int, val cargo: Int = -1, val count: Int = 1) : Command
+    /** Buys road vehicle [model] in a garage, set to carry [cargo] if it can; with [inherit], given the orders kept from the last one sold. */
+    data class BuyRoadVehicle(override val company: Int, val depot: Int, val model: Int, val cargo: Int = -1, val count: Int = 1, val inherit: Boolean = false) : Command
 
     /** Tells a road vehicle what to do, as [TrainOrder] does a train, or turns its seasonal tires on or off. */
     class RoadOrder(override val company: Int, val vehicle: Int, val what: Int, val stations: IntArray = IntArray(0)) : Command {
@@ -125,8 +125,8 @@ sealed interface Command {
     /** Adds landing aids ([what] 0) or de-icing (1) to an airport. */
     data class AirportUpgrade(override val company: Int, val airport: Int, val what: Int) : Command
 
-    /** Buys a ship at a shipyard, or an aircraft in a hangar, set to carry [cargo] if it can. */
-    data class BuyCraft(override val company: Int, val depot: Int, val model: Int, val cargo: Int = -1, val count: Int = 1) : Command
+    /** Buys a ship at a shipyard, or an aircraft in a hangar, set to carry [cargo] if it can; [inherit] as for [BuyRoadVehicle]. */
+    data class BuyCraft(override val company: Int, val depot: Int, val model: Int, val cargo: Int = -1, val count: Int = 1, val inherit: Boolean = false) : Command
 
     /** Tells a ship ([aircraft] false) or an aircraft what to do, as [TrainOrder] does a train, or turns a bush plane's seasonal gear on or off. */
     class CraftOrder(override val company: Int, val aircraft: Boolean, val vehicle: Int, val what: Int, val stations: IntArray = IntArray(0)) : Command {
@@ -168,8 +168,8 @@ sealed interface Command {
     /** Sells the company's own property on every tile from ([x0], [y0]) to ([x1], [y1]) as [Remove] does one. */
     data class RemoveArea(override val company: Int, val x0: Int, val y0: Int, val x1: Int, val y1: Int) : Command
 
-    /** Buys a train in a depot, its wagons set to carry [cargo] if they can, or their first. */
-    data class BuyTrain(override val company: Int, val depot: Int, val engine: Int, val wagon: Int, val wagons: Int, val cargo: Int = -1, val count: Int = 1) : Command
+    /** Buys a train in a depot, its wagons set to carry [cargo] if they can, or their first; [inherit] as for [BuyRoadVehicle]. */
+    data class BuyTrain(override val company: Int, val depot: Int, val engine: Int, val wagon: Int, val wagons: Int, val cargo: Int = -1, val count: Int = 1, val inherit: Boolean = false) : Command
 
     /** Changes a train's ordered cars together, while it is in its depot. */
     data class EditTrain(override val company: Int, val train: Int, val cars: List<TrainCar>) : Command

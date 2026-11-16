@@ -760,7 +760,7 @@ internal fun World.roadVehiclesDay() {
     for (v in roadVehicles) {
         if (v == null || v.inDepot || v.wreckedFor > 0) continue
         v.reliability = (v.reliability - WEAR_A_DAY).coerceAtLeast(LEAST_RELIABLE / 2)
-        if (v.running && v.brokenFor == 0 && v.waiting == 0 && rng.below(BREAKDOWN_ODDS) < 10_000 - v.reliability) {
+        if (v.running && v.brokenFor == 0 && v.waiting == 0 && breaksDown(10_000 - v.reliability)) {
             v.brokenFor = Calendar.TICKS_PER_DAY / 2
             v.breakdowns++
         }

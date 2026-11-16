@@ -15,6 +15,7 @@ class AutorenewTest {
     /** A line with two stations and a depot, and a train of [wagons] wagons set to carry what [wagon] carries second, if anything. */
     private fun railLine(wagons: Int = 3): World {
         val w = World(64, 64, 1, startYear = 1900)
+        w.companies[0].autorenew = true
         for (i in w.corners.indices) w.corners[i] = 3
         w.companies[0].money = 10_000_000
         w.apply(Command.Depot(0, 2, 10, Track.XP))
@@ -32,6 +33,7 @@ class AutorenewTest {
 
     private fun bus(): World {
         val w = World(64, 64, 1, startYear = 1965)
+        w.companies[0].autorenew = true
         for (i in w.corners.indices) w.corners[i] = 3
         w.companies[0].money = 10_000_000
         w.apply(Command.Road(0, 5, 20, 40, 20, Surface.PAVED, remove = false))
@@ -48,6 +50,7 @@ class AutorenewTest {
 
     private fun ship(): World {
         val w = World(64, 64, 1, startYear = 1965)
+        w.companies[0].autorenew = true
         for (y in 0..64) for (x in 0..64) w.corners[w.corner(x, y)] = if (x in 10..50 && y in 10..30) 0 else 1
         w.shoreChanged()
         w.companies[0].money = 100_000_000
@@ -62,6 +65,7 @@ class AutorenewTest {
 
     private fun plane(): World {
         val w = World(64, 64, 1, startYear = 1965)
+        w.companies[0].autorenew = true
         for (i in w.corners.indices) w.corners[i] = 1
         w.companies[0].money = 100_000_000
         w.apply(Command.Airport(0, 5, 5, Airports.REGIONAL, Track.X))
@@ -250,7 +254,7 @@ class AutorenewTest {
         assertTrue(back.trains[0]!!.renewFailed)
         assertEquals(7, back.trains[0]!!.renewAsked)
         assertEquals(w.checksum(), back.checksum())
-        // An older save has it on, as a new game does.
+        // A save from before autorenew has it on.
         val older = Save.read(Save.write(w, version = 39))
         assertTrue(older.companies[0].autorenew)
         assertEquals(Autorenew.MONTHS_DEFAULT, older.companies[0].renewMonths)

@@ -16,7 +16,7 @@ package com.rm.interchange.sim
  */
 object Save {
     private val MAGIC = "ICHG".encodeToByteArray()
-    const val VERSION = 64
+    const val VERSION = 65
 
     /** A vehicle's [built] day as saved by [version]: work days from 36, calendar days before. */
     private fun World.builtOut(built: Int, version: Int) = if (version >= 36) built else built / settings.dayLength
@@ -33,6 +33,7 @@ object Save {
             w.int(g.sea); w.int(g.hills); w.int(g.trees); w.int(g.towns); w.int(g.industries); w.bool(g.inflation); w.bool(g.weather); w.int(g.dayLength); w.int(g.rivals); w.bool(g.sharing); w.int(g.rivalLevel)
             if (version >= 29) { w.int(g.townGrowth.ordinal); w.int(g.goals.ordinal) }
             if (version >= 38) w.bool(g.collisions)
+            if (version >= 65) w.int(g.breakdowns)
             w.uvar(roster.packs.size.toLong())
             for (p in roster.packs) { w.string(p.id); w.int(p.version); w.long(p.hash) }
             w.uvar(roster.engines.size.toLong())
@@ -662,7 +663,8 @@ object Save {
                 }
                 crashes = CrashLog(first, list)
             }
-            // Before 40 there was no autorenew: every company has it on, as new ones do.
+            // Before 40 there was no autorenew: every company has it on.
+            if (version < 40) for (c in companies) c.autorenew = true
             if (version >= 40) {
                 for (c in companies) { c.autorenew = r.bool(); c.renewMonths = r.int().coerceIn(-12, 12); c.renewFloor = r.long().coerceAtLeast(0) }
                 for (list in listOf<List<Carrier?>>(trains, roadVehicles, ships, aircraft)) for (v in list) if (v != null) { v.renewAsked = r.int(); v.renewFailed = r.bool() }
@@ -855,6 +857,8 @@ object Save {
             goals = if (version >= 29) GoalSet.entries.getOrElse(r.int()) { GoalSet.NONE } else GoalSet.NONE,
             // Games from before collisions keep trains waiting for each other.
             collisions = version >= 38 && r.bool(),
+            // Games from before the setting break down as they always did.
+            breakdowns = if (version >= 65) r.int().coerceIn(Breakdowns.NONE, Breakdowns.NORMAL) else Breakdowns.NORMAL,
         )
         if (settings.width !in 16..4096 || settings.height !in 16..4096) throw BadData("map size out of range")
         return settings

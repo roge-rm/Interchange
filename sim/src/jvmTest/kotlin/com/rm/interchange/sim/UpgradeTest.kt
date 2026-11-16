@@ -18,6 +18,7 @@ class UpgradeTest {
     /** A bus line, the bus set going if [start], else left in its garage. */
     private fun bus(start: Boolean = true): World {
         val w = World(64, 64, 1, startYear = 1965)
+        w.companies[0].autorenew = true
         for (i in w.corners.indices) w.corners[i] = 3
         w.companies[0].money = 10_000_000
         w.apply(Command.Road(0, 5, 20, 40, 20, Surface.PAVED, remove = false))
@@ -40,6 +41,7 @@ class UpgradeTest {
     /** A line with a depot, two stations of [platform] tiles, and a train of [engine] and [wagons] of [wagon]. */
     private fun railLine(year: Int, engine: (World) -> Engine, wagon: (World) -> Engine, wagons: Int = 3, platform: Int = 4): World {
         val w = World(64, 64, 1, startYear = year)
+        w.companies[0].autorenew = true
         for (i in w.corners.indices) w.corners[i] = 3
         w.companies[0].money = 100_000_000
         w.apply(Command.Depot(0, 2, 10, Track.XP))
@@ -250,6 +252,7 @@ class UpgradeTest {
     @Test
     fun anAircraftRuleToAModelASmallAirportCantTakeIsRefused() {
         val w = World(64, 64, 1, startYear = 1965)
+        w.companies[0].autorenew = true
         for (i in w.corners.indices) w.corners[i] = 1
         w.companies[0].money = 100_000_000
         w.apply(Command.Airport(0, 5, 5, Airports.REGIONAL, Track.X))
@@ -364,7 +367,7 @@ class UpgradeTest {
 
     @Test
     fun saveKeepsRulesAndStaysInStep() {
-        assertEquals(64, Save.VERSION)
+        assertEquals(65, Save.VERSION)
         val w = bus(start = false)
         val to = otherBuses(w).first()
         w.apply(Command.SetAutorenew(0, true, -6, w.companies[0].money + 1_000_000))

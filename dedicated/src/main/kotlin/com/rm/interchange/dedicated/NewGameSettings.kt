@@ -1,5 +1,6 @@
 package com.rm.interchange.dedicated
 
+import com.rm.interchange.sim.Breakdowns
 import com.rm.interchange.sim.GoalSet
 import com.rm.interchange.sim.NewGame
 import com.rm.interchange.sim.Region
@@ -9,8 +10,9 @@ import com.rm.interchange.sim.TownGrowth
  * A new game's settings: from the INTERCHANGE_ env vars, where a value out of
  * range is left at its default, then from [chosen] (size, seed, year, region,
  * rivals, dayLength), where one is refused with [IllegalArgumentException].
- * INTERCHANGE_TOWN_GROWTH (NORMAL or SUPPLIED) and INTERCHANGE_GOALS (NONE,
- * TOWNS, DELIVERIES, CONNECTIONS or MIXED) come from the env vars only.
+ * INTERCHANGE_TOWN_GROWTH (NORMAL or SUPPLIED), INTERCHANGE_GOALS (NONE,
+ * TOWNS, DELIVERIES, CONNECTIONS or MIXED) and INTERCHANGE_BREAKDOWNS (NONE,
+ * REDUCED or NORMAL, REDUCED if not set) come from the env vars only.
  */
 fun newGameSettings(env: Map<String, String>, chosen: Map<String, String> = emptyMap()): NewGame {
     for (key in chosen.keys) require(key in KEYS) { "no setting called \"$key\"" }
@@ -35,6 +37,11 @@ fun newGameSettings(env: Map<String, String>, chosen: Map<String, String> = empt
         townGrowth = env["INTERCHANGE_TOWN_GROWTH"]?.let { v -> TownGrowth.entries.firstOrNull { it.name.equals(v, ignoreCase = true) } } ?: TownGrowth.NORMAL,
         goals = env["INTERCHANGE_GOALS"]?.let { v -> GoalSet.entries.firstOrNull { it.name.equals(v, ignoreCase = true) } } ?: GoalSet.NONE,
         collisions = env["INTERCHANGE_COLLISIONS"]?.let { v -> v.lowercase() !in setOf("0", "false", "off", "no") } ?: true,
+        breakdowns = when (env["INTERCHANGE_BREAKDOWNS"]?.uppercase()) {
+            "NONE" -> Breakdowns.NONE
+            "NORMAL" -> Breakdowns.NORMAL
+            else -> Breakdowns.NEW_GAME
+        },
     )
 }
 

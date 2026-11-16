@@ -332,7 +332,7 @@ class World(settings: NewGame, val roster: Roster = Roster.BASE, generate: Boole
                     val sizeBefore = roadVehicles.size
                     buyRoadVehicle(company, command)
                     if (roadVehicles.size == sizeBefore) break
-                    inheritOrders(company, Command.CopyVehicle.ROAD, roadVehicles.getOrNull(sizeBefore))
+                    if (command.inherit) inheritOrders(company, Command.CopyVehicle.ROAD, roadVehicles.getOrNull(sizeBefore))
                     roadVehicles.getOrNull(sizeBefore)?.let { refreshUpgrade(it) }
                 }
             }
@@ -351,8 +351,8 @@ class World(settings: NewGame, val roster: Roster = Roster.BASE, generate: Boole
                     val aircraftBefore = aircraft.size
                     buyCraft(company, command)
                     if (ships.size == shipsBefore && aircraft.size == aircraftBefore) break
-                    if (ships.size > shipsBefore) inheritOrders(company, Command.CopyVehicle.SHIP, ships.getOrNull(shipsBefore))
-                    if (aircraft.size > aircraftBefore) inheritOrders(company, Command.CopyVehicle.AIRCRAFT, aircraft.getOrNull(aircraftBefore))
+                    if (command.inherit && ships.size > shipsBefore) inheritOrders(company, Command.CopyVehicle.SHIP, ships.getOrNull(shipsBefore))
+                    if (command.inherit && aircraft.size > aircraftBefore) inheritOrders(company, Command.CopyVehicle.AIRCRAFT, aircraft.getOrNull(aircraftBefore))
                     ships.getOrNull(shipsBefore)?.let { refreshUpgrade(it) }
                     aircraft.getOrNull(aircraftBefore)?.let { refreshUpgrade(it) }
                 }
@@ -376,7 +376,7 @@ class World(settings: NewGame, val roster: Roster = Roster.BASE, generate: Boole
                     val sizeBefore = trains.size
                     buyTrain(company, command)
                     if (trains.size == sizeBefore) break
-                    inheritOrders(company, Command.CopyVehicle.TRAIN, trains.getOrNull(sizeBefore))
+                    if (command.inherit) inheritOrders(company, Command.CopyVehicle.TRAIN, trains.getOrNull(sizeBefore))
                     trains.getOrNull(sizeBefore)?.let { refreshUpgrade(it) }
                 }
             }
@@ -513,7 +513,7 @@ class World(settings: NewGame, val roster: Roster = Roster.BASE, generate: Boole
             for (x in c.values) mix(x.toLong()); for (n in c.valueNames) { mix(n.length.toLong()); for (ch in n) mix(ch.code.toLong()) } }
         for (list in listOf<List<Carrier?>>(trains, roadVehicles, ships, aircraft)) for (v in list) if (v != null) { mix(v.renewAsked.toLong()); mix(if (v.renewFailed) 1L else 0L); mix(if (v.renewOff) 1L else 0L); mix(v.upgradeWhy.toLong()); mix(if (v.upgradeTold) 1L else 0L) }
         mix(if (upkeepCounted) 1L else 0L)
-        mix(if (settings.collisions) 1L else 0L); mix(crashes.first.toLong() + crashes.list.size)
+        mix(if (settings.collisions) 1L else 0L); if (settings.breakdowns != Breakdowns.NORMAL) mix(100L + settings.breakdowns); mix(crashes.first.toLong() + crashes.list.size)
         for (s in subsidies) { mix(s.cargo.toLong()); mix(s.from.toLong()); mix(s.to.toLong()); mix(s.company.toLong()); mix(s.months.toLong()) }
         mix(costScale); mix(payScale)
         mix(weather.anomaly.toLong()); mix(weather.recent.toLong())

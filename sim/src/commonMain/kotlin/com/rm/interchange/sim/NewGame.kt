@@ -53,6 +53,8 @@ data class NewGame(
     val goals: GoalSet = GoalSet.NONE,
     /** Trains that run into each other with no signal or reserved path keeping them apart are wrecked; without it they wait. */
     val collisions: Boolean = true,
+    /** How often vehicles break down, a [Breakdowns] level. The app and the dedicated server start new games at [Breakdowns.NEW_GAME]. */
+    val breakdowns: Int = Breakdowns.NORMAL,
 ) {
     companion object {
         val DAY_LENGTHS = intArrayOf(1, 2, 4, 6, 10, 16)
@@ -74,4 +76,13 @@ object RivalLevel {
     const val EASY = 0
     const val NORMAL = 1
     const val HARD = 2
+}
+
+/** How often vehicles break down: never, at half the daily odds, or at the full odds. */
+object Breakdowns {
+    const val NONE = 0
+    const val REDUCED = 1
+    const val NORMAL = 2
+    /** What a new game picks unless told otherwise. */
+    const val NEW_GAME = REDUCED
 }

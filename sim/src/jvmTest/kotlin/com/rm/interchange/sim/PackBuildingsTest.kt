@@ -148,6 +148,7 @@ class PackBuildingsTest {
     @Test
     fun theBasePackRunsAsBefore() {
         val w = World(NewGame(width = 128, height = 128, seed = 11, startYear = 1900))
+        w.companies[0].autorenew = true
         repeat(Calendar.TICKS_PER_DAY * 730) { w.step() }
         assertEquals(6798382713203588718L, w.checksum())
         assertEquals(434, w.industries.sumOf { it.madeLastMonth.sum() })

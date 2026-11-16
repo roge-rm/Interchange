@@ -33,10 +33,10 @@ class VehicleGroupTest {
         fun buy() {
             val v = world.groupVehicles(kind).filterNotNull().first()
             world.apply(when (v) {
-                is Train -> Command.BuyTrain(0, depot, v.engine, v.wagon, v.wagons, v.wagonCargo)
-                is RoadVehicle -> Command.BuyRoadVehicle(0, depot, v.model, v.cargoChoice)
-                is Ship -> Command.BuyCraft(0, depot, v.model, v.cargoChoice)
-                is Aircraft -> Command.BuyCraft(0, depot, v.model, v.cargoChoice)
+                is Train -> Command.BuyTrain(0, depot, v.engine, v.wagon, v.wagons, v.wagonCargo, inherit = true)
+                is RoadVehicle -> Command.BuyRoadVehicle(0, depot, v.model, v.cargoChoice, inherit = true)
+                is Ship -> Command.BuyCraft(0, depot, v.model, v.cargoChoice, inherit = true)
+                is Aircraft -> Command.BuyCraft(0, depot, v.model, v.cargoChoice, inherit = true)
                 else -> error("unknown vehicle")
             })
         }
@@ -125,7 +125,7 @@ class VehicleGroupTest {
 
     @Test
     fun olderSavesLeaveGroupsEmpty() {
-        assertEquals(64, Save.VERSION)
+        assertEquals(65, Save.VERSION)
         for (kind in kinds) {
             val f = fleet(kind)
             f.create()

@@ -78,6 +78,10 @@ object Codec {
     private const val COMPANY_VALUE = 66
     private const val UPGRADE = 67
     private const val SET_UPGRADE = 68
+    /** Buys given the orders kept from the last one sold. */
+    private const val BUY_TRAINS_INHERIT = 69
+    private const val BUY_ROAD_VEHICLES_INHERIT = 70
+    private const val BUY_CRAFTS_INHERIT = 71
 
     /** The most goals a [Command.SetGoals] may carry. */
     const val MOST_GOALS = 100
@@ -105,7 +109,7 @@ object Codec {
             is Command.RoadOneWay -> { w.byte(ROAD_ONE_WAY); w.int(c.company); w.int(c.x); w.int(c.y) }
             is Command.RoadStop -> { w.byte(ROAD_STOP); w.int(c.company); w.int(c.x); w.int(c.y) }
             is Command.Garage -> { w.byte(GARAGE); w.int(c.company); w.int(c.x); w.int(c.y); w.int(c.edge) }
-            is Command.BuyRoadVehicle -> { w.byte(if (c.count == 1) BUY_ROAD_VEHICLE else BUY_ROAD_VEHICLES); w.int(c.company); w.int(c.depot); w.int(c.model); w.int(c.cargo); if (c.count != 1) w.int(c.count) }
+            is Command.BuyRoadVehicle -> { w.byte(if (c.inherit) BUY_ROAD_VEHICLES_INHERIT else if (c.count == 1) BUY_ROAD_VEHICLE else BUY_ROAD_VEHICLES); w.int(c.company); w.int(c.depot); w.int(c.model); w.int(c.cargo); if (c.count != 1 || c.inherit) w.int(c.count) }
             is Command.RoadOrder -> { w.byte(ROAD_ORDER); w.int(c.company); w.int(c.vehicle); w.int(c.what); w.ints(c.stations) }
             is Command.SaltDepot -> { w.byte(SALT_DEPOT); w.int(c.company); w.int(c.x); w.int(c.y) }
             is Command.Canal -> { w.byte(CANAL); w.int(c.company); w.int(c.sx); w.int(c.sy); w.int(c.ex); w.int(c.ey); w.bool(c.remove) }
@@ -115,7 +119,7 @@ object Codec {
             is Command.Buoy -> { w.byte(BUOY); w.int(c.company); w.int(c.x); w.int(c.y) }
             is Command.Airport -> { w.byte(AIRPORT); w.int(c.company); w.int(c.x); w.int(c.y); w.int(c.kind); w.int(c.axis) }
             is Command.AirportUpgrade -> { w.byte(AIRPORT_UPGRADE); w.int(c.company); w.int(c.airport); w.int(c.what) }
-            is Command.BuyCraft -> { w.byte(if (c.count == 1) BUY_CRAFT else BUY_CRAFTS); w.int(c.company); w.int(c.depot); w.int(c.model); w.int(c.cargo); if (c.count != 1) w.int(c.count) }
+            is Command.BuyCraft -> { w.byte(if (c.inherit) BUY_CRAFTS_INHERIT else if (c.count == 1) BUY_CRAFT else BUY_CRAFTS); w.int(c.company); w.int(c.depot); w.int(c.model); w.int(c.cargo); if (c.count != 1 || c.inherit) w.int(c.count) }
             is Command.CraftOrder -> { w.byte(CRAFT_ORDER); w.int(c.company); w.bool(c.aircraft); w.int(c.vehicle); w.int(c.what); w.ints(c.stations) }
             is Command.SnowWorks -> { w.byte(SNOW_WORKS); w.int(c.company); w.int(c.x); w.int(c.y); w.bool(c.shed) }
             is Command.SetUpkeep -> { w.byte(UPKEEP); w.int(c.company); w.int(c.level) }
@@ -134,7 +138,7 @@ object Codec {
             is Command.CompanyValue -> { w.byte(COMPANY_VALUE); w.int(c.company); w.int(c.index); w.int(c.value); w.bool(c.name != null); w.string(c.name ?: "") }
             is Command.CopyVehicle -> { w.byte(if (c.count == 1) COPY_VEHICLE else COPY_VEHICLES); w.int(c.company); w.int(c.kind); w.int(c.vehicle); w.int(c.depot); if (c.count != 1) w.int(c.count) }
             is Command.EditTrain -> { w.byte(EDIT_TRAIN); w.int(c.company); w.int(c.train); writeFormation(w, c.cars) }
-            is Command.BuyTrain -> { w.byte(if (c.count == 1) BUY_TRAIN_CARGO else BUY_TRAINS); w.int(c.company); w.int(c.depot); w.int(c.engine); w.int(c.wagon); w.int(c.wagons); w.int(c.cargo); if (c.count != 1) w.int(c.count) }
+            is Command.BuyTrain -> { w.byte(if (c.inherit) BUY_TRAINS_INHERIT else if (c.count == 1) BUY_TRAIN_CARGO else BUY_TRAINS); w.int(c.company); w.int(c.depot); w.int(c.engine); w.int(c.wagon); w.int(c.wagons); w.int(c.cargo); if (c.count != 1 || c.inherit) w.int(c.count) }
             is Command.Loan -> { w.byte(LOAN); w.int(c.company); w.bool(c.borrow) }
             is Command.FundIndustry -> { w.byte(FUND_INDUSTRY); w.int(c.company); w.int(c.kind) }
             is Command.TownAction -> { w.byte(TOWN_ACTION); w.int(c.company); w.int(c.town); w.int(c.action) }
@@ -185,6 +189,7 @@ object Codec {
         TRAIN_ORDER -> Command.TrainOrder(r.int(), r.int(), r.int(), r.ints())
         BUY_TRAIN_CARGO -> Command.BuyTrain(r.int(), r.int(), r.int(), r.int(), r.int(), r.int())
         BUY_TRAINS -> Command.BuyTrain(r.int(), r.int(), r.int(), r.int(), r.int(), r.int(), r.int())
+        BUY_TRAINS_INHERIT -> Command.BuyTrain(r.int(), r.int(), r.int(), r.int(), r.int(), r.int(), r.int(), inherit = true)
         LOAN -> Command.Loan(r.int(), r.bool())
         FUND_INDUSTRY -> Command.FundIndustry(r.int(), r.int())
         TOWN_ACTION -> Command.TownAction(r.int(), r.int(), r.int())
@@ -208,6 +213,7 @@ object Codec {
         GARAGE -> Command.Garage(r.int(), r.int(), r.int(), r.int())
         BUY_ROAD_VEHICLE -> Command.BuyRoadVehicle(r.int(), r.int(), r.int(), r.int())
         BUY_ROAD_VEHICLES -> Command.BuyRoadVehicle(r.int(), r.int(), r.int(), r.int(), r.int())
+        BUY_ROAD_VEHICLES_INHERIT -> Command.BuyRoadVehicle(r.int(), r.int(), r.int(), r.int(), r.int(), inherit = true)
         ROAD_ORDER -> Command.RoadOrder(r.int(), r.int(), r.int(), r.ints())
         CANAL -> Command.Canal(r.int(), r.int(), r.int(), r.int(), r.int(), r.bool())
         LOCK -> Command.Lock(r.int(), r.int(), r.int())
@@ -218,6 +224,7 @@ object Codec {
         AIRPORT_UPGRADE -> Command.AirportUpgrade(r.int(), r.int(), r.int())
         BUY_CRAFT -> Command.BuyCraft(r.int(), r.int(), r.int(), r.int())
         BUY_CRAFTS -> Command.BuyCraft(r.int(), r.int(), r.int(), r.int(), r.int())
+        BUY_CRAFTS_INHERIT -> Command.BuyCraft(r.int(), r.int(), r.int(), r.int(), r.int(), inherit = true)
         CRAFT_ORDER -> Command.CraftOrder(r.int(), r.bool(), r.int(), r.int(), r.ints())
         WIRE -> Command.Wire(r.int(), r.int(), r.int(), r.int(), r.int(), r.int(), r.bool())
         EDIT_TERRAIN -> Command.EditTerrain(r.int(), r.int(), r.int(), r.int(), r.int(), r.int(), r.int())

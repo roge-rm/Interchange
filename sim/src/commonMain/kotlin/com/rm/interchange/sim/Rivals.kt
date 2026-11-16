@@ -86,7 +86,7 @@ internal fun World.startRivals(n: Int) {
     while (homes.size < n) homes += towns[k++ % towns.size]
     for ((i, home) in homes.withIndex()) {
         val id = companies.size
-        companies += Company(id, rivalName(home, id), Prices.startMoney(startYear)).also { giveInsignia(it) }
+        companies += Company(id, rivalName(home, id), Prices.startMoney(startYear)).also { it.autorenew = true; giveInsignia(it) }
         rivals += Rival(id, home.id).also { it.thinkOn = workDay + 3 + i * 9 }
     }
 }
@@ -576,7 +576,7 @@ internal fun World.bestModel(cargo: Int): Engine? {
 
 internal fun World.buyAndStart(c: Company, route: RivalRoute, model: Engine) {
     val before = roadVehicles.size
-    apply(Command.BuyRoadVehicle(c.id, route.depot, model.id, route.cargo))
+    apply(Command.BuyRoadVehicle(c.id, route.depot, model.id, route.cargo, inherit = true))
     if (roadVehicles.size == before) return
     val id = roadVehicles.size - 1
     // Freight waits for a full load at the first stop and comes back empty.

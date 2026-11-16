@@ -419,6 +419,10 @@ class WorldView(
     val valueNames: List<String> = emptyList(),
     /** The player's upgrade rules. */
     val upgrades: List<UpgradeView> = emptyList(),
+    /** Orders the player's company kept from the last vehicle of each kind it sold, one per kind that has some. */
+    val keptOrders: List<KeptOrdersView> = emptyList(),
+    /** How often vehicles break down in this game, a [Breakdowns] level. */
+    val breakdowns: Int = Breakdowns.NORMAL,
 )
 
 /**
@@ -642,6 +646,8 @@ fun World.view(company: Int = 0, withReserved: Boolean = false, withNetwork: Boo
         companies.getOrNull(company)?.values?.copyOf() ?: IntArray(0),
         companies.getOrNull(company)?.valueNames?.toList().orEmpty(),
         upgradeViews(company),
+        keptOrderViews(company),
+        settings.breakdowns,
     )
 }
 
