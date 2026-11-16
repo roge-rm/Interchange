@@ -942,4 +942,22 @@
     <string name="why_servicing_off">Servicing is off</string>
     <string name="news_upgrade_failed">Can\'t upgrade %1$s: %2$s</string>
     <string name="news_upgrade_failed_was">Couldn\'t upgrade %1$s</string>
+    <string name="breakdowns_setting">Breakdowns</string>
+    <string-array name="breakdown_levels"><item>None</item><item>Reduced</item><item>Normal</item></string-array>
+    <plurals name="use_kept_orders">
+        <item quantity="one">Use orders of the last one sold (%1$d stop)</item>
+        <item quantity="other">Use orders of the last one sold (%1$d stops)</item>
+    </plurals>
+    <string name="automation">Automation</string>
+    <string name="first_route">First route</string>
+    <string name="first_route_progress">First route %1$d/%2$d</string>
+    <string name="first_route_stations">Build two stations</string>
+    <string name="first_route_join">Join them with track or road</string>
+    <string name="first_route_vehicle">Buy a vehicle</string>
+    <string name="first_route_orders">Give it orders to both</string>
+    <string name="first_route_delivery">First delivery</string>
+    <string name="first_route_fold">Fold the checklist</string>
+    <string name="first_route_unfold">Open the checklist</string>
+    <string name="first_route_hide">Hide the checklist</string>
+    <string name="first_route_setting">First-route checklist</string>
 </resources>

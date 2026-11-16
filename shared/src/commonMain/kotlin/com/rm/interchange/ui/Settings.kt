@@ -30,6 +30,8 @@ class Settings {
     var lastAddress by mutableStateOf("")
     /** Made once, so a server knows this phone again and gives back its company. */
     var client = ""
+    /** The first-route checklist in new games. Turned off when it's dismissed or done. */
+    var checklist by mutableStateOf(true)
     /** The campaign chapters won, by id. */
     var chaptersWon by mutableStateOf(emptySet<String>())
 
@@ -39,6 +41,7 @@ class Settings {
         files.write(FILE, ("language=$language\nautosave=$autosave\ngrid=$grid\nheights=$heights\nsnow=$snow\ncondition=$condition\nreserved=$reserved\n" +
             "sound=$sound\nworld=$world\ntools=$tools\n" +
             "player=${playerName.replace('\n', ' ')}\naddress=${lastAddress.replace('\n', ' ')}\nclient=$client\n" +
+            "checklist=$checklist\n" +
             "chapters=${chaptersWon.sorted().joinToString(",")}\n").encodeToByteArray())
     }
 
@@ -67,6 +70,7 @@ class Settings {
                     "player" -> s.playerName = v
                     "address" -> s.lastAddress = v
                     "client" -> s.client = v
+                    "checklist" -> s.checklist = v != "false"
                     "chapters" -> s.chaptersWon = v.split(",").filter { it.isNotBlank() }.toSet()
                 }
             }

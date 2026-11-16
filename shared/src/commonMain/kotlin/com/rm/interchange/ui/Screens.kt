@@ -184,10 +184,11 @@ fun NewGameScreen(packs: List<Pack>, onStart: (NewGame, List<Pack>) -> Unit, onB
     var rivals by remember { mutableIntStateOf(2) }
     var townGrowth by remember { mutableStateOf(com.rm.interchange.sim.TownGrowth.NORMAL) }
     var goals by remember { mutableStateOf(com.rm.interchange.sim.GoalSet.NONE) }
+    var breakdowns by remember { mutableIntStateOf(com.rm.interchange.sim.Breakdowns.NEW_GAME) }
     var off by remember { mutableStateOf(emptySet<String>()) }
-    val settings = NewGame(width, height, seed, year, region, sea, hills, trees, towns, industries, inflation, weather, dayLength, rivals, sharing, rivalLevel, townGrowth, goals, collisions)
+    val settings = NewGame(width, height, seed, year, region, sea, hills, trees, towns, industries, inflation, weather, dayLength, rivals, sharing, rivalLevel, townGrowth, goals, collisions, breakdowns = breakdowns)
     // The map's the same whatever the goals and growth, so changing them doesn't make it again.
-    val land = settings.copy(townGrowth = com.rm.interchange.sim.TownGrowth.NORMAL, goals = com.rm.interchange.sim.GoalSet.NONE)
+    val land = settings.copy(townGrowth = com.rm.interchange.sim.TownGrowth.NORMAL, goals = com.rm.interchange.sim.GoalSet.NONE, breakdowns = com.rm.interchange.sim.Breakdowns.NORMAL)
     val chosen = packs.filter { it.id !in off }
     val clash = remember(chosen) {
         try {
@@ -292,6 +293,11 @@ fun NewGameScreen(packs: List<Pack>, onStart: (NewGame, List<Pack>) -> Unit, onB
             // Narrow, none and mixed above the three of one kind.
             val rows = if (wide) listOf(sets) else listOf(listOf(sets.first(), sets.last()), sets.subList(1, sets.size - 1))
             for (row in rows) FillChips(row, goals, { g -> goalNames.getOrElse(g.ordinal) { g.name } }) { goals = it }
+        }
+        val breakdownNames = stringArrayResource(Res.array.breakdown_levels)
+        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text(stringResource(Res.string.breakdowns_setting), color = c.text, style = KitType.Label)
+            FillChips((0..2).toList(), breakdowns, { breakdownNames.getOrElse(it) { "$it" } }) { breakdowns = it }
         }
         // The four switches, all in a row where wide, else two and two.
         val toggles = listOf<@Composable (Modifier) -> Unit>(
@@ -478,6 +484,7 @@ fun SettingsWindow(settings: Settings, onClose: () -> Unit) {
         FillChips(Settings.AUTOSAVE_DAYS.indices.toList(), settings.autosave, { levels.getOrElse(it) { "$it" } }) { settings.autosave = it; settings.save() }
         Head(stringResource(Res.string.overlays))
         OverlayToggles(settings)
+        TogglePill(stringResource(Res.string.first_route_setting), settings.checklist, Modifier.fillMaxWidth()) { settings.checklist = it; settings.save() }
         Head(stringResource(Res.string.sound))
         VolumeSlider(stringResource(Res.string.sound_everything), settings.sound, set = { settings.sound = it }, settled = { settings.save() })
         VolumeSlider(stringResource(Res.string.sound_world), settings.world, set = { settings.world = it }, settled = { settings.save() })

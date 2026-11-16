@@ -200,6 +200,7 @@ fun DepotCard(view: WorldView, roster: Roster, depot: Int, year: Int, funds: Lon
     var vehicleCount by remember(depot) { mutableIntStateOf(1) }
     var cargo by remember { mutableIntStateOf(-1) }
     var showWagons by remember { mutableStateOf(false) }
+    var inherit by remember { mutableStateOf(false) }
     Card(stringResource(Res.string.depot), onClose, modifier, scrolls = false) {
         // What's picked, or the first on sale once the one picked goes off sale.
         val e = engines.firstOrNull { it.id == engineId } ?: engines.firstOrNull()
@@ -241,8 +242,9 @@ fun DepotCard(view: WorldView, roster: Roster, depot: Int, year: Int, funds: Lon
                     // Electric engines need wires over the depot to get out.
                     val unwired = e.traction == Traction.ELECTRIC && view.depots.firstOrNull { it.id == depot }?.wired != true
                     if (unwired) Text(stringResource(Res.string.depot_needs_wires), color = c.warn, style = KitType.ListLine)
+                    InheritPill(view, Command.CopyVehicle.TRAIN, inherit) { inherit = it }
                     BuyButton(cost, funds, blocked = unwired || w == null) {
-                        send(Command.BuyTrain(me, depot, e.id, w?.id ?: 0, n, if (cargo in choices) cargo else -1, vehicleCount))
+                        send(Command.BuyTrain(me, depot, e.id, w?.id ?: 0, n, if (cargo in choices) cargo else -1, vehicleCount, inherit))
                     }
                 }
                 VehicleCount(vehicleCount) { vehicleCount = it }

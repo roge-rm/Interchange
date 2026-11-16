@@ -925,4 +925,22 @@
     <string name="why_servicing_off">Entretien désactivé</string>
     <string name="news_upgrade_failed">Mise à niveau de %1$s impossible : %2$s</string>
     <string name="news_upgrade_failed_was">Mise à niveau de %1$s impossible</string>
+    <string name="breakdowns_setting">Pannes</string>
+    <string-array name="breakdown_levels"><item>Aucune</item><item>Réduites</item><item>Normales</item></string-array>
+    <plurals name="use_kept_orders">
+        <item quantity="one">Reprendre les ordres du dernier vendu (%1$d arrêt)</item>
+        <item quantity="other">Reprendre les ordres du dernier vendu (%1$d arrêts)</item>
+    </plurals>
+    <string name="automation">Automatisation</string>
+    <string name="first_route">Première ligne</string>
+    <string name="first_route_progress">Première ligne %1$d/%2$d</string>
+    <string name="first_route_stations">Construire deux gares</string>
+    <string name="first_route_join">Les relier par rail ou route</string>
+    <string name="first_route_vehicle">Acheter un véhicule</string>
+    <string name="first_route_orders">Lui donner des ordres pour les deux</string>
+    <string name="first_route_delivery">Première livraison</string>
+    <string name="first_route_fold">Replier la liste</string>
+    <string name="first_route_unfold">Ouvrir la liste</string>
+    <string name="first_route_hide">Masquer la liste</string>
+    <string name="first_route_setting">Liste de la première ligne</string>
 </resources>

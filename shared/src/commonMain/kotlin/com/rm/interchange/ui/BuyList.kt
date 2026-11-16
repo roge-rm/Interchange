@@ -28,6 +28,7 @@ import com.rm.interchange.res.*
 import com.rm.interchange.sim.Engine
 import com.rm.interchange.sim.MAX_AT_ONCE
 import com.rm.interchange.sim.Traction
+import com.rm.interchange.sim.WorldView
 import org.jetbrains.compose.resources.pluralStringResource
 import org.jetbrains.compose.resources.stringArrayResource
 import org.jetbrains.compose.resources.stringResource
@@ -183,6 +184,13 @@ fun BuyButton(cost: Long, funds: Long, blocked: Boolean = false, onBuy: () -> Un
     val short = funds < cost
     if (short) Text(stringResource(Res.string.not_enough_money), color = c.warn, style = KitType.Dim)
     BigButton(stringResource(Res.string.buy_for, money(cost)), primary = true, enabled = !short && !blocked, glyph = Glyph.Plus, onClick = onBuy)
+}
+
+/** Under the buy button: a switch to give what's bought the orders of the last [kind] sold, shown when [view] has some kept. */
+@Composable
+fun InheritPill(view: WorldView, kind: Int, on: Boolean, onChange: (Boolean) -> Unit) {
+    val kept = view.keptOrders.firstOrNull { it.kind == kind }?.takeIf { it.stops > 0 } ?: return
+    TogglePill(pluralStringResource(Res.plurals.use_kept_orders, kept.stops, kept.stops), on, Modifier.fillMaxWidth(), onChange)
 }
 
 /** One vehicle in a depot, garage, shipyard or hangar, with its orders, copy and start or stop buttons. */

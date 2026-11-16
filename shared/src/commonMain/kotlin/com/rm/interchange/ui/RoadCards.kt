@@ -42,6 +42,7 @@ fun GarageCard(view: WorldView, roster: Roster, depot: Int, year: Int, funds: Lo
     var model by remember { mutableIntStateOf(models.firstOrNull()?.id ?: -1) }
     var vehicleCount by remember(depot) { mutableIntStateOf(1) }
     var cargo by remember { mutableIntStateOf(-1) }
+    var inherit by remember { mutableStateOf(false) }
     Card(stringResource(Res.string.garage), onClose, modifier, scrolls = false) {
         // What's picked, or the first on sale once the one picked goes off sale.
         val picked = models.firstOrNull { it.id == model } ?: models.firstOrNull()
@@ -54,7 +55,8 @@ fun GarageCard(view: WorldView, roster: Roster, depot: Int, year: Int, funds: Lo
             footer = {
                 picked?.let { e ->
                     if (e.tram) Text(stringResource(Res.string.needs_tram_rails), color = c.textDim, style = KitType.ListLine)
-                    BuyButton(price(e.cost) * vehicleCount, funds) { send(Command.BuyRoadVehicle(me, depot, e.id, if (cargo in e.cargoes) cargo else -1, vehicleCount)) }
+                    InheritPill(view, Command.CopyVehicle.ROAD, inherit) { inherit = it }
+                    BuyButton(price(e.cost) * vehicleCount, funds) { send(Command.BuyRoadVehicle(me, depot, e.id, if (cargo in e.cargoes) cargo else -1, vehicleCount, inherit)) }
                 }
                 VehicleCount(vehicleCount) { vehicleCount = it }
                 ActionButton(stringResource(Res.string.copy_one), strong = copying, onClick = { onCopy(vehicleCount) })

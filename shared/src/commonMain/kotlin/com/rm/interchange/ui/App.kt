@@ -1552,6 +1552,19 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
             )
         }
 
+        // On the left edge, mid-height, where no strip, tool bar or card sits.
+        val wantChecklist = remember(world) {
+            me >= 0 && !world.editor && world.scenario == null &&
+                world.stations.none { it?.owner == me } && world.trains.none { it?.owner == me } && world.roadVehicles.none { it?.owner == me } &&
+                world.ships.none { it?.owner == me } && world.aircraft.none { it?.owner == me }
+        }
+        if (wantChecklist && settings.checklist) {
+            FirstRouteChecklist(
+                runner, worldView.value, me, folded = layout.compact, onHide = { settings.checklist = false; settings.save() },
+                modifier = Modifier.align(Alignment.CenterStart).windowInsetsPadding(safe.only(WindowInsetsSides.Start)).padding(gap),
+            )
+        }
+
         // Along the bottom: what's selected, the tool's tray, and on an upright screen the tools.
         Column(
             Modifier

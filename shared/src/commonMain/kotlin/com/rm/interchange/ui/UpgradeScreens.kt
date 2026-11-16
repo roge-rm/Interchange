@@ -25,6 +25,7 @@ import com.rm.interchange.sim.Roster
 import com.rm.interchange.sim.UpgradeWhy
 import com.rm.interchange.sim.VehicleKind
 import com.rm.interchange.sim.WorldView
+import org.jetbrains.compose.resources.stringArrayResource
 import org.jetbrains.compose.resources.stringResource
 
 /** The most rules a company can have, as the sim keeps. */
@@ -69,6 +70,7 @@ fun UpgradesWindow(runner: GameThread, onClose: () -> Unit) {
     Window(stringResource(Res.string.upgrades), onClose, Glyph.Renew) {
         fun renew(on: Boolean = co.autorenew, months: Int = co.renewMonths, floor: Long = co.renewFloor) =
             runner.request(Command.SetAutorenew(me, on, months, floor))
+        Head(stringResource(Res.string.automation), Glyph.Gear)
         TogglePill(stringResource(Res.string.autorenew_on), co.autorenew, Modifier.fillMaxWidth()) { renew(on = it) }
         TogglePill(stringResource(Res.string.upgrade_on), co.upgrade, Modifier.fillMaxWidth()) { runner.request(Command.SetUpgrade(me, it)) }
         if (co.autorenew) {
@@ -85,6 +87,7 @@ fun UpgradesWindow(runner: GameThread, onClose: () -> Unit) {
             val floors = Autorenew.FLOORS.toList()
             StepSlider(stringResource(Res.string.renew_floor), floors, floors.lastOrNull { it <= co.renewFloor } ?: 0L, { money(it) }) { renew(floor = it) }
         }
+        InfoRow(stringResource(Res.string.breakdowns_setting), stringArrayResource(Res.array.breakdown_levels).getOrElse(v.breakdowns) { "" })
         Head(stringResource(Res.string.upgrade_rules), Glyph.Replace)
         FillChips(listOf(ShowVehicle.TRAIN, ShowVehicle.ROAD, ShowVehicle.SHIP, ShowVehicle.AIRCRAFT), kind, { k ->
             stringResource(when (k) {

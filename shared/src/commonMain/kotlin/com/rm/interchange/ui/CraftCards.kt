@@ -60,12 +60,13 @@ fun NoneOnSale(roster: Roster, kind: VehicleKind, year: Int) {
  */
 @Composable
 private fun CraftBuyPanel(
-    roster: Roster, kind: VehicleKind, year: Int, funds: Long, price: (Long) -> Long, count: Int, onCount: (Int) -> Unit, copying: Boolean, onCopy: (Int) -> Unit, fits: (Engine) -> Boolean, buy: (Int, Int) -> Unit,
+    view: WorldView, roster: Roster, kind: VehicleKind, year: Int, funds: Long, price: (Long) -> Long, count: Int, onCount: (Int) -> Unit, copying: Boolean, onCopy: (Int) -> Unit, fits: (Engine) -> Boolean, buy: (Int, Int, Boolean) -> Unit,
     top: @Composable () -> Unit = {}, inDepot: @Composable () -> Unit,
 ) {
     val models = roster.availableOf(kind, year).filter(fits)
     var model by remember { mutableIntStateOf(-1) }
     var cargo by remember { mutableIntStateOf(-1) }
+    var inherit by remember { mutableStateOf(false) }
     val e = models.firstOrNull { it.id == model } ?: models.firstOrNull()
     BuyPanel(
         top = top,
@@ -74,7 +75,10 @@ private fun CraftBuyPanel(
             else BuyList(models, e.id, cargo, price, { model = it; cargo = -1 }) { cargo = it }
         },
         footer = {
-            if (e != null) BuyButton(price(e.cost) * count, funds) { buy(e.id, if (cargo in e.cargoes) cargo else -1) }
+            if (e != null) {
+                InheritPill(view, if (kind == VehicleKind.SHIP) Command.CopyVehicle.SHIP else Command.CopyVehicle.AIRCRAFT, inherit) { inherit = it }
+                BuyButton(price(e.cost) * count, funds) { buy(e.id, if (cargo in e.cargoes) cargo else -1, inherit) }
+            }
             VehicleCount(count, onCount)
             ActionButton(stringResource(Res.string.copy_one), strong = copying, onClick = { onCopy(count) })
         },
@@ -88,7 +92,7 @@ fun ShipyardCard(view: WorldView, roster: Roster, depot: Int, year: Int, funds: 
     val me = LocalCompany.current
     var vehicleCount by remember(depot) { mutableIntStateOf(1) }
     Card(stringResource(Res.string.tool_shipyard), onClose, modifier, scrolls = false) {
-        CraftBuyPanel(roster, VehicleKind.SHIP, year, funds, price, vehicleCount, { vehicleCount = it }, copying, onCopy, { true }, { model, cargo -> send(Command.BuyCraft(me, depot, model, cargo, vehicleCount)) }) {
+        CraftBuyPanel(view, roster, VehicleKind.SHIP, year, funds, price, vehicleCount, { vehicleCount = it }, copying, onCopy, { true }, { model, cargo, inherit -> send(Command.BuyCraft(me, depot, model, cargo, vehicleCount, inherit)) }) {
             for (v in view.ships.filter { it.depot == depot && it.inDepot }) {
                 InDepotRow(
                     shipName(v), v.running, { onShip(v.id) },
@@ -112,7 +116,7 @@ fun AirportCard(view: WorldView, roster: Roster, airport: AirportView, year: Int
     val stand = Airport(airport.id, 0, airport.station, airport.kind, airport.x, airport.y, airport.axis, airport.depot)
     Card(title, onClose, modifier, scrolls = false) {
         CraftBuyPanel(
-            roster, VehicleKind.AIRCRAFT, year, funds, price, vehicleCount, { vehicleCount = it }, copying, onCopy, { stand.serves(it) }, { model, cargo -> send(Command.BuyCraft(me, airport.depot, model, cargo, vehicleCount)) },
+            view, roster, VehicleKind.AIRCRAFT, year, funds, price, vehicleCount, { vehicleCount = it }, copying, onCopy, { stand.serves(it) }, { model, cargo, inherit -> send(Command.BuyCraft(me, airport.depot, model, cargo, vehicleCount, inherit)) },
             top = {
                 Text(kinds.getOrElse(airport.kind) { "" }, color = c.textDim, style = KitType.Dim)
                 // A row for each facility this kind of airport can have: a tick once it has it, else its price.
