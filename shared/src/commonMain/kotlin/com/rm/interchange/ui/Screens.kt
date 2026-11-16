@@ -586,7 +586,7 @@ class ShowVehicle(val kind: Int, val id: Int, val x: Float, val y: Float) {
 
 /** Every vehicle the company has, and what it's doing. The chips keep to one kind. A tap goes to it and opens it. */
 @Composable
-fun VehiclesWindow(runner: com.rm.interchange.server.GameThread, onOpen: (ShowVehicle) -> Unit, onClose: () -> Unit) {
+fun VehiclesWindow(runner: com.rm.interchange.server.GameThread, onOpen: (ShowVehicle) -> Unit, onServices: () -> Unit, onClose: () -> Unit) {
     val me = LocalCompany.current
     val c = LocalColors.current
     val view by produceState(runner.view, runner) {
@@ -608,6 +608,7 @@ fun VehiclesWindow(runner: com.rm.interchange.server.GameThread, onOpen: (ShowVe
         if (group >= 0 && groups.none { it.id == group }) group = -1
     }
     Window(stringResource(Res.string.vehicles), onClose, Glyph.Train) {
+        ButtonTiles(listOf(TileButton(Glyph.Calendar, stringResource(Res.string.services), onClick = onServices)))
         FillChips(listOf(ShowVehicle.ALL, ShowVehicle.TRAIN, ShowVehicle.ROAD, ShowVehicle.SHIP, ShowVehicle.AIRCRAFT), kind, { k ->
             stringResource(when (k) {
                 ShowVehicle.TRAIN -> Res.string.group_rail

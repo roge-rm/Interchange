@@ -856,4 +856,19 @@
     <string name="why_not_carried">Nothing on the way carries it</string>
     <string name="why_orders">Orders don't let it go</string>
     <string name="why_not_accepted">Not taken there</string>
+
+    <!-- Services and timetables -->
+    <string name="service">Service</string>
+    <string name="services">Services</string>
+    <string name="no_services">No services</string>
+    <string name="start_service">Start a service</string>
+    <string name="service_name">Name</string>
+    <string name="service_travel">Travel</string>
+    <string name="service_wait">Wait</string>
+    <string name="autofill">Autofill</string>
+    <string name="clear_times">Clear</string>
+    <string name="timetable">Timetable</string>
+    <string name="on_time">On time</string>
+    <string name="days_late">%1$s late</string>
+    <string name="days_early">%1$s early</string>
 </resources>

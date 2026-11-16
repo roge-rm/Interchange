@@ -36,10 +36,13 @@ internal fun SharedOrdersControls(
     adding: Boolean,
     onAdd: () -> Unit,
     order: (Int, IntArray) -> Unit,
+    service: TileButton,
+    serviceLine: @Composable () -> Unit,
     stops: @Composable () -> Unit,
 ) {
     val shared = group > 0
     if (shared) Text(pluralStringResource(Res.plurals.shared_with, group, group), color = LocalColors.current.textDim, style = KitType.Dim)
+    serviceLine()
     stops()
     var sharing by remember(id) { mutableStateOf(false) }
     ButtonTiles(listOfNotNull(
@@ -49,6 +52,7 @@ internal fun SharedOrdersControls(
             others.isNotEmpty() -> TileButton(Glyph.Layers, stringResource(Res.string.share_orders), lit = sharing) { sharing = !sharing }
             else -> null
         },
+        service,
     ))
     if (sharing && !shared) {
         val stations = remember(view.stations) { view.stations.associateBy { it.id } }

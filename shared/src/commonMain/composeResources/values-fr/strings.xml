@@ -839,4 +839,19 @@
     <string name="why_not_carried">Rien en route ne le transporte</string>
     <string name="why_orders">Les ordres ne le permettent pas</string>
     <string name="why_not_accepted">Pas accepté là-bas</string>
+
+    <!-- Services and timetables -->
+    <string name="service">Service</string>
+    <string name="services">Services</string>
+    <string name="no_services">Aucun service</string>
+    <string name="start_service">Créer un service</string>
+    <string name="service_name">Nom</string>
+    <string name="service_travel">Trajet</string>
+    <string name="service_wait">Attente</string>
+    <string name="autofill">Remplir</string>
+    <string name="clear_times">Effacer</string>
+    <string name="timetable">Horaire</string>
+    <string name="on_time">À l'heure</string>
+    <string name="days_late">%1$s de retard</string>
+    <string name="days_early">%1$s d'avance</string>
 </resources>

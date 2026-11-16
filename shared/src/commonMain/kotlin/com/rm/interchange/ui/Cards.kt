@@ -115,6 +115,7 @@ fun TrainCard(
         // The last train left in a group shares with nobody, so it's shown as not sharing.
         val shared = group > 0
         if (shared) Text(pluralStringResource(Res.plurals.shared_with, group, group), color = LocalColors.current.textDim, style = KitType.Dim)
+        ServiceLine(view, t.serviceId, t.late)
         OrdersList(view, t.id, t.orders, t.order, OrderFlags.TRAIN, Glyph.Station) { order(Command.TrainOrder.ORDERS, it) }
         // Sharing orders with another train: pick which from a list, or stop sharing.
         var sharing by remember(t.id) { mutableStateOf(false) }
@@ -126,6 +127,7 @@ fun TrainCard(
                 others.isNotEmpty() -> TileButton(Glyph.Layers, stringResource(Res.string.share_orders), lit = sharing) { sharing = !sharing }
                 else -> null
             },
+            serviceTile(Command.CopyVehicle.TRAIN, t.id, t.serviceId, send),
         ))
         if (sharing && !shared) {
             val stations = remember(view.stations) { view.stations.associateBy { it.id } }

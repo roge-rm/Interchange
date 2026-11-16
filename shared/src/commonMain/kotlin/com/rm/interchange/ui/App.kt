@@ -195,7 +195,7 @@ private fun soundBusGains(sound: Int, world: Int, tools: Int): FloatArray {
 private enum class Screen { Title, NewGame, Playing }
 
 /** A window open over the screen. */
-private enum class Win { Menu, Load, Settings, Packs, Overlays, Map, Finances, Vehicles, Industries, Companies, Insignia, Town, Subsidies, Goals, Chronicle, Multiplayer, Players, Chat, Scenarios, Campaign, Scenario, SaveScenario, Intro, Outcome }
+private enum class Win { Menu, Load, Settings, Packs, Overlays, Map, Finances, Vehicles, Services, Industries, Companies, Insignia, Town, Subsidies, Goals, Chronicle, Multiplayer, Players, Chat, Scenarios, Campaign, Scenario, SaveScenario, Intro, Outcome }
 
 /** Picking a place by tapping the map: what to tell the player, what a tapped tile does (false if nothing there will do), and giving up. */
 class MapPick(val prompt: String, val onTile: (Int) -> Boolean, val onCancel: () -> Unit)
@@ -222,6 +222,8 @@ private fun Root(settings: Settings) {
     val goTo = remember { mutableStateOf<Pair<Float, Float>?>(null) }
     // A vehicle the list asked the map to open.
     val showVehicle = remember { mutableStateOf<ShowVehicle?>(null) }
+    // The id of the service whose window is open.
+    val openService = remember { mutableStateOf<Int?>(null) }
     val copyPick = remember { mutableStateOf<CopyPick?>(null) }
     // Saved from the menu since it was opened.
     var saved by remember { mutableStateOf(false) }
@@ -573,7 +575,7 @@ private fun Root(settings: Settings) {
         }
     }
 
-    CompositionLocalProvider(LocalCompany provides (runner?.company ?: 0)) { Box(Modifier.fillMaxSize()) {
+    CompositionLocalProvider(LocalCompany provides (runner?.company ?: 0), LocalOpenService provides { openService.value = it }) { Box(Modifier.fillMaxSize()) {
         when (screen) {
             Screen.Title -> TitleScreen(
                 continueLine = saves.firstOrNull()?.let { date(it.day, it.startYear) + " · " + saveLine(it) },
@@ -682,7 +684,8 @@ private fun Root(settings: Settings) {
                     copyPick.value = null
                     window = null
                 }
-            }) { window = null } }
+            }, { window = Win.Services }) { window = null } }
+            Win.Services -> runner?.let { r -> ServicesWindow(r, { openService.value = it; window = null }) { window = Win.Vehicles } }
             Win.Industries -> runner?.game?.world?.let { w ->
                 // The map's sheets, for the pictures of each kind.
                 CompositionLocalProvider(LocalSheets provides sheets) {
@@ -753,6 +756,9 @@ private fun Root(settings: Settings) {
                 else if (remote != null) ChatWindow({ remote.chat }, { remote.say(it) }) { window = null }
             }
             null -> {}
+        }
+        if (screen == Screen.Playing) openService.value?.let { id ->
+            runner?.let { r -> ServiceWindow(r, id, { showVehicle.value = it; openService.value = null; window = null }) { openService.value = null } }
         }
         // Over the game only: a new game being set up stays, and the window waits for the game to come back.
         if (lost && screen == Screen.Playing) LostWindow {

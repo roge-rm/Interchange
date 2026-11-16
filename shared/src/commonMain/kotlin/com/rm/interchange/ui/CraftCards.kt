@@ -153,9 +153,9 @@ private fun Facility(glyph: Glyph, label: String, has: Boolean, year: Int, from:
 
 /** A ship's or aircraft's stops under their Head, each marked with [glyph] and tapped open to change, and a button to add more. */
 @Composable
-private fun CraftOrders(view: WorldView, roster: Roster, id: Int, orders: IntArray, order: Int, glyph: Glyph, group: Int, gap: Int, others: List<SharedOrderChoice>, adding: Boolean, onAdd: () -> Unit, send: (Int, IntArray) -> Unit) {
+private fun CraftOrders(view: WorldView, roster: Roster, id: Int, orders: IntArray, order: Int, glyph: Glyph, group: Int, gap: Int, others: List<SharedOrderChoice>, adding: Boolean, onAdd: () -> Unit, send: (Int, IntArray) -> Unit, service: TileButton, serviceLine: @Composable () -> Unit) {
     Head(stringResource(Res.string.orders))
-    SharedOrdersControls(view, roster, id, group, gap, others, adding, onAdd, send) {
+    SharedOrdersControls(view, roster, id, group, gap, others, adding, onAdd, send, service, serviceLine) {
         OrdersList(view, id, orders, order, OrderFlags.CRAFT, glyph) { send(Command.TrainOrder.ORDERS, it) }
     }
     Box(Modifier.height(KitSpace.Tight))
@@ -210,7 +210,7 @@ fun ShipCard(view: WorldView, roster: Roster, v: ShipView, year: Int, funds: Lon
         val group = if (v.shared >= 0) view.ships.count { it.id != v.id && it.shared == v.shared } else 0
         val others = view.ships.filter { it.id != v.id && it.owner == me }
             .map { SharedOrderChoice(it.id, shipName(it), it.model, it.orders) }
-        CraftOrders(view, roster, v.id, v.orders, v.order, Glyph.Dock, group, v.gap, others, addingStops, onAddStops, ::order)
+        CraftOrders(view, roster, v.id, v.orders, v.order, Glyph.Dock, group, v.gap, others, addingStops, onAddStops, ::order, serviceTile(Command.CopyVehicle.SHIP, v.id, v.serviceId, send), { ServiceLine(view, v.serviceId, v.late) })
         var replacing by remember(v.id) { mutableStateOf(false) }
         CraftActions(
             v.running, v.inDepot, v.toDepot, v.renewCost, Res.string.to_shipyard,
@@ -269,7 +269,7 @@ fun AircraftCard(view: WorldView, roster: Roster, v: AircraftView, year: Int, fu
         val group = if (v.shared >= 0) view.aircraft.count { it.id != v.id && it.shared == v.shared } else 0
         val others = view.aircraft.filter { it.id != v.id && it.owner == me }
             .map { SharedOrderChoice(it.id, aircraftName(it), it.model, it.orders) }
-        CraftOrders(view, roster, v.id, v.orders, v.order, Glyph.Airport, group, v.gap, others, addingStops, onAddStops, ::order)
+        CraftOrders(view, roster, v.id, v.orders, v.order, Glyph.Airport, group, v.gap, others, addingStops, onAddStops, ::order, serviceTile(Command.CopyVehicle.AIRCRAFT, v.id, v.serviceId, send), { ServiceLine(view, v.serviceId, v.late) })
         var replacing by remember(v.id) { mutableStateOf(false) }
         CraftActions(
             v.running, v.inDepot, v.toDepot, v.renewCost, Res.string.to_hangar,

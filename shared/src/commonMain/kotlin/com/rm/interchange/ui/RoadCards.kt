@@ -106,7 +106,7 @@ fun RoadVehicleCard(view: WorldView, roster: Roster, v: RoadVehicleView, year: I
         val group = if (v.shared >= 0) view.roadVehicles.count { it.id != v.id && it.shared == v.shared } else 0
         val others = view.roadVehicles.filter { it.id != v.id && it.owner == me }
             .map { SharedOrderChoice(it.id, roadVehicleName(it), it.model, it.orders) }
-        SharedOrdersControls(view, roster, v.id, group, v.gap, others, addingStops, onAddStops, ::order) {
+        SharedOrdersControls(view, roster, v.id, group, v.gap, others, addingStops, onAddStops, ::order, serviceTile(Command.CopyVehicle.ROAD, v.id, v.serviceId, send), { ServiceLine(view, v.serviceId, v.late) }) {
             OrdersList(view, v.id, v.orders, v.order, OrderFlags.ROAD, Glyph.RoadStop) { order(Command.TrainOrder.ORDERS, it) }
         }
         Box(Modifier.height(KitSpace.Tight))
