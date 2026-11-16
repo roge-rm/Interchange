@@ -220,6 +220,7 @@ fun ShipCard(view: WorldView, roster: Roster, v: ShipView, year: Int, funds: Lon
                     ReplaceList(
                         roster.availableOf(VehicleKind.SHIP, year).filter { it.id != v.model }, funds,
                         { price(it.cost) - (price(e.cost) - v.renewCost) },
+                        why = v.replaceWhy,
                     ) {
                         order(Command.TrainOrder.REPLACE, intArrayOf(it))
                         replacing = false
@@ -228,8 +229,9 @@ fun ShipCard(view: WorldView, roster: Roster, v: ShipView, year: Int, funds: Lon
             },
             order = { order(it) },
         ) {
+            UpgradeLine(roster, v.upgradeTo, v.upgradeWhy)
             SwitchRow(stringResource(Res.string.servicing), v.service) { order(Command.TrainOrder.SERVICE) }
-            VehicleMapControls(view.company?.autorenew == true, v.renewOff, v.x, v.y, onShow) { order(Command.TrainOrder.AUTORENEW) }
+            VehicleMapControls(companyRenews(view), v.renewOff, v.x, v.y, onShow) { order(Command.TrainOrder.AUTORENEW) }
         }
     }
 }
@@ -277,12 +279,9 @@ fun AircraftCard(view: WorldView, roster: Roster, v: AircraftView, year: Int, fu
             replacements = {
                 if (replacing) {
                     ReplaceList(
-                        roster.availableOf(VehicleKind.AIRCRAFT, year).filter { model ->
-                            model.id != v.model && view.airports.firstOrNull { it.depot == v.depot }?.let { a ->
-                                Airport(a.id, 0, a.station, a.kind, a.x, a.y, a.axis, a.depot).serves(model)
-                            } == true
-                        }, funds,
+                        roster.availableOf(VehicleKind.AIRCRAFT, year).filter { it.id != v.model }, funds,
                         { price(it.cost) - (price(e.cost) - v.renewCost) },
+                        why = v.replaceWhy,
                     ) {
                         order(Command.TrainOrder.REPLACE, intArrayOf(it))
                         replacing = false
@@ -291,9 +290,10 @@ fun AircraftCard(view: WorldView, roster: Roster, v: AircraftView, year: Int, fu
             },
             order = { order(it) },
         ) {
+            UpgradeLine(roster, v.upgradeTo, v.upgradeWhy)
             SwitchRow(stringResource(Res.string.servicing), v.service) { order(Command.TrainOrder.SERVICE) }
             if (e.floats) SwitchRow(stringResource(Res.string.seasonal_gear), v.seasonalGear) { order(Command.CraftOrder.GEAR) }
-            VehicleMapControls(view.company?.autorenew == true, v.renewOff, v.x, v.y, onShow) { order(Command.TrainOrder.AUTORENEW) }
+            VehicleMapControls(companyRenews(view), v.renewOff, v.x, v.y, onShow) { order(Command.TrainOrder.AUTORENEW) }
         }
     }
 }

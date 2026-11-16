@@ -586,7 +586,7 @@ class ShowVehicle(val kind: Int, val id: Int, val x: Float, val y: Float) {
 
 /** Every vehicle the company has, and what it's doing. The chips keep to one kind. A tap goes to it and opens it. */
 @Composable
-fun VehiclesWindow(runner: com.rm.interchange.server.GameThread, onOpen: (ShowVehicle) -> Unit, onServices: () -> Unit, onClose: () -> Unit) {
+fun VehiclesWindow(runner: com.rm.interchange.server.GameThread, onOpen: (ShowVehicle) -> Unit, onServices: () -> Unit, onUpgrades: () -> Unit, onClose: () -> Unit) {
     val me = LocalCompany.current
     val c = LocalColors.current
     val view by produceState(runner.view, runner) {
@@ -608,7 +608,10 @@ fun VehiclesWindow(runner: com.rm.interchange.server.GameThread, onOpen: (ShowVe
         if (group >= 0 && groups.none { it.id == group }) group = -1
     }
     Window(stringResource(Res.string.vehicles), onClose, Glyph.Train) {
-        ButtonTiles(listOf(TileButton(Glyph.Calendar, stringResource(Res.string.services), onClick = onServices)))
+        ButtonTiles(listOf(
+            TileButton(Glyph.Calendar, stringResource(Res.string.services), onClick = onServices),
+            TileButton(Glyph.Renew, stringResource(Res.string.upgrades), onClick = onUpgrades),
+        ))
         FillChips(listOf(ShowVehicle.ALL, ShowVehicle.TRAIN, ShowVehicle.ROAD, ShowVehicle.SHIP, ShowVehicle.AIRCRAFT), kind, { k ->
             stringResource(when (k) {
                 ShowVehicle.TRAIN -> Res.string.group_rail
@@ -622,6 +625,10 @@ fun VehiclesWindow(runner: com.rm.interchange.server.GameThread, onOpen: (ShowVe
             FillChips(listOf(-1) + groups.map { it.id }, selected, { id ->
                 if (id == -1) stringResource(Res.string.vehicles_all) else groups.first { it.id == id }.name
             }) { group = it }
+            if (selected != -1) {
+                Head(stringResource(Res.string.upgrade_rules), Glyph.Replace)
+                UpgradeRules(runner, v, kind, selected)
+            }
         }
         val trains = if (kind == ShowVehicle.ALL || kind == ShowVehicle.TRAIN) v.trains.filter { it.owner == me && (selected == -1 || it.group == selected) }.byFleet({ it.number }, { it.id }) else emptyList()
         val roads = if (kind == ShowVehicle.ALL || kind == ShowVehicle.ROAD) v.roadVehicles.filter { it.owner == me && (selected == -1 || it.group == selected) }.byFleet({ it.number }, { it.id }) else emptyList()
@@ -705,22 +712,6 @@ fun FinanceWindow(runner: com.rm.interchange.server.GameThread, onClose: () -> U
         Head(stringResource(Res.string.track_upkeep))
         val levels = stringArrayResource(Res.array.upkeep_levels)
         FillChips(listOf(0, 1, 2), co.upkeep, { levels.getOrElse(it) { "" } }) { runner.request(com.rm.interchange.sim.Command.SetUpkeep(me, it)) }
-        Head(stringResource(Res.string.autorenew))
-        fun renew(on: Boolean = co.autorenew, months: Int = co.renewMonths, floor: Long = co.renewFloor) =
-            runner.request(com.rm.interchange.sim.Command.SetAutorenew(me, on, months, floor))
-        TogglePill(stringResource(Res.string.autorenew_on), co.autorenew, Modifier.fillMaxWidth()) { renew(on = it) }
-        if (co.autorenew) {
-            val months = com.rm.interchange.sim.Autorenew.MONTHS.toList()
-            StepSlider(stringResource(Res.string.renew_when), months, co.renewMonths.let { m -> months.minBy { kotlin.math.abs(it - m) } }, { m ->
-                when {
-                    m < 0 -> stringResource(Res.string.renew_before, -m)
-                    m > 0 -> stringResource(Res.string.renew_after, m)
-                    else -> stringResource(Res.string.renew_at_end)
-                }
-            }) { renew(months = it) }
-            val floors = com.rm.interchange.sim.Autorenew.FLOORS.toList()
-            StepSlider(stringResource(Res.string.renew_floor), floors, floors.lastOrNull { it <= co.renewFloor } ?: 0L, { money(it) }) { renew(floor = it) }
-        }
         if (co.history.size >= 2) {
             Head(stringResource(Res.string.money_graph))
             MoneyGraph(co.history, Modifier.fillMaxWidth().height(120.dp))

@@ -195,7 +195,7 @@ private fun soundBusGains(sound: Int, world: Int, tools: Int): FloatArray {
 private enum class Screen { Title, NewGame, Playing }
 
 /** A window open over the screen. */
-private enum class Win { Menu, Load, Settings, Packs, Overlays, Map, Finances, Vehicles, Services, Industries, Values, Companies, Insignia, Town, Subsidies, Goals, Chronicle, Multiplayer, Players, Chat, Scenarios, Campaign, Scenario, SaveScenario, Intro, Outcome }
+private enum class Win { Menu, Load, Settings, Packs, Overlays, Map, Finances, Vehicles, Services, Upgrades, Industries, Values, Companies, Insignia, Town, Subsidies, Goals, Chronicle, Multiplayer, Players, Chat, Scenarios, Campaign, Scenario, SaveScenario, Intro, Outcome }
 
 /** Picking a place by tapping the map: what to tell the player, what a tapped tile does (false if nothing there will do), and giving up. */
 class MapPick(val prompt: String, val onTile: (Int) -> Boolean, val onCancel: () -> Unit)
@@ -686,8 +686,9 @@ private fun Root(settings: Settings) {
                     copyPick.value = null
                     window = null
                 }
-            }, { window = Win.Services }) { window = null } }
+            }, { window = Win.Services }, { window = Win.Upgrades }) { window = null } }
             Win.Services -> runner?.let { r -> ServicesWindow(r, { openService.value = it; window = null }, { window = Win.Values }) { window = Win.Vehicles } }
+            Win.Upgrades -> runner?.let { r -> UpgradesWindow(r) { window = Win.Vehicles } }
             Win.Values -> runner?.let { r -> ValuesWindow(r) { window = Win.Services } }
             Win.Industries -> runner?.game?.world?.let { w ->
                 // The map's sheets, for the pictures of each kind.

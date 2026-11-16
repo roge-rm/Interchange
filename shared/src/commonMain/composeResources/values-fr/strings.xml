@@ -445,7 +445,7 @@
     <string name="renew_before">%1$d mois avant la fin de vie</string>
     <string name="renew_at_end">En fin de vie</string>
     <string name="renew_after">%1$d mois après la fin de vie</string>
-    <string name="renew_floor">Garder au moins</string>
+    <string name="renew_floor">Garder en réserve</string>
     <string name="news_renew_failed">Renouvellement automatique de %1$s impossible : pas assez d'argent</string>
     <string name="track_condition">Voies</string>
     <string name="reserved_track">Voies réservées</string>
@@ -884,4 +884,23 @@
     <string name="cond_if_since_service">Si jours depuis l'entretien : %1$s %2$s, aller à l'ordre %3$d</string>
     <string name="cond_if_always">Toujours aller à l'ordre %1$d</string>
     <string name="cond_if_value">Si %1$s : %2$s %3$s, aller à l'ordre %4$d</string>
+    <string name="upgrades">Mises à niveau</string>
+    <string name="upgrade_on">Mettre à niveau les vieux modèles</string>
+    <string name="upgrade_rules">Règles de mise à niveau</string>
+    <string name="no_upgrade_rules">Aucune règle de mise à niveau</string>
+    <string name="add_rule">Ajouter une règle</string>
+    <string name="upgrade_from">De</string>
+    <string name="upgrade_to">Vers</string>
+    <string name="no_models_run">Aucun modèle en service</string>
+    <string name="whole_fleet">Toute la flotte</string>
+    <string name="rule_fleet">%1$s vers %2$s, toute la flotte</string>
+    <string name="rule_group">%1$s vers %2$s, groupe %3$s</string>
+    <string name="upgrades_to">Passe à %1$s à la prochaine visite</string>
+    <string name="upgrade_blocked">Mise à niveau vers %1$s impossible : %2$s</string>
+    <string name="why_not_on_sale">Pas en vente</string>
+    <string name="why_no_wires">Pas de caténaire</string>
+    <string name="why_too_long">Trop long pour un quai</string>
+    <string name="why_airport">Un aéroport ne peut pas l\'accueillir</string>
+    <string name="why_tram">Tramway et autobus ne se remplacent pas</string>
+    <string name="why_other">Non permis</string>
 </resources>

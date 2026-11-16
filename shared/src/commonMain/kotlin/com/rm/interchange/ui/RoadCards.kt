@@ -124,13 +124,14 @@ fun RoadVehicleCard(view: WorldView, roster: Roster, v: RoadVehicleView, year: I
             ),
         )
         if (v.inDepot && replacing) {
-            ReplaceList(roster.availableRoad(year).filter { it.id != v.model }, funds, { price(it.cost) - (price(e.cost) - v.renewCost) }) {
+            ReplaceList(roster.availableRoad(year).filter { it.id != v.model }, funds, { price(it.cost) - (price(e.cost) - v.renewCost) }, why = v.replaceWhy) {
                 order(Command.TrainOrder.REPLACE, intArrayOf(it))
                 replacing = false
             }
         }
+        UpgradeLine(roster, v.upgradeTo, v.upgradeWhy)
         SwitchRow(stringResource(Res.string.servicing), v.service) { order(Command.TrainOrder.SERVICE) }
         if (!horses) SwitchRow(stringResource(Res.string.seasonal_tires), v.seasonalTires) { order(Command.RoadOrder.TIRES) }
-        VehicleMapControls(view.company?.autorenew == true, v.renewOff, v.x, v.y, onShow) { order(Command.TrainOrder.AUTORENEW) }
+        VehicleMapControls(companyRenews(view), v.renewOff, v.x, v.y, onShow) { order(Command.TrainOrder.AUTORENEW) }
     }
 }

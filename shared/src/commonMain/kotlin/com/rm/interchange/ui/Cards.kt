@@ -174,13 +174,15 @@ fun TrainCard(
                 roster.available(year, pulls = true).filter { it.id != t.engine }, funds,
                 costOf = { price(base(it)) - (price(base(e)) - t.renewCost) },
                 blocked = { it.traction == Traction.ELECTRIC && view.depots.firstOrNull { d -> d.id == t.shed }?.wired != true },
+                why = t.replaceWhy,
             ) {
                 order(Command.TrainOrder.REPLACE, intArrayOf(it))
                 replacing = false
             }
         }
+        UpgradeLine(roster, t.upgradeTo, t.upgradeWhy)
         SwitchRow(stringResource(Res.string.servicing), t.service) { order(Command.TrainOrder.SERVICE) }
-        VehicleMapControls(view.company?.autorenew == true, t.renewOff, t.x, t.y, onShow) { order(Command.TrainOrder.AUTORENEW) }
+        VehicleMapControls(companyRenews(view), t.renewOff, t.x, t.y, onShow) { order(Command.TrainOrder.AUTORENEW) }
     }
 }
 
