@@ -748,24 +748,25 @@ private fun PricesSection(p: com.rm.interchange.sim.PricesView) {
             Text("${now[k] * 100 / first}%", color = c.text, style = KitType.ListLine)
         }
     }
-    if (p.years.size >= 2) PriceGraph(lines, Modifier.fillMaxWidth().height(100.dp))
+    if (p.years.size >= 2) PriceGraph(p.years, lines, Modifier.fillMaxWidth().height(100.dp))
 }
 
-/** Every price as a line of its percent of the first year, on one scale. */
+/** Every price as a line of its percent of the first year, on one scale, each point placed by its year in [years]. */
 @Composable
-private fun PriceGraph(lines: List<IntArray>, modifier: Modifier) {
+private fun PriceGraph(years: IntArray, lines: List<IntArray>, modifier: Modifier) {
     val c = LocalColors.current
     androidx.compose.foundation.Canvas(modifier) {
         val ratios = lines.map { l -> val first = l[0].coerceAtLeast(1); FloatArray(l.size) { l[it].toFloat() / first } }
         val most = ratios.maxOf { it.max() }.coerceAtLeast(1.1f)
         val least = ratios.minOf { it.min() }.coerceAtMost(0.9f)
         val n = lines[0].size
-        val step = size.width / (n - 1).coerceAtLeast(1)
+        val span = (years.last() - years.first()).coerceAtLeast(1)
+        fun x(i: Int) = size.width * (years[i] - years.first()) / span
         fun y(v: Float) = size.height * (1f - (v - least) / (most - least))
         drawLine(c.chromeEdge, androidx.compose.ui.geometry.Offset(0f, y(1f)), androidx.compose.ui.geometry.Offset(size.width, y(1f)), 1.dp.toPx())
         for ((k, r) in ratios.withIndex()) {
             val path = androidx.compose.ui.graphics.Path()
-            for (i in 0 until n) if (i == 0) path.moveTo(0f, y(r[0])) else path.lineTo(i * step, y(r[i]))
+            for (i in 0 until n) if (i == 0) path.moveTo(0f, y(r[0])) else path.lineTo(x(i), y(r[i]))
             drawPath(path, PRICE_COLOURS[k], style = androidx.compose.ui.graphics.drawscope.Stroke(1.5.dp.toPx()))
         }
     }

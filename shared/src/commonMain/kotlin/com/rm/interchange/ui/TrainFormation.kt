@@ -131,7 +131,10 @@ internal fun TrainFormationEditor(
         ))
         val tenths = preview.length * 10 / (com.rm.interchange.sim.FIX * 16)
         InfoRow(stringResource(Res.string.formation_length), stringResource(Res.string.formation_tiles, tenths / 10, tenths % 10))
-        InfoRow(stringResource(Res.string.formation_running), stringResource(Res.string.a_year, money(price(preview.carEngines.sumOf { roster[it].running }))))
+        // With era costs on, each car's fixed part and fuel at today's price, as the sim charges it.
+        val prices = LocalPrices.current
+        val running = prices?.let { p -> preview.carEngines.sumOf { p.running(roster[it]).sum() } } ?: price(preview.carEngines.sumOf { roster[it].running })
+        InfoRow(stringResource(Res.string.formation_running), stringResource(Res.string.a_year, money(running)))
         for (cg in 0 until Cargo.MAX) if (preview.capacity(cg) > 0) CargoRow(cg, cargoAmount(cg, preview.capacity(cg)))
     }
     val problem = when {

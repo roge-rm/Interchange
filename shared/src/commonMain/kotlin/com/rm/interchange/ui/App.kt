@@ -1445,7 +1445,7 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
     // A player who just joined may be drawn a frame or two before their company is made; costs go by the first till then.
     val company = world.companies.getOrNull(me) ?: world.companies[0]
     val dragged: Pair<Int, Long>? = plan?.let { p ->
-        if (tool == Tool.Wires) Track.line(world, p.sx, p.sy, p.ex, p.ey, p.first)?.let { it.size to it.size * world.build(Prices.WIRE, Mix.WIRE, world.index(p.sx, p.sy)) }
+        if (tool == Tool.Wires) Track.line(world, p.sx, p.sy, p.ex, p.ey, p.first)?.let { it.size to it.sumOf { e -> world.build(Prices.WIRE, Mix.WIRE, e / 64) } }
         else world.railCost(p).let { (cost, n) -> if (cost < 0) null else n to cost }
     } ?: roadPlan?.let { p -> world.roadCost(company, p).takeIf { it >= 0 }?.let { (maxOf(kotlin.math.abs(p.ex - p.sx), kotlin.math.abs(p.ey - p.sy)) + 1) to it } }
         ?: canalPlan?.let { p -> world.canalCost(company, p).let { (cost, n) -> n to cost } }
@@ -1454,7 +1454,12 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
         ?: levelPlan?.let { p -> world.levelCost(p).let { (cost, n) -> n to cost } }
         ?: treePlan?.let { p -> world.plantCost(p).let { (cost, n) -> n to cost } }
         ?: signalPlan?.takeIf { !it.remove }?.let { p -> world.signalRunCost(p).let { (cost, n) -> n to cost } }
-        ?: stationPlan?.let { p -> ((kotlin.math.abs(p.x1 - p.x0) + 1) * (kotlin.math.abs(p.y1 - p.y0) + 1)).let { n -> n to n * world.build(Prices.PLATFORM, Mix.PLATFORM, world.index(p.x0, p.y0)) } }
+        ?: stationPlan?.let { p ->
+            // A tile at a time, as the sim charges it, for the land and frost on each.
+            var cost = 0L
+            for (y in minOf(p.y0, p.y1)..maxOf(p.y0, p.y1)) for (x in minOf(p.x0, p.x1)..maxOf(p.x0, p.x1)) if (world.inside(x, y)) cost += world.build(Prices.PLATFORM, Mix.PLATFORM, world.index(x, y))
+            ((kotlin.math.abs(p.x1 - p.x0) + 1) * (kotlin.math.abs(p.y1 - p.y0) + 1)) to cost
+        }
         ?: bridgePlan?.let { p -> world.bridgeCost(company, p).takeIf { it >= 0 }?.let { (maxOf(kotlin.math.abs(p.x1 - p.x0), kotlin.math.abs(p.y1 - p.y0)) + 1) to it } }
     // Building's free in the editor.
     val dragText = if (editor) null else dragged?.takeIf { it.first > 0 }?.let { (n, cost) ->

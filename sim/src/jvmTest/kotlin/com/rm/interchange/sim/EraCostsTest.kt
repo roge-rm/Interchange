@@ -168,6 +168,38 @@ class EraCostsTest {
     }
 
     @Test
+    fun aGameStartedInAShockYearHearsOfIt() {
+        val w = world(1979)
+        assertEquals(1, w.news.count { it.kind == News.FUEL_SHOCK && it.about == 1 })
+        assertEquals(1, w.chronicle.count { it.kind == News.FUEL_SHOCK })
+        val off = world(1979, era = false)
+        assertTrue(off.news.none { it.kind == News.FUEL_SHOCK })
+        // News only: the game goes on as one started the year before would, and a load doesn't tell it again.
+        assertTrue(world(1978).news.none { it.kind == News.FUEL_SHOCK })
+        val loaded = Save.read(Save.write(w))
+        assertTrue(loaded.news.none { it.kind == News.FUEL_SHOCK })
+        assertEquals(1, loaded.chronicle.count { it.kind == News.FUEL_SHOCK })
+        while (w.day < 400) w.step()
+        assertEquals(1, w.chronicle.count { it.kind == News.FUEL_SHOCK })
+    }
+
+    @Test
+    fun aLongGameKeepsTheShockYearsInTheView() {
+        val w = world(1836)
+        val p = assertNotNull(w.view().prices)
+        assertEquals(listOf(1836), p.years.toList())
+        val c = world(1900)
+        // 1 February 2020: 120 years with 29 leap days, and a month.
+        c.tick = c.dayTicks * (120L * 365 + 29 + 31)
+        assertEquals(2020, Calendar.year(c.startYear, c.day))
+        val q = assertNotNull(c.view().prices)
+        assertEquals(q.years.sorted(), q.years.toList())
+        assertEquals(q.years.distinct(), q.years.toList())
+        for (y in listOf(1972, 1973, 1978, 1979, 2007, 2008, 2020)) assertTrue(y in q.years, "$y")
+        assertTrue(q.years.size <= PRICE_POINTS + 7)
+    }
+
+    @Test
     fun twoWorldsKeepInStep() {
         val g = NewGame(128, 128, 3, 1968, Region.SHIELD, towns = 8, industries = 6, rivals = 2, rivalLevel = RivalLevel.HARD)
         val a = World(g)

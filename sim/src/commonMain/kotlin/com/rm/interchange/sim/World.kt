@@ -272,6 +272,8 @@ class World(settings: NewGame, val roster: Roster = Roster.BASE, generate: Boole
             giveInsignia(companies[0])
             startRivals(settings.rivals)
             makeGoals()
+            // A game started on 1 January of a shock year hears of it here, as the year's turn only comes after day 0.
+            fuelShockNews()
         }
     }
 

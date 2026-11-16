@@ -229,7 +229,7 @@ fun World.running(e: Engine): Long {
 internal fun World.trackUpkeepFactor(): Int = if (settings.eraCosts) EraCosts.trackUpkeep(settings.region, yearNow) else 1_000
 internal fun World.roadUpkeepFactor(): Int = if (settings.eraCosts) EraCosts.roadUpkeep(settings.region, yearNow) else 1_000
 
-/** The fuel shock of this year, its place in [EraCosts.SHOCKS], told on the first of the year with era costs on. */
+/** The fuel shock of this year, its place in [EraCosts.SHOCKS], told on the first of the year with era costs on, and when a new game starts in one. News only. */
 internal fun World.fuelShockNews() {
     if (!settings.eraCosts) return
     val k = EraCosts.SHOCKS.indexOf(yearNow)
@@ -238,7 +238,7 @@ internal fun World.fuelShockNews() {
 
 /**
  * Prices for the screen: this year's [indices] and [fuels] per mille, their history a point a year from the start
- * ([years], [indexHistory] by index, [fuelHistory] by fuel), the climate's track and road upkeep per mille, and
+ * ([years] in order, fewer on long games but always each shock year and the year before it; [indexHistory] by index, [fuelHistory] by fuel), the climate's track and road upkeep per mille, and
  * [scale] for working out running costs with [running].
  */
 class PricesView(
@@ -267,7 +267,9 @@ internal fun World.pricesView(): PricesView? {
     val first = Calendar.year(startYear, 0)
     val span = year - first
     val step = span / PRICE_POINTS + 1
-    val years = IntArray(span / step + 1) { first + it * step }.let { if (it.last() != year) it + year else it }
+    // A point every step years, this year, and each shock year so far with the year before it, so the jumps show.
+    val shocks = EraCosts.SHOCKS.flatMap { listOf(it - 1, it) }.filter { it in first..year }
+    val years = (IntArray(span / step + 1) { first + it * step }.toList() + year + shocks).distinct().sorted().toIntArray()
     val view = PricesView(
         year, IntArray(EraCosts.INDICES) { EraCosts.index(it, year) }, IntArray(EraCosts.FUELS) { EraCosts.fuel(it, year) }, years,
         Array(EraCosts.INDICES) { k -> IntArray(years.size) { EraCosts.index(k, years[it]) } },
