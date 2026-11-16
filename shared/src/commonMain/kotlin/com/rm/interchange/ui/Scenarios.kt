@@ -298,7 +298,7 @@ fun pickInto(world: World, draft: GoalDraft, slot: GoalSlot, i: Int): Boolean {
         // Only an industry that takes some cargo; a tap on one that takes none falls back to the town nearby.
         world.industryAt(i)?.takeIf { !it.closed }?.let { ind ->
             val kind = world.roster.industries[ind.kind]
-            val takes = (0 until Cargo.COUNT).firstOrNull { kind.takes(it) }
+            val takes = (0 until Cargo.MAX).firstOrNull { kind.takes(it) }
             if (takes != null) {
                 draft.industry = ind.id
                 draft.town = -1
@@ -351,7 +351,7 @@ fun EditorGoalsWindow(world: World, draft: GoalDraft?, onDraft: (GoalDraft?) -> 
         return
     }
     val kinds = stringArrayResource(Res.array.goal_kinds)
-    val cargoes = stringArrayResource(Res.array.cargoes)
+    val cargoes = cargoNames()
     val lang = languageCode()
     var listing by remember { mutableStateOf<GoalSlot?>(null) }
     Window(stringResource(Res.string.add_goal), { onDraft(null) }, Glyph.Plus) {
@@ -396,7 +396,7 @@ fun EditorGoalsWindow(world: World, draft: GoalDraft?, onDraft: (GoalDraft?) -> 
         if (draft.kind == Goal.DELIVER) {
             Head(stringResource(Res.string.cargo))
             val takes = world.industries.getOrNull(draft.industry)?.let { world.roster.industries[it.kind] }
-            val offered = (0 until Cargo.COUNT).filter { takes == null || takes.takes(it) }
+            val offered = (0 until LocalCargo.current.size).filter { takes == null || takes.takes(it) }
             if (offered.isNotEmpty()) SegmentedChoice(offered, draft.cargo, { cargoes.getOrElse(it) { "" } }, perRow = 3) { draft.cargo = it }
         }
         val amountLabel = when (draft.kind) {

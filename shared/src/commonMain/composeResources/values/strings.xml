@@ -194,6 +194,25 @@
         <item quantity="one">%1$d vehicle</item>
         <item quantity="other">%1$d vehicles</item>
     </plurals>
+    <string name="pack_filter_all">All</string>
+    <string name="buildings">Buildings</string>
+    <plurals name="buildings_count">
+        <item quantity="one">%1$d building</item>
+        <item quantity="other">%1$d buildings</item>
+    </plurals>
+    <plurals name="industries_count">
+        <item quantity="one">%1$d industry</item>
+        <item quantity="other">%1$d industries</item>
+    </plurals>
+    <plurals name="cargo_count">
+        <item quantity="one">%1$d cargo</item>
+        <item quantity="other">%1$d cargo</item>
+    </plurals>
+    <string name="pack_adds">Adds</string>
+    <string name="pack_changes">Changes</string>
+    <string name="pack_turns_off">Turns off</string>
+    <string name="pack_problems">Problems</string>
+    <string name="pack_unit">Counted in %1$s</string>
     <string name="pack_added">Added %1$s.</string>
     <string name="cant_add_pack">Can't add this pack: %1$s</string>
     <string name="packs_clash">These packs don't work together: %1$s</string>

@@ -223,39 +223,17 @@ fun StatGrid(stats: List<Pair<String, String>>, least: Dp = 72.dp, valueColours:
     }
 }
 
-/** Each cargo's colour, by its number, for its swatch. */
-private val CARGO_COLOURS = listOf(
-    Color(0xFF6FA8DC), // passengers
-    Color(0xFFE8E6E1), // mail
-    Color(0xFF8B5A2B), // timber
-    Color(0xFFD9B26F), // lumber
-    Color(0xFFE6C84F), // grain
-    Color(0xFF3A3A3A), // coal
-    Color(0xFFA0522D), // iron ore
-    Color(0xFF8A9BA8), // steel
-    Color(0xFFC77DBB), // goods
-    Color(0xFF222831), // oil
-    Color(0xFFE07B39), // fuel
-    Color(0xFFB5835A), // livestock
-    Color(0xFF7CC36E), // food
-    Color(0xFF5FB3B3), // fish
-    Color(0xFFF2EEDC), // paper
-    Color(0xFFD96C6C), // potash
-    Color(0xFF7D8F69), // nickel ore
-    Color(0xFFB8C2C8), // nickel
-    Color(0xFFC2603A), // bauxite
-    Color(0xFFD5DDE3), // aluminium
-)
-
-/** [cargo]'s colour, for a swatch or a bar. */
-fun cargoColour(cargo: Int): Color = CARGO_COLOURS.getOrElse(cargo) { Color(0xFF9AA0A6) }
 
 /** A small square in [cargo]'s colour, edged so dark ones show on the panel. */
 @Composable
-fun CargoSwatch(cargo: Int, modifier: Modifier = Modifier) {
+fun CargoSwatch(cargo: Int, modifier: Modifier = Modifier) = ColourSwatch(cargoColour(cargo), modifier)
+
+/** A small square in [colour], edged so dark ones show on the panel. */
+@Composable
+fun ColourSwatch(colour: Color, modifier: Modifier = Modifier) {
     val c = LocalColors.current
     val shape = RoundedCornerShape(3.dp)
-    Box(modifier.size(12.dp).clip(shape).background(cargoColour(cargo)).border(1.dp, c.chromeEdge, shape))
+    Box(modifier.size(12.dp).clip(shape).background(colour).border(1.dp, c.chromeEdge, shape))
 }
 
 /**
@@ -265,7 +243,7 @@ fun CargoSwatch(cargo: Int, modifier: Modifier = Modifier) {
 @Composable
 fun CargoRow(cargo: Int, amount: String, share: Float? = null, percent: String? = null, name: String? = null, modifier: Modifier = Modifier) {
     val c = LocalColors.current
-    val names = stringArrayResource(Res.array.cargoes)
+    val names = cargoNames()
     Row(
         modifier.fillMaxWidth().semantics(mergeDescendants = true) {},
         verticalAlignment = Alignment.CenterVertically,
@@ -371,7 +349,7 @@ fun <T> Grid(items: List<T>, columns: Int = 2, cell: @Composable (T) -> Unit) {
 @OptIn(ExperimentalLayoutApi::class)
 fun PlaceCell(name: String, amounts: List<Pair<Int, Int>>, line: String? = null, warning: String? = null) {
     val c = LocalColors.current
-    val cargoNames = stringArrayResource(Res.array.cargoes)
+    val cargoNames = cargoNames()
     val spoken = amounts.joinToString(", ") { (cargo, n) -> "${cargoNames.getOrElse(cargo) { "" }} ${Numbers.grouped(n.toLong())}" }
     Column(
         Modifier.fillMaxSize().clip(RoundedCornerShape(KitSpace.InnerCorner)).background(c.button)
@@ -473,7 +451,7 @@ fun PictureGroup(picture: @Composable (Modifier) -> Unit, content: @Composable (
 @Composable
 fun AmountsRow(title: String, amounts: List<Pair<Int, Int>>, onClick: (() -> Unit)? = null, columns: Int = amounts.size) {
     val c = LocalColors.current
-    val names = stringArrayResource(Res.array.cargoes)
+    val names = cargoNames()
     Row(
         Modifier.fillMaxWidth().heightIn(min = 32.dp).clip(RoundedCornerShape(KitSpace.InnerCorner))
             .then(if (onClick != null) Modifier.clickable(role = Role.Button, onClick = onClick) else Modifier)

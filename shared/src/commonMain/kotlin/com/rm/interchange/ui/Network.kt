@@ -89,7 +89,7 @@ fun LinkWindow(network: WorldView, roster: Roster, link: LinkView, onVehicle: (I
             valueColour = if (link.heldLong()) c.warn else null)
         InfoRow(stringResource(Res.string.link_departures), Numbers.grouped(link.departures.toLong()), Glyph.Up)
         Head(stringResource(Res.string.head_link_load), Glyph.Package)
-        val cargoes = (0 until Cargo.COUNT).filter { link.capacity.getOrElse(it) { 0 } > 0 }
+        val cargoes = (0 until Cargo.MAX).filter { link.capacity.getOrElse(it) { 0 } > 0 }
         if (cargoes.isEmpty()) Text(stringResource(Res.string.link_no_departures), color = c.textDim, style = KitType.Body)
         for (cg in cargoes) {
             val room = link.capacity[cg]

@@ -35,10 +35,6 @@ import org.jetbrains.compose.resources.stringResource
 /** How tall a buying list gets before it scrolls, set from the screen's height. */
 val LocalBuyListHeight = staticCompositionLocalOf { 320.dp }
 
-/** How much of [cargo] [n] is, as "31 passengers" or "20 t coal". */
-@Composable
-fun cargoAmount(cargo: Int, n: Int): String =
-    stringArrayResource(Res.array.cargo_amounts).getOrElse(cargo) { "%d" }.replace("%d", Numbers.grouped(n.toLong()))
 
 /** What [e] is carrying in the list: [cargo] if it's one of its choices, else its first, and how many others it could unless [choosing]. */
 @Composable
@@ -89,7 +85,7 @@ private fun ModelRow(e: Engine, cost: Long, running: Long, selected: Boolean, ca
             sight.bringIntoView()
         }
     }
-    val names = stringArrayResource(Res.array.cargoes)
+    val names = cargoNames()
     PictureRow(
         title = e.name(lang),
         modifier = Modifier.bringIntoViewRequester(sight),

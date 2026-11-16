@@ -101,6 +101,7 @@ import com.rm.interchange.sim.BadData
 import com.rm.interchange.sim.BadPack
 import com.rm.interchange.sim.Calendar
 import com.rm.interchange.sim.Cargo
+import com.rm.interchange.sim.CargoTable
 import com.rm.interchange.sim.Command
 import com.rm.interchange.sim.MissingPacks
 import com.rm.interchange.sim.Pack
@@ -584,7 +585,7 @@ private fun Root(settings: Settings) {
         }
     }
 
-    CompositionLocalProvider(LocalCompany provides (runner?.company ?: 0), LocalOpenService provides { openService.value = it }) { Box(Modifier.fillMaxSize()) {
+    CompositionLocalProvider(LocalCompany provides (runner?.company ?: 0), LocalOpenService provides { openService.value = it }, LocalCargo provides (runner?.game?.world?.roster?.cargo ?: CargoTable.BASE)) { Box(Modifier.fillMaxSize()) {
         when (screen) {
             Screen.Title -> TitleScreen(
                 continueLine = saves.firstOrNull()?.let { date(it.day, it.startYear) + " · " + saveLine(it) },
@@ -798,7 +799,7 @@ private fun Playing(runner: GameThread, sheets: Sheets, settings: Settings, pick
         Box(Modifier.fillMaxSize().background(LocalColors.current.page))
         return
     }
-    key(runner, w) { GameScreen(runner, w, sheets, frame, settings, pick, copyPick, onMenu, onOverlays, onFinances, onTown, goTo, showVehicle, onChat, chatUnread, onMap, overview, onCloseOverview) }
+    key(runner, w) { CompositionLocalProvider(LocalCargo provides w.roster.cargo) { GameScreen(runner, w, sheets, frame, settings, pick, copyPick, onMenu, onOverlays, onFinances, onTown, goTo, showVehicle, onChat, chatUnread, onMap, overview, onCloseOverview) } }
 }
 
 @Composable
@@ -1944,14 +1945,14 @@ private fun IndustryCard(world: World, ind: Industry, x: Int, y: Int, onClose: (
             line = world.towns.getOrNull(ind.town)?.name, lineEnd = stringResource(Res.string.tile_xy, x, y),
         )
         Head(stringResource(Res.string.head_made), Glyph.Up)
-        for (cg in 0 until Cargo.COUNT) {
+        for (cg in 0 until Cargo.MAX) {
             if (kind.outputs and (1 shl cg) == 0) continue
             val made = ind.madeLastMonth[cg]
             CargoRow(cg, Numbers.grouped(made.toLong()), share = if (made == 0) 0f else ind.movedLastMonth[cg].toFloat() / made, percent = if (made == 0) "-" else null)
         }
         if (kind.secondary) {
             Head(stringResource(Res.string.head_takes), Glyph.Down)
-            for (cg in 0 until Cargo.COUNT) if (kind.takes(cg)) CargoRow(cg, "")
+            for (cg in 0 until Cargo.MAX) if (kind.takes(cg)) CargoRow(cg, "")
             InfoRow(stringResource(Res.string.brought_label), Numbers.grouped(ind.broughtLastMonth.toLong()), Glyph.Package)
         }
     }
@@ -2085,7 +2086,7 @@ internal fun newsText(world: World, n: News): String {
 fun subsidyRoute(world: World, i: Int): String {
     val s = world.subsidies.getOrNull(i) ?: return ""
     val lang = languageCode()
-    val cargo = stringArrayResource(Res.array.cargoes).getOrElse(s.cargo) { "" }
+    val cargo = cargoNames().getOrElse(s.cargo) { "" }
     fun place(id: Int) = if (s.towns) world.towns.getOrNull(id)?.name ?: "" else world.industries.getOrNull(id)?.let { industryName(world, it, lang) } ?: ""
     return stringResource(Res.string.subsidy_route, cargo, place(s.from), place(s.to))
 }
@@ -2098,7 +2099,7 @@ fun goalText(world: World, g: Goal): String {
     return when (g.kind) {
         Goal.TOWN_POP -> stringResource(Res.string.goal_town, town(g.town), amount, g.deadline)
         Goal.DELIVER -> {
-            val cargo = stringArrayResource(Res.array.cargoes).getOrElse(g.cargo) { "" }
+            val cargo = cargoNames().getOrElse(g.cargo) { "" }
             val place = if (g.industry >= 0) world.industries.getOrNull(g.industry)?.let { industryName(world, it, languageCode()) } ?: "" else town(g.town)
             stringResource(Res.string.goal_deliver, amount, cargo, place, g.deadline)
         }

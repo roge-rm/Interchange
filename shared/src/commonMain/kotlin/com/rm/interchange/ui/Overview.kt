@@ -141,7 +141,7 @@ internal fun OverviewWindow(runner: GameThread, view: View, viewport: Size, opti
     val current = image
     val companyIds = listOf(-1) + current?.data?.companies.orEmpty().map { it.first }
     val filter = owner.takeIf { it in companyIds } ?: -1
-    val cargoNames = stringArrayResource(Res.array.cargoes)
+    val cargoNames = cargoNames()
     val lang = languageCode()
     val me = LocalCompany.current
     val companyLabel = when (filter) {
@@ -180,7 +180,7 @@ internal fun OverviewWindow(runner: GameThread, view: View, viewport: Size, opti
             }
             val cargoPicker: @Composable (Modifier) -> Unit = { modifier ->
                 MapChoice(if (cargo < 0) stringResource(Res.string.map_all_cargo) else cargoNames[cargo], stringResource(Res.string.map_cargo), Glyph.Package,
-                    modifier, listOf(-1) + (0 until Cargo.COUNT),
+                    modifier, listOf(-1) + (0 until LocalCargo.current.size),
                     { if (it < 0) stringResource(Res.string.map_all_cargo) else cargoNames[it] }, cargo) { cargo = it }
             }
             val navigation: @Composable () -> Unit = {
@@ -277,17 +277,17 @@ internal fun OverviewWindow(runner: GameThread, view: View, viewport: Size, opti
         Window(industry.name(lang), { selectedIndustry = -1 }, Glyph.Factory) {
             PictureRow(industry.kind.name(lang), picture = { IndustryPicture(industry.kind, it) })
             Head(stringResource(Res.string.head_made), Glyph.Up)
-            for (cg in 0 until Cargo.COUNT) if (industry.kind.outputs and (1 shl cg) != 0) {
+            for (cg in 0 until Cargo.MAX) if (industry.kind.outputs and (1 shl cg) != 0) {
                 val made = info.made[cg]
                 CargoRow(cg, Numbers.grouped(made.toLong()), share = if (made > 0) info.moved[cg].toFloat() / made else 0f)
             }
             if (industry.kind.accepts != 0) {
                 Head(stringResource(Res.string.head_takes), Glyph.Down)
-                for (cg in 0 until Cargo.COUNT) if (industry.kind.takes(cg)) CargoRow(cg, "")
+                for (cg in 0 until Cargo.MAX) if (industry.kind.takes(cg)) CargoRow(cg, "")
                 InfoRow(stringResource(Res.string.map_input_stock), Numbers.grouped(info.stock.toLong()), Glyph.Package)
             }
             Head(stringResource(Res.string.map_nearby_waiting), Glyph.Station)
-            for (cg in 0 until Cargo.COUNT) if (industry.kind.outputs and (1 shl cg) != 0) CargoRow(cg, Numbers.grouped(info.waiting[slot][cg].toLong()))
+            for (cg in 0 until Cargo.MAX) if (industry.kind.outputs and (1 shl cg) != 0) CargoRow(cg, Numbers.grouped(info.waiting[slot][cg].toLong()))
             InfoRow(stringResource(Res.string.map_coverage), "${info.coverage[slot]}%", Glyph.Station)
             BigButton(stringResource(Res.string.map_go_to), primary = true, glyph = Glyph.Inspect) {
                 view.focusX = industry.place.x

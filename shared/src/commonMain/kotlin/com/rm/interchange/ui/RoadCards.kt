@@ -99,7 +99,7 @@ fun RoadVehicleCard(view: WorldView, roster: Roster, v: RoadVehicleView, year: I
         if (!mine || v.wrecked) return@Card
         VehicleGroupControls(view, Command.CopyVehicle.ROAD, v.id, v.group, send) { order(Command.TrainOrder.GROUP, intArrayOf(it)) }
         if (v.inDepot && e.cargoes.size > 1) {
-            val cargoes = stringArrayResource(Res.array.cargoes)
+            val cargoes = cargoNames()
             SegmentedChoice(e.cargoes.toList(), v.carries, { cargoes[it] }) { order(Command.TrainOrder.REFIT, intArrayOf(it)) }
         }
         Head(stringResource(Res.string.orders))

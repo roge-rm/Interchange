@@ -465,32 +465,6 @@ fun LoadWindow(saves: List<SavedGames.Entry>, error: String?, onLoad: (SavedGame
     }
 }
 
-/** The content packs added: what each is, adding more from a file, and taking them off. Removing asks once more. */
-@Composable
-fun PacksWindow(packs: List<Pack>, adding: Boolean, message: String?, failed: Boolean, onAdd: () -> Unit, onRemove: (Pack) -> Unit, onClose: () -> Unit) {
-    val c = LocalColors.current
-    val lang = languageCode()
-    var removing by remember { mutableStateOf<String?>(null) }
-    Window(stringResource(Res.string.packs), onClose, Glyph.Package) {
-        BigButton(stringResource(if (adding) Res.string.adding_pack else Res.string.add_pack), primary = true, enabled = !adding, glyph = Glyph.Plus, onClick = onAdd)
-        if (message != null) Text(message, color = if (failed) c.bad else c.text, style = KitType.Body)
-        for (p in listOf(Packs.BASE) + packs) {
-            val about = p.description(lang)
-            PictureRow(
-                p.name(lang),
-                icon = { Badge(Glyph.Package, size = 40.dp) },
-                line = stringResource(Res.string.pack_line, p.version, p.author),
-                stats = pluralStringResource(Res.plurals.vehicles_count, p.vehicles.size, p.vehicles.size),
-                end = if (p.id == Packs.BASE_ID) null else ({
-                    if (removing == p.id) ActionButton(stringResource(Res.string.remove), strong = true) { removing = null; onRemove(p) }
-                    else SquareButton(Glyph.Remove, stringResource(Res.string.remove), 34.dp) { removing = p.id }
-                }),
-                below = if (about.isEmpty()) null else ({ Text(about, color = c.textDim, style = KitType.Dim) }),
-            )
-        }
-    }
-}
-
 /** The player's settings: the language, how often the game saves itself, what's drawn over the map, and the volume. */
 @Composable
 fun SettingsWindow(settings: Settings, onClose: () -> Unit) {
@@ -1021,7 +995,7 @@ fun IndustriesWindow(world: World, onGo: (Float, Float) -> Unit, send: (com.rm.i
         val byKind = world.industries.filter { !it.closed }.groupBy { it.kind }.entries.sortedBy { it.key }
         for ((k, list) in byKind) {
             val kind = world.roster.industries[k]
-            val outputs = (0 until com.rm.interchange.sim.Cargo.COUNT).filter { kind.outputs and (1 shl it) != 0 }
+            val outputs = (0 until com.rm.interchange.sim.Cargo.MAX).filter { kind.outputs and (1 shl it) != 0 }
             Head(kind.name(lang))
             PictureGroup({ IndustryPicture(kind, it) }) {
                 for (ind in list.sortedBy { industryName(world, it, lang) }) {

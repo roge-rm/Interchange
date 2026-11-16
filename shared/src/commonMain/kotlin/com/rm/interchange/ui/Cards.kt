@@ -96,7 +96,7 @@ fun TrainCard(
         )
         VehicleStats(
             t.kmh, t.topSpeed, t.age, t.old, t.reliability, t.profitThisYear, t.profitLastYear,
-            (0 until Cargo.COUNT).filter { t.capacity[it] > 0 }.map { VehicleLoad(it, t.load[it], t.capacity[it]) },
+            (0 until Cargo.MAX).filter { t.capacity[it] > 0 }.map { VehicleLoad(it, t.load[it], t.capacity[it]) },
             listOfNotNull(
                 stringResource(Res.string.breakdowns) to t.breakdowns.toString(),
             ) + worthRows(t.value, t.nextService, mine) + linkRows(OverviewVehicle.TRAIN, t.id, t.orders, t.order),
@@ -106,7 +106,7 @@ fun TrainCard(
         if (!mine || t.wrecked) return@Card
         VehicleGroupControls(view, Command.CopyVehicle.TRAIN, t.id, t.group, send) { order(Command.TrainOrder.GROUP, intArrayOf(it)) }
         if (t.inDepot && t.formation.all { it.model == t.engine || it.model == t.wagon } && t.formation.filter { it.model == t.wagon }.map { it.cargo }.distinct().size <= 1 && w.cargoes.size > 1) {
-            val cargoes = stringArrayResource(Res.array.cargoes)
+            val cargoes = cargoNames()
             val selected = if (t.wagonCargo in w.cargoes) t.wagonCargo else w.cargoes.first()
             SegmentedChoice(w.cargoes.toList(), selected, { cargoes[it] }) { order(Command.TrainOrder.REFIT, intArrayOf(it)) }
         }
@@ -273,13 +273,13 @@ fun StationCard(view: WorldView, roster: Roster, s: StationView, onVehicle: (Veh
         var loadable = 0
         fun loads(orders: IntArray, cargo: (Int) -> Boolean) {
             if (orders.none { Order.station(it) == s.id && !Order.has(it, Order.NO_LOAD) }) return
-            for (cg in 0 until Cargo.COUNT) if (cargo(cg)) loadable = loadable or (1 shl cg)
+            for (cg in 0 until Cargo.MAX) if (cargo(cg)) loadable = loadable or (1 shl cg)
         }
         for (t in view.trains) loads(t.orders) { t.capacity[it] > 0 }
         for (v in view.roadVehicles) loads(v.orders) { it == v.carries }
         for (v in view.ships) loads(v.orders) { it == v.carries }
         for (v in view.aircraft) loads(v.orders) { it == v.carries }
-        for (cg in 0 until Cargo.COUNT) {
+        for (cg in 0 until Cargo.MAX) {
             if (cg > Cargo.MAIL && (s.served or loadable) and (1 shl cg) == 0) continue
             CargoRow(cg, Numbers.grouped(s.waiting[cg].toLong()), share = s.rating[cg] / 255f, percent = if (s.served and (1 shl cg) == 0) "-" else null)
             // Last month's average wait for what boarded, and how many gave up, under its cargo's row.
@@ -304,7 +304,7 @@ fun StationCard(view: WorldView, roster: Roster, s: StationView, onVehicle: (Veh
                 GoingCell(
                     if (g.dest < 0) anywhere else stationName(view, g.dest),
                     if (g.via >= 0) stringResource(Res.string.changing_at, stationName(view, g.via)) else null,
-                    (0 until Cargo.COUNT).filter { g.counts[it] > 0 }.map { it to g.counts[it] },
+                    (0 until Cargo.MAX).filter { g.counts[it] > 0 }.map { it to g.counts[it] },
                     if (g.dest >= 0) whyText(why[g.dest] ?: -1) else null,
                 )
             }

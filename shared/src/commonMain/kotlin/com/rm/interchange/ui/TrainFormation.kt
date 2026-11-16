@@ -52,7 +52,7 @@ internal fun TrainFormationEditor(
 ) {
     val colours = LocalColors.current
     val lang = languageCode()
-    val cargoNames = stringArrayResource(Res.array.cargoes)
+    val cargoNames = cargoNames()
     var draft by remember(t.id, t.formation) { mutableStateOf(t.formation) }
     var selected by remember(t.id) { mutableIntStateOf(0) }
     var picking by remember(t.id) { mutableStateOf(false) }
@@ -113,7 +113,7 @@ internal fun TrainFormationEditor(
     val valid = validTrainFormation(roster, draft)
     val preview = if (valid) Train(roster, t.id, t.owner, t.engine, t.wagon, 0, t.depot, formation = draft) else null
     val cost = trainFormationCost(roster, t.formation, draft, t.days, price)
-    val fits = preview != null && (0 until Cargo.COUNT).all { t.load[it] <= preview.capacity(it) }
+    val fits = preview != null && (0 until Cargo.MAX).all { t.load[it] <= preview.capacity(it) }
     if (preview != null) {
         // With a dual-mode engine, its numbers under wires and off them.
         val power = draft.sumOf { roster[it.model].power }.toLong()
@@ -131,7 +131,7 @@ internal fun TrainFormationEditor(
         val tenths = preview.length * 10 / (com.rm.interchange.sim.FIX * 16)
         InfoRow(stringResource(Res.string.formation_length), stringResource(Res.string.formation_tiles, tenths / 10, tenths % 10))
         InfoRow(stringResource(Res.string.formation_running), stringResource(Res.string.a_year, money(price(preview.carEngines.sumOf { roster[it].running }))))
-        for (cg in 0 until Cargo.COUNT) if (preview.capacity(cg) > 0) CargoRow(cg, cargoAmount(cg, preview.capacity(cg)))
+        for (cg in 0 until Cargo.MAX) if (preview.capacity(cg) > 0) CargoRow(cg, cargoAmount(cg, preview.capacity(cg)))
     }
     val problem = when {
         !valid -> stringResource(Res.string.formation_limits, MAX_LOCOMOTIVES, MAX_WAGONS)

@@ -204,7 +204,7 @@ fun ShipCard(view: WorldView, roster: Roster, v: ShipView, year: Int, funds: Lon
         if (!mine) return@Card
         VehicleGroupControls(view, Command.CopyVehicle.SHIP, v.id, v.group, send) { order(Command.TrainOrder.GROUP, intArrayOf(it)) }
         if (v.inDepot && e.cargoes.size > 1) {
-            val cargoes = stringArrayResource(Res.array.cargoes)
+            val cargoes = cargoNames()
             SegmentedChoice(e.cargoes.toList(), v.carries, { cargoes[it] }) { order(Command.TrainOrder.REFIT, intArrayOf(it)) }
         }
         val group = if (v.shared >= 0) view.ships.count { it.id != v.id && it.shared == v.shared } else 0
@@ -265,7 +265,7 @@ fun AircraftCard(view: WorldView, roster: Roster, v: AircraftView, year: Int, fu
         if (!mine || v.wrecked) return@Card
         VehicleGroupControls(view, Command.CopyVehicle.AIRCRAFT, v.id, v.group, send) { order(Command.TrainOrder.GROUP, intArrayOf(it)) }
         if (v.inDepot && e.cargoes.size > 1) {
-            val cargoes = stringArrayResource(Res.array.cargoes)
+            val cargoes = cargoNames()
             SegmentedChoice(e.cargoes.toList(), v.carries, { cargoes[it] }) { order(Command.TrainOrder.REFIT, intArrayOf(it)) }
         }
         val group = if (v.shared >= 0) view.aircraft.count { it.id != v.id && it.shared == v.shared } else 0
