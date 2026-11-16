@@ -31,6 +31,31 @@ class Rival(val company: Int, val home: Int) {
     val held = HashMap<Long, Int>()
     /** The railway it's planning, a little each tick, or null. */
     internal var job: RailJob? = null
+    /** The shipping line it's looking for water for, a little each tick, or null. */
+    internal var shipJob: ShipJob? = null
+    /** What it runs, a [RivalStyle]. */
+    var style = RivalStyle.GENERAL
+    /**
+     * Its ways, fixed when it starts: how much of the bank's limit it borrows (0 a half, 1 three quarters, 2 all of
+     * it), how far apart it likes its ships' and aircraft's ends (0 near, 1 middling, 2 far), and whether a shipping
+     * line goes after freight before passengers and an airline carries mail. A rival from before styles has 2, 1 and
+     * false.
+     */
+    var borrow = 2
+    var far = 1
+    var freight = false
+
+    /** Whether its style or ways differ from a rival's before styles, so they count in the checksum. */
+    internal val styled get() = style != RivalStyle.GENERAL || borrow != 2 || far != 1 || freight
+}
+
+/** What a rival runs: roads and railways as before styles, freight first, ships, or aircraft. */
+object RivalStyle {
+    const val GENERAL = 0
+    const val HAULER = 1
+    const val SHIPPING = 2
+    const val AIRLINE = 3
+    const val COUNT = 4
 }
 
 /** Whether [r] has tried [key] lately and not tried again yet. */
@@ -45,10 +70,24 @@ internal fun World.giveUp(r: Rival, key: Long) {
  * A route a rival runs: its two stations, the depot its vehicles come from, the towns, what they carry, and whether
  * it's a railway. A freight route's [townA] and [townB] are the industry it loads at and the one it takes the cargo to.
  */
-class RivalRoute(val a: Int, val b: Int, val depot: Int, val townA: Int, val townB: Int, val cargo: Int, val rail: Boolean = false) {
+class RivalRoute(
+    val a: Int, val b: Int, val depot: Int, val townA: Int, val townB: Int, val cargo: Int, val rail: Boolean = false,
+    /** [RivalRoute.ROAD] (or a railway, by [rail]), [RivalRoute.SHIP] or [RivalRoute.AIR]; [depot] is a shipyard or hangar. */
+    val craft: Int = ROAD,
+) {
     val freight get() = cargo != Cargo.PASSENGERS
+    val ship get() = craft == SHIP
+    val air get() = craft == AIR
+    /** Buses or trucks. */
+    val road get() = !rail && craft == ROAD
     /** A railway's feeder buses, from the middle of town [townA] to a stop at its station [b]. */
-    val feeder get() = !rail && !freight && townA == townB
+    val feeder get() = road && !freight && townA == townB
+
+    companion object {
+        const val ROAD = 0
+        const val SHIP = 1
+        const val AIR = 2
+    }
     /** A railway's passing loops, each packed by [packLoop]. */
     val loops = ArrayList<Int>()
 }
@@ -64,16 +103,28 @@ private fun railKey(from: Int, to: Int, cargo: Int): Long = (1L shl 61) or (carg
 /** Feeder buses from town [town] to station [station]. */
 private fun feederKey(town: Int, station: Int): Long = (1L shl 60) or (town.toLong() shl 24) or station.toLong()
 
+/** A shipping line from [from] to [to] carrying [cargo]: industries for freight, towns for passengers. */
+internal fun shipKey(from: Int, to: Int, cargo: Int): Long = (1L shl 59) or (cargo.toLong() shl 48) or (from.toLong() shl 24) or to.toLong()
+
+/** An air route between towns [a] and [b]. */
+internal fun airKey(a: Int, b: Int): Long = (1L shl 58) or (minOf(a, b).toLong() shl 24) or maxOf(a, b).toLong()
+
 /** The key [route] is remembered by in [Rival.failed] once given up. */
-private fun keyOf(route: RivalRoute): Long = when {
+internal fun keyOf(route: RivalRoute): Long = when {
+    route.ship -> shipKey(route.townA, route.townB, route.cargo)
+    route.air -> airKey(route.townA, route.townB)
     route.rail -> railKey(route.townA, route.townB, route.cargo)
     route.feeder -> feederKey(route.townA, route.b)
     route.freight -> freightKey(route.townA, route.townB, route.cargo)
     else -> pairKey(route.townA, route.townB)
 }
 
-/** Sets up [n] rivals, each on its own home town, the biggest towns first and kept apart. */
-internal fun World.startRivals(n: Int) {
+/**
+ * Sets up [n] rivals, each on its own home town, the biggest towns first and kept apart. With [styled] each gets a
+ * [RivalStyle] and ways from the game's RNG: the first runs roads and railways, the rest go through the other styles
+ * the map allows in a shuffled order, then roads and railways again, so a game's rivals differ.
+ */
+internal fun World.startRivals(n: Int, styled: Boolean = true) {
     if (n <= 0 || towns.isEmpty()) return
     val homes = ArrayList<Town>()
     for (t in towns.sortedWith(compareByDescending<Town> { it.population }.thenBy { it.id })) {
@@ -84,10 +135,55 @@ internal fun World.startRivals(n: Int) {
     // Too few towns far enough apart: share them.
     var k = 0
     while (homes.size < n) homes += towns[k++ % towns.size]
+    val order = ArrayList<Int>()
+    if (styled) {
+        val others = arrayListOf(RivalStyle.HAULER)
+        if (waterForShips()) others += RivalStyle.SHIPPING
+        if (airportsForAirlines()) others += RivalStyle.AIRLINE
+        for (k in others.indices.reversed()) {
+            val j = rng.below(k + 1)
+            val t = others[k]; others[k] = others[j]; others[j] = t
+        }
+        order += others
+        order += RivalStyle.GENERAL
+    }
     for ((i, home) in homes.withIndex()) {
         val id = companies.size
-        companies += Company(id, rivalName(home, id), Prices.startMoney(startYear)).also { it.autorenew = true; giveInsignia(it) }
-        rivals += Rival(id, home.id).also { it.thinkOn = workDay + 3 + i * 9 }
+        val rv = Rival(id, home.id).also { it.thinkOn = workDay + 3 + i * 9 }
+        if (styled) {
+            rv.style = if (i == 0) RivalStyle.GENERAL else order[(i - 1) % order.size]
+            rv.borrow = rng.below(3)
+            rv.far = rng.below(3)
+            rv.freight = rng.below(2) == 1
+        }
+        companies += Company(id, rivalName(home, id, rv.style), Prices.startMoney(startYear)).also { it.autorenew = true; giveInsignia(it) }
+        rivals += rv
+    }
+}
+
+/**
+ * Whether there's water enough for a shipping line: at least [SHIP_PLACES] towns and industries with natural open
+ * water within [SHIP_SHORE] tiles of their middle, and [SHIP_WATER] tiles of open water in all.
+ */
+internal fun World.waterForShips(): Boolean {
+    var water = 0
+    for (y in 0 until height) for (x in 0 until width) if (isWater(x, y)) water++
+    if (water < SHIP_WATER) return false
+    fun near(cx: Int, cy: Int): Boolean {
+        for (y in cy - SHIP_SHORE..cy + SHIP_SHORE) for (x in cx - SHIP_SHORE..cx + SHIP_SHORE) if (inside(x, y) && isWater(x, y)) return true
+        return false
+    }
+    var places = 0
+    for (t in towns) if (near(t.x, t.y)) places++
+    for (ind in industries) if (!ind.closed) { val (x, y) = middle(ind); if (near(x, y)) places++ }
+    return places >= SHIP_PLACES
+}
+
+/** Whether an airport a passenger aircraft on sale can use is on sale. */
+internal fun World.airportsForAirlines(): Boolean {
+    val year = Calendar.year(startYear, day)
+    return roster.availableOf(VehicleKind.AIRCRAFT, year).any { e ->
+        Cargo.PASSENGERS in e.cargoes && e.runway != Runways.HELI && Airports.entries(year).any { Airports.CLASS[it] >= e.runway }
     }
 }
 
@@ -95,9 +191,9 @@ internal fun World.startRivals(n: Int) {
  * A name from the home town in its own language, or from the nearest town no company is named after if another
  * company has the home town's, and that no other company has.
  */
-private fun World.rivalName(home: Town, id: Int): String {
+private fun World.rivalName(home: Town, id: Int, style: Int): String {
     val kind = rng.below(TOWN_NAME_KINDS)
-    return townCompanyName(nameTown(home, id), kind, id)
+    return townCompanyName(nameTown(home, id), kind, id, style)
 }
 
 /** Each calendar day: any rival due to think does, every so many work days. */
@@ -135,8 +231,8 @@ private fun World.think(r: Rival, c: Company) {
     townWork(r, c)
     for (route in r.routes) growRoute(c, route)
     for (route in r.routes.toList()) if (route.rail && !route.freight) feeders(r, c, route)
-    // Still planning a railway: nothing more opened until it's done.
-    if (r.job != null) return
+    // Still planning a railway or shipping line: nothing more opened until it's done.
+    if (r.job != null || r.shipJob != null) return
     // A hard rival with money to spare opens two at a look.
     val opens = if (settings.rivalLevel == RivalLevel.HARD && c.money - c.loan > maxLoan()) 2 else 1
     open(r, c, opens)
@@ -159,13 +255,25 @@ private fun World.open(r: Rival, c: Company, opens: Int, from: Int = 0, running:
         if (ran < 0) ran = r.routes.count { !it.feeder }
         left--
         // Each level's kinds in turn; anything it can't do this time, the next kind.
-        val kinds = KINDS[level()]
+        val kinds = kindsFor(r)
         k0 = k0.coerceIn(0, kinds.size)
         var done = false
         for (k in k0 until kinds.size) {
             val tried = when (kinds[(ran + k) % kinds.size]) {
                 KIND_BUS -> newRoute(r, c, richPayback(c, ROAD_PAYBACK[level()]))
                 KIND_TRUCK -> newFreightRoute(r, c, richPayback(c, ROAD_PAYBACK[level()]))
+                KIND_AIR -> newAirRoute(r, c, richPayback(c, AIR_PAYBACK[level()]))
+                KIND_SHIP -> {
+                    val job = shipJob(r, c, richPayback(c, SHIP_PAYBACK[level()]))
+                    if (job != null) {
+                        job.running = ran
+                        job.from = k + 1
+                        job.opensLeft = left
+                        r.shipJob = job
+                        return
+                    }
+                    Tried.CANT
+                }
                 else -> {
                     val job = railJob(r, c, RAIL_PAYBACK[level()])
                     if (job != null) {
@@ -211,15 +319,56 @@ internal fun World.railJobs() {
     }
 }
 
-/** What each level opens in turn, easy to hard: buses, trucks, railways. */
+/**
+ * Each tick one rival looking for water for a shipping line carries on with it, for up to [World.shipTickStates]
+ * tiles, the first by number; one that's done carries on opening as [think] would have.
+ */
+internal fun World.shipJobs() {
+    if (rivals.none { it.shipJob != null }) return
+    for (r in rivals) {
+        val c = companies.getOrNull(r.company)
+        if (c == null || c.gone) r.shipJob = null
+    }
+    val r = rivals.firstOrNull { it.shipJob != null } ?: return
+    val c = companies[r.company]
+    val job = r.shipJob!!
+    job.left = shipTickStates
+    val t = runShipJob(r, c, job) ?: return
+    r.shipJob = null
+    when (t) {
+        Tried.BUILT -> open(r, c, job.opensLeft)
+        Tried.CANT -> open(r, c, job.opensLeft + 1, job.from, job.running)
+        Tried.POOR -> {}
+    }
+}
+
+/** What each level opens in turn, easy to hard: buses, trucks, railways; and ships and aircraft for those styles. */
 private const val KIND_BUS = 0
 private const val KIND_TRUCK = 1
 private const val KIND_RAIL = 2
+private const val KIND_SHIP = 3
+private const val KIND_AIR = 4
 private val KINDS = listOf(
     intArrayOf(KIND_BUS, KIND_TRUCK, KIND_BUS, KIND_TRUCK, KIND_RAIL),
     intArrayOf(KIND_BUS, KIND_TRUCK, KIND_RAIL),
     intArrayOf(KIND_RAIL, KIND_BUS, KIND_RAIL, KIND_TRUCK),
 )
+/** A hauler's, by level: trucks and freight railways. */
+private val HAULER_KINDS = listOf(
+    intArrayOf(KIND_TRUCK, KIND_TRUCK, KIND_RAIL),
+    intArrayOf(KIND_TRUCK, KIND_RAIL),
+    intArrayOf(KIND_RAIL, KIND_TRUCK),
+)
+/** A shipping line's: ships, and trucks while no ship line will go. */
+private val SHIP_KINDS = intArrayOf(KIND_SHIP, KIND_TRUCK)
+private val AIR_KINDS = intArrayOf(KIND_AIR)
+
+private fun World.kindsFor(r: Rival): IntArray = when (r.style) {
+    RivalStyle.HAULER -> HAULER_KINDS[level()]
+    RivalStyle.SHIPPING -> SHIP_KINDS
+    RivalStyle.AIRLINE -> AIR_KINDS
+    else -> KINDS[level()]
+}
 
 /** Work days so far this calendar year. */
 internal fun World.workedThisYear(): Long = Calendar.dayOfYear(startYear, day).toLong() * settings.dayLength
@@ -228,7 +377,7 @@ internal fun World.workedThisYear(): Long = Calendar.dayOfYear(startYear, day).t
 internal const val FEW_MONTHS = 90
 
 /** Whether a vehicle built on work day [built] ran the whole of last calendar year, so its profit then is a full year's. */
-private fun World.ranLastYear(built: Int) = Calendar.year(startYear, built / settings.dayLength) < Calendar.year(startYear, day) - 1
+internal fun World.ranLastYear(built: Int) = Calendar.year(startYear, built / settings.dayLength) < Calendar.year(startYear, day) - 1
 
 /**
  * Whether a vehicle built on work day [built] lost money: last calendar year if it ran all of it. Past day length 1
@@ -252,6 +401,8 @@ internal fun World.sellLosers(r: Rival, c: Company) {
     fun routeOf(v: Carrier) = r.routes.firstOrNull { onRoute(v, it) }
     for (v in roadVehicles) if (v != null && v.owner == c.id && v.toDepot && !v.servicing) routeOf(v)?.let { selling += it }
     for (t in trains) if (t != null && t.owner == c.id && t.toDepot && !t.servicing) routeOf(t)?.let { selling += it }
+    for (v in ships) if (v != null && v.owner == c.id && v.toDepot && !v.servicing) routeOf(v)?.let { selling += it }
+    for (v in aircraft) if (v != null && v.owner == c.id && v.toDepot && !v.servicing) routeOf(v)?.let { selling += it }
     // Its own vehicles only stand stopped in a depot when sent there to be sold.
     for (v in roadVehicles) {
         if (v == null || v.owner != c.id || v.wreckedFor > 0) continue
@@ -276,11 +427,32 @@ internal fun World.sellLosers(r: Rival, c: Company) {
             apply(Command.TrainOrder(c.id, t.id, Command.TrainOrder.TO_DEPOT))
         }
     }
+    // Ships and aircraft as road vehicles, to their shipyard or hangar.
+    for (v in ships) {
+        if (v == null || v.owner != c.id) continue
+        if (v.inDepot && !v.running) apply(Command.CraftOrder(c.id, false, v.id, Command.TrainOrder.SELL))
+        else if (!v.inDepot && (!v.toDepot || v.servicing) && tick >= v.noDepotUntil && lostAWorkYear(v.built, v.profitThisYear, v.profitLastYear)) {
+            val route = routeOf(v)
+            if (route != null && !selling.add(route)) continue
+            if (v.toDepot) apply(Command.CraftOrder(c.id, false, v.id, Command.TrainOrder.TO_DEPOT))
+            apply(Command.CraftOrder(c.id, false, v.id, Command.TrainOrder.TO_DEPOT))
+        }
+    }
+    for (v in aircraft) {
+        if (v == null || v.owner != c.id || v.wreckedFor > 0) continue
+        if (v.inDepot && !v.running) apply(Command.CraftOrder(c.id, true, v.id, Command.TrainOrder.SELL))
+        else if (!v.inDepot && (!v.toDepot || v.servicing) && lostAWorkYear(v.built, v.profitThisYear, v.profitLastYear)) {
+            val route = routeOf(v)
+            if (route != null && !selling.add(route)) continue
+            if (v.toDepot) apply(Command.CraftOrder(c.id, true, v.id, Command.TrainOrder.TO_DEPOT))
+            apply(Command.CraftOrder(c.id, true, v.id, Command.TrainOrder.TO_DEPOT))
+        }
+    }
     // A road route is held while another company's vehicle is on one of its stops that would come down, as that stop
     // can't then; it's tried again each look, for up to HOLD_DAYS.
     val held = HashMap<Long, Int>()
     fun clear(route: RivalRoute): Boolean {
-        if (route.rail) return true
+        if (!route.road) return true
         val going = listOf(route.a, route.b).filter { id -> r.routes.none { it !== route && !it.rail && (it.a == id || it.b == id) } }
         val stops = going.flatMap { stations.getOrNull(it)?.stops?.toList() ?: emptyList() }.toSet()
         if (roadVehicles.none { it != null && it.owner != c.id && !it.inDepot && roadStepTile(it.at) in stops }) return true
@@ -289,7 +461,13 @@ internal fun World.sellLosers(r: Rival, c: Company) {
         held[key] = since
         return workDay - since >= HOLD_DAYS
     }
-    val gone = r.routes.filter { route -> (if (route.rail) trains else roadVehicles).none { it != null && it.owner == c.id && onRoute(it, route) } && clear(route) }
+    fun runs(route: RivalRoute) = when {
+        route.rail -> trains
+        route.ship -> ships
+        route.air -> aircraft
+        else -> roadVehicles
+    }.any { it != null && it.owner == c.id && onRoute(it, route) }
+    val gone = r.routes.filter { route -> !runs(route) && clear(route) }
     for (route in gone) held.remove(keyOf(route))
     r.held.clear()
     r.held.putAll(held)
@@ -302,7 +480,12 @@ internal fun World.sellLosers(r: Rival, c: Company) {
         for (id in listOf(route.a, route.b)) {
             val s = stations.getOrNull(id) ?: continue
             val others = r.routes.filter { it.a == id || it.b == id }
-            val tiles = (if (others.none { !it.rail }) s.stops.toList() else emptyList()) + (if (others.none { it.rail }) s.tiles.toList() else emptyList())
+            val tiles = ArrayList<Int>()
+            if (others.none { it.road }) tiles += s.stops
+            if (others.none { it.rail }) tiles += s.tiles
+            // A dock or airport only for a route of ships or aircraft; the whole airport comes down from one of its tiles.
+            if (route.ship && others.none { it.ship }) tiles += s.docks.filter { docks.containsKey(it) }
+            if (route.air && others.none { it.air }) s.aero.firstOrNull()?.let { tiles += it }
             for (i in tiles) clearTile(c, Command.Clear(c.id, i % width, i / width))
         }
         // A railway's feeder buses go with it.
@@ -444,7 +627,7 @@ private fun World.playerNear(x: Int, y: Int): Boolean =
     stations.any { it != null && human(it.owner) && !it.waypoint && chebyshev(it.signX, it.signY, x, y) <= PLAYER_REACH }
 
 /** Easy rivals keep clear of towns the player serves. */
-private fun World.leaveAlone(t: Town) = settings.rivalLevel == RivalLevel.EASY && playerNear(t.x, t.y)
+internal fun World.leaveAlone(t: Town) = settings.rivalLevel == RivalLevel.EASY && playerNear(t.x, t.y)
 
 /** Whether a company other than [company] already has a passenger station in both [t1] and [t2], so the pair's taken. */
 private fun World.pairTaken(company: Int, t1: Town, t2: Town): Boolean {
@@ -519,7 +702,15 @@ private fun World.shed(c: Company) {
     val rail = trains.filter { it != null && it.owner == c.id && it.wreckedFor == 0 && !it.inDepot && !it.toDepot && old(it.built) }.map { it!! }
     val v = road.minByOrNull { it.profitThisYear + it.profitLastYear }
     val t = rail.minByOrNull { it.profitThisYear + it.profitLastYear }
-    if (t != null && (v == null || t.profitThisYear + t.profitLastYear < v.profitThisYear + v.profitLastYear)) {
+    // Ships and aircraft only where it has any, so a rival without keeps to what it did before.
+    val ship = ships.filter { it != null && it.owner == c.id && !it.inDepot && !it.toDepot && old(it.built) }.minByOrNull { it!!.profitThisYear + it.profitLastYear }
+    val plane = aircraft.filter { it != null && it.owner == c.id && it.wreckedFor == 0 && !it.inDepot && !it.toDepot && old(it.built) }.minByOrNull { it!!.profitThisYear + it.profitLastYear }
+    val craft = listOfNotNull(ship?.let { it.profitThisYear + it.profitLastYear }, plane?.let { it.profitThisYear + it.profitLastYear }).minOrNull()
+    val land = listOfNotNull(v?.let { it.profitThisYear + it.profitLastYear }, t?.let { it.profitThisYear + it.profitLastYear }).minOrNull()
+    if (craft != null && (land == null || craft < land)) {
+        if (ship != null && ship.profitThisYear + ship.profitLastYear == craft) apply(Command.CraftOrder(c.id, false, ship.id, Command.TrainOrder.TO_DEPOT))
+        else if (plane != null) apply(Command.CraftOrder(c.id, true, plane.id, Command.TrainOrder.TO_DEPOT))
+    } else if (t != null && (v == null || t.profitThisYear + t.profitLastYear < v.profitThisYear + v.profitLastYear)) {
         apply(Command.TrainOrder(c.id, t.id, Command.TrainOrder.TO_DEPOT))
     } else if (v != null) {
         apply(Command.RoadOrder(c.id, v.id, Command.TrainOrder.TO_DEPOT))
@@ -528,6 +719,8 @@ private fun World.shed(c: Company) {
 
 /** Adds a vehicle to [route] when it's leaving people behind at either end, or for a railway a train or a passing loop. */
 internal fun World.growRoute(c: Company, route: RivalRoute) {
+    if (route.ship) return growShips(c, route)
+    if (route.air) return growAir(c, route)
     if (route.rail) return growRail(c, route, RAIL_PAYBACK[level()]) { ranLastYear(it) }
     val a = stations.getOrNull(route.a) ?: return
     val b = stations.getOrNull(route.b) ?: return
@@ -556,7 +749,9 @@ private fun World.buyStruggling(c: Company) {
 
 /** Whether [c] has [cost] or can borrow it, borrowing what it needs; an easy rival borrows only half what the bank lends. */
 internal fun World.afford(c: Company, cost: Long): Boolean {
-    val most = if (settings.rivalLevel == RivalLevel.EASY && !human(c.id)) maxLoan() / 2 else maxLoan()
+    var most = if (settings.rivalLevel == RivalLevel.EASY && !human(c.id)) maxLoan() / 2 else maxLoan()
+    // A rival borrows as its ways go: half, three quarters or all of that.
+    rivals.firstOrNull { it.company == c.id }?.let { most = most * (2 + it.borrow) / 4 }
     // A computer company keeps a little in hand past it, for the bills that come before the takings.
     val spare = if (human(c.id)) 0L else price(Prices.LOAN_STEP) * SPARE_STEPS
     if (c.money + (most - c.loan) < cost + spare) return false
@@ -586,7 +781,7 @@ internal fun World.buyAndStart(c: Company, route: RivalRoute, model: Engine) {
 }
 
 /** How far ([x], [y]) is from [r]'s [home] or the nearest of its stations, so it grows out from what it has. */
-private fun World.reach(r: Rival, home: Town, x: Int, y: Int): Int {
+internal fun World.reach(r: Rival, home: Town, x: Int, y: Int): Int {
     var best = chebyshev(x, y, home.x, home.y)
     for (route in r.routes) for (id in intArrayOf(route.a, route.b)) stations.getOrNull(id)?.let { best = minOf(best, chebyshev(x, y, it.signX, it.signY)) }
     return best
@@ -724,7 +919,7 @@ private fun World.railJob(r: Rival, c: Company, payback: Int): RailJob? {
         }
     }
     for (t1 in towns) {
-        if (t1.population < RAIL_TOWN || !carries(Cargo.PASSENGERS)) continue
+        if (r.style == RivalStyle.HAULER || t1.population < RAIL_TOWN || !carries(Cargo.PASSENGERS)) continue
         val fromHome = reach(r, home, t1.x, t1.y)
         if (fromHome > far) continue
         for (t2 in towns) {
@@ -768,7 +963,7 @@ private fun World.runRailJob(r: Rival, c: Company, job: RailJob): Tried? {
 }
 
 /** Whether another company's station already takes cargo [cg] from [ind]. */
-private fun World.servedByOthers(ind: Industry, cg: Int, company: Int): Boolean {
+internal fun World.servedByOthers(ind: Industry, cg: Int, company: Int): Boolean {
     // Hard rivals go after what the player carries.
     val hard = settings.rivalLevel == RivalLevel.HARD
     return industryStations[ind.id].orEmpty().any { id ->
@@ -783,7 +978,7 @@ internal fun World.middle(ind: Industry): Pair<Int, Int> {
 }
 
 /** The rivals' level, as an index into the tables by level. */
-private fun World.level() = settings.rivalLevel.coerceIn(RivalLevel.EASY, RivalLevel.HARD)
+internal fun World.level() = settings.rivalLevel.coerceIn(RivalLevel.EASY, RivalLevel.HARD)
 
 /**
  * Whether a road route is expected to pay for itself within [payback] work years, or any will do if that's 0: as many

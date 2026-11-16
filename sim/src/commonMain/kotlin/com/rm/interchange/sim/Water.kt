@@ -183,7 +183,7 @@ fun World.berths(id: Int): List<Int> {
 fun World.shipyardWater(d: Depot) = index(d.tile % width + Track.dx(d.edge), d.tile / width + Track.dy(d.edge))
 
 /** The edge of land tile ([x], [y]) that faces open water or a canal, or -1. */
-private fun World.waterSide(x: Int, y: Int): Int {
+internal fun World.waterSide(x: Int, y: Int): Int {
     for (e in intArrayOf(Track.XM, Track.XP, Track.YM, Track.YP)) {
         val nx = x + Track.dx(e)
         val ny = y + Track.dy(e)
@@ -193,7 +193,7 @@ private fun World.waterSide(x: Int, y: Int): Int {
 }
 
 /** Whether land tile [i] is clear to build on: not water, and nothing there. */
-private fun World.clearLand(i: Int): Boolean {
+internal fun World.clearLand(i: Int): Boolean {
     val x = i % width
     val y = i / width
     return !isWater(x, y) && track[i].toInt() == 0 && road[i].toInt() == 0 && house[i].toInt() == 0 && industryOf[i].toInt() == 0 &&

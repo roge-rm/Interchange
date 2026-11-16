@@ -7,6 +7,18 @@ const val COMPANY_NAME_MOST = 32
 private val ENGLISH_NAMES = listOf("%s Transport", "%s Coach Lines", "%s & District")
 private val FRENCH_NAMES = listOf("Transports %s", "Messageries %s", "Diligences %s")
 
+/** Names for a hauler, a shipping line and an airline, as above, by [RivalStyle] less one. */
+private val ENGLISH_STYLE_NAMES = listOf(
+    listOf("%s Freight", "%s Cartage", "%s Haulage"),
+    listOf("%s Shipping", "%s Navigation", "%s Marine"),
+    listOf("%s Air", "%s Airways", "%s Aviation"),
+)
+private val FRENCH_STYLE_NAMES = listOf(
+    listOf("Fret %s", "Camionnage %s", "Transport de fret %s"),
+    listOf("Navigation %s", "Armateurs %s", "Compagnie maritime %s"),
+    listOf("Air %s", "Lignes aériennes %s", "Aviation %s"),
+)
+
 /** How many ways there are to name a company after a town. */
 internal const val TOWN_NAME_KINDS = 3
 
@@ -15,11 +27,12 @@ fun World.companyNameFree(name: String, id: Int): Boolean =
     companies.none { it.id != id && !it.gone && it.name.equals(name, ignoreCase = true) }
 
 /**
- * A name for company [id] from town [t] in the town's language, the [first] kind if it's free, else the next free
+ * A name for company [id] from town [t] in the town's language, suiting its [style], the [first] kind if it's free, else the next free
  * kind, else the first with a number after it.
  */
-internal fun World.townCompanyName(t: Town, first: Int, id: Int): String {
-    val names = if (t.french) FRENCH_NAMES else ENGLISH_NAMES
+internal fun World.townCompanyName(t: Town, first: Int, id: Int, style: Int = RivalStyle.GENERAL): String {
+    val names = if (style in 1 until RivalStyle.COUNT) (if (t.french) FRENCH_STYLE_NAMES else ENGLISH_STYLE_NAMES)[style - 1]
+    else if (t.french) FRENCH_NAMES else ENGLISH_NAMES
     for (k in names.indices) {
         val name = names[(first + k) % names.size].replace("%s", t.name)
         if (companyNameFree(name, id)) return name

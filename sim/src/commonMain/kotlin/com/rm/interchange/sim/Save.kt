@@ -16,7 +16,7 @@ package com.rm.interchange.sim
  */
 object Save {
     private val MAGIC = "ICHG".encodeToByteArray()
-    const val VERSION = 65
+    const val VERSION = 66
 
     /** A vehicle's [built] day as saved by [version]: work days from 36, calendar days before. */
     private fun World.builtOut(built: Int, version: Int) = if (version >= 36) built else built / settings.dayLength
@@ -172,6 +172,7 @@ object Save {
                 for (rt in rv.routes) {
                     w.int(rt.a); w.int(rt.b); w.int(rt.depot); w.int(rt.townA); w.int(rt.townB); w.int(rt.cargo); w.bool(rt.rail)
                     if (version >= 35) { w.uvar(rt.loops.size.toLong()); for (l in rt.loops) w.int(l) }
+                    if (version >= 66) w.int(rt.craft)
                 }
                 val failed = rv.failed.keys.sorted()
                 w.uvar(failed.size.toLong())
@@ -190,6 +191,12 @@ object Save {
                     val job = rv.job
                     w.bool(job != null)
                     if (job != null) writeRailJob(w, job, width * height)
+                }
+                if (version >= 66) {
+                    w.int(rv.style); w.int(rv.borrow); w.int(rv.far); w.bool(rv.freight)
+                    val ship = rv.shipJob
+                    w.bool(ship != null)
+                    if (ship != null) writeShipJob(w, ship)
                 }
             }
             w.uvar(subsidies.size.toLong())
@@ -599,14 +606,26 @@ object Save {
                 // Before 34 it thought on calendar days and never tried a pair again.
                 rv.thinkOn = r.int().let { if (version >= 34) it else it * settings.dayLength }
                 repeat(r.uvar().toInt().also { if (it > 1000) throw BadData("too many routes") }) {
-                    val route = RivalRoute(r.int(), r.int(), r.int(), r.int(), r.int(), r.int(), version >= 20 && r.bool())
-                    if (version >= 35) repeat(r.uvar().toInt().also { if (it > 100) throw BadData("too many loops") }) { route.loops += r.int() }
+                    val a = r.int(); val b = r.int(); val depot = r.int(); val townA = r.int(); val townB = r.int(); val cargo = r.int()
+                    val rail = version >= 20 && r.bool()
+                    val loops = ArrayList<Int>()
+                    if (version >= 35) repeat(r.uvar().toInt().also { if (it > 100) throw BadData("too many loops") }) { loops += r.int() }
+                    val craft = if (version >= 66) r.int().also { if (it !in RivalRoute.ROAD..RivalRoute.AIR || rail && it != RivalRoute.ROAD) throw BadData("bad rival route") } else RivalRoute.ROAD
+                    val route = RivalRoute(a, b, depot, townA, townB, cargo, rail, craft)
+                    route.loops += loops
                     rv.routes += route
                 }
                 repeat(r.uvar().toInt().also { if (it > 100_000) throw BadData("too many tried pairs") }) { rv.failed[r.long()] = if (version >= 34) r.int() else 0 }
                 if (version >= 50) repeat(r.uvar().toInt().also { if (it > 1_000_000) throw BadData("too many standing vehicles") }) { rv.stood[r.int()] = r.int() }
                 if (version >= 51) repeat(r.uvar().toInt().also { if (it > 100_000) throw BadData("too many held routes") }) { rv.held[r.long()] = r.int() }
                 if (version >= 58 && r.bool()) rv.job = readRailJob(r)
+                if (version >= 66) {
+                    rv.style = r.int().also { if (it !in 0 until RivalStyle.COUNT) throw BadData("bad rival style") }
+                    rv.borrow = r.int().also { if (it !in 0..2) throw BadData("bad rival ways") }
+                    rv.far = r.int().also { if (it !in 0..2) throw BadData("bad rival ways") }
+                    rv.freight = r.bool()
+                    if (r.bool()) rv.shipJob = readShipJob(r)
+                }
                 rivals += rv
             }
             if (version >= 22) repeat(r.uvar().toInt().also { if (it > 100_000) throw BadData("too many subsidies") }) {

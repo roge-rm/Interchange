@@ -28,7 +28,7 @@ class RivalRun {
         val names = listOf("easy", "normal", "hard")
         val out = StringBuilder("# Rivals\n\n")
         out.append("A 256 by 256 map, default settings, $count rivals, $years calendar years. Company 0 is the human one and does nothing. ")
-        out.append("Per rival: routes open as bus/truck/rail, routes given up as bus/truck/rail, vehicles, money and loan in dollars, value (money less loan plus vehicles less start money), ")
+        out.append("Per rival: its style, routes open as bus/truck/rail/ship/air, routes given up as bus/truck/rail/ship/air, vehicles, money and loan in dollars, value (money less loan plus vehicles less start money), ")
         out.append("profit last year (income less running, upkeep and interest), status (ok, trouble in months, GONE). Tried is town pairs and industries it has given up on, in all. ")
         out.append("Bus routes include feeder buses to railway stations. Trains, passing loops and feeders are counted in the runs and summed by level at the end.\n\n")
         out.append("## Summary at the end\n\n")
@@ -47,6 +47,13 @@ class RivalRun {
             fun spread(f: (Snap) -> Long) = rs.map(f).sorted().let { "${it[it.size / 2]} (${it.first()} to ${it.last()})" }
             out.append("| ${names[v]} | ${spread { it.open.sum().toLong() }} | ${spread { it.open[2].toLong() }} | ${spread { it.trains.toLong() }} | ${spread { it.vehicles.toLong() }} | ${spread { it.value }} | ${givenUp(rs)} | ${rs.count { it.gone } * 100 / rs.size}% | ${rs.count { it.trouble > 0 && !it.gone } * 100 / rs.size}% |\n")
         }
+        out.append("\n## Summary by style\n\n| style | rivals | routes | vehicles | value | profit | gone | in trouble |\n|---|---|---|---|---|---|---|---|\n")
+        for (st in 0 until RivalStyle.COUNT) {
+            val rs = done.flatMap { it.second.last().rivals }.filter { it.style == st }
+            if (rs.isEmpty()) continue
+            fun spread(f: (Snap) -> Long) = rs.map(f).sorted().let { "${it[it.size / 2]} (${it.first()} to ${it.last()})" }
+            out.append("| ${STYLES[st]} | ${rs.size} | ${spread { it.open.sum().toLong() }} | ${spread { it.vehicles.toLong() }} | ${spread { it.value }} | ${spread { it.profit }} | ${rs.count { it.gone } * 100 / rs.size}% | ${rs.count { it.trouble > 0 && !it.gone } * 100 / rs.size}% |\n")
+        }
         out.append("\nIn all at the end, by level: ")
         out.append(levels.joinToString("; ") { v ->
             val rs = done.filter { it.first.level == v }.flatMap { it.second.last().rivals }
@@ -55,9 +62,9 @@ class RivalRun {
         out.append(".\n\n## Runs\n\n")
         for ((j, r) in done) {
             out.append("### ${names[j.level]}, ${j.start}, day length ${j.length}, seed ${j.seed}\n\n")
-            out.append("| year | rival | open | given up | trains | loops | feeders | vehicles | money | loan | value | profit | tried | status |\n|---|---|---|---|---|---|---|---|---|---|---|---|---|---|\n")
+            out.append("| year | rival | style | open | given up | trains | loops | feeders | vehicles | money | loan | value | profit | tried | status |\n|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|\n")
             for (m in r.marks) for ((i, s) in m.rivals.withIndex()) {
-                out.append("| ${m.year} | ${i + 1} | ${s.open.joinToString("/")} | ${s.failed.joinToString("/")} | ${s.trains} | ${s.loops} | ${s.feeders} | ${s.vehicles} | ${s.money} | ${s.loan} | ${s.value} | ${s.profit} | ${s.tried} | ${if (s.gone) "GONE" else if (s.trouble > 0) "trouble ${s.trouble}" else "ok"} |\n")
+                out.append("| ${m.year} | ${i + 1} | ${STYLES[s.style]} | ${s.open.joinToString("/")} | ${s.failed.joinToString("/")} | ${s.trains} | ${s.loops} | ${s.feeders} | ${s.vehicles} | ${s.money} | ${s.loan} | ${s.value} | ${s.profit} | ${s.tried} | ${if (s.gone) "GONE" else if (s.trouble > 0) "trouble ${s.trouble}" else "ok"} |\n")
             }
             out.append("\n")
         }
@@ -65,12 +72,13 @@ class RivalRun {
         File(dir, "rivals.md").writeText(out.toString())
     }
 
-    private fun givenUp(rs: List<Snap>) = (0 until 3).joinToString("/") { k -> rs.sumOf { it.failed[k] }.toString() }
+    private fun givenUp(rs: List<Snap>) = (0 until KINDS).joinToString("/") { k -> rs.sumOf { it.failed[k] }.toString() }
 
     private fun list(key: String, default: String) = (System.getProperty(key) ?: default).split(",").map { it.trim() }
 
-    /** One rival's state: routes open and given up by bus, truck and rail. */
+    /** One rival's state: routes open and given up by bus, truck, rail, ship and air. */
     class Snap(
+        val style: Int,
         val open: IntArray, val failed: IntArray, val vehicles: Int, val money: Long, val loan: Long, val value: Long,
         val profit: Long, val tried: Int, val trouble: Int, val gone: Boolean, val trains: Int, val loops: Int, val feeders: Int,
     )
@@ -82,27 +90,30 @@ class RivalRun {
     }
 
     companion object {
-        /** 0 bus, 1 truck, 2 rail. */
-        private fun kind(r: RivalRoute) = if (r.rail) 2 else if (r.freight) 1 else 0
+        private const val KINDS = 5
+        private val STYLES = listOf("general", "hauler", "shipping", "airline")
+
+        /** 0 bus, 1 truck, 2 rail, 3 ship, 4 air. */
+        private fun kind(r: RivalRoute) = if (r.ship) 3 else if (r.air) 4 else if (r.rail) 2 else if (r.freight) 1 else 0
 
 
         private fun snap(w: World, r: Rival, given: IntArray): Snap {
             val c = w.companies[r.company]
-            val open = IntArray(3)
+            val open = IntArray(KINDS)
             for (route in r.routes) open[kind(route)]++
             val vehicles = w.trains.count { it != null && it.owner == c.id } + w.roadVehicles.count { it != null && it.owner == c.id } +
                 w.ships.count { it != null && it.owner == c.id } + w.aircraft.count { it != null && it.owner == c.id }
             // Costs are booked as negative amounts.
             val profit = c.lastYear[Books.INCOME] + c.lastYear[Books.RUNNING] + c.lastYear[Books.UPKEEP] + c.lastYear[Books.INTEREST]
             val trains = w.trains.count { it != null && it.owner == c.id }
-            return Snap(open, given.copyOf(), vehicles, c.money, c.loan, w.companyValue(c), profit, r.failed.size, c.trouble, c.gone, trains, r.routes.sumOf { it.loops.size }, r.routes.count { it.feeder })
+            return Snap(r.style, open, given.copyOf(), vehicles, c.money, c.loan, w.companyValue(c), profit, r.failed.size, c.trouble, c.gone, trains, r.routes.sumOf { it.loops.size }, r.routes.count { it.feeder })
         }
 
         fun run(seed: Long, start: Int, length: Int, level: Int, count: Int, years: Int): Result {
             val w = World(NewGame(256, 256, seed, start, dayLength = length, rivals = count, rivalLevel = level))
             val marks = ArrayList<Mark>()
             // Routes given up so far, by kind: ones that leave the rival's list while it's still going.
-            val given = List(w.rivals.size) { IntArray(3) }
+            val given = List(w.rivals.size) { IntArray(KINDS) }
             val running = List(w.rivals.size) { HashSet<RivalRoute>() }
             // A rival bought out leaves w.rivals, so keep them all.
             val all = w.rivals.toList()

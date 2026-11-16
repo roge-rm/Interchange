@@ -122,6 +122,8 @@ class World(settings: NewGame, val roster: Roster = Roster.BASE, generate: Boole
     internal var catchmentDirty = true
     /** Rail path search steps all rivals' railway jobs take in one tick. Tests set it lower. Not saved. */
     internal var railTickStates = RAIL_TICK_STATES
+    /** Water tiles all rivals' shipping line looks take in one tick. Tests set it lower. Not saved. */
+    internal var shipTickStates = SHIP_TICK_STATES
     /** The people round each station, and for each cargo the next stop from each station towards each it can reach. Not saved. */
     internal val stationPeople = HashMap<Int, Int>()
     internal var nextHops: Array<HashMap<Int, HashMap<Int, Int>>> = Array(Cargo.MAX) { HashMap() }
@@ -457,8 +459,9 @@ class World(settings: NewGame, val roster: Roster = Roster.BASE, generate: Boole
                 companiesYear()
             }
         }
-        // Rivals planning a railway carry on with it.
+        // Rivals planning a railway or shipping line carry on with it.
         railJobs()
+        shipJobs()
     }
 
     /**
@@ -508,7 +511,11 @@ class World(settings: NewGame, val roster: Roster = Roster.BASE, generate: Boole
         for (y in 0 until height) mix(heightAt(width, y).toLong())
         for (c in companies) { mix(c.money); mix(c.loan) }
         for (r in rivals) { mix(r.thinkOn.toLong()); mix(r.routes.size.toLong()); for (rt in r.routes) for (l in rt.loops) mix(l.toLong()); mix(r.failed.size.toLong()); for (f in r.failed.keys.sorted()) { mix(f); mix(r.failed.getValue(f).toLong()) }; for (k in r.stood.keys.sorted()) { mix(k.toLong()); mix(r.stood.getValue(k).toLong()) }; for (k in r.held.keys.sorted()) { mix(k); mix(r.held.getValue(k).toLong()) }
-            r.job?.let { j -> mix(j.pick.toLong()); mix(j.ia.toLong()); mix(j.ib.toLong()); mix(j.phase.toLong()); mix(j.search?.expanded?.toLong() ?: -1L) } }
+            r.job?.let { j -> mix(j.pick.toLong()); mix(j.ia.toLong()); mix(j.ib.toLong()); mix(j.phase.toLong()); mix(j.search?.expanded?.toLong() ?: -1L) }
+            // Only past what a rival from before styles has, so an old game's checksum stays as it was.
+            if (r.styled) { mix(100L + r.style); mix(r.borrow.toLong()); mix(r.far.toLong()); mix(if (r.freight) 1L else 0L) }
+            for (rt in r.routes) if (rt.craft != RivalRoute.ROAD) { mix(rt.a.toLong()); mix(rt.craft.toLong()) }
+            r.shipJob?.let { j -> mix(200L + j.pick); mix(j.head.toLong()); mix(j.tail.toLong()); mix(j.depth.toLong()) } }
         for (c in companies) { mix(c.money); mix(c.loan); mix(c.founded); mix(c.upkeepOwed); mix(c.trackTiles.toLong()); mix(c.roadUpkeep); mix(c.trouble.toLong()); mix(if (c.gone) 1 else 0); for (ch in c.name) mix(ch.code.toLong())
             for (b in c.insignia) mix(b.toLong()); mix(if (c.autorenew) 1L else 0L); mix(c.renewMonths.toLong()); mix(c.renewFloor)
             mix(if (c.upgrade) 1L else 0L); mix(c.upgrades.size.toLong()); for (u in c.upgrades) { mix(u.kind.toLong()); mix(u.from.toLong()); mix(u.to.toLong()); mix(u.group.toLong()) }

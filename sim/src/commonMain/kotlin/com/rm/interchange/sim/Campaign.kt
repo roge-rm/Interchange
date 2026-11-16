@@ -49,7 +49,8 @@ object Campaign {
         w.companies[0].name = w.playerCompanyName(0)
         w.giveInsignia(w.companies[0])
         if (r.settings.rivals > 0) {
-            w.startRivals(r.settings.rivals)
+            // A chapter's rivals run roads and railways, as it was written for.
+            w.startRivals(r.settings.rivals, styled = false)
             for ((k, rival) in w.rivals.withIndex()) r.rivalNames.getOrNull(k)?.let { w.companies[rival.company].name = it }
         }
         r.started(w)
