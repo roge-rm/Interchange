@@ -33,7 +33,7 @@ import org.jetbrains.compose.resources.stringResource
 private val HEADLINES = setOf(
     News.INDUSTRY_OPENS, News.INDUSTRY_CLOSES, News.WASHOUT, News.FIRE, News.AVALANCHE, News.SUBSIDY_AWARDED,
     News.COMPANY_FOR_SALE, News.COMPANY_BOUGHT, News.COMPANY_BANKRUPT, News.COMPANY_RESTARTED, News.NEW_VEHICLE,
-    News.GOAL_MET, News.GOAL_FAILED, News.SCENARIO_WON, News.SCENARIO_LOST, News.CRASH,
+    News.GOAL_MET, News.GOAL_FAILED, News.CONTRACT_FAILED, News.SCENARIO_WON, News.SCENARIO_LOST, News.CRASH,
 )
 
 /** The most months the chronicle shows at once, newest first. */
@@ -130,6 +130,7 @@ private fun storyGlyph(world: World, t: Story): Glyph = when (t.kind) {
         else -> Glyph.Rail
     }
     News.GOAL_MET, News.GOAL_FAILED -> world.goals.getOrNull(t.about)?.let { goalGlyph(it.kind) } ?: Glyph.Flag
+    in News.CONTRACT_OFFERED..News.CONTRACT_DONE -> Glyph.Package
     News.SCENARIO_WON -> Glyph.Trophy
     News.SCENARIO_LOST -> Glyph.Flag
     News.CRASH -> Glyph.Alert
@@ -145,6 +146,7 @@ private fun storyPlace(world: World, t: Story): Pair<Float, Float>? = when (t.ki
     News.WARN_SNOW, News.WARN_ICE, News.WARN_STORM, News.WARN_COLD -> warnPlace(world, t.about)
     News.SUBSIDY_OFFERED, News.SUBSIDY_AWARDED -> subsidyStart(world, t.about)
     News.GOAL_MET, News.GOAL_FAILED -> goalPlace(world, t.about)
+    in News.CONTRACT_OFFERED..News.CONTRACT_DONE -> contractMapPlace(world, t.about)
     News.CRASH -> world.crashFor(t.about)?.let { it.tile % world.width + 0.5f to it.tile / world.width + 0.5f }
     else -> null
 }

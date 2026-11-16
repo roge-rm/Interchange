@@ -50,6 +50,8 @@ All are environment variables; `docker-compose.yml` sets them from the shorter n
 | `INTERCHANGE_TOWN_GROWTH` | `NORMAL` | `SUPPLIED`: towns grow only when supplied with what they need |
 | `INTERCHANGE_GOALS` | `NONE` | `TOWNS`, `DELIVERIES`, `CONNECTIONS` or `MIXED` |
 | `INTERCHANGE_BREAKDOWNS` | `REDUCED` | `NONE`, `REDUCED` or `NORMAL` |
+| `INTERCHANGE_STOCKPILES` | on | `0`, `false`, `off` or `no` turns it off: industries without stores |
+| `INTERCHANGE_CONTRACTS` | on | `0`, `false`, `off` or `no` turns it off: no contracts offered |
 | `INTERCHANGE_SCENARIO` | none | starts from a `.ichscn` scenario file |
 
 The admin page takes `ADMIN_PASSWORD`, `WEB_PORT` (8088), `WEB_BIND`, `HTTPS` (1 behind a reverse proxy that serves HTTPS) and `FORWARDED_ALLOW_IPS` (the proxy's address, 127.0.0.1 unless set).

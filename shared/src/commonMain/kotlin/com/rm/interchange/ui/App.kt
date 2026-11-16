@@ -68,6 +68,9 @@ import com.rm.interchange.sim.Ship
 import com.rm.interchange.sim.Train
 import com.rm.interchange.sim.UpgradeWhy
 import com.rm.interchange.sim.Crash
+import com.rm.interchange.sim.contractView
+import com.rm.interchange.sim.stockView
+import com.rm.interchange.sim.contractsOn
 import com.rm.interchange.sim.crashFor
 import com.rm.interchange.sim.railCost
 import com.rm.interchange.sim.canalCost
@@ -217,7 +220,7 @@ private class KeptView {
     var rejoined = false
 }
 
-private enum class Win { Menu, Load, Settings, Packs, Overlays, Map, Finances, Vehicles, Services, Upgrades, Industries, Values, Companies, Insignia, Town, Subsidies, Goals, Chronicle, Multiplayer, Players, Chat, Scenarios, Campaign, Scenario, SaveScenario, Intro, Outcome }
+private enum class Win { Menu, Load, Settings, Packs, Overlays, Map, Finances, Vehicles, Services, Upgrades, Industries, Contracts, Values, Companies, Insignia, Town, Subsidies, Goals, Chronicle, Multiplayer, Players, Chat, Scenarios, Campaign, Scenario, SaveScenario, Intro, Outcome }
 
 /** Picking a place by tapping the map: what to tell the player, what a tapped tile does (false if nothing there will do), and giving up. */
 class MapPick(val prompt: String, val onTile: (Int) -> Boolean, val onCancel: () -> Unit)
@@ -757,6 +760,7 @@ private fun Root(settings: Settings) {
                 onCompanies = { window = Win.Companies },
                 onSubsidies = { window = Win.Subsidies },
                 onGoals = { window = Win.Goals },
+                onContracts = if (runner?.game?.world?.contractsOn == true) ({ window = Win.Contracts }) else null,
                 onChronicle = { window = Win.Chronicle },
                 onTitle = ::toTitle,
                 onClose = { window = null },
@@ -810,6 +814,7 @@ private fun Root(settings: Settings) {
             }
             Win.Chronicle -> runner?.game?.world?.let { w -> ChronicleWindow(w, { x, y -> goTo.value = x to y; window = null }) { window = null } }
             Win.Subsidies -> runner?.game?.world?.let { w -> SubsidiesWindow(w, { x, y -> goTo.value = x to y; window = null }) { window = null } }
+            Win.Contracts -> runner?.game?.world?.let { w -> ContractsWindow(w, { x, y -> goTo.value = x to y; window = null }, { runner?.request(it) }) { window = null } }
             Win.Goals -> runner?.game?.world?.let { w ->
                 if (editing) CompositionLocalProvider(LocalSheets provides sheets) {
                     EditorGoalsWindow(w, goalDraft, { goalDraft = it }, { slot -> picking = slot; window = null }, { runner?.request(it) }) { window = null }
@@ -1591,6 +1596,7 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
                         }
                     }
                     if (n.kind == News.SUBSIDY_OFFERED || n.kind == News.SUBSIDY_AWARDED) subsidyStart(world, n.about).let { (x, y) -> view.focusX = x; view.focusY = y }
+                    if (n.kind in News.CONTRACT_OFFERED..News.CONTRACT_DONE) contractMapPlace(world, n.about)?.let { (x, y) -> view.focusX = x; view.focusY = y }
                     if (n.kind == News.GOAL_MET || n.kind == News.GOAL_FAILED) goalPlace(world, n.about)?.let { (x, y) -> view.focusX = x; view.focusY = y }
                     if (n.kind == News.WASHOUT || n.kind == News.FIRE || n.kind == News.AVALANCHE) {
                         view.focusX = n.about % world.width + 0.5f
@@ -2121,6 +2127,36 @@ private fun IndustryCard(world: World, ind: Industry, x: Int, y: Int, onClose: (
             for (cg in 0 until Cargo.MAX) if (kind.takes(cg)) CargoRow(cg, "")
             InfoRow(stringResource(Res.string.brought_label), Numbers.grouped(ind.broughtLastMonth.toLong()), Glyph.Package)
         }
+        val stock = world.stockView(ind)
+        if (stock != null) {
+            val names = cargoNames()
+            val stored = (0 until Cargo.MAX).filter { stock.stored and (1 shl it) != 0 }
+            if (stored.isNotEmpty()) {
+                Head(stringResource(Res.string.head_stores), Glyph.Package)
+                for (cg in stored) {
+                    val n = stock.stores.getOrElse(cg) { 0 }
+                    val share = if (stock.storeCap > 0) n.toFloat() / stock.storeCap else 0f
+                    CargoRow(cg, Numbers.grouped(n.toLong()), share = 1f - share, percent = stringResource(Res.string.percent, (share * 100).toInt()))
+                }
+                val recipe = (0 until Cargo.MAX).filter { stock.recipeIn.getOrElse(it) { 0 } > 0 }
+                if (recipe.isNotEmpty()) {
+                    fun part(list: IntArray, cg: Int) = "${list[cg]} ${names.getOrElse(cg) { "" }}"
+                    val out = (0 until Cargo.MAX).filter { stock.recipeOut.getOrElse(it) { 0 } > 0 }
+                    InfoRow(stringResource(Res.string.recipe_label), stringResource(Res.string.recipe_line, recipe.joinToString(" + ") { part(stock.recipeIn, it) }, out.joinToString(" + ") { part(stock.recipeOut, it) }), Glyph.Factory)
+                }
+                InfoRow(stringResource(Res.string.rate_label), Numbers.grouped(stock.rate.toLong()), Glyph.Speed)
+            }
+            val waiting = (0 until Cargo.MAX).filter { stock.stock.getOrElse(it) { 0 } > 0 }
+            if (waiting.isNotEmpty()) {
+                Head(stringResource(Res.string.head_stock), Glyph.Up)
+                for (cg in waiting) {
+                    val n = stock.stock[cg]
+                    val cap = stock.stockCaps.getOrElse(cg) { 0 }
+                    val share = if (cap > 0) n.toFloat() / cap else 0f
+                    CargoRow(cg, Numbers.grouped(n.toLong()), share = 1f - share, percent = stringResource(Res.string.percent, (share * 100).toInt()))
+                }
+            }
+        }
     }
 }
 
@@ -2130,6 +2166,7 @@ internal fun newsCompany(world: World, n: News): com.rm.interchange.sim.Company?
     News.COMPANY_BOUGHT -> world.companies.getOrNull(n.about shr 8)
     News.SUBSIDY_AWARDED -> world.companies.getOrNull(world.subsidies.getOrNull(n.about)?.company ?: -1)
     News.GOAL_MET -> world.companies.getOrNull(world.goals.getOrNull(n.about)?.by ?: -1)
+    in News.CONTRACT_MET..News.CONTRACT_DONE -> world.companies.getOrNull(world.contracts.getOrNull(n.about)?.company ?: -1)
     News.CRASH -> world.companies.getOrNull(world.crashFor(n.about)?.vehicles?.firstOrNull()?.owner ?: -1)
     else -> null
 }
@@ -2174,6 +2211,18 @@ internal fun newsText(world: World, n: News): String {
         if (n.kind == News.GOAL_FAILED) return stringResource(Res.string.news_goal_failed, goalText(world, g))
         val name = if (g.by == me) stringResource(Res.string.your_company) else world.companies.getOrNull(g.by)?.name ?: ""
         return stringResource(Res.string.news_goal_met, name, goalText(world, g))
+    }
+    if (n.kind in News.CONTRACT_OFFERED..News.CONTRACT_DONE) {
+        val k = world.contractView(n.about) ?: return ""
+        if (n.kind != News.CONTRACT_OFFERED && k.company != me) return ""
+        val text = contractText(world, k)
+        return when (n.kind) {
+            News.CONTRACT_OFFERED -> stringResource(Res.string.news_contract_offered, text)
+            News.CONTRACT_MET -> stringResource(Res.string.news_contract_met, text)
+            News.CONTRACT_MISSED -> stringResource(Res.string.news_contract_missed, text)
+            News.CONTRACT_FAILED -> stringResource(Res.string.news_contract_failed, text, money(k.penalty))
+            else -> stringResource(Res.string.news_contract_done, text)
+        }
     }
     if (n.kind == News.SCENARIO_WON || n.kind == News.SCENARIO_LOST) {
         val title = world.scenario?.title?.ifBlank { null } ?: stringResource(Res.string.untitled)

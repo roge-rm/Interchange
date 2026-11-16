@@ -12,7 +12,8 @@ import com.rm.interchange.sim.TownGrowth
  * rivals, dayLength), where one is refused with [IllegalArgumentException].
  * INTERCHANGE_TOWN_GROWTH (NORMAL or SUPPLIED), INTERCHANGE_GOALS (NONE,
  * TOWNS, DELIVERIES, CONNECTIONS or MIXED) and INTERCHANGE_BREAKDOWNS (NONE,
- * REDUCED or NORMAL, REDUCED if not set) come from the env vars only.
+ * REDUCED or NORMAL, REDUCED if not set), INTERCHANGE_STOCKPILES and
+ * INTERCHANGE_CONTRACTS (on unless 0, false, off or no) come from the env vars only.
  */
 fun newGameSettings(env: Map<String, String>, chosen: Map<String, String> = emptyMap()): NewGame {
     for (key in chosen.keys) require(key in KEYS) { "no setting called \"$key\"" }
@@ -22,6 +23,7 @@ fun newGameSettings(env: Map<String, String>, chosen: Map<String, String> = empt
         }
         return env[envKey]?.toIntOrNull()?.takeIf(ok) ?: default
     }
+    fun on(key: String) = env[key]?.let { v -> v.lowercase() !in setOf("0", "false", "off", "no") } ?: true
     val size = pick("size", "INTERCHANGE_MAP_SIZE", 256) { it in NewGame.SIZES }
     val seed = chosen["seed"]?.takeIf { it.isNotEmpty() }?.let { it.toLongOrNull() ?: throw IllegalArgumentException("seed can't be $it") }
         ?: env["INTERCHANGE_SEED"]?.toLongOrNull() ?: System.currentTimeMillis()
@@ -36,12 +38,14 @@ fun newGameSettings(env: Map<String, String>, chosen: Map<String, String> = empt
         dayLength = pick("dayLength", "INTERCHANGE_DAY_LENGTH", 10) { it in NewGame.DAY_LENGTHS },
         townGrowth = env["INTERCHANGE_TOWN_GROWTH"]?.let { v -> TownGrowth.entries.firstOrNull { it.name.equals(v, ignoreCase = true) } } ?: TownGrowth.NORMAL,
         goals = env["INTERCHANGE_GOALS"]?.let { v -> GoalSet.entries.firstOrNull { it.name.equals(v, ignoreCase = true) } } ?: GoalSet.NONE,
-        collisions = env["INTERCHANGE_COLLISIONS"]?.let { v -> v.lowercase() !in setOf("0", "false", "off", "no") } ?: true,
+        collisions = on("INTERCHANGE_COLLISIONS"),
         breakdowns = when (env["INTERCHANGE_BREAKDOWNS"]?.uppercase()) {
             "NONE" -> Breakdowns.NONE
             "NORMAL" -> Breakdowns.NORMAL
             else -> Breakdowns.NEW_GAME
         },
+        stockpiles = on("INTERCHANGE_STOCKPILES"),
+        contracts = on("INTERCHANGE_CONTRACTS"),
     )
 }
 

@@ -186,8 +186,10 @@ fun NewGameScreen(packs: List<Pack>, onStart: (NewGame, List<Pack>) -> Unit, onB
     var townGrowth by remember { mutableStateOf(com.rm.interchange.sim.TownGrowth.NORMAL) }
     var goals by remember { mutableStateOf(com.rm.interchange.sim.GoalSet.NONE) }
     var breakdowns by remember { mutableIntStateOf(com.rm.interchange.sim.Breakdowns.NEW_GAME) }
+    var stockpiles by remember { mutableStateOf(true) }
+    var contracts by remember { mutableStateOf(true) }
     var off by remember { mutableStateOf(emptySet<String>()) }
-    val settings = NewGame(width, height, seed, year, region, sea, hills, trees, towns, industries, inflation, weather, dayLength, rivals, sharing, rivalLevel, townGrowth, goals, collisions, breakdowns = breakdowns)
+    val settings = NewGame(width, height, seed, year, region, sea, hills, trees, towns, industries, inflation, weather, dayLength, rivals, sharing, rivalLevel, townGrowth, goals, collisions, breakdowns = breakdowns, stockpiles = stockpiles, contracts = contracts && stockpiles)
     // The map's the same whatever the goals and growth, so changing them doesn't make it again.
     val land = settings.copy(townGrowth = com.rm.interchange.sim.TownGrowth.NORMAL, goals = com.rm.interchange.sim.GoalSet.NONE, breakdowns = com.rm.interchange.sim.Breakdowns.NORMAL)
     val chosen = packs.filter { it.id !in off }
@@ -300,14 +302,16 @@ fun NewGameScreen(packs: List<Pack>, onStart: (NewGame, List<Pack>) -> Unit, onB
             Text(stringResource(Res.string.breakdowns_setting), color = c.text, style = KitType.Label)
             FillChips((0..2).toList(), breakdowns, { breakdownNames.getOrElse(it) { "$it" } }) { breakdowns = it }
         }
-        // The four switches, all in a row where wide, else two and two.
+        // The six switches, three to a row where wide, else two and two.
         val toggles = listOf<@Composable (Modifier) -> Unit>(
             { m -> TogglePill(stringResource(Res.string.inflation), inflation, m) { inflation = it } },
             { m -> TogglePill(stringResource(Res.string.weather), weather, m) { weather = it } },
             { m -> TogglePill(stringResource(Res.string.shared_track), sharing, m) { sharing = it } },
             { m -> TogglePill(stringResource(Res.string.collisions), collisions, m) { collisions = it } },
+            { m -> TogglePill(stringResource(Res.string.stockpiles), stockpiles, m) { stockpiles = it } },
+            { m -> TogglePill(stringResource(Res.string.contracts), contracts && stockpiles, m) { contracts = it } },
         )
-        for (row in toggles.chunked(if (wide) 4 else 2)) {
+        for (row in toggles.chunked(if (wide) 3 else 2)) {
             Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 for (t in row) t(Modifier.weight(1f).fillMaxHeight())
             }
@@ -525,7 +529,7 @@ fun OverlaysWindow(settings: Settings, onClose: () -> Unit) {
  * isn't saved here. A scenario tried from the editor has only the way back to it, and the title screen asks once more.
  */
 @Composable
-fun MenuWindow(saved: Boolean, canSave: Boolean, onEditor: (() -> Unit)?, onSave: () -> Unit, onLoad: () -> Unit, onNew: () -> Unit, onPlayers: () -> Unit, onSettings: () -> Unit, onMap: () -> Unit, onFinances: () -> Unit, onVehicles: () -> Unit, onIndustries: () -> Unit, onCompanies: () -> Unit, onSubsidies: () -> Unit, onGoals: () -> Unit, onChronicle: () -> Unit, onTitle: () -> Unit, onClose: () -> Unit) {
+fun MenuWindow(saved: Boolean, canSave: Boolean, onEditor: (() -> Unit)?, onSave: () -> Unit, onLoad: () -> Unit, onNew: () -> Unit, onPlayers: () -> Unit, onSettings: () -> Unit, onMap: () -> Unit, onFinances: () -> Unit, onVehicles: () -> Unit, onIndustries: () -> Unit, onCompanies: () -> Unit, onSubsidies: () -> Unit, onGoals: () -> Unit, onContracts: (() -> Unit)?, onChronicle: () -> Unit, onTitle: () -> Unit, onClose: () -> Unit) {
     val trying = onEditor != null
     var leaving by remember { mutableStateOf(false) }
     // Each entry's words, glyph, whether it's the main one, and what it does.
@@ -541,7 +545,7 @@ fun MenuWindow(saved: Boolean, canSave: Boolean, onEditor: (() -> Unit)?, onSave
             if (!trying || leaving) onTitle() else leaving = true
         },
     )
-    val world = listOf(
+    val world = listOfNotNull(
         Entry(stringResource(Res.string.overview_map), Glyph.Map, onClick = onMap),
         Entry(stringResource(Res.string.finances), Glyph.Graph, onClick = onFinances),
         Entry(stringResource(Res.string.vehicles), Glyph.Train, onClick = onVehicles),
@@ -549,6 +553,7 @@ fun MenuWindow(saved: Boolean, canSave: Boolean, onEditor: (() -> Unit)?, onSave
         Entry(stringResource(Res.string.companies), Glyph.Briefcase, onClick = onCompanies),
         Entry(stringResource(Res.string.subsidies), Glyph.Money, onClick = onSubsidies),
         Entry(stringResource(Res.string.goals), Glyph.Flag, onClick = onGoals),
+        onContracts?.let { Entry(stringResource(Res.string.contracts), Glyph.Package, onClick = it) },
         Entry(stringResource(Res.string.chronicle), Glyph.Newspaper, onClick = onChronicle),
     )
     Window(stringResource(Res.string.menu), onClose, Glyph.Menu) {

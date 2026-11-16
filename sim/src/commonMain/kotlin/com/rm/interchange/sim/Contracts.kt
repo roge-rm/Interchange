@@ -270,16 +270,22 @@ class ContractView(
     val offerMonth: Int,
 )
 
+/** Contract [i] as a view, whatever its status, or null if there's none. */
+fun World.contractView(i: Int): ContractView? {
+    val k = contracts.getOrNull(i) ?: return null
+    return ContractView(
+        i, k.cargo, k.industry, k.town, k.amount, k.months, k.season, k.until / 12, k.until % 12, pay(k.reward), pay(k.penalty),
+        k.status, k.company, k.count, k.lastCount, k.met, k.misses, k.offerUntil / 12, k.offerUntil % 12,
+    )
+}
+
 /** Contracts on offer and [company]'s running ones, offers first, each by its place in [World.contracts]. */
-internal fun World.contractViews(company: Int): List<ContractView> {
+fun World.contractViews(company: Int): List<ContractView> {
     if (contracts.isEmpty()) return emptyList()
     val out = ArrayList<ContractView>()
     for (status in listOf(Contract.OFFERED, Contract.RUNNING)) for ((i, k) in contracts.withIndex()) {
         if (k.status != status || (status == Contract.RUNNING && k.company != company)) continue
-        out += ContractView(
-            i, k.cargo, k.industry, k.town, k.amount, k.months, k.season, k.until / 12, k.until % 12, pay(k.reward), pay(k.penalty),
-            k.status, k.company, k.count, k.lastCount, k.met, k.misses, k.offerUntil / 12, k.offerUntil % 12,
-        )
+        out += contractView(i)!!
     }
     return out
 }
