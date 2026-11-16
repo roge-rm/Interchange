@@ -352,7 +352,7 @@ internal fun World.aircraftCommand(company: Company, c: Command.CraftOrder) {
             val group = aircraft.filterNotNull().filter { v.shared >= 0 && it.shared == v.shared }.ifEmpty { listOf(v) }
             for (g in group) {
                 g.orders.clear()
-                for (o in c.stations) if (stations.getOrNull(Order.station(o))?.owner == company.id) g.orders += o
+                for (o in c.stations) if (stations.getOrNull(Order.station(o))?.owner == company.id) g.orders += o and Order.VIA.inv()
                 g.order = 0
             }
         }

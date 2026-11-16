@@ -209,16 +209,24 @@ private fun World.routes(keys: LongArray, guess: Map<Long, Int>): HashMap<Int, H
     return hops
 }
 
-/** Feeds a vehicle's run of [ticks] over the link from station [from] to [to] into the link's journey time. */
+/**
+ * Feeds a vehicle's run of [ticks] over the link from station [from] to [to] into the link's journey time, at most
+ * [SAMPLE_MOST] times what it was, so one held up or lost on the way doesn't make the link look slow for weeks.
+ */
 internal fun World.timeLink(from: Int, to: Int, ticks: Long) {
-    val sample = ticks.coerceIn(1, MAX_LINK_TICKS.toLong()).toInt()
     val key = linkKey(from, to)
     val old = linkTimes[key]
+    val most = if (old == null) MAX_LINK_TICKS.toLong() else minOf(MAX_LINK_TICKS.toLong(), old.toLong() * SAMPLE_MOST)
+    val sample = ticks.coerceIn(1, most).toInt()
     linkTimes[key] = if (old == null) sample else (7 * old + sample) / 8
 }
 
-/** Each week: the way goes by the journey times measured so far, until the next week. */
+/** The most one run counts for, as a multiple of the link's time before it. */
+const val SAMPLE_MOST = 4
+
+/** Each week: the way goes by the journey times measured so far, until the next week, worked out again if they changed. */
 internal fun World.linksWeek() {
+    if (linkCosts == linkTimes) return
     linkCosts.clear()
     linkCosts.putAll(linkTimes)
     linksDirty = true
@@ -446,6 +454,13 @@ const val HEAVY = 1500
 const val RESORT_HEIGHT = 12
 const val RESORT_REACH = 4
 
+/** The station of [t]'s stop before the order it's on, past depot orders and stations it runs through, or -1. */
+private fun World.stopBefore(t: Carrier): Int {
+    val n = t.orders.size
+    for (k in 1..n) t.orders[(t.order - k).mod(n)].let { if (isStop(it)) return Order.station(it) }
+    return -1
+}
+
 /** The station [t] stops at after the one it's at now, past depot orders and stations it runs through, or -1. */
 private fun World.nextStop(t: Carrier): Int {
     if (t.orders.count { isStop(it) } < 2) return -1
@@ -463,8 +478,8 @@ private fun World.nextStop(t: Carrier): Int {
  * one not to load takes nothing on.
  */
 internal fun World.callAt(t: Carrier, s: Station, o: Int = 0) {
-    // The link it has just run, timed from when it left its last stop.
-    if (t.leftFrom >= 0 && t.leftAt >= 0 && t.leftFrom != s.id) timeLink(t.leftFrom, s.id, tick - t.leftAt)
+    // The link it has just run, timed from when it left its last stop, unless it left out a stop on the way.
+    if (t.leftFrom >= 0 && t.leftAt >= 0 && t.leftFrom != s.id && stopBefore(t) == t.leftFrom) timeLink(t.leftFrom, s.id, tick - t.leftAt)
     t.leftFrom = s.id
     t.leftAt = -1
     val company = companies.getOrNull(t.owner) ?: return

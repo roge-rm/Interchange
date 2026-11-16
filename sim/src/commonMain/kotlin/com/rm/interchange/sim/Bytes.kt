@@ -58,6 +58,8 @@ class ByteWriter(initial: Int = 1024) {
 
 class ByteReader(private val buf: ByteArray, private var at: Int = 0) {
     val done get() = at >= buf.size
+    /** Bytes not read yet. */
+    val left get() = buf.size - at
 
     fun byte(): Int {
         if (at >= buf.size) throw BadData("ran out of data")

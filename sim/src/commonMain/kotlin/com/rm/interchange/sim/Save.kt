@@ -625,8 +625,12 @@ object Save {
             }
             // Before 59 no link was timed: they go by estimates until vehicles have run them.
             if (version >= 59) {
+                // Each link is two stations and at least two bytes.
+                val most = minOf(r.left / 2L, stations.size.toLong() * stations.size)
                 for (times in listOf(linkTimes, linkCosts)) {
-                    repeat(r.uvar().toInt().also { if (it > 10_000_000) throw BadData("too many link times") }) { times[r.long()] = r.int() }
+                    val n = r.uvar()
+                    if (n !in 0..most) throw BadData("too many link times")
+                    repeat(n.toInt()) { times[r.long()] = r.int().coerceIn(1, MAX_LINK_TICKS) }
                 }
                 for (list in listOf<List<Carrier?>>(trains, roadVehicles, ships, aircraft)) for (v in list) if (v != null) { v.leftFrom = r.int(); v.leftAt = r.long() }
             }

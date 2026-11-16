@@ -110,7 +110,8 @@ internal fun World.waitForLoad(v: Carrier, o: Int): Boolean {
  * depots of [kind], with wires over it for an [electric] train.
  */
 internal fun World.allowedOrder(o: Int, company: Int, kind: Int, electric: Boolean = false): Int? {
-    if (!Order.isDepot(o)) return o.takeIf { stations.getOrNull(Order.station(o))?.owner == company }
+    // Only trains run through stations.
+    if (!Order.isDepot(o)) return (if (kind == Depots.RAIL) o else o and Order.VIA.inv()).takeIf { stations.getOrNull(Order.station(o))?.owner == company }
     val d = depots.getOrNull(Order.depot(o)) ?: return null
     val k = Order.depotKind(o)
     if (d.owner != company || d.kind != kind || k !in Order.DEPOT_KINDS) return null

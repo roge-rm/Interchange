@@ -7,7 +7,7 @@ import kotlin.test.assertTrue
 
 class LinkRoutingTest {
     /** Stations A, B and C along one line, ids 0 to 2, each with a row of houses as a town, and a depot at the west end. */
-    private fun line(): World {
+    private fun line(houses: Boolean = true): World {
         val w = World(NewGame(96, 64, 1, 1900, towns = 0, industries = 0, weather = false, collisions = false))
         for (i in w.corners.indices) w.corners[i] = 3
         w.companies[0].money = 10_000_000
@@ -15,6 +15,10 @@ class LinkRoutingTest {
         w.apply(Command.Rail(0, 3, 10, 90, 10, Track.X, remove = false))
         val house = w.roster.houses.first { it.key == "base:clapboard_house" }
         for ((n, xs) in listOf(10..13, 46..49, 82..85).withIndex()) {
+            if (!houses) {
+                w.apply(Command.Station(0, xs.first, 10, xs.last, 10, Track.X))
+                continue
+            }
             val t = Town(n, "Town $n", xs.first, 12, 3)
             w.towns += t
             for (x in xs) {
@@ -70,6 +74,44 @@ class LinkRoutingTest {
         assertEquals(2, w.nextHop(0, 2))
         assertEquals(-1, w.nextHop(0, 1))
         assertEquals(0, w.nextHop(2, 0))
+    }
+
+    @Test
+    fun onlyTrainsRunThrough() {
+        val w = line()
+        assertEquals(Order.VIA or 1, w.allowedOrder(Order.VIA or 1, 0, Depots.RAIL))
+        assertEquals(1, w.allowedOrder(Order.VIA or 1, 0, Depots.ROAD))
+    }
+
+    @Test
+    fun oneSlowRunCountsForLittle() {
+        val w = line()
+        w.timeLink(0, 1, 1000)
+        w.timeLink(0, 1, 1_000_000)
+        assertEquals((7 * 1000 + 4000) / 8, w.linkTimes[linkKey(0, 1)])
+        // Unchanged times leave the way as it is.
+        w.linksWeek()
+        w.workOutLinks()
+        w.linksWeek()
+        assertFalse(w.linksDirty)
+    }
+
+    @Test
+    fun aRunThatLeftOutAStopIsntTimed() {
+        val w = line(houses = false)
+        // B is left out when there's nothing for it, which with nobody about is always.
+        val t = w.train("base:coach_wood", -1, 0, Order.SKIP_IF_NOTHING or 1, 2, start = true)
+        var reachedC = false
+        var calledAtB = false
+        repeat(20_000) {
+            w.step()
+            if (t.leftFrom == 2) reachedC = true
+            if (t.leftFrom == 1) calledAtB = true
+        }
+        assertTrue(reachedC, "never reached C")
+        assertFalse(calledAtB, "called at B")
+        assertTrue(w.linkTimes.containsKey(linkKey(2, 0)))
+        assertFalse(w.linkTimes.containsKey(linkKey(0, 2)))
     }
 
     @Test
