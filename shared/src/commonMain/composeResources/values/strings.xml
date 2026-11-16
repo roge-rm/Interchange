@@ -310,7 +310,7 @@
     <string name="book_new_trains">New vehicles</string>
     <string name="book_running">Running costs</string>
     <string name="book_interest">Loan interest</string>
-    <string name="book_sold">Trains sold</string>
+    <string name="book_sold">Vehicles sold</string>
     <string name="book_total">Profit</string>
     <string name="money_graph">Money, last two years</string>
     <string name="inflation">Inflation</string>

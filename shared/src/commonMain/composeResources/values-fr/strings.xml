@@ -293,7 +293,7 @@
     <string name="book_new_trains">Nouveaux véhicules</string>
     <string name="book_running">Frais d'exploitation</string>
     <string name="book_interest">Intérêts</string>
-    <string name="book_sold">Trains vendus</string>
+    <string name="book_sold">Véhicules vendus</string>
     <string name="book_total">Bénéfice</string>
     <string name="money_graph">Argent, deux dernières années</string>
     <string name="inflation">Inflation</string>
@@ -365,7 +365,7 @@
     <string name="news_subsidy_won">%1$s remporte la subvention : %2$s</string>
     <string name="goal_town">Faire grandir %1$s à %2$s habitants d’ici %3$d</string>
     <string name="goal_deliver">%2$s : livrer %1$s à %3$s d’ici %4$d</string>
-    <string name="goal_connect">Transporter %1$s passagers entre %2$s et %3$s en un an, d’ici %4$d</string>
+    <string name="goal_connect">Transporter %1$s voyageurs entre %2$s et %3$s en un an, d’ici %4$d</string>
     <string name="goal_value">Faire monter la valeur de la compagnie de %1$s depuis son plus bas, d’ici %2$d</string>
     <string name="goal_profit">Un bénéfice annuel de %1$s d’ici %2$d</string>
     <string name="news_goal_met">%1$s atteint un objectif : %2$s</string>
