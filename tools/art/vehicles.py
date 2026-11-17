@@ -503,6 +503,14 @@ ROSTER = [
     # Hyperloop pods.
     ("vela", 10, lambda f: coach(f, L(10), True)),
     ("photon", 10, lambda f: coach(f, L(10), True)),
+    # Autonomous trucks and drones.
+    ("auto_tractor", 12, lambda f: boxcar(f, L(12), True)),
+    ("auto_dump", 8, lambda f: hopper(f, L(8))),
+    ("auto_tanker", 13, lambda f: tankcar(f, L(13))),
+    ("convoy_tractor", 12, lambda f: boxcar(f, L(12), True)),
+    ("mail_drone", 1, lambda f: coach(f, L(1), True)),
+    ("freight_drone", 1, lambda f: coach(f, L(1), True)),
+    ("tiltrotor_drone", 2, lambda f: coach(f, L(2), True)),
 ]
 
 

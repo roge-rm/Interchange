@@ -30,6 +30,7 @@ import aircraft  # noqa: E402
 import energy  # noqa: E402
 import maglev  # noqa: E402
 import hyperloop  # noqa: E402
+import autonomy  # noqa: E402
 
 
 def L(n):
@@ -163,9 +164,15 @@ MODELS = {
     "meteor_coach": (13, lambda m: maglev.coach(m, L(13), "meteor")),
     "vela": (10, lambda m: hyperloop.pod(m, L(10), "vela")),
     "photon": (10, lambda m: hyperloop.pod(m, L(10), "photon")),
+    "auto_tractor": (12, lambda m: roadcars.tractor(m, L(12), "van", "pod", roadcars.AUTO_BAND, era=2035)),
+    "auto_dump": (8, lambda m: roadcars.truck(m, L(8), "dump", "pod", 3, lifts=2, era=2036)),
+    "auto_tanker": (13, lambda m: roadcars.tractor(m, L(13), "tank", "pod", roadcars.AUTO_BAND, era=2037)),
+    "convoy_tractor": (12, lambda m: roadcars.tractor(m, L(12), "van", "cabless", roadcars.AUTO_BAND, era=2055)),
 }
 SHIPS = ships.ship_builders()
 AIRCRAFT = aircraft.aircraft_builders()
+DRONES = autonomy.drone_builders()
+AIRCRAFT.update(DRONES)
 for _key, (_n, _build) in list(SHIPS.items()) + list(AIRCRAFT.items()):
     MODELS[_key] = (_n, lambda m, n=_n, build=_build: build(m, L(n)))
 
@@ -175,7 +182,8 @@ ROAD = {"horse_omnibus", "stagecoach", "mail_coach", "freight_wagon", "red_river
         "tank_truck", "log_truck", "cattle_truck", "semi_van", "plow_truck", "streetcar", "pcc", "clrv", "flexity",
         "step_van", "electric_van", "flatbed_truck", "tandem_dump", "quad_dump", "fuel_truck", "tandem_plow", "highway_tractor",
         "aero_tractor", "tanker_train", "grain_train", "cattle_liner", "logger", "sander_plow", "tandem_semi", "boom_truck", "tanker_long", "wing_sander",
-        "battery_tractor", "hydrogen_tractor", "hydrogen_bus", "battery_coach"}
+        "battery_tractor", "hydrogen_tractor", "hydrogen_bus", "battery_coach",
+        "auto_tractor", "auto_dump", "auto_tanker", "convoy_tractor"}
 # How each kind is lowered, as (h, base): heights over base steps are scaled by h, wheels, horses and people keep
 # their size. Rail bodies come down onto their trucks' wheel tops, road ones onto their wheels; ships from the waterline,
 # helicopters and float planes from the ground. Fixed-wing aircraft are already in proportion.
@@ -190,6 +198,9 @@ def height(key):
         return 0.45, 0.0
     if key in HELICOPTERS:
         return 0.35, 0.0
+    if key in DRONES:
+        # Built at the height they're drawn.
+        return 1.0, 0.0
     if key in FLOAT_PLANES:
         return 0.65, 0.0
     if key in AIRCRAFT or key in MAGLEV:

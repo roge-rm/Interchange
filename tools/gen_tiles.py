@@ -187,7 +187,7 @@ for era in range(TOWER_ERAS):
     JOBS.append(("static", ("tower", era), lambda era=era: scenery(f"tower_{era}.png", base.cell), None))
     JOBS.append(("shadows", ("tower_shadow", era), lambda era=era: scenery(f"tower_{era}_shadow.png", base.cell), None))
     UP[("tower", era)] = f"tower_{era}.png"
-for name in ("strip_hut",):
+for name in ("strip_hut", "pad_shed"):
     JOBS.append(("static", (name,), lambda name=name: scenery(f"{name}.png", base.cell), None))
     JOBS.append(("shadows", (name + "_shadow",), lambda name=name: scenery(f"{name}_shadow.png", base.cell), None))
     UP[(name,)] = f"{name}.png"
@@ -420,7 +420,7 @@ def waterside_consts(index):
     out.append("    /** Control towers by era, and their shadows. */")
     out.append(f"    val TOWER = intArrayOf({', '.join(str(index[('tower', k)]) for k in range(TOWER_ERAS))})")
     out.append(f"    val TOWER_SHADOW = intArrayOf({', '.join(str(index[('tower_shadow', k)]) for k in range(TOWER_ERAS))})")
-    for name in ("strip_hut",):
+    for name in ("strip_hut", "pad_shed"):
         out.append(f"    const val {name.upper()} = {index[(name,)]}")
         out.append(f"    const val {name.upper()}_SHADOW = {index[(name + '_shadow',)]}")
     return "\n".join(out)

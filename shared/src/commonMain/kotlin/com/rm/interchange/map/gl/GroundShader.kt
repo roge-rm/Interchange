@@ -230,6 +230,8 @@ const vec3 APRON = ${rgb(0xb4b0a8)};
 const vec3 APRON_JOINT = ${rgb(0x96928a)};
 const vec3 MARKING = ${rgb(0xeeeeea)};
 const vec3 TAXI_LINE = ${rgb(0xe8c030)};
+const vec3 DRONE_PAD = ${rgb(0x4e5856)};
+const vec3 DRONE_MARK = ${rgb(0x16c4b8)};
 const float PI = 3.14159265;
 const vec3 GRID_LIGHT = ${rgb(0xf2efe6)};
 const vec3 WEAR[3] = vec3[3](${rgb(0xd03a2a)}, ${rgb(0xe8b030)}, ${rgb(0x3aa048)});
@@ -426,6 +428,21 @@ vec3 airportTexel(float u, float v, int aero, vec3 ground, out bool paved) {
         if (rr >= 0.28 && rr <= 0.31) return TAXI_LINE;
         if ((du >= 0.1 && du <= 0.14 && dv < 0.16) || (du < 0.12 && dv < 0.02)) return MARKING;
         return base(APRON, ground);
+    }
+    if (role == 6) {
+        // A drone pad: concrete with a dark landing square toward the front, its shed in the back corner, a drone's
+        // outline in teal on the square, arms out to four rotor rings.
+        if (abs(u - 0.5) > 0.46 || abs(v - 0.5) > 0.46) { paved = false; return ground; }
+        float pu = u - 0.56;
+        float pv = v - 0.56;
+        float edge = max(abs(pu), abs(pv));
+        if (edge > 0.27) return base(APRON, ground);
+        if (edge > 0.25) return MARKING;
+        float ring = length(vec2(abs(pu) - 0.12, abs(pv) - 0.12));
+        if (ring >= 0.05 && ring <= 0.068) return DRONE_MARK;
+        if (edge < 0.032) return DRONE_MARK;
+        if (edge < 0.12 && min(abs(pu - pv), abs(pu + pv)) < 0.02) return DRONE_MARK;
+        return base(DRONE_PAD, ground);
     }
     paved = false;
     return ground;

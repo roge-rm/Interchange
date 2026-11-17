@@ -3436,8 +3436,7 @@
       "carries": ["goods", "food", "paper", "lumber", "fish", "aluminium", "steel"],
       "capacity": 32,
       "reliability": 92,
-      "autonomous": true,
-      "sprite": "aero_tractor"
+      "autonomous": true
     },
     {
       "id": "auto_dump",
@@ -3456,8 +3455,7 @@
       "carries": ["coal", "iron_ore", "potash", "nickel_ore", "bauxite", "grain"],
       "capacity": 30,
       "reliability": 92,
-      "autonomous": true,
-      "sprite": "quad_dump"
+      "autonomous": true
     },
     {
       "id": "auto_tanker",
@@ -3476,8 +3474,7 @@
       "carries": ["oil", "fuel"],
       "capacity": 40,
       "reliability": 92,
-      "autonomous": true,
-      "sprite": "tanker_train"
+      "autonomous": true
     },
     {
       "id": "convoy_tractor",
@@ -3496,8 +3493,7 @@
       "carries": ["goods", "food", "paper", "lumber", "fish", "aluminium", "steel"],
       "capacity": 34,
       "reliability": 95,
-      "autonomous": true,
-      "sprite": "aero_tractor"
+      "autonomous": true
     },
     {
       "id": "mail_drone",
@@ -3518,8 +3514,7 @@
       "life": 12,
       "reliability": 90,
       "range": 15,
-      "runway": "drone",
-      "sprite": "jetranger"
+      "runway": "drone"
     },
     {
       "id": "freight_drone",
@@ -3540,8 +3535,7 @@
       "life": 12,
       "reliability": 90,
       "range": 12,
-      "runway": "drone",
-      "sprite": "jetranger"
+      "runway": "drone"
     },
     {
       "id": "tiltrotor_drone",
@@ -3562,8 +3556,7 @@
       "life": 15,
       "reliability": 95,
       "range": 30,
-      "runway": "drone",
-      "sprite": "jetranger"
+      "runway": "drone"
     }
   ]
 }

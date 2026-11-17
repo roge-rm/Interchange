@@ -37,6 +37,8 @@ guide_deck_<a>.png, guide_ramp_<edge>.png and guide_portal_<edge>.png its bridge
 Hyperloop tube (hyperloop.py): tube_<piece>_<shape>.png, tube_set_<mask>.png, tube_curve_<key>.png and tube_end_<edge>.png
 as for guideway, tube_station_<a>.png and tube_station_bare_<a>.png portal platforms, tube_depot_<edge>.png the pod hall,
 tube_deck_<a>.png and tube_ramp_<edge>.png its bridges and tube_portal_<edge>.png a bore's entry hall.
+
+pad_shed.png is a drone pad's charging shed (autonomy.py), in the tile's back corner behind the painted landing square.
 """
 import sys
 from pathlib import Path
@@ -47,6 +49,7 @@ import bpy  # noqa: E402
 import curve_art  # noqa: E402
 import curves  # noqa: E402
 import houses  # noqa: E402
+import autonomy  # noqa: E402
 import hyperloop  # noqa: E402
 import industries  # noqa: E402
 import maglev  # noqa: E402
@@ -65,6 +68,8 @@ SIGNAL_RISE = 0.6
 PORTAL_RISE = 0.8
 # The seaplane base and strip hut, drawn at the float planes' scale: the shed comes to about 0.85 of a Beaver.
 PLANE_RISE = 0.33
+# The drone pad's charging shed, drawn at the drones' scale.
+PAD_RISE = 0.5
 LEAFY = ["maple", "birch", "aspen"]
 DECOR = ["boulder", "shrub", "tall_grass"]
 PIECES = ["X", "Y", "N", "E", "S", "W"]
@@ -206,6 +211,7 @@ def main():
     for era in range(waterside.TOWER_ERAS):
         shot(out, f"tower_{era}.png", lambda m, era=era: waterside.tower(m, era), rise=BUILDING_RISE)
     shot(out, "strip_hut.png", waterside.strip_hut, rise=PLANE_RISE)
+    shot(out, "pad_shed.png", autonomy.pad_shed, rise=PAD_RISE)
     for kind in houses.BUILDERS:
         for edge in EDGES:
             shot(out, f"house_{kind}_{edge}.png", lambda m, kind=kind: houses.house(m, kind), heading=houses.FACING[edge], rise=BUILDING_RISE)

@@ -150,7 +150,7 @@ class PackBuildingsTest {
         val w = World(NewGame(width = 128, height = 128, seed = 11, startYear = 1900))
         w.companies[0].autorenew = true
         repeat(Calendar.TICKS_PER_DAY * 730) { w.step() }
-        assertEquals(-260545003249067636L, w.checksum())
+        assertEquals(-2482493958933559309L, w.checksum())
         assertEquals(544, w.industries.sumOf { it.madeLastMonth.sum() })
     }
 
@@ -160,7 +160,7 @@ class PackBuildingsTest {
         val w = World(NewGame(width = 128, height = 128, seed = 11, startYear = 1900, future = false))
         w.companies[0].autorenew = true
         repeat(Calendar.TICKS_PER_DAY * 730) { w.step() }
-        assertEquals(7769568724633567708L, w.checksum())
+        assertEquals(6059885551085355865L, w.checksum())
     }
 
     @Test

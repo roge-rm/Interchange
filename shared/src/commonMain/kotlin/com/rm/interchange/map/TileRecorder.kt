@@ -570,7 +570,7 @@ internal class TileRecorder(
 
     /**
      * How airport [a]'s tile ([wx], [wy]) is paved, packed for [airportTexel]: an [AERO_RUNWAY], [AERO_STRIP],
-     * [AERO_TAXI], [AERO_APRON] or [AERO_PAD] in the low bits, [AERO_ALONG_U] if its runway runs along view u, and
+     * [AERO_TAXI], [AERO_APRON], [AERO_PAD] or [AERO_DRONE] in the low bits, [AERO_ALONG_U] if its runway runs along view u, and
      * the sides of the tile at a runway's ends from bit 8. From bit 12, for [airportTexel] to find where on the airport
      * a texel is: the view sides world x and y count up toward, two bits each, the tile's place along and across
      * (4 and 3 bits), the kind (3 bits) and whether the runway runs along y.
@@ -581,7 +581,8 @@ internal class TileRecorder(
         val len = Airports.LENGTH[a.kind]
         val role = when (a.kind) {
             Airports.SEAPLANE -> return 0
-            Airports.HELIPORT, Airports.PAD -> AERO_PAD
+            Airports.HELIPORT -> AERO_PAD
+            Airports.PAD -> AERO_DRONE
             Airports.STRIP -> AERO_STRIP
             Airports.REGIONAL -> if (ly == 0) AERO_RUNWAY else AERO_APRON
             Airports.CITY -> when (ly) { 0 -> AERO_RUNWAY; 1 -> AERO_TAXI; else -> AERO_APRON }
@@ -640,6 +641,7 @@ internal class TileRecorder(
         return when (a.kind) {
             Airports.SEAPLANE -> viewEdge(a.axis).let { if (shadow) Atlas.SEAPLANE_SHADOW[it] else Atlas.SEAPLANE[it] }
             Airports.STRIP -> if (lx == Airports.LENGTH[a.kind] - 1) (if (shadow) Atlas.STRIP_HUT_SHADOW else Atlas.STRIP_HUT) else -1
+            Airports.PAD -> if (shadow) Atlas.PAD_SHED_SHADOW else Atlas.PAD_SHED
             Airports.REGIONAL -> if (ly != back) -1 else when (lx) {
                 0 -> pick(Atlas.HANGAR_SMALL, Atlas.HANGAR_SMALL_SHADOW, smallHangarEra(built))
                 2 -> terminal(Atlas.TERMINAL_SMALL, Atlas.TERMINAL_SMALL_SHADOW)
@@ -1125,6 +1127,7 @@ internal class TileRecorder(
         private const val AERO_TAXI = 3
         private const val AERO_APRON = 4
         private const val AERO_PAD = 5
+        private const val AERO_DRONE = 6
         private const val AERO_ALONG_U = 16
         /**
          * Each airport kind's taxi legs that leave the runway's middle line, from [Taxiways] so the map paves and lines

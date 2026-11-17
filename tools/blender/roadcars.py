@@ -266,13 +266,18 @@ def highway_coach(m, L, era=1980):
 
 
 # How long each cab is, from its back to its bumper, in tiles.
-CAB_LEN = {"early": 0.15, "round": 0.17, "square": 0.17, "medium": 0.17, "sloped": 0.21, "fifties": 0.22, "long": 0.25, "sleeper": 0.32, "aero": 0.27, "cabover": 0.1}
+CAB_LEN = {"early": 0.15, "round": 0.17, "square": 0.17, "medium": 0.17, "sloped": 0.21, "fifties": 0.22, "long": 0.25, "sleeper": 0.32, "aero": 0.27, "cabover": 0.1, "pod": 0.22, "cabless": 0.16}
 # Each cab's roof, in steps, for bodies sized to it.
-CAB_TOP = {"early": 0.9, "round": 0.9, "square": 0.96, "medium": 1.04, "sloped": 1.14, "fifties": 1.16, "long": 1.34, "sleeper": 1.34, "aero": 1.62, "cabover": 1.32}
+CAB_TOP = {"early": 0.9, "round": 0.9, "square": 0.96, "medium": 1.04, "sloped": 1.14, "fifties": 1.16, "long": 1.34, "sleeper": 1.34, "aero": 1.62, "cabover": 1.32, "pod": 1.42, "cabless": 0.98}
 # How far the steer axle sits behind each cab's front, in tiles: under the front of the hood, about a metre back.
-FRONT_AXLE = {"early": 0.045, "round": 0.045, "square": 0.045, "medium": 0.04, "sloped": 0.05, "fifties": 0.05, "long": 0.05, "sleeper": 0.05, "aero": 0.05, "cabover": 0.045}
+FRONT_AXLE = {"early": 0.045, "round": 0.045, "square": 0.045, "medium": 0.04, "sloped": 0.05, "fifties": 0.05, "long": 0.05, "sleeper": 0.05, "aero": 0.05, "cabover": 0.045, "pod": 0.05, "cabless": 0.045}
 # From a truck or trailer's back to its last axle, in tiles, about a metre and a quarter.
 REAR_AXLE = 0.05
+# Autonomous trucks' cabs: a windowless sensor pod, and from the 2050s no cab at all. All are pearl white with a teal
+# light band, the band carried down the trailer, so they stand out from crewed trucks at any zoom.
+AUTO_CABS = ("pod", "cabless")
+AUTO_WHITE = "#eceff0"
+AUTO_BAND = "#16c4b8"
 
 
 def _ring(m, x, y, zc, r, w, mat, n=20):
@@ -531,6 +536,8 @@ def _cab(m, y0, y1, c, paint, style, era=1970, stacks="back", power="diesel"):
         return _medium_cab(m, y0, y1, c, paint)
     if style == "sloped":
         return _sloped_cab(m, y0, y1, c, paint)
+    if style in AUTO_CABS:
+        return _auto_cab(m, y0, y1, c, style)
     half = 0.075
     # Battery and hydrogen trucks need little cooling air: the grille is closed in the body colour.
     grille = material("grille", "#3a3836", metal=0.4, rough=0.5) if power == "diesel" else paint
@@ -602,6 +609,54 @@ def _cab(m, y0, y1, c, paint, style, era=1970, stacks="back", power="diesel"):
     return hood
 
 
+def _lidar(m, y, z, c, r=0.017):
+    """A spinning lidar: a dark drum with a teal window ring and a domed cap, standing at y on the middle line from z."""
+    with m.keep(z):
+        m.upright(0.0, y, z, z + 0.08, r, r, c["dark"], segments=16)
+        m.upright(0.0, y, z + 0.08, z + 0.14, r * 1.02, r * 1.02, material("lidar window", AUTO_BAND, rough=0.15), segments=16)
+        m.lathe(0.0, y, z + 0.14, [(r, 0.0), (r * 0.9, 0.04), (r * 0.5, 0.08), (0.0, 0.09)], c["dark"], segments=16)
+
+
+def _auto_cab(m, y0, y1, c, style):
+    """An autonomous truck's cab from y0 to its front at y1, with no glass: a smooth pearl pod with a raked, rounded front
+    and a lidar on the roof ("pod"), or a low power unit with a rounded nose and its lidar on the nose ("cabless"). A teal
+    light band wraps the front and runs down the sides, cameras sit where the mirrors would. Returns where the cab's
+    front slope starts."""
+    half = 0.075
+    body = material("autonomous cab", AUTO_WHITE, rough=0.3, clearcoat=0.5)
+    band = material("autonomous band", AUTO_BAND, rough=0.25, clearcoat=0.3)
+    mats = {"paint": body, "band": band, "dark": c["dark"]}
+    top = CAB_TOP[style]
+    if style == "pod":
+        hood = y1 - 0.12
+        shape = [(y0, 0.32, 0.01, "paint"), (y1 - 0.012, 0.32, 0.02, "dark", 0.9), (y1, 0.5, 0.04, "paint", 0.9),
+                 (y1 - 0.008, 0.76, 0.03, "band", 0.92), (y1 - 0.024, 0.92, 0.03, "paint", 0.94), (hood, 1.3, 0.07, "paint"),
+                 (y0 + 0.04, top, 0.05, "paint"), (y0, top - 0.02, 0.015, "paint")]
+        outline = m.shell(shape, half, mats, crown=0.09)
+        bz = (0.76, 0.9)
+        _lidar(m, (y0 + hood) / 2, top - 0.03, c)
+        cam = (hood + 0.01, 1.12)
+    else:
+        hood = y1 - 0.09
+        shape = [(y0, 0.32, 0.01, "paint"), (y1 - 0.012, 0.32, 0.02, "dark", 0.9), (y1, 0.48, 0.035, "paint", 0.9),
+                 (y1 - 0.006, 0.62, 0.02, "band", 0.92), (y1 - 0.02, 0.74, 0.03, "paint", 0.94), (hood, top, 0.05, "paint"),
+                 (y0, top, 0.015, "paint")]
+        outline = m.shell(shape, half, mats, crown=0.06)
+        bz = (0.62, 0.72)
+        _lidar(m, hood + 0.03, top - 0.03, c, r=0.015)
+        cam = (y0 + 0.03, 0.86)
+    # The light band down each side, a sensor strip low across the nose and the lamps in it.
+    for side in (-1, 1):
+        m.box(side * half - 0.0015, side * half + 0.0015, y0 + 0.01, parts.outline_front(outline, bz[0]) - 0.02, bz[0], bz[1], band)
+        m.box(side * half - 0.003, side * half + 0.001, y0 + 0.01, y1 - 0.08, 0.26, 0.5, body, bevel=0.004)
+        # A camera pod each side on a short stalk, where a crewed truck has its mirrors.
+        m.box(side * (half + 0.004) - 0.004, side * (half + 0.004) + 0.004, cam[0] - 0.012, cam[0] + 0.004, cam[1], cam[1] + 0.07, c["dark"], bevel=0.003)
+    y = parts.outline_front(outline, 0.42)
+    m.box(-0.05, 0.05, y - 0.006, y + 0.003, 0.4, 0.45, c["light"])
+    m.box(-0.074, 0.074, y1 - 0.01, y1 + 0.006, 0.24, 0.36, body, bevel=0.007)
+    return hood
+
+
 # Each kind's paint, the load's colour, and its body's colour where that differs.
 PAINTS = {"mail": "#b8322a", "box": "#2a5a3a", "stake": "#6a4a2a", "flatbed": "#2a5a8a", "dump": "#d8a020", "tank": "#d8d8d4", "log": "#3a5a2a",
           "cattle": "#8a2a22", "plow": "#e07a20", "boom": "#e8e6e0"}
@@ -665,7 +720,7 @@ def truck(m, L, kind, cab="round", gen=1, plow="wedge", lifts=0, era=1970):
     (spoked if cab == "early" else wheels)(m, [a1 - FRONT_AXLE[cab]] + rear, c)
     m.box(-0.06, 0.06, a0, a1, 0.25, 0.35, c["dark"])
     _cab(m, cab0, a1 - (0.005 if cab == "cabover" else 0.0), c, paint, cab, era, "front")
-    if gen == 3:
+    if gen == 3 and cab not in AUTO_CABS:
         guard(m, a1, c)
     b0, b1 = a0 + 0.005, cab0 - 0.012
     if kind == "mail":
@@ -989,15 +1044,22 @@ def tractor(m, L, trailer, cab, paint_hex, bumper=False, era=1970, drive=2, axle
         else:
             m.box(-0.078, 0.078, t0, t1, 0.42, 1.55, material("trailer", "#e8e8e4", rough=0.4), bevel=0.006)
             for side in (-1, 1):
-                m.box(side * 0.0782 - 0.001, side * 0.0782 + 0.001, t0 + 0.01, t1 - 0.01, 0.5, 0.56, paint)
-                if cab == "aero":
+                m.box(side * 0.0782 - 0.001, side * 0.0782 + 0.001, t0 + 0.01, t1 - 0.01, 0.5, 0.66 if cab in AUTO_CABS else 0.56, paint)
+                if cab == "aero" or cab in AUTO_CABS:
                     m.box(side * 0.075 - 0.002, side * 0.075 + 0.002, t0 + 0.2, t1 - 0.12, 0.28, 0.42, material("skirt", "#5a5e62", rough=0.5))
             m.text(LETTERS, 0.0792, (t0 + t1) / 2, 1.1, 0.034, paint, 1)
+            if cab == "cabless":
+                # A fairing rising from the low power unit's roof to the trailer's, closing the gap between them.
+                m.shell([(t1 - 0.05, 1.53, 0.01, "paint"), (t1 - 0.004, 1.53, 0.04, "paint"), (cab0 + 0.07, CAB_TOP[cab] - 0.01, 0.03, "paint"),
+                         (t1 - 0.05, CAB_TOP[cab] - 0.01, 0.0, "paint")], 0.076, {"paint": material("trailer", "#e8e8e4", rough=0.4)}, crown=0.04)
     elif trailer == "tank":
         # Smooth elliptical tanks, lower than a van, each on a frame with a walkway and three domes on top.
         for y0, y1 in bodies:
             m.box(-0.05, 0.05, y0 + 0.01, y1 - 0.01, 0.36, 0.5, c["dark"])
             tank(m, y0, y1, 0.48, 1.24, 0.077, alu, 3, c, walkway=True)
+            if cab in AUTO_CABS:
+                for side in (-1, 1):
+                    m.box(side * 0.0772 - 0.001, side * 0.0772 + 0.001, y0 + 0.03, y1 - 0.03, 0.8, 0.9, paint)
     elif trailer == "hopper":
         # A Super B of grain hoppers: two trailers, each with a pair of hoppers under a tarp.
         tarp = material("hopper tarp", "#3a4a5a", rough=0.7)
