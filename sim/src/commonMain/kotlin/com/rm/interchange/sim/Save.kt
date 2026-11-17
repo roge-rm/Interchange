@@ -417,7 +417,25 @@ object Save {
     }
 
     /** The packs a save needs, as named in it, without reading the rest. */
-    fun packs(data: ByteArray): List<PackRef> = body(data).let { (version, r) -> readSettings(version, r); readPacks(version, r) }
+    fun packs(data: ByteArray): List<PackRef> {
+        val (version, r) = body(data)
+        try {
+            readSettings(version, r)
+            return readPacks(version, r)
+        } finally {
+            r.close()
+        }
+    }
+
+    /** A save's map width and height, read from the start of its packed body without the rest. */
+    fun mapSize(data: ByteArray): Pair<Int, Int> {
+        val (_, r) = body(data)
+        try {
+            return r.int() to r.int()
+        } finally {
+            r.close()
+        }
+    }
 
     /**
      * Reads a world, finding the packs it needs with [find]: the pack with that
@@ -425,6 +443,17 @@ object Save {
      */
     fun read(data: ByteArray, find: (PackRef) -> Pack? = ::basePack): World {
         val (version, r) = body(data)
+        try {
+            val world = read(version, r, find)
+            // The rest of the packed body read through, so a damaged checksum at its end is refused too.
+            r.close(check = true)
+            return world
+        } finally {
+            r.close()
+        }
+    }
+
+    private fun read(version: Int, r: ByteReader, find: (PackRef) -> Pack?): World {
         val settings = readSettings(version, r)
         val refs = readPacks(version, r)
         val found = refs.map { find(it) }
@@ -827,11 +856,7 @@ object Save {
                     s.name = capName(r.string(), SERVICE_NAME_MOST)
                     s.timetabled = r.bool()
                     // Each order takes a byte at the least in each of its five lists.
-                    fun ints(most: Long): IntArray {
-                        val k = r.uvar()
-                        if (k !in 0..most) throw BadData("bad service orders")
-                        return IntArray(k.toInt()) { r.int() }
-                    }
+                    fun ints(most: Long): IntArray = r.ints(most)
                     s.orders = ints(r.left / 4L)
                     val times = Array(4) { ints(s.orders.size.toLong()) }
                     if (times.any { it.size != s.orders.size }) throw BadData("bad service times")
@@ -1023,7 +1048,8 @@ object Save {
         val version = head.int()
         if (version < 1 || version > VERSION) throw BadData("saved by a newer version of the game ($version)")
         if (version >= 30 && head.bool()) { head.string(); head.string(); head.int() }
-        return version to ByteReader(Squeeze.unpacker(head.bytes()))
+        val packed = head.blockRange()
+        return version to ByteReader(Squeeze.unpacker(data, packed.first, packed.last + 1))
     }
 
     private fun readSettings(version: Int, r: ByteReader): NewGame {

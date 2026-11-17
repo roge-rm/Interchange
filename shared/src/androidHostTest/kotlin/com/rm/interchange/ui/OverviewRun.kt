@@ -10,7 +10,8 @@ import java.lang.management.ManagementFactory
 import kotlin.test.Test
 
 /**
- * What the overview map costs to open on a big map: the snapshot taken on the game thread, and what it holds, against
+ * What the overview map costs to open on a big map: the snapshot taken on the game thread, its terrain coloured off it,
+ * and what it holds once coloured, against
  * the whole-map copies and full size terrain it took before, with its industries matched to their figures and numbered by search. Slow, so it runs only when asked:
  * `./gradlew :shared:testAndroidHostTest --tests '*OverviewRun*' -Pinterchange.overview=1024,4096`.
  */
@@ -23,14 +24,15 @@ class OverviewRun {
             var base: Long
             // The quickest of three, each way.
             val snap = (1..3).minOf { time { MapSnapshot(w) } }
+            val colour = (1..3).minOf { MapSnapshot(w).let { s -> time { s.terrainColours() } } }
             val oldTime = (1..3).minOf { time { OldSnapshot(w) } }
             base = used()
-            val s = MapSnapshot(w)
+            val s = MapSnapshot(w).also { it.terrainColours() }
             val held = (used() - base) / 1e6
             base = used()
             val old = OldSnapshot(w)
             val oldHeld = (used() - base) / 1e6
-            println("overview $size: now ${"%.0f".format(snap)} ms on the game thread, holds ${"%.0f".format(held)} MB, terrain ${s.terrainWidth}; " +
+            println("overview $size: now ${"%.0f".format(snap)} ms on the game thread, ${"%.0f".format(colour)} ms colouring off it, holds ${"%.0f".format(held)} MB, terrain ${s.terrainWidth}; " +
                 "before ${"%.0f".format(oldTime)} ms for its figures, names, copies and pixels, holds ${"%.0f".format(oldHeld)} MB, terrain ${old.width} (${s.rail.tiles.size} rail, ${s.roads.tiles.size} road tiles)")
         }
     }

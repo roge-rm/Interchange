@@ -131,6 +131,7 @@
     <string name="delete">Supprimer</string>
     <string name="no_saves">Aucune partie enregistrée</string>
     <string name="cant_load">Impossible de charger cette partie : %1$s</string>
+    <string name="map_too_big">Cette carte fait %1$s × %2$s, trop grande pour la mémoire de cet appareil</string>
 
     <string name="map_size">Taille de la carte</string>
     <string name="width">Largeur</string>

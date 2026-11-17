@@ -107,7 +107,10 @@ import com.rm.interchange.map.buildingAt
 import com.rm.interchange.platform.logLine
 import com.rm.interchange.server.Game
 import com.rm.interchange.server.GameThread
+import com.rm.interchange.platform.MapLimits
+import com.rm.interchange.platform.MapTooBig
 import com.rm.interchange.platform.Network
+import com.rm.interchange.platform.deviceMemory
 import com.rm.interchange.server.Host
 import com.rm.interchange.server.ChatLine
 import com.rm.interchange.server.Reconnect
@@ -316,6 +319,8 @@ private fun Root(settings: Settings) {
     var picking by remember { mutableStateOf<GoalSlot?>(null) }
     var loadError by remember { mutableStateOf<String?>(null) }
     val cantLoad = stringResource(Res.string.cant_load, "%s")
+    val mapTooBig = stringResource(Res.string.map_too_big, "%1", "%2")
+    val memory = deviceMemory()
     val needsPacks = stringResource(Res.string.needs_packs, "%s")
     val cantAdd = stringResource(Res.string.cant_add_pack, "%s")
     val added = stringResource(Res.string.pack_added, "%s")
@@ -476,7 +481,7 @@ private fun Root(settings: Settings) {
         droppedAway = null
         reconnect?.cancel()
         val again = Reconnect.of(remote, { r ->
-            val w = Save.read(r.welcome!!.save, InstalledPacks::findExact)
+            val w = MapLimits.read(r.welcome!!.save, memory, mapTooBig) { Save.read(it, InstalledPacks::findExact) }
             InstalledPacks.prepare(w.roster, InstalledPacks::findExact)
             w
         })
@@ -575,7 +580,8 @@ private fun Root(settings: Settings) {
             sheets?.get(Zoom.levelFor(View.START_HALF_WIDTH))
             val world = withContext(Dispatchers.Default) {
                 try {
-                    val w = Save.read(SavedGames.read(entry.name) ?: throw BadData("missing"), InstalledPacks::find)
+                    val bytes = SavedGames.read(entry.name) ?: throw BadData("missing")
+                    val w = MapLimits.read(bytes, memory, mapTooBig) { Save.read(it, InstalledPacks::find) }
                     InstalledPacks.prepare(w.roster)
                     Result.success(w)
                 } catch (e: BadData) {
@@ -583,7 +589,7 @@ private fun Root(settings: Settings) {
                 }
             }
             world.onSuccess { w -> loadError = null; play({ w }) }.onFailure {
-                loadError = if (it is MissingPacks) needsPacks.replace("%s", it.packs.joinToString { p -> "${p.id} ${p.version}" })
+                loadError = if (it is MapTooBig) it.message else if (it is MissingPacks) needsPacks.replace("%s", it.packs.joinToString { p -> "${p.id} ${p.version}" })
                 else cantLoad.replace("%s", it.message ?: "")
             }
         }
@@ -597,7 +603,7 @@ private fun Root(settings: Settings) {
             val world = withContext(Dispatchers.Default) {
                 try {
                     val bytes = read() ?: throw BadData("missing")
-                    val w = if (edit) Scenarios.edit(bytes, InstalledPacks::find) else Scenarios.play(bytes, InstalledPacks::find)
+                    val w = MapLimits.read(bytes, memory, mapTooBig) { if (edit) Scenarios.edit(it, InstalledPacks::find) else Scenarios.play(it, InstalledPacks::find) }
                     InstalledPacks.prepare(w.roster)
                     Result.success(w)
                 } catch (e: BadData) {
@@ -605,7 +611,7 @@ private fun Root(settings: Settings) {
                 }
             }
             world.onSuccess { w -> scenarioError = null; play({ w }, editor = edit, test = test, intro = !edit) }.onFailure {
-                scenarioError = if (it is MissingPacks) needsPacks.replace("%s", it.packs.joinToString { p -> "${p.id} ${p.version}" })
+                scenarioError = if (it is MapTooBig) it.message else if (it is MissingPacks) needsPacks.replace("%s", it.packs.joinToString { p -> "${p.id} ${p.version}" })
                 else cantOpenScenario.replace("%s", it.message ?: "")
                 if (screen == Screen.Title) window = Win.Scenarios
             }

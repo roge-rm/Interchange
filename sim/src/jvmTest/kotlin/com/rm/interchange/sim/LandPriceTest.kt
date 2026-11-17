@@ -2,6 +2,7 @@ package com.rm.interchange.sim
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 
 /** [landAt] looking only at near towns prices every tile as going through every town does. */
 class LandPriceTest {
@@ -26,8 +27,11 @@ class LandPriceTest {
 
     /** Every tile now, after each town's grown [growths] times in [year], and with one town far bigger than the rest. */
     private fun check(size: Int, seed: Long, start: Int, growths: Int, year: Int) {
+        // The ceiling no higher than this world's towns, so the 30,000 city of an earlier check doesn't loosen this one.
+        Town.resetCeilingForTest()
         val w = World(NewGame(size, size, seed, start))
         val what = "$size seed $seed from $start"
+        assertTrue(Town.populationCeiling < 30_000, "$what ceiling ${Town.populationCeiling}")
         same(w, "$what, ${w.towns.size} towns, most ${w.towns.maxOf { it.population }}")
         for (t in w.towns) repeat(growths) { w.growTown(t, year) }
         same(w, "$what grown in $year, most ${w.towns.maxOf { it.population }}")

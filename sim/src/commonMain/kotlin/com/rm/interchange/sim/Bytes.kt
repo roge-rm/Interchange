@@ -74,12 +74,12 @@ class ByteWriter(initial: Int = 1024, private val drain: ((ByteArray, Int) -> Un
 }
 
 /**
- * Reads what [ByteWriter] wrote, from a whole buffer, or from a [source] that fills a buffer bit by bit and returns
- * how many bytes it put in, or -1 at the end, for a save too big to hold whole before reading.
+ * Reads what [ByteWriter] wrote, from a whole buffer, or from a [source] that fills a buffer bit by bit, for a save too
+ * big to hold whole before reading. [close] lets go of the source.
  */
-class ByteReader private constructor(private var buf: ByteArray, private var at: Int, private var end: Int, private val source: ((ByteArray, Int, Int) -> Int)?) {
+class ByteReader private constructor(private var buf: ByteArray, private var at: Int, private var end: Int, private val source: Unpacker?) {
     constructor(buf: ByteArray, at: Int = 0) : this(buf, at, buf.size, null)
-    constructor(source: (ByteArray, Int, Int) -> Int) : this(ByteArray(1 shl 16), 0, 0, source)
+    constructor(source: Unpacker) : this(ByteArray(1 shl 16), 0, 0, source)
 
     val done get() = at >= end && !refill()
     /** Bytes not read yet, for bounding counts read from the data; a [source]'s aren't known ahead, so the most a block may be. */
@@ -87,7 +87,7 @@ class ByteReader private constructor(private var buf: ByteArray, private var at:
 
     private fun refill(): Boolean {
         if (source == null) return false
-        val n = source(buf, 0, buf.size)
+        val n = source.read(buf, 0, buf.size)
         if (n <= 0) return false
         at = 0
         end = n
@@ -129,16 +129,26 @@ class ByteReader private constructor(private var buf: ByteArray, private var at:
             return out
         }
         if (n < 0 || n > MOST_BLOCK) throw BadData("a block too big")
-        val out = ByteArray(n)
+        // Grown as the bytes come, so a wrong count ends in BadData instead of a huge array.
+        var out = ByteArray(minOf(n, GROW_FROM))
         var k = 0
         while (k < n) {
             if (at >= end && !refill()) throw BadData("a block runs past the end")
-            val take = minOf(end - at, n - k)
+            if (k == out.size) out = out.copyOf(minOf(n, out.size * 2))
+            val take = minOf(end - at, out.size - k)
             buf.copyInto(out, k, at, at + take)
             at += take
             k += take
         }
         return out
+    }
+
+    /** Where in the whole buffer the next block is, for reading it in place; moves past it. */
+    fun blockRange(): IntRange {
+        check(source == null)
+        val n = uvar()
+        if (n < 0 || at + n > end) throw BadData("a block runs past the end")
+        return (at until at + n.toInt()).also { at += n.toInt() }
     }
 
     fun string(): String = bytes().decodeToString()
@@ -148,12 +158,29 @@ class ByteReader private constructor(private var buf: ByteArray, private var at:
         return ShortArray(b.size / 2) { k -> ((b[k * 2].toInt() and 0xff) or (b[k * 2 + 1].toInt() shl 8)).toShort() }
     }
 
-    fun ints(): IntArray {
-        val n = uvar().toInt()
-        if (n < 0 || n > (if (source == null) end else MOST_BLOCK)) throw BadData("too many numbers")
-        return IntArray(n) { int() }
+    fun ints(): IntArray = ints(if (source == null) end.toLong() else MOST_BLOCK.toLong())
+
+    /** A count of numbers, up to [most], then the numbers; streamed, the array grows as they come, as in [bytes]. */
+    fun ints(most: Long): IntArray {
+        val n = uvar()
+        if (n !in 0..most) throw BadData("too many numbers")
+        if (source == null) return IntArray(n.toInt()) { int() }
+        var out = IntArray(minOf(n, GROW_FROM.toLong()).toInt())
+        for (k in 0 until n.toInt()) {
+            if (k == out.size) out = out.copyOf(minOf(n, out.size * 2L).toInt())
+            out[k] = int()
+        }
+        return out
+    }
+
+    /** Lets go of the source; with [check], first reads it to the end and checks it came through whole, or BadData. */
+    fun close(check: Boolean = false) {
+        source?.close(check)
     }
 }
+
+/** What a streamed [ByteReader] starts a block or numbers at before growing it, in items. */
+private const val GROW_FROM = 1 shl 16
 
 /** The biggest block a streamed [ByteReader] reads: twice a 4096 map's two-byte layer. */
 private const val MOST_BLOCK = 1 shl 26
@@ -170,12 +197,20 @@ expect object Squeeze {
     fun unpack(data: ByteArray): ByteArray
     /** A packer that takes the bytes bit by bit, so a big save needn't be held whole before packing. */
     fun packer(): Packer
-    /** [data] unpacked bit by bit, as a [ByteReader] source. */
-    fun unpacker(data: ByteArray): (ByteArray, Int, Int) -> Int
+    /** [data] from [from] until [until] unpacked bit by bit, as a [ByteReader] source. */
+    fun unpacker(data: ByteArray, from: Int = 0, until: Int = data.size): Unpacker
 }
 
 /** Packs what it's [add]ed, the first [add] n bytes of each array, all of each taken before [add] returns. */
 interface Packer {
     fun add(b: ByteArray, n: Int)
     fun finish(): ByteArray
+}
+
+/** Unpacks bit by bit, for a streamed [ByteReader]. */
+interface Unpacker {
+    /** Up to [len] bytes into [buf] at [off]: how many, or -1 at the end. BadData if they're cut short or damaged. */
+    fun read(buf: ByteArray, off: Int, len: Int): Int
+    /** Lets go of what it holds, once; with [check], first reads to the end and checks the data came through whole, or BadData. */
+    fun close(check: Boolean)
 }

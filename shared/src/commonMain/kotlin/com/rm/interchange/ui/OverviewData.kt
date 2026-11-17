@@ -16,8 +16,8 @@ internal data class MapSpan(val x: Int, val y: Int, val ex: Int, val ey: Int, va
 internal const val TERRAIN_MOST = 2048
 
 /**
- * What the overview draws, taken between ticks: the terrain's colours, a pixel for each [terrainStep] tiles
- * square, and the tiles with rail or road; making paths runs off the game thread.
+ * What the overview draws, taken between ticks: what the terrain's colours are made from, a pixel for each
+ * [terrainStep] tiles square, and the tiles with rail or road; colouring and making paths run off the game thread.
  */
 internal class MapSnapshot(w: World) {
     val info = w.overviewInfo()
@@ -26,7 +26,18 @@ internal class MapSnapshot(w: World) {
     val terrainStep = (maxOf(width, height) + TERRAIN_MOST - 1) / TERRAIN_MOST
     val terrainWidth = maxOf(1, width / terrainStep)
     val terrainHeight = maxOf(1, height / terrainStep)
-    val terrain = terrainPixels(w, terrainStep, terrainWidth, terrainHeight)
+    /** Each pixel's [terrainTile] until [terrainColours] colours them in place. */
+    private val terrain = terrainTiles(w, terrainStep, terrainWidth, terrainHeight)
+    private var coloured = false
+
+    /** The terrain's colours, coloured the first time it's asked, off the game thread. */
+    fun terrainColours(): IntArray {
+        if (!coloured) {
+            for (k in terrain.indices) terrain[k] = colourOf(terrain[k])
+            coloured = true
+        }
+        return terrain
+    }
     /** Tiles with track, their [Track] bits and owner; tiles with road, their road bits and builder. */
     val rail = SparseTiles.of(w.track, w.owner)
     val roads = SparseTiles.of(w.road, w.roadOwner)
@@ -72,24 +83,48 @@ internal class SparseTiles(val tiles: IntArray, val bits: ByteArray, val owners:
     }
 }
 
-/** [w]'s terrain colours, a pixel for each [step] tiles square, [across] by [down]. */
-private fun terrainPixels(w: World, step: Int, across: Int, down: Int): IntArray {
+/**
+ * What [w]'s terrain colour takes, a pixel for each [step] tiles square, [across] by [down], each as [terrainTile]:
+ * only reads and shifts, so the game thread isn't held up by the colouring.
+ */
+private fun terrainTiles(w: World, step: Int, across: Int, down: Int): IntArray {
     val out = IntArray(across * down)
     val canals = w.canals
-    for (py in 0 until down) for (px in 0 until across) {
-        val x = px * step
+    val corners = w.corners
+    val ground = w.ground
+    val trees = w.trees
+    val row = w.width + 1
+    for (py in 0 until down) {
         val y = py * step
-        val i = w.index(x, y)
-        out[py * across + px] = if (canals.isNotEmpty() && i in canals) terrainColour(0, 0, 0, 0, 0, 0) else terrainColour(
-            w.heightAt(x, y), w.heightAt(x + 1, y), w.heightAt(x + 1, y + 1), w.heightAt(x, y + 1),
-            w.ground[i].toInt(), Trees.count(w.trees[i].toInt()),
-        )
+        var i = y * w.width
+        var c = y * row
+        var o = py * across
+        for (px in 0 until across) {
+            out[o++] = terrainTile(corners[c].toInt(), corners[c + 1].toInt(), corners[c + row + 1].toInt(), corners[c + row].toInt(),
+                ground[i].toInt(), Trees.count(trees[i].toInt()))
+            i += step
+            c += step
+        }
+    }
+    // A canal is water, as all four corners at 0 colour it.
+    for (i in canals) {
+        val x = i % w.width
+        val y = i / w.width
+        if (x % step == 0 && y % step == 0 && x / step < across && y / step < down) out[y / step * across + x / step] = 0
     }
     return out
 }
 
+/** A tile's corner heights, 6 bits each, its ground in 3 and its tree count in 2, packed in an Int for [colourOf]. */
+private fun terrainTile(t: Int, r: Int, b: Int, l: Int, ground: Int, trees: Int): Int =
+    minOf(t, 63) or (minOf(r, 63) shl 6) or (minOf(b, 63) shl 12) or (minOf(l, 63) shl 18) or (minOf(ground, 7) shl 24) or (trees shl 27)
+
+private fun colourOf(tile: Int): Int = terrainColour(
+    tile and 63, (tile shr 6) and 63, (tile shr 12) and 63, (tile shr 18) and 63, (tile shr 24) and 7, (tile shr 27) and 3,
+)
+
 internal class MapImage(val data: MapSnapshot) {
-    val terrain: ImageBitmap = imageBitmapOf(data.terrain, data.terrainWidth, data.terrainHeight)
+    val terrain: ImageBitmap = imageBitmapOf(data.terrainColours(), data.terrainWidth, data.terrainHeight)
     val rail = linkedMapOf<Int, Path>()
     val roads = linkedMapOf<Int, Path>()
     init {

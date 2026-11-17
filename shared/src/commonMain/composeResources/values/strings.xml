@@ -146,6 +146,7 @@
     <string name="no_saves">No saved games</string>
     <!-- A saved game in the list: its date, its money, its map. -->
     <string name="cant_load">That save can't be loaded: %1$s</string>
+    <string name="map_too_big">This map is %1$s × %2$s, bigger than this device has memory for</string>
 
     <!-- The new game screen. -->
     <string name="map_size">Map size</string>

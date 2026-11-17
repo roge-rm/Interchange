@@ -37,7 +37,10 @@ import com.rm.interchange.net.Player
 import com.rm.interchange.net.ChatEvent
 import com.rm.interchange.net.Reject
 import com.rm.interchange.net.Wire
+import com.rm.interchange.platform.MapLimits
+import com.rm.interchange.platform.MapTooBig
 import com.rm.interchange.platform.Network
+import com.rm.interchange.platform.deviceMemory
 import com.rm.interchange.res.*
 import com.rm.interchange.server.Cancelled
 import com.rm.interchange.server.ChatLine
@@ -159,6 +162,8 @@ fun MultiplayerWindow(settings: Settings, onJoined: (Remote, World) -> Unit, onC
     val cantReach = stringResource(Res.string.cant_reach, "%s")
     val needsPacks = stringResource(Res.string.needs_packs, "%s")
     val cantLoad = stringResource(Res.string.cant_load, "%s")
+    val mapTooBig = stringResource(Res.string.map_too_big, "%1", "%2")
+    val memory = deviceMemory()
     val lookingText = stringResource(Res.string.looking)
     val joiningText = stringResource(Res.string.joining)
     val downloading = stringResource(Res.string.downloading_packs, "%1", "%2")
@@ -206,7 +211,7 @@ fun MultiplayerWindow(settings: Settings, onJoined: (Remote, World) -> Unit, onC
             /** Joins as [h] and reads the world sent, with only the very packs it names. */
             fun enter(h: Message.Hello): Joining = try {
                 val r = Remote.join(game.address, game.port, h).also { got = it }
-                val w = Save.read(r.welcome!!.save, InstalledPacks::findExact)
+                val w = MapLimits.read(r.welcome!!.save, memory, mapTooBig) { Save.read(it, InstalledPacks::findExact) }
                 InstalledPacks.prepare(w.roster, InstalledPacks::findExact)
                 Joining.In(r, w)
             } catch (e: Refused) {
@@ -217,6 +222,8 @@ fun MultiplayerWindow(settings: Settings, onJoined: (Remote, World) -> Unit, onC
                 got = null
                 // The base pack comes with the game, so missing it means another version.
                 if (e.packs.any { it.id == Packs.BASE_ID }) Joining.Turned(Reject.VERSION) else Joining.Download(company, e.packs)
+            } catch (e: MapTooBig) {
+                Joining.Unreachable(e.message ?: "")
             } catch (e: BadData) {
                 Joining.Unreachable(cantLoad.replace("%s", e.message ?: ""))
             } catch (e: Exception) {

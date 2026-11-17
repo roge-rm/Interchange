@@ -64,6 +64,9 @@ class Town(
 
         val populationCeiling get() = ceiling.load()
 
+        /** Sets the ceiling back to [v], for tests that run one at a time and need it no higher than their own towns. */
+        internal fun resetCeilingForTest(v: Int = 0) = ceiling.store(v)
+
         private fun raiseCeiling(v: Int) {
             while (true) {
                 val c = ceiling.load()
