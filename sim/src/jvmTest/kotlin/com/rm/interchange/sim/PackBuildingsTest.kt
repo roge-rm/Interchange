@@ -150,17 +150,17 @@ class PackBuildingsTest {
         val w = World(NewGame(width = 128, height = 128, seed = 11, startYear = 1900))
         w.companies[0].autorenew = true
         repeat(Calendar.TICKS_PER_DAY * 730) { w.step() }
-        assertEquals(5757161727364302154L, w.checksum())
+        assertEquals(3380570192057711837L, w.checksum())
         assertEquals(544, w.industries.sumOf { it.madeLastMonth.sum() })
     }
 
-    /** The same world with the future off; main is -5839538994460265999, which differs only by the pack hash (vehicles.json gained the maglev cars). */
+    /** The same world with the future off; main is -5839538994460265999, which differs only by the pack hash (vehicles.json gained the maglev cars and pods). */
     @Test
     fun theBasePackRunsAsBeforeWithTheFutureOff() {
         val w = World(NewGame(width = 128, height = 128, seed = 11, startYear = 1900, future = false))
         w.companies[0].autorenew = true
         repeat(Calendar.TICKS_PER_DAY * 730) { w.step() }
-        assertEquals(-1304774994633122026L, w.checksum())
+        assertEquals(-7786105795614450505L, w.checksum())
     }
 
     @Test

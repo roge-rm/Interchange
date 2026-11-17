@@ -119,11 +119,11 @@ private fun World.demolish(company: Company, x: Int, y: Int) {
 
 /** What selling the company's track, platform or depot on tile [i] pays, with its signals, wires and snow shed. */
 private inline fun World.eachOwnedBase(i: Int, pay: (Long) -> Unit) {
-    val maglev = guideway[i]
+    val kind = kindAt(i)
     val base = when {
-        depotTiles.containsKey(i) -> if (maglev) Maglev.DEPOT else Prices.DEPOT
-        isPlatform(i) -> if (maglev) Maglev.PLATFORM else Prices.PLATFORM
-        track[i].toInt() != 0 -> if (maglev) Maglev.TRACK else Prices.TRACK
+        depotTiles.containsKey(i) -> depotPrice(kind)
+        isPlatform(i) -> platformPrice(kind)
+        track[i].toInt() != 0 -> trackPrice(kind)
         else -> 0L
     }
     if (base != 0L) pay(base)
@@ -137,10 +137,10 @@ internal fun World.scrapOwnedTrack(company: Company, i: Int) {
     eachOwnedBase(i) { scrap(company, it) }
 }
 
-/** What selling track and a platform pays back on tile [i], for the Remove tool's quote; guideway tiles pay guideway prices. */
+/** What selling track and a platform pays back on tile [i], for the Remove tool's quote; guideway and tube tiles pay their own prices. */
 fun World.removeQuote(i: Int): Pair<Long, Long> {
-    val maglev = guideway[i]
-    return scrapBack(if (maglev) Maglev.TRACK else Prices.TRACK) to scrapBack(if (maglev) Maglev.PLATFORM else Prices.PLATFORM)
+    val kind = kindAt(i)
+    return scrapBack(trackPrice(kind)) to scrapBack(platformPrice(kind))
 }
 
 private fun World.trackScrapBack(i: Int): Long {
@@ -191,7 +191,7 @@ private fun World.saleOf(company: Int, i: Int, spansGone: MutableSet<Int>, airpo
         val s = spans[id] ?: return Sale()
         if (spanBlocked(s)) return Sale()
         spansGone += id
-        return Sale(back = scrapBack(spanBuilt(s, maglevSpan(s))), cleared = true, trackGone = true)
+        return Sale(back = scrapBack(spanBuilt(s, spanKind(s))), cleared = true, trackGone = true)
     }
     return Sale(back = trackScrapBack(i), cleared = true, trackGone = true, depotGone = depotTiles.containsKey(i))
 }

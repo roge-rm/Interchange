@@ -211,6 +211,8 @@ class World(settings: NewGame, val roster: Roster = Roster.BASE, generate: Boole
 
     /** Tiles whose track, platform, depot or span head is maglev guideway, by [Maglev]'s rules; false where there's no track. */
     val guideway = BooleanArray(width * height)
+    /** Tiles whose track, platform, depot or span head is hyperloop tube, by [Hyperloop]'s rules; false where there's no track. */
+    val tube = BooleanArray(width * height)
 
     /** Bridges and tunnels by id, a removed one leaving null; the span over or under each tile between heads, and each head's span. */
     val spans = ArrayList<Span?>()
@@ -624,6 +626,7 @@ class World(settings: NewGame, val roster: Roster = Roster.BASE, generate: Boole
         }
         energyChecksum(::mix)
         maglevChecksum(::mix)
+        hyperloopChecksum(::mix)
         for (k in roadStops.keys.sorted()) mix(k.toLong() * 31 + roadStops.getValue(k))
         for (k in saltDepots.sorted()) mix(k.toLong() * 7)
         for (v in roadVehicles) if (v != null) { mix(v.depot.toLong()); mix(v.noDepotUntil); mix(v.wreckedFor.toLong()); mix(v.leave.toLong()) }

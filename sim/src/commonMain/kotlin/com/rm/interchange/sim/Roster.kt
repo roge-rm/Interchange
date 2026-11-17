@@ -102,7 +102,9 @@ object Traction {
     const val HYDROGEN = 6
     /** Engines and coaches that run only on guideway, with [NewGame.future], by [Maglev]. */
     const val MAGLEV = 7
-    val NAMES = listOf("steam", "diesel", "electric", "horse", "dual", "battery", "hydrogen", "maglev")
+    /** Pods that run only in a hyperloop tube, with [NewGame.future], by [Hyperloop]. */
+    const val HYPERLOOP = 8
+    val NAMES = listOf("steam", "diesel", "electric", "horse", "dual", "battery", "hydrogen", "maglev", "hyperloop")
 }
 
 /**
@@ -348,6 +350,7 @@ class Roster(
                 if (d.plow != null && d.kind != VehicleKind.WAGON && d.kind != VehicleKind.ROAD) problems += "${s.key}: only wagons and road vehicles are plows"
                 if ((d.dieselPower != null || d.dieselSpeed != null) && d.traction != "dual") problems += "${s.key}: only dual-mode engines have a diesel power and speed"
                 if (d.traction == "dual" && d.kind != VehicleKind.ENGINE) problems += "${s.key}: only engines are dual-mode"
+                if (d.traction == "hyperloop" && d.carries.orEmpty().any { cargo.of(it) != Cargo.PASSENGERS && cargo.of(it) != Cargo.MAIL }) problems += "${s.key}: hyperloop pods carry only passengers and mail"
                 Engine(
                     id = i, key = s.key, kind = d.kind!!, names = d.names!!, plurals = d.plurals ?: emptyMap(), types = d.types ?: emptyMap(),
                     from = d.from!!, until = d.until!!, speed = d.speed ?: 0, power = d.power ?: 0, weight = d.weight!!,

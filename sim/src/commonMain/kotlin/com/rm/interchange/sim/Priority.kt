@@ -57,6 +57,7 @@ fun World.priorityCount(company: Int): Int {
 internal fun World.trackLifted(i: Int) {
     priorityTrack.remove(i)
     guideway[i] = false
+    tube[i] = false
 }
 
 /** Drops the priority mark on tile [i]'s road as the road is lifted. */

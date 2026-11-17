@@ -355,9 +355,10 @@ object Packs {
                 val moves = kind == VehicleKind.ENGINE || kind == VehicleKind.ROAD || kind == VehicleKind.SHIP || kind == VehicleKind.AIRCRAFT
                 if (kind != null && !moves && (def.speed != null || def.power != null)) problems += "$at: only engines, road vehicles, ships and aircraft have speed and power"
                 val stored = def.traction == "battery" || def.traction == "hydrogen"
-                val maglevCar = def.traction == "maglev" && kind == VehicleKind.WAGON
-                if (kind != null && kind != VehicleKind.ENGINE && kind != VehicleKind.ROAD && (def.tractive != null || def.traction != null && !(stored && moves) && !maglevCar)) problems += "$at: only engines and road vehicles have tractive effort and traction, ships and aircraft only battery or hydrogen, and wagons only maglev"
+                val maglevCar = (def.traction == "maglev" || def.traction == "hyperloop") && kind == VehicleKind.WAGON
+                if (kind != null && kind != VehicleKind.ENGINE && kind != VehicleKind.ROAD && (def.tractive != null || def.traction != null && !(stored && moves) && !maglevCar)) problems += "$at: only engines and road vehicles have tractive effort and traction, ships and aircraft only battery or hydrogen, and wagons only maglev or hyperloop"
                 if (def.traction == "maglev" && kind != null && kind != VehicleKind.ENGINE && kind != VehicleKind.WAGON) problems += "$at: only engines and wagons are maglev"
+                if (def.traction == "hyperloop" && kind != null && kind != VehicleKind.ENGINE && kind != VehicleKind.WAGON) problems += "$at: only engines and wagons are hyperloop pods"
                 if (def.plow != null && def.plow !in Plows.NAMES) problems += "$at: plow should be wedge, rotary or oneway"
                 if (def.plow == "oneway" && kind != null && kind != VehicleKind.ROAD) problems += "$at: only road vehicles have one-way plows"
                 if (def.plow != null && kind != null && kind != VehicleKind.WAGON && kind != VehicleKind.ROAD) problems += "$at: only wagons and road vehicles are plows"

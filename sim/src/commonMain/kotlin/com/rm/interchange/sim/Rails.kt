@@ -111,16 +111,16 @@ private fun World.tileAcross(x: Int, y: Int, edge: Int): Int {
 
 /**
  * Whether tile ([x], [y]) could hold [pieces], with the track round it as
- * [trackOf] says: dry, and every join with track next door level. As guideway
- * with [maglev] (the tile's own kind if null), with each tile's kind as [kindOf]
- * says, it joins no track of the other kind.
+ * [trackOf] says: dry, and every join with track next door level. As track
+ * of [kind] (the tile's own kind if null), with each tile's kind as [kindOf]
+ * says, it joins no track of another kind.
  */
 fun World.piecesFit(
     x: Int, y: Int, pieces: Int, trackOf: (Int) -> Int = { track[it].toInt() },
-    maglev: Boolean? = null, kindOf: (Int) -> Boolean = { guideway[it] },
+    kind: Int? = null, kindOf: (Int) -> Int = { kindAt(it) },
 ): Boolean {
     if (!inside(x, y) || isWater(x, y)) return false
-    if (!kindMeets(index(x, y), pieceEdges(pieces), maglev ?: guideway[index(x, y)], trackOf, kindOf)) return false
+    if (!kindMeets(index(x, y), pieceEdges(pieces), kind ?: kindAt(index(x, y)), trackOf, kindOf)) return false
     for (p in Track.PIECES) {
         if (pieces and p == 0) continue
         val e = Track.edges(p)
@@ -150,29 +150,29 @@ fun World.planRail(c: Command.Rail): BooleanArray? {
 private fun World.planLine(c: Command.Rail, line: IntArray, planned: HashMap<Int, Int>): BooleanArray {
     val trackOf = { i: Int -> planned[i] ?: track[i].toInt() }
     val kindOf = plannedKind(c, planned)
-    // Guideway only with future transport, from its year; lifting it any time.
-    if (c.maglev && !c.remove && !maglevOpen()) return BooleanArray(line.size)
+    // Guideway and tube only with future transport, from their years; lifting them any time.
+    if (!c.remove && !kindOpen(c.kind)) return BooleanArray(line.size)
     return BooleanArray(line.size) { k ->
         val i = line[k] / 64
         val piece = line[k] % 64
         val has = trackOf(i)
         // Town roads and buildings stay put; level crossings come with roads of the player's own.
         // Across a road only on a level crossing.
-        // Guideway crosses no road on the level, and each kind keeps to tiles of its own.
+        // Guideway and tube cross no road on the level, and each kind keeps to tiles of its own.
         val special = stationTiles.containsKey(i) || depotTiles.containsKey(i) || (townBuilt(i) && !(road[i].toInt() != 0 && crossable(i, piece))) || spanHeads.containsKey(i) ||
-            othersBuilding(c.company, i) || (!c.remove && !roomUnder(i)) || (c.maglev && road[i].toInt() != 0) || (has != 0 && kindOf(i) != c.maglev)
+            othersBuilding(c.company, i) || (!c.remove && !roomUnder(i)) || (c.kind != TrackKind.RAIL && road[i].toInt() != 0) || (has != 0 && kindOf(i) != c.kind)
         val ok = !special && if (c.remove) {
             has and piece != 0 && owner[i].toInt() == c.company
         } else {
-            has and piece == 0 && (has == 0 || owner[i].toInt() == c.company) && piecesFit(i % width, i / width, has or piece, trackOf, c.maglev, kindOf)
+            has and piece == 0 && (has == 0 || owner[i].toInt() == c.company) && piecesFit(i % width, i / width, has or piece, trackOf, c.kind, kindOf)
         }
         if (ok) planned[i] = if (c.remove) has and piece.inv() else has or piece
         ok
     }
 }
 
-/** Each tile's kind with [c]'s line planned: guideway or rail as [c] is where it lays track, else as the tile is. */
-private fun World.plannedKind(c: Command.Rail, planned: HashMap<Int, Int>): (Int) -> Boolean = { i -> if (planned.containsKey(i)) c.maglev else guideway[i] }
+/** Each tile's kind with [c]'s line planned: [c]'s where it lays track, else as the tile is. */
+private fun World.plannedKind(c: Command.Rail, planned: HashMap<Int, Int>): (Int) -> Int = { i -> if (planned.containsKey(i)) c.kind else kindAt(i) }
 
 /**
  * The junctions laying [c] would add where it meets other track, as [railJoins] has them, or the junction curves
@@ -192,7 +192,7 @@ fun World.planJoins(c: Command.Rail): List<Join> {
 
 internal fun World.buildRail(company: Company, c: Command.Rail) {
     val line = Track.line(this, c.sx, c.sy, c.ex, c.ey, c.first) ?: return
-    if (c.maglev && !c.remove && !maglevOpen()) return
+    if (!c.remove && !kindOpen(c.kind)) return
     // Junctions aren't made on tiles that had signals.
     val signalled = line.map { it / 64 }.filter { hasSignals(it) }.toSet()
     val laid = BooleanArray(line.size)
@@ -205,7 +205,7 @@ internal fun World.buildRail(company: Company, c: Command.Rail) {
         // Platforms and depots are left for the Clear tool.
         if (stationTiles.containsKey(i) || depotTiles.containsKey(i) || (townBuilt(i) && !(road[i].toInt() != 0 && crossable(i, piece) && !c.remove)) || spanHeads.containsKey(i)) continue
         if (othersBuilding(company.id, i)) continue
-        if ((has != 0 && guideway[i] != c.maglev) || (c.maglev && road[i].toInt() != 0)) continue
+        if ((has != 0 && kindAt(i) != c.kind) || (c.kind != TrackKind.RAIL && road[i].toInt() != 0)) continue
         if (c.remove) {
             if (has and piece == 0 || owner[i].toInt() != company.id || trainOnTile(i)) continue
             val lift = liftCost(c, i)
@@ -223,14 +223,14 @@ internal fun World.buildRail(company: Company, c: Command.Rail) {
             }
         } else {
             if (has and piece != 0 || (has != 0 && owner[i].toInt() != company.id)) continue
-            if (!piecesFit(x, y, has or piece, maglev = c.maglev) || !roomUnder(i)) continue
+            if (!piecesFit(x, y, has or piece, kind = c.kind) || !roomUnder(i)) continue
             val cost = pieceCost(c, i) + treeCost(i) + if (!needsFoundation(x, y, has) && needsFoundation(x, y, has or piece)) build(Prices.FOUNDATION, Mix.FOUNDATION, i, true) else 0
             if (company.money < cost) return
             spend(company, Books.CONSTRUCTION, cost)
             fellTrees(company, i)
             clearOwnBuilding(company.id, i)
             track[i] = (has or piece).toByte()
-            guideway[i] = c.maglev
+            setKind(i, c.kind)
             owner[i] = company.id.toByte()
             condition[i] = -1
             if (fences.remove(i)) fenceCoverCache = null
@@ -247,7 +247,7 @@ internal fun World.buildRail(company: Company, c: Command.Rail) {
         joinCorner(company, c, line.first() / 64)
         joinCorner(company, c, line.last() / 64)
         if (c.join and Command.Rail.JOIN != 0) {
-            for (j in railJoins(c, line, laid, { track[it].toInt() }, { guideway[it] }) { it in signalled || hasSignals(it) }) {
+            for (j in railJoins(c, line, laid, { track[it].toInt() }, { kindAt(it) }) { it in signalled || hasSignals(it) }) {
                 // Each is checked again as the ones before may have changed the tile.
                 if (track[j.tile].toInt() != j.from || !piecesFit(j.tile % width, j.tile / width, j.to)) continue
                 if (company.money < j.cost) return
@@ -289,18 +289,18 @@ private fun World.leadsAcross(i: Int, edge: Int, trackOf: (Int) -> Int): Boolean
  * from one to the other is what was meant. The curve tile [i]'s crossing would become, if each straight only leads
  * off it one way; 0 if none.
  */
-private fun World.cornerCurve(c: Command.Rail, i: Int, trackOf: (Int) -> Int, kindOf: (Int) -> Boolean): Int {
-    if (trackOf(i) != Track.X or Track.Y || owner[i].toInt() != c.company || kindOf(i) != c.maglev || trainOnTile(i) || crossing(i)) return 0
+private fun World.cornerCurve(c: Command.Rail, i: Int, trackOf: (Int) -> Int, kindOf: (Int) -> Int): Int {
+    if (trackOf(i) != Track.X or Track.Y || owner[i].toInt() != c.company || kindOf(i) != c.kind || trainOnTile(i) || crossing(i)) return 0
     val alongX = intArrayOf(Track.XM, Track.XP).filter { leadsAcross(i, it, trackOf) }
     val alongY = intArrayOf(Track.YM, Track.YP).filter { leadsAcross(i, it, trackOf) }
     if (alongX.size != 1 || alongY.size != 1) return 0
     val curve = Track.pieceOf(alongX[0], alongY[0])
-    return if (piecesFit(i % width, i / width, curve, trackOf, c.maglev, kindOf)) curve else 0
+    return if (piecesFit(i % width, i / width, curve, trackOf, c.kind, kindOf)) curve else 0
 }
 
 /** Turns tile [i]'s crossing into the curve [cornerCurve] finds. */
 private fun World.joinCorner(company: Company, c: Command.Rail, i: Int) {
-    val curve = cornerCurve(c, i, { track[it].toInt() }, { guideway[it] })
+    val curve = cornerCurve(c, i, { track[it].toInt() }, { kindAt(it) })
     if (curve == 0) return
     track[i] = curve.toByte()
     wires[i] = (wires[i].toInt() and curve).toByte()
@@ -339,13 +339,13 @@ class Join(val tile: Int, val from: Int, val to: Int, val cost: Long)
  * A train on the tile doesn't stop a junction, as each only adds pieces or takes away the one the line just laid,
  * which no train can be on yet; laying a piece beside a train is allowed anyway.
  */
-private fun World.railJoins(c: Command.Rail, line: IntArray, laid: BooleanArray, trackOf: (Int) -> Int, kindOf: (Int) -> Boolean, signalled: (Int) -> Boolean): List<Join> {
+private fun World.railJoins(c: Command.Rail, line: IntArray, laid: BooleanArray, trackOf: (Int) -> Int, kindOf: (Int) -> Int, signalled: (Int) -> Boolean): List<Join> {
     if (c.remove || c.join and Command.Rail.JOIN == 0 || line.size < 2) return emptyList()
     val out = ArrayList<Join>()
     // The track with the joins so far made, so each is planned as the build will make it, and each tile used once.
     val joined = HashMap<Int, Int>()
     val now = { i: Int -> joined[i] ?: trackOf(i) }
-    fun usable(t: Int) = t !in joined && joinable(c.company, t, trains = false) && kindOf(t) == c.maglev && !signalled(t)
+    fun usable(t: Int) = t !in joined && joinable(c.company, t, trains = false) && kindOf(t) == c.kind && !signalled(t)
     // The edge a curve at the start (or end) turns out of, across [axisEdge]'s axis.
     fun turn(axisEdge: Int, atStart: Boolean): Int = if (axisEdge == Track.XM || axisEdge == Track.XP) {
         if (c.join and (if (atStart) Command.Rail.START_Y_LOW else Command.Rail.END_Y_LOW) != 0) Track.YM else Track.YP
@@ -353,7 +353,7 @@ private fun World.railJoins(c: Command.Rail, line: IntArray, laid: BooleanArray,
         if (c.join and (if (atStart) Command.Rail.START_X_LOW else Command.Rail.END_X_LOW) != 0) Track.XM else Track.XP
     }
     fun add(t: Int, from: Int, to: Int, removed: Int) {
-        if (!usable(t) || !piecesFit(t % width, t / width, to, now, c.maglev, kindOf)) return
+        if (!usable(t) || !piecesFit(t % width, t / width, to, now, c.kind, kindOf)) return
         // Taking away a piece that was there before needs the tile clear of trains.
         if (from and to.inv() and removed.inv() != 0 && trainOnTile(t)) return
         val x = t % width
@@ -417,7 +417,7 @@ private fun World.railStubs(c: Command.Rail, line: IntArray, trackOf: (Int) -> I
     }
     val out = ArrayList<Join>()
     for (t in near) {
-        if (!joinable(c.company, t) || guideway[t] != c.maglev) continue
+        if (!joinable(c.company, t) || kindAt(t) != c.kind) continue
         val from = trackOf(t)
         var to = from
         for (p in intArrayOf(Track.N, Track.E, Track.S, Track.W)) {
@@ -455,8 +455,8 @@ fun World.railCost(c: Command.Rail): Pair<Long, Int> {
     return cost + planJoins(c).sumOf { it.cost } to n
 }
 
-/** What laying a piece of [c]'s kind on tile [i] costs now, rail or guideway. */
-private fun World.pieceCost(c: Command.Rail, i: Int) = if (c.maglev) build(Maglev.TRACK, Mix.GUIDEWAY, i) else build(Prices.TRACK, Mix.TRACK, i)
+/** What laying a piece of [c]'s kind on tile [i] costs now. */
+private fun World.pieceCost(c: Command.Rail, i: Int) = build(trackPrice(c.kind), trackMix(c.kind), i)
 
 /** What lifting a piece of [c]'s kind on tile [i] costs now. */
-private fun World.liftCost(c: Command.Rail, i: Int) = build(if (c.maglev) Maglev.TRACK_REMOVE else Prices.TRACK_REMOVE, Mix.LABOUR, i)
+private fun World.liftCost(c: Command.Rail, i: Int) = build(liftPrice(c.kind), Mix.LABOUR, i)

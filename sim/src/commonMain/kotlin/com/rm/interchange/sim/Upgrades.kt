@@ -51,7 +51,7 @@ private fun ruleModel(kind: Int, e: Engine) = when (kind) {
 internal fun World.ruleFits(c: Company, rule: UpgradeRule): Boolean {
     val from = roster.getOrNull(rule.from) ?: return false
     val to = roster.getOrNull(rule.to) ?: return false
-    return rule.kind in 0..3 && rule.from != rule.to && ruleModel(rule.kind, from) && to.kind == from.kind && to.maglev == from.maglev &&
+    return rule.kind in 0..3 && rule.from != rule.to && ruleModel(rule.kind, from) && to.kind == from.kind && to.trackKind == from.trackKind &&
         (rule.group == -1 || c.groups[rule.kind].any { it.id == rule.group })
 }
 
@@ -172,7 +172,7 @@ internal fun World.trainWhy(t: Train, cars: List<TrainCar>, places: TrainPlaces 
         val e = roster.getOrNull(car.model) ?: return UpgradeWhy.NOT_ON_SALE
         if (t.formation.none { it.model == car.model } && !onSale(e)) return UpgradeWhy.NOT_ON_SALE
     }
-    if (cars.any { roster[it.model].maglev != t.maglev }) return UpgradeWhy.NOT_ON_SALE
+    if (cars.any { roster[it.model].trackKind != t.kind }) return UpgradeWhy.NOT_ON_SALE
     if (!places.wired && cars.any { roster[it.model].pulls && roster[it.model].traction == Traction.ELECTRIC }) return UpgradeWhy.NO_WIRES
     val length = formationModels(roster, cars).sumOf { roster[it].length } * FIX
     if (length > places.shortest && t.length <= places.shortest) return UpgradeWhy.TOO_LONG

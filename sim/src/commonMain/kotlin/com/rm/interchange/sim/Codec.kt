@@ -91,6 +91,11 @@ object Codec {
     private const val DEPOT_MAGLEV = 77
     private const val BRIDGE_MAGLEV = 78
     private const val TUNNEL_MAGLEV = 79
+    /** Track, platforms, depots and spans (bridges and bores) for tube. */
+    private const val RAIL_TUBE = 80
+    private const val STATION_TUBE = 81
+    private const val DEPOT_TUBE = 82
+    private const val BRIDGE_TUBE = 83
 
     /** The most goals a [Command.SetGoals] may carry. */
     const val MOST_GOALS = 100
@@ -99,20 +104,20 @@ object Codec {
         when (c) {
             is Command.Terraform -> { w.byte(TERRAFORM); w.int(c.company); w.int(c.x); w.int(c.y); w.bool(c.up) }
             is Command.Rail -> {
-                w.byte(if (c.maglev) RAIL_MAGLEV else if (c.join == 0) RAIL else RAIL_JOIN)
+                w.byte(if (c.tube) RAIL_TUBE else if (c.maglev) RAIL_MAGLEV else if (c.join == 0) RAIL else RAIL_JOIN)
                 w.int(c.company); w.int(c.sx); w.int(c.sy); w.int(c.ex); w.int(c.ey); w.int(c.first); w.bool(c.remove)
-                if (c.join != 0 || c.maglev) w.int(c.join)
+                if (c.join != 0 || c.maglev || c.tube) w.int(c.join)
             }
             is Command.Station -> {
-                w.byte(if (c.maglev) STATION_MAGLEV else if (c.join == Command.Station.NEXT_TO) STATION else STATION_JOIN)
+                w.byte(if (c.tube) STATION_TUBE else if (c.maglev) STATION_MAGLEV else if (c.join == Command.Station.NEXT_TO) STATION else STATION_JOIN)
                 w.int(c.company); w.int(c.x0); w.int(c.y0); w.int(c.x1); w.int(c.y1); w.int(c.axis)
-                if (c.join != Command.Station.NEXT_TO || c.maglev) w.int(c.join)
+                if (c.join != Command.Station.NEXT_TO || c.maglev || c.tube) w.int(c.join)
             }
-            is Command.Depot -> { w.byte(if (c.maglev) DEPOT_MAGLEV else DEPOT); w.int(c.company); w.int(c.x); w.int(c.y); w.int(c.edge) }
+            is Command.Depot -> { w.byte(if (c.tube) DEPOT_TUBE else if (c.maglev) DEPOT_MAGLEV else DEPOT); w.int(c.company); w.int(c.x); w.int(c.y); w.int(c.edge) }
             is Command.Signal -> { w.byte(SIGNAL_KIND); w.int(c.company); w.int(c.x); w.int(c.y); w.int(c.piece); w.int(c.facing); w.int(c.kind) }
             is Command.SignalRun -> { w.byte(SIGNAL_RUN); w.int(c.company); w.int(c.sx); w.int(c.sy); w.int(c.ex); w.int(c.ey); w.int(c.first); w.int(c.kind); w.int(c.spacing); w.bool(c.remove) }
             is Command.Waypoint -> { w.byte(WAYPOINT); w.int(c.company); w.int(c.x); w.int(c.y) }
-            is Command.Bridge -> { w.byte(if (c.maglev) BRIDGE_MAGLEV else BRIDGE); w.int(c.company); w.int(c.x0); w.int(c.y0); w.int(c.x1); w.int(c.y1); w.int(c.style) }
+            is Command.Bridge -> { w.byte(if (c.tube) BRIDGE_TUBE else if (c.maglev) BRIDGE_MAGLEV else BRIDGE); w.int(c.company); w.int(c.x0); w.int(c.y0); w.int(c.x1); w.int(c.y1); w.int(c.style) }
             is Command.Tunnel -> { w.byte(if (c.maglev) TUNNEL_MAGLEV else TUNNEL); w.int(c.company); w.int(c.x); w.int(c.y) }
             is Command.Road -> { w.byte(TRAM_ROAD); w.int(c.company); w.int(c.sx); w.int(c.sy); w.int(c.ex); w.int(c.ey); w.int(c.surface); w.bool(c.remove); w.bool(c.tram) }
             is Command.RoadOneWay -> { w.byte(ROAD_ONE_WAY); w.int(c.company); w.int(c.x); w.int(c.y) }
@@ -187,6 +192,10 @@ object Codec {
         DEPOT_MAGLEV -> Command.Depot(r.int(), r.int(), r.int(), r.int(), maglev = true)
         BRIDGE_MAGLEV -> Command.Bridge(r.int(), r.int(), r.int(), r.int(), r.int(), r.int(), maglev = true)
         TUNNEL_MAGLEV -> Command.Tunnel(r.int(), r.int(), r.int(), maglev = true)
+        RAIL_TUBE -> Command.Rail(r.int(), r.int(), r.int(), r.int(), r.int(), r.int(), r.bool(), r.int(), tube = true)
+        STATION_TUBE -> Command.Station(r.int(), r.int(), r.int(), r.int(), r.int(), r.int(), r.int(), tube = true)
+        DEPOT_TUBE -> Command.Depot(r.int(), r.int(), r.int(), r.int(), tube = true)
+        BRIDGE_TUBE -> Command.Bridge(r.int(), r.int(), r.int(), r.int(), r.int(), r.int(), tube = true)
         SIGNAL -> Command.Signal(r.int(), r.int(), r.int(), r.int(), r.int())
         CLEAR -> Command.Clear(r.int(), r.int(), r.int())
         CLEAR_AREA -> Command.ClearArea(r.int(), r.int(), r.int(), r.int(), r.int())

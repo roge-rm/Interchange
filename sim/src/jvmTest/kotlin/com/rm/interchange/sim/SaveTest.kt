@@ -130,6 +130,13 @@ class SaveTest {
             Command.Depot(0, 9, 9, Track.YP, maglev = true),
             Command.Bridge(0, 1, 2, 9, 2, Spans.CONCRETE, maglev = true),
             Command.Tunnel(0, 4, 5, maglev = true),
+            Command.Rail(0, 1, 2, 30, 2, Track.X, remove = false, tube = true),
+            Command.Rail(0, 1, 2, 30, 2, Track.X, remove = true, join = Command.Rail.JOIN, tube = true),
+            Command.Station(0, 5, 5, 8, 6, Track.Y, tube = true),
+            Command.Station(0, 5, 5, 8, 6, Track.Y, join = 3, tube = true),
+            Command.Depot(0, 9, 9, Track.YP, tube = true),
+            Command.Bridge(0, 1, 2, 9, 2, Spans.CONCRETE, tube = true),
+            Command.Bridge(0, 1, 2, 40, 2, Spans.TUNNEL, tube = true),
         )
         for (c in commands) assertEquals(c, Codec.decode(Codec.encode(c)))
         val orders = Codec.decode(Codec.encode(Command.TrainOrder(0, 3, Command.TrainOrder.ORDERS, intArrayOf(2, 0, 5)))) as Command.TrainOrder

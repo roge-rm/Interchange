@@ -46,10 +46,10 @@ fun World.maglevDepot(d: Depot) = guideway[d.tile]
 fun World.maglevSpan(s: Span) = guideway[index(s.x0, s.y0)]
 
 /**
- * Whether pieces on tile [i] of kind [maglev] (guideway or rail) meet no piece of the other kind across [edges]
- * (bits by edge), with [trackOf] the track and [kindOf] the kind of each tile.
+ * Whether pieces on tile [i] of [kind] (a [TrackKind]) meet no piece of another kind across [edges] (bits by edge),
+ * with [trackOf] the track and [kindOf] the kind of each tile.
  */
-internal fun World.kindMeets(i: Int, edges: Int, maglev: Boolean, trackOf: (Int) -> Int, kindOf: (Int) -> Boolean): Boolean {
+internal fun World.kindMeets(i: Int, edges: Int, kind: Int, trackOf: (Int) -> Int, kindOf: (Int) -> Int): Boolean {
     for (edge in 0 until 4) {
         if (edges and (1 shl edge) == 0) continue
         val x = i % width + Track.dx(edge)
@@ -57,7 +57,7 @@ internal fun World.kindMeets(i: Int, edges: Int, maglev: Boolean, trackOf: (Int)
         if (!inside(x, y)) continue
         val n = index(x, y)
         val theirs = trackOf(n)
-        if (theirs == 0 || kindOf(n) == maglev) continue
+        if (theirs == 0 || kindOf(n) == kind) continue
         val back = Track.opposite(edge)
         if (Track.PIECES.any { theirs and it != 0 && Track.has(it, back) }) return false
     }

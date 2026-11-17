@@ -79,6 +79,9 @@ class Train(
     /** A maglev, running only on guideway. */
     var maglev = locomotives.any { roster[it].maglev }
         private set
+    /** A hyperloop pod train, running only in tube. */
+    var hyperloop = locomotives.any { roster[it].hyperloop }
+        private set
     var life = locomotives.minOf { roster[it].life }
         private set
     var newReliability = locomotives.minOf { roster[it].reliability } * 100
@@ -90,6 +93,7 @@ class Train(
         electric = locomotives.any { roster[it].traction == Traction.ELECTRIC }
         steam = locomotives.any { roster[it].traction == Traction.STEAM }
         maglev = locomotives.any { roster[it].maglev }
+        hyperloop = locomotives.any { roster[it].hyperloop }
         life = locomotives.minOf { roster[it].life }
         newReliability = locomotives.minOf { roster[it].reliability } * 100
         topSpeed = locomotives.minOf { roster[it].speed }
@@ -306,8 +310,8 @@ internal fun World.buyTrain(company: Company, c: Command.BuyTrain) {
 internal fun World.buyTrainFormation(company: Company, depotId: Int, cars: List<TrainCar>, fallbackWagon: Int) {
     val depot = depots.getOrNull(depotId) ?: return
     if (depot.owner != company.id || depot.kind != Depots.RAIL || !validTrainFormation(roster, cars)) return
-    // Maglev trains in depots on guideway, others in depots on rail.
-    if (maglevCars(roster, cars) != maglevDepot(depot)) return
+    // Maglev trains in depots on guideway, pods in depots on tube, others in depots on rail.
+    if (carsKind(roster, cars) != depotKind(depot)) return
     if (cars.any { !onSale(roster[it.model]) }) return
     val lead = cars.first { roster[it.model].pulls }.model
     val t = Train(roster, trains.size, company.id, lead, fallbackWagon, 0, depot.id, formation = cars)
@@ -591,7 +595,7 @@ private fun World.plainWayClear(t: Train): Boolean {
 }
 
 /** How far ahead [t] looks for what it may have to stop for: its braking distance from its top speed, and a tile. */
-private fun brakeReach(t: Train) = t.maxSpeed.toLong().let { (it * it / (2L * BRAKE) / 16).toInt() } + 16 * FIX
+private fun brakeReach(t: Train) = t.maxSpeed.toLong().let { (it * it / (2L * t.brakeRate) / 16).toInt() } + 16 * FIX
 
 /** Moves every train on a tick: routes first, across the cores, then the moves, in order. */
 internal fun World.moveTrains() {
@@ -768,7 +772,7 @@ private fun World.drive(t: Train) {
         // The repair isn't counted as held time on the link.
         t.brokenFor--
         t.held = wasHeld && t.speed == 0
-        t.speed = (t.speed - BRAKE).coerceAtLeast(0)
+        t.speed = (t.speed - t.brakeRate).coerceAtLeast(0)
         if (t.speed > 0) advance(t, t.speed / 16, freeAhead(t).first)
         else if (atDoor(t)) {
             // Stood in its depot's door: back in, with the fitters there.
@@ -782,7 +786,7 @@ private fun World.drive(t: Train) {
         return
     }
     if (!t.running || t.target == -2) {
-        t.speed = (t.speed - BRAKE).coerceAtLeast(0)
+        t.speed = (t.speed - t.brakeRate).coerceAtLeast(0)
         if (t.speed > 0) advance(t, t.speed / 16, freeAhead(t).first)
         else if (atDoor(t)) backIn(t)
         else if (inShed(t)) {
@@ -795,7 +799,7 @@ private fun World.drive(t: Train) {
     if (t.turnRound) {
         // Brake to a stand, then turn.
         if (t.speed > 0) {
-            t.speed = (t.speed - BRAKE).coerceAtLeast(0)
+            t.speed = (t.speed - t.brakeRate).coerceAtLeast(0)
             advance(t, t.speed / 16, freeAhead(t).first)
         } else turnRound(t)
         return
@@ -824,11 +828,12 @@ private fun World.drive(t: Train) {
     }
     // Wet rail, leaves, ice and snow take the grip away, for pulling away and for braking; deep snow holds it back.
     val nose = stepTile(t.steps.last())
-    val out = exposed(t.steps.last())
+    // A pod is sealed in its tube, out of the weather.
+    val out = exposed(t.steps.last()) && !t.hyperloop
     // A maglev floats, so takes no grip from the rail.
     val grip = if (out && !t.maglev) adhesion(nose) else 100
-    val brake = BRAKE * (50 + grip / 2) / 100
-    val bends = bendScan.reset(t.speed, brake, t.maglev)
+    val brake = t.brakeRate * (50 + grip / 2) / 100
+    val bends = bendScan.reset(t.speed, brake, t.maglev, t.hyperloop)
     val (free, stop) = freeAhead(t, brake, bends)
     val allowed = isqrt(2L * brake * 16 * free).toInt()
     // A dual-mode engine runs on its electric power and speed with wires over its nose, on its diesel without, braking
@@ -1057,8 +1062,8 @@ private fun World.leafy(tile: Int): Boolean {
 
 /** The fastest train [t] can go over the bridge or through the tunnel its nose is on, in speed units: a trestle slowest. */
 private fun World.spanLimit(t: Train): Int {
-    // Guideway spans are built for the maglev's speed.
-    if (t.maglev) return t.maxSpeed
+    // Guideway and tube spans are built for their trains' speed.
+    if (t.maglev || t.hyperloop) return t.maxSpeed
     val s = spanOf(t.steps.last()) ?: spans.getOrNull(spanHeads[stepTile(t.steps.last())] ?: -1) ?: return t.maxSpeed
     return minOf(t.maxSpeed, Spans.SPEED[s.style] * 4096 * 16 / 2700)
 }
@@ -1075,7 +1080,7 @@ private fun World.snowLimit(t: Train, tile: Int): Int {
  * How far the train can go before it has to stand, up to what it needs to brake from full speed, and why it would stop.
  * With [bends] it also works out how fast the bends under the train and on the way to that point let it go.
  */
-private fun World.freeAhead(t: Train, brake: Int = BRAKE, bends: CurveScan? = null): Pair<Int, Stop> {
+private fun World.freeAhead(t: Train, brake: Int = t.brakeRate, bends: CurveScan? = null): Pair<Int, Stop> {
     if (bends == null) return walkAhead(t, brake, null)
     // Two steps behind the tail where the track doesn't branch, so a bend the tail is still on is known for what it
     // was. Where it does, the step before is taken as straight in through the edge it came in at.
@@ -1120,7 +1125,7 @@ private fun World.walkAhead(t: Train, brake: Int, bends: CurveScan?): Pair<Int, 
             t.electric && !wired(next) -> Stop.END
             stepLevel(next) == 0 && closedTile(nt) -> Stop.END
             signalFor(cur, next).let { it >= 0 && !signalLets(t, it, next, at, first = t.speed > 0 && free + t.speed / 16 >= reach) } -> Stop.SIGNAL
-            stepLevel(next) == 0 && t.plow != Plows.ROTARY && (weather.snow[nt].toInt() and 255) >= (if (t.plow == Plows.WEDGE) WEDGE_STOPS else Weather.BLOCKING) -> Stop.SNOW
+            stepLevel(next) == 0 && t.plow != Plows.ROTARY && !t.hyperloop && (weather.snow[nt].toInt() and 255) >= (if (t.plow == Plows.WEDGE) WEDGE_STOPS else Weather.BLOCKING) -> Stop.SNOW
             // On tiles in a path signal's area other trains can be on pieces that don't cross; elsewhere a train anywhere on the tile holds it.
             !pieceFree(t, next, occupiedTile = !inPathArea(next)) -> Stop.TRAIN
             else -> Stop.NONE
@@ -1206,12 +1211,12 @@ internal class CurveScan {
     private val dists = IntArray(3)
     private val tight = BooleanArray(3)
 
-    /** Starts again for a train at [speed] braking by [brake], a [maglev] taking bends at [Maglev]'s caps. */
-    fun reset(speed: Int, brake: Int, maglev: Boolean = false): CurveScan {
+    /** Starts again for a train at [speed] braking by [brake], a [maglev] or [hyperloop] one taking bends at its own caps. */
+    fun reset(speed: Int, brake: Int, maglev: Boolean = false, hyperloop: Boolean = false): CurveScan {
         this.speed = speed
         this.brake = brake
-        tightKmh = if (maglev) Maglev.TIGHT_KMH else CURVE_TIGHT_KMH
-        gentleKmh = if (maglev) Maglev.GENTLE_KMH else CURVE_GENTLE_KMH
+        tightKmh = if (hyperloop) Hyperloop.TIGHT_KMH else if (maglev) Maglev.TIGHT_KMH else CURVE_TIGHT_KMH
+        gentleKmh = if (hyperloop) Hyperloop.GENTLE_KMH else if (maglev) Maglev.GENTLE_KMH else CURVE_GENTLE_KMH
         limit = Int.MAX_VALUE
         kmh = 0
         heading = -1
@@ -1272,9 +1277,9 @@ internal class CurveScan {
 
 /**
  * The cap in km/h of each edge along [steps] by [CurveScan]'s rule, at the place of the step after the edge, 0 where
- * it doesn't turn; for working out ahead of time how bends slow a line, a [maglev] one at [Maglev]'s caps.
+ * it doesn't turn; for working out ahead of time how bends slow a line, a [maglev] one at [Maglev]'s caps and a [hyperloop] one at [Hyperloop]'s.
  */
-fun bendCaps(steps: IntArray, maglev: Boolean = false): IntArray {
+fun bendCaps(steps: IntArray, maglev: Boolean = false, hyperloop: Boolean = false): IntArray {
     val n = steps.size
     val caps = IntArray(n)
     if (n < 2) return caps
@@ -1288,8 +1293,8 @@ fun bendCaps(steps: IntArray, maglev: Boolean = false): IntArray {
             if (sum >= 2 || sum <= -2) for (k in i..j) tight[k] = true
         }
     }
-    val tightCap = if (maglev) Maglev.TIGHT_KMH else CURVE_TIGHT_KMH
-    val gentleCap = if (maglev) Maglev.GENTLE_KMH else CURVE_GENTLE_KMH
+    val tightCap = if (hyperloop) Hyperloop.TIGHT_KMH else if (maglev) Maglev.TIGHT_KMH else CURVE_TIGHT_KMH
+    val gentleCap = if (hyperloop) Hyperloop.GENTLE_KMH else if (maglev) Maglev.GENTLE_KMH else CURVE_GENTLE_KMH
     for (i in 1 until n) caps[i] = if (tight[i]) tightCap else if (turns[i] != 0) gentleCap else 0
     return caps
 }

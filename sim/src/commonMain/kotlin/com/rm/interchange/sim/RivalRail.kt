@@ -405,7 +405,7 @@ private class RailTrain(val engine: Engine, val wagon: Engine, val wagons: Int, 
 private fun World.railPlow(): Engine? {
     val year = Calendar.year(startYear, day)
     if (!settings.weather || Climate.normal(settings.region, year, JANUARY) >= 0) return null
-    return roster.available(year, false).filter { it.plow == Plows.WEDGE && !it.maglev }.minByOrNull { it.id }
+    return roster.available(year, false).filter { it.plow == Plows.WEDGE && !it.future }.minByOrNull { it.id }
 }
 
 /** Work days a train held in its depot after a service waits before it calls at the near end first. */
@@ -422,14 +422,14 @@ private const val JANUARY = 15
  */
 private fun World.railTrains(cargo: Int, load: Int, platforms: Int, loose: Boolean = false, tiles: Int = -1): List<RailTrain> {
     val year = Calendar.year(startYear, day)
-    // Rivals build no guideway, so take no maglev cars.
-    val wagon = roster.available(year, false).filter { cargo in it.cargoes && it.capacity > 0 && it.plow == Plows.NONE && !it.maglev }
+    // Rivals build no guideway or tube, so take no maglev cars or pods.
+    val wagon = roster.available(year, false).filter { cargo in it.cargoes && it.capacity > 0 && it.plow == Plows.NONE && !it.future }
         .maxWithOrNull(compareBy<Engine> { it.capacity * 16 / it.length }.thenBy { -it.id }) ?: return emptyList()
     val plow = railPlow()
     fun fits(e: Engine) = platforms * 16 - e.length - (roster.getOrNull(e.tender)?.length ?: 0) - (plow?.length ?: 0)
     val out = ArrayList<RailTrain>()
     for (e in roster.available(year, true)) {
-        if (e.traction == Traction.ELECTRIC || e.maglev || settings.energy && e.capacity > 0 || fits(e) < wagon.length || !rivalFits(e, tiles)) continue
+        if (e.traction == Traction.ELECTRIC || e.future || settings.energy && e.capacity > 0 || fits(e) < wagon.length || !rivalFits(e, tiles)) continue
         var n = ((load + wagon.capacity - 1) / wagon.capacity).coerceIn(1, fits(e) / wagon.length)
         if (loose) {
             // Loaded weight in tonnes against power, a horsepower a tonne.

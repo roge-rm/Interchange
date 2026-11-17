@@ -133,7 +133,7 @@ fun World.signalFits(x: Int, y: Int, piece: Int): Boolean {
  */
 internal fun World.buildStation(company: Company, c: Command.Station) {
     if (c.axis != Track.X && c.axis != Track.Y) return
-    if (c.maglev && !maglevOpen()) return
+    if (!kindOpen(c.kind)) return
     val xs = minOf(c.x0, c.x1)..maxOf(c.x0, c.x1)
     val ys = minOf(c.y0, c.y1)..maxOf(c.y0, c.y1)
     if (xs.last - xs.first >= MAX_STATION || ys.last - ys.first >= MAX_STATION) return
@@ -145,21 +145,21 @@ internal fun World.buildStation(company: Company, c: Command.Station) {
         val i = index(x, y)
         if (stationTiles.containsKey(i) || depotTiles.containsKey(i) || townBuilt(i) || othersBuilding(company.id, i)) return
         val t = trackAt(x, y)
-        if (t != 0 && (t != c.axis || owner[i].toInt() != company.id || guideway[i] != c.maglev)) return
-        // Guideway platforms cross no road.
-        if (c.maglev && road[i].toInt() != 0) return
+        if (t != 0 && (t != c.axis || owner[i].toInt() != company.id || kindAt(i) != c.kind)) return
+        // Guideway and tube platforms cross no road.
+        if (c.kind != TrackKind.RAIL && road[i].toInt() != 0) return
         if (signals.containsKey(pieceKey(i, c.axis))) return
         tiles += i
     }
     // Platforms on sloping land stand on a foundation, level with the highest corner; their track has to meet any already next door.
-    val platform = if (c.maglev) Maglev.PLATFORM else Prices.PLATFORM
+    val platform = platformPrice(c.kind)
     val cost = tiles.sumOf { build(platform, Mix.PLATFORM, it) + if (isFlat(it % width, it / width)) 0L else build(Prices.FOUNDATION, Mix.FOUNDATION, it, true) } + tiles.sumOf { treeCost(it) }
     if (company.money < cost) return
     for (i in tiles) stationTiles[i] = -1
     val fits = tiles.all { i ->
         val x = i % width
         val y = i / width
-        piecesFit(x, y, c.axis, { t -> if (t in tiles) c.axis else track[t].toInt() }, c.maglev, { t -> if (t in tiles) c.maglev else guideway[t] })
+        piecesFit(x, y, c.axis, { t -> if (t in tiles) c.axis else track[t].toInt() }, c.kind, { t -> if (t in tiles) c.kind else kindAt(t) })
     }
     for (i in tiles) stationTiles.remove(i)
     if (!fits) return
@@ -181,7 +181,7 @@ internal fun World.buildStation(company: Company, c: Command.Station) {
         clearOwnBuilding(company.id, i)
         // Any track already there must run the same way, checked above, so the platform's track joins it.
         track[i] = c.axis.toByte()
-        guideway[i] = c.maglev
+        setKind(i, c.kind)
         owner[i] = company.id.toByte()
         stationTiles[i] = s.id
         s.tiles += i
@@ -366,13 +366,13 @@ private fun World.turnWholeStation(company: Company, c: Command.Station, xs: Int
  */
 internal fun World.buildDepot(company: Company, c: Command.Depot) {
     if (!inside(c.x, c.y) || !isFlat(c.x, c.y) || isWater(c.x, c.y) || c.edge !in 0..3) return
-    if (c.maglev && !maglevOpen()) return
+    if (!kindOpen(c.kind)) return
     val i = index(c.x, c.y)
     if (trackAt(c.x, c.y) != 0 || stationTiles.containsKey(i) || depotTiles.containsKey(i) || townBuilt(i) || othersBuilding(company.id, i)) return
-    if (c.maglev && road[i].toInt() != 0) return
+    if (c.kind != TrackKind.RAIL && road[i].toInt() != 0) return
     val piece = Track.straight(c.edge)
-    if (!piecesFit(c.x, c.y, piece, maglev = c.maglev)) return
-    val price = build(if (c.maglev) Maglev.DEPOT else Prices.DEPOT, Mix.DEPOT, i)
+    if (!piecesFit(c.x, c.y, piece, kind = c.kind)) return
+    val price = build(depotPrice(c.kind), Mix.DEPOT, i)
     if (company.money < price + treeCost(i)) return
     spend(company, Books.CONSTRUCTION, price + fellTrees(company, i))
     clearOwnBuilding(company.id, i)
@@ -380,7 +380,7 @@ internal fun World.buildDepot(company: Company, c: Command.Depot) {
     depots += d
     depotTiles[i] = d.id
     track[i] = piece.toByte()
-    guideway[i] = c.maglev
+    setKind(i, c.kind)
     owner[i] = company.id.toByte()
     touched(c.x, c.y)
     networkChanged()
@@ -553,7 +553,7 @@ internal fun World.clearTile(company: Company, c: Command.Clear) {
     // A bridge or tunnel goes all at once, from either head, and scrap is paid once for the span.
     spanHeads[i]?.let { id ->
         val s = spans[id] ?: return
-        val built = spanBuilt(s, maglevSpan(s))
+        val built = spanBuilt(s, spanKind(s))
         if (removeSpan(s)) scrap(company, built)
         return
     }

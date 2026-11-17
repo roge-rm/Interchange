@@ -16,7 +16,7 @@ package com.rm.interchange.sim
  */
 object Save {
     private val MAGIC = "ICHG".encodeToByteArray()
-    const val VERSION = 73
+    const val VERSION = 74
 
     /** A vehicle's [built] day as saved by [version]: work days from 36, calendar days before. */
     private fun World.builtOut(built: Int, version: Int) = if (version >= 36) built else built / settings.dayLength
@@ -374,6 +374,11 @@ object Save {
             }
             if (version >= 73) {
                 val tiles = guideway.indices.filter { guideway[it] && track[it].toInt() != 0 }
+                w.uvar(tiles.size.toLong())
+                for (i in tiles) w.int(i)
+            }
+            if (version >= 74) {
+                val tiles = tube.indices.filter { tube[it] && track[it].toInt() != 0 }
                 w.uvar(tiles.size.toLong())
                 for (i in tiles) w.int(i)
             }
@@ -946,6 +951,16 @@ object Save {
                     val i = r.int()
                     if (i !in 0 until width * height || track[i].toInt() == 0) throw BadData("guideway with no track")
                     guideway[i] = true
+                }
+            }
+            // Before 74 no tube.
+            if (version >= 74) {
+                val n = r.uvar()
+                if (n !in 0..minOf(r.left.toLong(), width.toLong() * height)) throw BadData("too many tube tiles")
+                repeat(n.toInt()) {
+                    val i = r.int()
+                    if (i !in 0 until width * height || track[i].toInt() == 0 || guideway[i]) throw BadData("tube with no track")
+                    tube[i] = true
                 }
             }
             // A conditional order with a test there isn't or a jump past the end is left out, as are orders past

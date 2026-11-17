@@ -40,8 +40,8 @@ fun validTrainFormation(roster: Roster, cars: List<TrainCar>): Boolean {
             else -> return false
         }
         if (car.cargo != -1 && car.cargo !in model.cargoes) return false
-        // Maglev cars only with maglev cars.
-        if (model.maglev != roster[cars.first().model].maglev) return false
+        // Maglev cars only with maglev cars, pods only with pods.
+        if (model.trackKind != roster[cars.first().model].trackKind) return false
     }
     return engines in 1..MAX_LOCOMOTIVES && wagons <= MAX_WAGONS
 }
@@ -67,7 +67,7 @@ internal fun World.editTrain(company: Company, c: Command.EditTrain) {
     if (train.owner != company.id || !train.inDepot || train.wreckedFor > 0 || !validTrainFormation(roster, c.cars)) return
     val depot = depots.getOrNull(train.depot) ?: return
     if (depot.owner != company.id || depot.kind != Depots.RAIL) return
-    if (maglevCars(roster, c.cars) != train.maglev) return
+    if (carsKind(roster, c.cars) != train.kind) return
     // Wires over the depot it's in, which can be one it turned in.
     val shed = depots.getOrNull(train.shedIn) ?: depot
     val kept = train.formation.groupingBy { it.model }.eachCount().toMutableMap()

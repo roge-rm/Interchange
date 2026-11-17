@@ -224,7 +224,7 @@ internal fun World.companiesYear() {
     // What goes on sale this year, engines and the vehicles that run on their own, not wagons.
     val year = Calendar.year(startYear, day)
     for (e in roster.engines) {
-        if (!e.enabled || e.from != year || e.kind == VehicleKind.WAGON || e.kind == VehicleKind.TENDER || e.maglev && !settings.future) continue
+        if (!e.enabled || e.from != year || e.kind == VehicleKind.WAGON || e.kind == VehicleKind.TENDER || e.future && !settings.future) continue
         tell(News.NEW_VEHICLE, e.id)
     }
     fuelShockNews()

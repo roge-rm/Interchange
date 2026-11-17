@@ -94,15 +94,15 @@ private fun World.headHeight(x: Int, y: Int, axis: Int, edge: Int) = edgeHeight(
 
 /**
  * Whether head tile ([x], [y]) could take straight track [axis] for a span: empty or that track, the company's, nothing
- * else there; guideway with [maglev], rail without, meeting no track of the other kind and, for guideway, no road.
+ * else there; of [kind], meeting no track of another kind and, for guideway and tube, no road.
  */
-private fun World.headFree(company: Company, x: Int, y: Int, axis: Int, maglev: Boolean): Boolean {
+private fun World.headFree(company: Company, x: Int, y: Int, axis: Int, kind: Int): Boolean {
     if (!inside(x, y) || isWater(x, y)) return false
     val i = index(x, y)
     val t = track[i].toInt()
-    if (t != 0 && (t != axis || owner[i].toInt() != company.id || guideway[i] != maglev)) return false
-    if (maglev && road[i].toInt() != 0) return false
-    if (!kindMeets(i, pieceEdges(axis), maglev, { track[it].toInt() }, { guideway[it] })) return false
+    if (t != 0 && (t != axis || owner[i].toInt() != company.id || kindAt(i) != kind)) return false
+    if (kind != TrackKind.RAIL && road[i].toInt() != 0) return false
+    if (!kindMeets(i, pieceEdges(axis), kind, { track[it].toInt() }, { kindAt(it) })) return false
     return !stationTiles.containsKey(i) && !depotTiles.containsKey(i) && !townBuilt(i) && industryOf[i].toInt() == 0 && !spanHeads.containsKey(i) && !deck.containsKey(i) &&
         !othersBuilding(company.id, i)
 }
@@ -118,16 +118,17 @@ fun World.bridgeRefusal(company: Company, c: Command.Bridge): Int {
 
 /** What building [c] would cost, or less than 0 if it can't be built: minus its [Refusal]. */
 private fun World.bridgeSurvey(company: Company, c: Command.Bridge): Long {
+    if (c.kind == TrackKind.TUBE && c.style == Spans.TUNNEL) return boreSurvey(company, c)
     val year = Calendar.year(startYear, day)
     if (c.style !in Spans.TRESTLE..Spans.CONCRETE || year < Spans.FROM[c.style]) return -Refusal.NOT_YET.toLong()
-    // Guideway goes over on concrete only.
-    if (c.maglev && (!maglevOpen() || c.style != Spans.CONCRETE)) return -Refusal.NOT_YET.toLong()
+    // Guideway and tube go over on concrete only.
+    if (c.kind != TrackKind.RAIL && (!kindOpen(c.kind) || c.style != Spans.CONCRETE)) return -Refusal.NOT_YET.toLong()
     if (c.x0 != c.x1 && c.y0 != c.y1) return -Refusal.NOT_STRAIGHT.toLong()
     val axis = if (c.y0 == c.y1) Track.X else Track.Y
     val len = maxOf(kotlin.math.abs(c.x1 - c.x0), kotlin.math.abs(c.y1 - c.y0)) - 1
     if (len < 1) return -Refusal.NOTHING_TO_SPAN.toLong()
     if (len > Spans.LONGEST[c.style]) return -Refusal.TOO_LONG.toLong()
-    if (!headFree(company, c.x0, c.y0, axis, c.maglev) || !headFree(company, c.x1, c.y1, axis, c.maglev)) return -Refusal.ENDS.toLong()
+    if (!headFree(company, c.x0, c.y0, axis, c.kind) || !headFree(company, c.x1, c.y1, axis, c.kind)) return -Refusal.ENDS.toLong()
     val toward = if (axis == Track.X) (if (c.x1 > c.x0) Track.XP else Track.XM) else (if (c.y1 > c.y0) Track.YP else Track.YM)
     val h = headHeight(c.x0, c.y0, axis, toward)
     if (headHeight(c.x1, c.y1, axis, Track.opposite(toward)) != h) return -Refusal.NOT_LEVEL.toLong()
@@ -142,7 +143,7 @@ private fun World.bridgeSurvey(company: Company, c: Command.Bridge): Long {
         if (topCorner(x, y) > h) return -Refusal.HILL.toLong()
         if (deck.containsKey(i) || spanHeads.containsKey(i) || stationTiles.containsKey(i) || depotTiles.containsKey(i) || house[i].toInt() != 0 || industryOf[i].toInt() != 0 ||
             stationBuildings.containsKey(i)) return -Refusal.IN_THE_WAY.toLong()
-        cost += build(Spans.COST[c.style], Mix.SPANS[c.style], i) * (if (c.maglev) Maglev.SPAN_TIMES else 1)
+        cost += build(Spans.COST[c.style], Mix.SPANS[c.style], i) * spanTimes(c.kind)
     }
     val top = deckHeight(c, toward, len, h)
     if (top < 0) return -Refusal.NOTHING_TO_SPAN.toLong()
@@ -153,11 +154,35 @@ private fun World.bridgeSurvey(company: Company, c: Command.Bridge): Long {
         val i = index(x, y)
         if ((track[i].toInt() != 0 || road[i].toInt() != 0) && top <= topCorner(x, y)) return -Refusal.IN_THE_WAY.toLong()
     }
-    return cost + headCost(c.maglev, index(c.x0, c.y0)) + headCost(c.maglev, index(c.x1, c.y1)) + treeCost(index(c.x0, c.y0)) + treeCost(index(c.x1, c.y1))
+    return cost + headCost(c.kind, index(c.x0, c.y0)) + headCost(c.kind, index(c.x1, c.y1)) + treeCost(index(c.x0, c.y0)) + treeCost(index(c.x1, c.y1))
 }
 
-/** The track on a span's head tile [i], rail or guideway. */
-private fun World.headCost(maglev: Boolean, i: Int) = if (maglev) build(Maglev.TRACK, Mix.GUIDEWAY, i) else build(Prices.TRACK, Mix.TRACK, i)
+/**
+ * What boring tube [c] would cost, or minus its [Refusal]: a straight tunnel between two flat heads at the same height,
+ * under anything but another bridge or tunnel, up to [Hyperloop.BORE_LONGEST] tiles between.
+ */
+private fun World.boreSurvey(company: Company, c: Command.Bridge): Long {
+    if (!hyperloopOpen()) return -Refusal.NOT_YET.toLong()
+    if (c.x0 != c.x1 && c.y0 != c.y1) return -Refusal.NOT_STRAIGHT.toLong()
+    val axis = if (c.y0 == c.y1) Track.X else Track.Y
+    val len = maxOf(kotlin.math.abs(c.x1 - c.x0), kotlin.math.abs(c.y1 - c.y0)) - 1
+    if (len < 1) return -Refusal.NOTHING_TO_SPAN.toLong()
+    if (len > Hyperloop.BORE_LONGEST) return -Refusal.TOO_LONG.toLong()
+    if (!headFree(company, c.x0, c.y0, axis, TrackKind.TUBE) || !headFree(company, c.x1, c.y1, axis, TrackKind.TUBE)) return -Refusal.ENDS.toLong()
+    if (!isFlat(c.x0, c.y0) || !isFlat(c.x1, c.y1) || heightAt(c.x0, c.y0) != heightAt(c.x1, c.y1)) return -Refusal.NOT_LEVEL.toLong()
+    val dx = (c.x1 - c.x0).coerceIn(-1, 1)
+    val dy = (c.y1 - c.y0).coerceIn(-1, 1)
+    var cost = 0L
+    for (k in 1..len) {
+        val i = index(c.x0 + dx * k, c.y0 + dy * k)
+        if (deck.containsKey(i) || spanHeads.containsKey(i)) return -Refusal.IN_THE_WAY.toLong()
+        cost += build(Hyperloop.BORE, Mix.SPANS[Spans.TUNNEL], i)
+    }
+    return cost + headCost(TrackKind.TUBE, index(c.x0, c.y0)) + headCost(TrackKind.TUBE, index(c.x1, c.y1)) + treeCost(index(c.x0, c.y0)) + treeCost(index(c.x1, c.y1))
+}
+
+/** The track on a span's head tile [i], of [kind]. */
+private fun World.headCost(kind: Int, i: Int) = build(trackPrice(kind), trackMix(kind), i)
 
 /** The highest corner of tile ([x], [y]), in steps. */
 private fun World.topCorner(x: Int, y: Int) = maxOf(maxOf(heightAt(x, y), heightAt(x + 1, y)), maxOf(heightAt(x + 1, y + 1), heightAt(x, y + 1)))
@@ -201,10 +226,15 @@ internal fun World.buildBridge(company: Company, c: Command.Bridge) {
     val cost = bridgeCost(company, c)
     if (cost < 0 || company.money < cost) return
     spend(company, Books.CONSTRUCTION, cost)
+    if (c.kind == TrackKind.TUBE && c.style == Spans.TUNNEL) {
+        // A bore runs level with its heads.
+        open(company, Span(spans.size, company.id, true, Spans.TUNNEL, c.x0, c.y0, c.x1, c.y1, heightAt(c.x0, c.y0)), TrackKind.TUBE)
+        return
+    }
     val axis = if (c.y0 == c.y1) Track.X else Track.Y
     val toward = if (axis == Track.X) (if (c.x1 > c.x0) Track.XP else Track.XM) else (if (c.y1 > c.y0) Track.YP else Track.YM)
     val len = maxOf(kotlin.math.abs(c.x1 - c.x0), kotlin.math.abs(c.y1 - c.y0)) - 1
-    open(company, Span(spans.size, company.id, false, c.style, c.x0, c.y0, c.x1, c.y1, deckHeight(c, toward, len, headHeight(c.x0, c.y0, axis, toward))), c.maglev)
+    open(company, Span(spans.size, company.id, false, c.style, c.x0, c.y0, c.x1, c.y1, deckHeight(c, toward, len, headHeight(c.x0, c.y0, axis, toward))), c.kind)
 }
 
 /**
@@ -214,11 +244,12 @@ internal fun World.buildBridge(company: Company, c: Command.Bridge) {
 fun World.tunnelFrom(company: Company, x: Int, y: Int, maglev: Boolean = false): Span? {
     if (!inside(x, y)) return null
     if (maglev && !maglevOpen()) return null
+    val kind = TrackKind.of(maglev, false)
     val into = rises(x, y)
     if (into < 0) return null
     val axis = Track.straight(into)
     val h = minOf(minOf(heightAt(x, y), heightAt(x + 1, y)), minOf(heightAt(x + 1, y + 1), heightAt(x, y + 1)))
-    if (!headFree(company, x, y, axis, maglev)) return null
+    if (!headFree(company, x, y, axis, kind)) return null
     val dx = Track.dx(into)
     val dy = Track.dy(into)
     for (k in 1..Spans.LONGEST[Spans.TUNNEL] + 1) {
@@ -229,7 +260,7 @@ fun World.tunnelFrom(company: Company, x: Int, y: Int, maglev: Boolean = false):
         val hi = maxOf(maxOf(heightAt(tx, ty), heightAt(tx + 1, ty)), maxOf(heightAt(tx + 1, ty + 1), heightAt(tx, ty + 1)))
         // The far portal: a slope going back down to the same height, the same way round.
         if (lo == h && hi == h + 1 && k > 1) {
-            if (rises(tx, ty) != Track.opposite(into) || !headFree(company, tx, ty, axis, maglev)) return null
+            if (rises(tx, ty) != Track.opposite(into) || !headFree(company, tx, ty, axis, kind)) return null
             return Span(-1, company.id, true, Spans.TUNNEL, x, y, tx, ty, h)
         }
         if (lo <= h) return null
@@ -257,7 +288,8 @@ private fun World.rises(x: Int, y: Int): Int {
 /** What a tunnel from portal ([x], [y]) would cost, or -1; for guideway with [maglev]. */
 fun World.tunnelCost(company: Company, x: Int, y: Int, maglev: Boolean = false): Long {
     val s = tunnelFrom(company, x, y, maglev) ?: return -1
-    return s.length * build(Spans.COST[Spans.TUNNEL], Mix.SPANS[Spans.TUNNEL]) * (if (maglev) Maglev.SPAN_TIMES else 1) + headCost(maglev, index(s.x0, s.y0)) + headCost(maglev, index(s.x1, s.y1))
+    val kind = TrackKind.of(maglev, false)
+    return s.length * build(Spans.COST[Spans.TUNNEL], Mix.SPANS[Spans.TUNNEL]) * spanTimes(kind) + headCost(kind, index(s.x0, s.y0)) + headCost(kind, index(s.x1, s.y1))
 }
 
 internal fun World.buildTunnel(company: Company, c: Command.Tunnel) {
@@ -265,11 +297,11 @@ internal fun World.buildTunnel(company: Company, c: Command.Tunnel) {
     val cost = tunnelCost(company, c.x, c.y, c.maglev)
     if (company.money < cost) return
     spend(company, Books.CONSTRUCTION, cost)
-    open(company, Span(spans.size, company.id, true, Spans.TUNNEL, s.x0, s.y0, s.x1, s.y1, s.height), c.maglev)
+    open(company, Span(spans.size, company.id, true, Spans.TUNNEL, s.x0, s.y0, s.x1, s.y1, s.height), TrackKind.of(c.maglev, false))
 }
 
-/** Puts span [s] on the map: track on its heads, guideway with [maglev], and its own track over or under the tiles between. */
-private fun World.open(company: Company, s: Span, maglev: Boolean) {
+/** Puts span [s] on the map: track of [kind] on its heads, and its own track over or under the tiles between. */
+private fun World.open(company: Company, s: Span, kind: Int) {
     spans += s
     val dx = (s.x1 - s.x0).coerceIn(-1, 1)
     val dy = (s.y1 - s.y0).coerceIn(-1, 1)
@@ -278,7 +310,7 @@ private fun World.open(company: Company, s: Span, maglev: Boolean) {
         fellTrees(company, i)
         clearOwnBuilding(company.id, i)
         track[i] = s.axis.toByte()
-        guideway[i] = maglev
+        setKind(i, kind)
         owner[i] = company.id.toByte()
         spanHeads[i] = s.id
         touched(x, y)
@@ -292,9 +324,11 @@ private fun World.open(company: Company, s: Span, maglev: Boolean) {
     networkChanged()
 }
 
-/** What span [s] cost to build, before inflation: each tile between the heads, and the track on both heads; for guideway with [maglev]. */
-internal fun spanBuilt(s: Span, maglev: Boolean = false): Long =
-    if (maglev) s.length.toLong() * Spans.COST[s.style] * Maglev.SPAN_TIMES + 2 * Maglev.TRACK else s.length.toLong() * Spans.COST[s.style] + 2 * Prices.TRACK
+/** What span [s] cost to build, before inflation: each tile between the heads, and the track on both heads; for track of [kind]. */
+internal fun spanBuilt(s: Span, kind: Int = TrackKind.RAIL): Long = when {
+    kind == TrackKind.TUBE && s.tunnel -> s.length.toLong() * Hyperloop.BORE + 2 * Hyperloop.TRACK
+    else -> s.length.toLong() * Spans.COST[s.style] * spanTimes(kind) + 2 * trackPrice(kind)
+}
 
 /** Whether a train is on span [s], a head or the track between. */
 internal fun World.spanBlocked(s: Span): Boolean {
@@ -347,7 +381,7 @@ internal fun World.wire(company: Company, c: Command.Wire) {
     for (entry in line) {
         val i = entry / 64
         val piece = entry % 64
-        if (owner[i].toInt() != company.id || track[i].toInt() and piece == 0 || guideway[i]) continue
+        if (owner[i].toInt() != company.id || track[i].toInt() and piece == 0 || guideway[i] || tube[i]) continue
         val has = wires[i].toInt()
         if (c.remove == (has and piece == 0)) continue
         if (!c.remove) {
