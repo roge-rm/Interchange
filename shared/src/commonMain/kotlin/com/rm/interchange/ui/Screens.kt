@@ -75,6 +75,8 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.ui.unit.sp
 import com.rm.interchange.map.mapPicture
 import com.rm.interchange.map.mapPictureFlat
+import com.rm.interchange.platform.MapLimits
+import com.rm.interchange.platform.deviceMemory
 import com.rm.interchange.res.*
 import com.rm.interchange.sim.BadPack
 import com.rm.interchange.sim.NewGame
@@ -206,6 +208,8 @@ fun NewGameScreen(packs: List<Pack>, onStart: (NewGame, List<Pack>) -> Unit, onB
             e.problems.first()
         }
     }
+    // Only the map sizes this device has the memory for.
+    val memory = deviceMemory()
     var preview by remember { mutableStateOf<ImageBitmap?>(null) }
     LaunchedEffect(land) {
         // A moment's wait, so sliding through sizes doesn't make a map for every stop.
@@ -258,9 +262,9 @@ fun NewGameScreen(packs: List<Pack>, onStart: (NewGame, List<Pack>) -> Unit, onB
             FillChips(Region.entries, region, { r -> regionNames.getOrElse(r.ordinal) { r.name } }) { region = it }
         }
         SideBySide(wide, {
-            StepSlider(stringResource(Res.string.width), NewGame.SIZES.toList(), width, { "$it" }) { width = it }
+            StepSlider(stringResource(Res.string.width), MapLimits.sides(NewGame.SIZES.toList(), height, memory), width, { "$it" }) { width = it }
         }, {
-            StepSlider(stringResource(Res.string.height), NewGame.SIZES.toList(), height, { "$it" }) { height = it }
+            StepSlider(stringResource(Res.string.height), MapLimits.sides(NewGame.SIZES.toList(), width, memory), height, { "$it" }) { height = it }
         })
         SideBySide(wide, {
             StepSlider(stringResource(Res.string.hills), (0..3).toList(), hills, { hillNames.getOrElse(it) { "$it" } }) { hills = it }
