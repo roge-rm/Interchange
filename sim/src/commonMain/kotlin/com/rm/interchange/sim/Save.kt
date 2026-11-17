@@ -16,7 +16,7 @@ package com.rm.interchange.sim
  */
 object Save {
     private val MAGIC = "ICHG".encodeToByteArray()
-    const val VERSION = 72
+    const val VERSION = 73
 
     /** A vehicle's [built] day as saved by [version]: work days from 36, calendar days before. */
     private fun World.builtOut(built: Int, version: Int) = if (version >= 36) built else built / settings.dayLength
@@ -38,6 +38,7 @@ object Save {
             if (version >= 70) w.bool(g.handling)
             if (version >= 71) w.bool(g.eraCosts)
             if (version >= 72) w.bool(g.energy)
+            if (version >= 73) w.bool(g.future)
             w.uvar(roster.packs.size.toLong())
             for (p in roster.packs) { w.string(p.id); w.int(p.version); w.long(p.hash) }
             w.uvar(roster.engines.size.toLong())
@@ -370,6 +371,11 @@ object Save {
             }
             if (version >= 72) for (list in listOf<List<Carrier?>>(trains, roadVehicles, ships, aircraft)) for (v in list) if (v != null) {
                 w.int(v.charge); w.int(v.chargeTile)
+            }
+            if (version >= 73) {
+                val tiles = guideway.indices.filter { guideway[it] && track[it].toInt() != 0 }
+                w.uvar(tiles.size.toLong())
+                for (i in tiles) w.int(i)
             }
         }
         val body = Squeeze.pack(w.toByteArray())
@@ -932,6 +938,16 @@ object Save {
             if (version >= 72) for (list in listOf<List<Carrier?>>(trains, roadVehicles, ships, aircraft)) for (v in list) if (v != null) {
                 v.charge = r.int().coerceAtLeast(0); v.chargeTile = r.int().coerceIn(-1, width * height - 1)
             }
+            // Before 73 no guideway.
+            if (version >= 73) {
+                val n = r.uvar()
+                if (n !in 0..minOf(r.left.toLong(), width.toLong() * height)) throw BadData("too many guideway tiles")
+                repeat(n.toInt()) {
+                    val i = r.int()
+                    if (i !in 0 until width * height || track[i].toInt() == 0) throw BadData("guideway with no track")
+                    guideway[i] = true
+                }
+            }
             // A conditional order with a test there isn't or a jump past the end is left out, as are orders past
             // the most a vehicle takes, as a command would.
             for (list in listOf<List<Carrier?>>(trains, roadVehicles, ships, aircraft)) for (v in list) {
@@ -1003,6 +1019,8 @@ object Save {
             eraCosts = version >= 71 && r.bool(),
             // And without energy.
             energy = version >= 72 && r.bool(),
+            // And without future transport.
+            future = version >= 73 && r.bool(),
         )
         if (settings.width !in 16..4096 || settings.height !in 16..4096) throw BadData("map size out of range")
         return settings

@@ -65,6 +65,8 @@ data class NewGame(
     val eraCosts: Boolean = true,
     /** Battery and hydrogen vehicles run on a charge or a tank for their range, and stations can have chargers, by [Energy]. */
     val energy: Boolean = true,
+    /** Future transport: maglev guideway and trains from [MAGLEV_FROM], by [Maglev]. */
+    val future: Boolean = true,
 ) {
     companion object {
         val DAY_LENGTHS = intArrayOf(1, 2, 4, 6, 10, 16)

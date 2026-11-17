@@ -151,6 +151,8 @@ internal fun World.buildRoad(company: Company, c: Command.Road) {
         val joined = (has and 15) or bits
         if (!roadJoinsLevel(x, y, joined)) continue
         val t = track[i].toInt()
+        // Guideway has no level crossings.
+        if (t != 0 && guideway[i]) continue
         if (t != 0) {
             // Only a level crossing: straight road over straight track at right angles, on the level.
             val alongX = joined == (roadBit(Track.XM) or roadBit(Track.XP))

@@ -51,7 +51,7 @@ class EnergyTest {
         val g = NewGame(128, 128, 6, 2020, Region.MIXED, towns = 8, industries = 6, rivals = 2, rivalLevel = RivalLevel.HARD)
         val old = Save.read(Save.write(World(g), version = 71))
         assertFalse(old.settings.energy)
-        val off = Save.read(Save.write(World(g.copy(energy = false))))
+        val off = Save.read(Save.write(World(g.copy(energy = false, future = false))))
         assertEquals(off.checksum(), old.checksum())
         while (old.day < 365) { old.step(); off.step() }
         assertEquals(off.checksum(), old.checksum())

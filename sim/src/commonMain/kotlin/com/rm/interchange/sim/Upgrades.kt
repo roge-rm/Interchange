@@ -172,6 +172,7 @@ internal fun World.trainWhy(t: Train, cars: List<TrainCar>, places: TrainPlaces 
         val e = roster.getOrNull(car.model) ?: return UpgradeWhy.NOT_ON_SALE
         if (t.formation.none { it.model == car.model } && !onSale(e)) return UpgradeWhy.NOT_ON_SALE
     }
+    if (cars.any { roster[it.model].maglev != t.maglev }) return UpgradeWhy.NOT_ON_SALE
     if (!places.wired && cars.any { roster[it.model].pulls && roster[it.model].traction == Traction.ELECTRIC }) return UpgradeWhy.NO_WIRES
     val length = formationModels(roster, cars).sumOf { roster[it].length } * FIX
     if (length > places.shortest && t.length <= places.shortest) return UpgradeWhy.TOO_LONG

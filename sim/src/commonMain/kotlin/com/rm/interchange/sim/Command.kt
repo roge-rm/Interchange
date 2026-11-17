@@ -33,6 +33,8 @@ sealed interface Command {
         val first: Int,
         val remove: Boolean,
         val join: Int = 0,
+        /** Guideway rather than rail, by [Maglev]. */
+        val maglev: Boolean = false,
     ) : Command {
         companion object {
             const val JOIN = 1
@@ -47,15 +49,15 @@ sealed interface Command {
      * Lays platforms over a rectangle, running along [axis]. [join] is [NEXT_TO] to join the station next to it, [NEW]
      * for a new station, or a station's id to join that one when it's within [STATION_SPREAD].
      */
-    data class Station(override val company: Int, val x0: Int, val y0: Int, val x1: Int, val y1: Int, val axis: Int, val join: Int = NEXT_TO) : Command {
+    data class Station(override val company: Int, val x0: Int, val y0: Int, val x1: Int, val y1: Int, val axis: Int, val join: Int = NEXT_TO, val maglev: Boolean = false) : Command {
         companion object {
             const val NEXT_TO = -1
             const val NEW = -2
         }
     }
 
-    /** Builds a depot open at [edge]. */
-    data class Depot(override val company: Int, val x: Int, val y: Int, val edge: Int) : Command
+    /** Builds a depot open at [edge], on guideway with [maglev]. */
+    data class Depot(override val company: Int, val x: Int, val y: Int, val edge: Int, val maglev: Boolean = false) : Command
 
     /** Puts a signal of [kind] on a piece facing [facing], or changes the one there to it; the same again makes it one-way, then takes it away. */
     data class Signal(override val company: Int, val x: Int, val y: Int, val piece: Int, val facing: Int, val kind: Int = Signals.TWO_WAY) : Command
@@ -70,11 +72,11 @@ sealed interface Command {
         val first: Int, val kind: Int, val spacing: Int, val remove: Boolean,
     ) : Command
 
-    /** Builds a bridge of [style] from head ([x0], [y0]) to head ([x1], [y1]). */
-    data class Bridge(override val company: Int, val x0: Int, val y0: Int, val x1: Int, val y1: Int, val style: Int) : Command
+    /** Builds a bridge of [style] from head ([x0], [y0]) to head ([x1], [y1]), for guideway with [maglev]. */
+    data class Bridge(override val company: Int, val x0: Int, val y0: Int, val x1: Int, val y1: Int, val style: Int, val maglev: Boolean = false) : Command
 
-    /** Digs a tunnel into the hill from the portal at ([x], [y]), through to where it comes out. */
-    data class Tunnel(override val company: Int, val x: Int, val y: Int) : Command
+    /** Digs a tunnel into the hill from the portal at ([x], [y]), through to where it comes out, for guideway with [maglev]. */
+    data class Tunnel(override val company: Int, val x: Int, val y: Int, val maglev: Boolean = false) : Command
 
     /** Hangs wires over a line of track, as [Rail]'s line goes, or takes them down; a bridge or tunnel on the line is wired whole. */
     data class Wire(override val company: Int, val sx: Int, val sy: Int, val ex: Int, val ey: Int, val first: Int, val remove: Boolean) : Command

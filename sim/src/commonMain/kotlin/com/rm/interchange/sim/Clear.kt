@@ -119,10 +119,11 @@ private fun World.demolish(company: Company, x: Int, y: Int) {
 
 /** What selling the company's track, platform or depot on tile [i] pays, with its signals, wires and snow shed. */
 private inline fun World.eachOwnedBase(i: Int, pay: (Long) -> Unit) {
+    val maglev = guideway[i]
     val base = when {
-        depotTiles.containsKey(i) -> Prices.DEPOT
-        isPlatform(i) -> Prices.PLATFORM
-        track[i].toInt() != 0 -> Prices.TRACK
+        depotTiles.containsKey(i) -> if (maglev) Maglev.DEPOT else Prices.DEPOT
+        isPlatform(i) -> if (maglev) Maglev.PLATFORM else Prices.PLATFORM
+        track[i].toInt() != 0 -> if (maglev) Maglev.TRACK else Prices.TRACK
         else -> 0L
     }
     if (base != 0L) pay(base)
@@ -184,7 +185,7 @@ private fun World.saleOf(company: Int, i: Int, spansGone: MutableSet<Int>, airpo
         val s = spans[id] ?: return Sale()
         if (spanBlocked(s)) return Sale()
         spansGone += id
-        return Sale(back = scrapBack(spanBuilt(s)), cleared = true, trackGone = true)
+        return Sale(back = scrapBack(spanBuilt(s, maglevSpan(s))), cleared = true, trackGone = true)
     }
     return Sale(back = trackScrapBack(i), cleared = true, trackGone = true, depotGone = depotTiles.containsKey(i))
 }

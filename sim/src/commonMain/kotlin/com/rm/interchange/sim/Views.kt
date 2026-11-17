@@ -131,6 +131,8 @@ class TrainView(
     val replaceWhy: Map<Int, Int> = emptyMap(),
     /** Its battery or hydrogen tank with energy on, null for none. */
     val energy: EnergyView? = null,
+    /** A maglev, running only on guideway. */
+    val maglev: Boolean = false,
 )
 
 /** A bus, truck or streetcar as the screen shows it. */
@@ -191,6 +193,8 @@ class RoadVehicleView(
     val replaceWhy: Map<Int, Int> = emptyMap(),
     /** Its battery or hydrogen tank with energy on, null for none. */
     val energy: EnergyView? = null,
+    /** A maglev, running only on guideway. */
+    val maglev: Boolean = false,
 )
 
 /** A ship as the screen shows it. */
@@ -249,6 +253,8 @@ class ShipView(
     val replaceWhy: Map<Int, Int> = emptyMap(),
     /** Its battery or hydrogen tank with energy on, null for none. */
     val energy: EnergyView? = null,
+    /** A maglev, running only on guideway. */
+    val maglev: Boolean = false,
 )
 
 /** An aircraft as the screen shows it. */
@@ -341,6 +347,8 @@ class StationView(
     val flows: List<FlowView> = emptyList(),
     /** Its charger with energy on, null off or at a waypoint. */
     val charger: ChargerView? = null,
+    /** How many of its platforms are on guideway, for maglev trains; the rest are rail. */
+    val maglevPlatforms: Int = 0,
 )
 
 /**
@@ -354,13 +362,14 @@ class GoingView(val dest: Int, val via: Int, val counts: IntArray, val why: Int 
 const val GOING_WHY = 5
 
 /** A depot as the screen shows it, to draw over the trains going in and out of it. */
-class DepotView(val tile: Int, val edge: Int, val id: Int = -1, val wired: Boolean = false, val built: Int = 0)
+/** A depot as the screen shows it; [maglev] on guideway, for maglev trains. */
+class DepotView(val tile: Int, val edge: Int, val id: Int = -1, val wired: Boolean = false, val built: Int = 0, val maglev: Boolean = false)
 
 /** A signal as the screen shows it: where, which way and whether it shows red. */
 class SignalView(val tile: Int, val piece: Int, val facing: Int, val red: Boolean, val kind: Int = Signals.TWO_WAY)
 
-/** A bridge or tunnel as the screen shows it. */
-class SpanView(val tunnel: Boolean, val style: Int, val x0: Int, val y0: Int, val x1: Int, val y1: Int, val height: Int)
+/** A bridge or tunnel as the screen shows it, [maglev] for guideway. */
+class SpanView(val tunnel: Boolean, val style: Int, val x0: Int, val y0: Int, val x1: Int, val y1: Int, val height: Int, val maglev: Boolean = false)
 
 /** A town as the screen shows it: its name over the map at its middle, and how big it is. */
 class TownView(val id: Int, val name: String, val x: Int, val y: Int, val population: Int, val houses: Int)
@@ -571,7 +580,7 @@ fun World.view(company: Int = 0, withReserved: Boolean = false, withNetwork: Boo
             x = tx, y = ty, gap = t.gap, wagonCargo = t.wagonCargo, group = t.group, formation = t.formation.toList(), topSpeed = t.topSpeed, dieselSpeed = t.dieselSpeed,
             curveKmh = t.curveKmh, value = value(t), days = (workDay - t.built).coerceAtLeast(0), nextService = nextService(t.service, t.serviced), renewOff = t.renewOff,
             shed = t.shedIn, serviceId = serviceOf(t)?.key ?: -1, late = t.late,
-            upgradeTo = upgradeTo(t), upgradeWhy = t.upgradeWhy, replaceWhy = replaceWhy(t, company), energy = energyView(t),
+            upgradeTo = upgradeTo(t), upgradeWhy = t.upgradeWhy, replaceWhy = replaceWhy(t, company), energy = energyView(t), maglev = t.maglev,
         )
     }
     // Made once, and only if one of the player's stations has a destination to give a reason for.
@@ -600,6 +609,7 @@ fun World.view(company: Int = 0, withReserved: Boolean = false, withNetwork: Boo
             s.boardedLastMonth.copyOf(), s.gaveUpLastMonth.copyOf(), s.service,
             equipmentPrices?.let { handlingView(s, it) }, flows[s.id] ?: emptyList(),
             chargerPrices?.takeIf { !s.waypoint }?.let { (cost, upkeep) -> ChargerView(Equipment.has(s.equipment, Equipment.CHARGER), cost, upkeep) },
+            s.tiles.count { guideway[it] },
         )
     }
     val signalViews = signals.entries.sortedBy { it.key }.map { (k, s) ->
@@ -609,7 +619,7 @@ fun World.view(company: Int = 0, withReserved: Boolean = false, withNetwork: Boo
         SignalView(tile, piece, Signals.facing(s), signalRed(tile, piece, s), Signals.kind(s))
     }
     // Only engine houses are drawn over what goes in and out of them.
-    val depotViews = depots.filterNotNull().filter { it.kind == Depots.RAIL }.map { DepotView(it.tile, it.edge, it.id, depotWired(it), it.built) }
+    val depotViews = depots.filterNotNull().filter { it.kind == Depots.RAIL }.map { DepotView(it.tile, it.edge, it.id, depotWired(it), it.built, guideway[it.tile]) }
     // Towns change seldom, so their list is only made again when one has.
     if (townsChanged) {
         townViews = towns.map { TownView(it.id, it.name, it.x, it.y, it.population, it.houses) }
@@ -621,7 +631,7 @@ fun World.view(company: Int = 0, withReserved: Boolean = false, withNetwork: Boo
     return WorldView(VehicleView(tick, cars.toFloatArray(), wrecks), trainViews, stationViews, signalViews, depotViews, townViews, payments.filter { it.company == company }, news.toList(),
         companies.getOrNull(company)?.let { c -> CompanyView(c.money, c.loan, maxLoan(), c.thisYear.copyOf(), c.lastYear.copyOf(), c.history.map { it.copyOf() }, c.upkeep, c.autorenew, c.renewMonths, c.renewFloor, c.upgrade, priorityCount(c.id), priorityMonth(c.id)) }, tick, weatherView(),
         stations.filterNotNull().filter { it.waypoint }.flatMap { it.tiles }.toIntArray(),
-        spans.filterNotNull().map { SpanView(it.tunnel, it.style, it.x0, it.y0, it.x1, it.y1, it.height) },
+        spans.filterNotNull().map { SpanView(it.tunnel, it.style, it.x0, it.y0, it.x1, it.y1, it.height, maglevSpan(it)) },
         sheds.toIntArray(), fences.toIntArray(),
         roadVehicles.filterNotNull().map { v ->
             val c = v.carries

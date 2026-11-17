@@ -14,7 +14,8 @@ import com.rm.interchange.sim.TownGrowth
  * TOWNS, DELIVERIES, CONNECTIONS or MIXED) and INTERCHANGE_BREAKDOWNS (NONE,
  * REDUCED or NORMAL, REDUCED if not set), INTERCHANGE_STOCKPILES,
  * INTERCHANGE_CONTRACTS, INTERCHANGE_HANDLING, INTERCHANGE_ERA_COSTS and
- * INTERCHANGE_ENERGY (on unless 0, false, off or no) come from the env vars only.
+ * INTERCHANGE_ENERGY and INTERCHANGE_FUTURE (on unless 0, false, off or no) come
+ * from the env vars only.
  */
 fun newGameSettings(env: Map<String, String>, chosen: Map<String, String> = emptyMap()): NewGame {
     for (key in chosen.keys) require(key in KEYS) { "no setting called \"$key\"" }
@@ -50,6 +51,7 @@ fun newGameSettings(env: Map<String, String>, chosen: Map<String, String> = empt
         handling = on("INTERCHANGE_HANDLING"),
         eraCosts = on("INTERCHANGE_ERA_COSTS"),
         energy = on("INTERCHANGE_ENERGY"),
+        future = on("INTERCHANGE_FUTURE"),
     )
 }
 

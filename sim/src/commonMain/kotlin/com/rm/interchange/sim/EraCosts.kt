@@ -93,7 +93,7 @@ object EraCosts {
             VehicleKind.AIRCRAFT -> AVIATION
             VehicleKind.SHIP -> BUNKER
             VehicleKind.TENDER -> COAL
-            VehicleKind.ENGINE -> when (e.traction) { Traction.STEAM -> COAL; Traction.ELECTRIC, Traction.DUAL -> ELECTRIC; Traction.HORSE -> -1; else -> DIESEL }
+            VehicleKind.ENGINE -> when (e.traction) { Traction.STEAM -> COAL; Traction.ELECTRIC, Traction.DUAL, Traction.MAGLEV -> ELECTRIC; Traction.HORSE -> -1; else -> DIESEL }
             VehicleKind.ROAD -> when (e.traction) { Traction.HORSE -> -1; Traction.ELECTRIC -> ELECTRIC; else -> DIESEL }
             else -> -1
         }
@@ -132,6 +132,8 @@ object EraCosts {
 /** What each kind of build is made of, per mille of labour, steel, concrete and land, in [EraCosts] order. */
 object Mix {
     val TRACK = intArrayOf(400, 500, 0, 100)
+    /** Maglev guideway: a concrete beam with its steel stator. */
+    val GUIDEWAY = intArrayOf(300, 300, 300, 100)
     val LABOUR = intArrayOf(1_000, 0, 0, 0)
     val FOUNDATION = intArrayOf(500, 0, 500, 0)
     val PLATFORM = intArrayOf(200, 200, 500, 100)

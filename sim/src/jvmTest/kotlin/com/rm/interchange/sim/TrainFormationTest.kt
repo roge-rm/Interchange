@@ -17,7 +17,7 @@ class TrainFormationTest {
 
     /** With [old], made without the settings older saves load without. */
     private fun line(old: Boolean = false): World {
-        val w = if (old) World(NewGame(64, 64, 13, 1955, towns = 0, industries = 0, weather = false, stockpiles = false, contracts = false, handling = false, eraCosts = false)) else World(64, 64, 13, startYear = 1955)
+        val w = if (old) World(NewGame(64, 64, 13, 1955, towns = 0, industries = 0, weather = false, stockpiles = false, contracts = false, handling = false, eraCosts = false, energy = false, future = false)) else World(64, 64, 13, startYear = 1955)
         w.corners.fill(3)
         w.companies[0].money = 100_000_000
         w.apply(Command.Depot(0, 2, 10, Track.XP))

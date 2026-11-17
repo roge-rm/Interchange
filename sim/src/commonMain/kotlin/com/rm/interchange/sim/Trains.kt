@@ -76,6 +76,9 @@ class Train(
         private set
     var steam = locomotives.any { roster[it].traction == Traction.STEAM }
         private set
+    /** A maglev, running only on guideway. */
+    var maglev = locomotives.any { roster[it].maglev }
+        private set
     var life = locomotives.minOf { roster[it].life }
         private set
     var newReliability = locomotives.minOf { roster[it].reliability } * 100
@@ -86,6 +89,7 @@ class Train(
         locomotives = formation.filter { roster[it.model].pulls }.map { it.model }.toIntArray()
         electric = locomotives.any { roster[it].traction == Traction.ELECTRIC }
         steam = locomotives.any { roster[it].traction == Traction.STEAM }
+        maglev = locomotives.any { roster[it].maglev }
         life = locomotives.minOf { roster[it].life }
         newReliability = locomotives.minOf { roster[it].reliability } * 100
         topSpeed = locomotives.minOf { roster[it].speed }
@@ -302,6 +306,8 @@ internal fun World.buyTrain(company: Company, c: Command.BuyTrain) {
 internal fun World.buyTrainFormation(company: Company, depotId: Int, cars: List<TrainCar>, fallbackWagon: Int) {
     val depot = depots.getOrNull(depotId) ?: return
     if (depot.owner != company.id || depot.kind != Depots.RAIL || !validTrainFormation(roster, cars)) return
+    // Maglev trains in depots on guideway, others in depots on rail.
+    if (maglevCars(roster, cars) != maglevDepot(depot)) return
     if (cars.any { !onSale(roster[it.model]) }) return
     val lead = cars.first { roster[it.model].pulls }.model
     val t = Train(roster, trains.size, company.id, lead, fallbackWagon, 0, depot.id, formation = cars)
@@ -819,9 +825,10 @@ private fun World.drive(t: Train) {
     // Wet rail, leaves, ice and snow take the grip away, for pulling away and for braking; deep snow holds it back.
     val nose = stepTile(t.steps.last())
     val out = exposed(t.steps.last())
-    val grip = if (out) adhesion(nose) else 100
+    // A maglev floats, so takes no grip from the rail.
+    val grip = if (out && !t.maglev) adhesion(nose) else 100
     val brake = BRAKE * (50 + grip / 2) / 100
-    val bends = bendScan.reset(t.speed, brake)
+    val bends = bendScan.reset(t.speed, brake, t.maglev)
     val (free, stop) = freeAhead(t, brake, bends)
     val allowed = isqrt(2L * brake * 16 * free).toInt()
     // A dual-mode engine runs on its electric power and speed with wires over its nose, on its diesel without, braking
@@ -1050,6 +1057,8 @@ private fun World.leafy(tile: Int): Boolean {
 
 /** The fastest train [t] can go over the bridge or through the tunnel its nose is on, in speed units: a trestle slowest. */
 private fun World.spanLimit(t: Train): Int {
+    // Guideway spans are built for the maglev's speed.
+    if (t.maglev) return t.maxSpeed
     val s = spanOf(t.steps.last()) ?: spans.getOrNull(spanHeads[stepTile(t.steps.last())] ?: -1) ?: return t.maxSpeed
     return minOf(t.maxSpeed, Spans.SPEED[s.style] * 4096 * 16 / 2700)
 }
@@ -1183,6 +1192,8 @@ private val HEADINGS = intArrayOf(5, 4, 3, 6, 0, 2, 7, 0, 1)
 internal class CurveScan {
     private var speed = 0
     private var brake = 0
+    private var tightKmh = CURVE_TIGHT_KMH
+    private var gentleKmh = CURVE_GENTLE_KMH
     /** The speed the bends allow, and the cap in km/h of the bend that sets it. */
     var limit = Int.MAX_VALUE
         private set
@@ -1195,10 +1206,12 @@ internal class CurveScan {
     private val dists = IntArray(3)
     private val tight = BooleanArray(3)
 
-    /** Starts again for a train at [speed] braking by [brake]. */
-    fun reset(speed: Int, brake: Int): CurveScan {
+    /** Starts again for a train at [speed] braking by [brake], a [maglev] taking bends at [Maglev]'s caps. */
+    fun reset(speed: Int, brake: Int, maglev: Boolean = false): CurveScan {
         this.speed = speed
         this.brake = brake
+        tightKmh = if (maglev) Maglev.TIGHT_KMH else CURVE_TIGHT_KMH
+        gentleKmh = if (maglev) Maglev.GENTLE_KMH else CURVE_GENTLE_KMH
         limit = Int.MAX_VALUE
         kmh = 0
         heading = -1
@@ -1237,8 +1250,8 @@ internal class CurveScan {
 
     private fun settle(i: Int) {
         val k = when {
-            tight[i] -> CURVE_TIGHT_KMH
-            turns[i] != 0 -> CURVE_GENTLE_KMH
+            tight[i] -> tightKmh
+            turns[i] != 0 -> gentleKmh
             else -> return
         }
         val c = k * 4096 * 16 / 2700
@@ -1259,9 +1272,9 @@ internal class CurveScan {
 
 /**
  * The cap in km/h of each edge along [steps] by [CurveScan]'s rule, at the place of the step after the edge, 0 where
- * it doesn't turn; for working out ahead of time how bends slow a line.
+ * it doesn't turn; for working out ahead of time how bends slow a line, a [maglev] one at [Maglev]'s caps.
  */
-fun bendCaps(steps: IntArray): IntArray {
+fun bendCaps(steps: IntArray, maglev: Boolean = false): IntArray {
     val n = steps.size
     val caps = IntArray(n)
     if (n < 2) return caps
@@ -1275,7 +1288,9 @@ fun bendCaps(steps: IntArray): IntArray {
             if (sum >= 2 || sum <= -2) for (k in i..j) tight[k] = true
         }
     }
-    for (i in 1 until n) caps[i] = if (tight[i]) CURVE_TIGHT_KMH else if (turns[i] != 0) CURVE_GENTLE_KMH else 0
+    val tightCap = if (maglev) Maglev.TIGHT_KMH else CURVE_TIGHT_KMH
+    val gentleCap = if (maglev) Maglev.GENTLE_KMH else CURVE_GENTLE_KMH
+    for (i in 1 until n) caps[i] = if (tight[i]) tightCap else if (turns[i] != 0) gentleCap else 0
     return caps
 }
 

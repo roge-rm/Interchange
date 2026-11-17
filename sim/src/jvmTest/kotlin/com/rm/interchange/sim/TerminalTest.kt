@@ -51,7 +51,7 @@ class TerminalTest {
         val g = NewGame(128, 128, 6, 1930, Region.MIXED, towns = 8, industries = 6, rivals = 2, rivalLevel = RivalLevel.HARD)
         val old = Save.read(Save.write(World(g), version = 69))
         assertFalse(old.settings.handling)
-        val off = Save.read(Save.write(World(g.copy(handling = false, eraCosts = false, energy = false))))
+        val off = Save.read(Save.write(World(g.copy(handling = false, eraCosts = false, energy = false, future = false))))
         assertEquals(off.checksum(), old.checksum())
         while (old.day < 365) { old.step(); off.step() }
         assertEquals(off.checksum(), old.checksum())

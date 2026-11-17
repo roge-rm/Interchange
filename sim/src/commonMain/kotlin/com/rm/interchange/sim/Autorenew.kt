@@ -30,7 +30,7 @@ const val NEVER_ASKED = Int.MIN_VALUE / 2
 /** Whether [e] can be bought this year. */
 internal fun World.onSale(e: Engine): Boolean {
     val year = Calendar.year(startYear, day)
-    return e.enabled && year >= e.from && year < e.until
+    return e.enabled && year >= e.from && year < e.until && (settings.future || !e.maglev)
 }
 
 /** Whether [owner]'s vehicle built on work day [built], with a working life of [life] work years, is due renewing. */

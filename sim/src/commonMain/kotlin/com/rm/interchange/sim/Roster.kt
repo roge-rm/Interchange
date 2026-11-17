@@ -100,7 +100,9 @@ object Traction {
     /** With [NewGame.energy], run on a battery or a hydrogen tank for their [Engine.range]; without it, as diesel. */
     const val BATTERY = 5
     const val HYDROGEN = 6
-    val NAMES = listOf("steam", "diesel", "electric", "horse", "dual", "battery", "hydrogen")
+    /** Engines and coaches that run only on guideway, with [NewGame.future], by [Maglev]. */
+    const val MAGLEV = 7
+    val NAMES = listOf("steam", "diesel", "electric", "horse", "dual", "battery", "hydrogen", "maglev")
 }
 
 /**

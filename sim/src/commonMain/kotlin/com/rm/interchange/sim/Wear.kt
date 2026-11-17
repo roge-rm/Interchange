@@ -67,7 +67,8 @@ fun World.trackLimit(tile: Int): Int = when {
 
 /** Wear from a train of [mass] kg running onto [tile]: a point for each [WEAR_TONNES] it weighs, the rest by chance. */
 internal fun World.wearBy(tile: Int, mass: Long) {
-    if (track[tile].toInt() == 0) return
+    // Nothing touches guideway to wear it.
+    if (track[tile].toInt() == 0 || guideway[tile]) return
     val tonnes = (mass / 1000).toInt()
     val points = tonnes / WEAR_TONNES + if (rng.below(WEAR_TONNES) < tonnes % WEAR_TONNES) 1 else 0
     if (points > 0) condition[tile] = (u(condition[tile]) - points).coerceAtLeast(0).toByte()
@@ -96,7 +97,8 @@ internal fun World.trackWorkDay() {
             val i = index(x, y)
             if (track[i].toInt() == 0) continue
             var c = u(condition[i])
-            if (settings.weather) {
+            // Guideway stands clear of the ground, so frost and wet don't move it.
+            if (settings.weather && !guideway[i]) {
                 val frost = u(weather.frost[i])
                 val soaked = u(weather.wet[i]) > SOAKED
                 if (frost > 0 || soaked) {
@@ -146,8 +148,8 @@ internal fun World.trackDay() {
             val t = track[i].toInt()
             if (t != 0) {
                 val o = owner[i].toInt()
-                // With era costs a wired tile counts twice, its wires kept up like its track.
-                if (o in 0 until MAX_COMPANIES) tracks[b][o] += if (eraWires && wires[i].toInt() != 0) 2 else 1
+                // With era costs a wired tile counts twice, its wires kept up like its track; guideway as [Maglev.UPKEEP_TILES].
+                if (o in 0 until MAX_COMPANIES) tracks[b][o] += if (guideway[i]) Maglev.UPKEEP_TILES else if (eraWires && wires[i].toInt() != 0) 2 else 1
             }
             if (road[i].toInt() != 0) {
                 val o = roadOwner[i].toInt()
@@ -173,7 +175,7 @@ internal fun World.trackDay() {
             if (sky != null) {
                 val c = u(condition[i])
                 if (sky.temperature > KINK_HEAT && c < KINK_BELOW && !kinks.containsKey(i) && cellDice(x, y, salt + 3) * 256 + cellDice(x, y, salt + 6) < (KINK_BELOW - c) * KINK_ODDS) found[b] += intArrayOf(EVENT_KINK, i)
-                if (sky.precipitation >= WASHOUT_RAIN && u(weather.wet[i]) > 200 && lowGround(x, y) && cellDice(x, y, salt + 4) < WASHOUT_ODDS) found[b] += intArrayOf(EVENT_WASHOUT, i)
+                if (sky.precipitation >= WASHOUT_RAIN && u(weather.wet[i]) > 200 && !guideway[i] && lowGround(x, y) && cellDice(x, y, salt + 4) < WASHOUT_ODDS) found[b] += intArrayOf(EVENT_WASHOUT, i)
             }
         }
     }
@@ -242,7 +244,7 @@ private fun World.countUpkeep() {
         for (i in from * width until until * width) {
             if (track[i].toInt() != 0) {
                 val o = owner[i].toInt()
-                if (o in 0 until MAX_COMPANIES) tracks[b][o] += if (eraWires && wires[i].toInt() != 0) 2 else 1
+                if (o in 0 until MAX_COMPANIES) tracks[b][o] += if (guideway[i]) Maglev.UPKEEP_TILES else if (eraWires && wires[i].toInt() != 0) 2 else 1
             }
             if (road[i].toInt() != 0 && roadEdges(i) != 0) {
                 val o = roadOwner[i].toInt()

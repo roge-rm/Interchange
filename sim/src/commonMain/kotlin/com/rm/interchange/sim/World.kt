@@ -209,6 +209,9 @@ class World(settings: NewGame, val roster: Roster = Roster.BASE, generate: Boole
     /** Track pieces wired for electric engines, as [Track] bits, on the ground; bridges and tunnels are wired whole. */
     val wires = ByteArray(width * height)
 
+    /** Tiles whose track, platform, depot or span head is maglev guideway, by [Maglev]'s rules; false where there's no track. */
+    val guideway = BooleanArray(width * height)
+
     /** Bridges and tunnels by id, a removed one leaving null; the span over or under each tile between heads, and each head's span. */
     val spans = ArrayList<Span?>()
     val deck = HashMap<Int, Int>()
@@ -620,6 +623,7 @@ class World(settings: NewGame, val roster: Roster = Roster.BASE, generate: Boole
             for (c in companies) mix(c.handlingOwed)
         }
         energyChecksum(::mix)
+        maglevChecksum(::mix)
         for (k in roadStops.keys.sorted()) mix(k.toLong() * 31 + roadStops.getValue(k))
         for (k in saltDepots.sorted()) mix(k.toLong() * 7)
         for (v in roadVehicles) if (v != null) { mix(v.depot.toLong()); mix(v.noDepotUntil); mix(v.wreckedFor.toLong()); mix(v.leave.toLong()) }
