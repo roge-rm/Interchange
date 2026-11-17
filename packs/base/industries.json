@@ -258,7 +258,7 @@
       "regions": { "shield": 5, "north": 3, "prairies": 2, "mixed": 1, "rockies": 1, "maritimes": 1 },
       "ground": ["rock", "tundra", "prairie"],
       "weather": ["thaw"],
-      "layout": ["open_pit open_pit_far", "ore_crusher tailings"],
+      "layout": ["lithium_pit lithium_pit_far", "lithium_mill spodumene_pile"],
       "produces": { "lithium": 70 },
       "future": true
     },
@@ -268,7 +268,7 @@
       "from": 2027,
       "until": 2100,
       "regions": { "mixed": 4, "shield": 2, "maritimes": 1, "prairies": 1, "rockies": 1, "north": 0 },
-      "layout": ["factory_shed factory_shed factory_shed", "loading_dock factory_shed factory_yard"],
+      "layout": ["battery_hall_head battery_hall battery_hall_tail", "battery_office battery_dock battery_yard"],
       "accepts": ["lithium", "nickel"],
       "produces": { "batteries": 0 },
       "recipe": { "inputs": { "lithium": 2, "nickel": 1 }, "makes": { "batteries": 2 } },
@@ -281,7 +281,7 @@
       "until": 2100,
       "regions": { "prairies": 3, "mixed": 3, "maritimes": 3, "shield": 2, "rockies": 2, "north": 1 },
       "water": true,
-      "layout": ["wharf refinery_tanks", "powerhouse refinery_tanks"],
+      "layout": ["hydrogen_jetty hydrogen_spheres", "hydrogen_hall hydrogen_tanks"],
       "produces": { "hydrogen": 60 },
       "future": true
     }

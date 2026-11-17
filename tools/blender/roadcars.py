@@ -699,13 +699,14 @@ def tank(m, y0, y1, z0, z1, half, mat, domes, c, walkway=False):
                 m.rod((side * 0.03, y, z1 - 0.03), (side * 0.03, y, z1 + 0.07), 0.0016, c["hub"])
 
 
-def truck(m, L, kind, cab="round", gen=1, plow="wedge", lifts=0, era=1970):
+def truck(m, L, kind, cab="round", gen=1, plow="wedge", lifts=0, era=1970, paint_hex=None, tarp=None):
     """A truck: a cab of its era and a body for its load, sized to the cab's roof. Later generations run more axles, and
     lifts more again, bunched just ahead of the drive. A plow truck's plow is a V plow ("wedge"), a one-way plow with a
     side wing ("wing"), a hydraulic V plow with a V-box sander behind ("vee"), or a one-way plow and wing with a
-    stainless V-box sander ("sander")."""
+    stainless V-box sander ("sander"). paint_hex paints it other than its kind's colour; tarp, a colour, rolls a tarp
+    over a later dump box's load."""
     c = common()
-    paint = material(f"{kind} {cab} truck", PAINTS[kind], rough=0.45, clearcoat=0.2)
+    paint = material(f"{kind} {cab} truck" + (f" {paint_hex}" if paint_hex else ""), paint_hex or PAINTS[kind], rough=0.45, clearcoat=0.2)
     wood = material("truck boards", "#8a6a44", rough=0.85)
     a0, a1 = -L / 2 + 0.01, L / 2 - 0.01
     cab0 = a1 - CAB_LEN[cab]
@@ -799,6 +800,12 @@ def truck(m, L, kind, cab="round", gen=1, plow="wedge", lifts=0, era=1970):
             m.box(-0.078, 0.078, b1 - 0.01, b1, 0.5, hi + 0.12, paint, bevel=0.003)
             m.box(-0.078, 0.078, b1 - 0.01, b1 + 0.035, hi + 0.12, hi + 0.16, paint, bevel=0.004)
             m.box(-0.068, 0.068, b0 + 0.01, b1 - 0.01, hi - 0.05, hi + 0.02, load, bevel=0.02)
+            if tarp:
+                # A roll tarp drawn over the box on its bows, the roller along the cab shield.
+                cover = material(f"dump tarp {tarp}", tarp, rough=0.7)
+                m.shell([(b0 + 0.004, hi - 0.01, 0, "paint"), (b1 - 0.004, hi + 0.1, 0, "paint"), (b1 - 0.008, hi + 0.15, 0.01, "paint"),
+                         (b0 + 0.008, hi + 0.05, 0.01, "paint")], 0.077, {"paint": cover}, crown=0.06)
+                m.rod((-0.076, b1 - 0.012, hi + 0.15), (0.076, b1 - 0.012, hi + 0.15), 0.008, c["dark"], segments=10)
         if kind == "plow":
             _plow(m, a0, a1, cab0, top, plow, c)
     elif kind == "tank":
@@ -960,7 +967,7 @@ def _plow(m, a0, a1, cab0, top, style, c):
 
 
 # Trailer axles by load: one group under a single trailer, the lead's and the pup's for a B-train.
-TRAILER_AXLES = {"van": (3,), "logs": (3,), "cattle": (2,), "tank": (3, 2), "hopper": (3, 2)}
+TRAILER_AXLES = {"van": (3,), "logs": (3,), "cattle": (2,), "tank": (3, 2), "hopper": (3, 2), "reefer": (3,), "tubes": (3,)}
 # Between axles in a group, in tiles.
 AXLE_GAP = 0.047
 
@@ -1052,6 +1059,47 @@ def tractor(m, L, trailer, cab, paint_hex, bumper=False, era=1970, drive=2, axle
                 # A fairing rising from the low power unit's roof to the trailer's, closing the gap between them.
                 m.shell([(t1 - 0.05, 1.53, 0.01, "paint"), (t1 - 0.004, 1.53, 0.04, "paint"), (cab0 + 0.07, CAB_TOP[cab] - 0.01, 0.03, "paint"),
                          (t1 - 0.05, CAB_TOP[cab] - 0.01, 0.0, "paint")], 0.076, {"paint": material("trailer", "#e8e8e4", rough=0.4)}, crown=0.04)
+    elif trailer == "reefer":
+        # A white reefer van for battery packs, kept cool: the refrigeration unit on its nose, a wide green band low
+        # down each side and a class 9 placard on its back.
+        white = material("reefer white", "#eceeec", rough=0.4)
+        green = material("battery green", "#3fa34d", rough=0.45)
+        m.box(-0.078, 0.078, t0, t1 - 0.03, 0.42, 1.55, white, bevel=0.008)
+        m.box(-0.07, 0.07, t1 - 0.032, t1 - 0.002, 0.86, 1.48, material("reefer unit", "#c4c8cc", metal=0.4, rough=0.4), bevel=0.01)
+        m.box(-0.05, 0.05, t1 - 0.004, t1, 0.96, 1.36, c["dark"])
+        for side in (-1, 1):
+            m.box(side * 0.0782 - 0.0012, side * 0.0782 + 0.0012, t0 + 0.01, t1 - 0.04, 0.5, 0.78, green)
+            m.box(side * 0.075 - 0.002, side * 0.075 + 0.002, t0 + 0.2, t1 - 0.12, 0.28, 0.42, material("skirt", "#5a5e62", rough=0.5))
+        m.box(-0.012, 0.012, t0 - 0.002, t0 + 0.001, 0.62, 0.74, material("class 9 placard", "#f0f0ec", rough=0.5))
+        m.box(-0.078, 0.078, t0 - 0.002, t0 + 0.001, 0.46, 0.5, green)
+        m.text(LETTERS, 0.0792, (t0 + t1) / 2, 1.15, 0.034, green, 1)
+    elif trailer == "tubes":
+        # A hydrogen tube trailer: nine long white tubes in a steel frame, three across and three high, their domed
+        # ends showing at the back, a pale blue band round each near its ends, a valve cabinet across the back and a
+        # bulkhead at the front.
+        frame = material("tube frame", "#4a4e52", metal=0.5, rough=0.5)
+        white = material("hydrogen tubes", "#e6eaec", metal=0.2, rough=0.35)
+        blue = material("hydrogen blue", "#8fd3f4", rough=0.4)
+        cab_ = material("valve cabinet", "#9aa0a4", metal=0.5, rough=0.4)
+        f0, f1 = t0 + 0.035, t1 - 0.025
+        m.box(-0.07, 0.07, t0, t1, 0.36, 0.44, frame)
+        r = 0.024
+        for x in (-0.05, 0.0, 0.05):
+            for z in (0.56, 0.82, 1.08):
+                m.tube(f0 + 0.004, f1 - 0.004, x, z, r, white, segments=16)
+                for y in (f0 + 0.03, f1 - 0.03):
+                    m.tube(y - 0.006, y + 0.006, x, z, r + 0.0015, blue, segments=16)
+        for side in (-1, 1):
+            for z in (0.44, 1.2):
+                m.box(side * 0.077 - 0.003, side * 0.077 + 0.003, f0, f1, z - 0.02, z + 0.02, frame)
+            for k in range(5):
+                y = f0 + (f1 - f0) * k / 4
+                m.box(side * 0.077 - 0.003, side * 0.077 + 0.003, y - 0.004, y + 0.004, 0.44, 1.2, frame)
+        m.box(-0.078, 0.078, f1, t1, 0.44, 1.26, frame, bevel=0.004)
+        m.box(-0.076, 0.076, t0, f0, 0.44, 1.18, cab_, bevel=0.004)
+        for side in (-1, 1):
+            m.box(side * 0.03 - 0.025, side * 0.03 + 0.025, t0 - 0.002, t0 + 0.001, 0.5, 1.1, frame)
+        m.box(-0.012, 0.012, t0 - 0.004, t0 - 0.001, 0.86, 0.98, blue)
     elif trailer == "tank":
         # Smooth elliptical tanks, lower than a van, each on a frame with a walkway and three domes on top.
         for y0, y1 in bodies:

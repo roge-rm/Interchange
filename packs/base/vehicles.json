@@ -3571,8 +3571,7 @@
       "running": 540,
       "length": 11,
       "carries": ["lithium"],
-      "capacity": 90,
-      "sprite": "covered_hopper"
+      "capacity": 90
     },
     {
       "id": "battery_boxcar",
@@ -3587,8 +3586,7 @@
       "running": 520,
       "length": 12,
       "carries": ["batteries"],
-      "capacity": 50,
-      "sprite": "boxcar_50"
+      "capacity": 50
     },
     {
       "id": "hydrogen_tank_car",
@@ -3603,8 +3601,7 @@
       "running": 560,
       "length": 12,
       "carries": ["hydrogen"],
-      "capacity": 50,
-      "sprite": "tank_domeless"
+      "capacity": 50
     },
     {
       "id": "lithium_dump",
@@ -3621,8 +3618,7 @@
       "running": 280,
       "length": 8,
       "carries": ["lithium"],
-      "capacity": 30,
-      "sprite": "quad_dump"
+      "capacity": 30
     },
     {
       "id": "battery_hauler",
@@ -3639,8 +3635,7 @@
       "running": 500,
       "length": 12,
       "carries": ["batteries"],
-      "capacity": 30,
-      "sprite": "aero_tractor"
+      "capacity": 30
     },
     {
       "id": "hydrogen_tube_trailer",
@@ -3657,8 +3652,7 @@
       "running": 380,
       "length": 13,
       "carries": ["hydrogen"],
-      "capacity": 30,
-      "sprite": "tanker_train"
+      "capacity": 30
     }
   ]
 }

@@ -5100,6 +5100,476 @@ def tailings_pond(m, far=False):
     _dozer(m, 0.18, -0.3, 0.58, turn=-0.4)
 
 
+# ---- future industries: lithium, batteries and hydrogen -------------------------------------------
+
+# The lithium pit's benches, its middle on the shared edge of its two tiles as the iron pit's, cut in more and lower
+# benches through grey Shield granite to the pale spodumene pegmatite, the haul road spiralling down them.
+LI_PIT = Benches(0.0, 0.5, 0.42, 0.9, [(0.3, 0.02), (0.43, 0.3), (0.56, 0.58), (0.69, 0.86), (0.82, 1.14), (9.0, 1.42)], seed=5.0,
+                 road=(-math.pi / 2 - 0.5, 1.3, 1.0, 0.26, 1.42, 0.02, 0.07), rough=0.012, face=0.035, edge=0.04)
+
+
+def li_pick(x, y, slope):
+    """The lithium pit's faces: pegmatite in a band round one side, granite elsewhere, the berm all granite rubble."""
+    if pit_edge(x, y) < 0.08:
+        return 0
+    e, a = LI_PIT.at(x, y)
+    if LI_PIT.on_road(e, a) is not None:
+        return 3
+    if LI_PIT.on_face(x, y, 0.7 / (PIT_GRID * LI_PIT.rx))[0] or (slope > 5.0 and LI_PIT.near_road(e, a) is not None):
+        return 2 if math.sin(a + LI_PIT.seed) + 0.5 * math.sin(4 * a) > 0.2 else 1
+    return 0
+
+
+def li_height(x, y):
+    d = pit_edge(x, y)
+    h = LI_PIT.height(x, y)
+    return min(h, 0.1 + 1.32 * max(0.0, d) / 0.07) if d < 0.07 else h
+
+
+def lithium_pit(m, far=False):
+    """An open pit lithium mine across two tiles, this one and far, its +y neighbour, in the Canadian Shield: grey
+    granite benches with white spodumene pegmatite showing in the faces down one side, the haul road spiralling down
+    them, an electric shovel at the face and a haul truck with a load of pale ore, green water pooled on the floor."""
+    mats = [material("shield bench", "#8e8780", rough=1.0), material("granite face", "#5e5854", rough=1.0),
+            material("pegmatite face", "#ece8dc", rough=1.0), material("li haul road", "#c4baa6", rough=1.0)]
+    terrain(m, li_height, mats, li_pick, n=PIT_GRID, oy=1.0 if far else 0.0, wall=0)
+    if not far:
+        moved(m, lambda mm: shovel(mm, "#e4e2da"), 0.01, 0.34, math.pi, z=0.02)
+    else:
+        moved(m, lambda mm: haul_truck(mm, "#e4e2da", load=("spodumene load", "#dcd8cc")), 0.02, -0.28, 0.5, z=0.02)
+        water = material("pit water green", "#3e6a62", rough=0.15)
+        for x, y, r in ((-0.05, -0.16, 0.06), (0.02, -0.12, 0.05)):
+            m.upright(x, y, 0.02, 0.035, r, r, water, segments=18)
+
+
+def thickener(m, x, y, r, conc, steel):
+    """A round thickener: a low concrete tank of cloudy water with its drive bridge across to the middle."""
+    m.upright(x, y, 0, 0.4, r, r, conc, segments=32)
+    m.upright(x, y, 0.36, 0.38, r - 0.006, r - 0.006, material("thickener water", "#7e9a96", rough=0.2), segments=32)
+    m.box(x - r, x + 0.01, y - 0.008, y + 0.008, 0.42, 0.48, steel)
+    m.box(x - 0.025, x + 0.025, y - 0.025, y + 0.025, 0.4, 0.62, steel, 0.003)
+
+
+def lithium_mill(m):
+    """The concentrator by the pit (-x): the crusher where the trucks tip, a covered conveyor up to the tall dense media
+    tower, the long white flotation hall with a blue band, thickeners and the concentrate bin over the loadout."""
+    ground(m, "#8a857c", "mill gravel")
+    wall = material("mill cladding", "#dcdedc", metal=0.3, rough=0.55)
+    rib = material("mill ribs", "#c4c6c4", metal=0.3, rough=0.55)
+    roof = material("mill roof", "#6a6e72", metal=0.4, rough=0.6)
+    band = material("mill band", "#2f6f8f", rough=0.5)
+    trim = material("mill trim", "#4a4e52", metal=0.3, rough=0.6)
+    conc = material("mill concrete", "#a8a49c", rough=0.95)
+    g = glass()
+    # The crusher by the pit edge, its dump pocket and a low wall for the trucks to back to.
+    cx0, cx1, cy0, cy1 = -0.46, -0.3, -0.36, -0.14
+    clad_box(m, cx0, cx1, cy0, cy1, 0, 1.8, wall, rib)
+    gable(m, cx0, cx1, cy0, cy1, 1.8, 2.1, roof, wall, along_x=True, over=0.01, thick=0.04)
+    m.box(cx0, cx1, cy0 - 0.1, cy0, 0, 0.3, conc)
+    m.box(cx0 + 0.02, cx1 - 0.02, cy0 - 0.09, cy0 - 0.01, 0.3, 0.32, material("pocket dark", "#1e1c1a", rough=1.0))
+    # The flotation hall, low and long, with a band of windows and the blue band under the eave.
+    hx0, hx1, hy0, hy1, eave = -0.2, 0.3, -0.44, 0.1, 2.3
+    clad_box(m, hx0, hx1, hy0, hy1, 0, eave, wall, rib)
+    gable(m, hx0, hx1, hy0, hy1, eave, eave + 0.35, roof, wall, along_x=False, over=0.015, thick=0.05)
+    for face, at, d, a0, a1 in (("x", hx0, -1, hy0, hy1), ("x", hx1, 1, hy0, hy1), ("y", hy0, -1, hx0, hx1)):
+        houses.on_wall(m, face, at, d, a0, a1, 0.002, 0.008, eave - 0.32, eave - 0.14, band)
+        houses.on_wall(m, face, at, d, a0 + 0.03, a1 - 0.03, 0.002, 0.008, 1.2, 1.5, g)
+    harbour.rollup_door(m, 0.0, 0.12, hy0, 0.0, 0.9, face=-1)
+    for y in (-0.3, -0.1):
+        roof_vent(m, 0.05, y, eave + 0.2, trim)
+    # The dense media tower at the hall's +y end, taller, its flat top railed.
+    tx0, tx1, ty0, ty1, top = -0.2, 0.06, 0.1, 0.34, 3.7
+    clad_box(m, tx0, tx1, ty0, ty1, 0, top, wall, rib)
+    houses.flat_top(m, tx0, tx1, ty0, ty1, top, trim, parapet=0.12)
+    for face, at, d, a0, a1 in (("x", tx0, -1, ty0, ty1), ("y", ty1, 1, tx0, tx1), ("x", tx1, 1, ty0, ty1)):
+        houses.on_wall(m, face, at, d, a0, a1, 0.002, 0.008, top - 0.3, top - 0.12, band)
+        houses.on_wall(m, face, at, d, a0 + 0.03, a1 - 0.03, 0.002, 0.008, 2.2, 2.5, g)
+    # The covered conveyor from the crusher up to the tower's top, and the one on from it to the storage dome (+y).
+    conveyor(m, (-0.07, ty1 - 0.02, top - 0.4), (-0.08, 0.5, top - 0.6), 0.05, trim, material("conveyor belt", "#2e2a26", rough=0.8),
+             legs=0.14, hood=wall, load=material("ore on belt", "#cfcabe", rough=1.0))
+    conveyor(m, (cx1 - 0.02, -0.25, 1.5), (tx0 + 0.01, 0.22, top - 0.25), 0.05, trim, material("conveyor belt", "#2e2a26", rough=0.8),
+             legs=0.14, hood=wall, load=material("ore on belt", "#cfcabe", rough=1.0))
+    # Two thickeners and the concentrate bin over a truck lane on +x.
+    steel = material("mill steel", "#6a6e70", metal=0.4, rough=0.55)
+    thickener(m, 0.25, 0.3, 0.12, conc, steel)
+    thickener(m, -0.38, 0.28, 0.09, conc, steel)
+    m.rod((0.3, 0.1, 0.6), (0.25, 0.2, 0.5), 0.012, steel, segments=8)
+    bx, by = 0.42, -0.3
+    for dx in (-0.045, 0.045):
+        for dy in (-0.045, 0.045):
+            m.box(bx + dx - 0.006, bx + dx + 0.006, by + dy - 0.006, by + dy + 0.006, 0, 1.2, trim)
+    m.upright(bx, by, 1.2, 2.6, 0.06, 0.06, wall, segments=20)
+    m.lathe(bx, by, 0.9, [(0.012, 0), (0.06, 0.3)], wall, segments=20)
+    m.lathe(bx, by, 2.6, [(0.062, 0), (0.0, 0.18)], roof, segments=20)
+    m.rod((hx1, by, 2.0), (bx - 0.05, by, 2.5), 0.012, trim, segments=8)
+    _light_pole(m, 0.44, 0.06)
+
+
+def spodumene_pile(m):
+    """Where the concentrate waits: a white fabric storage dome fed by a conveyor over its crown from the mill (-x),
+    a loader at its door, and on the far side a low dry stack of grey tailings with a dozer on top."""
+    ground(m, "#8a857c", "mill gravel")
+    fabric = material("dome fabric", "#eeece6", rough=0.6)
+    rib = material("dome ribs", "#c8c6c0", rough=0.6)
+    trim = material("mill trim", "#4a4e52", metal=0.3, rough=0.6)
+    dx, dy, r, h = -0.1, 0.06, 0.32, 2.2
+    prof = [(r * math.cos(t), h * math.sin(t)) for t in (math.pi / 2 * k / 10 for k in range(11))]
+    m.lathe(dx, dy, 0, prof, fabric, segments=40)
+    for k in range(8):
+        a = math.pi * k / 8
+        ca, sa = math.cos(a), math.sin(a)
+        pts = [(dx + ca * r * math.cos(t), dy + sa * r * math.cos(t), h * math.sin(t)) for t in (math.pi * j / 16 for j in range(17))]
+        for p, q in zip(pts, pts[1:]):
+            m.rod(p, q, 0.003, rib, segments=4)
+    # A door on +x with a loader at it, and the concentrate showing inside.
+    m.box(dx + r - 0.02, dx + r + 0.03, dy - 0.07, dy + 0.07, 0, 0.75, fabric)
+    m.box(dx + r + 0.028, dx + r + 0.032, dy - 0.055, dy + 0.055, 0, 0.62, material("dome door dark", "#2a2826", rough=0.9))
+    _loader(m, 0.34, dy + 0.02, 0.02, turn=-math.pi / 2, paint="#e4e2da")
+    # The conveyor in over the crown from the mill's tower (-y), on bents.
+    conveyor(m, (-0.08, -0.5, 3.1), (dx, dy - 0.04, h + 0.12), 0.05, trim, material("conveyor belt", "#2e2a26", rough=0.8),
+             legs=0.14, hood=material("mill cladding", "#dcdedc", metal=0.3, rough=0.55), load=material("ore on belt", "#cfcabe", rough=1.0))
+    # The dry stack of tailings in the corner.
+    heap(m, 0.3, -0.32, 0.17, 0.5, "#8a8884", 71, "dry tailings")
+    _dozer(m, 0.3, -0.32, 0.5, turn=0.4)
+    _light_pole(m, 0.44, 0.44)
+
+
+# The battery plant's long hall runs along y across the three tiles of its first row, -x of the yard row.
+BATT_X0, BATT_X1, BATT_EAVE = -0.44, 0.5, 1.8
+BATT_WHITE = ("battery plant white", "#e8eae8")
+BATT_GREY = ("battery plant grey", "#8a8e92")
+BATT_GREEN = ("battery green", "#3fa34d")
+
+
+def _solar_rows(m, x0, x1, y0, y1, z, n):
+    """Rows of solar panels tilted up toward -x on a flat roof at z, n of them from x0 to x1."""
+    solar = material("solar panels", "#1a2a44", metal=0.4, rough=0.15, clearcoat=0.6)
+    frame = material("solar frames", "#b8bcc0", metal=0.6, rough=0.4)
+    w = (x1 - x0) / n
+    for k in range(n):
+        xa = x0 + k * w + 0.008
+        xb = xa + w - 0.026
+        m.wedge([(xa, y0, z), (xb, y0, z), (xb, y1, z), (xa, y1, z)],
+                [(xa, y0, z + 0.04), (xb, y0, z + 0.16), (xb, y1, z + 0.16), (xa, y1, z + 0.04)], frame)
+        m.wedge([(xa, y0 + 0.002, z + 0.045), (xb, y0 + 0.002, z + 0.165), (xb, y1 - 0.002, z + 0.165), (xa, y1 - 0.002, z + 0.045)],
+                [(xa, y0 + 0.002, z + 0.06), (xb, y0 + 0.002, z + 0.18), (xb, y1 - 0.002, z + 0.18), (xa, y1 - 0.002, z + 0.06)], solar)
+
+
+def battery_hall(m, end=0):
+    """A length of the battery plant's cell hall, one long low modern building across three tiles: white insulated
+    panels over a grey base, a green stripe along the top, a clerestory of glass, and a white roof covered in rows of
+    solar panels with air handlers along the middle. end -1 or 1 closes the hall at -y or +y."""
+    paved(m, -0.5, 0.5, -0.5, 0.5, "#8a867e")
+    white = material(*BATT_WHITE, rough=0.45)
+    grey = material(*BATT_GREY, metal=0.3, rough=0.5)
+    green = material(*BATT_GREEN, rough=0.45)
+    roof = material("white roof", "#d8dad6", rough=0.7)
+    g = glass()
+    y0 = -0.44 if end == -1 else -0.5
+    y1 = 0.44 if end == 1 else 0.5
+    x0, x1, eave = BATT_X0, BATT_X1, BATT_EAVE
+    m.box(x0, x1, y0, y1, 0, eave, white)
+    m.box(x0, x1, y0, y1, eave, eave + 0.03, roof)
+    walls = [("x", x0, -1, y0, y1), ("x", x1, 1, y0, y1)]
+    if end == -1:
+        walls.append(("y", y0, -1, x0, x1))
+    if end == 1:
+        walls.append(("y", y1, 1, x0, x1))
+    for face, at, d, a0, a1 in walls:
+        houses.on_wall(m, face, at, d, a0, a1, 0.0, 0.005, 0, 0.35, grey)
+        houses.on_wall(m, face, at, d, a0, a1, 0.0, 0.006, eave - 0.16, eave - 0.04, green)
+        houses.on_wall(m, face, at, d, a0 + (0.03 if face == "y" else 0), a1 - (0.03 if face == "y" else 0), 0.0, 0.006, 1.0, 1.36, g)
+        # Panel joints up the walls.
+        n = max(1, round((a1 - a0) / 0.1))
+        for k in range(1, n):
+            a = a0 + (a1 - a0) * k / n
+            houses.on_wall(m, face, at, d, a - 0.002, a + 0.002, 0.0, 0.007, 0.35, eave - 0.16, material("panel joints", "#c8cac8", rough=0.5))
+    # A parapet round the roof's open edges.
+    cap = material("parapet cap", "#b4b8b6", metal=0.3, rough=0.5)
+    for x in (x0, x1 - 0.012):
+        m.box(x, x + 0.012, y0, y1, eave, eave + 0.14, cap)
+    if end:
+        y = y0 if end == -1 else y1 - 0.012
+        m.box(x0, x1, y, y + 0.012, eave, eave + 0.14, cap)
+    _solar_rows(m, x0 + 0.03, -0.06, y0 + 0.02, y1 - 0.02, eave + 0.03, 4)
+    _solar_rows(m, 0.08, x1 - 0.03, y0 + 0.02, y1 - 0.02, eave + 0.03, 4)
+    # Air handlers for the dry rooms down the middle of the roof.
+    unit = material("air handler", "#c4c8ca", metal=0.4, rough=0.45)
+    for y in (-0.26, 0.0, 0.26):
+        if (end == -1 and y < -0.3) or (end == 1 and y > 0.3):
+            continue
+        m.box(-0.05, 0.07, y - 0.08, y + 0.08, eave + 0.03, eave + 0.36, unit, 0.004)
+        for k in (-1, 1):
+            m.upright(0.01, y + k * 0.04, eave + 0.36, eave + 0.4, 0.026, 0.026, grey, segments=14)
+    if end == -1:
+        harbour.rollup_door(m, -0.3, -0.14, y0, 0.0, 0.8, face=-1)
+
+
+def battery_office(m):
+    """The plant's front: a two storey office in glass with a white frame and green fin, joined to the hall's end,
+    and the staff lot with cars at EV chargers."""
+    paved(m, -0.5, 0.5, -0.5, 0.5, "#8a867e")
+    white = material(*BATT_WHITE, rough=0.45)
+    green = material(*BATT_GREEN, rough=0.45)
+    g = glass()
+    mull = material("office mullions", "#c8ccce", metal=0.5, rough=0.4)
+    x0, x1, y0, y1 = -0.5, -0.06, -0.44, 0.0
+    m.box(x0, x1, y0, y1, 0, 2 * STOREY + 0.1, white, 0.003)
+    houses.curtain(m, x0 + 0.04, x1, y0, y1 - 0.04, 0.0, 2, g, mull)
+    houses.flat_top(m, x0, x1, y0, y1, 2 * STOREY + 0.1, white, parapet=0.14)
+    m.box(x1 - 0.004, x1 + 0.012, -0.24, -0.2, 0, 2 * STOREY + 0.4, green)
+    m.box(x1, x1 + 0.12, -0.3, -0.14, 0.95, 1.0, white)
+    _solar_rows(m, x0 + 0.04, x1 - 0.04, y0 + 0.03, y1 - 0.03, 2 * STOREY + 0.16, 3)
+    houses.parking(m, -0.02, 0.46, -0.46, 0.44, 0.09, [(-0.4, "#c8c8c4"), (-0.31, "#2a4a7a"), (-0.13, "#7a2a2a"), (0.05, "#3a3a3c"),
+                                                     (0.14, "#d8d8d4"), (0.32, "#4a6a5a")])
+    post = material("charger posts", "#e8eae8", rough=0.4)
+    for k in range(5):
+        y = -0.36 + k * 0.18
+        m.box(0.44, 0.47, y - 0.012, y + 0.012, 0.02, 0.5, post, 0.003)
+        m.box(0.437, 0.441, y - 0.008, y + 0.008, 0.3, 0.44, green)
+    for x in (0.16, 0.3):
+        houses.lamp_post(m, x, 0.46)
+
+
+def battery_dock(m):
+    """The shipping end of the plant: a lower dock wing off the hall (-x) with doors along its +x face, reefer trailers
+    of packs backed in to them and a battery tractor waiting."""
+    paved(m, -0.5, 0.5, -0.5, 0.5, "#7e7a74")
+    white = material(*BATT_WHITE, rough=0.45)
+    grey = material(*BATT_GREY, metal=0.3, rough=0.5)
+    green = material(*BATT_GREEN, rough=0.45)
+    x0, x1, eave = -0.5, -0.12, 1.4
+    m.box(x0, x1, -0.5, 0.5, 0, eave, white)
+    houses.flat_top(m, x0, x1, -0.5, 0.5, eave, material("parapet cap", "#b4b8b6", metal=0.3, rough=0.5), parapet=0.12, open_y=(-1, 1))
+    houses.on_wall(m, "x", x1, 1, -0.5, 0.5, 0.0, 0.006, eave - 0.14, eave - 0.04, green)
+    houses.on_wall(m, "x", x1, 1, -0.5, 0.5, 0.0, 0.005, 0, 0.3, grey)
+    for k in range(5):
+        y = -0.4 + k * 0.2
+        m.box(x1, x1 + 0.004, y - 0.05, y + 0.05, 0.3, 1.05, material("dock doors", "#5a6a72", metal=0.3, rough=0.6))
+        m.box(x1, x1 + 0.03, y - 0.065, y + 0.065, 1.05, 1.12, material("dock seal", "#2a2a2c", rough=0.8))
+    m.box(x1, x1 + 0.03, -0.5, 0.5, 0, 0.3, material("dock concrete", "#9a9488", rough=0.9))
+    for y in (-0.2, 0.2):
+        moved(m, lambda mm: roadcars.tractor(mm, 12 / 16, "reefer", "aero", "#34383c", era=2027, power="battery"), 0.17, y, -math.pi / 2, scale=0.75)
+
+
+def battery_yard(m):
+    """The plant's yard at the hall's far end: a substation fed from the grid, chillers in a row, a white nitrogen tank
+    for the dry rooms and a solar canopy over the lot."""
+    paved(m, -0.5, 0.5, -0.5, 0.5, "#8a867e")
+    green = material(*BATT_GREEN, rough=0.45)
+    gravel = material("substation gravel", "#9a968c", rough=1.0)
+    tank = material("transformer", "#7a8478", metal=0.4, rough=0.6)
+    steel = material("pylon", "#8a8a86", metal=0.5, rough=0.5)
+    ins = material("insulator", "#c8bca8", rough=0.5)
+    m.box(-0.46, 0.02, 0.06, 0.46, 0.0, 0.04, gravel)
+    for x in (-0.3, -0.1):
+        m.box(x - 0.06, x + 0.06, 0.18, 0.3, 0.04, 0.6, tank, 0.004)
+        for k in range(3):
+            m.box(x - 0.055 + k * 0.045, x - 0.045 + k * 0.045, 0.16, 0.18, 0.1, 0.55, tank)
+            m.upright(x - 0.03 + k * 0.03, 0.26, 0.6, 0.85, 0.007, 0.005, ins, segments=8)
+    for x in (-0.42, 0.0):
+        m.box(x - 0.006, x + 0.006, 0.4, 0.412, 0.0, 1.6, steel)
+    m.box(-0.42, 0.0, 0.4, 0.412, 1.5, 1.58, steel)
+    for x in (-0.3, -0.2, -0.1):
+        m.rod((x, 0.406, 1.5), (x, 0.406, 1.35), 0.004, ins, segments=6)
+        m.rod((x, 0.406, 1.35), (x, 0.26, 0.85), 0.002, steel, segments=4)
+    post = material("fence posts", "#7a7c7e", metal=0.6, rough=0.4)
+    mesh = material("chain link", "#9a9c9e", metal=0.6, rough=0.5)
+    for a, b in (((-0.46, 0.06), (0.02, 0.06)), ((0.02, 0.06), (0.02, 0.46))):
+        m.box(min(a[0], b[0]) - 0.002, max(a[0], b[0]) + 0.002, min(a[1], b[1]) - 0.002, max(a[1], b[1]) + 0.002, 0.0, 0.4, mesh)
+    unit = material("chiller", "#c4c8ca", metal=0.4, rough=0.45)
+    fan = material("chiller fans", "#2a2c2e", rough=0.6)
+    for k in range(3):
+        y = 0.1 + k * 0.12
+        m.box(0.14, 0.3, y - 0.05, y + 0.05, 0, 0.42, unit, 0.004)
+        for x in (0.18, 0.26):
+            m.upright(x, y, 0.42, 0.44, 0.03, 0.03, fan, segments=14)
+    white = material("nitrogen tank", "#eceeec", metal=0.3, rough=0.4)
+    m.upright(0.4, 0.3, 0.0, 2.2, 0.045, 0.045, white, segments=20)
+    m.lathe(0.4, 0.3, 2.2, [(0.045, 0), (0.025, 0.08), (0.0, 0.1)], white, segments=20)
+    for dx in (-0.03, 0.03):
+        m.box(0.4 + dx - 0.004, 0.4 + dx + 0.004, 0.24, 0.25, 0, 0.3, post)
+    # The solar canopy over the lot on -y, cars under it.
+    for x, colour in ((-0.36, "#3a3a3c"), (-0.22, "#c8c8c4"), (0.06, "#7a2a2a"), (0.2, "#2a4a7a")):
+        houses.car(m, x, -0.22, colour, along_y=True)
+    for x in (-0.4, -0.05, 0.3):
+        m.box(x - 0.008, x + 0.008, -0.12, -0.104, 0, 0.9, post)
+    m.wedge([(-0.46, -0.42, 0.85), (0.38, -0.42, 0.85), (0.38, -0.1, 1.0), (-0.46, -0.1, 1.0)],
+            [(-0.46, -0.42, 0.88), (0.38, -0.42, 0.88), (0.38, -0.1, 1.03), (-0.46, -0.1, 1.03)],
+            material("solar panels", "#1a2a44", metal=0.4, rough=0.15, clearcoat=0.6))
+    m.box(-0.46, 0.38, -0.105, -0.095, 0.95, 1.04, green)
+
+
+H2_WHITE = ("hydrogen white", "#eceeec")
+H2_BLUE = ("hydrogen blue", "#8fd3f4")
+H2_PIPE = ("hydrogen pipe", "#b4b8bc")
+
+
+def _sphere(m, x, y, r, z, mat):
+    """A round sphere of radius r tiles with its middle z steps up, kept round."""
+    rz = r / rig.RISE
+    with m.keep(z):
+        m.lathe(x, y, z - rz, [(r * math.sin(t), rz * (1 - math.cos(t))) for t in (math.pi * k / 16 for k in range(17))], mat, segments=32)
+
+
+def hydrogen_jetty(m):
+    """The hydrogen plant's waterfront (-x): a concrete jetty out over the water with a loading arm, the seawater intake
+    house at its root and the water treatment block, two small white tanks by it."""
+    conc = material("jetty concrete", "#b4b0a8", rough=0.9)
+    white = material(*H2_WHITE, metal=0.2, rough=0.4)
+    blue = material(*H2_BLUE, rough=0.4)
+    pipe = material(*H2_PIPE, metal=0.6, rough=0.35)
+    trim = material("plant trim", "#4a4e52", metal=0.3, rough=0.6)
+    paved(m, -0.5, 0.5, -0.5, 0.5, "#8e8a84")
+    # The jetty: a deck on round concrete piles out past the edge, a fender line on its face.
+    top = 0.3
+    m.box(-0.82, -0.3, -0.12, 0.12, top - 0.08, top, conc)
+    for x in (-0.76, -0.6, -0.44):
+        for y in (-0.09, 0.09):
+            m.upright(x, y, -0.6, top - 0.08, 0.02, 0.02, conc, segments=12)
+    m.box(-0.83, -0.82, -0.12, 0.12, -0.2, top + 0.02, material("jetty fenders", "#2a2a2c", rough=0.8))
+    # The loading arm on its riser, folded up, and the line along the jetty to it.
+    m.box(-0.74, -0.68, -0.03, 0.03, top, top + 0.9, trim)
+    m.rod((-0.71, 0.0, top + 0.9), (-0.8, 0.0, top + 1.5), 0.01, white, segments=10)
+    m.rod((-0.8, 0.0, top + 1.5), (-0.84, 0.0, top + 0.5), 0.008, white, segments=10)
+    m.tube_x(-0.7, 0.5, 0.06, top + 0.1, 0.012, pipe, segments=10)
+    # The intake house by the water, grilles low on its water face.
+    ix0, ix1, iy0, iy1 = -0.48, -0.26, -0.44, -0.18
+    m.box(ix0, ix1, iy0, iy1, 0, 1.3, conc, 0.003)
+    houses.flat_top(m, ix0, ix1, iy0, iy1, 1.3, trim, parapet=0.1)
+    houses.on_wall(m, "x", ix0, -1, iy0 + 0.02, iy1 - 0.02, 0, 0.006, 1.0, 1.1, blue)
+    for k in range(3):
+        y = iy0 + 0.05 + k * 0.08
+        m.box(ix0 - 0.006, ix0, y - 0.025, y + 0.025, 0.05, 0.4, material("intake grille", "#2a3034", rough=0.5))
+    # The water treatment block with its two tanks.
+    wx0, wx1, wy0, wy1 = -0.12, 0.3, -0.44, -0.12
+    m.box(wx0, wx1, wy0, wy1, 0, 1.4, white, 0.003)
+    houses.flat_top(m, wx0, wx1, wy0, wy1, 1.4, material("parapet cap", "#b4b8b6", metal=0.3, rough=0.5), parapet=0.1)
+    houses.on_wall(m, "y", wy1, 1, wx0, wx1, 0, 0.006, 1.1, 1.22, blue)
+    houses.on_wall(m, "x", wx0, -1, wy0, wy1, 0, 0.006, 1.1, 1.22, blue)
+    for x in (0.1, 0.24):
+        m.upright(x, 0.12, 0, 1.6, 0.06, 0.06, white, segments=22)
+        m.lathe(x, 0.12, 1.6, [(0.06, 0), (0.0, 0.1)], white, segments=22)
+        m.upright(x, 0.12, 1.2, 1.3, 0.062, 0.062, blue, segments=22)
+    m.rod((ix1, -0.3, 0.6), (wx0, -0.3, 0.6), 0.012, pipe, segments=8)
+    m.rod((0.1, 0.06, 0.5), (0.1, wy1, 0.5), 0.01, pipe, segments=8)
+    harbour.lamp(m, -0.3, 0.14, top, top + 1.2, toward=(-1.0, 0.0))
+
+
+def hydrogen_spheres(m):
+    """The plant's store: two big white spheres on their legs, a stair winding up to the top of each, and the pipe rack
+    along the yard side (+x) that carries hydrogen to the loading bay and the jetty."""
+    paved(m, -0.5, 0.5, -0.5, 0.5, "#8e8a84")
+    white = material(*H2_WHITE, metal=0.2, rough=0.35)
+    blue = material(*H2_BLUE, rough=0.4)
+    pipe = material(*H2_PIPE, metal=0.6, rough=0.35)
+    steel = material("plant steel", "#6a6e70", metal=0.4, rough=0.55)
+    rail = material("stair rail", "#d8b428", metal=0.3, rough=0.5)
+    m.box(-0.46, 0.3, -0.46, 0.46, 0.0, 0.05, material("tank field gravel", "#8a847a", rough=1.0))
+    for x, y in ((-0.1, -0.22), (-0.1, 0.22)):
+        r, zc = 0.19, 1.6
+        for k in range(6):
+            a = math.tau * k / 6 + 0.3
+            lx, ly = x + math.cos(a) * r * 0.86, y + math.sin(a) * r * 0.86
+            m.box(lx - 0.009, lx + 0.009, ly - 0.009, ly + 0.009, 0, zc, steel)
+        _sphere(m, x, y, r, zc, white)
+        with m.keep(zc):
+            m.upright(x, y, zc - 0.03, zc + 0.03, r + 0.003, r + 0.003, blue, segments=32)
+        # A caged ladder up a leg to the equator, and a railed platform on the crown.
+        crown = m.fixed(m.z(zc) + r / rig.RISE)
+        lx, ly = x - r * 0.95, y
+        m.rod((lx - 0.012, ly, 0), (lx - 0.012, ly, zc), 0.004, rail, segments=4)
+        m.rod((lx - 0.012, ly, zc), (x - 0.02, y, crown), 0.004, rail, segments=4)
+        m.upright(x, y, crown - 0.03, crown + 0.02, 0.035, 0.035, steel, segments=16)
+        pipe_ring(m, x, y, crown + 0.18, 0.034, 0.002, rail, n=16)
+        m.rod((x, y, 0.4), (0.34, y, 0.4), 0.01, pipe, segments=8)
+    # The pipe rack along +x, three lines on bents.
+    for y in (-0.4, -0.13, 0.13, 0.4):
+        for x in (0.34, 0.44):
+            m.box(x - 0.006, x + 0.006, y - 0.006, y + 0.006, 0, 0.8, steel)
+        m.box(0.33, 0.45, y - 0.008, y + 0.008, 0.76, 0.82, steel)
+    for x, mat in ((0.36, pipe), (0.39, blue), (0.42, pipe)):
+        m.tube(-0.5, 0.5, x, 0.87, 0.011, mat, segments=10)
+
+
+def hydrogen_hall(m):
+    """The electrolyser hall: a long white building with a pale blue band, vent stacks along its roof where the stacks
+    under it give off their oxygen, the rectifiers and transformers on its -y end and the line in from the grid."""
+    paved(m, -0.5, 0.5, -0.5, 0.5, "#8e8a84")
+    white = material(*H2_WHITE, metal=0.2, rough=0.45)
+    rib = material("hall ribs", "#d4d6d6", metal=0.2, rough=0.45)
+    blue = material(*H2_BLUE, rough=0.4)
+    roof = material("hall roof", "#b8bcbe", metal=0.4, rough=0.5)
+    steel = material("plant steel", "#6a6e70", metal=0.4, rough=0.55)
+    g = glass()
+    x0, x1, y0, y1, eave = -0.4, 0.22, -0.2, 0.5, 2.0
+    clad_box(m, x0, x1, y0, y1, 0, eave, white, rib, gap=0.04)
+    gable(m, x0, x1, y0, y1, eave, eave + 0.3, roof, white, along_x=False, over=0.012, thick=0.04)
+    for face, at, d, a0, a1 in (("x", x0, -1, y0, y1), ("x", x1, 1, y0, y1), ("y", y0, -1, x0, x1)):
+        houses.on_wall(m, face, at, d, a0, a1, 0.002, 0.008, eave - 0.3, eave - 0.12, blue)
+    houses.on_wall(m, "x", x1, 1, y0 + 0.04, y1 - 0.04, 0.002, 0.008, 1.0, 1.3, g)
+    harbour.rollup_door(m, -0.3, -0.16, y0, 0.0, 0.85, face=-1)
+    for k in range(5):
+        y = y0 + 0.08 + k * 0.13
+        for x in (-0.24, 0.06):
+            m.upright(x, y, eave + 0.1, eave + 0.75, 0.014, 0.014, steel, segments=10)
+            m.upright(x, y, eave + 0.75, eave + 0.8, 0.02, 0.02, steel, segments=10)
+    # Rectifier cabinets and transformers on the -y end, and the gantry the line comes in on.
+    tank = material("transformer", "#7a8478", metal=0.4, rough=0.6)
+    ins = material("insulator", "#c8bca8", rough=0.5)
+    cab = material("rectifier cabinets", "#c8ccce", metal=0.4, rough=0.45)
+    for x in (-0.32, -0.12, 0.08):
+        m.box(x - 0.06, x + 0.06, -0.34, -0.24, 0, 0.6, cab, 0.004)
+        m.box(x - 0.05, x + 0.05, -0.46, -0.38, 0, 0.55, tank, 0.004)
+        for k in range(3):
+            m.upright(x - 0.03 + k * 0.03, -0.42, 0.55, 0.78, 0.006, 0.005, ins, segments=8)
+    for x in (-0.44, 0.2):
+        m.box(x - 0.006, x + 0.006, -0.48, -0.468, 0, 1.7, steel)
+    m.box(-0.44, 0.2, -0.48, -0.468, 1.6, 1.68, steel)
+    # The pipe from the hall to the rack.
+    pipe = material(*H2_PIPE, metal=0.6, rough=0.35)
+    m.rod((-0.2, 0.3, 0.6), (-0.5, 0.3, 0.87), 0.011, pipe, segments=8)
+    m.rod((x1, 0.1, 0.5), (0.44, 0.1, 0.5), 0.011, pipe, segments=8)
+    harbour.lamp(m, 0.42, -0.2, 0.0, 1.2, toward=(-1.0, 0.0))
+
+
+def hydrogen_tanks(m):
+    """The compression and loading end: white bullet tanks on saddles, the compressor house with its coolers, and the
+    loading bay with a tube trailer at the fill post."""
+    paved(m, -0.5, 0.5, -0.5, 0.5, "#8e8a84")
+    white = material(*H2_WHITE, metal=0.2, rough=0.35)
+    blue = material(*H2_BLUE, rough=0.4)
+    pipe = material(*H2_PIPE, metal=0.6, rough=0.35)
+    conc = material("saddle concrete", "#b4b0a8", rough=0.9)
+    steel = material("plant steel", "#6a6e70", metal=0.4, rough=0.55)
+    # Three bullet tanks along y.
+    for x in (-0.38, -0.26, -0.14):
+        for y in (-0.36, -0.06):
+            m.box(x - 0.04, x + 0.04, y - 0.015, y + 0.015, 0, 0.3, conc)
+        m.tube(-0.44, 0.02, x, 0.5, 0.05, white, segments=20)
+        m.tube(-0.24, -0.18, x, 0.5, 0.052, blue, segments=20)
+        m.rod((x, 0.02, 0.5), (x, 0.12, 0.3), 0.008, pipe, segments=8)
+    m.tube_x(-0.4, 0.0, 0.12, 0.3, 0.01, pipe, segments=8)
+    # The compressor house and the fin fan coolers on its roof.
+    cx0, cx1, cy0, cy1 = 0.06, 0.44, -0.46, -0.12
+    clad_box(m, cx0, cx1, cy0, cy1, 0, 1.3, white, material("hall ribs", "#d4d6d6", metal=0.2, rough=0.45), gap=0.04)
+    houses.flat_top(m, cx0, cx1, cy0, cy1, 1.3, material("parapet cap", "#b4b8b6", metal=0.3, rough=0.5), parapet=0.1)
+    houses.on_wall(m, "y", cy1, 1, cx0, cx1, 0.002, 0.008, 1.0, 1.15, blue)
+    fan = material("cooler fans", "#2a2c2e", rough=0.6)
+    for x in (0.14, 0.25, 0.36):
+        m.box(x - 0.05, x + 0.05, -0.4, -0.18, 1.36, 1.6, steel, 0.003)
+        for y in (-0.34, -0.24):
+            m.upright(x, y, 1.6, 1.62, 0.035, 0.035, fan, segments=14)
+    # The loading bay: a canopy over the fill post, a tube trailer at it nose out toward +y.
+    for x in (0.0, 0.44):
+        for y in (0.02, 0.44):
+            m.box(x - 0.008, x + 0.008, y - 0.008, y + 0.008, 0, 1.75, steel)
+    m.box(-0.02, 0.46, 0.0, 0.46, 1.75, 1.82, white)
+    houses.on_wall(m, "y", 0.0, -1, -0.02, 0.46, 0.0, 0.004, 1.75, 1.82, blue)
+    m.box(0.02, 0.06, 0.2, 0.26, 0, 0.7, material("fill post", "#9aa0a4", metal=0.4, rough=0.45), 0.003)
+    moved(m, lambda mm: roadcars.tractor(mm, 13 / 16, "tubes", "aero", "#1f4e8c", era=2030, power="hydrogen"), 0.24, 0.17, 0.0, scale=0.7)
+
+
 PARTS = {
     "bunkhouse": bunkhouse, "log_pile": log_pile, "camp_shed": camp_shed,
     "sawmill": sawmill, "log_deck": log_deck, "burner": burner, "lumber_stack": lumber_stack,
@@ -5132,6 +5602,10 @@ PARTS = {
     "sand_pit_bucketwheel": lambda m: sand_pit(m, "sand_pit", era=0),
     "sand_pit_far_bucketwheel": lambda m: sand_pit(m, "sand_pit_far", era=0),
     "sand_pit_corner_dragline": lambda m: sand_pit(m, "sand_pit_corner", era=0),
+    "lithium_pit": lithium_pit, "lithium_pit_far": lambda m: lithium_pit(m, far=True), "lithium_mill": lithium_mill, "spodumene_pile": spodumene_pile,
+    "battery_hall": battery_hall, "battery_hall_head": lambda m: battery_hall(m, -1), "battery_hall_tail": lambda m: battery_hall(m, 1),
+    "battery_office": battery_office, "battery_dock": battery_dock, "battery_yard": battery_yard,
+    "hydrogen_jetty": hydrogen_jetty, "hydrogen_spheres": hydrogen_spheres, "hydrogen_hall": hydrogen_hall, "hydrogen_tanks": hydrogen_tanks,
 }
 
 

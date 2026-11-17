@@ -511,6 +511,13 @@ ROSTER = [
     ("mail_drone", 1, lambda f: coach(f, L(1), True)),
     ("freight_drone", 1, lambda f: coach(f, L(1), True)),
     ("tiltrotor_drone", 2, lambda f: coach(f, L(2), True)),
+    # Future industries' wagons and trucks.
+    ("lithium_hopper", 11, lambda f: hopper(f, L(11))),
+    ("battery_boxcar", 12, lambda f: boxcar(f, L(12), True)),
+    ("hydrogen_tank_car", 12, lambda f: tankcar(f, L(12))),
+    ("lithium_dump", 8, lambda f: hopper(f, L(8))),
+    ("battery_hauler", 12, lambda f: boxcar(f, L(12), True)),
+    ("hydrogen_tube_trailer", 13, lambda f: tankcar(f, L(13))),
 ]
 
 

@@ -946,3 +946,115 @@ def alto_coach(m, L):
             y0 = w0 + (w1 - w0) * i / n
             m.box(x - 0.0008, x + 0.0008, y0 + 0.006, y0 + (w1 - w0) / n - 0.006, 1.06, 1.26, mats["mask"])
         m.text(diesel.LETTERS, side * (half + 0.0012), (a0 + a1) / 2, 0.9, 0.026, mats["line"], side)
+
+
+def lithium_hopper(m, L):
+    """A short heavy covered hopper of the 2020s for spodumene concentrate, dense enough to fill a small car: slab sides
+    with outside posts, sloped ends, two bays under it, round loading hatches along a running board on its roof, sage
+    grey with a white band."""
+    c = common()
+    body = material("lithium hopper", "#8fa498", rough=0.55)
+    dark = material("lithium hopper dark", "#6a7c72", rough=0.6)
+    band = material("lithium band", "#eef0ec", rough=0.5)
+    a0, a1 = -L / 2 + 0.015, L / 2 - 0.015
+    for y in (-L / 2 + 0.08, L / 2 - 0.08):
+        truck(m, y, c, top=0.91)
+    b0, b1, top = a0 + 0.07, a1 - 0.07, 1.62
+    hw = 0.118
+    # The body: straight sides between the end slopes, rounded over the top edges.
+    m.shell([(a0 + 0.02, 1.0, 0.004, "paint"), (b0, 0.82, 0.004, "paint"), (b1, 0.82, 0.004, "paint"), (a1 - 0.02, 1.0, 0.004, "paint"),
+             (a1 - 0.012, top, 0.012, "paint"), (a0 + 0.012, top, 0.012, "paint")], hw, {"paint": body}, crown=0.03)
+    for cy in (-0.07, 0.07):
+        m.wedge([(-0.04, cy - 0.025, 0.42), (0.04, cy - 0.025, 0.42), (0.04, cy + 0.025, 0.42), (-0.04, cy + 0.025, 0.42)],
+                [(-0.1, cy - 0.06, 0.84), (0.1, cy - 0.06, 0.84), (0.1, cy + 0.06, 0.84), (-0.1, cy + 0.06, 0.84)], dark)
+    for side in (-1, 1):
+        for k in range(9):
+            y = b0 - 0.03 + (b1 - b0 + 0.06) * k / 8
+            m.box(side * hw - 0.002, side * hw + 0.002, y - 0.004, y + 0.004, 0.86, top - 0.04, dark)
+        m.box(side * hw - 0.0015, side * hw + 0.0015, a0 + 0.04, a1 - 0.04, 1.26, 1.38, band)
+        m.text("LITHIUM", side * (hw + 0.002), 0.0, 1.08, 0.026, material("hopper letters", "#2a2a2a", rough=0.6), side)
+    for end in (a0, a1):
+        inward = 1 if end == a0 else -1
+        m.box(-0.12, 0.12, min(end, end + inward * 0.03), max(end, end + inward * 0.03), 0.84, 0.9, c["iron"])
+        m.box(-0.025, 0.025, min(end, end + inward * 0.12), max(end, end + inward * 0.12), 0.48, 0.9, c["iron"])
+    m.box(-0.026, 0.026, a0 + 0.03, a1 - 0.03, top - 0.01, top + 0.03, material("hopper walk", "#5e605c", rough=0.7))
+    for k in range(4):
+        y = a0 + 0.07 + (a1 - a0 - 0.14) * k / 3
+        m.upright(0.055, y, top - 0.02, top + 0.08, 0.026, 0.026, dark, segments=16)
+        m.upright(-0.055, y, top - 0.02, top + 0.08, 0.026, 0.026, dark, segments=16)
+
+
+def battery_boxcar(m, L):
+    """A 60 ft high cube boxcar of the 2020s for battery packs: white with a broad green band low down, two plug doors
+    side by side, ribbed ends and no roofwalk."""
+    c = common()
+    body = material("battery boxcar white", "#e6e8e4", rough=0.5)
+    dark = material("battery boxcar grey", "#b4b8b6", rough=0.55)
+    green = material("battery green", "#3fa34d", rough=0.45)
+    a0, a1 = -L / 2 + 0.012, L / 2 - 0.012
+    top = 1.72
+    _base(m, L, a0, a1, c)
+    m.box(-0.12, 0.12, a0, a1, 0.62, top, body, bevel=0.003)
+    _freight_roof(m, a0, a1, top, dark, walk=False)
+    doors = ((-0.105, -0.005), (0.005, 0.105))
+    for side in (-1, 1):
+        x = side * 0.1208
+        m.box(x - 0.0012, x + 0.0012, a0 + 0.01, a1 - 0.01, 0.66, 0.9, green)
+        for d0, d1 in doors:
+            m.box(x - 0.002, x + 0.002, d0 + 0.004, d1 - 0.004, 0.64, top - 0.05, dark)
+            for z in (0.9, 1.3):
+                m.box(x - 0.0026, x + 0.0026, d0 + 0.01, d1 - 0.01, z - 0.008, z + 0.008, body)
+            m.rod((side * 0.1235, d0 + 0.02, 0.72), (side * 0.1235, d0 + 0.02, top - 0.12), 0.002, c["iron"])
+        for k in range(1, 14):
+            y = a0 + (a1 - a0) * k / 14
+            if y < -0.11 or y > 0.11:
+                m.box(side * 0.1206 - 0.0015, side * 0.1206 + 0.0015, y - 0.003, y + 0.003, 0.64, top - 0.02, dark)
+        m.text("BATTERIES", side * 0.1224, (a0 - 0.105) / 2, 1.38, 0.022, green, side)
+        m.text(LETTERS, side * 0.1224, (a1 + 0.105) / 2, 1.38, 0.028, green, side)
+    for y in (a0, a1):
+        d = -0.003 if y == a0 else 0.003
+        for k in range(1, 6):
+            z = 0.62 + (top - 0.62) * k / 6
+            m.box(-0.115, 0.115, min(y, y + d), max(y, y + d), z - 0.025, z + 0.025, dark, bevel=0.0015)
+    for side, y in ((1, a1 - 0.012), (-1, a0 + 0.012)):
+        for dy in (-0.007, 0.007):
+            m.rod((side * 0.123, y + dy, 0.66), (side * 0.123, y + dy, 1.2), 0.0015, c["iron"])
+    m.rod((0, a1 + 0.004, 1.1), (0, a1 + 0.004, 1.3), 0.002, c["iron"])
+    m.tube(a1 + 0.004, a1 + 0.008, 0, 1.3, 0.016, c["iron"], segments=12)
+
+
+def hydrogen_tank_car(m, L):
+    """A liquid hydrogen tank car of the 2030s: a fat white vacuum jacketed tank with no dome, its heads well rounded, on
+    stub sills, a pale blue band round it, and the valve cabinets low on each side at the middle where the lines come
+    out, with a step and a hand rail by each."""
+    c = common()
+    body = material("hydrogen tank white", "#eceeee", rough=0.35, clearcoat=0.3)
+    blue = material("hydrogen blue", "#8fd3f4", rough=0.4)
+    cabinet = material("hydrogen cabinet", "#9aa0a4", metal=0.4, rough=0.45)
+    a0, a1 = -L / 2 + 0.012, L / 2 - 0.012
+    zc, r = 1.16, 0.118
+    rz = r / rig.RISE
+
+    def circ(k, n=32):
+        return [(r * k * math.cos(2 * math.pi * i / n), zc + rz * k * math.sin(2 * math.pi * i / n)) for i in range(n)]
+    m.loft([(a0 + 0.004, circ(0.45)), (a0 + 0.014, circ(0.8)), (a0 + 0.034, circ(1.0)),
+            (a1 - 0.034, circ(1.0)), (a1 - 0.014, circ(0.8)), (a1 - 0.004, circ(0.45))], {"body": body}, sharp=50, round=True)
+    for y in (a0 + 0.07, a1 - 0.07):
+        m.loft([(y - 0.008, circ(1.012)), (y + 0.008, circ(1.012))], {"band": blue}, round=True)
+    for y in (-L / 2 + 0.085, L / 2 - 0.085):
+        truck(m, y, c)
+    for end in (a0, a1):
+        inward = 1 if end == a0 else -1
+        ya, yb = sorted((end - inward * 0.01, end + inward * 0.13))
+        m.box(-0.03, 0.03, ya, yb, 0.44, 0.62, c["iron"])
+        ya, yb = sorted((end + inward * 0.06, end + inward * 0.11))
+        m.box(-0.07, 0.07, ya, yb, 0.56, 0.7, c["iron"], bevel=0.003)
+        ya, yb = sorted((end, end + inward * 0.03))
+        m.box(-0.1, 0.1, ya, yb, 0.52, 0.6, c["iron"])
+    for side in (-1, 1):
+        m.box(side * 0.1 - 0.02, side * 0.1 + 0.02, -0.06, 0.06, 0.5, 0.86, cabinet, bevel=0.004)
+        m.box(side * 0.122 - 0.002, side * 0.122 + 0.002, -0.05, 0.05, 0.56, 0.8, material("cabinet door", "#7a8084", metal=0.4, rough=0.5))
+        m.box(side * 0.11 - 0.012, side * 0.11 + 0.012, -0.08, -0.06, 0.42, 0.46, c["iron"])
+        m.rod((side * 0.124, 0.07, 0.6), (side * 0.124, 0.07, 1.0), 0.0016, c["iron"])
+        m.text("HYDROGEN", side * 0.119, -0.17, zc + 0.02, 0.024, material("hydrogen letters", "#2a5a8a", rough=0.6), side)
+        m.text(LETTERS, side * 0.119, 0.17, zc + 0.02, 0.024, material("hydrogen letters", "#2a5a8a", rough=0.6), side)

@@ -168,6 +168,13 @@ MODELS = {
     "auto_dump": (8, lambda m: roadcars.truck(m, L(8), "dump", "pod", 3, lifts=2, era=2036)),
     "auto_tanker": (13, lambda m: roadcars.tractor(m, L(13), "tank", "pod", roadcars.AUTO_BAND, era=2037)),
     "convoy_tractor": (12, lambda m: roadcars.tractor(m, L(12), "van", "cabless", roadcars.AUTO_BAND, era=2055)),
+    # Future industries' wagons and trucks.
+    "lithium_hopper": (11, lambda m: cars.lithium_hopper(m, L(11))),
+    "battery_boxcar": (12, lambda m: cars.battery_boxcar(m, L(12))),
+    "hydrogen_tank_car": (12, lambda m: cars.hydrogen_tank_car(m, L(12))),
+    "lithium_dump": (8, lambda m: roadcars.truck(m, L(8), "dump", "long", 3, lifts=2, era=2025, paint_hex="#e6e8e4", tarp="#4f7f6c")),
+    "battery_hauler": (12, lambda m: roadcars.tractor(m, L(12), "reefer", "aero", "#34383c", era=2027, power="battery")),
+    "hydrogen_tube_trailer": (13, lambda m: roadcars.tractor(m, L(13), "tubes", "aero", "#1f4e8c", era=2030, power="hydrogen")),
 }
 SHIPS = ships.ship_builders()
 AIRCRAFT = aircraft.aircraft_builders()
@@ -183,7 +190,7 @@ ROAD = {"horse_omnibus", "stagecoach", "mail_coach", "freight_wagon", "red_river
         "step_van", "electric_van", "flatbed_truck", "tandem_dump", "quad_dump", "fuel_truck", "tandem_plow", "highway_tractor",
         "aero_tractor", "tanker_train", "grain_train", "cattle_liner", "logger", "sander_plow", "tandem_semi", "boom_truck", "tanker_long", "wing_sander",
         "battery_tractor", "hydrogen_tractor", "hydrogen_bus", "battery_coach",
-        "auto_tractor", "auto_dump", "auto_tanker", "convoy_tractor"}
+        "auto_tractor", "auto_dump", "auto_tanker", "convoy_tractor", "lithium_dump", "battery_hauler", "hydrogen_tube_trailer"}
 # How each kind is lowered, as (h, base): heights over base steps are scaled by h, wheels, horses and people keep
 # their size. Rail bodies come down onto their trucks' wheel tops, road ones onto their wheels; ships from the waterline,
 # helicopters and float planes from the ground. Fixed-wing aircraft are already in proportion.
