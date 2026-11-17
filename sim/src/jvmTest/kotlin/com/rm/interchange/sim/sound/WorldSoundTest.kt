@@ -1,7 +1,11 @@
 package com.rm.interchange.sim.sound
 
+import com.rm.interchange.sim.Calendar
+import com.rm.interchange.sim.Climate
+import com.rm.interchange.sim.FIRE_DAYS
 import com.rm.interchange.sim.Front
 import com.rm.interchange.sim.NewGame
+import com.rm.interchange.sim.Runways
 import com.rm.interchange.sim.News
 import com.rm.interchange.sim.Traction
 import com.rm.interchange.sim.Trees
@@ -12,8 +16,8 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 class WorldSoundTest {
-    private fun world(): World {
-        val w = World(NewGame(width = 64, height = 64, seed = 1, startYear = 1900))
+    private fun world(year: Int = 1900): World {
+        val w = World(NewGame(width = 64, height = 64, seed = 1, startYear = year))
         w.weather.fronts.clear()
         w.weather.anomaly = 0
         w.weather.wind = 0
@@ -50,7 +54,8 @@ class WorldSoundTest {
         inDepot: Boolean = false,
         wrecked: Boolean = false,
         waiting: Boolean = false,
-    ) = WorldSound.Mover(kind, id, x, y, speed, traction, jet, inDepot, wrecked, waiting)
+        sound: Int = 0,
+    ) = WorldSound.Mover(kind, id, x, y, speed, traction, jet, inDepot, wrecked, waiting, sound)
 
     private fun front(kind: Int, warmth: Int, strength: Int = 8000) = Front(
         kind, 32 * 256 + 128, 32 * 256 + 128, 256, 0, 40, strength, warmth, 4, false,
@@ -346,6 +351,163 @@ class WorldSoundTest {
         assertEquals(0f, waypoint.loudness(WorldSound.KEY_CROWD))
         val far = frame(sound, at(), stations = listOf(WorldSound.StationSpot(2f, 2f, false)))
         assertEquals(0f, far.loudness(WorldSound.KEY_CROWD))
+    }
+
+    @Test
+    fun newTractionsHaveTheirOwnTrainSound() {
+        val sound = WorldSound(world())
+        val key = WorldSound.voiceKey(WorldSound.TRAIN, 1)
+        for ((traction, kind) in listOf(Traction.BATTERY to 3f, Traction.HYDROGEN to 3f, Traction.MAGLEV to 4f, Traction.HYPERLOOP to 5f, Traction.DUAL to 1f)) {
+            val out = frame(sound, at(), movers = listOf(mover(WorldSound.TRAIN, 1, traction = traction)))
+            assertEquals(Recipes.TRAIN, out.recipeOf(key))
+            assertEquals(kind, out.param(key, 1), "traction $traction")
+        }
+    }
+
+    @Test
+    fun batteryHornsAndFloatingTrainsLeaveQuietly() {
+        val battery = leave(WorldSound.TRAIN, Traction.HYDROGEN)
+        assertEquals(Recipes.HORN, battery.recipe)
+        assertEquals(2f, battery.params[0])
+        for (traction in listOf(Traction.MAGLEV, Traction.HYPERLOOP)) {
+            val sound = WorldSound(world())
+            frame(sound, at(), movers = listOf(mover(WorldSound.TRAIN, 2, speed = 0f, traction = traction, waiting = true)))
+            assertEquals(0, frame(sound, at(), movers = listOf(mover(WorldSound.TRAIN, 2, speed = 0.4f, traction = traction))).shots.size)
+        }
+        val sound = WorldSound(world())
+        val sail = WorldSound.SHIP_SAIL
+        frame(sound, at(), movers = listOf(mover(WorldSound.SHIP, 2, speed = 0f, traction = Traction.STEAM, waiting = true, sound = sail)))
+        assertEquals(0, frame(sound, at(), movers = listOf(mover(WorldSound.SHIP, 2, speed = 0.4f, traction = Traction.STEAM, sound = sail))).shots.size)
+    }
+
+    @Test
+    fun stationChimesAsATrainLeavesFrom1950() {
+        val station = listOf(WorldSound.StationSpot(34.5f, 32.5f, false))
+        fun leaving(year: Int): List<WorldSound.Shot> {
+            val sound = WorldSound(world(year))
+            frame(sound, at(), movers = listOf(mover(WorldSound.TRAIN, 2, speed = 0f, traction = Traction.ELECTRIC, waiting = true)), stations = station)
+            return frame(sound, at(), movers = listOf(mover(WorldSound.TRAIN, 2, speed = 0.3f, traction = Traction.ELECTRIC)), stations = station).shots
+        }
+        val modern = leaving(1980)
+        val chime = modern.single { it.recipe == Recipes.CHIME }
+        assertEquals(4f, chime.params[0])
+        assertEquals(VoiceFlags.TOWN, chime.flags)
+        assertTrue(leaving(1920).none { it.recipe == Recipes.CHIME })
+    }
+
+    @Test
+    fun batteryAndHydrogenCarsCountAsElectric() {
+        val sound = WorldSound(world())
+        val cars = listOf(mover(WorldSound.ROAD, 1, traction = Traction.BATTERY), mover(WorldSound.ROAD, 2, traction = Traction.HYDROGEN))
+        val out = frame(sound, at(), movers = cars)
+        assertEquals(1f, out.param(WorldSound.KEY_TRAFFIC, 1))
+        assertEquals(1f, out.param(WorldSound.KEY_TRAFFIC, 2))
+    }
+
+    @Test
+    fun aHorseTramGoesWithTheHorses() {
+        val sound = WorldSound(world())
+        val out = frame(sound, at(), movers = listOf(mover(WorldSound.TRAM, 1, traction = Traction.HORSE)))
+        assertEquals(0f, out.loudness(WorldSound.KEY_TRAM))
+        assertTrue(out.loudness(WorldSound.KEY_TRAFFIC) > 0f)
+        assertEquals(0f, out.param(WorldSound.KEY_TRAFFIC, 1))
+    }
+
+    @Test
+    fun hornsInTrafficAndGongsOnTramsNowAndThen() {
+        val sound = WorldSound(world(1960))
+        val cars = (0 until 6).map { mover(WorldSound.ROAD, it, x = 33f + it) }
+        val trams = listOf(mover(WorldSound.TRAM, 9, traction = Traction.ELECTRIC))
+        var horns = 0
+        var gongs = 0
+        repeat(600) {
+            val out = frame(sound, at(), dt = 0.2f, movers = cars + trams)
+            horns += out.shots.count { it.recipe == Recipes.HORN }
+            gongs += out.shots.count { it.recipe == Recipes.BELL }
+        }
+        // Two minutes: a handful of each, nothing like a din.
+        assertTrue(horns in 2..20, "horns $horns")
+        assertTrue(gongs in 1..12, "gongs $gongs")
+    }
+
+    @Test
+    fun shipsAndAircraftByTheirSound() {
+        assertEquals(WorldSound.SHIP_SAIL, WorldSound.shipSound(Traction.STEAM, false, 50, 1836))
+        assertEquals(WorldSound.SHIP_STEAM, WorldSound.shipSound(Traction.STEAM, false, 200, 1836))
+        assertEquals(WorldSound.SHIP_MOTOR, WorldSound.shipSound(Traction.STEAM, false, 9000, 1959))
+        assertEquals(WorldSound.SHIP_ELECTRIC, WorldSound.shipSound(Traction.BATTERY, false, 4000, 2020))
+        assertEquals(WorldSound.SHIP_HOVER, WorldSound.shipSound(Traction.STEAM, true, 1000, 1968))
+        assertEquals(WorldSound.AIR_HELI, WorldSound.airSound(Runways.HELI))
+        assertEquals(WorldSound.AIR_DRONE, WorldSound.airSound(Runways.DRONE))
+        assertEquals(WorldSound.AIR_PLANE, WorldSound.airSound(Runways.CITY))
+        val sound = WorldSound(world())
+        val out = frame(sound, at(), movers = listOf(
+            mover(WorldSound.SHIP, 1, sound = WorldSound.SHIP_STEAM),
+            mover(WorldSound.AIRCRAFT, 2, sound = WorldSound.AIR_HELI),
+            mover(WorldSound.AIRCRAFT, 3, x = 31f, sound = WorldSound.AIR_DRONE),
+        ))
+        val ship = WorldSound.voiceKey(WorldSound.SHIP, 1)
+        assertEquals(Recipes.OUTBOARD, out.recipeOf(ship))
+        assertEquals(WorldSound.SHIP_STEAM.toFloat(), out.param(ship, 2))
+        assertEquals(Recipes.HELI, out.recipeOf(WorldSound.voiceKey(WorldSound.AIRCRAFT, 2)))
+        assertEquals(Recipes.DRONE, out.recipeOf(WorldSound.voiceKey(WorldSound.AIRCRAFT, 3)))
+    }
+
+    @Test
+    fun dronesNearbyDontCrowdOutAJet() {
+        val sound = WorldSound(world())
+        val drones = (0 until 3).map { mover(WorldSound.AIRCRAFT, it, x = 33f + it * 0.5f, sound = WorldSound.AIR_DRONE) }
+        val jet = mover(WorldSound.AIRCRAFT, 9, x = 37f, speed = 0.9f, jet = true)
+        val out = frame(sound, at(), movers = drones + jet)
+        assertEquals(Recipes.JET, out.recipeOf(WorldSound.voiceKey(WorldSound.AIRCRAFT, 9)))
+        assertEquals(2, out.voices(Recipes.DRONE))
+    }
+
+    @Test
+    fun townHumDarkensWithZoomAndFollowsTheEra() {
+        fun hum(year: Int, half: Float): Pair<Float, WorldSound.Frame> {
+            val w = world(year)
+            for (y in 28 until 38) for (x in 28 until 38) w.house[w.index(x, y)] = 1
+            val sound = WorldSound(w)
+            sound.survey()
+            val out = frame(sound, at(half = half))
+            return out.loudness(WorldSound.KEY_CITY) to out
+        }
+        val (near, closeUp) = hum(1960, 6f)
+        val (far, highUp) = hum(1960, 60f)
+        assertTrue(near > 0f && far > 0f, "near $near far $far")
+        assertEquals(0f, closeUp.param(WorldSound.KEY_CITY, 2))
+        assertEquals(1f, highUp.param(WorldSound.KEY_CITY, 2))
+        assertEquals(1f, closeUp.param(WorldSound.KEY_CITY, 1))
+        assertEquals(0f, hum(1900, 6f).second.param(WorldSound.KEY_CITY, 1))
+        assertEquals(0f, frame(WorldSound(world()).also { it.survey() }, at()).loudness(WorldSound.KEY_CITY))
+    }
+
+    @Test
+    fun industryAndFireAreHeard() {
+        val w = world(1960)
+        for (y in 32 until 35) for (x in 33 until 36) w.industryOf[w.index(x, y)] = 1
+        w.fire[w.index(30, 30)] = FIRE_DAYS.toByte()
+        val sound = WorldSound(w)
+        sound.survey()
+        val out = frame(sound, at())
+        assertTrue(out.loudness(WorldSound.KEY_INDUSTRY) > 0f, "industry ${out.loudness(WorldSound.KEY_INDUSTRY)}")
+        assertTrue(out.param(WorldSound.KEY_INDUSTRY, 1) in 0.7f..0.8f, "era ${out.param(WorldSound.KEY_INDUSTRY, 1)}")
+        assertTrue(out.loudness(WorldSound.KEY_FIRE) > 0f, "fire ${out.loudness(WorldSound.KEY_FIRE)}")
+    }
+
+    @Test
+    fun cricketsOnSummerNightsOnly() {
+        val w = world()
+        w.trees[w.index(34, 32)] = Trees.pack(Trees.SPRUCE, 2).toByte()
+        w.tick = Calendar.TICKS_PER_DAY * 200L
+        assertTrue(w.lookToday() == Climate.SUMMER || w.lookToday() == Climate.LATE_SUMMER, "look ${w.lookToday()}")
+        val sound = WorldSound(w)
+        sound.survey()
+        assertTrue(frame(sound, at(), hour = 23f).loudness(WorldSound.KEY_CRICKETS) > 0f)
+        assertEquals(0f, frame(sound, at(), hour = 12f).loudness(WorldSound.KEY_CRICKETS))
+        w.tick = Calendar.TICKS_PER_DAY * 20L
+        assertEquals(0f, frame(sound, at(), hour = 23f).loudness(WorldSound.KEY_CRICKETS))
     }
 
     private fun WorldSound.Frame.param(key: Int, p: Int): Float {

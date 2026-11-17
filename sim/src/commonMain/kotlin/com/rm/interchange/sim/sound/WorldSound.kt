@@ -4,9 +4,12 @@ import com.rm.interchange.sim.Calendar
 import com.rm.interchange.sim.Climate
 import com.rm.interchange.sim.Front
 import com.rm.interchange.sim.News
+import com.rm.interchange.sim.Runways
 import com.rm.interchange.sim.Traction
 import com.rm.interchange.sim.Trees
 import com.rm.interchange.sim.World
+import com.rm.interchange.sim.burning
+import com.rm.interchange.sim.industryAt
 import com.rm.interchange.sim.skyAt
 import kotlin.math.exp
 import kotlin.math.max
@@ -14,33 +17,45 @@ import kotlin.math.sqrt
 import kotlin.random.Random
 
 /**
- * The land's sound from where the map is looking. [survey] adds up the shore
- * and the trees by chunk, and [frame] turns what's near the view into the
- * synth's held sounds, panned across the screen, plus the odd clap of thunder.
- * Trains, traffic and the rest come in as plain positions on [frame]. A train
- * or a ship that sets off, and a train that reaches a crossing, get one whistle.
+ * The land's sound from where the map is looking. [survey] adds up the shore,
+ * the trees, the towns, the industries and any fires by chunk, and [frame] turns
+ * what's near the view into the synth's held sounds, panned across the screen,
+ * plus the odd clap of thunder, car horn and tram gong. Trains, traffic and the
+ * rest come in as plain positions on [frame]. A train or a ship that sets off,
+ * and a train that reaches a crossing, get one whistle, and a train leaving a
+ * station near the view gets the station's chime.
  */
 class WorldSound(private val world: World) {
     private val across = world.width / World.CHUNK
     private val down = world.height / World.CHUNK
     private val trees = Layer(across * down)
     private val shore = Layer(across * down)
+    private val town = Layer(across * down)
+    private val works = Layer(across * down)
+    private val fires = Layer(across * down)
     private val random = Random(world.settings.seed)
     /** Trains and ships that waited and have not set off, by [voiceKey]. */
     private val wasWaiting = HashSet<Int>()
     /** The flashing crossing a train was already on, by id, so it whistles once. */
     private val crossingTile = HashMap<Int, Int>()
 
-    /** Adds up the shore and the trees in each chunk. Every couple of seconds is plenty. */
+    /** Adds up the shore, trees, houses, working industry and fire in each chunk. Every couple of seconds is plenty. */
     fun survey() {
         trees.clear()
         shore.clear()
+        town.clear()
+        works.clear()
+        fires.clear()
         val w = world
         for (y in 0 until w.height) for (x in 0 until w.width) {
             val c = x / World.CHUNK + y / World.CHUNK * across
-            val n = Trees.count(w.trees[w.index(x, y)].toInt())
+            val i = w.index(x, y)
+            val n = Trees.count(w.trees[i].toInt())
             if (n > 0) trees.add(c, n.toFloat(), x + 0.5f, y + 0.5f)
             if (w.isWater(x, y) && besideLand(x, y)) shore.add(c, 1f, x + 0.5f, y + 0.5f)
+            if (w.house[i].toInt() != 0) town.add(c, 1f, x + 0.5f, y + 0.5f)
+            if (w.industryOf[i].toInt() != 0 && w.industryAt(i)?.closed != true) works.add(c, 1f, x + 0.5f, y + 0.5f)
+            if (w.burning(i)) fires.add(c, 1f, x + 0.5f, y + 0.5f)
         }
     }
 
@@ -64,7 +79,8 @@ class WorldSound(private val world: World) {
     /**
      * A vehicle the view can hear. [speed] is 0 standing and 1 at its top speed.
      * [jet] is an aircraft whose top speed is at least [JET_KMH].
-     * [waiting] is standing at a station or a dock.
+     * [waiting] is standing at a station or a dock. [sound] is a ship's or an
+     * aircraft's kind of sound, from [shipSound] or [airSound].
      */
     class Mover(
         val kind: Int,
@@ -77,6 +93,7 @@ class WorldSound(private val world: World) {
         val inDepot: Boolean = false,
         val wrecked: Boolean = false,
         val waiting: Boolean = false,
+        val sound: Int = 0,
     )
 
     /** A station's middle. A [waypoint] has no crowd. */
@@ -179,9 +196,10 @@ class WorldSound(private val world: World) {
         val x = at.x.toInt().coerceIn(0, world.width - 1)
         val y = at.y.toInt().coerceIn(0, world.height - 1)
         val h = (world.heightAt(x, y) + world.heightAt(x + 1, y) + world.heightAt(x + 1, y + 1) + world.heightAt(x, y + 1)) / 4
+        val year = Calendar.year(world.startYear, world.day)
         val sky = skyAt(
             world.settings.region,
-            Calendar.year(world.startYear, world.day),
+            year,
             Calendar.dayOfYear(world.startYear, world.day),
             world.weather.anomaly,
             world.weather.fronts,
@@ -213,9 +231,27 @@ class WorldSound(private val world: World) {
             val loud = level(birdsHeard, TREES_REF) * BIRDS_LEVEL * day * birdsSeason() * muffle
             out.add(KEY_BIRDS, Recipes.BIRDS, loud, pan[0], lowpass, 1f, chorus(hour))
         }
+        if (night(hour) && cricketSeason() && sky.precipitation == 0 && birdsHeard > 0f) {
+            out.add(KEY_CRICKETS, Recipes.CRICKETS, level(birdsHeard, TREES_REF) * CRICKETS_LEVEL, pan[0], lowpass, 1f)
+        }
 
-        near(at, lowpass, muffle, movers, crossings, stations, out)
-        whistles(at, lowpass, muffle, movers, crossings, out)
+        // Towns and works as one hum each, darker the higher the view.
+        val far = ((reach(at) - NEAR_REACH) / (FAR_REACH - NEAR_REACH)).coerceIn(0f, 1f)
+        val townHeard = heard(town, at, pan)
+        if (townHeard > 0f) {
+            val motors = ((year - MOTORS_FROM) / MOTORS_YEARS.toFloat()).coerceIn(0f, 1f)
+            out.add(KEY_CITY, Recipes.CITY, level(townHeard, TOWN_REF) * CITY_LEVEL * muffle, pan[0], lowpass, 1f, motors, far)
+        }
+        val worksHeard = heard(works, at, pan)
+        if (worksHeard > 0f) {
+            val era = ((year - MODERN_WORKS_FROM) / MODERN_WORKS_YEARS.toFloat()).coerceIn(0f, 1f)
+            out.add(KEY_INDUSTRY, Recipes.INDUSTRY, level(worksHeard, WORKS_REF) * INDUSTRY_LEVEL * muffle, pan[0], lowpass, 1f, era, far)
+        }
+        val fireHeard = heard(fires, at, pan)
+        if (fireHeard > 0f) out.add(KEY_FIRE, Recipes.FIRE, level(fireHeard, FIRE_REF) * FIRE_LEVEL, pan[0], lowpass, 1f)
+
+        near(at, dt, year, lowpass, muffle, movers, crossings, stations, out)
+        whistles(at, year, lowpass, muffle, movers, crossings, stations, out)
         thunder(x, y, dt, lowpass, out)
     }
 
@@ -225,11 +261,23 @@ class WorldSound(private val world: World) {
     /**
      * One whistle when a train or a ship that was waiting starts moving, and when a
      * train reaches a flashing crossing. Standing after the wait keeps it in memory.
+     * A train leaving a station near the view also gets one chime from the station,
+     * from [STATION_CHIMES_FROM].
      */
-    private fun whistles(at: Listener, lowpass: Float, muffle: Float, movers: List<Mover>, crossings: IntArray, out: Frame) {
+    private fun whistles(
+        at: Listener,
+        year: Int,
+        lowpass: Float,
+        muffle: Float,
+        movers: List<Mover>,
+        crossings: IntArray,
+        stations: List<StationSpot>,
+        out: Frame,
+    ) {
         val stillWaiting = HashSet<Int>()
         val stillCrossing = HashMap<Int, Int>()
         val seen = HashSet<Int>()
+        var chimed = false
         for (m in movers) {
             if ((m.kind != TRAIN && m.kind != SHIP) || m.inDepot || m.wrecked) continue
             val key = voiceKey(m.kind, m.id)
@@ -237,7 +285,10 @@ class WorldSound(private val world: World) {
             val here = place(m.x, m.y, at)
             // Waiting records it. Standing at speed 0 keeps that record until it rolls.
             if (m.waiting || (m.speed <= 0f && key in wasWaiting)) stillWaiting.add(key)
-            else if (m.speed > 0f && key in wasWaiting && here != null) horn(m, here, lowpass, muffle, out)
+            else if (m.speed > 0f && key in wasWaiting && here != null) {
+                horn(m, here, lowpass, muffle, out)
+                if (m.kind == TRAIN && !chimed && year >= STATION_CHIMES_FROM) chimed = chime(at, m, lowpass, muffle, stations, out)
+            }
             if (m.kind != TRAIN) continue
             val tile = tileOf(m.x, m.y)
             if (tile < 0 || !crossings.contains(tile)) continue
@@ -258,10 +309,31 @@ class WorldSound(private val world: World) {
         return world.index(tx, ty)
     }
 
-    /** A whistle or a horn at [here], panned with the vehicle. */
+    /** The station's chime if [m] is leaving one in earshot of the view, at the station. True if it chimed. */
+    private fun chime(at: Listener, m: Mover, lowpass: Float, muffle: Float, stations: List<StationSpot>, out: Frame): Boolean {
+        val s = stations.firstOrNull { s ->
+            !s.waypoint && sq(s.x - m.x) + sq(s.y - m.y) <= sq(STATION_REACH) && sq(s.x - at.x) + sq(s.y - at.y) <= sq(STATION_NEAR)
+        } ?: return false
+        val p = place(s.x, s.y, at) ?: return false
+        val params = FloatArray(SharedParams.COUNT)
+        params[0] = 4f
+        params[SharedParams.GAIN] = (0.2f + 0.3f * p.weight) * muffle
+        params[SharedParams.PAN] = p.pan
+        params[SharedParams.LOWPASS] = lowpass
+        // A little after the train starts, as the doors close and it pulls out.
+        out.shots += Shot(Recipes.CHIME, params, delay = 0.4f, flags = VoiceFlags.TOWN)
+        return true
+    }
+
+    /**
+     * A whistle or a horn at [here], panned with the vehicle. A maglev, a pod and a ship
+     * under sail have none.
+     */
     private fun horn(m: Mover, here: Placed, lowpass: Float, muffle: Float, out: Frame) {
         val ship = m.kind == SHIP
-        val electric = m.traction == Traction.ELECTRIC
+        if (!ship && (m.traction == Traction.MAGLEV || m.traction == Traction.HYPERLOOP)) return
+        if (ship && m.sound == SHIP_SAIL) return
+        val electric = m.traction == Traction.ELECTRIC || m.traction == Traction.BATTERY || m.traction == Traction.HYDROGEN
         val recipe = if (!ship && electric) Recipes.HORN else Recipes.WHISTLE
         val kind = when {
             ship || electric -> 2f
@@ -277,9 +349,14 @@ class WorldSound(private val world: World) {
         out.shots += Shot(recipe, params)
     }
 
-    /** Trains, road traffic, ships, aircraft, a crossing bell and a station crowd. */
+    /**
+     * Trains, road traffic with the odd horn, trams with the odd gong, ships, aircraft,
+     * a crossing bell and a station crowd. A horse-drawn tram goes with the horses.
+     */
     private fun near(
         at: Listener,
+        dt: Float,
+        year: Int,
         lowpass: Float,
         muffle: Float,
         movers: List<Mover>,
@@ -288,6 +365,9 @@ class WorldSound(private val world: World) {
         out: Frame,
     ) {
         val roads = hear(ROAD, movers, at)
+        val trams = hear(TRAM, movers, at)
+        for (c in trams) if (c.mover.traction == Traction.HORSE) roads += c
+        trams.removeAll { it.mover.traction == Traction.HORSE }
         if (roads.isNotEmpty()) {
             var horses = 0
             var engines = 0
@@ -298,7 +378,7 @@ class WorldSound(private val world: World) {
             for (c in roads) {
                 when (c.mover.traction) {
                     Traction.HORSE -> horses++
-                    Traction.ELECTRIC -> {
+                    Traction.ELECTRIC, Traction.BATTERY, Traction.HYDROGEN -> {
                         engines++
                         electric++
                     }
@@ -312,9 +392,17 @@ class WorldSound(private val world: World) {
             val motors = engines.toFloat() / (horses + engines)
             val electricMix = if (engines == 0) 0f else electric.toFloat() / engines
             out.add(KEY_TRAFFIC, Recipes.TRAFFIC, pointGain(weight, TRAFFIC_LEVEL) * muffle, pan / weight, lowpass, 1f, motors, electricMix, speed / weight)
+            // Now and then a horn, more often the more cars there are: a bulb horn early on, then a car's or a truck's.
+            if (engines > 0 && random.nextFloat() < HORNS_A_SECOND * dt * engines.coerceAtMost(HORN_CROWD)) {
+                val kind = when {
+                    year < BULB_HORNS_UNTIL -> 0f
+                    random.nextFloat() < TRUCK_HORNS -> 2f
+                    else -> 1f
+                }
+                out.shots += placedShot(Recipes.HORN, pointGain(weight, HORN_LEVEL) * muffle, pan / weight, lowpass, kind, 0.2f + 0.4f * random.nextFloat())
+            }
         }
 
-        val trams = hear(TRAM, movers, at)
         if (trams.isNotEmpty()) {
             var weight = 0f
             var pan = 0f
@@ -323,6 +411,9 @@ class WorldSound(private val world: World) {
                 pan += c.weight * c.pan
             }
             out.add(KEY_TRAM, Recipes.TRAM, pointGain(weight, TRAM_LEVEL) * muffle, pan / weight, lowpass, 1f)
+            if (random.nextFloat() < GONGS_A_SECOND * dt * trams.size.coerceAtMost(HORN_CROWD)) {
+                out.shots += placedShot(Recipes.BELL, pointGain(weight, GONG_LEVEL) * muffle, pan / weight, lowpass, 0.5f + 0.5f * random.nextFloat())
+            }
         }
 
         voices(hear(TRAIN, movers, at), TRAIN_VOICES, lowpass, muffle, out)
@@ -332,10 +423,10 @@ class WorldSound(private val world: World) {
         crowd(at, lowpass, muffle, stations, out)
     }
 
-    /** The nearest [cap] of [found], each its own voice. */
+    /** The loudest [cap] of [found], each its own voice, so a drone nearby doesn't crowd out a jet. */
     private fun voices(found: MutableList<Candidate>, cap: Int, lowpass: Float, muffle: Float, out: Frame) {
         if (found.isEmpty()) return
-        found.sortBy { it.dist2 }
+        found.sortWith(compareByDescending<Candidate> { it.weight * fullLevel(it.mover) }.thenBy { it.dist2 })
         val n = found.size.coerceAtMost(cap)
         for (i in 0 until n) {
             val c = found[i]
@@ -347,15 +438,31 @@ class WorldSound(private val world: World) {
                     out.add(voiceKey(TRAIN, m.id), Recipes.TRAIN, gain, c.pan, lowpass, 1f, trainKind(m.traction), speed, pitch = trainPitch(speed))
                 }
                 SHIP -> {
-                    val gain = pointGain(c.weight, SHIP_LEVEL * (0.3f + 0.7f * speed)) * muffle
-                    out.add(voiceKey(SHIP, m.id), Recipes.OUTBOARD, gain, c.pan, lowpass, 1f, 0.15f + 0.85f * speed)
+                    val gain = pointGain(c.weight, fullLevel(m)) * muffle
+                    out.add(voiceKey(SHIP, m.id), Recipes.OUTBOARD, gain, c.pan, lowpass, 1f, 0.15f + 0.85f * speed, m.sound.toFloat())
                 }
                 AIRCRAFT -> {
-                    val gain = pointGain(c.weight, AIR_LEVEL * (0.35f + 0.65f * speed)) * muffle
-                    if (m.jet) out.add(voiceKey(AIRCRAFT, m.id), Recipes.JET, gain, c.pan, lowpass, 1f, 0.25f + 0.75f * speed, speed)
-                    else out.add(voiceKey(AIRCRAFT, m.id), Recipes.PROP, gain, c.pan, lowpass, 1f, 40f + 90f * speed, 0.25f + 0.75f * speed)
+                    val gain = pointGain(c.weight, fullLevel(m)) * muffle
+                    val key = voiceKey(AIRCRAFT, m.id)
+                    val load = 0.25f + 0.75f * speed
+                    when {
+                        m.sound == AIR_HELI -> out.add(key, Recipes.HELI, gain, c.pan, lowpass, 1f, load)
+                        m.sound == AIR_DRONE -> out.add(key, Recipes.DRONE, gain, c.pan, lowpass, 1f, load)
+                        m.jet -> out.add(key, Recipes.JET, gain, c.pan, lowpass, 1f, load, speed)
+                        else -> out.add(key, Recipes.PROP, gain, c.pan, lowpass, 1f, 40f + 90f * speed, load)
+                    }
                 }
             }
+        }
+    }
+
+    /** How loud [m] is right beside it. */
+    private fun fullLevel(m: Mover): Float {
+        val speed = m.speed.coerceIn(0f, 1f)
+        return when (m.kind) {
+            SHIP -> SHIP_LEVEL * (0.3f + 0.7f * speed)
+            AIRCRAFT -> (if (m.sound == AIR_DRONE) DRONE_LEVEL else AIR_LEVEL) * (0.35f + 0.65f * speed)
+            else -> TRAIN_LEVEL
         }
     }
 
@@ -442,11 +549,24 @@ class WorldSound(private val world: World) {
     /** One sound's loudness, from how close it is, so a vehicle under the camera stays audible at any zoom. */
     private fun pointGain(weight: Float, full: Float) = level(weight, POINT_REF) * full
 
-    /** 0 steam, 1 diesel, 2 electric; a dual-mode engine sounds like a diesel. */
+    /** 0 steam, 1 diesel, 2 electric, 3 battery or hydrogen, 4 maglev, 5 hyperloop pod; a dual-mode engine sounds like a diesel. */
     private fun trainKind(traction: Int) = when (traction) {
         Traction.DIESEL, Traction.DUAL -> 1f
         Traction.ELECTRIC -> 2f
+        Traction.BATTERY, Traction.HYDROGEN -> 3f
+        Traction.MAGLEV -> 4f
+        Traction.HYPERLOOP -> 5f
         else -> 0f
+    }
+
+    /** A one-shot at [pan] with [p] as its first parameters. */
+    private fun placedShot(recipe: Int, gain: Float, pan: Float, lowpass: Float, vararg p: Float): Shot {
+        val params = FloatArray(SharedParams.COUNT)
+        for ((j, v) in p.withIndex()) params[j] = v
+        params[SharedParams.GAIN] = gain
+        params[SharedParams.PAN] = pan.coerceIn(-1f, 1f)
+        params[SharedParams.LOWPASS] = lowpass
+        return Shot(recipe, params)
     }
 
     /** A frequency factor. 0 is no shift, so anything moving passes a factor above 0, and a fast one is higher. */
@@ -486,6 +606,12 @@ class WorldSound(private val world: World) {
         else -> world.width - x
     }
 
+    /** Crickets sing on warm nights, high summer into early autumn. */
+    private fun cricketSeason(): Boolean = when (world.lookToday()) {
+        Climate.SUMMER, Climate.LATE_SUMMER, Climate.AUTUMN -> true
+        else -> false
+    }
+
     /** Quieter in winter. */
     private fun birdsSeason(): Float = when (world.lookToday()) {
         Climate.WINTER -> 0.4f
@@ -512,7 +638,10 @@ class WorldSound(private val world: World) {
     }
 
     companion object {
-        /** Weather, the road, a tram, the nearest trains, ships and aircraft, a crossing and a station. */
+        /**
+         * Weather, birds or crickets, the town, works, a fire, the road, a tram, the
+         * loudest trains, ships and aircraft, a crossing and a station: 21 at most.
+         */
         const val MAX_HELD = 24
         private const val QUIET = 0.02f
         private const val PAN_WIDTH = 0.8f
@@ -527,16 +656,64 @@ class WorldSound(private val world: World) {
         /** Top speed in km/h from which an aircraft is a jet. */
         const val JET_KMH = 600
 
+        /** A ship's sound, [Mover.sound]: the synth's kinds for it. */
+        const val SHIP_MOTOR = 0
+        const val SHIP_STEAM = 1
+        const val SHIP_SAIL = 2
+        const val SHIP_ELECTRIC = 3
+        const val SHIP_HOVER = 4
+
+        /** An aircraft's sound, [Mover.sound]. */
+        const val AIR_PLANE = 0
+        const val AIR_HELI = 1
+        const val AIR_DRONE = 2
+
+        /** Under this much power, in hp, a ship sails. */
+        private const val SAIL_POWER = 100
+        /** Ships brought in before this year run on steam. */
+        private const val MOTOR_SHIPS_FROM = 1920
+
+        /** How a ship of this [traction], [power] and first year [from] sounds, one of the SHIP_ kinds. */
+        fun shipSound(traction: Int, hovercraft: Boolean, power: Int, from: Int): Int = when {
+            hovercraft -> SHIP_HOVER
+            traction == Traction.BATTERY || traction == Traction.HYDROGEN -> SHIP_ELECTRIC
+            power < SAIL_POWER -> SHIP_SAIL
+            from < MOTOR_SHIPS_FROM -> SHIP_STEAM
+            else -> SHIP_MOTOR
+        }
+
+        /** How an aircraft for this [runway], a [Runways] kind, sounds. */
+        fun airSound(runway: Int): Int = when (runway) {
+            Runways.HELI -> AIR_HELI
+            Runways.DRONE -> AIR_DRONE
+            else -> AIR_PLANE
+        }
+
         private const val TRAIN_VOICES = 4
         private const val SHIP_VOICES = 2
-        private const val AIR_VOICES = 2
+        private const val AIR_VOICES = 3
         private const val POINT_REF = 4f
         private const val TRAIN_LEVEL = 0.75f
         private const val TRAFFIC_LEVEL = 0.55f
         private const val TRAM_LEVEL = 0.6f
         private const val SHIP_LEVEL = 0.6f
         private const val AIR_LEVEL = 0.7f
+        private const val DRONE_LEVEL = 0.4f
         private const val BELL_LEVEL = 0.5f
+        private const val HORN_LEVEL = 0.4f
+        private const val GONG_LEVEL = 0.45f
+        /** Horns a second for each car heard, up to [HORN_CROWD] cars, and the share from trucks. */
+        private const val HORNS_A_SECOND = 0.006f
+        private const val HORN_CROWD = 6
+        private const val TRUCK_HORNS = 0.25f
+        /** Gongs a second for each tram heard. */
+        private const val GONGS_A_SECOND = 0.03f
+        /** Cars had bulb horns until about this year, then electric ones. */
+        private const val BULB_HORNS_UNTIL = 1925
+        /** The year from which a station chimes as a train leaves. */
+        const val STATION_CHIMES_FROM = 1950
+        /** Tiles from a station inside which a train leaving counts as leaving it. */
+        private const val STATION_REACH = 4f
         /** Tiles from the listener inside which a station's crowd is heard. */
         private const val STATION_NEAR = 8f
 
@@ -547,6 +724,22 @@ class WorldSound(private val world: World) {
         private const val SHORE_REF = 5f
         private const val TREES_REF = 8f
         private const val BIRDS_LEVEL = 0.3f
+        private const val CRICKETS_LEVEL = 0.3f
+        private const val TOWN_REF = 40f
+        private const val CITY_LEVEL = 0.55f
+        private const val WORKS_REF = 12f
+        private const val INDUSTRY_LEVEL = 0.5f
+        private const val FIRE_REF = 3f
+        private const val FIRE_LEVEL = 0.6f
+        /** Tiles from the middle of the view to its edge, close up and from high above, for how dark the hums are. */
+        private const val NEAR_REACH = 8f
+        private const val FAR_REACH = 56f
+        /** The town hum goes from horses to engines over these years. */
+        private const val MOTORS_FROM = 1905
+        private const val MOTORS_YEARS = 30
+        /** Works go from steam to modern plant over these years. */
+        private const val MODERN_WORKS_FROM = 1925
+        private const val MODERN_WORKS_YEARS = 45
         private const val SNOW_MUFFLE = 0.6f
         private const val SNOW_LOWPASS = 3200f
         /** Claps a second under the middle of a storm. */
@@ -558,6 +751,10 @@ class WorldSound(private val world: World) {
         const val KEY_RAIN = 2
         const val KEY_SHORE = 3
         const val KEY_BIRDS = 4
+        const val KEY_CRICKETS = 5
+        const val KEY_CITY = 6
+        const val KEY_INDUSTRY = 7
+        const val KEY_FIRE = 8
         const val KEY_TRAFFIC = 10
         const val KEY_TRAM = 11
         const val KEY_SIREN = 12
@@ -573,6 +770,11 @@ class WorldSound(private val world: World) {
             hour < 17f -> 1f
             else -> (18.5f - hour) / 1.5f
         }
+
+        /** Dark enough for crickets. */
+        private fun night(hour: Float) = hour >= 21f || hour < 4f
+
+        private fun sq(v: Float) = v * v
 
         /** Fuller around dawn, thinner later in the day. */
         private fun chorus(hour: Float): Float = when {

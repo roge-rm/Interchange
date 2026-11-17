@@ -23,6 +23,10 @@ object Recipes {
     const val CRICKETS = 24
     const val CROWD = 25
     const val SIREN = 26
+    const val HELI = 27
+    const val DRONE = 28
+    const val CITY = 29
+    const val INDUSTRY = 30
 
     // One-shots.
     const val IMPACT = 50

@@ -2050,7 +2050,8 @@ private fun heardMovers(world: World, snap: WorldView, camX: Float, camY: Float,
             val v = ships[ship] ?: continue
             if (v.inDepot) continue
             val model = roster.getOrNull(v.model) ?: continue
-            out.add(WorldSound.Mover(WorldSound.SHIP, v.id, x, y, speedFraction(v.kmh, model.speed), model.traction, waiting = v.waiting))
+            val sound = WorldSound.shipSound(model.traction, model.hovercraft, model.power, model.from)
+            out.add(WorldSound.Mover(WorldSound.SHIP, v.id, x, y, speedFraction(v.kmh, model.speed), model.traction, waiting = v.waiting, sound = sound))
             continue
         }
         val air = cars.aircraft(i)
@@ -2059,7 +2060,7 @@ private fun heardMovers(world: World, snap: WorldView, camX: Float, camY: Float,
             if (v.inDepot || v.wrecked) continue
             val model = roster.getOrNull(v.model) ?: continue
             val jet = model.speed >= WorldSound.JET_KMH
-            out.add(WorldSound.Mover(WorldSound.AIRCRAFT, v.id, x, y, speedFraction(v.kmh, model.speed), model.traction, jet))
+            out.add(WorldSound.Mover(WorldSound.AIRCRAFT, v.id, x, y, speedFraction(v.kmh, model.speed), model.traction, jet, sound = WorldSound.airSound(model.runway)))
         }
     }
 }

@@ -10,7 +10,7 @@ constexpr int PROP = 3;        // p0 output, p1 blade rate Hz, p2 load
 constexpr int WIND = 6;        // p0 loudness, p1 gustiness, p2 brightness
 constexpr int RAIN = 7;        // p0 loudness, p1 patter on the hull
 constexpr int FIRE = 10;       // p0 loudness
-constexpr int OUTBOARD = 12;   // p0 output, p1 revs
+constexpr int OUTBOARD = 12;   // p0 output, p1 revs, p2 kind (0 motor, 1 steam, 2 sail, 3 electric, 4 hovercraft)
 constexpr int SURF = 13;       // p0 loudness
 constexpr int SEA = 15;        // p0 loudness, p1 roughness, p2 storm
 constexpr int COMPLEX = 16;    // p0 loudness, p1 lamps lit (0..1)
@@ -18,11 +18,15 @@ constexpr int PORT = 17;       // p0 loudness
 // The town's own.
 constexpr int TRAFFIC = 20;    // p0 loudness, p1 motors (0 horses and carts .. 1 engines), p2 electric, p3 speed (0 street .. 1 highway)
 constexpr int TRAM = 21;       // p0 loudness
-constexpr int TRAIN = 22;      // p0 loudness, p1 kind (0 steam, 1 diesel, 2 electric), p2 speed (0..1)
+constexpr int TRAIN = 22;      // p0 loudness, p1 kind (0 steam, 1 diesel, 2 electric, 3 battery or hydrogen, 4 maglev, 5 hyperloop pod), p2 speed (0..1)
 constexpr int BIRDS = 23;      // p0 loudness, p1 chorus (0 a few .. 1 the dawn chorus)
 constexpr int CRICKETS = 24;   // p0 loudness
 constexpr int CROWD = 25;      // p0 loudness
 constexpr int SIREN = 26;      // p0 loudness, p1 kind (0 bell, 1 wailing, 2 electronic)
+constexpr int HELI = 27;       // p0 output, p1 load
+constexpr int DRONE = 28;      // p0 output, p1 load
+constexpr int CITY = 29;       // p0 loudness, p1 motors (0 horses and carts .. 1 engines), p2 far (0 street .. 1 high above)
+constexpr int INDUSTRY = 30;   // p0 loudness, p1 era (0 steam works .. 1 modern plant), p2 far
 constexpr int LAST_CONTINUOUS = 49;
 
 // One-shots: fired once, then they ring out.
@@ -38,7 +42,7 @@ constexpr int SLAP = 62;       // p0 energy
 constexpr int HORN = 63;       // p0 kind (0 bulb, 1 car, 2 truck), p1 length (0..1)
 constexpr int BELL = 64;       // p0 how hard
 constexpr int WHISTLE = 65;    // p0 kind (0 steam whistle, 1 diesel horn, 2 ship's horn), p1 length (0..1)
-constexpr int CHIME = 66;      // p0 kind (0 a tick, 1 good news, 2 bad news, 3 a new era)
+constexpr int CHIME = 66;      // p0 kind (0 a tick, 1 good news, 2 bad news, 3 a new era, 4 a station's chime)
 }  // namespace recipe
 
 /** Surfaces an impact can be on, for its character. */

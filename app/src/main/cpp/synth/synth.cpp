@@ -28,7 +28,7 @@ float lifetime(int r, const float* p) {
         case recipe::HORN: return 0.35f + 0.9f * p[1];
         case recipe::BELL: return 1.6f;
         case recipe::WHISTLE: return (p[0] > 1.5f ? 2.6f : 1.4f) + 1.5f * p[1];
-        case recipe::CHIME: return p[0] < 0.5f ? 0.25f : p[0] > 2.5f ? 2.0f : 1.0f;
+        case recipe::CHIME: return p[0] < 0.5f ? 0.25f : p[0] > 3.5f ? 2.6f : p[0] > 2.5f ? 2.0f : 1.0f;
         default: return 1.0f;
     }
 }
@@ -115,6 +115,10 @@ float trim(int r) {
         case recipe::CRICKETS: return 0.15f;
         case recipe::CROWD: return 0.12f;
         case recipe::SIREN: return 0.12f;
+        case recipe::HELI: return 0.2f;
+        case recipe::DRONE: return 0.2f;
+        case recipe::CITY: return 0.14f;  // ambient, so under the vehicles in it
+        case recipe::INDUSTRY: return 0.18f;
         case recipe::HORN: return 0.12f;
         case recipe::BELL: return 0.15f;
         case recipe::WHISTLE: return 0.12f;
@@ -425,6 +429,61 @@ void Synth::renderVoice(Voice& v, float& left, float& right) {
             // A low, uneven burble, never a buzz, with the propeller churning the water under it.
             // All kept well down and low pitched.
             float out = clampf(p[0], 0, 1), rev = clampf(p[1], 0, 1);
+            int kind = static_cast<int>(p[2] + 0.5f);
+            if (kind == 1) {
+                // A steamer: the slow beat of its engine and the churn of a paddle wheel or a screw.
+                v.state[2] -= dt;
+                if (v.state[2] <= 0) {
+                    v.state[2] = vary(rng, 0.08f) / (0.8f + 1.6f * rev);
+                    v.env[1].trigger(0.02f, 0.18f, sr, 0.6f + 0.4f * rng.uniform());
+                }
+                if (control) { v.f[0].set(260.0f * pf, 0.8f, sr); v.f[1].set(110.0f, 0.7f, sr); v.f[2].set((300.0f + 200.0f * rev) * pf, 0.6f, sr); }
+                v.f[0].process(v.pink.next(rng.white()));
+                v.f[2].process(v.brown.next(rng.white()));
+                float beat = v.f[0].band * 2.0f * v.env[1].next();
+                float churn = v.f[2].low * (0.3f + 0.5f * rev) * (0.7f + 0.3f * v.env[1].value);
+                v.f[1].process(beat + churn);
+                s = v.f[1].high * out;
+                break;
+            }
+            if (kind == 2) {
+                // Under sail: water along the hull with the swell, and now and then the timbers creak.
+                v.state[3] += dt / 5.5f;
+                v.state[3] -= std::floor(v.state[3]);
+                float swell = 0.6f + 0.4f * std::sin(kTwoPi * v.state[3]);
+                v.state[2] -= dt;
+                if (v.state[2] <= 0) {
+                    v.state[2] = 2.5f + 5.0f * rng.uniform();
+                    float f0 = 260.0f * vary(rng, 0.2f);
+                    const float F[] = {f0, f0 * 1.7f, f0 * 2.9f}, Q[] = {14, 10, 8}, G[] = {1, .5f, .25f};
+                    v.res.set(3, F, Q, G, sr);
+                    v.env[1].trigger(0.08f, 0.25f, sr, 0.3f + 0.5f * rng.uniform());
+                }
+                if (control) { v.f[0].set(500.0f + 300.0f * rev, 0.6f, sr); v.f[3].set(1400.0f, 0.6f, sr); }
+                v.f[0].process(v.pink.next(rng.white()));
+                float wash = v.f[0].low * (0.3f + 0.6f * rev) * swell;
+                v.f[3].process(v.res.process(v.crackle.next(rng, 400.0f, sr) * v.env[1].next()));
+                s = (wash * 1.2f + v.f[3].low * 0.6f) * out;
+                break;
+            }
+            if (kind == 3) {
+                // Battery or hydrogen: the motors' hum and the wash at the bow, little else.
+                if (control) v.f[0].set(600.0f + 300.0f * rev, 0.6f, sr);
+                v.f[0].process(v.pink.next(rng.white()));
+                float wash = v.f[0].low * (0.2f + 0.6f * rev);
+                float hum = v.osc[0].sine(120.0f * pf, sr) * 0.04f + v.osc[1].sine((300.0f + 250.0f * rev) * pf, sr) * 0.012f;
+                s = (wash + hum) * out;
+                break;
+            }
+            if (kind == 4) {
+                // A hovercraft: big propellers' roar, the skirt's rumble and spray.
+                if (control) { v.f[0].set(700.0f * pf, 0.8f, sr); v.f[1].set(250.0f, 0.7f, sr); v.f[2].set(1600.0f, 0.8f, sr); }
+                v.f[0].process(v.osc[0].pulse((28.0f + 30.0f * rev) * pf, 0.2f, sr));
+                v.f[1].process(v.brown.next(rng.white()));
+                v.f[2].process(v.pink2.next(rng.white()));
+                s = (v.f[0].low * 0.38f + v.f[1].low * 0.38f + v.f[2].band * 0.2f * rev) * out;
+                break;
+            }
             float f = (16.0f + 38.0f * rev) * pf;
             if (control) {
                 float corner = (320.0f + 220.0f * rev) * pf;
@@ -558,8 +617,8 @@ void Synth::renderVoice(Voice& v, float& left, float& right) {
         }
         case recipe::TRAFFIC: {
             // Horses' hooves and cart wheels in the early years, then engines: cars swelling as
-            // they pass, a low hum under them and the hiss of tyres, steadier and faster on a
-            // highway. Electric cars keep the tyres and lose the engine.
+            // they pass, a low hum under them and the roar of tires, steadier and faster on a
+            // highway. Electric cars keep the tires and lose the engine.
             float loud = clampf(p[0], 0, 1.5f), motors = clampf(p[1], 0, 1), electric = clampf(p[2], 0, 1), speed = clampf(p[3], 0, 1);
             // Hooves: a clip and a clop, then the next horse, more of them in busier traffic.
             v.state[0] -= dt;
@@ -586,11 +645,11 @@ void Synth::renderVoice(Voice& v, float& left, float& right) {
                 v.f[0].set(160.0f, 0.7f, sr);
                 v.f[1].set(380.0f * v.state[2] * (1.0f + 0.4f * speed), 0.8f, sr);
                 v.f[2].set(260.0f, 0.7f, sr);
-                v.f[3].set(1800.0f + 1500.0f * speed, 0.7f, sr);
+                v.f[3].set(900.0f + 900.0f * speed, 0.7f, sr);
                 v.f[4].set(2600.0f, 0.7f, sr);
             }
             float swell = std::min(1.2f, v.env[1].next() + v.env[2].next() + 0.5f * speed);
-            // Iron tyres on cobbles under the hooves.
+            // Iron tires on cobbles under the hooves.
             v.f[0].process(v.brown.next(rng.white()));
             float hoof = v.res.process(rng.white() * v.env[0].next());
             v.f[4].process(hoof);
@@ -600,7 +659,8 @@ void Synth::renderVoice(Voice& v, float& left, float& right) {
             v.f[2].process(v.osc[0].saw(48.0f * v.state[2] * pf, sr) * (0.6f + 0.4f * (1.0f - motors)));
             float engine = (v.f[1].band * 0.8f + v.f[2].low * 0.35f) * (1.0f - electric);
             v.f[3].process(v.pink2.next(rng.white()));
-            float tyres = v.f[3].high * (0.12f + 0.3f * speed);
+            // Tire roar, kept under 2 kHz or so since it can last.
+            float tyres = v.f[3].low * (0.08f + 0.2f * speed);
             float whine = v.osc[1].sine(700.0f * v.state[2] * pf, sr) * 0.02f * electric;
             float cars = (engine + tyres + whine) * swell;
             s = (carts * (1.0f - motors) + cars * motors) * loud;
@@ -637,12 +697,15 @@ void Synth::renderVoice(Voice& v, float& left, float& right) {
             break;
         }
         case recipe::TRAIN: {
-            // The rumble and the clack of the joints under every kind, and over it a steam
-            // engine's chuffs, a diesel's drone or an electric's whine, quicker as it speeds up.
+            // The rumble and the clack of the joints under every kind on rails, and over it a steam
+            // engine's chuffs, a diesel's drone, an electric's whine or a battery or hydrogen
+            // engine's quieter hum, quicker as it speeds up. A maglev and a pod float, so no wheels:
+            // a whoosh that rises with speed, a pod's dulled by its tube.
             float loud = clampf(p[0], 0, 1.5f), speed = clampf(p[2], 0, 1);
             int kind = static_cast<int>(p[1] + 0.5f);
-            v.state[0] -= dt;
-            if (v.state[0] <= 0) {
+            bool rails = kind < 4;
+            if (rails) v.state[0] -= dt;
+            if (rails && v.state[0] <= 0) {
                 // Da-dum, da-dum: a pair of joints under each bogie.
                 v.state[3] += 1.0f;
                 bool pair = static_cast<int>(v.state[3]) % 2 == 1;
@@ -659,13 +722,19 @@ void Synth::renderVoice(Voice& v, float& left, float& right) {
             }
             if (control) {
                 v.f[0].set(110.0f, 0.7f, sr);
-                v.f[1].set(650.0f, 0.7f, sr);
+                if (kind == 4) v.f[1].set((250.0f + 1000.0f * speed) * pf, 1.2f, sr);
+                else if (kind == 5) v.f[1].set((140.0f + 420.0f * speed) * pf, 0.7f, sr);
+                else v.f[1].set(650.0f, 0.7f, sr);
                 v.f[2].set(380.0f, 0.7f, sr);
                 v.f[3].set(3200.0f, 0.7f, sr);
             }
-            v.f[0].process(v.brown.next(rng.white()));
-            float rumble = v.f[0].low * (0.15f + 0.25f * speed);
-            float joints = v.res.process(rng.white() * v.env[0].next()) * (0.6f + 0.8f * speed);
+            float rumble = 0, joints = 0;
+            if (rails) {
+                v.f[0].process(v.brown.next(rng.white()));
+                // A battery or hydrogen engine is light on its wheels, so a little less rumble.
+                rumble = v.f[0].low * (0.15f + 0.25f * speed) * (kind == 3 ? 0.75f : 1.0f);
+                joints = v.res.process(rng.white() * v.env[0].next()) * (0.6f + 0.8f * speed);
+            }
             float engine = 0;
             if (kind == 0) {
                 v.f[1].process(v.pink.next(rng.white()));
@@ -674,8 +743,22 @@ void Synth::renderVoice(Voice& v, float& left, float& right) {
             } else if (kind == 1) {
                 v.f[2].process(v.osc[0].saw(52.0f * pf, sr) + v.osc[1].saw(78.5f * pf, sr) * 0.5f);
                 engine = v.f[2].low * (0.25f + 0.2f * speed);
-            } else {
+            } else if (kind == 2) {
                 engine = v.osc[2].sine((260.0f + 900.0f * speed) * pf, sr) * 0.04f + v.osc[0].sine(50.0f, sr) * 0.05f;
+            } else if (kind == 3) {
+                // A soft inverter whine low down, the motors' hum and the wheels' hiss on the rail.
+                v.f[3].process(v.pink2.next(rng.white()));
+                engine = v.osc[2].sine((180.0f + 520.0f * speed) * pf, sr) * 0.022f + v.osc[0].sine(100.0f, sr) * 0.025f +
+                         v.f[3].high * 0.05f * speed;
+            } else if (kind == 4) {
+                // Air rushing past, brighter as it gathers speed, and a faint hum from the guideway.
+                v.f[1].process(v.pink.next(rng.white()));
+                float rush = v.f[1].low * (0.15f + 1.1f * speed * speed);
+                engine = rush * 0.8f + v.osc[0].sine(150.0f * pf, sr) * 0.02f * (0.3f + 0.7f * speed);
+            } else {
+                // Heard through a tube: a low, dark rush, and the pumps' soft drone.
+                v.f[1].process(v.brown.next(rng.white()) * 0.6f + v.pink.next(rng.white()) * 0.4f);
+                engine = v.f[1].low * (0.2f + 1.0f * speed) * 0.5f + v.osc[0].sine(55.0f, sr) * 0.015f;
             }
             s = (rumble + joints + engine) * loud;
             break;
@@ -772,6 +855,105 @@ void Synth::renderVoice(Voice& v, float& left, float& right) {
             s *= loud;
             break;
         }
+        case recipe::HELI: {
+            // A rotor's thwop, a blade slap at each pass, over the tail rotor's buzz and a low
+            // turbine whine.
+            float out = clampf(p[0], 0, 1), load = clampf(p[1], 0, 1);
+            v.state[0] -= dt;
+            if (v.state[0] <= 0) {
+                v.state[0] = vary(rng, 0.03f) / ((9.0f + 4.0f * load) * pf);
+                v.env[0].trigger(0.003f, 0.035f, sr, 0.7f + 0.3f * load);
+            }
+            if (control) { v.f[0].set(420.0f * pf, 1.0f, sr); v.f[1].set(1200.0f * pf, 0.7f, sr); v.f[2].set(600.0f * pf, 0.7f, sr); }
+            v.f[0].process(v.pink.next(rng.white()));
+            float slap = v.f[0].band * v.env[0].next() * 3.0f;
+            float thump = v.osc[0].sine(70.0f * pf, sr) * v.env[0].value * 0.5f;
+            v.f[2].process(v.osc[1].saw((80.0f + 20.0f * load) * pf, sr));
+            float tail = v.f[2].low * 0.08f;
+            float whine = v.osc[2].sine((900.0f + 200.0f * load) * pf, sr) * 0.01f;
+            v.f[1].process(slap + thump + tail + whine + v.brown.next(rng.white()) * 0.1f);
+            s = v.f[1].low * out;
+            break;
+        }
+        case recipe::DRONE: {
+            // A light buzz from small rotors, each wandering a little in pitch so they never settle
+            // into a beat, kept soft and low.
+            float out = clampf(p[0], 0, 1), load = clampf(p[1], 0, 1);
+            if (control) {
+                for (int i = 1; i <= 3; ++i) v.state[i] += (rng.white() - v.state[i]) * 0.01f;
+                v.f[0].set(900.0f * pf, 0.7f, sr);
+                v.f[1].set(2000.0f, 1.5f, sr);
+            }
+            float base = (140.0f + 50.0f * load) * pf;
+            float buzz = v.osc[0].saw(base * (1.0f + 0.02f * v.state[1]), sr) + v.osc[1].saw(base * 1.07f * (1.0f + 0.02f * v.state[2]), sr) * 0.8f +
+                         v.osc[2].saw(base * 1.13f * (1.0f + 0.02f * v.state[3]), sr) * 0.7f;
+            v.f[0].process(buzz);
+            v.f[1].process(v.pink.next(rng.white()));
+            s = (v.f[0].low * 0.12f + v.f[1].band * 0.03f) * out;
+            break;
+        }
+        case recipe::CITY: {
+            // A town as one sound: the soft wash of its streets, a low hum of engines once there are
+            // cars, and now and then something standing out, a cart's rattle or a car going by. From
+            // higher up it's darker and the details sink into the wash.
+            float loud = clampf(p[0], 0, 1.5f), motors = clampf(p[1], 0, 1), far = clampf(p[2], 0, 1);
+            v.state[1] += dt / 13.0f;
+            v.state[1] -= std::floor(v.state[1]);
+            float wander = 0.8f + 0.2f * std::sin(kTwoPi * v.state[1]) * std::sin(kTwoPi * v.state[1] * 2.3f + 0.7f);
+            v.state[0] -= dt;
+            if (v.state[0] <= 0) {
+                v.state[0] = 0.8f + 3.0f * rng.uniform();
+                v.state[2] = rng.uniform() < motors ? 1.0f : 0.0f;
+                v.state[3] = 0.7f + 0.6f * rng.uniform();
+                v.env[0].trigger(0.4f + 0.8f * rng.uniform(), 0.6f + 1.0f * rng.uniform(), sr, (0.4f + 0.6f * rng.uniform()) * (1.0f - 0.7f * far));
+            }
+            if (control) {
+                v.f[0].set(900.0f - 600.0f * far, 0.6f, sr);
+                v.f[1].set(140.0f, 0.7f, sr);
+                v.f[2].set(420.0f * v.state[3], 0.9f, sr);
+                v.f[3].set(1800.0f - 900.0f * far, 0.7f, sr);
+            }
+            v.f[0].process(v.pink.next(rng.white()));
+            v.f[1].process(v.brown.next(rng.white()));
+            float wash = v.f[0].low * wander;
+            float hum = v.f[1].low * motors * 0.6f;
+            float detail = v.state[2] > 0.5f ? v.pink2.next(rng.white()) : v.crackle.next(rng, 30.0f, sr) * 2.0f;
+            v.f[2].process(detail * v.env[0].next());
+            v.f[3].process(wash * 0.8f + hum + v.f[2].band * 1.2f);
+            s = v.f[3].low * loud;
+            break;
+        }
+        case recipe::INDUSTRY: {
+            // Works at their trade: a low machine drone and a hammer or press on no fixed beat. A
+            // steam-era works hisses now and then; a modern plant has fans and its motors' hum.
+            float loud = clampf(p[0], 0, 1.5f), era = clampf(p[1], 0, 1), far = clampf(p[2], 0, 1);
+            v.state[0] -= dt;
+            if (v.state[0] <= 0) {
+                v.state[0] = 0.7f + 1.1f * rng.uniform();
+                float f0 = 180.0f * vary(rng, 0.1f);
+                const float F[] = {f0, f0 * 2.3f, f0 * 5.2f}, Q[] = {12, 10, 8}, G[] = {1, .5f, .25f};
+                v.res.set(3, F, Q, G, sr);
+                float hard = (0.5f + 0.5f * rng.uniform()) * (1.0f - 0.6f * era);
+                v.env[0].trigger(0.001f, 0.05f, sr, hard);
+                v.env[1].trigger(0.002f, 0.12f, sr, hard);
+            }
+            v.state[2] -= dt;
+            if (v.state[2] <= 0) {
+                v.state[2] = 6.0f + 10.0f * rng.uniform();
+                v.env[2].trigger(0.3f, 0.8f + 0.8f * rng.uniform(), sr, (0.4f + 0.6f * rng.uniform()) * (1.0f - era));
+            }
+            if (control) { v.f[0].set(220.0f, 0.7f, sr); v.f[1].set(1500.0f, 1.2f, sr); v.f[2].set(600.0f, 0.6f, sr); v.f[3].set(2200.0f - 1500.0f * far, 0.7f, sr); }
+            v.f[0].process(v.osc[0].saw(55.0f, sr) + v.osc[1].saw(82.5f, sr) * 0.4f);
+            float drone = v.f[0].low * 0.35f;
+            float hammer = v.res.process(rng.white() * v.env[0].next()) * 1.5f + v.brown2.next(rng.white()) * v.env[1].next() * 0.8f;
+            v.f[1].process(v.pink.next(rng.white()));
+            float hiss = v.f[1].band * v.env[2].next() * 0.6f;
+            v.f[2].process(v.pink2.next(rng.white()));
+            float fans = (v.f[2].low * 0.5f + v.osc[2].sine(120.0f, sr) * 0.02f) * era;
+            v.f[3].process(drone + hammer + hiss + fans);
+            s = v.f[3].low * loud;
+            break;
+        }
         case recipe::HORN: {
             // A bulb horn's honk, a car's two notes or a truck's air horn.
             int kind = static_cast<int>(p[0] + 0.5f);
@@ -822,7 +1004,8 @@ void Synth::renderVoice(Voice& v, float& left, float& right) {
         }
         case recipe::CHIME: {
             // Small and soft: two ticks for painting, two notes up for good news, two down for
-            // bad, four rising for a new era. Each note a little bell, rung and left to fade.
+            // bad, four rising for a new era, three falling for a station's chime. Each note a
+            // little bell, rung and left to fade.
             int kind = static_cast<int>(p[0] + 0.5f);
             if (kind == 0) {
                 float t = v.age < 0.08f ? v.age : v.age - 0.08f;
@@ -832,14 +1015,15 @@ void Synth::renderVoice(Voice& v, float& left, float& right) {
                 break;
             }
             static const float good[] = {659.3f, 880.0f}, bad[] = {587.3f, 440.0f}, era[] = {523.3f, 659.3f, 784.0f, 1046.5f};
-            const float* notes = kind == 1 ? good : kind == 2 ? bad : era;
-            int count = kind == 3 ? 4 : 2;
-            float step = kind == 3 ? 0.16f : 0.14f;
+            static const float station[] = {784.0f, 659.3f, 523.3f};
+            const float* notes = kind == 1 ? good : kind == 2 ? bad : kind == 4 ? station : era;
+            int count = kind == 3 ? 4 : kind == 4 ? 3 : 2;
+            float step = kind == 3 ? 0.16f : kind == 4 ? 0.5f : 0.14f;
             int n = std::min(count - 1, static_cast<int>(v.age / step));
             float t = v.age - n * step;
             if (static_cast<int>(v.state[0]) != n + 1) { v.state[0] = static_cast<float>(n + 1); v.osc[0].phase = 0; v.osc[1].phase = 0; }
             float f = notes[n];
-            float ring = std::exp(-t * (n == count - 1 ? 3.0f : 9.0f)) * std::min(1.0f, t / 0.004f);
+            float ring = std::exp(-t * (kind == 4 ? 2.2f : n == count - 1 ? 3.0f : 9.0f)) * std::min(1.0f, t / 0.004f);
             s = (v.osc[0].sine(f, sr) + v.osc[1].sine(f * 2.76f, sr) * 0.25f * std::exp(-t * 12.0f)) * ring * 0.6f;
             break;
         }
