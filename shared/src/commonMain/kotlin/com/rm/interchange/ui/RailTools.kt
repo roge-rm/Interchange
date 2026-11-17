@@ -130,4 +130,4 @@ fun DrawScope.drawBridgePlan(world: World, painter: LandPainter, plan: Command.B
 private val PLAN_OK = Color(0x99F0B429)
 private val REACH = Color(0x2EF0B429)
 private val REACH_BUILT = Color(0x70F0B429)
-private val PLAN_BAD = Color(0x99E05A4E)
+private val PLAN_BAD get() = Palette.bad(0x99)

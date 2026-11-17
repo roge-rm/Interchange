@@ -211,7 +211,8 @@ fun App() {
         }
     }
     InLanguage(settings.language) {
-        CompositionLocalProvider(LocalColors provides DarkColors) { Root(settings) }
+        Palette.safe = settings.safeColours
+        CompositionLocalProvider(LocalColors provides if (settings.safeColours) SafeColors else DarkColors) { Root(settings) }
     }
 }
 
@@ -1543,7 +1544,7 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
             onSharp = { mapSharp.value = true },
             onHover = { hover.value = it },
             overlays = (if (settings.grid) MapOverlays.GRID else 0) or (if (settings.heights) MapOverlays.HEIGHTS else 0) or
-                (if (settings.snow) MapOverlays.SNOW else 0) or (if (settings.condition) MapOverlays.CONDITION else 0),
+                (if (settings.snow) MapOverlays.SNOW else 0) or (if (settings.condition) MapOverlays.CONDITION else 0) or (if (settings.safeColours) MapOverlays.SAFE else 0),
             labels = {
                 val wv = worldView.value
                 with(townLabels) {

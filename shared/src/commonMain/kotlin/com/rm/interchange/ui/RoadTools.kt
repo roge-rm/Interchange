@@ -47,7 +47,7 @@ fun garageAt(world: World, company: Int, at: Pick): Command.Garage {
 }
 
 private val ROAD_OK = Color(0x99F0B429)
-private val ROAD_BAD = Color(0x99E05A4E)
+private val ROAD_BAD get() = Palette.bad(0x99)
 
 /** The tiles a canal [plan] covers, lit on flat land it can be dug on and red elsewhere. */
 fun DrawScope.drawCanalPlan(world: World, painter: LandPainter, plan: Command.Canal) {
@@ -80,4 +80,4 @@ private fun DrawScope.drawClearPlan(world: World, painter: LandPainter, x0: Int,
     }
 }
 
-private val CLEAR_PLAN = Color(0x66E05A4E)
+private val CLEAR_PLAN get() = Palette.bad(0x66)

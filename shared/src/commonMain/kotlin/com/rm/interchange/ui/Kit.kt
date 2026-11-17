@@ -58,6 +58,7 @@ import androidx.compose.ui.semantics.paneTitle
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.Constraints
@@ -75,6 +76,20 @@ import com.rm.interchange.res.percent
 import org.jetbrains.compose.resources.stringResource
 import kotlin.math.roundToInt
 
+/** The smallest a tap target is, across and down. */
+val TOUCH_TARGET = 48.dp
+
+/**
+ * Grows what it holds to at least [across] by [down], the content kept in the middle, so the whole of the larger area
+ * takes the taps of the click modifiers before it. A zero leaves that way alone.
+ */
+fun Modifier.touchTarget(across: Dp = TOUCH_TARGET, down: Dp = TOUCH_TARGET): Modifier = layout { measurable, constraints ->
+    val p = measurable.measure(constraints.copy(minWidth = 0, minHeight = 0))
+    val w = maxOf(p.width, across.roundToPx()).coerceIn(constraints.minWidth, constraints.maxWidth.coerceAtLeast(constraints.minWidth))
+    val h = maxOf(p.height, down.roundToPx()).coerceIn(constraints.minHeight, constraints.maxHeight.coerceAtLeast(constraints.minHeight))
+    layout(w, h) { p.place((w - p.width) / 2, (h - p.height) / 2) }
+}
+
 /** A wide button for the screens and windows, with a glyph before its words. [primary] is the one most likely wanted. */
 @Composable
 fun BigButton(text: String, primary: Boolean = false, enabled: Boolean = true, glyph: Glyph? = null, modifier: Modifier = Modifier, onClick: () -> Unit) {
@@ -90,6 +105,7 @@ fun BigButton(text: String, primary: Boolean = false, enabled: Boolean = true, g
                 Sounds.click()
                 onClick()
             }
+            .heightIn(min = TOUCH_TARGET)
             .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -209,6 +225,7 @@ fun ListRow(
             .clip(RoundedCornerShape(10.dp))
             .background(c.button)
             .then(if (onClick != null) Modifier.clickable(role = Role.Button, onClick = onClick) else Modifier)
+            .heightIn(min = TOUCH_TARGET)
             .padding(horizontal = 10.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -309,7 +326,7 @@ fun <T> StepSliderRow(glyph: Glyph, label: String, options: List<T>, value: T, n
     val c = LocalColors.current
     val at = options.indexOf(value).coerceAtLeast(0)
     val shown = name(value)
-    Row(modifier.fillMaxWidth().heightIn(min = 34.dp).padding(start = 6.dp, end = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+    Row(modifier.fillMaxWidth().heightIn(min = TOUCH_TARGET).padding(start = 6.dp, end = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         GlyphIcon(glyph, c.textDim, Modifier.size(20.dp).clearAndSetSemantics { })
         Slider(
             value = at.toFloat(),
@@ -359,6 +376,7 @@ fun <T> FillChips(options: List<T>, selected: T, label: @Composable (T) -> Strin
                     Modifier.clip(RoundedCornerShape(8.dp))
                         .background(if (on) c.accent else c.button)
                         .selectable(selected = on, role = Role.RadioButton) { onSelect(o) }
+                        .heightIn(min = TOUCH_TARGET)
                         .padding(horizontal = CHIP_PAD, vertical = 8.dp),
                     contentAlignment = Alignment.Center,
                 ) {
@@ -444,6 +462,7 @@ fun TogglePill(text: String, on: Boolean, modifier: Modifier = Modifier, onChang
         modifier.clip(RoundedCornerShape(8.dp)).background(if (on) c.accent else c.button)
             .semantics(mergeDescendants = true) {}
             .toggleable(value = on, role = Role.Switch, onValueChange = onChange)
+            .heightIn(min = TOUCH_TARGET)
             .padding(horizontal = 6.dp, vertical = 10.dp),
         contentAlignment = Alignment.Center,
     ) {

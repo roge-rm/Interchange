@@ -271,6 +271,14 @@ fun FillBar(share: Float, modifier: Modifier = Modifier, colour: Color? = null) 
     }
     Box(modifier.height(6.dp).clip(RoundedCornerShape(3.dp)).background(c.textDim.copy(alpha = 0.25f))) {
         if (s > 0f) Box(Modifier.fillMaxHeight().fillMaxWidth(s).clip(RoundedCornerShape(3.dp)).background(fill))
+        // Notches at the thirds, so low, middle and high show without the colour.
+        if (colour == null) Row(Modifier.fillMaxSize()) {
+            for (k in 0 until 3) {
+                Box(Modifier.weight(1f).fillMaxHeight(), contentAlignment = Alignment.CenterEnd) {
+                    if (k < 2) Box(Modifier.width(1.dp).fillMaxHeight().background(c.page.copy(alpha = 0.7f)))
+                }
+            }
+        }
     }
 }
 
@@ -313,7 +321,7 @@ fun ActionRow(
     Row(
         Modifier
             .fillMaxWidth()
-            .heightIn(min = 44.dp)
+            .heightIn(min = TOUCH_TARGET)
             .clip(shape)
             .background(c.button)
             .then(if (onClick != null) Modifier.clickable(role = Role.Button, onClick = onClick) else Modifier.semantics(mergeDescendants = true) {})
@@ -453,7 +461,7 @@ fun AmountsRow(title: String, amounts: List<Pair<Int, Int>>, onClick: (() -> Uni
     val c = LocalColors.current
     val names = cargoNames()
     Row(
-        Modifier.fillMaxWidth().heightIn(min = 32.dp).clip(RoundedCornerShape(KitSpace.InnerCorner))
+        Modifier.fillMaxWidth().heightIn(min = if (onClick != null) TOUCH_TARGET else 32.dp).clip(RoundedCornerShape(KitSpace.InnerCorner))
             .then(if (onClick != null) Modifier.clickable(role = Role.Button, onClick = onClick) else Modifier)
             .semantics(mergeDescendants = true) {
                 contentDescription = listOf(title).plus(amounts.map { (cargo, n) -> "${names.getOrElse(cargo) { "" }} ${Numbers.grouped(n.toLong())}" }).joinToString(", ")
@@ -500,7 +508,7 @@ fun <T> OptionGroup(options: List<T>, selected: T, glyph: (T) -> Glyph, label: (
                 Modifier
                     .weight(1f)
                     .fillMaxHeight()
-                    .heightIn(min = 34.dp)
+                    .heightIn(min = TOUCH_TARGET)
                     .clip(RoundedCornerShape(KitSpace.InnerCorner))
                     .background(if (on) c.accent else c.button)
                     .then(if (labels) Modifier else Modifier.semantics { contentDescription = label(o) })
@@ -528,7 +536,7 @@ fun BulletRow(text: String, glyph: Glyph? = null, lead: (@Composable () -> Unit)
     Row(
         Modifier
             .fillMaxWidth()
-            .heightIn(min = 30.dp)
+            .heightIn(min = if (onClick != null) TOUCH_TARGET else 30.dp)
             .clip(RoundedCornerShape(KitSpace.InnerCorner))
             .then(if (onClick != null) Modifier.clickable(role = Role.Button, onClick = onClick) else Modifier.semantics(mergeDescendants = true) {})
             .padding(horizontal = 2.dp, vertical = KitSpace.Tight),
@@ -615,7 +623,7 @@ fun ButtonTiles(buttons: List<TileButton>, perRow: Int = 4) {
 fun SwitchRow(label: String, on: Boolean, modifier: Modifier = Modifier, onChange: (Boolean) -> Unit) {
     val c = LocalColors.current
     Row(
-        modifier.fillMaxWidth().heightIn(min = 32.dp).clip(RoundedCornerShape(KitSpace.InnerCorner))
+        modifier.fillMaxWidth().heightIn(min = TOUCH_TARGET).clip(RoundedCornerShape(KitSpace.InnerCorner))
             .toggleable(value = on, role = Role.Switch, onValueChange = onChange),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(KitSpace.Gap),
@@ -652,6 +660,7 @@ fun <T> SegmentedChoice(options: List<T>, selected: T, label: (T) -> String, per
                             .clip(RoundedCornerShape(6.dp))
                             .background(if (on) c.accent else c.page)
                             .selectable(selected = on, role = Role.RadioButton) { onSelect(o) }
+                            .heightIn(min = TOUCH_TARGET)
                             .padding(horizontal = 4.dp, vertical = 6.dp),
                         contentAlignment = Alignment.Center,
                     ) {

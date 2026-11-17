@@ -396,6 +396,8 @@ object MapOverlays {
     const val SNOW = 4
     /** Track tiles coloured by how worn they are. */
     const val CONDITION = 8
+    /** The colour-blind safe colours for the bands above; only drawn along with one of them. */
+    const val SAFE = 16
 }
 
 /** How long the cover takes to fade once the map's ready, in milliseconds. */

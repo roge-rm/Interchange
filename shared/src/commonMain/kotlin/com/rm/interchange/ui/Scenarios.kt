@@ -521,8 +521,8 @@ fun DrawScope.drawAreaPlan(world: World, painter: LandPainter, a: IntArray, remo
     }
 }
 
-private val AREA_ADD = Color(0x6658B368)
-private val AREA_REMOVE = Color(0x66E05A4E)
+private val AREA_ADD get() = Palette.good(0x66)
+private val AREA_REMOVE get() = Palette.bad(0x66)
 
 /** What the editor's land tools send for the area from ([x0], [y0]) to ([x1], [y1]); [height] is what Level levels to. */
 fun editAreaCommand(tool: Tool, me: Int, x0: Int, y0: Int, x1: Int, y1: Int, height: Int): Command? = when (tool) {

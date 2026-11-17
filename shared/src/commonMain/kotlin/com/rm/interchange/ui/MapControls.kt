@@ -24,10 +24,13 @@ internal fun MapTile(glyph: Glyph, label: String, selected: Boolean, side: Dp, e
     TooltipBox(positionProvider = TooltipDefaults.rememberTooltipPositionProvider(),
         tooltip = { PlainTooltip { Text(label) } }, state = rememberTooltipState()) {
         val c = LocalColors.current
-        Box(Modifier.size(side).clip(RoundedCornerShape(9.dp)).background(if (selected) c.accent else c.button)
+        Box(Modifier.clip(RoundedCornerShape(9.dp))
             .semantics { contentDescription = label; this.selected = selected }
-            .clickable(enabled = enabled, role = Role.Button, onClick = onClick), contentAlignment = Alignment.Center) {
-            GlyphIcon(glyph, if (selected) c.onAccent else if (enabled) c.text else c.textDim.copy(alpha = 0.4f), Modifier.size(20.dp))
+            .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
+            .touchTarget(), contentAlignment = Alignment.Center) {
+            Box(Modifier.size(side).clip(RoundedCornerShape(9.dp)).background(if (selected) c.accent else c.button), contentAlignment = Alignment.Center) {
+                GlyphIcon(glyph, if (selected) c.onAccent else if (enabled) c.text else c.textDim.copy(alpha = 0.4f), Modifier.size(20.dp))
+            }
         }
     }
 }
@@ -39,7 +42,7 @@ internal fun MapChoice(label: String, description: String, glyph: Glyph, modifie
     val c = LocalColors.current
     var open by remember { mutableStateOf(false) }
     Box(modifier) {
-        Row(Modifier.fillMaxWidth().heightIn(min = 42.dp).clip(RoundedCornerShape(10.dp)).background(c.button)
+        Row(Modifier.fillMaxWidth().heightIn(min = TOUCH_TARGET).clip(RoundedCornerShape(10.dp)).background(c.button)
             .semantics { contentDescription = description }.clickable { open = true }.padding(horizontal = 8.dp),
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             GlyphIcon(glyph, colour?.invoke(selected) ?: c.accent, Modifier.size(17.dp))

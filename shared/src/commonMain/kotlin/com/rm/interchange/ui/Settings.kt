@@ -8,6 +8,8 @@ import com.rm.interchange.platform.files
 
 /** The player's settings, kept in a small file of name=value lines. */
 class Settings {
+    /** Colours: false for Standard, true for the set safe for colour blindness. */
+    var safeColours by mutableStateOf(false)
     /** "" for the phone's own, else "en" or "fr". */
     var language by mutableStateOf("")
     /** Which of [AUTOSAVE_DAYS] autosaves come at. */
@@ -51,7 +53,7 @@ class Settings {
     val autosaveDays get() = AUTOSAVE_DAYS[autosave.coerceIn(0, AUTOSAVE_DAYS.size - 1)]
 
     fun save() {
-        files.write(FILE, ("language=$language\nautosave=$autosave\ngrid=$grid\nheights=$heights\nsnow=$snow\ncondition=$condition\nreserved=$reserved\npriority=$priority\nrisk=$risk\n" +
+        files.write(FILE, ("language=$language\ncolours=${if (safeColours) "safe" else "standard"}\nautosave=$autosave\ngrid=$grid\nheights=$heights\nsnow=$snow\ncondition=$condition\nreserved=$reserved\npriority=$priority\nrisk=$risk\n" +
             "sound=$sound\nworld=$world\ntools=$tools\nmusic=$music\n" +
             "player=${playerName.replace('\n', ' ')}\naddress=${lastAddress.replace('\n', ' ')}\nclient=$client\n" +
             "checklist=$checklist\nchecklistGame=$checklistGame\nchecklistTicks=$checklistTicks\n" +
@@ -73,6 +75,7 @@ class Settings {
                 val (k, v) = line.split("=", limit = 2).takeIf { it.size == 2 } ?: continue
                 when (k) {
                     "language" -> if (v in LANGUAGES) s.language = v
+                    "colours" -> s.safeColours = v == "safe"
                     "autosave" -> v.toIntOrNull()?.let { s.autosave = it }
                     "grid" -> s.grid = v == "true"
                     "heights" -> s.heights = v == "true"

@@ -100,6 +100,17 @@ internal fun OverviewCanvas(image: MapImage?, traffic: State<List<OverviewVehicl
             val colour = if (percent == 0) c.bad else if (percent < 75) c.warn else c.good
             drawCircle(colour.copy(alpha = 0.35f), 9.dp.toPx(), point(p.x, p.y))
             drawCircle(colour, 9.dp.toPx(), point(p.x, p.y), style = Stroke(1.dp.toPx()))
+            // A sign in the circle too: a cross for none, a dash for some, a plus for plenty.
+            val at = point(p.x, p.y)
+            val r = 3.5.dp.toPx()
+            val w = 1.5.dp.toPx()
+            if (percent == 0) {
+                drawLine(colour, at + Offset(-r, -r), at + Offset(r, r), w)
+                drawLine(colour, at + Offset(-r, r), at + Offset(r, -r), w)
+            } else {
+                drawLine(colour, at - Offset(r, 0f), at + Offset(r, 0f), w)
+                if (percent >= 75) drawLine(colour, at - Offset(0f, r), at + Offset(0f, r), w)
+            }
         }
         clipRect {
             drawImage(current.terrain, dstOffset = IntOffset(origin.x.toInt(), origin.y.toInt()),
@@ -135,7 +146,9 @@ internal fun OverviewCanvas(image: MapImage?, traffic: State<List<OverviewVehicl
                 val share = link.share(options.cargo.intValue)
                 val colour = if (share == null) c.textDim else shareColour(share, c)
                 drawLine(c.page, a, b, linkWidth(link, options.cargo.intValue).dp.toPx() + 2.dp.toPx())
-                drawLine(colour, a, b, linkWidth(link, options.cargo.intValue).dp.toPx())
+                // Dashes for a low load and short dashes for the middle, as well as the colour.
+                val dash = if (share == null) null else if (share < 1f / 3) floatArrayOf(12.dp.toPx(), 5.dp.toPx()) else if (share < 2f / 3) floatArrayOf(5.dp.toPx(), 3.dp.toPx()) else null
+                drawLine(colour, a, b, linkWidth(link, options.cargo.intValue).dp.toPx(), pathEffect = dash?.let { PathEffect.dashPathEffect(it) })
                 if (link.heldLong()) {
                     val mid = a + (b - a) * 0.5f
                     drawCircle(c.text, 4.5.dp.toPx(), mid)

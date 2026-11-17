@@ -122,13 +122,7 @@ class TownLabels(private val measurer: TextMeasurer, private val back: Color, pr
     }
 }
 
-/** Each company's colour, by its id, for its station signs; the player's company is the first. */
-private val COMPANY_COLOURS = listOf(
-    Color(0xFF2E6FB0), Color(0xFFC0392B), Color(0xFF2E8B57), Color(0xFFE0B020),
-    Color(0xFF8E44AD), Color(0xFFE67E22), Color(0xFF16A085), Color(0xFF7F8C8D),
-)
-
-fun companyColour(company: Int): Color = COMPANY_COLOURS[company.mod(COMPANY_COLOURS.size)]
+fun companyColour(company: Int): Color = (if (com.rm.interchange.ui.Palette.safe) com.rm.interchange.ui.SAFE_COMPANY_COLOURS else com.rm.interchange.ui.STANDARD_COMPANY_COLOURS).let { it[company.mod(it.size)] }
 
 @Composable
 fun rememberTownLabels(back: Color, text: Color, dim: Color): TownLabels {

@@ -161,7 +161,7 @@ fun DrawScope.drawSignalPlan(world: World, painter: LandPainter, run: Command.Si
 private val PLAN_DIM = Color(0x33F0B429)
 private val PLAN_OK = Color(0x99F0B429)
 private val PLAN_RAIL = Color(0xCCFFFFFF)
-private val PLAN_BAD = Color(0x99E05A4E)
+private val PLAN_BAD get() = Palette.bad(0x99)
 
 /** The pieces the track tool can lay one at a time, in the view's own terms, and their drawings. */
 val VIEW_PIECES = intArrayOf(Track.X, Track.Y, Track.N, Track.E, Track.S, Track.W)

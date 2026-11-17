@@ -60,20 +60,24 @@ fun ChromeBox(modifier: Modifier = Modifier, content: @Composable () -> Unit) {
     Box(modifier.clip(BarShape).background(c.chrome).border(1.dp, c.chromeEdge, BarShape)) { content() }
 }
 
-/** A square button with a glyph, lit while [selected]. */
+/**
+ * A square button with a glyph, lit while [selected]. It draws [side] across but takes taps over [TOUCH_TARGET]
+ * (just the height, with [wide] off, for a row too tight to grow sideways).
+ */
 @Composable
-fun SquareButton(glyph: Glyph, description: String, side: Dp, selected: Boolean = false, enabled: Boolean = true, onClick: () -> Unit) {
+fun SquareButton(glyph: Glyph, description: String, side: Dp, selected: Boolean = false, enabled: Boolean = true, wide: Boolean = true, onClick: () -> Unit) {
     val c = LocalColors.current
     Box(
         Modifier
-            .size(side)
             .clip(ButtonShape)
-            .background(if (selected) c.accent else c.button)
             .semantics { contentDescription = description; this.selected = selected }
-            .clickable(enabled = enabled, role = Role.Button, onClick = onClick),
+            .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
+            .touchTarget(if (wide) TOUCH_TARGET else 0.dp, TOUCH_TARGET),
         contentAlignment = Alignment.Center,
     ) {
-        GlyphIcon(glyph, if (selected) c.onAccent else if (enabled) c.text else c.textDim.copy(alpha = 0.4f), Modifier.size(side * 0.55f))
+        Box(Modifier.size(side).clip(ButtonShape).background(if (selected) c.accent else c.button), contentAlignment = Alignment.Center) {
+            GlyphIcon(glyph, if (selected) c.onAccent else if (enabled) c.text else c.textDim.copy(alpha = 0.4f), Modifier.size(side * 0.55f))
+        }
     }
 }
 
@@ -123,40 +127,40 @@ fun StatusStrip(
     val side = if (twoLines) minOf(preferredSide, ((width - gap * (buttons - 1)) / buttons).coerceAtLeast(28.dp)) else preferredSide
     val textSize = if (compact) 13.sp else 15.sp
     val time = @Composable {
-        SquareButton(Glyph.Menu, stringResource(Res.string.menu), side, onClick = onMenu)
+        SquareButton(Glyph.Menu, stringResource(Res.string.menu), side, wide = !twoLines, onClick = onMenu)
         if (timeControls) {
-            SquareButton(if (paused) Glyph.Play else Glyph.Pause, stringResource(if (paused) Res.string.play else Res.string.pause), side, selected = paused, onClick = onPause)
+            SquareButton(if (paused) Glyph.Play else Glyph.Pause, stringResource(if (paused) Res.string.play else Res.string.pause), side, selected = paused, wide = !twoLines, onClick = onPause)
             Box(contentAlignment = Alignment.BottomEnd) {
-                SquareButton(Glyph.Speed, stringResource(Res.string.speed), side, onClick = onSpeed)
+                SquareButton(Glyph.Speed, stringResource(Res.string.speed), side, wide = !twoLines, onClick = onSpeed)
                 Text("${SPEEDS[speed]}×", color = c.textDim, fontSize = 9.sp, modifier = Modifier.padding(end = 3.dp))
             }
         }
-        SquareButton(Glyph.Layers, stringResource(Res.string.overlays), side, selected = overlaysOn, onClick = onOverlays)
-        onChat?.let { SquareButton(Glyph.Chat, stringResource(Res.string.chat), side, selected = chatUnread, onClick = it) }
+        SquareButton(Glyph.Layers, stringResource(Res.string.overlays), side, selected = overlaysOn, wide = !twoLines, onClick = onOverlays)
+        onChat?.let { SquareButton(Glyph.Chat, stringResource(Res.string.chat), side, selected = chatUnread, wide = !twoLines, onClick = it) }
     }
     val readings = @Composable {
         Text(date, color = c.text, fontSize = textSize, fontWeight = FontWeight.SemiBold, maxLines = 1)
         Text(
             weather, color = c.text, fontSize = textSize, maxLines = 1,
-            modifier = Modifier.clip(RoundedCornerShape(6.dp)).clickable(onClickLabel = stringResource(Res.string.weather), role = Role.Button, onClick = onWeather).padding(2.dp),
+            modifier = Modifier.clip(RoundedCornerShape(6.dp)).clickable(onClickLabel = stringResource(Res.string.weather), role = Role.Button, onClick = onWeather).touchTarget(0.dp, TOUCH_TARGET).padding(2.dp),
         )
         if (showMoney) Text(
             money, color = if (moneyLow) c.bad else c.text, fontSize = textSize, maxLines = 1,
-            modifier = Modifier.clip(RoundedCornerShape(6.dp)).clickable(onClickLabel = stringResource(Res.string.finances), role = Role.Button, onClick = onMoney).padding(2.dp),
+            modifier = Modifier.clip(RoundedCornerShape(6.dp)).clickable(onClickLabel = stringResource(Res.string.finances), role = Role.Button, onClick = onMoney).touchTarget(0.dp, TOUCH_TARGET).padding(2.dp),
         )
     }
     val turns = @Composable {
         Row(horizontalArrangement = Arrangement.spacedBy(gap)) {
-            SquareButton(Glyph.Map, stringResource(Res.string.overview_map), side, onClick = onMap)
-            SquareButton(Glyph.TurnLeft, stringResource(Res.string.turn_left), side, onClick = onTurnLeft)
-            SquareButton(Glyph.TurnRight, stringResource(Res.string.turn_right), side, onClick = onTurnRight)
+            SquareButton(Glyph.Map, stringResource(Res.string.overview_map), side, wide = !twoLines, onClick = onMap)
+            SquareButton(Glyph.TurnLeft, stringResource(Res.string.turn_left), side, wide = !twoLines, onClick = onTurnLeft)
+            SquareButton(Glyph.TurnRight, stringResource(Res.string.turn_right), side, wide = !twoLines, onClick = onTurnRight)
         }
     }
     CapFontScale { ChromeBox(modifier) {
         if (twoLines) {
             // Across the whole width: the buttons on the left and turning on the right, clear of the cameras, then
             // the date and money spread out under them.
-            Column(Modifier.fillMaxWidth().padding(horizontal = 6.dp, vertical = 4.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Column(Modifier.fillMaxWidth().padding(horizontal = 6.dp, vertical = 0.dp), verticalArrangement = Arrangement.spacedBy(0.dp)) {
                 ClearOf(cameras, gap, Modifier.fillMaxWidth(), pinLast = true) {
                     time()
                     turns()
@@ -164,7 +168,7 @@ fun StatusStrip(
                 Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp), horizontalArrangement = Arrangement.SpaceBetween) { readings() }
             }
         } else {
-            Row(Modifier.padding(horizontal = 6.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(gap * 1.5f), verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.padding(horizontal = 6.dp, vertical = 0.dp), horizontalArrangement = Arrangement.spacedBy(gap * 1.5f), verticalAlignment = Alignment.CenterVertically) {
                 time()
                 readings()
                 turns()
@@ -268,6 +272,7 @@ private fun GroupButton(glyph: Glyph, label: String, selected: Boolean, compact:
             .background(if (selected) c.accent else c.button)
             .semantics(mergeDescendants = true) { this.selected = selected }
             .clickable(role = Role.Tab, onClick = onClick)
+            .heightIn(min = TOUCH_TARGET)
             .padding(horizontal = 2.dp, vertical = if (compact) 4.dp else 6.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
@@ -364,7 +369,7 @@ fun RowScope.OptionButton(glyph: Glyph, label: String, on: Boolean, onClick: () 
     Box(
         Modifier
             .weight(1f)
-            .heightIn(min = 34.dp, max = 34.dp)
+            .heightIn(min = TOUCH_TARGET)
             .clip(ButtonShape)
             .background(if (on) c.accent else c.button)
             .semantics { contentDescription = label; selected = on }
@@ -407,7 +412,7 @@ fun weekdayDate(day: Int, startYear: Int): String {
 @Composable
 fun MessageChip(text: String, lead: (@Composable () -> Unit)? = null, onClick: () -> Unit) {
     val c = LocalColors.current
-    ChromeBox(Modifier.clickable(role = Role.Button, onClick = onClick)) {
+    ChromeBox(Modifier.clickable(role = Role.Button, onClick = onClick).touchTarget(0.dp, TOUCH_TARGET)) {
         if (lead == null) Text(text, color = c.text, style = KitType.Body, modifier = Modifier.padding(horizontal = 14.dp, vertical = 9.dp))
         else Row(Modifier.padding(start = 8.dp, end = 14.dp, top = 5.dp, bottom = 5.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             lead()
@@ -426,7 +431,9 @@ fun ActionButton(label: String, enabled: Boolean = true, strong: Boolean = false
             .clip(ButtonShape)
             .background(if (strong) c.accent else if (LocalOnRow.current) c.text.copy(alpha = 0.12f).compositeOver(c.button) else c.button)
             .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
+            .heightIn(min = TOUCH_TARGET)
             .padding(horizontal = 12.dp, vertical = 8.dp),
+        contentAlignment = Alignment.CenterStart,
     ) {
         Text(label, color = if (strong) c.onAccent else c.text, style = KitType.ListLine, fontWeight = FontWeight.SemiBold, maxLines = 1)
     }

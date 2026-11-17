@@ -76,9 +76,9 @@ fun warnPlace(world: World, about: Int): Pair<Float, Float>? =
     world.towns.getOrNull(Warning.town(about))?.let { it.x + 0.5f to it.y + 0.5f }
 
 private val PRIORITY_NEW = Color(0x99F0B429)
-private val PRIORITY_CLEAR = Color(0x99E05A4E)
+private val PRIORITY_CLEAR get() = Palette.bad(0x99)
 private val PRIORITY_RAIL = Color(0xCCFFFFFF)
 private val PRIORITY_TRACK = Color(0x88F0B429)
 private val PRIORITY_ROAD = Color(0x66F0B429)
-private val RISK_SLOWS = Color(0x88E0A030)
-private val RISK_STOPS = Color(0x99D8483C)
+private val RISK_SLOWS get() = Palette.slows(0x88)
+private val RISK_STOPS get() = Palette.bad(0x99)

@@ -157,6 +157,9 @@
     <string name="later">Plus tard</string>
     <string name="start_game">Commencer</string>
 
+    <string name="colours">Couleurs</string>
+    <string name="colours_standard">Standard</string>
+    <string name="colours_safe">Adaptées au daltonisme</string>
     <string name="language">Langue</string>
     <string name="language_phone">Langue du téléphone</string>
     <string name="autosave_every">Sauvegarde auto</string>

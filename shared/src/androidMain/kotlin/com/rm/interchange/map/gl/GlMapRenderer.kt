@@ -181,7 +181,9 @@ internal class GlMapRenderer(private val scene: GlScene, private val page: Int) 
         val wanted = scene.overlays
         val wear = scene.wear
         if (wanted and MapOverlays.CONDITION != 0 && wear != null && wear !== wearUp) upload(wear)
-        overlays = if (wearUp == null || wear == null) wanted and MapOverlays.CONDITION.inv() else wanted
+        val drawn = if (wearUp == null || wear == null) wanted and MapOverlays.CONDITION.inv() else wanted
+        // The safe colours only count with an overlay that uses them, so the plain ground program stays.
+        overlays = if (drawn and MapOverlays.CONDITION == 0) drawn and MapOverlays.SAFE.inv() else drawn
         if (takeLevels(scene.levels)) {
             takeLive()
             scene.requestRender()

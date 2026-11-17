@@ -493,6 +493,9 @@ fun SettingsWindow(settings: Settings, onClose: () -> Unit) {
         // Each language named in itself, so it can be found from any other.
         val languages = listOf("" to stringResource(Res.string.language_phone), "en" to "English", "fr" to "Français")
         FillChips(languages.map { it.first }, settings.language, { code -> languages.first { it.first == code }.second }) { settings.language = it; settings.save() }
+        Head(stringResource(Res.string.colours))
+        val sets = listOf(false, true)
+        FillChips(sets, settings.safeColours, { stringResource(if (it) Res.string.colours_safe else Res.string.colours_standard) }) { settings.safeColours = it; settings.save() }
         Head(stringResource(Res.string.autosave_every))
         val levels = stringArrayResource(Res.array.autosave_levels)
         FillChips(Settings.AUTOSAVE_DAYS.indices.toList(), settings.autosave, { levels.getOrElse(it) { "$it" } }) { settings.autosave = it; settings.save() }
@@ -739,14 +742,6 @@ fun FinanceWindow(runner: com.rm.interchange.server.GameThread, onClose: () -> U
     }
 }
 
-/** The line colours of the price chart: labour, steel, concrete, land, then coal, diesel, electricity, aviation fuel, bunker fuel and hydrogen. */
-private val PRICE_COLOURS = listOf(
-    androidx.compose.ui.graphics.Color(0xFFE0A030), androidx.compose.ui.graphics.Color(0xFF7A8CA0), androidx.compose.ui.graphics.Color(0xFFB0A090),
-    androidx.compose.ui.graphics.Color(0xFF6AAA5A), androidx.compose.ui.graphics.Color(0xFF555555), androidx.compose.ui.graphics.Color(0xFFD05A3A),
-    androidx.compose.ui.graphics.Color(0xFF4A90D9), androidx.compose.ui.graphics.Color(0xFF9A70C8), androidx.compose.ui.graphics.Color(0xFF30A8A8),
-    androidx.compose.ui.graphics.Color(0xFFE05AA0),
-)
-
 /** Each price as a percent of what it was in the first year, with a chart of them over the years so far. */
 @Composable
 private fun PricesSection(p: com.rm.interchange.sim.PricesView) {
@@ -762,7 +757,7 @@ private fun PricesSection(p: com.rm.interchange.sim.PricesView) {
     for ((k, name) in names.withIndex()) {
         val first = lines[k].firstOrNull()?.takeIf { it > 0 } ?: 1
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Box(Modifier.size(10.dp).background(PRICE_COLOURS[k]))
+            Box(Modifier.size(10.dp).background(priceColours()[k]))
             Text(stringResource(name), color = c.text, style = KitType.ListLine, modifier = Modifier.weight(1f))
             Text("${now[k] * 100 / first}%", color = c.text, style = KitType.ListLine)
         }
@@ -786,7 +781,9 @@ private fun PriceGraph(years: IntArray, lines: List<IntArray>, modifier: Modifie
         for ((k, r) in ratios.withIndex()) {
             val path = androidx.compose.ui.graphics.Path()
             for (i in 0 until n) if (i == 0) path.moveTo(0f, y(r[0])) else path.lineTo(x(i), y(r[i]))
-            drawPath(path, PRICE_COLOURS[k], style = androidx.compose.ui.graphics.drawscope.Stroke(1.5.dp.toPx()))
+            // With the safe colours the second five are dashed, so lines of near colours still tell apart.
+            val dash = if (Palette.safe && k >= 5) androidx.compose.ui.graphics.PathEffect.dashPathEffect(floatArrayOf(6.dp.toPx(), 4.dp.toPx())) else null
+            drawPath(path, priceColours()[k], style = androidx.compose.ui.graphics.drawscope.Stroke(1.5.dp.toPx(), pathEffect = dash))
         }
     }
 }

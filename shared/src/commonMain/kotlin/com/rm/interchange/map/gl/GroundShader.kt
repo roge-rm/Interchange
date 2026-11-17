@@ -3,6 +3,7 @@ package com.rm.interchange.map.gl
 import com.rm.interchange.map.MapOverlays.CONDITION
 import com.rm.interchange.map.MapOverlays.GRID
 import com.rm.interchange.map.MapOverlays.HEIGHTS
+import com.rm.interchange.map.MapOverlays.SAFE
 import com.rm.interchange.map.MapOverlays.SNOW
 
 /** A colour written RRGGBB as a GLSL vec3. */
@@ -235,6 +236,8 @@ const vec3 DRONE_MARK = ${rgb(0x16c4b8)};
 const float PI = 3.14159265;
 const vec3 GRID_LIGHT = ${rgb(0xf2efe6)};
 const vec3 WEAR[3] = vec3[3](${rgb(0xd03a2a)}, ${rgb(0xe8b030)}, ${rgb(0x3aa048)});
+// The same bands in the colour-blind safe set: vermillion, yellow, sky blue.
+const vec3 WEAR_SAFE[3] = vec3[3](${rgb(0xd55e00)}, ${rgb(0xf0e442)}, ${rgb(0x56b4e9)});
 // The snow overlay's bands: under 10 cm, under 30, under 60, deeper; then ice on the water.
 const vec3 SNOW_BAND[4] = vec3[4](${rgb(0x9fd0f0)}, ${rgb(0x5a9ae0)}, ${rgb(0x3a52c8)}, ${rgb(0x6a2ab0)});
 const vec3 ICE_BAND = ${rgb(0x40e0e0)};
@@ -536,7 +539,7 @@ void main() {
 #ifdef OVERLAYS
     // Overlays, as the tile recorder painted them at each level's own size, hw the half tile there.
     float hw = 128.0 / float(1 << uLevel);
-    if (vWear > 0) texel = mix(texel, WEAR[vWear - 1], 0.6);
+    if (vWear > 0) texel = mix(texel, (uOverlay & $SAFE) != 0 ? WEAR_SAFE[vWear - 1] : WEAR[vWear - 1], 0.6);
     if ((uOverlay & $SNOW) != 0) {
         float depth = dot(vSnow, bw);
         if (icy) texel = mix(texel, ICE_BAND, 0.6);
