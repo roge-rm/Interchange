@@ -1,9 +1,9 @@
 {
-  "format": 3,
+  "format": 4,
   "id": "template",
-  "version": 1,
+  "version": 2,
   "name": { "en": "Template pack", "fr": "Pack modèle" },
-  "description": { "en": "One of each thing a pack can do: a new engine with its tender, a new wagon, the caboose changed, a town building, an industry with a rule, and a new cargo with the industry that makes it and a wagon that carries it.", "fr": "Un exemple de tout ce qu'un pack peut faire : une nouvelle locomotive et son tender, un nouveau wagon, le fourgon de queue modifié, un bâtiment de ville, une industrie avec une règle, et une nouvelle marchandise avec l'industrie qui la produit et un wagon qui la transporte." },
+  "description": { "en": "One of each thing a pack can do: a new engine with its tender, a new wagon, the caboose changed, a town building, an industry with a rule, a new cargo with the industry that makes it and a wagon that carries it, a driverless hydrogen truck for it, and a future industry that makes hydrogen from it by a recipe.", "fr": "Un exemple de tout ce qu'un pack peut faire : une nouvelle locomotive et son tender, un nouveau wagon, le fourgon de queue modifié, un bâtiment de ville, une industrie avec une règle, une nouvelle marchandise avec l'industrie qui la produit et un wagon qui la transporte, un camion autonome à hydrogène pour elle, et une industrie du futur qui en fait de l'hydrogène selon une recette." },
   "author": "Your name",
   "licence": "CC-BY-SA-4.0",
   "needs": ["base"]

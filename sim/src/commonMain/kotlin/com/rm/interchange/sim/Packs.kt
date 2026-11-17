@@ -181,6 +181,11 @@ class Pack(
     val sprites: Map<String, ByteArray>,
     val hash: Long,
     val cargo: List<CargoDef> = emptyList(),
+    /** The format its manifest says, and the least format what it uses needs. */
+    val format: Int = Packs.FORMAT,
+    val needsFormat: Int = 1,
+    /** Fields the game doesn't know, left out as it loads; packtool shows them. */
+    val warnings: List<String> = emptyList(),
 ) {
     val ref get() = PackRef(id, version, hash)
     fun name(language: String) = names[language] ?: names["en"] ?: id
@@ -188,8 +193,10 @@ class Pack(
 }
 
 object Packs {
-    /** The newest pack format this game reads. */
-    const val FORMAT = 3
+    /** The newest pack format this game reads. Format 4 is Interchange packs 1.0. */
+    const val FORMAT = 4
+    /** The pack standard's version that [FORMAT] is, as SPEC.md names it. */
+    const val SPEC = "1.0"
     const val BASE_ID = "base"
 
     /** Sprite sheets: four by four cells, each [CELL] pixels square at the sharpest level. */
@@ -202,6 +209,8 @@ object Packs {
     // Limits, so a broken or hostile zip can't fill the phone.
     const val MAX_FILE = 16 shl 20
     const val MAX_TOTAL = 64 shl 20
+    /** The base pack's zip, built from the game's own sheets and never added in the game, can be bigger. */
+    const val MAX_TOTAL_BASE = 128 shl 20
     /** The most of a cargo a recipe takes or makes in a batch. */
     const val RECIPE_MOST = 100
 
@@ -234,6 +243,8 @@ object Packs {
         val top = all.keys.map { it.substringBefore('/', "") }.distinct()
         val inner = if ("manifest.json" !in all && top.size == 1 && top[0].isNotEmpty()) all.mapKeys { it.key.substringAfter('/') } else all
         val problems = ArrayList<String>()
+        // Fields the game doesn't know are left out, so a pack still loads; packtool lists them.
+        val warnings = ArrayList<String>()
         val manifestBytes = inner["manifest.json"] ?: throw BadPack(listOf("manifest.json is missing"))
         val vehiclesBytes = inner["vehicles.json"] ?: byteArrayOf()
         val housesBytes = inner["houses.json"] ?: byteArrayOf()
@@ -250,9 +261,9 @@ object Packs {
         val m = Fields("manifest.json", json("manifest.json", manifestBytes) as? Map<*, *> ?: run {
             if (problems.isEmpty()) problems += "manifest.json should be an object { }"
             throw BadPack(problems)
-        }, problems)
+        }, problems, warnings)
         val format = m.int("format", 1, 1000, need = true) ?: 0
-        if (format > FORMAT) throw BadPack(listOf("made for a newer version of the game (pack format $format, this game reads up to $FORMAT)"))
+        if (format > FORMAT) throw BadPack(listOf("made for a newer version of the game (pack format $format, this game reads up to $FORMAT, Interchange packs $SPEC)"))
         val id = m.string("id", need = true) ?: ""
         if (id.isNotEmpty() && !ID.matches(id)) problems += "manifest.json: id \"$id\" should be lower case letters, digits, - and _, up to 32"
         if (id == BASE_ID && !base) problems += "manifest.json: the id \"base\" is the game's own"
@@ -265,8 +276,16 @@ object Packs {
         val disables = m.strings("disables") ?: emptyList()
         m.done()
 
+        // The least format what the pack uses needs, and the first thing that needs it.
+        var needsFormat = 1
+        var needsWhy = ""
+        fun need(f: Int, why: String) {
+            if (f > needsFormat) { needsFormat = f; needsWhy = why }
+        }
+        if (housesBytes.isNotEmpty() || industriesBytes.isNotEmpty()) need(2, "houses.json or industries.json")
+        if (cargoBytes.isNotEmpty()) need(3, "cargo.json")
+
         val cargo = ArrayList<CargoDef>()
-        if (format < 3 && cargoBytes.isNotEmpty()) problems += "manifest.json: a pack with cargo.json needs \"format\": 3"
         if (cargoBytes.isNotEmpty()) {
             val root = json("cargo.json", cargoBytes)
             val list = (root as? Map<*, *>)?.get("cargo") as? List<*>
@@ -274,7 +293,7 @@ object Packs {
             val seen = HashSet<String>()
             list?.forEachIndexed { n, item ->
                 val map = item as? Map<*, *> ?: run { problems += "cargo.json, cargo ${n + 1} should be an object { }"; return@forEachIndexed }
-                val f = Fields("cargo.json, cargo ${n + 1}", map, problems)
+                val f = Fields("cargo.json, cargo ${n + 1}", map, problems, warnings)
                 val cid = f.string("id", need = true) ?: ""
                 f.where = "cargo.json, \"$cid\""
                 if (cid.isNotEmpty() && !ID.matches(cid)) problems += "${f.where}: id should be lower case letters, digits, - and _"
@@ -299,7 +318,10 @@ object Packs {
         // Cargo this pack can name: the base pack's and its own, and if it needs other packs, theirs too, which only the roster knows.
         val ownCargo = cargo.filter { it.replaces == null }.map { it.id }.toSet()
         val othersCargo = needs.any { it != BASE_ID }
-        fun knownCargo(cg: String) = othersCargo || Cargo.of(cg) >= 0 || cg in Cargo.FUTURE_IDS || cg in ownCargo
+        fun knownCargo(cg: String): Boolean {
+            if (cg in Cargo.FUTURE_IDS && cg !in ownCargo) need(4, "future cargo ($cg)")
+            return othersCargo || Cargo.of(cg) >= 0 || cg in Cargo.FUTURE_IDS || cg in ownCargo
+        }
 
         val vehicles = ArrayList<VehicleDef>()
         if (vehiclesBytes.isNotEmpty()) {
@@ -310,7 +332,7 @@ object Packs {
             list?.forEachIndexed { n, v ->
                 val where = "vehicles.json, vehicle ${n + 1}"
                 val map = v as? Map<*, *> ?: run { problems += "$where should be an object { }"; return@forEachIndexed }
-                val f = Fields(where, map, problems)
+                val f = Fields(where, map, problems, warnings)
                 val vid = f.string("id", need = true) ?: ""
                 val at = if (vid.isEmpty()) where else "vehicles.json, \"$vid\""
                 f.where = at
@@ -357,6 +379,9 @@ object Packs {
                     autonomous = f.bool("autonomous"),
                 )
                 f.done()
+                if (def.traction in Traction.FORMAT_4) need(4, "\"traction\": \"${def.traction}\"")
+                if (def.autonomous != null) need(4, "\"autonomous\"")
+                if (def.runway == "drone") need(4, "\"runway\": \"drone\"")
                 if (!fresh && kind != null) problems += "$at: a vehicle that replaces another keeps its kind"
                 if (def.from != null && def.until != null && def.from >= def.until) problems += "$at: from should be before until"
                 val moves = kind == VehicleKind.ENGINE || kind == VehicleKind.ROAD || kind == VehicleKind.SHIP || kind == VehicleKind.AIRCRAFT
@@ -386,10 +411,6 @@ object Packs {
                 vehicles += def
             }
         }
-        // Town buildings, industries and rules came in format 2; the base pack has always had them.
-        if (id != BASE_ID && format < 2 && (housesBytes.isNotEmpty() || industriesBytes.isNotEmpty())) {
-            problems += "manifest.json: a pack with houses.json or industries.json needs \"format\": 2"
-        }
         fun sprite(at: String, name: String?) {
             if (!spritesElsewhere && name != null && "sprites/$name.png" !in inner) problems += "$at: sprites/$name.png is missing"
         }
@@ -401,7 +422,7 @@ object Packs {
             val seen = HashSet<String>()
             list?.forEachIndexed { n, h ->
                 val map = h as? Map<*, *> ?: run { problems += "houses.json, building ${n + 1} should be an object { }"; return@forEachIndexed }
-                val f = Fields("houses.json, building ${n + 1}", map, problems)
+                val f = Fields("houses.json, building ${n + 1}", map, problems, warnings)
                 val hid = f.string("id", need = true) ?: ""
                 f.where = "houses.json, \"$hid\""
                 if (hid.isNotEmpty() && !ID.matches(hid)) problems += "${f.where}: id should be lower case letters, digits, - and _"
@@ -439,7 +460,7 @@ object Packs {
             val baseParts = if (id == BASE_ID) emptySet() else BASE.industries.flatMap { d -> d.layout.orEmpty().flatten() }.toSet()
             list?.forEachIndexed { n, item ->
                 val map = item as? Map<*, *> ?: run { problems += "industries.json, industry ${n + 1} should be an object { }"; return@forEachIndexed }
-                val f = Fields("industries.json, industry ${n + 1}", map, problems)
+                val f = Fields("industries.json, industry ${n + 1}", map, problems, warnings)
                 val iid = f.string("id", need = true) ?: ""
                 f.where = "industries.json, \"$iid\""
                 val at = f.where
@@ -490,15 +511,19 @@ object Packs {
                     replaces, parts, production, open, closes, recipe, f.bool("future"), f.int("fades", 1700, 2300),
                 )
                 f.done()
+                if (def.future != null) need(4, "\"future\"")
+                if (def.fades != null) need(4, "\"fades\"")
                 if (def.from != null && def.until != null && def.from >= def.until) problems += "$at: from should be before until"
                 industries += def
             }
         }
+        // The base pack ships with the game, so it never needs a newer format.
+        if (id != BASE_ID && format < needsFormat) problems += "manifest.json: a pack with $needsWhy needs \"format\": $needsFormat"
         if (problems.isNotEmpty()) throw BadPack(problems)
         val sprites = inner.filterKeys { it.startsWith("sprites/") && it.endsWith(".png") }.mapKeys { it.key.removePrefix("sprites/").removeSuffix(".png") }
         // cargo.json is hashed only when there is one, so packs without it keep their hash.
         val hash = if (cargoBytes.isEmpty()) hash(manifestBytes, vehiclesBytes, housesBytes, industriesBytes) else hash(manifestBytes, vehiclesBytes, housesBytes, industriesBytes, cargoBytes)
-        return Pack(id, version, names, descriptions, author, licence, needs, disables, vehicles, houses, industries, sprites, hash, cargo)
+        return Pack(id, version, names, descriptions, author, licence, needs, disables, vehicles, houses, industries, sprites, hash, cargo, format, needsFormat, warnings)
     }
 
     /** [source] parsed as a rule, or null with its problem noted, at its column. */
@@ -519,8 +544,8 @@ object Packs {
         return h
     }
 
-    /** Reads typed fields out of a JSON object, noting each problem, and any field left over as unknown. */
-    private class Fields(var where: String, val map: Map<*, *>, val problems: MutableList<String>) {
+    /** Reads typed fields out of a JSON object, noting each problem, and any field left over in [unknown]. */
+    private class Fields(var where: String, val map: Map<*, *>, val problems: MutableList<String>, val unknown: MutableList<String>) {
         /** An industry's months, twelve percentages, or all a hundred if it doesn't say and it's [fresh]. */
         fun seasons(fresh: Boolean = true): List<Int>? {
             val v = intList("seasons") ?: return if (fresh) List(12) { 100 } else null
@@ -627,7 +652,7 @@ object Packs {
         }
 
         fun done() {
-            for (k in map.keys) if (k !in used) problems += "$where: unknown field \"$k\""
+            for (k in map.keys) if (k !in used) unknown += "$where: unknown field \"$k\""
         }
     }
 }

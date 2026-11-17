@@ -17,7 +17,8 @@ import javax.imageio.ImageIO
 import kotlin.system.exitProcess
 
 private const val USAGE = """packtool check PACK [--with PACK]...
-    Checks a pack, a .ichpack zip or a folder, and says everything wrong with it.
+    Checks a pack, a .ichpack zip or a folder, against Interchange packs ${Packs.SPEC} (format ${Packs.FORMAT}), says everything
+    wrong with it and the format it needs.
     --with names packs it needs besides the base pack, in order.
 packtool zip FOLDER OUT.ichpack
     Zips a pack's folder up, after checking it.
@@ -35,30 +36,59 @@ fun main(args: Array<String>) {
     exitProcess(if (ok) 0 else 1)
 }
 
-/** A pack's files by path, from a zip or a folder. */
-private fun files(f: File): Map<String, ByteArray> =
-    if (f.isDirectory) f.walkTopDown().filter { it.isFile }.associate { it.relativeTo(f).invariantSeparatorsPath to it.readBytes() }
-    else com.rm.interchange.sim.Zip.read(f.readBytes(), Packs.MAX_FILE, Packs.MAX_TOTAL)
+/**
+ * A pack's files by path, from a zip or a folder, held to the game's limits. The base pack may be up to
+ * [Packs.MAX_TOTAL_BASE] unpacked, as the game never adds it from a file; [check] holds other packs to [Packs.MAX_TOTAL].
+ */
+private fun files(f: File): Map<String, ByteArray> {
+    if (!f.isDirectory) return com.rm.interchange.sim.Zip.read(f.readBytes(), Packs.MAX_FILE, Packs.MAX_TOTAL_BASE)
+    val out = LinkedHashMap<String, ByteArray>()
+    var total = 0L
+    for (file in f.walkTopDown().filter { it.isFile }) {
+        val name = file.relativeTo(f).invariantSeparatorsPath
+        if (file.length() > Packs.MAX_FILE) throw BadPack(listOf("$name is bigger than ${Packs.MAX_FILE shr 20} MB"))
+        total += file.length()
+        if (total > Packs.MAX_TOTAL_BASE) throw BadPack(listOf("the pack is bigger than ${Packs.MAX_TOTAL_BASE shr 20} MB unpacked"))
+        out[name] = file.readBytes()
+    }
+    return out
+}
 
-private fun load(f: File, base: Boolean = false): Pack = Packs.read(files(f), base = base)
+/**
+ * The base pack read from its folder in the repo, which has no sprites: its sheets are drawn by tools/gen_tiles.py
+ * into build/packs/base.ichpack, so they're checked there.
+ */
+private fun bareBase(files: Map<String, ByteArray>) = files.keys.none { it.startsWith("sprites/") } &&
+    (files["manifest.json"]?.decodeToString()?.let { Regex("\"id\"\\s*:\\s*\"base\"").containsMatchIn(it) } ?: false)
 
-private fun check(f: File, with: List<File>): Boolean {
-    if (!f.exists()) { println("$f isn't there"); return false }
+private fun load(f: File, base: Boolean = false): Pack = files(f).let { Packs.read(it, spritesElsewhere = base && bareBase(it), base = base) }
+
+/** Checks [f] as the game would load it, with [with] before it, and says what it finds through [say]. */
+internal fun check(f: File, with: List<File>, say: (String) -> Unit = ::println, maxTotal: Int = Packs.MAX_TOTAL): Boolean {
+    if (!f.exists()) { say("$f isn't there"); return false }
     val problems = ArrayList<String>()
-    val pack = try {
-        load(f, base = true)
+    val files = try {
+        files(f)
     } catch (e: BadPack) {
-        report(f, e.problems)
+        report(f, e.problems, say)
         return false
     }
+    val pack = try {
+        Packs.read(files, spritesElsewhere = bareBase(files), base = true)
+    } catch (e: BadPack) {
+        report(f, e.problems, say)
+        return false
+    }
+    val unpacked = files.values.sumOf { it.size.toLong() }
+    if (pack.id != Packs.BASE_ID && unpacked > maxTotal) problems += "the pack is bigger than ${maxTotal shr 20} MB unpacked"
     val roster = try {
         Roster.build(if (pack.id == Packs.BASE_ID) listOf(pack) else listOf(Packs.BASE) + with.map { load(it) } + pack)
     } catch (e: BadPack) {
         problems += e.problems
         null
     }
-    // New cargo nothing carries or makes can't be part of a game, so say so, though the pack still loads.
-    val warnings = ArrayList<String>()
+    // Fields the game leaves out, and new cargo nothing carries or makes, which can't be part of a game; the pack still loads.
+    val warnings = ArrayList(pack.warnings.map { "$it, which the game leaves out" })
     if (roster != null) for (c in pack.cargo.filter { it.replaces == null }) {
         val id = roster.cargo.of(c.id)
         if (roster.engines.none { it.enabled && id in it.cargoes }) warnings += "cargo.json, \"${c.id}\": no vehicle carries it"
@@ -80,16 +110,23 @@ private fun check(f: File, with: List<File>): Boolean {
         problems += wrong.map { "sprites/$name.png: $it" }
         if (wrong.isEmpty()) PackSprites.pack(picture)
     }
-    if (problems.isNotEmpty()) { report(f, problems); return false }
-    for (w in warnings) println("  warning: $w")
+    if (problems.isNotEmpty()) { report(f, problems, say); return false }
+    for (w in warnings) say("  warning: $w")
     val rules = pack.industries.sumOf { it.production.orEmpty().size + (if (it.open != null) 1 else 0) + (if (it.closes != null) 1 else 0) }
-    println("${pack.id} ${pack.version}: ${pack.vehicles.size} vehicles, ${pack.houses.size} buildings, ${pack.industries.size} industries, ${pack.cargo.size} cargo, $rules rules, ${pack.sprites.size} sprite sheets, all good")
+    val sheets = if (bareBase(files)) "sprite sheets not here (build/packs/base.ichpack has them)" else "${pack.sprites.size} sprite sheets"
+    say("${pack.id} ${pack.version}: ${pack.vehicles.size} vehicles, ${pack.houses.size} buildings, ${pack.industries.size} industries, ${pack.cargo.size} cargo, $rules rules, $sheets, ${String.format(java.util.Locale.ROOT, "%.1f", unpacked / 1048576.0)} MB unpacked, all good")
+    val note = when {
+        pack.id == Packs.BASE_ID -> if (pack.needsFormat > pack.format) ", fine for the base pack, which comes with the game" else ""
+        pack.needsFormat < pack.format -> ", so \"format\": ${pack.needsFormat} would let older games load it too"
+        else -> ""
+    }
+    say("  needs format ${pack.needsFormat} (Interchange packs ${Packs.SPEC} is format ${Packs.FORMAT}), says ${pack.format}$note")
     return true
 }
 
-private fun report(f: File, problems: List<String>) {
-    println("$f has ${problems.size} problem${if (problems.size == 1) "" else "s"}:")
-    for (p in problems) println("  $p")
+private fun report(f: File, problems: List<String>, say: (String) -> Unit) {
+    say("$f has ${problems.size} problem${if (problems.size == 1) "" else "s"}:")
+    for (p in problems) say("  $p")
 }
 
 /** Only what a pack is made of goes in: the data files and the sprite sheets. */

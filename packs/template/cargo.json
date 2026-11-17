@@ -10,7 +10,8 @@
       "pace": 2,
       "kg": 300,
       "colour": "#b5651d",
-      "towns": true
+      "towns": true,
+      "handling": "liquid"
     }
   ]
 }

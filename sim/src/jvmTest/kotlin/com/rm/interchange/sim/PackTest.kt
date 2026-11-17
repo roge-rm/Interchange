@@ -10,6 +10,7 @@ import javax.imageio.ImageIO
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 /** PNG through ImageIO, as the checking tool does. */
@@ -100,6 +101,70 @@ class PackTest {
         }
     }
 
+    /** The template pack in a game with future transport on and off: its future things only with it on, and both save and load in step. */
+    @Test
+    fun theTemplatePackPlaysWithTheFutureOnAndOff() {
+        val dir = File("../packs/template")
+        val pack = Packs.read(dir.walkTopDown().filter { it.isFile }.associate { it.relativeTo(dir).invariantSeparatorsPath to it.readBytes() })
+        assertEquals(listOf(4, 4), listOf(pack.format, pack.needsFormat))
+        assertEquals(emptyList(), pack.warnings)
+        val roster = Roster.build(listOf(Packs.BASE, pack))
+        val hauler = roster.engines.first { it.key == "template:syrup_hauler" }
+        assertTrue(hauler.autonomous && hauler.traction == Traction.HYDROGEN && hauler.range == 380 && hauler.future)
+        assertTrue(hauler in roster.availableRoad(2040, future = true))
+        assertFalse(hauler in roster.availableRoad(2040, future = false))
+        val refinery = roster.industries.first { it.key == "template:maple_biorefinery" }
+        assertTrue(refinery.future)
+        assertEquals(Handling.LIQUID, roster.cargo.handling[roster.cargo.of("maple_syrup")])
+        for (future in listOf(true, false)) {
+            val w = World(NewGame(128, 128, 5, 2040, Region.MIXED, towns = 4, industries = 12, future = future), roster)
+            repeat(Calendar.TICKS_PER_DAY * 30) { w.step() }
+            val copy = Save.read(Save.write(w)) { ref -> listOf(Packs.BASE, pack).firstOrNull { it.id == ref.id } }
+            repeat(Calendar.TICKS_PER_DAY * 30) { w.step(); copy.step() }
+            assertEquals(w.checksum(), copy.checksum())
+            if (!future) assertTrue(w.industries.none { roster.industries[it.kind].future }, "future off")
+        }
+    }
+
+    /** A pack has to say the format of the newest thing it uses; the base pack, shipped with the game, doesn't. */
+    @Test
+    fun packsSayTheFormatTheyNeed() {
+        fun files(format: Int, vehicles: String? = null, industries: String? = null) = buildMap<String, Any> {
+            put("manifest.json", """{ "format": $format, "id": "x", "version": 1, "name": { "en": "X" } }""")
+            if (vehicles != null) put("vehicles.json", """{ "vehicles": [ { "id": "c", "replaces": "base:caboose", $vehicles } ] }""")
+            if (industries != null) put("industries.json", """{ "industries": [ { "id": "f", "replaces": "base:farm", $industries } ] }""")
+        }
+        assertEquals(1, Packs.unzip(zip(files(1, vehicles = "\"life\": 40"))).needsFormat)
+        assertEquals(2, Packs.unzip(zip(files(2, industries = "\"weather\": [\"crops\"]"))).needsFormat)
+        val vehicles = mapOf(
+            "\"traction\": \"hydrogen\"" to "\"traction\": \"hydrogen\"", "\"traction\": \"maglev\"" to "\"traction\": \"maglev\"",
+            "\"autonomous\": true" to "\"autonomous\"", "\"runway\": \"drone\"" to "\"runway\": \"drone\"", "\"carries\": [\"lithium\"]" to "future cargo (lithium)",
+        )
+        for ((field, why) in vehicles) {
+            assertEquals(4, Packs.unzip(zip(files(4, vehicles = field))).needsFormat, field)
+            assertEquals(listOf("manifest.json: a pack with $why needs \"format\": 4"), problems(files(3, vehicles = field)), field)
+        }
+        for (field in listOf("\"future\": true", "\"fades\": 2040", "\"accepts\": [\"batteries\"]")) {
+            assertEquals(4, Packs.unzip(zip(files(4, industries = field))).needsFormat, field)
+            assertEquals(1, problems(files(3, industries = field)).size, field)
+        }
+        assertEquals(listOf("manifest.json: a pack with houses.json or industries.json needs \"format\": 2"), problems(files(1, industries = "\"water\": true")))
+        // A pack may say a newer format than it needs.
+        assertEquals(listOf(4, 1), Packs.unzip(zip(files(4, vehicles = "\"life\": 40"))).let { listOf(it.format, it.needsFormat) })
+        assertEquals(Packs.FORMAT, Packs.BASE.needsFormat)
+    }
+
+    /** A field the game doesn't know, a typo say, is left out with a warning, which packtool shows. */
+    @Test
+    fun unknownFieldsAreLeftOutWithAWarning() {
+        val pack = Packs.unzip(zip(mapOf(
+            "manifest.json" to """{ "format": 4, "id": "x", "version": 1, "name": { "en": "X" }, "homepage": "x" }""",
+            "vehicles.json" to """{ "vehicles": [ { "id": "c", "replaces": "base:caboose", "colour": "red" } ] }""",
+        )))
+        assertEquals(listOf("manifest.json: unknown field \"homepage\"", "vehicles.json, \"c\": unknown field \"colour\""), pack.warnings)
+        assertEquals("Caboose", Roster.build(listOf(Packs.BASE, pack)).engines.first { it.key == "base:caboose" }.name("en"))
+    }
+
     @Test
     fun aPackAddsChangesAndTurnsOffVehicles() {
         val roster = Roster.build(listOf(Packs.BASE, thirdParty()))
@@ -128,11 +193,11 @@ class PackTest {
         assertTrue("vehicles.json, \"a\": \"name\" needs English, \"en\"" in p, "$p")
         assertTrue("vehicles.json, \"a\": \"speed\" is missing" in p, "$p")
         assertTrue("vehicles.json, \"a\": \"length\" should be from 1 to 16" in p, "$p")
-        assertTrue("vehicles.json, \"a\": unknown field \"colour\"" in p, "$p")
+        assertTrue(p.none { "colour" in it }, "$p")
         assertTrue("vehicles.json, \"a\": sprites/a.png is missing" in p, "$p")
         assertTrue("vehicles.json, \"a\": from should be before until" in p, "$p")
         assertEquals(
-            listOf("made for a newer version of the game (pack format 9, this game reads up to ${Packs.FORMAT})"),
+            listOf("made for a newer version of the game (pack format 9, this game reads up to ${Packs.FORMAT}, Interchange packs ${Packs.SPEC})"),
             problems(mapOf("manifest.json" to """{ "format": 9, "id": "x", "version": 1, "name": { "en": "X" } }""")),
         )
         assertEquals(listOf("not a zip file, or an empty one"), assertFailsWith<BadPack> { Packs.unzip("hello".encodeToByteArray()) }.problems)

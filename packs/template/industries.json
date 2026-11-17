@@ -25,6 +25,18 @@
       "parts": { "sugar_shack": "sugar_shack" },
       "produces": { "maple_syrup": 40 },
       "production": { "maple_syrup": "pick(month, 0, 0, 90, 150, 0, 0, 0, 0, 0, 0, 0, 0) * level / 16" }
+    },
+    {
+      "id": "maple_biorefinery",
+      "name": { "en": "Maple Biorefinery", "fr": "Bioraffinerie d'érable" },
+      "from": 2035,
+      "until": 2100,
+      "regions": { "mixed": 2, "shield": 1, "maritimes": 1, "prairies": 0, "rockies": 0, "north": 0 },
+      "layout": ["hydrogen_hall hydrogen_tanks"],
+      "accepts": ["maple_syrup"],
+      "produces": { "hydrogen": 0 },
+      "recipe": { "inputs": { "maple_syrup": 3 }, "makes": { "hydrogen": 1 } },
+      "future": true
     }
   ]
 }

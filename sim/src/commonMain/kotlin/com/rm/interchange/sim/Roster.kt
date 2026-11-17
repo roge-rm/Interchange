@@ -109,6 +109,8 @@ object Traction {
     /** Pods that run only in a hyperloop tube, with [NewGame.future], by [Hyperloop]. */
     const val HYPERLOOP = 8
     val NAMES = listOf("steam", "diesel", "electric", "horse", "dual", "battery", "hydrogen", "maglev", "hyperloop")
+    /** Tractions a pack needs format 4 for. */
+    val FORMAT_4 = setOf("battery", "hydrogen", "maglev", "hyperloop")
 }
 
 /**

@@ -287,7 +287,7 @@ class PackCargoTest {
         assertFalse(r.engines.first { it.key == "maple:cask_car" }.futureCargo)
         assertFalse(r.industries.first { it.key == "maple:shack" }.future)
         // A pack industry naming future cargo no pack gives opens only with future transport.
-        val q = pack(cargo = emptyList(), industries = listOf(shack("hydrogen", "hydrogen")))
+        val q = pack(cargo = emptyList(), industries = listOf(shack("hydrogen", "hydrogen")), format = 4)
         assertTrue(roster(q).industries.first { it.key == "maple:shack" }.future)
     }
 }

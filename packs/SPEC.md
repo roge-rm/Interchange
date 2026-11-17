@@ -2,7 +2,36 @@
 
 A content pack adds things to Interchange: trains and the wagons they haul, road vehicles, ships, aircraft, town buildings, industries and cargo. Anyone can make one. The game's own are a pack too, the base pack, in this same format.
 
-This is format 3. A pack with only vehicles can say format 1, so older versions of the game load it too; one with town buildings or industries needs format 2, and one with cargo format 3. Start from the template pack in `packs/template`, which has one of each thing a pack can do.
+This is Interchange packs 1.0, pack format 4. Start from the template pack in `packs/template`, which has one of each thing a pack can do.
+
+## Formats
+
+A pack says in its manifest the format it's made for. Each table below gives the least format a field needs, and a pack has to say at least the format of the newest thing it uses. Say the least that does, so older games load it too: `packtool check` prints the format a pack needs.
+
+| Format | What it brought | Read by |
+|---|---|---|
+| 1 | Vehicles | Interchange 0.2 on, some fields later |
+| 2 | Town buildings and industries, with rules | Interchange 0.14 on |
+| 3 | Cargo, stores and recipes, handling | Interchange 0.14 on |
+| 4 | Interchange packs 1.0: battery, hydrogen, maglev and hyperloop traction, autonomous road vehicles, drones, future cargo, future and fading industries | Interchange 0.15 on |
+
+A game won't load a pack made for a newer format than it reads, and says so: "made for a newer version of the game (pack format 5, this game reads up to 4, Interchange packs 1.0)". A field the game doesn't know is left out as the pack loads, so a typo doesn't stop it; `packtool check` lists them as warnings. Older games refuse a pack with a field they don't know.
+
+The base pack comes with the game, so it isn't held to its format.
+
+## Limits
+
+| What | Most |
+|---|---|
+| A pack's files unpacked, together | 64 MB |
+| One file | 16 MB |
+| Cargo in a game, from every pack | 32 |
+| Town buildings in a game, from every pack | 4095 |
+| Industries in a game, from every pack | 4095 |
+| An industry's layout | 5 by 5 tiles |
+| A rule | 1000 characters |
+
+The game holds every pack it has in memory, and sends a pack whole to players joining a game, so the 64 MB keeps that within what a phone can spare. The base pack's zip, made from the game's own sheets by `tools/gen_tiles.py`, can be up to 128 MB, as the game never adds it from a file.
 
 ## What's in a pack
 
@@ -25,7 +54,7 @@ Text is UTF-8 JSON. Every name, description and type comes in English and can co
 
 ```json
 {
-  "format": 3,
+  "format": 4,
   "id": "prairie-lines",
   "version": 3,
   "name": { "en": "Prairie lines", "fr": "Lignes des Prairies" },
@@ -37,16 +66,18 @@ Text is UTF-8 JSON. Every name, description and type comes in English and can co
 }
 ```
 
-| Field | Needed | What it is |
-|---|---|---|
-| format | yes | The pack format, 1 to 3. A game won't load a pack made for a newer format. |
-| id | yes | Lower case letters, digits, `-` and `_`, up to 32. Keep it the same for every version. `base` is the game's own. |
-| version | yes | A whole number. Raise it each time you share a new version. |
-| name | yes | The pack's name in each language. |
-| description | no | A line about it. |
-| author, licence | no | Who made it and how others may use it. |
-| needs | no | Ids of packs that have to be on before this one, if it builds on their vehicles. The base pack is always on first. |
-| disables | no | Vehicles of other packs to take off sale, and town buildings and industries of other packs no longer to build, as `pack:id`. Those already on the map stay. |
+In the tables, "needed" means a pack has to give it. A field that changes another pack's thing (`replaces`, below) needs only `id` and `replaces`.
+
+| Field | Type | Default | Format | What it is |
+|---|---|---|---|---|
+| format | whole number, 1 to 4 | needed | 1 | The pack format, as above. |
+| id | text, lower case letters, digits, `-` and `_`, up to 32 | needed | 1 | Keep it the same for every version. `base` is the game's own. |
+| version | whole number, 1 to 1000000 | needed | 1 | Raise it each time you share a new version. |
+| name | text in each language | needed | 1 | The pack's name. |
+| description | text in each language | none | 1 | A line about it. |
+| author, licence | text | none | 1 | Who made it and how others may use it. |
+| needs | list of pack ids | none | 1 | Packs that have to be on before this one, if it builds on their vehicles or cargo. The base pack is always on first. |
+| disables | list of `pack:id` | none | 1 | Vehicles of other packs to take off sale, and town buildings and industries of other packs no longer to build. Those already on the map stay. |
 
 ## vehicles.json
 
@@ -56,37 +87,38 @@ Text is UTF-8 JSON. Every name, description and type comes in English and can co
 
 Each vehicle:
 
-| Field | Needed | What it is |
-|---|---|---|
-| id | yes | Lower case letters, digits, `-` and `_`. Its full name is `pack:id`. |
-| kind | yes | `engine`, `wagon` or `tender` on the track, `road` for buses, trucks and streetcars, `ship` or `aircraft`. A tender only comes with its engine. |
-| name | yes | Its name in each language. |
-| plural | no | What more than one is called, for wagons. |
-| type | no | What railwaymen called it: a wheel arrangement like `4-6-2`, or what a car is for. |
-| from, until | yes | The years it's on sale, from the first up to but not including the second. |
-| speed | engines, road, ships, aircraft | Top speed in km/h. |
-| power | engines, road, ships, aircraft | Horsepower. |
-| tractive | no | Engines' starting tractive effort in kN, what the wheels pull before they slip. A quarter of the engine's weight if left out (its weight in tonnes times 2.45). |
-| traction | no | Engines and road vehicles: `steam` (the default), `diesel`, `electric`, `dual` or `horse`. Electric engines only run under wires. Dual-mode engines run anywhere, on their speed and power under wires and on their diesel speed and power off them. Horse-drawn road vehicles need no winter tires and go on sleigh runners in deep snow, so it doesn't hold them up. `battery` and `hydrogen` (ships and aircraft too) run on a charge or a tank for their `range` in a game with energy on, and as diesel with it off; road vehicles with `electric` that aren't streetcars run as battery. `maglev` (engines and wagons) runs only on maglev guideway, in a game with future transport on, and a maglev train is all maglev cars. `hyperloop` (engines and wagons) runs only in hyperloop tube, the same way, and carries only passengers and mail. |
-| diesel_speed, diesel_power | no | Dual-mode engines: top speed in km/h and horsepower off the wires. Their speed and power if left out. |
-| life | no | Years it runs well before it wears out and breaks down more. 35 if left out. |
-| reliability | no | How reliable it is new, in percent. 85 if left out. |
-| plow | no | Wagons: `wedge` or `rotary` makes it a snow plow, run at the head of its train. A wedge clears up to a metre of snow and pushes through drifts four times as fast; a rotary clears anything. Road vehicles: `wedge` or `oneway`, a plow truck that clears the road it drives. |
-| tram | no | Road vehicles: `true` for a streetcar, which runs only on tram rails. |
-| autonomous | no | Road vehicles: `true` for one with no crew, on sale only in a game with future transport on. Give it a running cost without the crew's share. On highways it follows other autonomous vehicles closer, in convoys. |
-| icebreaker | no | Ships: the ice it breaks through, in cm, clearing a channel as it goes. Other ships stop at 15 cm. |
-| hovercraft | no | Ships: `true` rides over ice of any thickness. |
-| runway | aircraft | The least it lands at: `strip` (a gravel strip), `regional`, `city` or `international` airport, `heli` for a helicopter, which lands at any airport or a heliport but not a drone pad, or `drone` for a drone, which lands only at a drone pad, carries only mail, goods and food, at most 6, and is on sale only in a game with future transport on. |
-| range | no | Aircraft: how far it flies without stopping, in km. Stops beyond it are skipped. Battery and hydrogen engines, road vehicles and ships: tiles on a full charge or tank, 100 for battery and 400 for hydrogen if not given. |
-| floats | no | Aircraft: `true` for a bush plane, which goes on floats in summer and skis in winter, and lands at seaplane bases. |
-| weight | yes | Tonnes. |
-| cost | yes | Dollars to buy. |
-| running | yes | Dollars a year to run. |
-| length | yes | Sixteenths of a tile, 1 to 16. Draw it to match. |
-| carries, capacity | no | The cargo a wagon carries and how much. Cargo ids: `passengers`, `mail`, `timber`, `lumber`, `grain`, `coal`, `iron_ore`, `steel`, `goods`, `oil`, `fuel`, `livestock`, `food`, `fish`, `paper`, `potash`, `nickel_ore`, `nickel`, `bauxite`, `aluminium`, and with future transport on `lithium`, `batteries`, `hydrogen`; a vehicle carrying only those is on sale only then. A passenger weighs 90 kg with their bags, mail 50 kg a bag, livestock half a tonne a head, the rest a tonne each. Cargo from cargo.json can be named too. |
-| tender | no | An engine's tender: a tender's id in this pack, or `pack:id` in another. |
-| sprite | no | Its sprite sheet, `sprites/NAME.png`. Leave it out to use the vehicle's id. Vehicles can share one. |
-| sprite_off_wire | no | Dual-mode engines: the sprite sheet drawn off the wires, with the pantograph down. Leave it out to use `sprite` everywhere. |
+| Field | Type | Default | Format | What it is |
+|---|---|---|---|---|
+| id | text, lower case letters, digits, `-` and `_`, up to 32 | needed | 1 | Its full name is `pack:id`. |
+| kind | `engine`, `wagon`, `tender`, `road`, `ship` or `aircraft` | needed | 1 | `engine`, `wagon` or `tender` on the track, `road` for buses, trucks and streetcars. A tender only comes with its engine. |
+| name | text in each language | needed | 1 | Its name. |
+| plural | text in each language | its name and "s" | 1 | What more than one is called, for wagons. |
+| type | text in each language | none | 1 | What railwaymen called it: a wheel arrangement like `4-6-2`, or what a car is for. |
+| from, until | whole numbers, 1700 to 2300 | needed | 1 | The years it's on sale, from the first up to but not including the second. |
+| speed | whole number, 1 to 2000 | needed for engines, road, ships, aircraft | 1 | Top speed in km/h. Wagons and tenders have none. |
+| power | whole number, 1 to 1000000 | needed for engines, road, ships, aircraft | 1 | Horsepower. Wagons and tenders have none. |
+| tractive | whole number, 1 to 10000 | its weight times 2.45 | 1 | Engines and road vehicles: starting tractive effort in kN, what the wheels pull before they slip. The default is a quarter of its weight. |
+| traction | `steam`, `diesel`, `electric`, `dual`, `horse`, `battery`, `hydrogen`, `maglev` or `hyperloop` | `steam` | 1; 4 for `battery`, `hydrogen`, `maglev`, `hyperloop` | Engines and road vehicles. Electric engines only run under wires. Dual-mode engines run anywhere, on their speed and power under wires and on their diesel speed and power off them. Horse-drawn road vehicles need no winter tires and go on sleigh runners in deep snow, so it doesn't hold them up. `battery` and `hydrogen` (ships and aircraft too) run on a charge or a tank for their `range` in a game with energy on, and as diesel with it off; road vehicles with `electric` that aren't streetcars run as battery. `maglev` (engines and wagons) runs only on maglev guideway, in a game with future transport on, and a maglev train is all maglev cars. `hyperloop` (engines and wagons) runs only in hyperloop tube, the same way, and carries only passengers and mail. Wagons can only be `maglev` or `hyperloop`, ships and aircraft only `battery` or `hydrogen`. |
+| diesel_speed, diesel_power | whole numbers, 1 to 2000 and 1 to 1000000 | its speed and power | 1 | Dual-mode engines only: top speed in km/h and horsepower off the wires. |
+| life | whole number, 1 to 200 | 35 | 1 | Years it runs well before it wears out and breaks down more. |
+| reliability | whole number, 1 to 100 | 85 | 1 | How reliable it is new, in percent. |
+| plow | `wedge`, `rotary` or `oneway` | none | 1 | Wagons: `wedge` or `rotary` makes it a snow plow, run at the head of its train. A wedge clears up to a metre of snow and pushes through drifts four times as fast; a rotary clears anything. Road vehicles: `wedge` or `oneway`, a plow truck that clears the road it drives. |
+| tram | `true` or `false` | `false` | 1 | Road vehicles: `true` for a streetcar, which runs only on tram rails. |
+| autonomous | `true` or `false` | `false` | 4 | Road vehicles: `true` for one with no crew, on sale only in a game with future transport on. Give it a running cost without the crew's share. On highways it follows other autonomous vehicles closer, in convoys. |
+| icebreaker | whole number, 1 to 500 | none | 1 | Ships: the ice it breaks through, in cm, clearing a channel as it goes. Other ships stop at 15 cm. |
+| hovercraft | `true` or `false` | `false` | 1 | Ships: `true` rides over ice of any thickness. |
+| runway | `strip`, `regional`, `city`, `international`, `heli` or `drone` | needed for aircraft | 1; 4 for `drone` | Aircraft: the least it lands at: `strip` (a gravel strip), `regional`, `city` or `international` airport, `heli` for a helicopter, which lands at any airport or a heliport but not a drone pad, or `drone` for a drone, which lands only at a drone pad, carries only mail, goods and food, at most 6, and is on sale only in a game with future transport on. |
+| range | whole number, 1 to 30000 | aircraft: no limit; battery 100, hydrogen 400 | 1; 4 for battery and hydrogen | Aircraft: how far it flies without stopping, in km. Stops beyond it are skipped. Battery and hydrogen engines, road vehicles, ships and aircraft: tiles on a full charge or tank. |
+| floats | `true` or `false` | `false` | 1 | Aircraft: `true` for a bush plane, which goes on floats in summer and skis in winter, and lands at seaplane bases. |
+| weight | whole number, 1 to 100000 | needed | 1 | Tonnes. |
+| cost | whole number, 0 to 1000000000 | needed | 1 | Dollars to buy. |
+| running | whole number, 0 to 1000000000 | needed | 1 | Dollars a year to run. |
+| length | whole number, 1 to 16 | needed | 1 | Sixteenths of a tile. Draw it to match. |
+| carries | a cargo id, or a list of them | nothing | 1; 4 for future cargo | The cargo it carries, the first unless set otherwise. Cargo ids: `passengers`, `mail`, `timber`, `lumber`, `grain`, `coal`, `iron_ore`, `steel`, `goods`, `oil`, `fuel`, `livestock`, `food`, `fish`, `paper`, `potash`, `nickel_ore`, `nickel`, `bauxite`, `aluminium`, and the future cargo `lithium`, `batteries`, `hydrogen`, in play only with future transport on; a vehicle carrying only those is on sale only then. Cargo from cargo.json can be named too. |
+| capacity | whole number, 0 to 100000 | 0 | 1 | How much it carries. A passenger weighs 90 kg with their bags, mail 50 kg a bag, livestock half a tonne a head, the rest a tonne each, or a pack cargo's `kg`. Needs `carries`. |
+| tender | a tender's id in this pack, or `pack:id` | none | 1 | Engines: the tender that comes with it. |
+| sprite | a sheet's name | its id | 1 | Its sprite sheet, `sprites/NAME.png`. Vehicles can share one. |
+| sprite_off_wire | a sheet's name | `sprite` | 1 | Dual-mode engines: the sprite sheet drawn off the wires, with the pantograph down. |
 
 ### Changing another pack's vehicle
 
@@ -110,17 +142,17 @@ A saved game names each pack and its version, and loads with that version or a n
 
 Each town building:
 
-| Field | Needed | What it is |
-|---|---|---|
-| id | yes | Lower case letters, digits, `-` and `_`. Its full name is `pack:id`. |
-| name | yes | Its name in each language. |
-| from, until | yes | The years towns build it, from the first up to but not including the second. A town pulls it down for something newer once its years are past. |
-| residents, jobs | yes | How many live and work in it, 0 to 10000 each. |
-| zones | yes | How far into a town it's built: any of `outskirts`, `suburbs`, `inner` and `centre`. |
-| min_population | no | How many people a town needs before it builds one. 0 if left out. |
-| weight | no | How often it's picked among the buildings that suit a lot, 1 to 100. 1 if left out. |
-| monument | no | `true` for a statue and the like, which a town never builds; it goes up when a company pays for it. Needs no zones. |
-| sprite | no | Its sprite sheet, `sprites/NAME.png`. Leave it out to use the building's id. |
+| Field | Type | Default | Format | What it is |
+|---|---|---|---|---|
+| id | text, lower case letters, digits, `-` and `_`, up to 32 | needed | 2 | Its full name is `pack:id`. |
+| name | text in each language | needed | 2 | Its name. |
+| from, until | whole numbers, 1700 to 2300 | needed | 2 | The years towns build it, from the first up to but not including the second. A town pulls it down for something newer once its years are past. |
+| residents, jobs | whole numbers, 0 to 10000 | needed | 2 | How many live and work in it. |
+| zones | a list of `outskirts`, `suburbs`, `inner`, `centre` | needed, but for a monument | 2 | How far into a town it's built. |
+| min_population | whole number, 0 to 10000000 | 0 | 2 | How many people a town needs before it builds one. |
+| weight | whole number, 1 to 100 | 1 | 2 | How often it's picked among the buildings that suit a lot. |
+| monument | `true` or `false` | `false` | 2 | `true` for a statue and the like, which a town never builds; it goes up when a company pays for it. Needs no zones. |
+| sprite | a sheet's name | its id | 2 | Its sprite sheet, `sprites/NAME.png`. |
 
 Towns build a pack's buildings along with the base pack's, picked by weight among those whose zone, years and town size suit the lot.
 
@@ -136,26 +168,26 @@ Towns build a pack's buildings along with the base pack's, picked by weight amon
 
 Each industry:
 
-| Field | Needed | What it is |
-|---|---|---|
-| id | yes | Lower case letters, digits, `-` and `_`. Its full name is `pack:id`. |
-| name | yes | Its name in each language. |
-| from, until | yes | The years new ones open, from the first up to but not including the second. |
-| layout | yes | Its tiles as rows of part names split by spaces, all rows the same length, at most 5 by 5. The game turns it any of four ways as it's placed. |
-| parts | no | `{ "part": "sprite" }`: the sprite sheet drawn for each part of the layout that's this pack's own. Any part of a base industry's layout can be used without it. |
-| regions | no | How often it's placed in each region, 0 to 100: `prairies`, `shield`, `rockies`, `maritimes`, `north`, `mixed`. 2 where it doesn't say, 0 for never. |
-| ground | no | The ground most of it has to stand on: any of `meadow`, `prairie`, `forest`, `rock`, `tundra`, `snow`. Anywhere if left out. |
-| water | no | `true` for one on the shore, the first row of its layout facing the water. |
-| produces | no | `{ "cargo": amount }`: what it makes each month at its usual level, 0 to 100000 each. Give a cargo 0 to make it only from what's brought. |
-| accepts | no | The cargo it takes, by id. One that takes cargo and has a cargo at 0 in `produces` makes that from what it's brought, a tonne for a tonne. |
-| recipe | no | `{ "inputs": { "cargo": n }, "makes": { "cargo": n } }`: with stockpiles on, it makes in whole batches, each taking `inputs` from its stores and making `makes`, only while every input is in store. Each from 1 to 100. Inputs have to be in `accepts`, and what it makes in `produces` at 0. |
-| seasons | no | Twelve numbers, January first: how much it makes each month, in percent of its usual, 0 to 1000. |
-| weather | no | How the weather changes it: `crops` (makes less in drought or soaked ground), `thaw` (stops in the spring mud), `ice` (shut while the water by it is frozen). |
-| production | no | `{ "cargo": "rule" }`: a rule giving that cargo's monthly amount in place of the usual. The cargo has to be in `produces` too, above 0: rivals and subsidies go by that amount. |
-| open | no | A rule worked out where and when one would open: 0 means it can't. |
-| closes | no | A rule worked out on the first of each month: anything but 0 closes it. |
-| future | no | `true` for one that opens only in a game with future transport on. From 2030 it opens more often, a little more each decade. |
-| fades | no | A year from which, with future transport on, it opens less (half as often each decade) and closes more often, a little more each decade, as coal does. Its closing is told 6 months ahead. |
+| Field | Type | Default | Format | What it is |
+|---|---|---|---|---|
+| id | text, lower case letters, digits, `-` and `_`, up to 32 | needed | 2 | Its full name is `pack:id`. |
+| name | text in each language | needed | 2 | Its name. |
+| from, until | whole numbers, 1700 to 2300 | needed | 2 | The years new ones open, from the first up to but not including the second. |
+| layout | a list of rows, each part names split by spaces | needed | 2 | Its tiles, all rows the same length, at most 5 by 5. The game turns it any of four ways as it's placed. |
+| parts | `{ "part": "sheet" }` | none | 2 | The sprite sheet drawn for each part of the layout that's this pack's own. Any part of a base industry's layout can be used without it. |
+| regions | `{ "region": n }`, each 0 to 100 | 2 for each | 2 | How often it's placed in each region: `prairies`, `shield`, `rockies`, `maritimes`, `north`, `mixed`. 0 for never. |
+| ground | a list of `meadow`, `prairie`, `forest`, `rock`, `tundra`, `snow` | anywhere | 2 | The ground most of it has to stand on. |
+| water | `true` or `false` | `false` | 2 | `true` for one on the shore, the first row of its layout facing the water. |
+| produces | `{ "cargo": n }`, each 0 to 100000 | nothing | 2; 4 for future cargo | What it makes each month at its usual level. Give a cargo 0 to make it only from what's brought. |
+| accepts | a list of cargo ids | nothing | 2; 4 for future cargo | The cargo it takes. One that takes cargo and has a cargo at 0 in `produces` makes that from what it's brought, a tonne for a tonne. |
+| recipe | `{ "inputs": { "cargo": n }, "makes": { "cargo": n } }`, each 1 to 100 | a tonne for a tonne | 2; 4 for future cargo | With stockpiles on, it makes in whole batches, each taking `inputs` from its stores and making `makes`, only while every input is in store. Inputs have to be in `accepts`, and what it makes in `produces` at 0. |
+| seasons | twelve whole numbers, each 0 to 1000 | 100 each | 2 | How much it makes each month, January first, in percent of its usual. |
+| weather | a list of `crops`, `thaw`, `ice` | none | 2 | How the weather changes it: `crops` makes less in drought or soaked ground, `thaw` stops in the spring mud, `ice` shuts it while the water by it is frozen. |
+| production | `{ "cargo": "rule" }` | none | 2 | A rule giving that cargo's monthly amount in place of the usual. The cargo has to be in `produces` too, above 0: rivals and subsidies go by that amount. |
+| open | a rule | always | 2 | Worked out where and when one would open: 0 means it can't. |
+| closes | a rule | never | 2 | Worked out on the first of each month: anything but 0 closes it. |
+| future | `true` or `false` | `false` | 4 | `true` for one that opens only in a game with future transport on. From 2030 it opens more often, a little more each decade. One that makes or takes future cargo no pack gives is future too. |
+| fades | whole number, 1700 to 2300 | never | 4 | A year from which, with future transport on, it opens less (half as often each decade) and closes more often, a little more each decade, as coal does. Its closing is told 6 months ahead. |
 
 The cargo ids are those under vehicles.json and those from cargo.json.
 
@@ -198,21 +230,21 @@ In a game with stockpiles on, an industry keeps a store of each cargo it takes a
 }
 ```
 
-| Field | Needed | What it is |
-|---|---|---|
-| id | yes | Lower case letters, digits, `-` and `_`. Cargo ids are shared by every pack in a game, without the pack's id in front: two packs can't add the same one. |
-| name | yes | Its name. |
-| unit | yes | A short word for amounts of it, as in "40 casks". |
-| rate | yes | What one pays carried a tile, in cents, 1 to 1000. The base pack's run from 20 (coal, passengers) to 48 (food). |
-| grace | yes | Days it can take over its pace before it pays less, 0 to 365. |
-| decay | yes | How much less it pays a day after that, in percent, 0 to 100. It never pays less than a third. |
-| pace | yes | Days a tile it can take, 1 to 10: 1 for what has to be quick, 2 for freight that keeps. |
-| fast | no | Percent more paid carried much faster than a train, as by air, 0 to 400. 0 if not given. |
-| kg | yes | What one weighs, 1 to 100000. |
-| colour | yes | Its colour in the game's lists and charts, `"#rrggbb"`. |
-| towns | no | `true` if towns take it at stations with 60 or more people round them, as they take goods. Otherwise only industries that accept it take it. |
-| keeps | no | `false` for cargo that spoils in an industry's store, as livestock, food and fish do. `true` if not given. |
-| handling | no | How stations handle it, for handling time and charges: `people`, `bulk`, `general`, `liquid` or `livestock`. `general` if not given. |
+| Field | Type | Default | Format | What it is |
+|---|---|---|---|---|
+| id | text, lower case letters, digits, `-` and `_`, up to 32 | needed | 3 | Cargo ids are shared by every pack in a game, without the pack's id in front: two packs can't add the same one. |
+| name | text in each language | needed | 3 | Its name. |
+| unit | text in each language | needed | 3 | A short word for amounts of it, as in "40 casks". |
+| rate | whole number, 1 to 1000 | needed | 3 | What one pays carried a tile, in cents. The base pack's run from 20 (coal, passengers) to 48 (food). |
+| grace | whole number, 0 to 365 | needed | 3 | Days it can take over its pace before it pays less. |
+| decay | whole number, 0 to 100 | needed | 3 | How much less it pays a day after that, in percent. It never pays less than a third. |
+| pace | whole number, 1 to 10 | needed | 3 | Days a tile it can take: 1 for what has to be quick, 2 for freight that keeps. |
+| fast | whole number, 0 to 400 | 0 | 3 | Percent more paid carried much faster than a train, as by air. |
+| kg | whole number, 1 to 100000 | needed | 3 | What one weighs. |
+| colour | `"#rrggbb"` | needed | 3 | Its colour in the game's lists and charts. |
+| towns | `true` or `false` | `false` | 3 | `true` if towns take it at stations with 60 or more people round them, as they take goods. Otherwise only industries that accept it take it. |
+| keeps | `true` or `false` | `true` | 3 | `false` for cargo that spoils in an industry's store, as livestock, food and fish do. |
+| handling | `people`, `bulk`, `general`, `liquid` or `livestock` | `general` | 3 | How stations handle it, for handling time and charges. |
 
 New cargo come after the base pack's 20, in pack order and then in file order. After them come the future cargo, `lithium`, `batteries` and `hydrogen`, in play only with future transport on and left out of a game whose packs leave no room for them (what names them is turned off). A game can have 32 cargo at most, so 12 from packs, 9 to keep the future cargo. A cargo's place can't change once a game is saved: a saved game only loads with packs giving the same cargo in the same order.
 
@@ -336,8 +368,30 @@ packtool/build/install/packtool/bin/packtool check my-pack
 packtool/build/install/packtool/bin/packtool zip my-pack my-pack.ichpack
 ```
 
-`check` takes `--with other.ichpack` for each pack yours needs besides the base pack. It reads every rule and flags sprite sheets nothing uses, and warns of a new cargo no vehicle carries or no industry makes. `zip` checks a folder and zips what a pack is made of. `look my-pack out.png` lists the pack's cargo with their colours and draws its buildings.
+`check` takes `--with other.ichpack` for each pack yours needs besides the base pack. It checks every field in this spec, its type and range, the cargo, tenders, parts and packs it names, and every rule, and flags sprite sheets nothing uses or that are drawn wrong and a pack over the size limit. It warns of fields the game doesn't know and of a new cargo no vehicle carries or no industry makes. Last it says the format the pack needs, and if the pack could say an older one. `zip` checks a folder and zips what a pack is made of. `look my-pack out.png` lists the pack's cargo with their colours and draws its buildings.
+
+`packtool check packs/base` checks the base pack's data; its sheets are in `build/packs/base.ichpack`, made by `tools/gen_tiles.py`.
 
 ## In the game
 
 Packs are added from the title screen, under Packs, from a file on the phone, and checked as they're added. Adding a newer version of a pack replaces the old one. The new game screen chooses which packs are on for that game.
+
+## Changes
+
+Format 4, Interchange packs 1.0 (Interchange 0.15):
+- Vehicles: traction `battery` and `hydrogen` with `range` for engines, road vehicles, ships and aircraft; `maglev` and `hyperloop` for engines and wagons.
+- Vehicles: `autonomous` for road vehicles, and runway `drone`.
+- The future cargo `lithium`, `batteries` and `hydrogen` can be named.
+- Industries: `future` and `fades`.
+- Fields the game doesn't know are left out with a warning, where they stopped a pack loading before.
+- The format a pack says is checked against what it uses.
+
+Format 3 (Interchange 0.14):
+- cargo.json, with `keeps` and `handling`.
+- Industries: `recipe`, and the rule functions `brought(cargo)` and `stock(cargo)` and name `made`.
+
+Format 2 (Interchange 0.14):
+- houses.json and industries.json, with rules.
+
+Format 1 (Interchange 0.2, with fields added up to 0.14):
+- manifest.json and vehicles.json, and sprite sheets.

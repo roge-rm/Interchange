@@ -1152,11 +1152,12 @@ def write_json(path, data):
 
 
 def zip_pack(src, sheets, out):
-    """A pack's zip: its manifest and vehicles from src, and its sprite sheets."""
+    """A pack's zip: its data files from src, and its sprite sheets."""
     out.parent.mkdir(parents=True, exist_ok=True)
     with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
-        for name in ("manifest.json", "vehicles.json"):
-            z.write(src / name, name)
+        for name in ("manifest.json", "vehicles.json", "houses.json", "industries.json", "cargo.json"):
+            if (src / name).exists():
+                z.write(src / name, name)
         for name, path in sheets.items():
             z.write(path, f"sprites/{name}.png")
 
@@ -1172,7 +1173,7 @@ def recolour(img, turn):
 
 
 # The template pack: (its id for the vehicle, the base drawing it's recoloured from, how far round the hue turns).
-TEMPLATE = [("prairie", "ten_wheeler", 0.45), ("prairie_tender", "ten_wheeler_tender", 0.45), ("ore_car", "hopper", 0.08), ("van", "caboose", 0.6)]
+TEMPLATE = [("prairie", "ten_wheeler", 0.45), ("prairie_tender", "ten_wheeler_tender", 0.45), ("ore_car", "hopper", 0.08), ("van", "caboose", 0.6), ("syrup_hauler", "aero_tractor", 0.08)]
 
 
 def sheet_of(name, turn=0.0):
@@ -1203,7 +1204,7 @@ def write_packs():
         v["length"] = lengths[v.get("sprite", v["id"])]
     write_json(PACKS / "base/vehicles.json", data)
     template = PACKS / "template"
-    template_sheets = {name: template / "sprites" / f"{name}.png" for name, _, _ in TEMPLATE}
+    template_sheets = {path.stem: path for path in sorted((template / "sprites").glob("*.png"))}
     zip_pack(PACKS / "base", base_sheets, BUILD_PACKS / "base.ichpack")
     zip_pack(template, template_sheets, BUILD_PACKS / "template.ichpack")
     print(f"Packs: {len(base_sheets)} base sheets, {len(template_sheets)} template sheets, in {BUILD_PACKS}")

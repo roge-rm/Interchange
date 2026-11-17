@@ -24,3 +24,12 @@ application {
 dependencies {
     implementation(project(":sim"))
 }
+
+dependencies {
+    testImplementation(kotlin("test"))
+}
+
+// The tests read packs/base and packs/template from the repo.
+tasks.test {
+    workingDir = rootProject.projectDir
+}

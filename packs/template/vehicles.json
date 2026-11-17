@@ -59,6 +59,26 @@
       "sprite": "ore_car"
     },
     {
+      "id": "syrup_hauler",
+      "kind": "road",
+      "name": { "en": "Driverless syrup hauler", "fr": "Camion à sirop autonome" },
+      "plural": { "en": "Driverless syrup haulers", "fr": "Camions à sirop autonomes" },
+      "type": { "en": "Hydrogen tractor-trailer", "fr": "Tracteur et remorque à hydrogène" },
+      "from": 2038,
+      "until": 2100,
+      "speed": 110,
+      "power": 500,
+      "weight": 16,
+      "cost": 12000,
+      "running": 300,
+      "length": 12,
+      "carries": "maple_syrup",
+      "capacity": 30,
+      "traction": "hydrogen",
+      "range": 380,
+      "autonomous": true
+    },
+    {
       "id": "van",
       "replaces": "base:caboose",
       "name": { "en": "Van", "fr": "Fourgon" },

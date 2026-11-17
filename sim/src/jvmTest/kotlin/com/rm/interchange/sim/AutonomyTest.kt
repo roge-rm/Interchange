@@ -109,7 +109,7 @@ class AutonomyTest {
         assertEquals("base:auto_tractor", w.bestModel(Cargo.GOODS)!!.key)
         assertEquals("base:aero_tractor", flat(future = false).bestModel(Cargo.GOODS)!!.key)
         // Only road vehicles are autonomous.
-        val manifest = """{ "format": 1, "id": "x", "version": 1, "name": { "en": "X" } }"""
+        val manifest = """{ "format": 4, "id": "x", "version": 1, "name": { "en": "X" } }"""
         val bad = Packs.unzip(zip(mapOf("manifest.json" to manifest, "vehicles.json" to """{ "vehicles": [ { "id": "c", "replaces": "base:beaver", "autonomous": true } ] }""")))
         assertTrue(assertFailsWith<BadPack> { Roster.build(listOf(Packs.BASE, bad)) }.problems.any { "autonomous" in it })
     }
@@ -204,7 +204,7 @@ class AutonomyTest {
             assertTrue(e.drone && e.capacity in 1..Drones.MOST_LOAD)
             assertTrue(e.cargoes.all { it == Cargo.MAIL || it == Cargo.GOODS || it == Cargo.FOOD })
         }
-        val manifest = """{ "format": 1, "id": "x", "version": 1, "name": { "en": "X" } }"""
+        val manifest = """{ "format": 4, "id": "x", "version": 1, "name": { "en": "X" } }"""
         val coal = Packs.unzip(zip(mapOf("manifest.json" to manifest, "vehicles.json" to """{ "vehicles": [ { "id": "c", "replaces": "base:mail_drone", "carries": ["coal"] } ] }""")))
         assertEquals(listOf("base:mail_drone: drones carry only mail, goods, food"), assertFailsWith<BadPack> { Roster.build(listOf(Packs.BASE, coal)) }.problems)
         // Checked on what a replacing pack makes of a model too: a drone's load, a plane made a drone.
