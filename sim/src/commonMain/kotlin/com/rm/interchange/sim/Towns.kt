@@ -29,6 +29,10 @@ class Town(
     var french = french
         internal set
     var population = 0
+        set(v) {
+            field = v
+            raiseCeiling(v)
+        }
     var houses = 0
     /** Days until it next grows. */
     var growIn = 0
@@ -52,6 +56,21 @@ class Town(
     var exclusiveDays = 0
     /** The tile of each company's statue here, by company id, -1 for none. */
     val statue = IntArray(MAX_COMPANIES) { -1 }
+
+    @OptIn(kotlin.concurrent.atomics.ExperimentalAtomicApi::class)
+    companion object {
+        /** The most any town in this process has held: never less than a town's population, so [landAt] can stop looking. */
+        private val ceiling = kotlin.concurrent.atomics.AtomicInt(0)
+
+        val populationCeiling get() = ceiling.load()
+
+        private fun raiseCeiling(v: Int) {
+            while (true) {
+                val c = ceiling.load()
+                if (v <= c || ceiling.compareAndSet(c, v)) return
+            }
+        }
+    }
 }
 
 const val MAX_COMPANIES = 8
@@ -106,19 +125,35 @@ internal fun World.townRefuses(company: Company, x: Int, y: Int): Boolean {
 }
 
 /** The side of a [TownCells] square, in tiles. */
-private const val TOWN_CELL = 32
+internal const val TOWN_CELL = 32
 
-/** Towns by [TOWN_CELL] square of their middle, for the towns near a tile, as of [count] towns. Not saved. */
-internal class TownCells(val count: Int, val across: Int, val byCell: HashMap<Int, ArrayList<Town>>)
+/**
+ * Towns by [TOWN_CELL] square of their middle, for the towns near a tile, as of [count] towns, in [byCell] and in
+ * [dense] by row of squares, [down] rows. Not saved.
+ */
+internal class TownCells(val count: Int, val across: Int, val down: Int, val byCell: HashMap<Int, ArrayList<Town>>) {
+    val dense: Array<Array<Town>?> = arrayOfNulls<Array<Town>>(across * down).also { a -> for ((k, v) in byCell) a[k] = v.toTypedArray() }
+}
 
-/** [towns] by square, made again when a town's added; towns don't move or go. */
+/**
+ * [towns] by square, made again when a town's added; towns don't move or go. By index, as the screen prices tools
+ * with [landAt] while the sim adds towns; a list it saw part way through an add isn't kept.
+ */
 internal fun World.townCells(): TownCells {
     val have = townCellsCache
-    if (have != null && have.count == towns.size) return have
+    val n = towns.size
+    if (have != null && have.count == n) return have
     val across = width / TOWN_CELL + 1
     val byCell = HashMap<Int, ArrayList<Town>>()
-    for (t in towns) byCell.getOrPut(t.y / TOWN_CELL * across + t.x / TOWN_CELL) { ArrayList() } += t
-    return TownCells(towns.size, across, byCell).also { townCellsCache = it }
+    var whole = true
+    for (k in 0 until n) {
+        val t = towns.getOrNull(k)
+        if (t == null) { whole = false; continue }
+        byCell.getOrPut(t.y / TOWN_CELL * across + t.x / TOWN_CELL) { ArrayList() } += t
+    }
+    val cells = TownCells(n, across, height / TOWN_CELL + 1, byCell)
+    if (whole) townCellsCache = cells
+    return cells
 }
 
 /** The bit for a road reaching [edge], a [Track] edge. */

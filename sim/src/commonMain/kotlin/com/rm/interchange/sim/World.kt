@@ -79,7 +79,7 @@ class World(settings: NewGame, val roster: Roster = Roster.BASE, generate: Boole
     val townOf = ShortArray(width * height) { -1 }
 
     val towns = ArrayList<Town>()
-    /** [towns] by square, for [townRefuses]. Not saved. */
+    /** [towns] by square, for [townRefuses] and [landAt]. Not saved. */
     @kotlin.concurrent.Volatile internal var townCellsCache: TownCells? = null
 
     /** Industries, and which stands on each tile, as its id plus one, 0 for none. */

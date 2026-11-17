@@ -174,14 +174,41 @@ internal fun World.landAt(i: Int): Int {
     if (i < 0) return 1_000
     val x = i % width
     val y = i / width
+    val cells = townCells()
+    val ceiling = Town.populationCeiling.toLong() * 4
+    val cx = x / TOWN_CELL
+    val cy = y / TOWN_CELL
+    val rings = maxOf(maxOf(cx, cells.across - 1 - cx), maxOf(cy, cells.down - 1 - cy))
     var most = 0
-    // By index, as the screen prices tools with this too.
-    for (k in 0 until towns.size) {
-        val t = towns.getOrNull(k) ?: continue
-        val d = maxOf(kotlin.math.abs(t.x - x), kotlin.math.abs(t.y - y))
-        most = maxOf(most, t.population * 4 / (d + 4))
+    // Squares ring by ring out from the tile's. A town r rings out is at least (r - 1) * TOWN_CELL + 1 tiles away, so
+    // it adds at most ceiling / ((r - 1) * TOWN_CELL + 5); once that's no more than the most so far, or the most
+    // reaches the cap, the rest can't change the price.
+    for (r in 0..rings) {
+        if (most >= 1_400) break
+        if (r > 0 && ceiling / ((r - 1) * TOWN_CELL + 5) <= most) break
+        for (by in maxOf(0, cy - r)..minOf(cells.down - 1, cy + r)) {
+            val row = by * cells.across
+            if (by == cy - r || by == cy + r) {
+                for (bx in maxOf(0, cx - r)..minOf(cells.across - 1, cx + r)) most = landMost(cells.dense[row + bx], x, y, most)
+            } else {
+                // Inside the ring only its two ends.
+                if (cx - r >= 0) most = landMost(cells.dense[row + cx - r], x, y, most)
+                if (cx + r < cells.across) most = landMost(cells.dense[row + cx + r], x, y, most)
+            }
+        }
     }
     return 600 + minOf(1_400, most)
+}
+
+/** The most of [most] and what each of [near] adds to land at ([x], [y]). */
+private fun landMost(near: Array<Town>?, x: Int, y: Int, most: Int): Int {
+    if (near == null) return most
+    var m = most
+    for (t in near) {
+        val d = maxOf(kotlin.math.abs(t.x - x), kotlin.math.abs(t.y - y))
+        m = maxOf(m, t.population * 4 / (d + 4))
+    }
+    return m
 }
 
 /** The mean temperature on tile [i] in January this year, and over the whole year, in tenths. */
