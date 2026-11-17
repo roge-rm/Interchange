@@ -190,7 +190,7 @@ internal fun World.trackDay() {
                 // Settled track on thawing permafrost now and then gives way in summer.
                 else if (steps > 0 && dug && c < THAW_WASHOUT_BELOW && sky.temperature > 0 && u(weather.frost[i]) == 0 &&
                     cellDice(x, y, salt + 17) * 256 + cellDice(x, y, salt + 18) < THAW_WASHOUT * steps && thawGround(x, y)
-                ) found[b] += intArrayOf(EVENT_WASHOUT, i)
+                ) found[b] += intArrayOf(EVENT_THAW_WASHOUT, i)
             }
         }
     }
@@ -201,10 +201,11 @@ internal fun World.trackDay() {
         val i = e[1]
         when (e[0]) {
             EVENT_KINK -> kinks[i] = KINK_DAYS
-            EVENT_WASHOUT -> if (!closed.containsKey(i)) {
+            EVENT_WASHOUT, EVENT_THAW_WASHOUT -> if (!closed.containsKey(i)) {
                 closed[i] = Closure.WASHOUT shl 16 or (WASHOUT_DAYS_FROM + rng.below(6))
                 tell(News.WASHOUT, i)
-                if (washouts++ == 0) firstWashout = i
+                // Only rain washouts count toward the flood story.
+                if (e[0] == EVENT_WASHOUT && washouts++ == 0) firstWashout = i
             }
             EVENT_FIRE -> if (u(fire[i]) == 0) {
                 fire[i] = FIRE_DAYS.toByte()
@@ -341,12 +342,13 @@ private const val EVENT_WASHOUT = 1
 private const val EVENT_FIRE = 2
 private const val EVENT_BURNT = 3
 private const val EVENT_REGROW = 4
+private const val EVENT_THAW_WASHOUT = 5
 
 /**
  * With the climate trend on, a Chronicle story when the tiles burning cross [BIG_FIRE], about the burning tile
  * nearest the fires' middle, and when a day has [BIG_FLOOD] washouts or more, about the first.
  */
-private fun World.bigFireOrFlood(was: ByteArray, washouts: Int, firstWashout: Int) {
+internal fun World.bigFireOrFlood(was: ByteArray, washouts: Int, firstWashout: Int) {
     if (washouts >= BIG_FLOOD) tell(News.FLOOD, firstWashout)
     var before = 0
     var now = 0
@@ -357,6 +359,11 @@ private fun World.bigFireOrFlood(was: ByteArray, washouts: Int, firstWashout: In
         if (u(fire[i]) in 1..FIRE_DAYS) { now++; sx += i % width; sy += i / width }
     }
     if (before >= BIG_FIRE || now < BIG_FIRE) return
+    // Not again while a big fire story is in the news or this month's Chronicle (the count can hover round the line).
+    val month = Calendar.month(startYear, day)
+    val year = Calendar.year(startYear, day)
+    if (news.any { it.kind == News.BIG_FIRE && tick - it.tick <= BIG_FIRE_QUIET_DAYS * Calendar.TICKS_PER_DAY }) return
+    if (chronicle.any { it.kind == News.BIG_FIRE && it.year == year && it.month == month }) return
     val mx = (sx / now).toInt()
     val my = (sy / now).toInt()
     var best = -1
@@ -367,6 +374,8 @@ private fun World.bigFireOrFlood(was: ByteArray, washouts: Int, firstWashout: In
     }
     tell(News.BIG_FIRE, best)
 }
+/** Days a big fire story holds off another. */
+private const val BIG_FIRE_QUIET_DAYS = 30
 /** A day's mean heat in tenths of a degree that kinks worn rail, and that dries the forest for fire; rain in hundredths of a mm a day that washes track out. */
 const val KINK_HEAT = 230
 const val FIRE_HEAT = 200

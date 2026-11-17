@@ -508,6 +508,8 @@
     <string name="news_flood">Inondation près de %1$s, voie emportée</string>
     <string name="news_flood_far">Inondation, voie emportée</string>
     <string name="news_climate_season">Les lacs ont gelé %1$d jours plus tard et dégelé %2$d jours plus tôt que dans les années 2020</string>
+    <string name="news_climate_later">Les lacs ont gelé %1$d jours plus tard que dans les années 2020</string>
+    <string name="news_climate_sooner">Les lacs ont dégelé %1$d jours plus tôt que dans les années 2020</string>
     <string name="news_climate_open">Les lacs sont restés ouverts %1$d jours de plus que dans les années 2020</string>
     <string name="news_climate_same">Les lacs ont gelé et dégelé comme dans les années 2020</string>
     <string name="news_climate_none">Les lacs ne gèlent plus comme dans les années 2020</string>

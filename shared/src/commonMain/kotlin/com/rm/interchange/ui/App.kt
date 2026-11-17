@@ -2298,7 +2298,9 @@ internal fun newsText(world: World, n: News): String {
         return when {
             later == 0 && sooner == 0 && open == 0 -> stringResource(Res.string.news_climate_same)
             later == 0 && sooner == 0 -> stringResource(Res.string.news_climate_open, open)
-            else -> stringResource(Res.string.news_climate_season, later, sooner)
+            later > 0 && sooner > 0 -> stringResource(Res.string.news_climate_season, later, sooner)
+            later > 0 -> stringResource(Res.string.news_climate_later, later)
+            else -> stringResource(Res.string.news_climate_sooner, sooner)
         }
     }
     if (n.kind == News.PROSPECTING_FAILED) return stringResource(Res.string.news_prospect_failed, world.roster.industries.getOrNull(n.about)?.name(languageCode()) ?: "")

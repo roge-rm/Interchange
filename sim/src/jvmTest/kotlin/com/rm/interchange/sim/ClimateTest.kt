@@ -133,6 +133,33 @@ class ClimateTest {
     }
 
     @Test
+    fun onlyRainWashoutsCountTowardTheFloodStory() {
+        val w = flat(2050, true, size = 32)
+        w.bigFireOrFlood(ByteArray(w.width * w.height), BIG_FLOOD - 1, 5)
+        assertEquals(0, w.chronicle.count { it.kind == News.FLOOD })
+        w.bigFireOrFlood(ByteArray(w.width * w.height), BIG_FLOOD, 5)
+        assertEquals(1, w.chronicle.count { it.kind == News.FLOOD })
+    }
+
+    @Test
+    fun aBigFireIsToldOnceWhileTheCountHoversRoundTheLine() {
+        val w = flat(2050, true, size = 32)
+        val none = ByteArray(w.width * w.height)
+        repeat(BIG_FIRE + 5) { w.fire[it] = 3 }
+        w.bigFireOrFlood(none, 0, -1)
+        assertEquals(1, w.chronicle.count { it.kind == News.BIG_FIRE })
+        // Even with the news list gone, the Chronicle holds it back.
+        w.news.clear()
+        w.bigFireOrFlood(none, 0, -1)
+        assertEquals(1, w.chronicle.count { it.kind == News.BIG_FIRE })
+        // Chronicle emptied, news still holds it back.
+        w.chronicle = emptyList()
+        w.news += News(News.BIG_FIRE, 0, w.tick)
+        w.bigFireOrFlood(none, 0, -1)
+        assertEquals(0, w.chronicle.count { it.kind == News.BIG_FIRE })
+    }
+
+    @Test
     fun burntForestGrowsBackWithFutureOn() {
         fun regrown(future: Boolean): Int {
             val w = flat(2050, future)

@@ -525,6 +525,8 @@
     <string name="news_flood">Flooding near %1$s washes out track</string>
     <string name="news_flood_far">Flooding washes out track</string>
     <string name="news_climate_season">Lakes froze %1$d days later and thawed %2$d days sooner than in the 2020s</string>
+    <string name="news_climate_later">Lakes froze %1$d days later than in the 2020s</string>
+    <string name="news_climate_sooner">Lakes thawed %1$d days sooner than in the 2020s</string>
     <string name="news_climate_open">Lakes were open %1$d days longer than in the 2020s</string>
     <string name="news_climate_same">Lakes froze and thawed as in the 2020s</string>
     <string name="news_climate_none">Lakes no longer freeze as they did in the 2020s</string>
