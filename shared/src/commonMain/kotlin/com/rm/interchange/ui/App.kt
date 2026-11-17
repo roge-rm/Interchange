@@ -1757,7 +1757,7 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
             when (val sel = selected) {
                 is Selection.Tile -> InspectCard(world, sel.x, sel.y, onTown, { selected = null }, cardSize)
                 Selection.Weather -> wv?.weather?.let { w ->
-                    WeatherCard(world, w, view.focusX.toInt().coerceIn(0, world.width - 1), view.focusY.toInt().coerceIn(0, world.height - 1), wv.forecast, { selected = null }, cardSize)
+                    WeatherCard(world, w, view.focusX.toInt().coerceIn(0, world.width - 1), view.focusY.toInt().coerceIn(0, world.height - 1), wv.forecast, wv.droneOutlook, { selected = null }, cardSize)
                 }
                 is Selection.Train -> {
                     val t = wv?.trains?.firstOrNull { it.id == sel.id }

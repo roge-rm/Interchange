@@ -207,6 +207,11 @@ class AutonomyTest {
         val manifest = """{ "format": 1, "id": "x", "version": 1, "name": { "en": "X" } }"""
         val coal = Packs.unzip(zip(mapOf("manifest.json" to manifest, "vehicles.json" to """{ "vehicles": [ { "id": "c", "replaces": "base:mail_drone", "carries": ["coal"] } ] }""")))
         assertEquals(listOf("base:mail_drone: drones carry only mail, goods, food"), assertFailsWith<BadPack> { Roster.build(listOf(Packs.BASE, coal)) }.problems)
+        // Checked on what a replacing pack makes of a model too: a drone's load, a plane made a drone.
+        val big = Packs.unzip(zip(mapOf("manifest.json" to manifest, "vehicles.json" to """{ "vehicles": [ { "id": "c", "replaces": "base:mail_drone", "carries": ["mail"], "capacity": 9 } ] }""")))
+        assertEquals(listOf("base:mail_drone: drones carry at most ${Drones.MOST_LOAD}"), assertFailsWith<BadPack> { Roster.build(listOf(Packs.BASE, big)) }.problems)
+        val plane = Packs.unzip(zip(mapOf("manifest.json" to manifest, "vehicles.json" to """{ "vehicles": [ { "id": "c", "replaces": "base:jetranger", "runway": "drone" } ] }""")))
+        assertTrue(assertFailsWith<BadPack> { Roster.build(listOf(Packs.BASE, plane)) }.problems.any { "drones carry" in it })
         // The far pad, 40 tiles (30 km) off, is past a mail drone's 15 km: it stays home.
         val far = w.airports[2]!!
         val v = w.buyDrone("mail_drone", 0, intArrayOf(pad.station, far.station))!!
@@ -253,6 +258,43 @@ class AutonomyTest {
         w.weather.fronts += Front(Front.STORM, 32 * 256, 32 * 256, 0, 0, 60, 0, 0, 10, false)
         assertEquals(Drones.GROUNDED_WIND, w.droneOutlook(8, 21)[0])
         assertTrue(flat(weather = false).droneOutlook(8, 21).isEmpty())
+    }
+
+    @Test
+    fun aDroneWhosePadIsFullInBadWeatherLandsAtAFreePadOrHolds() {
+        for (spare in listOf(true, false)) {
+            // Without the spare, only the two pads: the third would be off the map.
+            val w = pads(highway(flat(weather = true)), far = if (spare) 40 else 100)
+            val pad = w.airports[0]!!
+            val other = w.airports[1]!!
+            fun calm() { w.weather.wind = 0; w.weather.fronts.clear(); w.weather.anomaly = 0 }
+            fun windy() { w.weather.wind = Drones.WIND + 5; w.weather.fronts.clear() }
+            val v = w.buyDrone("mail_drone", 0, intArrayOf(pad.station, other.station))!!
+            var n = 0
+            while (!(v.flying && v.state == Flight.CRUISE) && n++ < 20_000) { calm(); w.step() }
+            assertEquals(Flight.CRUISE, v.state)
+            // A drone grounded on the pad it's heading for, and with no spare, another on the pad it came from.
+            val held = w.buyDrone("mail_drone", other.id, intArrayOf(other.station, pad.station))!!
+            val home = if (spare) null else w.buyDrone("mail_drone", pad.id, intArrayOf(pad.station, other.station))!!
+            repeat(4) { windy(); w.step() }
+            assertTrue(held.state == Flight.GATE && held.at == other.id && !held.inDepot)
+            if (home != null) assertTrue(home.state == Flight.GATE && home.at == pad.id && !home.inDepot)
+            n = 0
+            while (v.state != Flight.GATE && n++ < 20_000) { windy(); w.step() }
+            if (spare) {
+                // Down at the nearest free pad, its own first stop, and waits there while it blows.
+                assertEquals(Flight.GATE, v.state)
+                assertEquals(pad.id, v.at)
+                repeat(2_000) { windy(); w.step() }
+                assertEquals(Flight.GATE, v.state)
+                assertEquals(pad.id, v.at)
+            } else {
+                // Nowhere to land: it holds, never diverting while it's windy.
+                assertTrue(v.flying)
+                assertEquals(other.station, v.target)
+            }
+            assertTrue(w.news.none { it.kind == News.DIVERTED && it.about == v.id })
+        }
     }
 
     @Test

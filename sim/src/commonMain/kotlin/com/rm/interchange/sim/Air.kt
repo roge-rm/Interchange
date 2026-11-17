@@ -1053,8 +1053,26 @@ private fun World.depart(v: Aircraft, from: Airport?) {
 }
 
 /** The airport it's flying to: its next stop's, or its hangar's. */
-private fun World.destination(v: Aircraft): Airport? =
-    if (v.target == -1) airports.firstOrNull { it != null && it.depot == v.depot } else airportOf(v.target)
+private fun World.destination(v: Aircraft): Airport? {
+    val a = if (v.target == -1) airports.firstOrNull { it != null && it.depot == v.depot } else airportOf(v.target)
+    // A drone whose pad is full while drones are grounded there puts down at its company's nearest free pad to wait.
+    if (a == null || !v.info.drone || !v.flying || homeBound(v, a) || freeStand(a, v) >= 0 || droneGrounded(a) == Drones.FLYING) return a
+    return refugePad(v, a) ?: a
+}
+
+/** [v]'s company's pad nearest it with a stand free, other than [full], the lowest id on a tie; null with none. */
+private fun World.refugePad(v: Aircraft, full: Airport): Airport? {
+    val x = (v.x / SHIP_UNIT).toLong()
+    val y = (v.y / SHIP_UNIT).toLong()
+    var best: Airport? = null
+    var far = Long.MAX_VALUE
+    for (a in airports) {
+        if (a == null || a === full || a.kind != Airports.PAD || a.owner != v.owner || freeStand(a, v) < 0) continue
+        val d = (a.x - x) * (a.x - x) + (a.y - y) * (a.y - y)
+        if (d < far) { far = d; best = a }
+    }
+    return best
+}
 
 /** The height it cruises at, in 16ths of a step, over the highest ground at either end. */
 private fun World.cruiseAltitude(v: Aircraft): Int {
@@ -1314,7 +1332,8 @@ private fun World.hold(v: Aircraft) {
         // A runway in use soon frees: that never makes it divert.
         if (why == "busy") v.holding -= 16
     }
-    if (v.holding > HOLD_TICKS && Order.stops(v.orders) > 1 && target >= 0) {
+    // A drone doesn't divert through weather that grounds it; it holds until it can land.
+    if (v.holding > HOLD_TICKS && Order.stops(v.orders) > 1 && target >= 0 && !(v.info.drone && droneGrounded(dest) != Drones.FLYING)) {
         // Diverted: on to its next stop with what it carries.
         passOrder(v)
         stepOrder(v)

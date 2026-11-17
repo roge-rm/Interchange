@@ -10,7 +10,7 @@ package com.rm.interchange.sim
  * A drone is an aircraft with runway `drone`, from about [DRONE_FROM]. It takes off and lands straight up and down as a
  * helicopter does, only at a pad ([Airports.PAD]), a one-tile airport that joins a station beside it as an airport
  * does. Drones fly short hops and carry only [Drones.CARGOES]. A drone on its pad stays there while the wind is at
- * [Drones.WIND] or more or snow is falling on the pad; one in the air lands at its pad and waits.
+ * [Drones.WIND] or more or snow is falling on the pad; one in the air lands at its pad and waits, or at its company's nearest free pad when its own is full.
  */
 
 /** The years autonomous trucks and drones are first on sale in the base pack, and pads can be built. */

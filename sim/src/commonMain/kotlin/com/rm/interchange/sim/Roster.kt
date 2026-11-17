@@ -226,14 +226,14 @@ class Roster(
     /** What can be bought in [year]: engines if [pulls], else wagons. */
     fun available(year: Int, pulls: Boolean) = engines.filter { it.enabled && it.pulls == pulls && !it.isTender && (it.kind == VehicleKind.ENGINE || it.kind == VehicleKind.WAGON) && year >= it.from && year < it.until }
 
-    /** The road vehicles on sale in [year]. */
-    fun availableRoad(year: Int) = availableOf(VehicleKind.ROAD, year)
+    /** The road vehicles on sale in [year], future ones only with [future]. */
+    fun availableRoad(year: Int, future: Boolean = true) = availableOf(VehicleKind.ROAD, year, future)
 
     /** The first year anything of [kind] is on sale, or null if nothing ever is. */
     fun firstOf(kind: VehicleKind): Int? = engines.filter { it.enabled && it.kind == kind }.minOfOrNull { it.from }
 
-    /** What of [kind] is on sale in [year]. */
-    fun availableOf(kind: VehicleKind, year: Int) = engines.filter { it.enabled && it.kind == kind && year >= it.from && year < it.until }
+    /** What of [kind] is on sale in [year], future models only with [future]. */
+    fun availableOf(kind: VehicleKind, year: Int, future: Boolean = true) = engines.filter { it.enabled && it.kind == kind && year >= it.from && year < it.until && (future || !it.future) }
 
     companion object {
         val BASE: Roster by lazy { build(listOf(Packs.BASE)) }

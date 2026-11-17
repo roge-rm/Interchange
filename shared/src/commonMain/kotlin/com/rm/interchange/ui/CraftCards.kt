@@ -64,7 +64,7 @@ private fun CraftBuyPanel(
     view: WorldView, roster: Roster, kind: VehicleKind, year: Int, funds: Long, price: (Long) -> Long, count: Int, onCount: (Int) -> Unit, copying: Boolean, onCopy: (Int) -> Unit, fits: (Engine) -> Boolean, buy: (Int, Int, Boolean) -> Unit,
     top: @Composable () -> Unit = {}, inDepot: @Composable () -> Unit,
 ) {
-    val models = roster.availableOf(kind, year).filter(fits)
+    val models = roster.availableOf(kind, year, view.future).filter(fits)
     var model by remember { mutableIntStateOf(-1) }
     var cargo by remember { mutableIntStateOf(-1) }
     var inherit by remember { mutableStateOf(false) }
@@ -286,7 +286,7 @@ fun AircraftCard(view: WorldView, roster: Roster, v: AircraftView, year: Int, fu
             replacements = {
                 if (replacing) {
                     ReplaceList(
-                        roster.availableOf(VehicleKind.AIRCRAFT, year).filter { it.id != v.model }, funds,
+                        roster.availableOf(VehicleKind.AIRCRAFT, year, view.future).filter { it.id != v.model }, funds,
                         { price(it.cost) - (price(e.cost) - v.renewCost) },
                         why = v.replaceWhy,
                     ) {

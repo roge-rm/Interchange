@@ -146,7 +146,7 @@ class ForecastTest {
     /** With [old], made without the settings older saves load without. */
     private fun line(old: Boolean = false): World {
         val g = NewGame(64, 64, 1, 1850, towns = 0, industries = 0, weather = false)
-        val w = World(if (old) g.copy(stockpiles = false, contracts = false, handling = false, eraCosts = false) else g)
+        val w = World(if (old) g.copy(stockpiles = false, contracts = false, handling = false, eraCosts = false, energy = false, future = false) else g)
         for (i in w.corners.indices) w.corners[i] = 3
         w.companies[0].money = 10_000_000
         w.apply(Command.Depot(0, 2, 10, Track.XP))

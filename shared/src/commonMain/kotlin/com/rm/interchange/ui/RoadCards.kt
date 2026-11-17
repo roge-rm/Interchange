@@ -38,7 +38,7 @@ fun roadVehicleName(v: RoadVehicleView): String = v.name.takeIf { it.isNotEmpty(
 fun GarageCard(view: WorldView, roster: Roster, depot: Int, year: Int, funds: Long, price: (Long) -> Long, send: (Command) -> Unit, onVehicle: (Int) -> Unit, copying: Boolean, onCopy: (Int) -> Unit, onClose: () -> Unit, modifier: Modifier) {
     val me = LocalCompany.current
     val c = LocalColors.current
-    val models = roster.availableRoad(year)
+    val models = roster.availableRoad(year, view.future)
     var model by remember { mutableIntStateOf(models.firstOrNull()?.id ?: -1) }
     var vehicleCount by remember(depot) { mutableIntStateOf(1) }
     var cargo by remember { mutableIntStateOf(-1) }
@@ -128,7 +128,7 @@ fun RoadVehicleCard(view: WorldView, roster: Roster, v: RoadVehicleView, year: I
             ),
         )
         if (v.inDepot && replacing) {
-            ReplaceList(roster.availableRoad(year).filter { it.id != v.model }, funds, { price(it.cost) - (price(e.cost) - v.renewCost) }, why = v.replaceWhy) {
+            ReplaceList(roster.availableRoad(year, view.future).filter { it.id != v.model }, funds, { price(it.cost) - (price(e.cost) - v.renewCost) }, why = v.replaceWhy) {
                 order(Command.TrainOrder.REPLACE, intArrayOf(it))
                 replacing = false
             }

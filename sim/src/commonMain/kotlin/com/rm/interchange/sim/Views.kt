@@ -1,5 +1,7 @@
 package com.rm.interchange.sim
 
+import kotlin.math.abs
+
 /*
  * What the screen needs from the world each tick, copied out on the game
  * thread so the screen never reads the game's own lists while they change.
@@ -473,6 +475,10 @@ class WorldView(
     val handling: Boolean = true,
     /** Whether energy (battery and hydrogen) is on in this game. */
     val energy: Boolean = false,
+    /** Whether future transport is on in this game, for buy lists to leave out future models when it's off. */
+    val future: Boolean = false,
+    /** Drones grounded at the player's pad nearest the forecast tile, a [Drones] reason per day of [forecast]; empty with no pad. */
+    val droneOutlook: IntArray = IntArray(0),
 )
 
 /**
@@ -482,6 +488,7 @@ class WorldView(
  */
 fun World.view(company: Int = 0, withReserved: Boolean = false, withNetwork: Boolean = false, forecastAt: Int = -1, withRisk: Boolean = false): WorldView {
     val risk = if (withRisk) snowRisk(company) else null
+    val forecastDays = if (forecastAt in 0 until width * height) forecast(forecastAt % width, forecastAt / width) else emptyList()
     val cars = ArrayList<Float>()
     val curves = DrawCache.carCurves(this)
     val pose = FloatArray(3)
@@ -708,7 +715,7 @@ fun World.view(company: Int = 0, withReserved: Boolean = false, withNetwork: Boo
         upgradeViews(company),
         keptOrderViews(company),
         settings.breakdowns,
-        if (forecastAt in 0 until width * height) forecast(forecastAt % width, forecastAt / width) else emptyList(),
+        forecastDays,
         news.filter { it.kind in News.WARN_SNOW..News.WARN_COLD && Warning.company(it.about) == company },
         priorityTrack.keys.filter { priorityTrack[it] == company }.sorted().toIntArray(),
         priorityRoad.keys.filter { priorityRoad[it] == company }.sorted().toIntArray(),
@@ -717,8 +724,21 @@ fun World.view(company: Int = 0, withReserved: Boolean = false, withNetwork: Boo
         if (withNetwork) demand else emptyList(),
         contractViews(company),
         pricesView(),
-        settings.handling, settings.energy,
+        settings.handling, settings.energy, settings.future,
+        if (forecastDays.isEmpty()) IntArray(0) else padOutlook(company, forecastAt % width, forecastAt / width, forecastDays.size),
     )
+}
+
+/** [droneOutlook] at [company]'s pad nearest ([x], [y]), the lowest id on a tie; empty if it has no pad. */
+private fun World.padOutlook(company: Int, x: Int, y: Int, days: Int): IntArray {
+    var best: Airport? = null
+    var far = Int.MAX_VALUE
+    for (a in airports) {
+        if (a == null || a.kind != Airports.PAD || a.owner != company) continue
+        val d = abs(a.x - x) + abs(a.y - y)
+        if (d < far) { far = d; best = a }
+    }
+    return best?.let { droneOutlook(it.x, it.y, days) } ?: IntArray(0)
 }
 
 /**

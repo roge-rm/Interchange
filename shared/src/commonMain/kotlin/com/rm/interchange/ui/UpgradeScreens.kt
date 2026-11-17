@@ -160,9 +160,9 @@ fun UpgradeRules(runner: GameThread, v: WorldView, kind: Int, only: Int?) {
     val old = roster.engines.getOrNull(from) ?: return
     val options: List<Engine> = when (kind) {
         ShowVehicle.TRAIN -> roster.available(year, pulls = old.pulls).filter { it.trackKind == old.trackKind && (!it.future || world.settings.future) }
-        ShowVehicle.ROAD -> roster.availableRoad(year).filter { it.tram == old.tram }
+        ShowVehicle.ROAD -> roster.availableRoad(year, world.settings.future).filter { it.tram == old.tram }
         ShowVehicle.SHIP -> roster.availableOf(VehicleKind.SHIP, year)
-        else -> roster.availableOf(VehicleKind.AIRCRAFT, year)
+        else -> roster.availableOf(VehicleKind.AIRCRAFT, year, world.settings.future)
     }.filter { it.id != old.id }
     Head(stringResource(Res.string.upgrade_to))
     for (e in options) key(e.id) {
