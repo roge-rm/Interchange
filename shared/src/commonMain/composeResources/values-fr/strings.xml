@@ -167,6 +167,14 @@
     <string name="sound_world">Le monde</string>
     <string name="sound_tools">Outils et nouvelles</string>
     <string name="sound_music">Musique</string>
+    <string name="keys">Touches</string>
+    <string name="key_pause">Pause ou reprise</string>
+    <string name="key_close">Retour ou menu</string>
+    <string name="key_pan">Déplacer la carte</string>
+    <string name="key_space">Espace</string>
+    <string name="key_esc">Échap</string>
+    <string name="key_delete">Suppr</string>
+    <string name="key_backspace">Retour arrière</string>
 
     <!-- Packs de contenu -->
     <string name="packs">Packs</string>

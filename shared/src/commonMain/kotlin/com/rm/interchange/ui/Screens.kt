@@ -243,7 +243,7 @@ fun NewGameScreen(packs: List<Pack>, onStart: (NewGame, List<Pack>) -> Unit, onB
                 focusedTextColor = c.text, unfocusedTextColor = c.text, focusedBorderColor = c.accent, unfocusedBorderColor = c.chromeEdge,
                 focusedLabelColor = c.accent, unfocusedLabelColor = c.textDim, cursorColor = c.accent,
             ),
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier.fillMaxWidth().typing(),
         )
     }
     val regionNames = stringArrayResource(Res.array.regions)
@@ -485,7 +485,7 @@ fun LoadWindow(saves: List<SavedGames.Entry>, error: String?, onLoad: (SavedGame
     }
 }
 
-/** The player's settings: the language, how often the game saves itself, what's drawn over the map, and the volume. */
+/** The player's settings: the language, how often the game saves itself, what's drawn over the map, the volume and the keys. */
 @Composable
 fun SettingsWindow(settings: Settings, onClose: () -> Unit) {
     Window(stringResource(Res.string.settings), onClose, Glyph.Gear) {
@@ -504,6 +504,8 @@ fun SettingsWindow(settings: Settings, onClose: () -> Unit) {
         VolumeSlider(stringResource(Res.string.sound_world), settings.world, set = { settings.world = it }, settled = { settings.save() })
         VolumeSlider(stringResource(Res.string.sound_tools), settings.tools, set = { settings.tools = it }, settled = { settings.save() })
         VolumeSlider(stringResource(Res.string.sound_music), settings.music, set = { settings.music = it }, settled = { settings.save() })
+        Head(stringResource(Res.string.keys))
+        KeyList()
     }
 }
 

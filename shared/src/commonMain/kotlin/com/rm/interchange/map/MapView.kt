@@ -3,7 +3,6 @@ package com.rm.interchange.map
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.gestures.awaitEachGesture
-import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
@@ -21,8 +20,15 @@ import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.graphics.layer.drawLayer
 import androidx.compose.ui.graphics.rememberGraphicsLayer
+import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.input.pointer.isPrimaryPressed
+import androidx.compose.ui.input.pointer.isSecondaryPressed
+import androidx.compose.ui.input.pointer.isTertiaryPressed
+import androidx.compose.ui.input.pointer.PointerType
+import androidx.compose.ui.input.pointer.changedToDownIgnoreConsumed
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChange
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.text.rememberTextMeasurer
 import com.rm.interchange.res.Res
 import com.rm.interchange.res.loading_drawing
@@ -32,6 +38,7 @@ import com.rm.interchange.res.loading_trains
 import com.rm.interchange.res.loading_unpacking
 import com.rm.interchange.sim.World
 import org.jetbrains.compose.resources.stringResource
+import kotlin.math.pow
 import kotlin.time.TimeSource
 
 /** What the map does with a finger, for the tool in use. */
@@ -57,6 +64,8 @@ interface MapInput {
  * which draws what moves into it and whatever the tool in use draws over it
  * ([overlay]). One finger uses the tool, or moves the map if the tool doesn't
  * drag. Two fingers move and pinch to zoom; the strip's buttons turn the view.
+ * A mouse's left button works as a finger, its wheel zooms round the pointer,
+ * a right drag turns the view and a middle drag moves the map.
  *
  * [frame] is read while drawing, so the canvas draws again when it changes
  * without the screen around it composing again.
@@ -83,11 +92,14 @@ fun MapView(
     loading: LoadingLook? = null,
     /** Called once, when the first screen has everything it needs and the cover starts to lift. */
     onSharp: () -> Unit = {},
+    /** Where a mouse rests over the map with no button down, in pixels; null once it goes, presses or zooms. */
+    onHover: (Offset?) -> Unit = {},
 ) {
     val scope = rememberCoroutineScope()
     // The lines drawn over the map keep their world, so let go of it when the map shows another.
     DisposableEffect(world) { onDispose { DrawLines.drop(world) } }
     val currentInput by rememberUpdatedState(input)
+    val currentHover by rememberUpdatedState(onHover)
     val gl = remember(world) { GlScene(world, scope) }
     DisposableEffect(gl) { onDispose { gl.close() } }
     gl.onSharp = onSharp
@@ -109,10 +121,37 @@ fun MapView(
     val planHeld = remember(world) { booleanArrayOf(false, false) }
     val touch = Modifier.pointerInput(world, view) {
             awaitEachGesture {
-                val down = awaitFirstDown(requireUnconsumed = false)
+                // The first press, of a finger or any mouse button.
+                var first = awaitPointerEvent()
+                while (!first.changes.all { it.changedToDownIgnoreConsumed() }) first = awaitPointerEvent()
+                val down = first.changes[0]
                 val start = down.position
                 val w = size.width.toFloat()
                 val h = size.height.toFloat()
+                val buttons = first.buttons
+                if (down.type == PointerType.Mouse && !buttons.isPrimaryPressed && (buttons.isSecondaryPressed || buttons.isTertiaryPressed)) {
+                    // A right drag turns the view a quarter for each stretch it goes across; a middle drag moves the map.
+                    val turning = buttons.isSecondaryPressed
+                    val stretch = TURN_DRAG_DP.dp.toPx()
+                    var across = 0f
+                    down.consume()
+                    while (true) {
+                        val event = awaitPointerEvent()
+                        val p = event.changes.firstOrNull { it.id == down.id } ?: break
+                        if (!p.pressed) {
+                            p.consume()
+                            break
+                        }
+                        val d = p.positionChange()
+                        if (turning) {
+                            across += d.x
+                            while (across > stretch) { view.askTurn(1); across -= stretch }
+                            while (across < -stretch) { view.askTurn(-1); across += stretch }
+                        } else view.pan(d.x, d.y)
+                        event.changes.forEach { it.consume() }
+                    }
+                    return@awaitEachGesture
+                }
                 var mode = Mode.Undecided
                 var lastCentre = Offset.Unspecified
                 var lastSpan = 0f
@@ -186,6 +225,28 @@ fun MapView(
                 }
             }
         }
+    // The mouse wheel and the pointer resting over the map.
+    val mouse = Modifier.pointerInput(world, view) {
+        awaitPointerEventScope {
+            while (true) {
+                val event = awaitPointerEvent()
+                val p = event.changes.firstOrNull() ?: continue
+                when (event.type) {
+                    PointerEventType.Scroll -> {
+                        val dy = p.scrollDelta.y
+                        if (dy != 0f) {
+                            view.zoomAt(WHEEL_ZOOM.pow(-dy), p.position.x, p.position.y, size.width.toFloat(), size.height.toFloat())
+                            p.consume()
+                        }
+                        currentHover(null)
+                    }
+                    PointerEventType.Enter, PointerEventType.Move ->
+                        currentHover(if (p.type == PointerType.Mouse && !p.pressed) p.position else null)
+                    else -> currentHover(null)
+                }
+            }
+        }
+    }
     val paint: DrawScope.() -> Unit = {
         sheets.revision.intValue
         frame()
@@ -234,7 +295,7 @@ fun MapView(
     }
     Box(modifier) {
         GlMapSurface(gl, page.toArgb(), Modifier.matchParentSize())
-        Canvas(Modifier.matchParentSize().then(touch), onDraw = paint)
+        Canvas(Modifier.matchParentSize().then(mouse).then(touch), onDraw = paint)
     }
 }
 
@@ -262,6 +323,12 @@ object MapOverlays {
 
 /** How long the cover takes to fade once the map's ready, in milliseconds. */
 private const val FADE_MILLIS = 180
+
+/** How much a notch of the mouse wheel zooms by. */
+private const val WHEEL_ZOOM = 1.15f
+
+/** How far a right drag goes across for each quarter turn, in dp. */
+private const val TURN_DRAG_DP = 120
 
 private enum class Mode { Undecided, Using, Moving, Two }
 

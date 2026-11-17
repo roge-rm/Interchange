@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -50,6 +51,8 @@ import com.rm.interchange.map.Sheets
 import com.rm.interchange.map.rememberPackedSheets
 import androidx.compose.runtime.rememberCoroutineScope
 import com.rm.interchange.map.MapView
+import com.rm.interchange.map.zoomAt
+import androidx.compose.ui.input.pointer.pointerInput
 import com.rm.interchange.map.LoadingLook
 import com.rm.interchange.map.Pick
 import com.rm.interchange.map.LandPainter
@@ -701,7 +704,7 @@ private fun Root(settings: Settings) {
         }
     }
 
-    CompositionLocalProvider(LocalCompany provides (runner?.company ?: 0), LocalOpenService provides { openService.value = it }, LocalCargo provides (runner?.game?.world?.let { w -> remember(w.roster, w.cargoCount) { cargoInPlay(w) } } ?: CargoTable.BASE)) { Box(Modifier.fillMaxSize()) {
+    CompositionLocalProvider(LocalCompany provides (runner?.company ?: 0), LocalOpenService provides { openService.value = it }, LocalCargo provides (runner?.game?.world?.let { w -> remember(w.roster, w.cargoCount) { cargoInPlay(w) } } ?: CargoTable.BASE)) { Box(Modifier.fillMaxSize().gameKeys()) {
         when (screen) {
             Screen.Title -> TitleScreen(
                 continueLine = saves.firstOrNull()?.let { date(it.day, it.startYear) + " · " + saveLine(it) },
@@ -1093,6 +1096,8 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
     var roadPlan by remember { mutableStateOf<Command.Road?>(null) }
     var roadSurface by remember { mutableIntStateOf(Surface.entries(Calendar.year(world.startYear, world.day)).last()) }
     var mapSize by remember { mutableStateOf(androidx.compose.ui.geometry.Size.Zero) }
+    // Where the mouse rests over the map, read only by the tip so the screen doesn't compose as it moves.
+    val hover = remember { mutableStateOf<androidx.compose.ui.geometry.Offset?>(null) }
     // The land around the camera, a few times a second. The shore and the trees are counted again every couple of seconds.
     val sound = remember(world) { WorldSound(world) }
     LaunchedEffect(sound) {
@@ -1505,7 +1510,7 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
         mapSize = androidx.compose.ui.geometry.Size(constraints.maxWidth.toFloat(), constraints.maxHeight.toFloat())
 
         MapView(
-            world, sheets, view, { frame.value }, input, { moving(runner) }, Modifier.fillMaxSize(),
+            world, sheets, view, { frame.value }, input, { moving(runner) }, Modifier.fillMaxSize().letsGoOfText(),
             overlay = drawLit(world, view, worldView.value, riskView.value, settings.priority || tool == Tool.PriorityTrack || tool == Tool.PriorityRoad, settings.risk, plan?.let { p -> { painter -> drawTrackPlan(world, painter, p) } }
                 ?: (stationPlan ?: stationHeld?.first)?.let { p -> { painter -> drawStationPlan(world, painter, p) } }
                 ?: bridgePlan?.let { p -> { painter -> drawBridgePlan(world, painter, p) } }
@@ -1527,6 +1532,7 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
             page = c.page,
             loading = remember(c) { LoadingLook(rail = c.textDim, train = c.accent, trim = c.text, text = c.textDim, style = KitType.Dim) },
             onSharp = { mapSharp.value = true },
+            onHover = { hover.value = it },
             overlays = (if (settings.grid) MapOverlays.GRID else 0) or (if (settings.heights) MapOverlays.HEIGHTS else 0) or
                 (if (settings.snow) MapOverlays.SNOW else 0) or (if (settings.condition) MapOverlays.CONDITION else 0),
             labels = {
@@ -1538,6 +1544,7 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
                 }
             },
         )
+        HoverTip(world, view, hover, mapSize, Modifier.matchParentSize())
 
         // Keep the buttons and readings on separate lines when one row would crowd them.
         val twoLines = maxWidth < (if (onChat != null) 760.dp else 680.dp)
@@ -1705,6 +1712,101 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
             if (tool != Tool.Inspect) lastTool[tool.group] = tool
             tool = Tool.Remove
             endGesture(false)
+        }
+
+        // A tab in the tool's tray.
+        fun pickTab(t: Tool) {
+            tool = t
+            if ((t == Tool.Tunnel || t == Tool.Wires) && kindPicked == TrackKind.TUBE) kindPicked = TrackKind.RAIL
+            refusal = Refusal.NONE; plan = null; stationPlan = null; stationHeld = null; signalPlan = null; priorityPlan = null; levelPlan = null; treePlan = null; removing = false
+        }
+
+        // Keys, as the buttons they stand for. Esc lets go of a pick, a card or the tool, in that order, then opens the menu.
+        fun onKey(action: KeyAction): Boolean {
+            val g = action.group
+            if (g != null) {
+                if (me < 0) return false
+                val next = keyTool(tool, g, editor, lastTool[g]) ?: return false
+                if (next == tool) return true
+                if (tool != Tool.Remove && next.group == tool.group) {
+                    pickTab(next)
+                    folded = false
+                    return true
+                }
+                if (tool != Tool.Remove && tool.group != g) lastTool[tool.group] = tool
+                tool = next
+                endGesture(g == ToolGroup.Inspect)
+                return true
+            }
+            if (action.speed >= 0) {
+                if (runner.remote != null || editor) return false
+                speed = action.speed
+                runner.speed = SPEEDS[speed]
+                return true
+            }
+            val w = mapSize.width
+            val h = mapSize.height
+            when (action) {
+                KeyAction.Pause -> {
+                    if (runner.remote != null || editor) return false
+                    paused = !paused
+                    runner.paused = paused
+                }
+                KeyAction.Close -> when {
+                    pick != null -> pick.onCancel()
+                    copyPick.value != null -> copyPick.value = null
+                    addingStops != null || addingRoadStops != null || addingCraftStops != null -> {
+                        addingStops = null
+                        addingRoadStops = null
+                        addingCraftStops = null
+                    }
+                    selected != null -> selected = null
+                    tool != Tool.Inspect -> {
+                        if (tool != Tool.Remove) lastTool[tool.group] = tool
+                        tool = Tool.Inspect
+                        endGesture(true)
+                    }
+                    else -> onMenu()
+                }
+                KeyAction.ZoomIn -> if (w > 0f) view.zoomAt(KEY_ZOOM, w / 2, h / 2, w, h)
+                KeyAction.ZoomOut -> if (w > 0f) view.zoomAt(1f / KEY_ZOOM, w / 2, h / 2, w, h)
+                KeyAction.TurnLeft -> view.askTurn(-1)
+                KeyAction.TurnRight -> view.askTurn(1)
+                KeyAction.Map -> onMap()
+                KeyAction.Finances -> onFinances()
+                KeyAction.Overlays -> onOverlays()
+                KeyAction.Remove -> if (me >= 0) pickRemove() else return false
+                else -> return false
+            }
+            return true
+        }
+        val keyHandler = rememberUpdatedState<(KeyAction) -> Boolean>(::onKey)
+        DisposableEffect(Unit) {
+            val handler: (KeyAction) -> Boolean = { keyHandler.value(it) }
+            KeyInput.game = handler
+            onDispose {
+                if (KeyInput.game === handler) KeyInput.game = null
+                KeyInput.release()
+            }
+        }
+        // The arrow keys move the map while they're held, by a share of the screen a second.
+        LaunchedEffect(view) {
+            var last = 0L
+            while (true) withFrameNanos { t ->
+                val dt = if (last == 0L) 0f else ((t - last) / 1e9f).coerceAtMost(0.1f)
+                last = t
+                val held = KeyInput.held
+                if (held.isNotEmpty() && !KeyInput.windowOpen) {
+                    val step = KEY_PAN * minOf(mapSize.width, mapSize.height) * dt
+                    var dx = 0f
+                    var dy = 0f
+                    if (KeyAction.PanUp in held) dy += step
+                    if (KeyAction.PanDown in held) dy -= step
+                    if (KeyAction.PanLeft in held) dx += step
+                    if (KeyAction.PanRight in held) dx -= step
+                    if (dx != 0f || dy != 0f) view.pan(dx, dy)
+                }
+            }
         }
 
         // Someone watching only looks, so the building tools are left out.
@@ -1928,7 +2030,7 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
                     }
                     else -> {}
                 }
-                ToolTray(tool, { tool = it; if ((it == Tool.Tunnel || it == Tool.Wires) && kindPicked == TrackKind.TUBE) kindPicked = TrackKind.RAIL; refusal = Refusal.NONE; plan = null; stationPlan = null; stationHeld = null; signalPlan = null; priorityPlan = null; levelPlan = null; treePlan = null; removing = false }, trayDetail, folded, { folded = it }, layout.compact, trayWidth, options = trackOptions, editor = editor, warning = editor && refused || !editor && refusedHere) {
+                ToolTray(tool, ::pickTab, trayDetail, folded, { folded = it }, layout.compact, trayWidth, options = trackOptions, editor = editor, warning = editor && refused || !editor && refusedHere) {
                     if (tool == Tool.PlaceIndustry) TrayToggle(Glyph.TurnRight, stringResource(Res.string.turn_industry), industryTurn != 0) { industryTurn = (industryTurn + 1) % 4 }
                     if (tool == Tool.Track || tool == Tool.Station || tool == Tool.Depot || tool == Tool.Bridge || tool == Tool.Tunnel || tool == Tool.Wires) {
                         if (world.maglevOpen()) TrayToggle(Glyph.Train, stringResource(Res.string.guideway), guideway) { kindPicked = if (guideway) TrackKind.RAIL else TrackKind.GUIDEWAY }
@@ -2079,6 +2181,78 @@ private fun newsInView(world: World, sound: WorldSound, at: WorldSound.Listener,
     else -> false
 }
 
+/** A press here takes focus from a text field, so the keys work again. */
+@Composable
+private fun Modifier.letsGoOfText(): Modifier {
+    val focus = androidx.compose.ui.platform.LocalFocusManager.current
+    return pointerInput(Unit) {
+        awaitPointerEventScope {
+            while (true) {
+                val e = awaitPointerEvent(androidx.compose.ui.input.pointer.PointerEventPass.Initial)
+                if (e.type == androidx.compose.ui.input.pointer.PointerEventType.Press && KeyInput.typing > 0) focus.clearFocus()
+            }
+        }
+    }
+}
+
+/** What's on tile ([x], [y]), as the inspect card's title has it, past an industry's. */
+@Composable
+private fun tileTitle(world: World, x: Int, y: Int): String {
+    val i = world.index(x, y)
+    val road = world.road[i].toInt()
+    val house = world.roster.houses.getOrNull(houseOf(world.house[i].toInt()))
+    return when {
+        house != null -> house.name(languageCode())
+        world.canals.contains(i) -> stringResource(Res.string.kind_canal)
+        world.locks.containsKey(i) -> stringResource(Res.string.kind_lock)
+        road != 0 -> stringResource(if (road and PAVED != 0) Res.string.paved_street else Res.string.dirt_road)
+        world.trackAt(x, y) != 0 -> stringResource(Res.string.kind_track)
+        world.isWater(x, y) -> stringResource(Res.string.kind_water)
+        else -> stringResource(Res.string.kind_land)
+    }
+}
+
+/**
+ * What's under the mouse, a line by the pointer once it's rested there a moment: the industry, or what's on the tile
+ * and the town it's in.
+ */
+@Composable
+private fun HoverTip(world: World, view: View, hover: State<androidx.compose.ui.geometry.Offset?>, size: androidx.compose.ui.geometry.Size, modifier: Modifier) {
+    val at = hover.value
+    var tile by remember { mutableStateOf<Pick?>(null) }
+    LaunchedEffect(at) {
+        tile = null
+        if (at == null) return@LaunchedEffect
+        delay(HOVER_MILLIS)
+        tile = view.pick(world, at.x, at.y, size.width, size.height)
+    }
+    val p = tile ?: return
+    val a = at ?: return
+    val i = world.index(p.tileX, p.tileY)
+    val industry = world.industryAt(i)
+    val town = world.towns.getOrNull(world.townOf[i].toInt())
+    val text = if (industry != null) industryName(world, industry, languageCode())
+    else listOfNotNull(tileTitle(world, p.tileX, p.tileY), town?.name).joinToString(" · ")
+    val c = LocalColors.current
+    val gap = with(LocalDensity.current) { 16.dp.toPx() }
+    // By the pointer, below and to the right, or the other side where it would go off the screen.
+    androidx.compose.ui.layout.Layout(
+        content = {
+            ChromeBox { Text(text, color = c.text, style = KitType.Body, maxLines = 1, modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)) }
+        },
+        modifier = modifier,
+    ) { measurables, constraints ->
+        val tip = measurables[0].measure(constraints.copy(minWidth = 0, minHeight = 0))
+        layout(constraints.maxWidth, constraints.maxHeight) {
+            var x = a.x + gap
+            if (x + tip.width > constraints.maxWidth) x = a.x - gap - tip.width
+            var y = a.y + gap
+            if (y + tip.height > constraints.maxHeight) y = a.y - gap - tip.height
+            tip.place(x.toInt().coerceAtLeast(0), y.toInt().coerceAtLeast(0))
+        }
+    }
+}
+
 @Composable
 private fun InspectCard(world: World, x: Int, y: Int, onTown: (Int) -> Unit, onClose: () -> Unit, modifier: Modifier) {
     val c = LocalColors.current
@@ -2091,20 +2265,11 @@ private fun InspectCard(world: World, x: Int, y: Int, onTown: (Int) -> Unit, onC
         return
     }
     val grounds = stringArrayResource(Res.array.grounds)
-    val lang = languageCode()
     val levels = stringArrayResource(Res.array.approval_levels)
     val house = world.roster.houses.getOrNull(houseOf(world.house[i].toInt()))
     val road = world.road[i].toInt()
     val town = world.towns.getOrNull(world.townOf[i].toInt())
-    val title = when {
-        house != null -> house.name(lang)
-        world.canals.contains(i) -> stringResource(Res.string.kind_canal)
-        world.locks.containsKey(i) -> stringResource(Res.string.kind_lock)
-        road != 0 -> stringResource(if (road and PAVED != 0) Res.string.paved_street else Res.string.dirt_road)
-        t != 0 -> stringResource(Res.string.kind_track)
-        water -> stringResource(Res.string.kind_water)
-        else -> stringResource(Res.string.kind_land)
-    }
+    val title = tileTitle(world, x, y)
     Card(title, onClose, modifier) {
         Head(stringResource(Res.string.head_tile), Glyph.Land)
         InfoRow(stringResource(Res.string.tile_label), stringResource(Res.string.tile_xy, x, y), Glyph.Grid)
@@ -2489,3 +2654,12 @@ private fun refusalText(why: Int): StringResource = when (why) {
 
 /** The speed that counts as flat out for [t]'s engine sound: a dual-mode train is on its diesel speed until it goes faster than that. */
 private fun soundTop(traction: Int, t: TrainView) = if (traction == Traction.DUAL && t.kmh <= t.dieselSpeed) t.dieselSpeed else t.topSpeed
+
+/** How long the mouse rests over the map before its tip shows. */
+private const val HOVER_MILLIS = 500L
+
+/** How much a press of + or - zooms by. */
+private const val KEY_ZOOM = 1.25f
+
+/** How fast the arrow keys move the map, in shares of the screen's short side a second. */
+private const val KEY_PAN = 0.8f

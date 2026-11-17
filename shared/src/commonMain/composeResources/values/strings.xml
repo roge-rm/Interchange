@@ -184,6 +184,14 @@
     <string name="sound_world">The world</string>
     <string name="sound_tools">Tools and news</string>
     <string name="sound_music">Music</string>
+    <string name="keys">Keys</string>
+    <string name="key_pause">Pause or play</string>
+    <string name="key_close">Back or menu</string>
+    <string name="key_pan">Move the map</string>
+    <string name="key_space">Space</string>
+    <string name="key_esc">Esc</string>
+    <string name="key_delete">Delete</string>
+    <string name="key_backspace">Backspace</string>
 
     <!-- Content packs -->
     <string name="packs">Packs</string>

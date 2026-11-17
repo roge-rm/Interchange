@@ -119,12 +119,13 @@ private fun breaksWord(text: String, end: Int) =
 
 /**
  * A window over whatever's behind it, which dims and closes the window when
- * tapped. Its title has a glyph and a close button. It keeps clear of the
+ * tapped or with Esc. Its title has a glyph and a close button. It keeps clear of the
  * camera cutout and the bars, and scrolls if the screen is short.
  */
 @Composable
 fun Window(title: String, onClose: () -> Unit, glyph: Glyph? = null, maxWidth: Dp = 480.dp, scrollable: Boolean = true, content: @Composable () -> Unit) {
     val c = LocalColors.current
+    ClosesWithEsc(onClose)
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         Box(
             Modifier

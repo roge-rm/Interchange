@@ -76,7 +76,7 @@ internal fun Field(value: String, label: String, onChange: (String) -> Unit, sec
             focusedTextColor = c.text, unfocusedTextColor = c.text, focusedBorderColor = c.accent, unfocusedBorderColor = c.chromeEdge,
             focusedLabelColor = c.accent, unfocusedLabelColor = c.textDim, cursorColor = c.accent,
         ),
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier.fillMaxWidth().typing(),
     )
 }
 
