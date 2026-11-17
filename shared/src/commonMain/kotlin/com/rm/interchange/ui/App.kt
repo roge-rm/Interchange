@@ -53,6 +53,8 @@ import androidx.compose.runtime.rememberCoroutineScope
 import com.rm.interchange.map.MapView
 import com.rm.interchange.map.zoomAt
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.geometry.isSpecified
 import com.rm.interchange.map.LoadingLook
 import com.rm.interchange.map.Pick
 import com.rm.interchange.map.LandPainter
@@ -1721,6 +1723,15 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
             refusal = Refusal.NONE; plan = null; stationPlan = null; stationHeld = null; signalPlan = null; priorityPlan = null; levelPlan = null; treePlan = null; removing = false
         }
 
+        // Moves the gamepad's cursor, and the map under it past the edges.
+        fun moveCursor(c: androidx.compose.ui.geometry.Offset, dx: Float, dy: Float) {
+            val r = cursorMove(c.x, c.y, dx, dy, mapSize.width, mapSize.height, CURSOR_MARGIN * minOf(mapSize.width, mapSize.height))
+            if (r[2] != 0f || r[3] != 0f) view.pan(r[2], r[3])
+            Gamepad.cursor.value = androidx.compose.ui.geometry.Offset(r[0], r[1])
+            Gamepad.map?.moved()
+        }
+        val toolFocus = remember { androidx.compose.ui.focus.FocusRequester() }
+
         // Keys, as the buttons they stand for. Esc lets go of a pick, a card or the tool, in that order, then opens the menu.
         fun onKey(action: KeyAction): Boolean {
             val g = action.group
@@ -1768,8 +1779,21 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
                     }
                     else -> onMenu()
                 }
-                KeyAction.ZoomIn -> if (w > 0f) view.zoomAt(KEY_ZOOM, w / 2, h / 2, w, h)
-                KeyAction.ZoomOut -> if (w > 0f) view.zoomAt(1f / KEY_ZOOM, w / 2, h / 2, w, h)
+                KeyAction.ZoomIn, KeyAction.ZoomOut -> if (w > 0f) {
+                    // Round the gamepad's cursor while it's out, else the middle.
+                    val c = Gamepad.cursor.value
+                    val at = if (Gamepad.shown.value && c.isSpecified) c else androidx.compose.ui.geometry.Offset(w / 2, h / 2)
+                    view.zoomAt(if (action == KeyAction.ZoomIn) KEY_ZOOM else 1f / KEY_ZOOM, at.x, at.y, w, h)
+                    Gamepad.map?.moved()
+                }
+                KeyAction.CursorUp, KeyAction.CursorDown, KeyAction.CursorLeft, KeyAction.CursorRight -> if (w > 0f) {
+                    val c = Gamepad.cursor.value.takeIf { it.isSpecified } ?: androidx.compose.ui.geometry.Offset(w / 2, h / 2)
+                    val dx = if (action == KeyAction.CursorLeft) -1 else if (action == KeyAction.CursorRight) 1 else 0
+                    val dy = if (action == KeyAction.CursorUp) -1 else if (action == KeyAction.CursorDown) 1 else 0
+                    val to = view.cursorStep(world, c, dx, dy, w, h)
+                    moveCursor(c, to.x - c.x, to.y - c.y)
+                }
+                KeyAction.Tools -> if (me >= 0) runCatching { toolFocus.requestFocus() }.getOrElse { return false } else return false
                 KeyAction.TurnLeft -> view.askTurn(-1)
                 KeyAction.TurnRight -> view.askTurn(1)
                 KeyAction.Map -> onMap()
@@ -1789,9 +1813,11 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
                 KeyInput.release()
             }
         }
-        // The arrow keys move the map while they're held, by a share of the screen a second.
+        // The arrow keys move the map while they're held, by a share of the screen a second, and the gamepad's left stick
+        // the cursor, by how far it's pushed. The cursor pushes the map along at the edges.
         LaunchedEffect(view) {
             var last = 0L
+            var padHover = false
             while (true) withFrameNanos { t ->
                 val dt = if (last == 0L) 0f else ((t - last) / 1e9f).coerceAtMost(0.1f)
                 last = t
@@ -1806,6 +1832,20 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
                     if (KeyAction.PanRight in held) dx -= step
                     if (dx != 0f || dy != 0f) view.pan(dx, dy)
                 }
+                if (Gamepad.shown.value && KeyInput.cursorMode && mapSize.width > 0f) {
+                    val c = Gamepad.cursor.value
+                    if (!c.isSpecified) Gamepad.cursor.value = androidx.compose.ui.geometry.Offset(mapSize.width / 2, mapSize.height / 2)
+                    else {
+                        val d = stickMove(Gamepad.leftX, Gamepad.leftY, CURSOR_SPEED * minOf(mapSize.width, mapSize.height), dt)
+                        if (d != androidx.compose.ui.geometry.Offset.Zero) moveCursor(c, d.x, d.y)
+                    }
+                    hover.value = Gamepad.cursor.value
+                    padHover = true
+                } else if (padHover) {
+                    // The tip goes with the cursor.
+                    hover.value = null
+                    padHover = false
+                }
             }
         }
 
@@ -1814,6 +1854,7 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
             ToolBar(
                 tool.group, ::pickGroup, vertical = true, compact = compactTools, remove = tool == Tool.Remove, onRemove = ::pickRemove, editor = editor,
                 modifier = Modifier
+                    .focusRequester(toolFocus)
                     .align(Alignment.CenterEnd)
                     .windowInsetsPadding(safe.only(WindowInsetsSides.End))
                     .padding(gap),
@@ -2049,7 +2090,7 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
             }
             if (!layout.sideTools && me >= 0) ToolBar(
                 tool.group, ::pickGroup, vertical = false, compact = compactTools, remove = tool == Tool.Remove, onRemove = ::pickRemove,
-                modifier = trayWidth, editor = editor,
+                modifier = trayWidth.focusRequester(toolFocus), editor = editor,
             )
         }
         // The map's sheets, for the vehicle pictures in the link window.
@@ -2663,3 +2704,9 @@ private const val KEY_ZOOM = 1.25f
 
 /** How fast the arrow keys move the map, in shares of the screen's short side a second. */
 private const val KEY_PAN = 0.8f
+
+/** How fast the gamepad's cursor goes with the stick pushed all the way, in shares of the screen's short side a second. */
+private const val CURSOR_SPEED = 0.9f
+
+/** How far in from the map's edges the cursor stops and pushes the map instead, a share of the short side. */
+private const val CURSOR_MARGIN = 0.06f

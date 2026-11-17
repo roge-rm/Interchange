@@ -485,7 +485,7 @@ fun LoadWindow(saves: List<SavedGames.Entry>, error: String?, onLoad: (SavedGame
     }
 }
 
-/** The player's settings: the language, how often the game saves itself, what's drawn over the map, the volume and the keys. */
+/** The player's settings: the language, how often the game saves itself, what's drawn over the map, the volume, the keys and the controller's buttons. */
 @Composable
 fun SettingsWindow(settings: Settings, onClose: () -> Unit) {
     Window(stringResource(Res.string.settings), onClose, Glyph.Gear) {
@@ -506,6 +506,8 @@ fun SettingsWindow(settings: Settings, onClose: () -> Unit) {
         VolumeSlider(stringResource(Res.string.sound_music), settings.music, set = { settings.music = it }, settled = { settings.save() })
         Head(stringResource(Res.string.keys))
         KeyList()
+        Head(stringResource(Res.string.controller))
+        KeyList(pad = true)
     }
 }
 

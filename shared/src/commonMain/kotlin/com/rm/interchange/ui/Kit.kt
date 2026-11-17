@@ -31,6 +31,9 @@ import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.runtime.mutableFloatStateOf
@@ -119,18 +122,22 @@ private fun breaksWord(text: String, end: Int) =
 
 /**
  * A window over whatever's behind it, which dims and closes the window when
- * tapped or with Esc. Its title has a glyph and a close button. It keeps clear of the
+ * tapped or with Esc or B. Its title has a glyph and a close button. It keeps clear of the
  * camera cutout and the bars, and scrolls if the screen is short.
  */
 @Composable
 fun Window(title: String, onClose: () -> Unit, glyph: Glyph? = null, maxWidth: Dp = 480.dp, scrollable: Boolean = true, content: @Composable () -> Unit) {
     val c = LocalColors.current
     ClosesWithEsc(onClose)
+    // With a gamepad, focus goes into the window as it opens, for the d-pad.
+    val focus = remember { FocusRequester() }
+    LaunchedEffect(Unit) { if (Gamepad.shown.value) runCatching { focus.requestFocus() } }
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         Box(
             Modifier
                 .matchParentSize()
                 .background(Color(0x66000000))
+                .focusProperties { canFocus = false }
                 .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onClose)
                 .clearAndSetSemantics { },
         )
@@ -139,6 +146,7 @@ fun Window(title: String, onClose: () -> Unit, glyph: Glyph? = null, maxWidth: D
                 .windowInsetsPadding(WindowInsets.safeDrawing)
                 .padding(12.dp)
                 .widthIn(max = maxWidth)
+                .focusRequester(focus)
                 // Taps on the window stay in it.
                 .pointerInput(Unit) { detectTapGestures { } }
                 .semantics { paneTitle = title },

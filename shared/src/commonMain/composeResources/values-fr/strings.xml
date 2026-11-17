@@ -175,6 +175,16 @@
     <string name="key_esc">Échap</string>
     <string name="key_delete">Suppr</string>
     <string name="key_backspace">Retour arrière</string>
+    <string name="key_tap">Toucher au curseur</string>
+    <string name="key_cursor">Déplacer le curseur</string>
+    <string name="key_tools">Barre d’outils</string>
+    <string name="key_turn">Tourner la vue</string>
+    <string name="controller">Manette</string>
+    <string name="pad_start">Start</string>
+    <string name="pad_select">Select</string>
+    <string name="pad_dpad">Croix</string>
+    <string name="pad_left_stick">Stick gauche</string>
+    <string name="pad_right_stick">Stick droit</string>
 
     <!-- Packs de contenu -->
     <string name="packs">Packs</string>

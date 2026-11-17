@@ -192,6 +192,16 @@
     <string name="key_esc">Esc</string>
     <string name="key_delete">Delete</string>
     <string name="key_backspace">Backspace</string>
+    <string name="key_tap">Tap at the cursor</string>
+    <string name="key_cursor">Move the cursor</string>
+    <string name="key_tools">Tool bar</string>
+    <string name="key_turn">Turn the view</string>
+    <string name="controller">Controller</string>
+    <string name="pad_start">Start</string>
+    <string name="pad_select">Select</string>
+    <string name="pad_dpad">D-pad</string>
+    <string name="pad_left_stick">Left stick</string>
+    <string name="pad_right_stick">Right stick</string>
 
     <!-- Content packs -->
     <string name="packs">Packs</string>

@@ -23,6 +23,10 @@ import androidx.compose.ui.input.key.isMetaPressed
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.input.pointer.PointerType
+import androidx.compose.ui.input.pointer.pointerInput
 import com.rm.interchange.res.*
 import org.jetbrains.compose.resources.stringResource
 
@@ -45,9 +49,26 @@ object KeyInput {
 
     val windowOpen get() = windows.isNotEmpty()
 
+    /** Whether the app's outermost box has focus itself, not a button or field in it. */
+    internal var rootFocused = false
+    /** Gives focus back to the outermost box. */
+    internal var focusRoot: (() -> Unit)? = null
+    /** Whether the gamepad's A went to the map when pressed. */
+    private var tapOnMap = false
+
+    /** Whether a gamepad's d-pad and A work the map cursor, rather than moving focus and pressing. */
+    val cursorMode get() = rootFocused && windows.isEmpty() && game != null && typing == 0
+
     fun handle(event: KeyEvent): Boolean {
-        val name = KEY_NAMES[event.key] ?: return false
+        var name = KEY_NAMES[event.key] ?: return false
+        if (name in ARROWS && event.fromGamepad()) name = KeyMap.PAD + name
         val action = KeyMap.action(name) ?: return false
+        val pad = KeyMap.isPad(name)
+        if (pad) Gamepad.used()
+        // The d-pad moves focus, as Compose does with it, unless the map cursor's out.
+        val step = action == KeyAction.CursorUp || action == KeyAction.CursorDown || action == KeyAction.CursorLeft || action == KeyAction.CursorRight
+        if (step && !cursorMode) return false
+        if (action == KeyAction.Tap) return tap(event)
         if (event.type == KeyEventType.KeyUp) {
             down.remove(name)
             held.remove(action)
@@ -56,15 +77,42 @@ object KeyInput {
         }
         if (event.type != KeyEventType.KeyDown) return false
         val again = !down.add(name)
-        // A key held down repeats only for zooming.
-        if (again && action != KeyAction.ZoomIn && action != KeyAction.ZoomOut) return name in taken
-        val used = press(action, event)
+        // A key held down repeats only for zooming and stepping the cursor.
+        if (again && action != KeyAction.ZoomIn && action != KeyAction.ZoomOut && !step) return name in taken
+        if (!again && (name == "pad_l2" || name == "pad_r2") && !Gamepad.triggerTurn(name == "pad_r2")) {
+            taken.add(name)
+            return true
+        }
+        val used = if (pad && action == KeyAction.Close && windows.isEmpty() && !rootFocused) {
+            // B out of the tool bar gives the map back.
+            focusRoot?.invoke()
+            true
+        } else !(event.isCtrlPressed || event.isAltPressed || event.isMetaPressed) && press(action)
         if (used) taken.add(name) else taken.remove(name)
         return used
     }
 
-    private fun press(action: KeyAction, event: KeyEvent): Boolean {
-        if (typing > 0 || event.isCtrlPressed || event.isAltPressed || event.isMetaPressed) return false
+    /** A gamepad's A: a tap at the cursor while it's out, otherwise a press of what has focus. */
+    private fun tap(event: KeyEvent): Boolean {
+        val name = "pad_a"
+        if (event.type == KeyEventType.KeyDown) {
+            if (!down.add(name)) return true
+            tapOnMap = cursorMode
+            if (tapOnMap) Gamepad.map?.press() else Gamepad.pressFocused?.invoke(true)
+            return true
+        }
+        if (event.type != KeyEventType.KeyUp) return false
+        if (!down.remove(name)) return true
+        if (tapOnMap) Gamepad.map?.release() else Gamepad.pressFocused?.invoke(false)
+        tapOnMap = false
+        return true
+    }
+
+    /** An action from a gamepad's stick or trigger. */
+    fun pad(action: KeyAction): Boolean = press(action)
+
+    private fun press(action: KeyAction): Boolean {
+        if (typing > 0) return false
         if (action == KeyAction.Close && windows.isNotEmpty()) {
             windows.last().value()
             return true
@@ -83,6 +131,8 @@ object KeyInput {
         held.clear()
         down.clear()
         taken.clear()
+        if (tapOnMap) Gamepad.map?.cancel()
+        tapOnMap = false
     }
 
     internal fun opened(close: State<() -> Unit>) { windows.add(close) }
@@ -110,11 +160,34 @@ fun Modifier.gameKeys(): Modifier {
             runCatching { focus.requestFocus() }
         }
     }
+    DisposableEffect(focus) {
+        val back = { runCatching { focus.requestFocus() }; Unit }
+        KeyInput.focusRoot = back
+        onDispose { if (KeyInput.focusRoot === back) KeyInput.focusRoot = null }
+    }
+    GamepadSticks()
     return this
+        .hidesCursor()
         .onKeyEvent { KeyInput.handle(it) }
         .focusRequester(focus)
-        .onFocusChanged { inside = it.hasFocus }
+        .onFocusChanged {
+            inside = it.hasFocus
+            KeyInput.rootFocused = it.isFocused
+        }
         .focusable()
+}
+
+/** Hides the gamepad's cursor when the screen's touched or a mouse moves or presses. */
+private fun Modifier.hidesCursor(): Modifier = pointerInput(Unit) {
+    awaitPointerEventScope {
+        while (true) {
+            val e = awaitPointerEvent(PointerEventPass.Initial)
+            if (!Gamepad.shown.value) continue
+            if (e.type == PointerEventType.Press || e.type == PointerEventType.Scroll ||
+                e.type == PointerEventType.Move && e.changes.any { it.type == PointerType.Mouse }
+            ) Gamepad.hide()
+        }
+    }
 }
 
 /** Marks a text field, so keys do nothing while it has focus. */
@@ -134,6 +207,8 @@ fun Modifier.typing(): Modifier {
         }
     }
 }
+
+private val ARROWS = setOf("up", "down", "left", "right")
 
 /** The name [KeyMap] knows a key by. */
 private val KEY_NAMES: Map<Key, String> by lazy {
@@ -160,6 +235,15 @@ private val KEY_NAMES: Map<Key, String> by lazy {
         put(Key.DirectionDown, "down")
         put(Key.DirectionLeft, "left")
         put(Key.DirectionRight, "right")
+        put(Key.ButtonA, "pad_a")
+        put(Key.ButtonB, "pad_b")
+        put(Key.ButtonY, "pad_y")
+        put(Key.ButtonStart, "pad_start")
+        put(Key.ButtonSelect, "pad_select")
+        put(Key.ButtonL1, "pad_l1")
+        put(Key.ButtonR1, "pad_r1")
+        put(Key.ButtonL2, "pad_l2")
+        put(Key.ButtonR2, "pad_r2")
     }
 }
 
@@ -177,14 +261,25 @@ fun keyLabel(name: String): String = when (name) {
     "down" -> "↓"
     "left" -> "←"
     "right" -> "→"
-    else -> name.uppercase()
+    "pad_start" -> stringResource(Res.string.pad_start)
+    "pad_select" -> stringResource(Res.string.pad_select)
+    "pad_up", "pad_down", "pad_left", "pad_right" -> stringResource(Res.string.pad_dpad)
+    else -> name.removePrefix(KeyMap.PAD).uppercase()
 }
 
-/** Every action and its keys, a row each, actions of the same title on one row. */
+/**
+ * Every action and its keys, a row each, actions of the same title on one row: the keyboard's, or with [pad] the
+ * gamepad's, with its sticks.
+ */
 @Composable
-fun KeyList() {
+fun KeyList(pad: Boolean = false) {
     for ((title, actions) in KeyAction.entries.groupBy { it.title }) {
-        val keys = actions.flatMap { KeyMap.keysOf(it) }.map { keyLabel(it) }
+        val keys = actions.flatMap { KeyMap.keysOf(it) }.filter { KeyMap.isPad(it) == pad }.map { keyLabel(it) }.distinct()
+        if (keys.isEmpty()) continue
         InfoRow(stringResource(title), keys.joinToString("  "))
+    }
+    if (pad) {
+        InfoRow(stringResource(Res.string.key_cursor), stringResource(Res.string.pad_left_stick))
+        InfoRow(stringResource(Res.string.key_turn), stringResource(Res.string.pad_right_stick))
     }
 }

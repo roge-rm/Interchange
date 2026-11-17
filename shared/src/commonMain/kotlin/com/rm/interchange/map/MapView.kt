@@ -17,6 +17,10 @@ import androidx.compose.ui.graphics.toArgb
 import com.rm.interchange.map.gl.GlMapSurface
 import com.rm.interchange.map.gl.GlScene
 import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.geometry.isSpecified
+import com.rm.interchange.ui.CursorTarget
+import com.rm.interchange.ui.Gamepad
 import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.graphics.layer.drawLayer
 import androidx.compose.ui.graphics.rememberGraphicsLayer
@@ -65,7 +69,9 @@ interface MapInput {
  * ([overlay]). One finger uses the tool, or moves the map if the tool doesn't
  * drag. Two fingers move and pinch to zoom; the strip's buttons turn the view.
  * A mouse's left button works as a finger, its wheel zooms round the pointer,
- * a right drag turns the view and a middle drag moves the map.
+ * a right drag turns the view and a middle drag moves the map. A gamepad's
+ * cursor is drawn over it all, and its A taps or drags at the cursor
+ * ([Gamepad.map]).
  *
  * [frame] is read while drawing, so the canvas draws again when it changes
  * without the screen around it composing again.
@@ -119,6 +125,83 @@ fun MapView(
     val plan = rememberGraphicsLayer()
     val planAt = remember(world) { FloatArray(4) }
     val planHeld = remember(world) { booleanArrayOf(false, false) }
+    // A tap on the tile at [it], from a finger or the gamepad's cursor.
+    fun tapAt(it: Pick) {
+        gl.lastEdit = it.tileX to it.tileY
+        planHeld[0] = false
+        val mark = gl.editMark(view.turn)
+        val builds = currentInput.builds
+        val area = editArea(currentInput, it, it)
+        currentInput.tap(it)
+        if (currentInput.builds != builds) gl.edited(view.turn, area[0], area[1], area[2], area[3], mark)
+    }
+    // The end of a drag that used the tool from [a] to [b].
+    fun dragEnd(a: Pick?, b: Pick?) {
+        val mark = gl.editMark(view.turn)
+        val builds = currentInput.builds
+        val drawn = planHeld[1]
+        val area = if (a != null && b != null) editArea(currentInput, a, b) else null
+        currentInput.dragEnd()
+        // What the drag showed stays till what it built is drawn ([planHeld]: held, drawn last frame).
+        planHeld[0] = drawn && currentInput.builds != builds && area != null
+        if (planHeld[0] && area != null) gl.edited(view.turn, area[0], area[1], area[2], area[3], mark)
+    }
+    // The map's size in pixels, as last drawn, for the gamepad's cursor.
+    val drawn = remember(world) { FloatArray(2) }
+    // A at the cursor taps, or held while the cursor goes to another tile, drags as a finger would.
+    DisposableEffect(world, view, gl) {
+        val target = object : CursorTarget {
+            var down = false
+            var using = false
+            var from: Pick? = null
+            var to: Pick? = null
+
+            fun at(): Pick? {
+                val c = Gamepad.cursor.value
+                if (!c.isSpecified || drawn[0] <= 0f) return null
+                return view.pick(world, c.x, c.y, drawn[0], drawn[1])
+            }
+
+            override fun press() {
+                down = true
+                using = false
+                from = at()
+                to = from
+            }
+
+            override fun moved() {
+                if (!down) return
+                val a = from ?: return
+                val p = at() ?: return
+                if (!using) {
+                    if (!currentInput.drags || p.tileX == a.tileX && p.tileY == a.tileY) return
+                    using = true
+                    currentInput.dragStart(a)
+                }
+                gl.lastEdit = p.tileX to p.tileY
+                to = p
+                currentInput.dragTo(p)
+            }
+
+            override fun release() {
+                if (!down) return
+                down = false
+                if (using) dragEnd(from, to) else (at() ?: from)?.let { tapAt(it) }
+                using = false
+            }
+
+            override fun cancel() {
+                if (using) currentInput.dragCancel()
+                down = false
+                using = false
+            }
+        }
+        Gamepad.map = target
+        onDispose {
+            target.cancel()
+            if (Gamepad.map === target) Gamepad.map = null
+        }
+    }
     val touch = Modifier.pointerInput(world, view) {
             awaitEachGesture {
                 // The first press, of a finger or any mouse button.
@@ -200,27 +283,8 @@ fun MapView(
                     event.changes.forEach { it.consume() }
                 }
                 when (mode) {
-                    Mode.Undecided -> view.pick(world, start.x, start.y, w, h)?.let {
-                        gl.lastEdit = it.tileX to it.tileY
-                        planHeld[0] = false
-                        val mark = gl.editMark(view.turn)
-                        val builds = currentInput.builds
-                        val area = editArea(currentInput, it, it)
-                        currentInput.tap(it)
-                        if (currentInput.builds != builds) gl.edited(view.turn, area[0], area[1], area[2], area[3], mark)
-                    }
-                    Mode.Using -> {
-                        val mark = gl.editMark(view.turn)
-                        val builds = currentInput.builds
-                        val drawn = planHeld[1]
-                        val a = from
-                        val b = to
-                        val area = if (a != null && b != null) editArea(currentInput, a, b) else null
-                        currentInput.dragEnd()
-                        // What the drag showed stays till what it built is drawn ([planHeld]: held, drawn last frame).
-                        planHeld[0] = drawn && currentInput.builds != builds && area != null
-                        if (planHeld[0] && area != null) gl.edited(view.turn, area[0], area[1], area[2], area[3], mark)
-                    }
+                    Mode.Undecided -> view.pick(world, start.x, start.y, w, h)?.let { tapAt(it) }
+                    Mode.Using -> dragEnd(from, to)
                     else -> {}
                 }
             }
@@ -285,6 +349,9 @@ fun MapView(
         }
         labels?.invoke(this)
         label?.invoke(this)
+        drawn[0] = size.width
+        drawn[1] = size.height
+        if (Gamepad.shown.value) Gamepad.cursor.value.let { if (it.isSpecified) drawCursor(it) }
         // The train stands still if the map can't be drawn.
         val failed = gl.step == LoadStep.FAILED
         if (!failed) train.advance(gl.progress, cover, now)
@@ -309,6 +376,16 @@ private fun editArea(input: MapInput, from: Pick, to: Pick): IntArray {
     )
 }
 
+/** The gamepad's cursor at [at]: a ring with a dot, white edged in black so it shows on any ground. */
+private fun DrawScope.drawCursor(at: Offset) {
+    val r = CURSOR_DP.dp.toPx()
+    val line = 2.dp.toPx()
+    drawCircle(Color.Black, r, at, style = Stroke(line * 2.5f))
+    drawCircle(Color.White, r, at, style = Stroke(line))
+    drawCircle(Color.Black, line * 1.6f, at)
+    drawCircle(Color.White, line, at)
+}
+
 /** The overlays the GPU map draws into the ground, as bits. */
 object MapOverlays {
     /** A line along each tile's top two edges, at the closer zooms. */
@@ -329,6 +406,9 @@ private const val WHEEL_ZOOM = 1.15f
 
 /** How far a right drag goes across for each quarter turn, in dp. */
 private const val TURN_DRAG_DP = 120
+
+/** The gamepad cursor's radius, in dp. */
+private const val CURSOR_DP = 11
 
 private enum class Mode { Undecided, Using, Moving, Two }
 

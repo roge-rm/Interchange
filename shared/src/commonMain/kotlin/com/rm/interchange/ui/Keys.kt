@@ -34,6 +34,14 @@ enum class KeyAction(val title: StringResource, val group: ToolGroup? = null, va
     Towns(Res.string.group_towns, ToolGroup.Towns),
     Industry(Res.string.group_industry, ToolGroup.Industry),
     Remove(Res.string.tool_remove),
+    /** A gamepad's A: a tap at the cursor, or held while the cursor moves, a drag. */
+    Tap(Res.string.key_tap),
+    CursorUp(Res.string.key_cursor),
+    CursorDown(Res.string.key_cursor),
+    CursorLeft(Res.string.key_cursor),
+    CursorRight(Res.string.key_cursor),
+    /** Moves focus into the tool bar, for the d-pad. */
+    Tools(Res.string.key_tools),
     ;
 
     /** Whether it still works with a window open. */
@@ -42,7 +50,8 @@ enum class KeyAction(val title: StringResource, val group: ToolGroup? = null, va
 
 /**
  * The keys, by name: lower case letters and digits, and space, esc, delete, backspace, plus, equals, minus, up, down,
- * left and right. A tool group's key picks the tool last used in it, and pressed again goes on to the group's next tool.
+ * left and right. A gamepad's start with pad_: its buttons, its shoulders l1 and r1, its triggers l2 and r2 and its
+ * d-pad. A tool group's key picks the tool last used in it, and pressed again goes on to the group's next tool.
  */
 object KeyMap {
     val DEFAULT: List<Pair<String, KeyAction>> = listOf(
@@ -56,7 +65,16 @@ object KeyMap {
         "i" to KeyAction.Inspect, "r" to KeyAction.Rail, "o" to KeyAction.Road, "w" to KeyAction.Water,
         "a" to KeyAction.Air, "l" to KeyAction.Land, "t" to KeyAction.Towns, "n" to KeyAction.Industry,
         "x" to KeyAction.Remove, "delete" to KeyAction.Remove, "backspace" to KeyAction.Remove,
+        "pad_a" to KeyAction.Tap, "pad_b" to KeyAction.Close, "pad_y" to KeyAction.Tools,
+        "pad_start" to KeyAction.Pause, "pad_select" to KeyAction.Map,
+        "pad_l1" to KeyAction.ZoomOut, "pad_r1" to KeyAction.ZoomIn, "pad_l2" to KeyAction.TurnLeft, "pad_r2" to KeyAction.TurnRight,
+        "pad_up" to KeyAction.CursorUp, "pad_down" to KeyAction.CursorDown, "pad_left" to KeyAction.CursorLeft, "pad_right" to KeyAction.CursorRight,
     )
+
+    /** Whether [name] is a gamepad's. */
+    fun isPad(name: String) = name.startsWith(PAD)
+
+    const val PAD = "pad_"
 
     private val byName = DEFAULT.toMap()
 
