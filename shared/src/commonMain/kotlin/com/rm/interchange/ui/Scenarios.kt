@@ -510,7 +510,7 @@ fun RowScope.IndustryKinds(world: World, kind: String, onKind: (String) -> Unit)
 
 /** The industry kinds that can be placed in [world]'s start year, or all if none can. */
 fun placeableKinds(world: World) = Calendar.year(world.startYear, world.day).let { year ->
-    world.roster.industries.filter { year >= it.from && year < it.until }.ifEmpty { world.roster.industries }
+    world.roster.industries.filter { year >= it.from && year < it.until && (world.settings.future || !it.future) }.ifEmpty { world.roster.industries.filter { world.settings.future || !it.future } }
 }
 
 /** An area of the map the editor is about to change, from ([a0], [a1]) to ([a2], [a3]) either way round. */

@@ -1075,7 +1075,7 @@ fun IndustriesWindow(world: World, onGo: (Float, Float) -> Unit, send: (com.rm.i
         if (funding) {
             // What can be built this year, and what it costs now.
             val year = com.rm.interchange.sim.Calendar.year(world.startYear, world.day)
-            for (kind in world.roster.industries.filter { it.enabled && year >= it.from && year < it.until }) {
+            for (kind in world.roster.industries.filter { it.enabled && (world.settings.future || !it.future) && year >= it.from && year < it.until }) {
                 val prospect = kind.primary && kind.accepts == 0
                 PictureRow(
                     kind.name(lang),

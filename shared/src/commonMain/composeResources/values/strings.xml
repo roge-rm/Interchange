@@ -277,6 +277,15 @@
     <!-- News -->
     <string name="news_opens">%1$s opens</string>
     <string name="news_closes">%1$s closes</string>
+    <plurals name="news_closing">
+        <item quantity="one">%1$s will close in %2$d month</item>
+        <item quantity="other">%1$s will close in %2$d months</item>
+    </plurals>
+    <plurals name="closing_in">
+        <item quantity="one">in %1$d month</item>
+        <item quantity="other">in %1$d months</item>
+    </plurals>
+    <string name="closing_label">Closing</string>
     <string name="news_more">%1$s makes more</string>
     <string name="news_less">%1$s makes less</string>
 

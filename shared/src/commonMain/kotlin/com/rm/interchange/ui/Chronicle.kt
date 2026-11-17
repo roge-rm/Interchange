@@ -31,7 +31,7 @@ import org.jetbrains.compose.resources.stringResource
 
 /** The news that makes the headlines; the rest is only in the full chronicle. */
 private val HEADLINES = setOf(
-    News.INDUSTRY_OPENS, News.INDUSTRY_CLOSES, News.WASHOUT, News.FIRE, News.AVALANCHE, News.SUBSIDY_AWARDED,
+    News.INDUSTRY_OPENS, News.INDUSTRY_CLOSES, News.INDUSTRY_CLOSING, News.WASHOUT, News.FIRE, News.AVALANCHE, News.SUBSIDY_AWARDED,
     News.COMPANY_FOR_SALE, News.COMPANY_BOUGHT, News.COMPANY_BANKRUPT, News.COMPANY_RESTARTED, News.NEW_VEHICLE,
     News.GOAL_MET, News.GOAL_FAILED, News.CONTRACT_FAILED, News.FUEL_SHOCK, News.SCENARIO_WON, News.SCENARIO_LOST, News.CRASH,
 )
@@ -109,6 +109,7 @@ private val COMPANY_NEWS = setOf(
 /** The bullet for story [t], by its kind. */
 private fun storyGlyph(world: World, t: Story): Glyph = when (t.kind) {
     News.INDUSTRY_OPENS, News.INDUSTRY_CLOSES, News.PROSPECTING_FAILED -> Glyph.Factory
+    News.INDUSTRY_CLOSING -> Glyph.Alert
     News.PRODUCTION_UP -> Glyph.Up
     News.PRODUCTION_DOWN -> Glyph.Down
     News.SNOWBOUND -> Glyph.Snow
@@ -142,7 +143,7 @@ private fun storyGlyph(world: World, t: Story): Glyph = when (t.kind) {
 
 /** Where on the map story [t] happened, or null if it's not about a place. */
 private fun storyPlace(world: World, t: Story): Pair<Float, Float>? = when (t.kind) {
-    News.INDUSTRY_OPENS, News.INDUSTRY_CLOSES, News.PRODUCTION_UP, News.PRODUCTION_DOWN ->
+    News.INDUSTRY_OPENS, News.INDUSTRY_CLOSES, News.INDUSTRY_CLOSING, News.PRODUCTION_UP, News.PRODUCTION_DOWN ->
         world.industries.getOrNull(t.about)?.let { it.x + 1f to it.y + 1f }
     News.WASHOUT, News.FIRE, News.AVALANCHE -> t.about % world.width + 0.5f to t.about / world.width + 0.5f
     News.WARN_SNOW, News.WARN_ICE, News.WARN_STORM, News.WARN_COLD -> warnPlace(world, t.about)

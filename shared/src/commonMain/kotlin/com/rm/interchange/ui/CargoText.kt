@@ -44,6 +44,10 @@ class CargoText(private val table: CargoTable, private val language: String, pri
     fun colour(c: Int): Color = table.getOrNull(c)?.let { Color(0xFF000000.toInt() or it.colour) } ?: Color(0xFF9AA0A6)
 }
 
+/** [world]'s cargo that are in play: the future ones only with future transport on. */
+fun cargoInPlay(world: com.rm.interchange.sim.World): CargoTable =
+    world.roster.cargo.let { if (it.size == world.cargoCount) it else CargoTable(it.kinds.take(world.cargoCount)) }
+
 @Composable
 fun cargoNames(): CargoText {
     val table = LocalCargo.current

@@ -127,6 +127,7 @@ import com.rm.interchange.sim.Track
 import com.rm.interchange.sim.PAVED
 import com.rm.interchange.sim.houseOf
 import com.rm.interchange.sim.Industry
+import com.rm.interchange.sim.CLOSING_NOTICE
 import com.rm.interchange.sim.News
 import com.rm.interchange.sim.Goal
 import com.rm.interchange.sim.Campaign
@@ -698,7 +699,7 @@ private fun Root(settings: Settings) {
         }
     }
 
-    CompositionLocalProvider(LocalCompany provides (runner?.company ?: 0), LocalOpenService provides { openService.value = it }, LocalCargo provides (runner?.game?.world?.roster?.cargo ?: CargoTable.BASE)) { Box(Modifier.fillMaxSize()) {
+    CompositionLocalProvider(LocalCompany provides (runner?.company ?: 0), LocalOpenService provides { openService.value = it }, LocalCargo provides (runner?.game?.world?.let { cargoInPlay(it) } ?: CargoTable.BASE)) { Box(Modifier.fillMaxSize()) {
         when (screen) {
             Screen.Title -> TitleScreen(
                 continueLine = saves.firstOrNull()?.let { date(it.day, it.startYear) + " · " + saveLine(it) },
@@ -929,7 +930,7 @@ private fun Playing(runner: GameThread, sheets: Sheets, settings: Settings, kept
         Box(Modifier.fillMaxSize().background(LocalColors.current.page))
         return
     }
-    key(runner, w) { CompositionLocalProvider(LocalCargo provides w.roster.cargo) { GameScreen(runner, w, sheets, frame, settings, kept, pick, copyPick, onMenu, onOverlays, onFinances, onTown, goTo, showVehicle, onChat, chatUnread, onMap, overview, townOpen, onCloseOverview) } }
+    key(runner, w) { CompositionLocalProvider(LocalCargo provides remember(w.roster, w.cargoCount) { cargoInPlay(w) }) { GameScreen(runner, w, sheets, frame, settings, kept, pick, copyPick, onMenu, onOverlays, onFinances, onTown, goTo, showVehicle, onChat, chatUnread, onMap, overview, townOpen, onCloseOverview) } }
 }
 
 @Composable
@@ -2159,6 +2160,7 @@ private fun IndustryCard(world: World, ind: Industry, x: Int, y: Int, onClose: (
             kind.name(lang), picture = { IndustryPicture(kind, it) },
             line = world.towns.getOrNull(ind.town)?.name, lineEnd = stringResource(Res.string.tile_xy, x, y),
         )
+        if (ind.closing > 0) InfoRow(stringResource(Res.string.closing_label), pluralStringResource(Res.plurals.closing_in, ind.closing, ind.closing), Glyph.Alert, valueColour = LocalColors.current.bad)
         Head(stringResource(Res.string.head_made), Glyph.Up)
         for (cg in 0 until Cargo.MAX) {
             if (kind.outputs and (1 shl cg) == 0) continue
@@ -2341,6 +2343,7 @@ internal fun newsText(world: World, n: News): String {
     }
     val ind = world.industries.getOrNull(n.about) ?: return ""
     val name = industryName(world, ind, languageCode())
+    if (n.kind == News.INDUSTRY_CLOSING) return pluralStringResource(Res.plurals.news_closing, CLOSING_NOTICE, name, CLOSING_NOTICE)
     return stringResource(
         when (n.kind) {
             News.INDUSTRY_OPENS -> Res.string.news_opens
