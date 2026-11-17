@@ -64,6 +64,15 @@ public:
     /** Audio thread: one stereo frame. */
     void next(float& left, float& right);
 
+    /**
+     * Audio thread, once a block while the music isn't worked out: a stop sent meanwhile ends the
+     * piece at once, so it doesn't play on when the music comes back up.
+     */
+    void idle();
+
+    /** Only while no stream renders: a new stream's rate. Works the coefficients out again and ends any piece. */
+    void setSampleRate(float sampleRate);
+
     /** A piece is sounding, not in a gap between pieces. */
     bool playing() const { return state_ == PLAYING; }
 
@@ -130,6 +139,8 @@ private:
     enum State { WAITING, PLAYING };
 
     void control();
+    void tune();
+    void silence();
     void beginPiece(int year, int season);
     void composeBar();
     void endPiece(float gapSeconds);

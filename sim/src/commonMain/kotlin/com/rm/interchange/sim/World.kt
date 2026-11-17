@@ -94,15 +94,17 @@ class World(settings: NewGame, val roster: Roster = Roster.BASE, generate: Boole
     internal var weatherViewCache: WeatherView? = null
     /** [pricesView] as of a day. */
     internal var pricesViewCache: Pair<Int, PricesView>? = null
-    private var lookDay = -1
-    private var look = Climate.SUMMER
+    /** Day and look kept together in one object, so a reader never sees one day's look under another day. */
+    private class DayLook(val day: Int, val look: Int)
+    private var dayLook: DayLook? = null
 
     /** How the land looks today, one of [Climate]'s looks, worked out from the date. */
     fun lookToday(): Int {
-        if (lookDay != day) {
-            lookDay = day
-            look = Climate.look(settings.region, Calendar.year(startYear, day), Calendar.dayOfYear(startYear, day))
-        }
+        val today = day
+        val cached = dayLook
+        if (cached != null && cached.day == today) return cached.look
+        val look = Climate.look(settings.region, Calendar.year(startYear, today), Calendar.dayOfYear(startYear, today))
+        dayLook = DayLook(today, look)
         return look
     }
 
@@ -318,7 +320,7 @@ class World(settings: NewGame, val roster: Roster = Roster.BASE, generate: Boole
     internal fun startYear(year: Int) {
         if (tick != 0L) return
         settings = settings.copy(startYear = year)
-        lookDay = -1
+        dayLook = null
     }
 
     /**

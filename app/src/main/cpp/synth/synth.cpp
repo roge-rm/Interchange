@@ -146,17 +146,31 @@ float materialGain(int m) {
 
 Synth::Synth(float sampleRate, int voiceBudget)
     : sampleRate_(sampleRate), voiceBudget_(std::min(voiceBudget, kMaxVoices)), music_(sampleRate) {
+    for (int b = 0; b < bus::COUNT; ++b) {
+        busTarget_[b].store(1.0f);
+        bus_[b].value = 1.0f;
+    }
+    room_.value = 0.15f;
+    tune();
+}
+
+void Synth::setSampleRate(float sampleRate) {
+    if (sampleRate == sampleRate_) return;
+    sampleRate_ = sampleRate;
+    for (Voice& v : voices_) v.active = false;
+    tune();
+    music_.setSampleRate(sampleRate);
+}
+
+/** Everything worked out from the rate. The reverb's lines are made again, empty. */
+void Synth::tune() {
+    const float sampleRate = sampleRate_;
     // Ducking falls in about 60 ms and comes back over about 1.5 s.
     duckDown_ = 1.0f - std::exp(-1.0f / (0.06f * sampleRate));
     duckUp_ = 1.0f - std::exp(-1.0f / (1.5f * sampleRate));
     tearDecay_ = std::pow(600.0f / 3200.0f, (1.0f / sampleRate) / 0.5f);
-    for (int b = 0; b < bus::COUNT; ++b) {
-        busTarget_[b].store(1.0f);
-        bus_[b].setTime(0.05f, sampleRate);
-        bus_[b].value = 1.0f;
-    }
+    for (int b = 0; b < bus::COUNT; ++b) bus_[b].setTime(0.05f, sampleRate);
     room_.setTime(0.3f, sampleRate);
-    room_.value = 0.15f;
     // Freeverb's tunings, scaled to this rate, with one side offset for width.
     const int combs[4] = {1116, 1188, 1277, 1356};
     const int allpasses[2] = {556, 441};
@@ -164,6 +178,8 @@ Synth::Synth(float sampleRate, int voiceBudget)
     for (int c = 0; c < 2; ++c) {
         for (int i = 0; i < 4; ++i) comb_[c][i].assign(static_cast<size_t>((combs[i] + c * 23) * scale), 0.0f);
         for (int i = 0; i < 2; ++i) allpass_[c][i].assign(static_cast<size_t>((allpasses[i] + c * 23) * scale), 0.0f);
+        for (int i = 0; i < 4; ++i) { combIndex_[c][i] = 0; combFilter_[c][i] = 0.0f; }
+        for (int i = 0; i < 2; ++i) allpassIndex_[c][i] = 0;
     }
 }
 
@@ -1175,6 +1191,7 @@ void Synth::render(float* out, int frames) {
 
     // Music is only worked out while its bus is up or still fading.
     const bool music = busTargets[bus::MUSIC] > 0.0f || bus_[bus::MUSIC].value > 1e-5f;
+    if (!music) music_.idle();
 
     for (int n = 0; n < frames; ++n) {
         float busL[bus::COUNT] = {}, busR[bus::COUNT] = {};

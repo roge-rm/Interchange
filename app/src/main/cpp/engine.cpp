@@ -54,6 +54,12 @@ public:
 
 private:
     bool open() {
+        // No old stream left calling back while the synth's rate changes below.
+        if (stream_) {
+            stream_->stop();
+            stream_->close();
+            stream_.reset();
+        }
         oboe::AudioStreamBuilder builder;
         builder.setDirection(oboe::Direction::Output)
             ->setPerformanceMode(oboe::PerformanceMode::LowLatency)
@@ -70,8 +76,10 @@ private:
             return false;
         }
         // Made once at the first stream's rate and kept: the game thread holds it across device
-        // changes.
-        if (!synth_) synth_ = std::make_unique<interchange::Synth>(static_cast<float>(stream_->getSampleRate()), budget_);
+        // changes. A new device's rate is set before its stream starts.
+        const float rate = static_cast<float>(stream_->getSampleRate());
+        if (!synth_) synth_ = std::make_unique<interchange::Synth>(rate, budget_);
+        else synth_->setSampleRate(rate);
         // Four bursts of slack, so a stalled frame doesn't run the buffer dry and crackle.
         stream_->setBufferSizeInFrames(stream_->getFramesPerBurst() * 4);
         // A device change while the app is put away reopens the stream, which stays quiet.

@@ -117,11 +117,18 @@ public:
 
     float sampleRate() const { return sampleRate_; }
 
+    /**
+     * Only while no stream renders: a new stream's rate, when the device changed. Works the
+     * coefficients and the room out again, stops every sound and the music's piece. Allocates.
+     */
+    void setSampleRate(float sampleRate);
+
     /** Only off to measure recipes' raw levels in the gallery. */
     bool limiting = true;
     int activeVoices() const;
 
 private:
+    void tune();
     void takeScene();
     void takeEvents();
     Voice* allocate();

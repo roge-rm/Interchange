@@ -161,8 +161,13 @@ int musicStyleOf(int year) {
 }
 
 Music::Music(float sampleRate) : sampleRate_(sampleRate) {
-    fade_.setTime(0.6f, sampleRate);
     fade_.value = 1.0f;
+    tune();
+}
+
+void Music::tune() {
+    const float sampleRate = sampleRate_;
+    fade_.setTime(0.6f, sampleRate);
     for (OnePole& a : air_) a.set(6000.0f, sampleRate);
     for (int i = 0; i < INSTRUMENTS; ++i) {
         const Patch& p = kPatches[i];
@@ -172,6 +177,31 @@ Music::Music(float sampleRate) : sampleRate_(sampleRate) {
         coeffs_[i].release = std::exp(-3.0f / (p.release * sampleRate));
         coeffs_[i].fenv32 = std::exp(-kControl / (p.envTime * sampleRate));
         coeffs_[i].pitch = std::exp(-1.0f / (p.envTime * sampleRate));
+    }
+}
+
+void Music::setSampleRate(float sampleRate) {
+    sampleRate_ = sampleRate;
+    tune();
+    for (OnePole& a : air_) a.y = 0.0f;
+    silence();
+    // The next piece starts straight away, at the new rate.
+    state_ = WAITING;
+    startAt_ = now_;
+}
+
+void Music::silence() {
+    for (Voice& v : voices_) v.on = false;
+    pendingCount_ = 0;
+    nextDue_ = INT64_MAX;
+    fade_.value = 0.0f;
+}
+
+void Music::idle() {
+    if (state_ == PLAYING && yearIn_.load(std::memory_order_acquire) <= 0) {
+        silence();
+        stopping_ = true;
+        endPiece(2.0f);
     }
 }
 
@@ -557,10 +587,7 @@ void Music::control() {
     if (year <= 0 && !stopping_) stopping_ = true;
     if (stopping_) {
         if (fade_.value < 1e-3f) {
-            for (Voice& v : voices_) v.on = false;
-            pendingCount_ = 0;
-            nextDue_ = INT64_MAX;
-            fade_.value = 0.0f;
+            silence();
             endPiece(2.0f);
         }
         return;

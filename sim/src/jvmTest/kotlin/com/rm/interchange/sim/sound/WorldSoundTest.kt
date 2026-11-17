@@ -525,6 +525,20 @@ class WorldSoundTest {
         assertEquals(2, WorldSound.musicSeason(Climate.LATE_AUTUMN))
     }
 
+    @Test
+    fun lookTodayAndMusicSeasonFollowTheDate() {
+        val w = world(1965)
+        val sound = WorldSound(w)
+        sound.survey()
+        for (d in listOf(20, 200, 21, 20, 300, 300)) {
+            w.tick = w.dayTicks.toLong() * d
+            val year = Calendar.year(w.startYear, w.day)
+            val look = Climate.look(w.settings.region, year, Calendar.dayOfYear(w.startYear, w.day))
+            assertEquals(WorldSound.musicSeason(look), frame(sound, at()).season)
+            assertEquals(look, w.lookToday(), "day $d")
+        }
+    }
+
     private fun WorldSound.Frame.param(key: Int, p: Int): Float {
         for (k in 0 until count) if (keys[k] == key) return params[k * SharedParams.COUNT + p]
         error("no sound $key")

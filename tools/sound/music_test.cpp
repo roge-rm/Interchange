@@ -1,5 +1,6 @@
 // Host tests for the music: the same seed plays the same, no style clips, phrases vary, pieces
-// have quiet gaps, winter is sparser, slower and lower, alerts duck it, and off costs nothing.
+// have quiet gaps, winter is sparser, slower and lower, alerts duck it, off costs nothing, a stop
+// sent while off still stops, and a new stream's rate keeps it in tune.
 #include <atomic>
 #include <chrono>
 #include <cstdio>
@@ -205,6 +206,71 @@ void offIsOff() {
     check(!stillPlaying && later < -60.0f && before > -40.0f, what);
 }
 
+/** A stop sent while the music is at 0 ends the piece, so the old era's doesn't play on when it comes back. */
+void stopWhileOff() {
+    Notes notes;
+    size_t before = 0;
+    music(30, 1965, musicSeason::SUMMER, 3, [&](float t, Scene& sc, Synth& synth) {
+        notes.driver()(t, sc, synth);
+        auto near = [t](float at) { return std::fabs(t - at) < kStep / 2; };
+        if (near(8.0f)) { const float off[bus::COUNT] = {1, 1, 1, 0}; synth.setBusGains(off); }
+        if (near(10.0f)) synth.setMusic(0, 0, 3);
+        if (near(11.0f)) synth.setMusic(2020, musicSeason::SUMMER, 3);
+        if (near(12.0f)) { const float on[bus::COUNT] = {1, 1, 1, 1}; synth.setBusGains(on); before = notes.all.size(); }
+    });
+    int old = 0, fresh = 0;
+    for (size_t i = before; i < notes.all.size(); ++i) (notes.all[i].style == musicStyle::SIXTIES ? old : fresh)++;
+    char what[128];
+    std::snprintf(what, sizeof what, "after a stop with the music off: %d notes of the old piece, %d of the new era's", old, fresh);
+    check(before > 0 && old == 0 && fresh > 0, what);
+}
+
+/** [seconds] of stereo from [synth] at [rate], with [drive] every kStep. */
+std::vector<float> renderAt(Synth& synth, float rate, float seconds, const Driver& drive) {
+    int total = static_cast<int>(seconds * rate), block = static_cast<int>(kStep * rate);
+    std::vector<float> out(static_cast<size_t>(total) * 2);
+    Scene scene;
+    for (int at = 0; at < total; at += block) {
+        scene.count = 0;
+        drive(at / rate, scene, synth);
+        synth.publishScene(scene);
+        synth.render(out.data() + static_cast<size_t>(at) * 2, std::min(block, total - at));
+    }
+    return out;
+}
+
+/** A synth moved from 48 to 44.1 kHz, as on a device change, plays in tune and like one made at 44.1 kHz. */
+void newStreamRate() {
+    const float rate = 44100.0f;
+    Synth moved(48000.0f);
+    renderAt(moved, 48000.0f, 3, [](float t, Scene&, Synth& s) { if (t == 0) s.setMusic(1965, musicSeason::SUMMER, 6); });
+    moved.setSampleRate(rate);
+    // The caution's first tone is an A5, 880 Hz, for 0.12 s.
+    std::vector<float> tone = renderAt(moved, rate, 0.2f, [](float t, Scene&, Synth& s) {
+        if (t == 0) {
+            const float gains[bus::COUNT] = {1, 1, 1, 0};
+            s.setBusGains(gains);
+            s.setMusic(0, 0, 6);
+            s.pushEvent(shot(recipe::CAUTION, {0}, 0.6f));
+        }
+    });
+    int crossings = 0;
+    size_t from = static_cast<size_t>(0.02f * rate), to = static_cast<size_t>(0.11f * rate);
+    for (size_t i = from + 1; i < to; ++i) if ((tone[i * 2 - 2] < 0) != (tone[i * 2] < 0)) ++crossings;
+    float hz = crossings / 2.0f / ((to - from) / rate);
+    char what[96];
+    std::snprintf(what, sizeof what, "an A5 at 44.1 kHz after 48 kHz sounds at %.0f Hz", hz);
+    check(std::fabs(hz - 880.0f) < 15.0f, what);
+
+    // From silence the moved synth's music is the same as a new one's at 44.1 kHz, sample for sample.
+    Synth fresh(rate);
+    Synth movedEarly(48000.0f);
+    movedEarly.setSampleRate(rate);
+    auto play = [](float t, Scene&, Synth& s) { if (t == 0) s.setMusic(1935, musicSeason::AUTUMN, 2); };
+    std::vector<float> a = renderAt(fresh, rate, 20, play), b = renderAt(movedEarly, rate, 20, play);
+    check(a == b && rmsDb(a) > -40.0f, "music after a move to 44.1 kHz matches music made at 44.1 kHz");
+}
+
 void cost() {
     auto start = std::chrono::steady_clock::now();
     music(120, 1990, musicSeason::SUMMER, 4);
@@ -217,7 +283,7 @@ void cost() {
 int main() {
     // Each test on its own thread, as they're long renders. The cost is timed alone after.
     std::vector<std::thread> tests;
-    for (void (*test)() : {sameSeedSameMusic, yearsPickStyles, noClipping, phrasesVary, gapsBetweenPieces, winterSparserAndLower, alertsDuck, offIsOff})
+    for (void (*test)() : {sameSeedSameMusic, yearsPickStyles, noClipping, phrasesVary, gapsBetweenPieces, winterSparserAndLower, alertsDuck, offIsOff, stopWhileOff, newStreamRate})
         tests.emplace_back(test);
     for (std::thread& t : tests) t.join();
     cost();

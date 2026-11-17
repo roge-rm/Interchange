@@ -200,18 +200,22 @@ class WorldSound(private val world: World) {
         val x = at.x.toInt().coerceIn(0, world.width - 1)
         val y = at.y.toInt().coerceIn(0, world.height - 1)
         val h = (world.heightAt(x, y) + world.heightAt(x + 1, y) + world.heightAt(x + 1, y + 1) + world.heightAt(x, y + 1)) / 4
-        val year = Calendar.year(world.startYear, world.day)
+        val today = world.day
+        val year = Calendar.year(world.startYear, today)
+        val dayOfYear = Calendar.dayOfYear(world.startYear, today)
+        // Worked out here, not by World.lookToday(): this runs on the UI thread and that cache belongs to the sim.
+        val look = Climate.look(world.settings.region, year, dayOfYear)
         val sky = skyAt(
             world.settings.region,
             year,
-            Calendar.dayOfYear(world.startYear, world.day),
+            dayOfYear,
             world.weather.anomaly,
             world.weather.fronts,
             world.height,
             x, y, h,
         )
         out.year = year
-        out.season = musicSeason(world.lookToday())
+        out.season = musicSeason(look)
         val snow = sky.precipitation > 0 && sky.temperature <= 0
         val muffle = if (snow) SNOW_MUFFLE else 1f
         // 0 leaves the mix open. Snow pulls it down to a few thousand Hz.
@@ -234,10 +238,10 @@ class WorldSound(private val world: World) {
         val day = daylight(hour)
         val birdsHeard = heard(trees, at, pan)
         if (day > 0f && birdsHeard > 0f) {
-            val loud = level(birdsHeard, TREES_REF) * BIRDS_LEVEL * day * birdsSeason() * muffle
+            val loud = level(birdsHeard, TREES_REF) * BIRDS_LEVEL * day * birdsSeason(look) * muffle
             out.add(KEY_BIRDS, Recipes.BIRDS, loud, pan[0], lowpass, 1f, chorus(hour))
         }
-        if (night(hour) && cricketSeason() && sky.precipitation == 0 && birdsHeard > 0f) {
+        if (night(hour) && cricketSeason(look) && sky.precipitation == 0 && birdsHeard > 0f) {
             out.add(KEY_CRICKETS, Recipes.CRICKETS, level(birdsHeard, TREES_REF) * CRICKETS_LEVEL, pan[0], lowpass, 1f)
         }
 
@@ -613,13 +617,13 @@ class WorldSound(private val world: World) {
     }
 
     /** Crickets sing on warm nights, high summer into early autumn. */
-    private fun cricketSeason(): Boolean = when (world.lookToday()) {
+    private fun cricketSeason(look: Int): Boolean = when (look) {
         Climate.SUMMER, Climate.LATE_SUMMER, Climate.AUTUMN -> true
         else -> false
     }
 
     /** Quieter in winter. */
-    private fun birdsSeason(): Float = when (world.lookToday()) {
+    private fun birdsSeason(look: Int): Float = when (look) {
         Climate.WINTER -> 0.4f
         Climate.EARLY_SPRING, Climate.LATE_AUTUMN -> 0.65f
         else -> 1f
