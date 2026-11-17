@@ -15,8 +15,8 @@ package com.rm.interchange.sim
  * [roster] is what can run on the track, from the game's content packs.
  */
 class World(settings: NewGame, val roster: Roster = Roster.BASE, generate: Boolean = true) {
-    /** The cargo in play, ids 0 until this; arrays by cargo run to [Cargo.MAX]. */
-    val cargoCount = roster.cargo.size
+    /** The cargo in play, ids 0 until this; arrays by cargo run to [Cargo.MAX]. The future cargo only with [NewGame.future]. */
+    val cargoCount = roster.cargoCount(settings.future)
     /** How the world was made; only its start year can change, in the editor before the first day's run. */
     var settings = settings
         private set
@@ -628,6 +628,7 @@ class World(settings: NewGame, val roster: Roster = Roster.BASE, generate: Boole
         maglevChecksum(::mix)
         hyperloopChecksum(::mix)
         autonomyChecksum(::mix)
+        futureIndustryChecksum(::mix)
         for (k in roadStops.keys.sorted()) mix(k.toLong() * 31 + roadStops.getValue(k))
         for (k in saltDepots.sorted()) mix(k.toLong() * 7)
         for (v in roadVehicles) if (v != null) { mix(v.depot.toLong()); mix(v.noDepotUntil); mix(v.wreckedFor.toLong()); mix(v.leave.toLong()) }

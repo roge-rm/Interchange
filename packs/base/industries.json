@@ -51,7 +51,8 @@
       "until": 2100,
       "regions": { "maritimes": 5, "rockies": 4, "prairies": 3, "mixed": 2, "north": 1, "shield": 1 },
       "layout": ["headframe tipple", "coal_heap mine_shed"],
-      "produces": { "coal": 100 }
+      "produces": { "coal": 100 },
+      "fades": 2030
     },
     {
       "id": "iron_mine",
@@ -71,7 +72,8 @@
       "layout": ["blast_furnace stacks steel_shed", "slag_heap steel_shed steel_yard"],
       "accepts": ["coal", "iron_ore"],
       "produces": { "steel": 0 },
-      "recipe": { "inputs": { "iron_ore": 2, "coal": 1 }, "makes": { "steel": 2 } }
+      "recipe": { "inputs": { "iron_ore": 2, "coal": 1 }, "makes": { "steel": 2 } },
+      "fades": 2030
     },
     {
       "id": "factory",
@@ -247,6 +249,41 @@
       "layout": ["concrete_terminal terminal_annex"],
       "accepts": ["grain"],
       "produces": { "grain": 0 }
+    },
+    {
+      "id": "lithium_mine",
+      "name": { "en": "Lithium Mine", "fr": "Mine de lithium" },
+      "from": 2025,
+      "until": 2100,
+      "regions": { "shield": 5, "north": 3, "prairies": 2, "mixed": 1, "rockies": 1, "maritimes": 1 },
+      "ground": ["rock", "tundra", "prairie"],
+      "weather": ["thaw"],
+      "layout": ["open_pit open_pit_far", "ore_crusher tailings"],
+      "produces": { "lithium": 70 },
+      "future": true
+    },
+    {
+      "id": "battery_plant",
+      "name": { "en": "Battery Plant", "fr": "Usine de batteries" },
+      "from": 2027,
+      "until": 2100,
+      "regions": { "mixed": 4, "shield": 2, "maritimes": 1, "prairies": 1, "rockies": 1, "north": 0 },
+      "layout": ["factory_shed factory_shed factory_shed", "loading_dock factory_shed factory_yard"],
+      "accepts": ["lithium", "nickel"],
+      "produces": { "batteries": 0 },
+      "recipe": { "inputs": { "lithium": 2, "nickel": 1 }, "makes": { "batteries": 2 } },
+      "future": true
+    },
+    {
+      "id": "hydrogen_plant",
+      "name": { "en": "Hydrogen Plant", "fr": "Usine d'hydrogène" },
+      "from": 2030,
+      "until": 2100,
+      "regions": { "prairies": 3, "mixed": 3, "maritimes": 3, "shield": 2, "rockies": 2, "north": 1 },
+      "water": true,
+      "layout": ["wharf refinery_tanks", "powerhouse refinery_tanks"],
+      "produces": { "hydrogen": 60 },
+      "future": true
     }
   ]
 }

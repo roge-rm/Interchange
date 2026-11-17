@@ -336,7 +336,7 @@ class AutonomyTest {
         }
         w.buyDrone("freight_drone", 0, intArrayOf(w.airports[0]!!.station, w.airports[1]!!.station))
         repeat(3_000) { w.step() }
-        assertEquals(75, Save.VERSION)
+        assertEquals(76, Save.VERSION)
         val again = Save.read(Save.write(w))
         assertEquals(w.checksum(), again.checksum())
         repeat(3_000) { w.step(); again.step() }

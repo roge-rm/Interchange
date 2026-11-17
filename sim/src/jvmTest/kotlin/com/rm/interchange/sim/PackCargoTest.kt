@@ -75,7 +75,9 @@ class PackCargoTest {
         val r = roster(pack(vehicles = listOf(wagon())))
         val c = r.cargo.of("maple_syrup")
         assertEquals(Cargo.COUNT, c)
-        assertEquals(Cargo.COUNT + 1, r.cargo.size)
+        // The future cargo come after it.
+        assertEquals(Cargo.COUNT + 1 + Cargo.FUTURE_IDS.size, r.cargo.size)
+        assertEquals(Cargo.COUNT + 1, r.cargo.of("lithium"))
         assertEquals("maple", r.cargo[c].pack)
         assertEquals("Sirop d'érable", r.cargo[c].name("fr"))
         assertEquals("casks", r.cargo[c].unit("en"))
@@ -113,7 +115,7 @@ class PackCargoTest {
     @Test
     fun replacingABaseCargoChangesItsNumbersAndKeepsItsId() {
         val r = roster(pack(cargo = listOf("""{ "id": "dear_coal", "replaces": "coal", "rate": 99, "colour": "#101010", "name": { "en": "Dear coal" } }""")))
-        assertEquals(Cargo.COUNT, r.cargo.size)
+        assertEquals(Cargo.COUNT + Cargo.FUTURE_IDS.size, r.cargo.size)
         assertEquals(Cargo.COAL, r.cargo.of("coal"))
         assertEquals(-1, r.cargo.of("dear_coal"))
         assertEquals(99, r.cargo.rate[Cargo.COAL])
@@ -133,7 +135,12 @@ class PackCargoTest {
     @Test
     fun cargoPastThirtyTwoIsRefused() {
         val most = Cargo.MAX - Cargo.COUNT
-        roster(pack(cargo = List(most) { syrup("c$it") }))
+        // With no room left the future cargo are left out, and the future industries and vehicles turned off.
+        val full = roster(pack(cargo = List(most) { syrup("c$it") }))
+        assertEquals(0, full.futureCargo)
+        assertEquals(-1, full.cargo.of("lithium"))
+        assertTrue(full.industries.filter { it.future }.none { it.enabled })
+        assertTrue(full.engines.filter { it.futureCargo }.none { it.enabled })
         val e = assertFailsWith<BadPack> { roster(pack(cargo = List(most + 1) { syrup("c$it") })) }
         assertEquals(listOf("maple: cargo c$most is past the ${Cargo.MAX} cargo a game can have"), e.problems)
         val twice = assertFailsWith<BadPack> { roster(pack(), pack(id = "again")) }
@@ -228,8 +235,9 @@ class PackCargoTest {
         assertEquals(Cargo.RATE[Cargo.COAL], a.roster.cargo.rate[Cargo.COAL])
         assertEquals(5, b.roster.cargo.rate[Cargo.COAL])
         assertEquals(Cargo.RATE[Cargo.COAL], Roster.BASE.cargo.rate[Cargo.COAL])
-        assertEquals(Cargo.COUNT, Roster.BASE.cargo.size)
-        assertEquals(Cargo.COUNT, World(64, 64, 1).cargoCount)
+        assertEquals(Cargo.COUNT + Cargo.FUTURE_IDS.size, Roster.BASE.cargo.size)
+        assertEquals(Cargo.COUNT + Cargo.FUTURE_IDS.size, World(64, 64, 1).cargoCount)
+        assertEquals(Cargo.COUNT, World(NewGame(64, 64, 1, 1900, future = false)).cargoCount)
     }
 
     @Test

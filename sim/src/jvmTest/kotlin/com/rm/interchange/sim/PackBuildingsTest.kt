@@ -150,17 +150,17 @@ class PackBuildingsTest {
         val w = World(NewGame(width = 128, height = 128, seed = 11, startYear = 1900))
         w.companies[0].autorenew = true
         repeat(Calendar.TICKS_PER_DAY * 730) { w.step() }
-        assertEquals(-2482493958933559309L, w.checksum())
+        assertEquals(4239996606376220254L, w.checksum())
         assertEquals(544, w.industries.sumOf { it.madeLastMonth.sum() })
     }
 
-    /** The same world with the future off; main is -1552601483264287277, which differs only by the pack hash (vehicles.json gained the autonomous trucks and drones). */
+    /** The same world with the future off; main is 6059885551085355865, which differs only by the pack hash (the future industries and their wagons and trucks). */
     @Test
     fun theBasePackRunsAsBeforeWithTheFutureOff() {
         val w = World(NewGame(width = 128, height = 128, seed = 11, startYear = 1900, future = false))
         w.companies[0].autorenew = true
         repeat(Calendar.TICKS_PER_DAY * 730) { w.step() }
-        assertEquals(6059885551085355865L, w.checksum())
+        assertEquals(-5483969671717337190L, w.checksum())
     }
 
     @Test

@@ -174,7 +174,7 @@ private fun World.offerContract(next: Int) {
     val x: Int
     val y: Int
     if (rng.below(3) != 0) {
-        val takers = industries.filter { !it.closed && roster.industries[it.kind].accepts and made != 0 }
+        val takers = industries.filter { !it.closed && it.closing == 0 && roster.industries[it.kind].accepts and made != 0 }
         if (takers.isEmpty()) return
         val ind = takers[rng.below(takers.size)]
         val kind = roster.industries[ind.kind]

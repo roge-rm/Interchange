@@ -121,6 +121,10 @@ class IndustryDef(
     val closes: Rule? = null,
     /** What it makes in whole batches from its stores, in place of a tonne for a tonne. */
     val recipe: RecipeDef? = null,
+    /** Opens only with future transport on. */
+    val future: Boolean? = null,
+    /** From this year, with future transport on, it closes more often and opens less, by the decade. */
+    val fades: Int? = null,
 )
 
 /** A batch: [inputs] taken from the stores, by cargo id, make [makes]. */
@@ -295,7 +299,7 @@ object Packs {
         // Cargo this pack can name: the base pack's and its own, and if it needs other packs, theirs too, which only the roster knows.
         val ownCargo = cargo.filter { it.replaces == null }.map { it.id }.toSet()
         val othersCargo = needs.any { it != BASE_ID }
-        fun knownCargo(cg: String) = othersCargo || Cargo.of(cg) >= 0 || cg in ownCargo
+        fun knownCargo(cg: String) = othersCargo || Cargo.of(cg) >= 0 || cg in Cargo.FUTURE_IDS || cg in ownCargo
 
         val vehicles = ArrayList<VehicleDef>()
         if (vehiclesBytes.isNotEmpty()) {
@@ -483,7 +487,7 @@ object Packs {
                     regions ?: if (fresh) emptyMap() else null, ground ?: if (fresh) emptyList() else null, layout,
                     produces ?: if (fresh) emptyMap() else null, accepts ?: if (fresh) emptyList() else null,
                     f.seasons(fresh), f.bool("water") ?: if (fresh) false else null, weather ?: if (fresh) emptyList() else null,
-                    replaces, parts, production, open, closes, recipe,
+                    replaces, parts, production, open, closes, recipe, f.bool("future"), f.int("fades", 1700, 2300),
                 )
                 f.done()
                 if (def.from != null && def.until != null && def.from >= def.until) problems += "$at: from should be before until"

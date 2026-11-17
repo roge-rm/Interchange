@@ -83,7 +83,7 @@ Each vehicle:
 | cost | yes | Dollars to buy. |
 | running | yes | Dollars a year to run. |
 | length | yes | Sixteenths of a tile, 1 to 16. Draw it to match. |
-| carries, capacity | no | The cargo a wagon carries and how much. Cargo ids: `passengers`, `mail`, `timber`, `lumber`, `grain`, `coal`, `iron_ore`, `steel`, `goods`, `oil`, `fuel`, `livestock`, `food`, `fish`, `paper`, `potash`, `nickel_ore`, `nickel`, `bauxite`, `aluminium`. A passenger weighs 90 kg with their bags, mail 50 kg a bag, livestock half a tonne a head, the rest a tonne each. Cargo from cargo.json can be named too. |
+| carries, capacity | no | The cargo a wagon carries and how much. Cargo ids: `passengers`, `mail`, `timber`, `lumber`, `grain`, `coal`, `iron_ore`, `steel`, `goods`, `oil`, `fuel`, `livestock`, `food`, `fish`, `paper`, `potash`, `nickel_ore`, `nickel`, `bauxite`, `aluminium`, and with future transport on `lithium`, `batteries`, `hydrogen`; a vehicle carrying only those is on sale only then. A passenger weighs 90 kg with their bags, mail 50 kg a bag, livestock half a tonne a head, the rest a tonne each. Cargo from cargo.json can be named too. |
 | tender | no | An engine's tender: a tender's id in this pack, or `pack:id` in another. |
 | sprite | no | Its sprite sheet, `sprites/NAME.png`. Leave it out to use the vehicle's id. Vehicles can share one. |
 | sprite_off_wire | no | Dual-mode engines: the sprite sheet drawn off the wires, with the pantograph down. Leave it out to use `sprite` everywhere. |
@@ -154,6 +154,8 @@ Each industry:
 | production | no | `{ "cargo": "rule" }`: a rule giving that cargo's monthly amount in place of the usual. The cargo has to be in `produces` too, above 0: rivals and subsidies go by that amount. |
 | open | no | A rule worked out where and when one would open: 0 means it can't. |
 | closes | no | A rule worked out on the first of each month: anything but 0 closes it. |
+| future | no | `true` for one that opens only in a game with future transport on. From 2030 it opens more often, a little more each decade. |
+| fades | no | A year from which, with future transport on, it opens less (half as often each decade) and closes more often, a little more each decade, as coal does. Its closing is told 6 months ahead. |
 
 The cargo ids are those under vehicles.json and those from cargo.json.
 
@@ -212,7 +214,7 @@ In a game with stockpiles on, an industry keeps a store of each cargo it takes a
 | keeps | no | `false` for cargo that spoils in an industry's store, as livestock, food and fish do. `true` if not given. |
 | handling | no | How stations handle it, for handling time and charges: `people`, `bulk`, `general`, `liquid` or `livestock`. `general` if not given. |
 
-New cargo come after the base pack's 20, in pack order and then in file order. A game can have 32 cargo at most, so 12 from packs. A cargo's place can't change once a game is saved: a saved game only loads with packs giving the same cargo in the same order.
+New cargo come after the base pack's 20, in pack order and then in file order. After them come the future cargo, `lithium`, `batteries` and `hydrogen`, in play only with future transport on and left out of a game whose packs leave no room for them (what names them is turned off). A game can have 32 cargo at most, so 12 from packs, 9 to keep the future cargo. A cargo's place can't change once a game is saved: a saved game only loads with packs giving the same cargo in the same order.
 
 A vehicle or industry can name the cargo of its own pack, the base pack's, and those of packs it lists in `needs`. Any other name stops the pack loading.
 

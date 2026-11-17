@@ -104,6 +104,19 @@ object Cargo {
 
     /** People round a station before it takes a town's goods, food, fuel and lumber. */
     const val TOWN_GOODS_PEOPLE = 60
+
+    /**
+     * The future industries' cargo, with [NewGame.future]: lithium for battery plants, batteries and hydrogen for
+     * towns. They come after every pack's cargo, so a pack's keep their place; their ids are in [Roster.cargo].
+     */
+    val FUTURE_IDS = listOf("lithium", "batteries", "hydrogen")
+
+    /** Future cargo [n] of [FUTURE_IDS] as cargo [id] of a game. */
+    fun futureKind(n: Int, id: Int) = when (n) {
+        0 -> CargoKind(id, "lithium", Packs.BASE_ID, mapOf("en" to "Lithium", "fr" to "Lithium"), unit(-1), 30, 40, 1, 2, 0, 1000, false, 0xC9D6CF, true, Handling.BULK)
+        1 -> CargoKind(id, "batteries", Packs.BASE_ID, mapOf("en" to "Batteries", "fr" to "Batteries"), unit(-1), 46, 15, 1, 1, 0, 1000, true, 0x3FA34D, true, Handling.GENERAL)
+        else -> CargoKind(id, "hydrogen", Packs.BASE_ID, mapOf("en" to "Hydrogen", "fr" to "Hydrogène"), unit(-1), 38, 15, 1, 2, 0, 1000, true, 0x8FD3F4, true, Handling.LIQUID)
+    }
 }
 
 /**

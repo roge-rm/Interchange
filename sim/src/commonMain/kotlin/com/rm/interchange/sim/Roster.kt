@@ -62,6 +62,8 @@ class Engine(
     val offWireSprite: Int = sprite,
     /** What it can carry as [Cargo] numbers in its roster; empty for nothing. */
     val cargoes: IntArray = carries.map { Cargo.of(it) }.filter { it >= 0 }.toIntArray(),
+    /** It carries future cargo, so is on sale only with [NewGame.future]. */
+    val futureCargo: Boolean = false,
 ) {
     val pulls get() = kind == VehicleKind.ENGINE
     /** Its power and top speed with wires overhead or without them. */
@@ -174,6 +176,10 @@ class IndustryKind(
     /** With stockpiles, a batch: what it takes of each cargo from its stores and makes of each, by cargo number; all 0 for none. */
     val recipeIn: IntArray = IntArray(Cargo.MAX),
     val recipeOut: IntArray = IntArray(Cargo.MAX),
+    /** Opens only with [NewGame.future]. */
+    val future: Boolean = false,
+    /** From this year, with [NewGame.future], it closes more often and opens less, by [fadeDecades]; 0 never. */
+    val fades: Int = 0,
 ) {
     /** Makes its cargo in batches by [recipeIn] and [recipeOut]. */
     val hasRecipe = recipeIn.any { it > 0 }
@@ -212,9 +218,14 @@ class Roster(
     val sprites: List<SpriteRef>,
     val houses: List<House> = emptyList(),
     val industries: List<IndustryKind> = emptyList(),
-    /** The game's cargo, base first, then each pack's new ones in order. */
+    /** The game's cargo, base first, then each pack's new ones in order, then the future cargo. */
     val cargo: CargoTable = CargoTable.BASE,
+    /** How many of [cargo] at its end are future cargo, in play only with [NewGame.future]. */
+    val futureCargo: Int = 0,
 ) {
+    /** The cargo in play in a game with future transport on or off. */
+    fun cargoCount(future: Boolean) = if (future) cargo.size else cargo.size - futureCargo
+
     /** The places in [sprites] that houses and industry parts draw with, each once and in order: the map gives each four cells of its static sheet. */
     val buildingSprites: List<Int> by lazy {
         (houses.map { it.sprite } + industries.flatMap { it.parts.values }).filter { it >= 0 }.distinct().sorted()
@@ -332,9 +343,19 @@ class Roster(
                     ind?.enabled = false
                 }
             }
+            // The future cargo after every pack's, so a pack's cargo keeps its place; left out where there's no room.
+            var futureCargo = 0
+            for (c in Cargo.FUTURE_IDS.indices) {
+                if (Cargo.FUTURE_IDS[c] in cargoIds || kinds.size >= Cargo.MAX) continue
+                cargoIds[Cargo.FUTURE_IDS[c]] = kinds.size
+                kinds += Cargo.futureKind(c, kinds.size)
+                futureCargo++
+            }
             val cargo = CargoTable(kinds)
+            /** Future cargo with no room in this game: what names them is turned off rather than refused. */
+            val noRoom = Cargo.FUTURE_IDS.filter { cargo.of(it) < 0 }.toSet()
             /** The number of cargo [key], with a problem noted for [at] if no pack gives it. */
-            fun cargoOf(at: String, key: String): Int = cargo.of(key).also { if (it < 0) problems += "$at: unknown cargo \"$key\" (${cargo.keys.joinToString()})" }
+            fun cargoOf(at: String, key: String): Int = cargo.of(key).also { if (it < 0 && key !in noRoom) problems += "$at: unknown cargo \"$key\" (${cargo.keys.joinToString()})" }
             val sprites = ArrayList<SpriteRef>()
             val spriteIds = HashMap<SpriteRef, Int>()
             val ids = specs.withIndex().associate { (i, s) -> s.key to i }
@@ -361,7 +382,8 @@ class Roster(
                     from = d.from!!, until = d.until!!, speed = d.speed ?: 0, power = d.power ?: 0, weight = d.weight!!,
                     cost = d.cost!!, running = d.running!!, length = d.length!!, carries = d.carries ?: emptyList(), capacity = d.capacity ?: 0,
                     sprite = spriteIds.getOrPut(sprite) { sprites += sprite; sprites.size - 1 },
-                    offWireSprite = spriteIds.getOrPut(offWire) { sprites += offWire; sprites.size - 1 }, tender = tender, enabled = s.enabled,
+                    offWireSprite = spriteIds.getOrPut(offWire) { sprites += offWire; sprites.size - 1 }, tender = tender,
+                    enabled = s.enabled && d.carries.orEmpty().let { cs -> cs.isEmpty() || cs.any { it !in noRoom } },
                     tractive = d.tractive ?: (d.weight!! * 245 / 100), traction = Traction.NAMES.indexOf(d.traction ?: "steam").coerceAtLeast(0),
                     dieselPower = d.dieselPower ?: d.power ?: 0, dieselSpeed = d.dieselSpeed ?: d.speed ?: 0,
                     life = d.life ?: 35, reliability = d.reliability ?: 85,
@@ -371,6 +393,7 @@ class Roster(
                     range = d.range ?: 0, runway = d.runway?.let { Runways.NAMES.indexOf(it) } ?: Runways.REGIONAL, floats = d.floats ?: false,
                     autonomous = d.autonomous ?: false,
                     cargoes = d.carries.orEmpty().map { cargoOf(s.key, it) }.filter { it >= 0 }.toIntArray(),
+                    futureCargo = d.carries.orEmpty().let { cs -> cs.isNotEmpty() && cs.all { it in Cargo.FUTURE_IDS } },
                 )
             }
             fun spriteId(ref: SpriteRef) = spriteIds.getOrPut(ref) { sprites += ref; sprites.size - 1 }
@@ -404,18 +427,19 @@ class Roster(
                     produces.keys.fold(0) { m, cg -> cargo.of(cg).let { if (it >= 0) m or (1 shl it) else m } },
                     (d.seasons ?: List(12) { 100 }).toIntArray(), d.water ?: false,
                     d.weather.orEmpty().fold(0) { m, r -> IndustryKind.WEATHER.indexOf(r).let { if (it >= 0) m or (1 shl it) else m } },
-                    enabled = s.enabled,
+                    enabled = s.enabled && named.none { it in noRoom },
                     parts = s.parts.entries.sortedBy { it.key }.associate { it.key to spriteId(it.value) },
                     production = Array(Cargo.MAX) { c -> cargo.getOrNull(c)?.let { d.production?.get(it.key) } },
                     open = d.open, closes = d.closes,
                     recipeIn = IntArray(Cargo.MAX) { c -> cargo.getOrNull(c)?.let { d.recipe?.inputs?.get(it.key) } ?: 0 },
                     recipeOut = IntArray(Cargo.MAX) { c -> cargo.getOrNull(c)?.let { d.recipe?.makes?.get(it.key) } ?: 0 },
+                    future = d.future ?: false, fades = d.fades ?: 0,
                 )
             }
             if (houses.size > MOST_HOUSES) problems += "These packs have ${houses.size} town buildings, more than the $MOST_HOUSES a game can hold"
             if (industries.size > MOST_INDUSTRIES) problems += "These packs have ${industries.size} industries, more than the $MOST_INDUSTRIES a game can hold"
             if (problems.isNotEmpty()) throw BadPack(problems)
-            return Roster(packs.map { it.ref }, engines, sprites, houses, industries, cargo)
+            return Roster(packs.map { it.ref }, engines, sprites, houses, industries, cargo, futureCargo)
         }
 
         /** [old] with whatever [h] gives in its place. */
@@ -430,7 +454,7 @@ class Roster(
             old.id, d.names ?: old.names, d.from ?: old.from, d.until ?: old.until, d.regions ?: old.regions, d.ground ?: old.ground,
             d.layout ?: old.layout, d.produces ?: old.produces, d.accepts ?: old.accepts, d.seasons ?: old.seasons, d.water ?: old.water,
             d.weather ?: old.weather, null, null, d.production ?: old.production, d.open ?: old.open, d.closes ?: old.closes,
-            d.recipe ?: old.recipe,
+            d.recipe ?: old.recipe, d.future ?: old.future, d.fades ?: old.fades,
         )
 
         /** [old] with whatever [v] gives in its place. */

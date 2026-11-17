@@ -75,7 +75,7 @@ val Engine.trackKind get() = when (traction) {
 }
 
 /** Whether an engine or wagon belongs to future transport, so is on sale only with [NewGame.future]. */
-val Engine.future get() = traction == Traction.MAGLEV || traction == Traction.HYPERLOOP || autonomyFuture
+val Engine.future get() = traction == Traction.MAGLEV || traction == Traction.HYPERLOOP || autonomyFuture || futureCargo
 
 /** The kind of track a train of [cars] runs on, by its first car; [validTrainFormation] keeps them all one kind. */
 fun carsKind(roster: Roster, cars: List<TrainCar>) = if (cars.isEmpty()) TrackKind.RAIL else roster[cars.first().model].trackKind

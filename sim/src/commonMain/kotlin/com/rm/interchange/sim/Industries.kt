@@ -44,6 +44,8 @@ class Industry(
     val broughtByLast = IntArray(Cargo.MAX)
     /** With stockpiles and a recipe, work owed in tonnes: builds by [workRate] a work day until a whole batch fits. */
     var work = 0
+    /** Months until it closes, told ahead by [News.INDUSTRY_CLOSING]; 0 for none. Only fading kinds with future transport on. */
+    var closing = 0
 }
 
 /** Something that happened in the world worth telling the player, by kind, with the industry or town it's about. */
@@ -114,6 +116,8 @@ class News(val kind: Int, val about: Int, val tick: Long) {
         const val FUEL_SHOCK = 38
         /** A battery or hydrogen vehicle run flat, with energy on; [News.about] as for [RENEW_FAILED]. */
         const val RAN_FLAT = 39
+        /** An industry to close in [CLOSING_NOTICE] months, with future transport on; [News.about] is the industry. */
+        const val INDUSTRY_CLOSING = 40
     }
 }
 
@@ -162,12 +166,12 @@ private fun industryCount(g: NewGame): Int {
 /** Places a new map's industries: every kind of the start year once if it'll go, then more by region. */
 internal fun generateIndustries(world: World) = with(world) {
     val year = settings.startYear
-    val kinds = roster.industries.filter { it.enabled && year >= it.from && year < it.until && it.weight(settings.region) > 0 }
+    val kinds = roster.industries.filter { it.enabled && year >= it.from && year < it.until && openWeight(it, year) > 0 }
     if (kinds.isEmpty()) return
     val want = industryCount(settings)
     // One of each first, so every chain can be made, then the rest by how common each is here.
-    for (k in kinds) if (industries.size < want && k.weight(settings.region) > 0) placeIndustry(k)
-    val weights = kinds.map { it.weight(settings.region) }
+    for (k in kinds) if (industries.size < want && openWeight(k, year) > 0) placeIndustry(k)
+    val weights = kinds.map { openWeight(it, year) }
     val total = weights.sum()
     if (total == 0) return
     var tries = want * 4
@@ -500,15 +504,16 @@ internal fun World.industriesMonth() {
         }
         // A pack's rule closing it, worked out on the month just gone.
         if (!ind.closed && kind.closes != null && kind.closes.eval(IndustryInputs(this, kind, ind, ind.x, ind.y, ind.turn)) != 0L) closeIndustry(ind)
+        if (!ind.closed && settings.future) fade(ind, kind, year)
     }
     // New industries, more often on bigger maps.
     if (settings.industries > 0 && rng.below(OPEN_ODDS * 256 * 256 / (width * height).coerceAtLeast(1) + 1) == 0) {
-        val kinds = roster.industries.filter { it.enabled && year >= it.from && year < it.until && it.weight(settings.region) > 0 }
+        val kinds = roster.industries.filter { it.enabled && year >= it.from && year < it.until && openWeight(it, year) > 0 }
         if (kinds.isNotEmpty()) {
-            val total = kinds.sumOf { it.weight(settings.region) }
+            val total = kinds.sumOf { openWeight(it, year) }
             var roll = rng.below(total)
             var i = 0
-            while (roll >= kinds[i].weight(settings.region)) roll -= kinds[i++].weight(settings.region)
+            while (roll >= openWeight(kinds[i], year)) roll -= openWeight(kinds[i++], year)
             if (placeIndustry(kinds[i])) tell(News.INDUSTRY_OPENS, industries.last().id)
         }
     }
@@ -516,7 +521,7 @@ internal fun World.industriesMonth() {
 }
 
 /** Whether an open delivery goal is for [ind]. */
-private fun World.goalFor(ind: Industry) = goals.any { it.status == Goal.OPEN && it.kind == Goal.DELIVER && it.industry == ind.id }
+internal fun World.goalFor(ind: Industry) = goals.any { it.status == Goal.OPEN && it.kind == Goal.DELIVER && it.industry == ind.id }
 
 /** What funding an industry of [kind] costs before inflation: more for one that's built for sure. */
 fun fundCost(kind: IndustryKind) = if (kind.secondary || kind.accepts != 0) 80_000L else 40_000L
@@ -532,7 +537,7 @@ private const val PROSPECT_FAILS = 3
 internal fun World.fundIndustry(company: Company, c: Command.FundIndustry) {
     val kind = roster.industries.getOrNull(c.kind) ?: return
     val year = Calendar.year(startYear, day)
-    if (!kind.enabled || year < kind.from || year >= kind.until) return
+    if (!kind.enabled || year < kind.from || year >= kind.until || kind.future && !settings.future) return
     val cost = build(fundCost(kind), Mix.INDUSTRY)
     if (company.money < cost) return
     val prospect = kind.primary && kind.accepts == 0
@@ -564,6 +569,7 @@ internal fun World.clearIndustryTiles(ind: Industry) {
 /** Shuts [ind] down: its tiles cleared, its stations no longer reaching it. */
 internal fun World.closeIndustry(ind: Industry) {
     ind.closed = true
+    ind.closing = 0
     ind.store.fill(0)
     ind.stock.fill(0)
     ind.work = 0

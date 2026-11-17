@@ -16,7 +16,7 @@ package com.rm.interchange.sim
  */
 object Save {
     private val MAGIC = "ICHG".encodeToByteArray()
-    const val VERSION = 75
+    const val VERSION = 76
 
     /** A vehicle's [built] day as saved by [version]: work days from 36, calendar days before. */
     private fun World.builtOut(built: Int, version: Int) = if (version >= 36) built else built / settings.dayLength
@@ -46,8 +46,9 @@ object Save {
             w.uvar(roster.houses.size.toLong())
             for (h in roster.houses) w.string(h.key)
             // The cargo by id from 64, checked on loading as they can't be remapped; 20 before.
-            val kinds = if (version >= 64) cargoCount else Cargo.COUNT
-            if (version >= 64) { w.uvar(kinds.toLong()); for (k in roster.cargo.keys) w.string(k) }
+            // Future cargo only where the save keeps the future setting.
+            val kinds = if (version >= 64) roster.cargoCount(version >= 73 && settings.future) else Cargo.COUNT
+            if (version >= 64) { w.uvar(kinds.toLong()); for (k in roster.cargo.keys.take(kinds)) w.string(k) }
             fun cargoInts(a: IntArray) = w.ints(a.copyOf(kinds))
             w.long(tick)
             w.long(rng.state)
@@ -382,6 +383,7 @@ object Save {
                 w.uvar(tiles.size.toLong())
                 for (i in tiles) w.int(i)
             }
+            if (version >= 76) for (ind in industries) w.uvar(ind.closing.toLong())
         }
         val body = Squeeze.pack(w.toByteArray())
         val out = ByteWriter(body.size + 16)
@@ -441,11 +443,16 @@ object Save {
             IntArray(keys.size) { houseIds[keys[it]] ?: throw BadData("${keys[it]} is no longer in its pack") }
         }
         // Cargo ids can't be remapped, so the packs have to give the same cargo in the same order.
+        var savedCargo = Cargo.COUNT
         if (version >= 64) {
             val n = r.uvar()
             if (n !in 0..minOf(r.left.toLong(), Cargo.MAX.toLong())) throw BadData("too many kinds of cargo")
             val saved = List(n.toInt()) { r.string() }
-            if (saved != roster.cargo.keys) throw BadData("this game's packs give different cargo now: saved with ${saved.joinToString()}, the packs give ${roster.cargo.keys.joinToString()}")
+            savedCargo = saved.size
+            // A game saved without the future cargo takes them on with future transport on; they come last, so nothing moves.
+            val now = roster.cargo.keys.take(roster.cargoCount(settings.future))
+            val before = roster.cargo.keys.take(roster.cargoCount(false))
+            if (saved != now && !(settings.future && saved == before)) throw BadData("this game's packs give different cargo now: saved with ${saved.joinToString()}, the packs give ${roster.cargo.keys.joinToString()}")
         }
         val world = World(settings, roster, generate = false)
         with(world) {
@@ -775,7 +782,7 @@ object Save {
             }
             // Before 60 no stats were kept: links and stations start with none.
             if (version >= 60) {
-                val kinds = if (version >= 64) r.uvar().also { if (it != cargoCount.toLong()) throw BadData("bad cargo stats") }.toInt() else Cargo.COUNT
+                val kinds = if (version >= 64) r.uvar().also { if (it != savedCargo.toLong()) throw BadData("bad cargo stats") }.toInt() else Cargo.COUNT
                 // Each link's stats take well over eight bytes.
                 val n = r.uvar()
                 if (n !in 0..minOf(r.left / 8L, stations.size.toLong() * stations.size)) throw BadData("too many link stats")
@@ -963,6 +970,8 @@ object Save {
                     tube[i] = true
                 }
             }
+            // Before 76 no closings told ahead.
+            if (version >= 76) for (ind in industries) ind.closing = r.uvar().toInt().coerceIn(0, CLOSING_NOTICE).let { if (ind.closed) 0 else it }
             // A conditional order with a test there isn't or a jump past the end is left out, as are orders past
             // the most a vehicle takes, as a command would.
             for (list in listOf<List<Carrier?>>(trains, roadVehicles, ships, aircraft)) for (v in list) {
