@@ -21,6 +21,7 @@ import com.rm.interchange.server.GameThread
 import com.rm.interchange.sim.Autorenew
 import com.rm.interchange.sim.Command
 import com.rm.interchange.sim.Engine
+import com.rm.interchange.sim.maglev
 import com.rm.interchange.sim.Roster
 import com.rm.interchange.sim.UpgradeWhy
 import com.rm.interchange.sim.VehicleKind
@@ -157,7 +158,7 @@ fun UpgradeRules(runner: GameThread, v: WorldView, kind: Int, only: Int?) {
     }
     val old = roster.engines.getOrNull(from) ?: return
     val options: List<Engine> = when (kind) {
-        ShowVehicle.TRAIN -> roster.available(year, pulls = old.pulls)
+        ShowVehicle.TRAIN -> roster.available(year, pulls = old.pulls).filter { it.maglev == old.maglev && (!it.maglev || world.settings.future) }
         ShowVehicle.ROAD -> roster.availableRoad(year).filter { it.tram == old.tram }
         ShowVehicle.SHIP -> roster.availableOf(VehicleKind.SHIP, year)
         else -> roster.availableOf(VehicleKind.AIRCRAFT, year)

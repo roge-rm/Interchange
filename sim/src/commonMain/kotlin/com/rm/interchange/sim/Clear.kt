@@ -137,6 +137,12 @@ internal fun World.scrapOwnedTrack(company: Company, i: Int) {
     eachOwnedBase(i) { scrap(company, it) }
 }
 
+/** What selling track and a platform pays back on tile [i], for the Remove tool's quote; guideway tiles pay guideway prices. */
+fun World.removeQuote(i: Int): Pair<Long, Long> {
+    val maglev = guideway[i]
+    return scrapBack(if (maglev) Maglev.TRACK else Prices.TRACK) to scrapBack(if (maglev) Maglev.PLATFORM else Prices.PLATFORM)
+}
+
 private fun World.trackScrapBack(i: Int): Long {
     var back = 0L
     eachOwnedBase(i) { back += scrapBack(it) }

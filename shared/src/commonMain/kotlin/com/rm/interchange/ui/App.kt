@@ -58,6 +58,7 @@ import androidx.compose.foundation.layout.RowScope
 import org.jetbrains.compose.resources.pluralStringResource
 import org.jetbrains.compose.resources.StringResource
 import com.rm.interchange.sim.Traction
+import com.rm.interchange.sim.removeQuote
 import com.rm.interchange.sim.TrainView
 import com.rm.interchange.sim.VehicleKind
 import com.rm.interchange.sim.Autorenew
@@ -1844,7 +1845,7 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
                     Tool.Station -> stringResource(Res.string.cost_tile, money(world.build(if (guideway) Maglev.PLATFORM else Prices.PLATFORM, Mix.PLATFORM, here)))
                     Tool.Depot -> money(world.build(if (guideway) Maglev.DEPOT else Prices.DEPOT, Mix.DEPOT, here))
                     Tool.Raise, Tool.Lower, Tool.Level -> stringResource(Res.string.cost_corner, money(world.build(Prices.TERRAFORM, Mix.LABOUR, here)))
-                    Tool.Remove -> stringResource(Res.string.cost_back, money(world.price(Prices.TRACK) / 2), money(world.price(Prices.PLATFORM) / 2))
+                    Tool.Remove -> world.removeQuote(here).let { (t, pl) -> stringResource(Res.string.cost_back, money(t), money(pl)) }
                     Tool.Clear, Tool.Trees -> stringResource(Res.string.cost_clear, money(world.build(Prices.TREE, Mix.LABOUR)))
                     else -> null
                 }

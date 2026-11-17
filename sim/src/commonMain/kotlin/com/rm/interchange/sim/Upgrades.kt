@@ -51,7 +51,7 @@ private fun ruleModel(kind: Int, e: Engine) = when (kind) {
 internal fun World.ruleFits(c: Company, rule: UpgradeRule): Boolean {
     val from = roster.getOrNull(rule.from) ?: return false
     val to = roster.getOrNull(rule.to) ?: return false
-    return rule.kind in 0..3 && rule.from != rule.to && ruleModel(rule.kind, from) && to.kind == from.kind &&
+    return rule.kind in 0..3 && rule.from != rule.to && ruleModel(rule.kind, from) && to.kind == from.kind && to.maglev == from.maglev &&
         (rule.group == -1 || c.groups[rule.kind].any { it.id == rule.group })
 }
 
