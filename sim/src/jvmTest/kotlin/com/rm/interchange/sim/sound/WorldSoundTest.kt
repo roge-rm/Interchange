@@ -510,6 +510,21 @@ class WorldSoundTest {
         assertEquals(0f, frame(sound, at(), hour = 23f).loudness(WorldSound.KEY_CRICKETS))
     }
 
+    @Test
+    fun musicGetsTheYearAndSeason() {
+        val w = world(1965)
+        val sound = WorldSound(w)
+        sound.survey()
+        w.tick = Calendar.TICKS_PER_DAY * 200L
+        val summer = frame(sound, at())
+        assertEquals(1965, summer.year)
+        assertEquals(1, summer.season, "look ${w.lookToday()}")
+        w.tick = Calendar.TICKS_PER_DAY * 20L
+        assertEquals(3, frame(sound, at()).season, "look ${w.lookToday()}")
+        assertEquals(0, WorldSound.musicSeason(Climate.EARLY_SPRING))
+        assertEquals(2, WorldSound.musicSeason(Climate.LATE_AUTUMN))
+    }
+
     private fun WorldSound.Frame.param(key: Int, p: Int): Float {
         for (k in 0 until count) if (keys[k] == key) return params[k * SharedParams.COUNT + p]
         error("no sound $key")

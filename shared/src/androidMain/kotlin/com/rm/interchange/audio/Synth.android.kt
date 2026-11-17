@@ -15,4 +15,5 @@ internal actual object Synth {
     actual external fun nativeEvent(recipe: Int, flags: Int, seed: Int, delay: Float, params: FloatArray)
     actual external fun nativeBusGains(gains: FloatArray)
     actual external fun nativeRoom(amount: Float)
+    actual external fun nativeMusic(year: Int, season: Int, seed: Int)
 }

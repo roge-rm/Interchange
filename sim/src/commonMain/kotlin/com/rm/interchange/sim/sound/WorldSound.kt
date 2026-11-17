@@ -111,6 +111,10 @@ class WorldSound(private val world: World) {
         val params = FloatArray(capacity * SharedParams.COUNT)
         val shots = ArrayList<Shot>()
 
+        /** The game year and the season for the music: 0 spring, 1 summer, 2 autumn, 3 winter. */
+        var year = 0
+        var season = 0
+
         /** How loud the sound with [key] is, or 0 if it isn't playing. */
         fun loudness(key: Int): Float {
             for (k in 0 until count) if (keys[k] == key) return params[k * SharedParams.COUNT + SharedParams.GAIN]
@@ -206,6 +210,8 @@ class WorldSound(private val world: World) {
             world.height,
             x, y, h,
         )
+        out.year = year
+        out.season = musicSeason(world.lookToday())
         val snow = sky.precipitation > 0 && sky.temperature <= 0
         val muffle = if (snow) SNOW_MUFFLE else 1f
         // 0 leaves the mix open. Snow pulls it down to a few thousand Hz.
@@ -672,6 +678,14 @@ class WorldSound(private val world: World) {
         private const val SAIL_POWER = 100
         /** Ships brought in before this year run on steam. */
         private const val MOTOR_SHIPS_FROM = 1920
+
+        /** The music's season for one of [Climate]'s looks: 0 spring, 1 summer, 2 autumn, 3 winter. */
+        fun musicSeason(look: Int): Int = when (look) {
+            Climate.EARLY_SPRING, Climate.SPRING -> 0
+            Climate.SUMMER, Climate.LATE_SUMMER -> 1
+            Climate.AUTUMN, Climate.LATE_AUTUMN -> 2
+            else -> 3
+        }
 
         /** How a ship of this [traction], [power] and first year [from] sounds, one of the SHIP_ kinds. */
         fun shipSound(traction: Int, hovercraft: Boolean, power: Int, from: Int): Int = when {

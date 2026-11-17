@@ -199,7 +199,7 @@ fun App() {
     LaunchedEffect(Unit) {
         withContext(Dispatchers.Default) { AudioEngine.start(32) }
         snapshotFlow { Triple(settings.sound, settings.world, settings.tools) }.collect { (sound, world, tools) ->
-            val gains = soundBusGains(sound, world, tools)
+            val gains = soundBusGains(sound, world, tools, MUSIC_LEVEL)
             withContext(Dispatchers.Default) { AudioEngine.busGains(gains) }
         }
     }
@@ -208,8 +208,11 @@ fun App() {
     }
 }
 
-/** The four bus levels. The master scales the world and the tools, and music stays at 0. */
-private fun soundBusGains(sound: Int, world: Int, tools: Int): FloatArray {
+/** The music's volume, 0 to 100, until Settings has its own. */
+private const val MUSIC_LEVEL = 60
+
+/** The four bus levels, each 0 to 100 and scaled by the master. Music at 0 is off and costs nothing. */
+private fun soundBusGains(sound: Int, world: Int, tools: Int, music: Int): FloatArray {
     val master = sound.coerceIn(0, 100) / 100f
     val worldGain = world.coerceIn(0, 100) / 100f
     val toolsGain = tools.coerceIn(0, 100) / 100f
@@ -217,7 +220,7 @@ private fun soundBusGains(sound: Int, world: Int, tools: Int): FloatArray {
     gains[Buses.TOWN] = master * worldGain
     gains[Buses.EFFECTS] = master * toolsGain
     gains[Buses.UI] = master * toolsGain
-    gains[Buses.MUSIC] = 0f
+    gains[Buses.MUSIC] = master * music.coerceIn(0, 100) / 100f
     return gains
 }
 
@@ -1156,12 +1159,16 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
                     }
                 }
                 if (AudioEngine.running) {
+                    AudioEngine.music(out.year, out.season)
                     AudioEngine.scene(out.count, out.keys, out.recipes, out.flags, out.params)
                     for (shot in out.shots) AudioEngine.event(shot.recipe, shot.params, shot.delay, flags = shot.flags)
                 }
             }
         } finally {
-            if (AudioEngine.running) AudioEngine.scene(0, IntArray(0), IntArray(0), IntArray(0), FloatArray(0))
+            if (AudioEngine.running) {
+                AudioEngine.scene(0, IntArray(0), IntArray(0), IntArray(0), FloatArray(0))
+                AudioEngine.music(0, 0)
+            }
         }
     }
     // The scenario editor: time stands still and its own tools are out. The size of town placed or grown, the kind

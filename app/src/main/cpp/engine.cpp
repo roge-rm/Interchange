@@ -162,6 +162,11 @@ Java_com_rm_interchange_audio_Synth_nativeBusGains(JNIEnv* env, jobject, jfloatA
     engine->synth()->setBusGains(copy);
 }
 
+JNIEXPORT void JNICALL
+Java_com_rm_interchange_audio_Synth_nativeMusic(JNIEnv*, jobject, jint year, jint season, jint seed) {
+    if (engine && engine->synth()) engine->synth()->setMusic(year, season, static_cast<uint32_t>(seed));
+}
+
 JNIEXPORT jint JNICALL
 Java_com_rm_interchange_audio_Synth_nativeActiveVoices(JNIEnv*, jobject) {
     return engine && engine->synth() ? engine->synth()->activeVoices() : 0;

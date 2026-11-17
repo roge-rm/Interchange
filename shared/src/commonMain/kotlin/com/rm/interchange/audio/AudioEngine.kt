@@ -1,6 +1,7 @@
 package com.rm.interchange.audio
 
 import kotlin.concurrent.Volatile
+import kotlin.random.Random
 
 /**
  * The sound engine, on its own audio thread. The game never waits on it:
@@ -19,6 +20,8 @@ object AudioEngine {
         if (!available || running) return
         running = runCatching { Synth.nativeStart(voiceBudget) }.getOrDefault(false)
         lastGains = null
+        lastMusicYear = 0
+        lastMusicSeason = -1
     }
 
     fun stop() {
@@ -65,6 +68,23 @@ object AudioEngine {
 
     private var lastRoom = Float.NaN
 
+    /**
+     * The game [year] and [season] (0 spring, 1 summer, 2 autumn, 3 winter) for the music, which
+     * picks its style and key from them at the start of each piece. Year 0 fades it out. Its
+     * loudness is the MUSIC bus in [busGains], 0 for off.
+     */
+    fun music(year: Int, season: Int) {
+        if (!running || (year == lastMusicYear && season == lastMusicSeason)) return
+        lastMusicYear = year
+        lastMusicSeason = season
+        Synth.nativeMusic(year, season, musicSeed)
+    }
+
+    private var lastMusicYear = 0
+    private var lastMusicSeason = -1
+    // New tunes each time the app starts.
+    private val musicSeed = Random.nextInt()
+
     /** Voices sounding now. */
     val activeVoices: Int get() = if (running) Synth.nativeActiveVoices() else 0
 }
@@ -80,4 +100,5 @@ internal expect object Synth {
     fun nativeEvent(recipe: Int, flags: Int, seed: Int, delay: Float, params: FloatArray)
     fun nativeBusGains(gains: FloatArray)
     fun nativeRoom(amount: Float)
+    fun nativeMusic(year: Int, season: Int, seed: Int)
 }

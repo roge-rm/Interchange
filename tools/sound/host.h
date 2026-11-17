@@ -66,6 +66,17 @@ inline std::vector<float> run(float seconds, const Driver& drive, int budget = 3
     return out;
 }
 
+/**
+ * [seconds] of music alone for [year] and [season] (musicSeason) with tunes from [seed]. [also]
+ * runs every kStep after, for one-shots, bus gains or a note hook.
+ */
+inline std::vector<float> music(float seconds, int year, int season, uint32_t seed, const Driver& also = nullptr, bool limiting = true) {
+    return run(seconds, [&](float t, Scene& sc, Synth& synth) {
+        if (t == 0) synth.setMusic(year, season, seed);
+        if (also) also(t, sc, synth);
+    }, 32, limiting);
+}
+
 inline float rmsDb(const std::vector<float>& s, size_t from = 0, size_t to = 0) {
     if (to == 0 || to > s.size()) to = s.size();
     double sum = 0;

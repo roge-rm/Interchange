@@ -11,6 +11,7 @@
 #include <vector>
 
 #include "dsp.h"
+#include "music.h"
 #include "recipes.h"
 
 namespace interchange {
@@ -96,6 +97,18 @@ public:
     /** Game thread: loudness per bus, 0..1 each. */
     void setBusGains(const float* gains);
 
+    /**
+     * Game thread: the year and season (musicSeason) the music plays for, and a seed for its tunes.
+     * Year 0 fades the music out. How loud it is goes by the MUSIC bus gain; at 0 it isn't worked out.
+     */
+    void setMusic(int year, int season, uint32_t seed) { music_.set(year, season, seed); }
+
+    /** The music's level under news chimes and alerts, 1 when nothing ducks it. */
+    float musicDuck() const { return duck_; }
+
+    /** Host tests only: the music, for its note hook and state. */
+    Music& music() { return music_; }
+
     /** Game thread: how much reverb, more inside a hull. */
     void setRoom(float amount) { roomTarget_.store(amount); }
 
@@ -145,6 +158,10 @@ private:
     float combFilter_[2][4] = {};
     std::vector<float> allpass_[2][2];
     int allpassIndex_[2][2] = {};
+
+    Music music_;
+    float duck_ = 1.0f;
+    float duckDown_ = 0, duckUp_ = 0;
 
     float limiterGain_ = 1.0f;
     uint32_t nextSeed_ = 1;

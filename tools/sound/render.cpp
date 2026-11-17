@@ -1,7 +1,8 @@
 // Renders the game's sounds to WAV files through the real synth, for listening to.
 //   render sounds DIR         one WAV per sound added or changed in S7a, with levels printed
 //   render scene SCRIPT OUT   a scene script from SoundScenesTest, played through the synth
-//   render cpu                how long a busy scene takes against real time
+//   render music DIR [SECONDS] a stretch of music per era in summer and winter
+//   render cpu                how long a busy scene and the music take against real time
 #include <chrono>
 #include <cstdio>
 #include <string>
@@ -108,6 +109,23 @@ int scene(const std::string& script, const std::string& out) {
     return 0;
 }
 
+int musicRenders(const std::string& dir, float seconds) {
+    const int years[] = {1905, 1935, 1965, 1990, 2020, 2060};
+    const char* names[] = {"1905_parlour", "1935_swing", "1965_sixties", "1990_synth_pop", "2020_ambient", "2060_future"};
+    const int seasons[] = {musicSeason::SUMMER, musicSeason::WINTER};
+    const char* seasonNames[] = {"summer", "winter"};
+    std::printf("%-28s %8s %8s\n", "music", "rms dB", "peak");
+    for (int s = 0; s < 6; ++s) {
+        for (int k = 0; k < 2; ++k) {
+            std::vector<float> out = music(seconds, years[s], seasons[k], 1000 + s * 10 + k);
+            std::string path = dir + "/" + names[s] + "_" + seasonNames[k] + ".wav";
+            if (!writeWav(path, out)) { std::fprintf(stderr, "can't write %s\n", path.c_str()); return 1; }
+            std::printf("%-28s %8.1f %8.2f\n", (std::string(names[s]) + "_" + seasonNames[k]).c_str(), rmsDb(out), peak(out));
+        }
+    }
+    return 0;
+}
+
 /** A crowded moment: every kind of held sound at once, near the game's 24 held plus one-shots. */
 int cpu() {
     Driver busy = [](float t, Scene& sc, Synth& synth) {
@@ -126,6 +144,21 @@ int cpu() {
     std::vector<float> s = run(seconds, busy);
     double took = std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
     std::printf("20 held and a horn a second: %.2f s of work for %.0f s of sound, %.2f%% of one core\n", took, seconds, 100.0 * took / seconds);
+    // The same with music playing, then each style's music alone (two minutes, summer).
+    start = std::chrono::steady_clock::now();
+    s = run(seconds, [&](float t, Scene& sc, Synth& synth) {
+        if (t == 0) synth.setMusic(1990, musicSeason::SUMMER, 4);
+        busy(t, sc, synth);
+    });
+    double withMusic = std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
+    std::printf("the same with synth pop music: %.2f%% of one core\n", 100.0 * withMusic / seconds);
+    const int years[] = {1905, 1935, 1965, 1990, 2020, 2060};
+    for (int year : years) {
+        start = std::chrono::steady_clock::now();
+        s = music(120, year, musicSeason::SUMMER, 4);
+        double alone = std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
+        std::printf("music alone, %d summer: %.2f%% of one core\n", year, 100.0 * alone / 120);
+    }
     return 0;
 }
 
@@ -135,7 +168,8 @@ int main(int argc, char** argv) {
     std::string mode = argc > 1 ? argv[1] : "";
     if (mode == "sounds" && argc > 2) return sounds(argv[2]);
     if (mode == "scene" && argc > 3) return scene(argv[2], argv[3]);
+    if (mode == "music" && argc > 2) return musicRenders(argv[2], argc > 3 ? std::stof(argv[3]) : 70.0f);
     if (mode == "cpu") return cpu();
-    std::fprintf(stderr, "render sounds DIR | render scene SCRIPT OUT.wav | render cpu\n");
+    std::fprintf(stderr, "render sounds DIR | render scene SCRIPT OUT.wav | render music DIR [SECONDS] | render cpu\n");
     return 2;
 }

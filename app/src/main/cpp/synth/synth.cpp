@@ -10,6 +10,10 @@ namespace {
 constexpr int kControlInterval = 32;
 // How loud the harbour's lapping is, set by ear against the engines.
 constexpr float kPortWater = 0.75f;
+/** How much of the music goes to the room, whatever the town's room. */
+constexpr float kMusicRoom = 0.35f;
+/** The music's level while a news chime or alert sounds. */
+constexpr float kDuck = 0.3f;
 
 bool continuous(int r) { return r <= recipe::LAST_CONTINUOUS; }
 
@@ -141,7 +145,10 @@ float materialGain(int m) {
 }  // namespace
 
 Synth::Synth(float sampleRate, int voiceBudget)
-    : sampleRate_(sampleRate), voiceBudget_(std::min(voiceBudget, kMaxVoices)) {
+    : sampleRate_(sampleRate), voiceBudget_(std::min(voiceBudget, kMaxVoices)), music_(sampleRate) {
+    // Ducking falls in about 60 ms and comes back over about 1.5 s.
+    duckDown_ = 1.0f - std::exp(-1.0f / (0.06f * sampleRate));
+    duckUp_ = 1.0f - std::exp(-1.0f / (1.5f * sampleRate));
     tearDecay_ = std::pow(600.0f / 3200.0f, (1.0f / sampleRate) / 0.5f);
     for (int b = 0; b < bus::COUNT; ++b) {
         busTarget_[b].store(1.0f);
@@ -1166,8 +1173,12 @@ void Synth::render(float* out, int frames) {
     for (int b = 0; b < bus::COUNT; ++b) busTargets[b] = busTarget_[b].load(std::memory_order_relaxed);
     const float roomTarget = roomTarget_.load(std::memory_order_relaxed);
 
+    // Music is only worked out while its bus is up or still fading.
+    const bool music = busTargets[bus::MUSIC] > 0.0f || bus_[bus::MUSIC].value > 1e-5f;
+
     for (int n = 0; n < frames; ++n) {
         float busL[bus::COUNT] = {}, busR[bus::COUNT] = {};
+        bool alert = false;
         for (int i = 0; i < voiceBudget_; ++i) {
             Voice& v = voices_[i];
             if (!v.active) continue;
@@ -1176,17 +1187,26 @@ void Synth::render(float* out, int frames) {
             int b = busOf(v.recipe, v.flags);
             busL[b] += l;
             busR[b] += r;
+            // News chimes and alerts duck the music; clicks don't.
+            if (b == bus::UI && v.recipe != recipe::CLICK) alert = true;
         }
-        float l = 0, r = 0;
+        if (music) music_.next(busL[bus::MUSIC], busR[bus::MUSIC]);
+        duck_ += ((alert ? kDuck : 1.0f) - duck_) * (alert ? duckDown_ : duckUp_);
+        float l = 0, r = 0, musicMono = 0;
         for (int b = 0; b < bus::COUNT; ++b) {
             float g = bus_[b].next(busTargets[b]);
+            if (b == bus::MUSIC) {
+                g *= duck_;
+                musicMono = (busL[b] + busR[b]) * 0.5f * g;
+            }
             l += busL[b] * g;
             r += busR[b] * g;
         }
+        // The world's reverb follows the town's room; the music keeps its own amount.
         float room = room_.next(roomTarget);
-        float mono = (l + r) * 0.5f;
-        l += reverb(mono, 0) * room;
-        r += reverb(mono, 1) * room;
+        float send = ((l + r) * 0.5f - musicMono) * room + musicMono * kMusicRoom;
+        l += reverb(send, 0);
+        r += reverb(send, 1);
 
         // Limiter: instant down and slow back up, so a blast never clips.
         if (!limiting) { out[2 * n] = l; out[2 * n + 1] = r; continue; }
