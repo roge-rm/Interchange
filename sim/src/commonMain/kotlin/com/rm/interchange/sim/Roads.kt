@@ -313,6 +313,7 @@ internal fun World.roadsDay() {
         c.upkeepOwed += (if (salt) SALT_COST else SAND_COST) * spread * settings.dayLength
     }
     var changed = false
+    val thaw = if (settings.weather) trendSteps(year) * THAW_ROAD_ODDS * settings.dayLength else 0
     val opens = iceRoadsOpen ?: BooleanArray(0)
     val now = ArrayList<Boolean>()
     var k = 0
@@ -334,6 +335,8 @@ internal fun World.roadsDay() {
             val t = skyAt(x, y).temperature
             if (t > 0) c -= settings.dayLength
         }
+        // With the climate trend, thawing permafrost under any road slumps now and then through the summer.
+        if (thaw > 0 && (weather.frost[i].toInt() and 255) == 0 && cellDice(x, y, day * 977 + seedBits + 23) < thaw && thawGround(x, y) && skyAt(x, y).temperature > 0) c -= THAW_ROAD
         val owner = roadOwner[i].toInt()
         // Vehicles wear roads by work time, so crews mend a calendar day's worth of work days.
         val mend = settings.dayLength * if (owner < 0) Upkeep.MEND[Upkeep.NORMAL] else Upkeep.MEND[companies.getOrNull(owner)?.upkeep ?: Upkeep.NORMAL]

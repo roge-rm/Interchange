@@ -166,7 +166,7 @@ object Warning {
 /**
  * Once a day, after the weather: for each player's company, its track and roads, its road and air strips and its
  * docks against the next [WARN_DAYS] days, news of heavy snow coming, ice closing a harbour, a storm holding ships
- * and deep cold, one item per kind and nearest town, told once while it stands and not again till it's been gone
+ * and deep cold, and with the climate trend fire weather, floods and thaw on track, one item per kind and nearest town, told once while it stands and not again till it's been gone
  * [WARN_QUIET] days. It makes news only.
  */
 internal fun World.warnDay() {
@@ -217,6 +217,7 @@ internal fun World.warnFound(o: Outlook): HashMap<Long, Int>? {
     fun HashMap<Long, Int>.note(k: Long, days: Int) { val was = this[k]; if (was == null || days < was) this[k] = days }
     val bands = Workers.threads * 4
     val found = Array(bands) { HashMap<Long, Int>() }
+    val trend = o.days > 0 && trendSteps(o.year[0]) > 0
     parallelBandsIndexed(height, bands) { b, from, until ->
         val mineHere = found[b]
         for (y in from until until) for (x in 0 until width) {
@@ -238,6 +239,7 @@ internal fun World.warnFound(o: Outlook): HashMap<Long, Int>? {
                 val d = days.indexOfFirst { (it.high + it.low) / 2 < DEEP_COLD }
                 if (d >= 0) mineHere.note(key(News.WARN_COLD, tc, i), d + 1)
             }
+            if (trend && onTrack && !guideway[i] && !tube[i]) climateWarnings(x, y, days)?.let { (kind, d) -> mineHere.note(key(kind, tc, i), d + 1) }
         }
     }
     val all = HashMap<Long, Int>()
@@ -264,6 +266,37 @@ internal fun World.warnFound(o: Outlook): HashMap<Long, Int>? {
     }
     return all
 }
+
+/**
+ * With the climate trend on, the first of fire weather, a flood and a thaw slow order coming to track tile ([x], [y])
+ * through [days], as a [News] kind and the day's place in [days], or null: hot dry days with trees by the line and
+ * the ground dry, a downpour on soaked low ground, and thawing days on permafrost where one slump puts the track on
+ * a slow order.
+ */
+private fun World.climateWarnings(x: Int, y: Int, days: List<ForecastDay>): Pair<Int, Int>? {
+    val i = index(x, y)
+    val wet = weather.wet[i].toInt() and 255
+    var trees = false
+    for (dy in -1..1) for (dx in -1..1) if (inside(x + dx, y + dy) && Trees.count(this.trees[index(x + dx, y + dy)].toInt()) > 0) trees = true
+    if (trees && wet < FIRE_WET) {
+        val d = days.indexOfFirst { (it.high + it.low) / 2 > FIRE_HEAT && it.precipitation == 0 }
+        if (d >= 0) return News.WARN_FIRE to d
+    }
+    if (wet > FLOOD_WET && lowGround(x, y)) {
+        val d = days.indexOfFirst { it.precipitation >= WASHOUT_RAIN }
+        if (d >= 0) return News.WARN_FLOOD to d
+    }
+    val c = condition[i].toInt() and 255
+    if (c in WORN until WORN + THAW_SLUMP && (weather.frost[i].toInt() and 255) == 0 && thawGround(x, y)) {
+        val d = days.indexOfFirst { (it.high + it.low) / 2 > 0 }
+        if (d >= 0) return News.WARN_THAW to d
+    }
+    return null
+}
+
+/** Ground wetness, in mm, below which hot dry days are fire weather, and above which a downpour may flood low track. */
+const val FIRE_WET = 30
+const val FLOOD_WET = 150
 
 /**
  * The tiles of [company]'s track and roads that the next [days] days' snow would slow or stop, with how: a tile in

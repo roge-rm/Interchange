@@ -118,6 +118,15 @@ class News(val kind: Int, val about: Int, val tick: Long) {
         const val RAN_FLAT = 39
         /** An industry to close in [CLOSING_NOTICE] months, with future transport on; [News.about] is the industry. */
         const val INDUSTRY_CLOSING = 40
+        /** With the climate trend on: fire weather, a flood and thaw slow orders coming on a player's line; [News.about] packed by [Warning]. */
+        const val WARN_FIRE = 41
+        const val WARN_FLOOD = 42
+        const val WARN_THAW = 43
+        /** With the climate trend on: a big fire, and a day of washouts; [News.about] is a tile in it. */
+        const val BIG_FIRE = 44
+        const val FLOOD = 45
+        /** The climate trend's line each decade; [News.about] packed by [ClimateLine]. */
+        const val CLIMATE_DECADE = 46
     }
 }
 

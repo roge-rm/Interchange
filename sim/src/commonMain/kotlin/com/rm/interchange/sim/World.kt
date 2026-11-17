@@ -493,6 +493,7 @@ class World(settings: NewGame, val roster: Roster = Roster.BASE, generate: Boole
             if (Calendar.newYear(startYear, day) && day > 0) {
                 passengersYear()
                 companiesYear()
+                climateYear(Calendar.year(startYear, day))
             }
         }
         // Rivals planning a railway or shipping line carry on with it.

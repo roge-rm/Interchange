@@ -92,6 +92,7 @@ internal fun World.trackWorkDay() {
     val salt = (tick / Calendar.TICKS_PER_DAY).toInt() * 977 + seedBits
     val fronts = weather.fronts.toList()
     val priority = priorityTrack.isNotEmpty()
+    val thaw = if (settings.weather) trendSteps(year) * THAW_ODDS else 0
     parallelBands(height) { from, until ->
         for (y in from until until) for (x in 0 until width) {
             val i = index(x, y)
@@ -111,6 +112,10 @@ internal fun World.trackWorkDay() {
                             if (settle) c -= SETTLE
                         }
                     }
+                }
+                // With the climate trend, thawing permafrost under the line slumps now and then through the summer.
+                if (thaw > 0 && u(weather.frost[i]) == 0 && cellDice(x, y, salt + 7) < thaw && thawGround(x, y)) {
+                    if (skyAt(settings.region, year, doy, weather.anomaly, fronts, height, x, y, tileHeight(x, y)).temperature > 0) c -= THAW_SLUMP
                 }
             }
             // Priority track is mended first, a bigger share, and kept off a slow order.
@@ -142,6 +147,8 @@ internal fun World.trackDay() {
     val tracks = Array(bands) { IntArray(MAX_COMPANIES) }
     val roads = Array(bands) { LongArray(MAX_COMPANIES) }
     val eraWires = settings.eraCosts
+    val steps = trendSteps(year)
+    val regrow = steps > 0
     parallelBandsIndexed(height, bands) { b, from, until ->
         for (y in from until until) for (x in 0 until width) {
             val i = index(x, y)
@@ -161,6 +168,7 @@ internal fun World.trackDay() {
                 fire[i] = (if (f == 1) BURNT else f - 1).toByte()
                 if (f == 1 && Trees.count(trees[i].toInt()) > 0) found[b] += intArrayOf(EVENT_BURNT, i)
             } else if (f > BURNT_FROM) fire[i] = (f - 1).toByte()
+            else if (regrow && f == BURNT_FROM && Trees.count(trees[i].toInt()) == 0 && cellDice(x, y, salt + 13) * 256 + cellDice(x, y, salt + 14) < REGROW_ODDS && canPlantTree(x, y)) found[b] += intArrayOf(EVENT_REGROW, i)
             if (t == 0 && Trees.count(trees[i].toInt()) == 0) continue
             val sky = if (settings.weather) skyAt(settings.region, year, doy, weather.anomaly, fronts, height, x, y, tileHeight(x, y)) else null
             if (sky != null && f == 0 && Trees.count(trees[i].toInt()) > 0 && sky.precipitation == 0 && sky.temperature > FIRE_HEAT && u(weather.wet[i]) < 12) {
@@ -169,17 +177,26 @@ internal fun World.trackDay() {
                 for ((nx, ny, from2) in arrayOf(Triple(x - 1, y, 0), Triple(x + 1, y, 4), Triple(x, y - 1, 2), Triple(x, y + 1, 6))) {
                     if (inside(nx, ny) && u(was[index(nx, ny)]) in 1..FIRE_DAYS) odds += if ((wind - from2 + 1) and 7 <= 2) 36_000 else 16_000
                 }
-                if (cellDice(x, y, salt + 11) * 256 + cellDice(x, y, salt + 12) < odds) found[b] += intArrayOf(EVENT_FIRE, i)
+                if (trendHit(cellDice(x, y, salt + 11) * 256 + cellDice(x, y, salt + 12), cellDice(x, y, salt + 15), odds, steps)) found[b] += intArrayOf(EVENT_FIRE, i)
             }
             if (t == 0) continue
             if (sky != null) {
                 val c = u(condition[i])
                 if (sky.temperature > KINK_HEAT && c < KINK_BELOW && !kinks.containsKey(i) && cellDice(x, y, salt + 3) * 256 + cellDice(x, y, salt + 6) < (KINK_BELOW - c) * KINK_ODDS) found[b] += intArrayOf(EVENT_KINK, i)
-                if (sky.precipitation >= WASHOUT_RAIN && u(weather.wet[i]) > 200 && !guideway[i] && !tube[i] && lowGround(x, y) && cellDice(x, y, salt + 4) < WASHOUT_ODDS) found[b] += intArrayOf(EVENT_WASHOUT, i)
+                val dug = !guideway[i] && !tube[i]
+                if (sky.precipitation >= WASHOUT_RAIN && u(weather.wet[i]) > 200 && dug && lowGround(x, y) &&
+                    trendHit(cellDice(x, y, salt + 4), cellDice(x, y, salt + 16), WASHOUT_ODDS, steps)
+                ) found[b] += intArrayOf(EVENT_WASHOUT, i)
+                // Settled track on thawing permafrost now and then gives way in summer.
+                else if (steps > 0 && dug && c < THAW_WASHOUT_BELOW && sky.temperature > 0 && u(weather.frost[i]) == 0 &&
+                    cellDice(x, y, salt + 17) * 256 + cellDice(x, y, salt + 18) < THAW_WASHOUT * steps && thawGround(x, y)
+                ) found[b] += intArrayOf(EVENT_WASHOUT, i)
             }
         }
     }
     setUpkeepCounts(tracks, roads)
+    var washouts = 0
+    var firstWashout = -1
     for (b in 0 until bands) for (e in found[b]) {
         val i = e[1]
         when (e[0]) {
@@ -187,6 +204,7 @@ internal fun World.trackDay() {
             EVENT_WASHOUT -> if (!closed.containsKey(i)) {
                 closed[i] = Closure.WASHOUT shl 16 or (WASHOUT_DAYS_FROM + rng.below(6))
                 tell(News.WASHOUT, i)
+                if (washouts++ == 0) firstWashout = i
             }
             EVENT_FIRE -> if (u(fire[i]) == 0) {
                 fire[i] = FIRE_DAYS.toByte()
@@ -196,8 +214,13 @@ internal fun World.trackDay() {
                 trees[i] = 0
                 touched(i % width, i / width)
             }
+            EVENT_REGROW -> {
+                plantTree(i % width, i / width)
+                fire[i] = 0
+            }
         }
     }
+    if (steps > 0) bigFireOrFlood(was, washouts, firstWashout)
     // Track by or in a fire is closed while it burns.
     for (i in 0 until width * height) if (u(fire[i]) == FIRE_DAYS) {
         val x = i % width
@@ -294,7 +317,7 @@ internal fun World.upkeepDay() {
 }
 
 /** Whether ([x], [y]) lies low: water within two tiles, or a hollow lower than the land round it. */
-private fun World.lowGround(x: Int, y: Int): Boolean {
+internal fun World.lowGround(x: Int, y: Int): Boolean {
     val h = tileHeight(x, y)
     var higher = 0
     for (dy in -2..2) for (dx in -2..2) {
@@ -317,6 +340,33 @@ private const val EVENT_KINK = 0
 private const val EVENT_WASHOUT = 1
 private const val EVENT_FIRE = 2
 private const val EVENT_BURNT = 3
+private const val EVENT_REGROW = 4
+
+/**
+ * With the climate trend on, a Chronicle story when the tiles burning cross [BIG_FIRE], about the burning tile
+ * nearest the fires' middle, and when a day has [BIG_FLOOD] washouts or more, about the first.
+ */
+private fun World.bigFireOrFlood(was: ByteArray, washouts: Int, firstWashout: Int) {
+    if (washouts >= BIG_FLOOD) tell(News.FLOOD, firstWashout)
+    var before = 0
+    var now = 0
+    var sx = 0L
+    var sy = 0L
+    for (i in 0 until width * height) {
+        if (u(was[i]) in 1..FIRE_DAYS) before++
+        if (u(fire[i]) in 1..FIRE_DAYS) { now++; sx += i % width; sy += i / width }
+    }
+    if (before >= BIG_FIRE || now < BIG_FIRE) return
+    val mx = (sx / now).toInt()
+    val my = (sy / now).toInt()
+    var best = -1
+    var bestD = Int.MAX_VALUE
+    for (i in 0 until width * height) if (u(fire[i]) in 1..FIRE_DAYS) {
+        val d = kotlin.math.abs(i % width - mx) + kotlin.math.abs(i / width - my)
+        if (d < bestD) { bestD = d; best = i }
+    }
+    tell(News.BIG_FIRE, best)
+}
 /** A day's mean heat in tenths of a degree that kinks worn rail, and that dries the forest for fire; rain in hundredths of a mm a day that washes track out. */
 const val KINK_HEAT = 230
 const val FIRE_HEAT = 200
