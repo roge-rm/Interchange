@@ -500,6 +500,17 @@
     <string name="news_warn_ice">%1$s : la glace ferme le port %2$s</string>
     <string name="news_warn_storm">%1$s : tempête, navires retenus %2$s</string>
     <string name="news_warn_cold">%1$s : grand froid %2$s</string>
+    <string name="news_warn_fire">%1$s : temps propice aux incendies %2$s</string>
+    <string name="news_warn_flood">%1$s : pluie torrentielle, risque d’inondation %2$s</string>
+    <string name="news_warn_thaw">%1$s : le dégel du sol peut ralentir les trains %2$s</string>
+    <string name="news_big_fire">Un grand incendie près de %1$s</string>
+    <string name="news_big_fire_far">Un grand incendie fait rage</string>
+    <string name="news_flood">Inondation près de %1$s, voie emportée</string>
+    <string name="news_flood_far">Inondation, voie emportée</string>
+    <string name="news_climate_season">Les lacs ont gelé %1$d jours plus tard et dégelé %2$d jours plus tôt que dans les années 2020</string>
+    <string name="news_climate_open">Les lacs sont restés ouverts %1$d jours de plus que dans les années 2020</string>
+    <string name="news_climate_same">Les lacs ont gelé et dégelé comme dans les années 2020</string>
+    <string name="news_climate_none">Les lacs ne gèlent plus comme dans les années 2020</string>
     <plurals name="warn_when">
         <item quantity="one">demain</item>
         <item quantity="other">dans %1$d jours</item>

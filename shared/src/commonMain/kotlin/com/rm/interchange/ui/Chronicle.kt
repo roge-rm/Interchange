@@ -31,7 +31,7 @@ import org.jetbrains.compose.resources.stringResource
 
 /** The news that makes the headlines; the rest is only in the full chronicle. */
 private val HEADLINES = setOf(
-    News.INDUSTRY_OPENS, News.INDUSTRY_CLOSES, News.INDUSTRY_CLOSING, News.WASHOUT, News.FIRE, News.AVALANCHE, News.SUBSIDY_AWARDED,
+    News.INDUSTRY_OPENS, News.INDUSTRY_CLOSES, News.INDUSTRY_CLOSING, News.WASHOUT, News.FIRE, News.AVALANCHE, News.BIG_FIRE, News.FLOOD, News.CLIMATE_DECADE, News.SUBSIDY_AWARDED,
     News.COMPANY_FOR_SALE, News.COMPANY_BOUGHT, News.COMPANY_BANKRUPT, News.COMPANY_RESTARTED, News.NEW_VEHICLE,
     News.GOAL_MET, News.GOAL_FAILED, News.CONTRACT_FAILED, News.FUEL_SHOCK, News.SCENARIO_WON, News.SCENARIO_LOST, News.CRASH,
 )
@@ -115,8 +115,10 @@ private fun storyGlyph(world: World, t: Story): Glyph = when (t.kind) {
     News.SNOWBOUND -> Glyph.Snow
     News.TRAIN_OLD -> Glyph.Calendar
     News.TRAIN_STUCK -> Glyph.Rail
-    News.WASHOUT -> Glyph.Water
-    News.FIRE -> Glyph.Fire
+    News.WASHOUT, News.FLOOD, News.WARN_FLOOD -> Glyph.Water
+    News.FIRE, News.BIG_FIRE, News.WARN_FIRE -> Glyph.Fire
+    News.WARN_THAW -> Glyph.Snow
+    News.CLIMATE_DECADE -> Glyph.Calendar
     News.AVALANCHE -> Glyph.Heights
     News.WARN_SNOW, News.WARN_COLD -> Glyph.Snow
     News.WARN_ICE, News.WARN_STORM -> Glyph.Water
@@ -145,8 +147,8 @@ private fun storyGlyph(world: World, t: Story): Glyph = when (t.kind) {
 private fun storyPlace(world: World, t: Story): Pair<Float, Float>? = when (t.kind) {
     News.INDUSTRY_OPENS, News.INDUSTRY_CLOSES, News.INDUSTRY_CLOSING, News.PRODUCTION_UP, News.PRODUCTION_DOWN ->
         world.industries.getOrNull(t.about)?.let { it.x + 1f to it.y + 1f }
-    News.WASHOUT, News.FIRE, News.AVALANCHE -> t.about % world.width + 0.5f to t.about / world.width + 0.5f
-    News.WARN_SNOW, News.WARN_ICE, News.WARN_STORM, News.WARN_COLD -> warnPlace(world, t.about)
+    News.WASHOUT, News.FIRE, News.AVALANCHE, News.BIG_FIRE, News.FLOOD -> t.about % world.width + 0.5f to t.about / world.width + 0.5f
+    News.WARN_SNOW, News.WARN_ICE, News.WARN_STORM, News.WARN_COLD, News.WARN_FIRE, News.WARN_FLOOD, News.WARN_THAW -> warnPlace(world, t.about)
     News.SUBSIDY_OFFERED, News.SUBSIDY_AWARDED -> subsidyStart(world, t.about)
     News.GOAL_MET, News.GOAL_FAILED -> goalPlace(world, t.about)
     in News.CONTRACT_OFFERED..News.CONTRACT_DONE -> contractMapPlace(world, t.about)

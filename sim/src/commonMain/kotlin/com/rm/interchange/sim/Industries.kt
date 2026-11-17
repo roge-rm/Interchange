@@ -127,6 +127,9 @@ class News(val kind: Int, val about: Int, val tick: Long) {
         const val FLOOD = 45
         /** The climate trend's line each decade; [News.about] packed by [ClimateLine]. */
         const val CLIMATE_DECADE = 46
+
+        /** Whether [kind] is a weather warning packed by [Warning]. */
+        fun isWarning(kind: Int) = kind in WARN_SNOW..WARN_COLD || kind in WARN_FIRE..WARN_THAW
     }
 }
 

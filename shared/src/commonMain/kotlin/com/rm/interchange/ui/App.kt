@@ -147,6 +147,8 @@ import com.rm.interchange.map.rememberTownLabels
 import com.rm.interchange.sim.World
 import com.rm.interchange.sim.WorldView
 import com.rm.interchange.sim.Warning
+import com.rm.interchange.sim.ClimateLine
+import com.rm.interchange.sim.nearestTown
 import com.rm.interchange.sim.SIGNAL_SPACING_MAX
 import com.rm.interchange.sim.SIGNAL_SPACING_MIN
 import com.rm.interchange.sim.Signals
@@ -1626,11 +1628,11 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
                     if (n.kind == News.SUBSIDY_OFFERED || n.kind == News.SUBSIDY_AWARDED) subsidyStart(world, n.about).let { (x, y) -> view.focusX = x; view.focusY = y }
                     if (n.kind in News.CONTRACT_OFFERED..News.CONTRACT_DONE) contractMapPlace(world, n.about)?.let { (x, y) -> view.focusX = x; view.focusY = y }
                     if (n.kind == News.GOAL_MET || n.kind == News.GOAL_FAILED) goalPlace(world, n.about)?.let { (x, y) -> view.focusX = x; view.focusY = y }
-                    if (n.kind == News.WASHOUT || n.kind == News.FIRE || n.kind == News.AVALANCHE) {
+                    if (n.kind == News.WASHOUT || n.kind == News.FIRE || n.kind == News.AVALANCHE || n.kind == News.BIG_FIRE || n.kind == News.FLOOD) {
                         view.focusX = n.about % world.width + 0.5f
                         view.focusY = n.about / world.width + 0.5f
                     }
-                    if (n.kind in News.WARN_SNOW..News.WARN_COLD) warnPlace(world, n.about)?.let { (x, y) -> view.focusX = x; view.focusY = y }
+                    if (News.isWarning(n.kind)) warnPlace(world, n.about)?.let { (x, y) -> view.focusX = x; view.focusY = y }
                     if (n.kind == News.CRASH) world.crashFor(n.about)?.let { k ->
                         view.focusX = k.tile % world.width + 0.5f
                         view.focusY = k.tile / world.width + 0.5f
@@ -2219,7 +2221,7 @@ internal fun newsCompany(world: World, n: News): com.rm.interchange.sim.Company?
 
 /** Whether news [n] has anything to say to company [me]: another company's weather warning and its own start don't. */
 internal fun newsForMe(n: News, me: Int): Boolean = when (n.kind) {
-    in News.WARN_SNOW..News.WARN_COLD -> Warning.company(n.about) == me
+    News.WARN_SNOW, News.WARN_ICE, News.WARN_STORM, News.WARN_COLD, News.WARN_FIRE, News.WARN_FLOOD, News.WARN_THAW -> Warning.company(n.about) == me
     News.COMPANY_STARTED -> n.about != me
     else -> true
 }
@@ -2275,12 +2277,29 @@ internal fun newsText(world: World, n: News): String {
         val title = world.scenario?.title?.ifBlank { null } ?: stringResource(Res.string.untitled)
         return stringResource(if (n.kind == News.SCENARIO_WON) Res.string.news_scenario_won else Res.string.news_scenario_lost, title)
     }
-    if (n.kind in News.WARN_SNOW..News.WARN_COLD) {
+    if (News.isWarning(n.kind)) {
         if (Warning.company(n.about) != me) return ""
         val place = world.towns.getOrNull(Warning.town(n.about))?.name ?: stringResource(Res.string.warn_line)
         val days = Warning.days(n.about).coerceAtLeast(1)
         val when_ = pluralStringResource(Res.plurals.warn_when, days, days)
-        return stringResource(when (n.kind) { News.WARN_SNOW -> Res.string.news_warn_snow; News.WARN_ICE -> Res.string.news_warn_ice; News.WARN_STORM -> Res.string.news_warn_storm; else -> Res.string.news_warn_cold }, place, when_)
+        return stringResource(when (n.kind) { News.WARN_SNOW -> Res.string.news_warn_snow; News.WARN_ICE -> Res.string.news_warn_ice; News.WARN_STORM -> Res.string.news_warn_storm; News.WARN_FIRE -> Res.string.news_warn_fire; News.WARN_FLOOD -> Res.string.news_warn_flood; News.WARN_THAW -> Res.string.news_warn_thaw; else -> Res.string.news_warn_cold }, place, when_)
+    }
+    if (n.kind == News.BIG_FIRE || n.kind == News.FLOOD) {
+        val town = world.nearestTown(n.about)
+        val place = world.towns.getOrNull(town)?.name
+        return if (place == null) stringResource(if (n.kind == News.BIG_FIRE) Res.string.news_big_fire_far else Res.string.news_flood_far)
+        else stringResource(if (n.kind == News.BIG_FIRE) Res.string.news_big_fire else Res.string.news_flood, place)
+    }
+    if (n.kind == News.CLIMATE_DECADE) {
+        val later = ClimateLine.later(n.about)
+        val sooner = ClimateLine.sooner(n.about)
+        val open = ClimateLine.open(n.about)
+        if (later == ClimateLine.NO_FREEZE) return stringResource(Res.string.news_climate_none)
+        return when {
+            later == 0 && sooner == 0 && open == 0 -> stringResource(Res.string.news_climate_same)
+            later == 0 && sooner == 0 -> stringResource(Res.string.news_climate_open, open)
+            else -> stringResource(Res.string.news_climate_season, later, sooner)
+        }
     }
     if (n.kind == News.PROSPECTING_FAILED) return stringResource(Res.string.news_prospect_failed, world.roster.industries.getOrNull(n.about)?.name(languageCode()) ?: "")
     if (n.kind == News.WASHOUT || n.kind == News.FIRE || n.kind == News.AVALANCHE) return stringResource(when (n.kind) { News.FIRE -> Res.string.news_fire; News.AVALANCHE -> Res.string.news_avalanche; else -> Res.string.news_washout })

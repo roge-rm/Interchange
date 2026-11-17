@@ -48,7 +48,7 @@ internal fun World.crashed(tile: Int, hit: List<Pair<CrashVehicle, Carrier>>) {
 fun World.crashFor(about: Int): Crash? = crashes.let { it.list.getOrNull(about - it.first) }
 
 /** The town nearest [tile], the lower id if two are as near, or -1 with none. */
-internal fun World.nearestTown(tile: Int): Int {
+fun World.nearestTown(tile: Int): Int {
     val x = tile % width
     val y = tile / width
     var best = -1

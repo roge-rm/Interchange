@@ -716,7 +716,7 @@ fun World.view(company: Int = 0, withReserved: Boolean = false, withNetwork: Boo
         keptOrderViews(company),
         settings.breakdowns,
         forecastDays,
-        news.filter { it.kind in News.WARN_SNOW..News.WARN_COLD && Warning.company(it.about) == company },
+        news.filter { News.isWarning(it.kind) && Warning.company(it.about) == company },
         priorityTrack.keys.filter { priorityTrack[it] == company }.sorted().toIntArray(),
         priorityRoad.keys.filter { priorityRoad[it] == company }.sorted().toIntArray(),
         risk?.first ?: IntArray(0),

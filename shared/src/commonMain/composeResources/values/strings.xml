@@ -517,6 +517,17 @@
     <string name="news_warn_ice">%1$s: ice closes the harbour %2$s</string>
     <string name="news_warn_storm">%1$s: storm holds the ships %2$s</string>
     <string name="news_warn_cold">%1$s: deep cold %2$s</string>
+    <string name="news_warn_fire">%1$s: fire weather %2$s</string>
+    <string name="news_warn_flood">%1$s: flooding rain %2$s</string>
+    <string name="news_warn_thaw">%1$s: thawing ground may slow trains %2$s</string>
+    <string name="news_big_fire">A big fire burns near %1$s</string>
+    <string name="news_big_fire_far">A big fire burns</string>
+    <string name="news_flood">Flooding near %1$s washes out track</string>
+    <string name="news_flood_far">Flooding washes out track</string>
+    <string name="news_climate_season">Lakes froze %1$d days later and thawed %2$d days sooner than in the 2020s</string>
+    <string name="news_climate_open">Lakes were open %1$d days longer than in the 2020s</string>
+    <string name="news_climate_same">Lakes froze and thawed as in the 2020s</string>
+    <string name="news_climate_none">Lakes no longer freeze as they did in the 2020s</string>
     <plurals name="warn_when">
         <item quantity="one">tomorrow</item>
         <item quantity="other">in %1$d days</item>
