@@ -627,6 +627,7 @@ class World(settings: NewGame, val roster: Roster = Roster.BASE, generate: Boole
         energyChecksum(::mix)
         maglevChecksum(::mix)
         hyperloopChecksum(::mix)
+        autonomyChecksum(::mix)
         for (k in roadStops.keys.sorted()) mix(k.toLong() * 31 + roadStops.getValue(k))
         for (k in saltDepots.sorted()) mix(k.toLong() * 7)
         for (v in roadVehicles) if (v != null) { mix(v.depot.toLong()); mix(v.noDepotUntil); mix(v.wreckedFor.toLong()); mix(v.leave.toLong()) }

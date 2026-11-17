@@ -64,6 +64,8 @@ class VehicleDef(
     val runway: String? = null,
     /** A bush plane, that goes on floats or skis as well as wheels. */
     val floats: Boolean? = null,
+    /** A road vehicle with no crew, with future transport on. */
+    val autonomous: Boolean? = null,
 )
 
 /**
@@ -348,6 +350,7 @@ object Packs {
                     range = f.int("range", 1, 30_000),
                     runway = f.string("runway"),
                     floats = f.bool("floats"),
+                    autonomous = f.bool("autonomous"),
                 )
                 f.done()
                 if (!fresh && kind != null) problems += "$at: a vehicle that replaces another keeps its kind"
@@ -363,6 +366,7 @@ object Packs {
                 if (def.plow == "oneway" && kind != null && kind != VehicleKind.ROAD) problems += "$at: only road vehicles have one-way plows"
                 if (def.plow != null && kind != null && kind != VehicleKind.WAGON && kind != VehicleKind.ROAD) problems += "$at: only wagons and road vehicles are plows"
                 if (def.tram != null && kind != null && kind != VehicleKind.ROAD) problems += "$at: only road vehicles are streetcars"
+                if (def.autonomous != null && kind != null && kind != VehicleKind.ROAD) problems += "$at: only road vehicles are autonomous"
                 if ((def.icebreaker != null || def.hovercraft != null) && kind != null && kind != VehicleKind.SHIP) problems += "$at: only ships break ice or hover"
                 if ((def.runway != null || def.floats != null) && kind != null && kind != VehicleKind.AIRCRAFT) problems += "$at: only aircraft have a runway and floats"
                 if (def.range != null && kind != null && kind != VehicleKind.AIRCRAFT && !stored) problems += "$at: only aircraft and battery or hydrogen vehicles have a range"

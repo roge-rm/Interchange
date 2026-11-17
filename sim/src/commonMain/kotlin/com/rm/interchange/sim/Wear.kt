@@ -33,7 +33,7 @@ object Upkeep {
     const val DOCK = 200
     const val CANAL = 30
     /** An airport a work day by [Airports] kind, about 5% of its price a work year. */
-    val AIRPORT = intArrayOf(1_100, 700, 800, 4_100, 11_000, 27_000)
+    val AIRPORT = intArrayOf(1_100, 700, 800, 4_100, 11_000, 27_000, 200)
 }
 
 /** Why track is closed. */

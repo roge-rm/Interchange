@@ -854,7 +854,7 @@ internal fun World.buyCraft(company: Company, c: Command.BuyCraft) {
     if (depot.owner != company.id) return
     val e = roster.getOrNull(c.model) ?: return
     val year = Calendar.year(startYear, day)
-    if (!e.enabled || year < e.from || year >= e.until) return
+    if (!e.enabled || year < e.from || year >= e.until || e.future && !settings.future) return
     when {
         depot.kind == Depots.SHIPYARD && e.kind == VehicleKind.SHIP -> buyShip(company, depot, e, c.cargo)
         depot.kind == Depots.HANGAR && e.kind == VehicleKind.AIRCRAFT -> buyAircraft(company, depot, e, c.cargo)

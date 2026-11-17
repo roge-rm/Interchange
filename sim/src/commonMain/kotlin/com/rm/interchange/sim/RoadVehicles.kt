@@ -246,7 +246,7 @@ internal fun World.buyRoadVehicle(company: Company, c: Command.BuyRoadVehicle) {
     if (depot.owner != company.id || !depot.road) return
     val e = roster.getOrNull(c.model) ?: return
     val year = Calendar.year(startYear, day)
-    if (!e.enabled || e.kind != VehicleKind.ROAD || year < e.from || year >= e.until) return
+    if (!e.enabled || e.kind != VehicleKind.ROAD || year < e.from || year >= e.until || e.future && !settings.future) return
     val v = RoadVehicle(roster, roadVehicles.size, company.id, e.id, depot.id, if (c.cargo in e.cargoes) c.cargo else -1)
     v.number = fleetNumber(company.id, roadVehicles, { it.owner }, { it.number })
     if (company.money < price(v.price)) return
@@ -648,7 +648,7 @@ internal fun World.roadFreeAhead(v: RoadVehicle, on: HashMap<Int, ArrayList<Road
     for (o in on[tile].orEmpty()) {
         if (o === v || roadStepExit(o.at) != roadStepExit(v.at)) continue
         val left = roadStepLength(o.at) - o.along
-        if (left < len - v.along) free = minOf(free, len - v.along - left - o.size() / 2 - GAP)
+        if (left < len - v.along) free = minOf(free, len - v.along - left - o.size() / 2 - gapBehind(v, o, tile))
     }
     if (free < len - v.along) return free.coerceAtLeast(0)
     // Its stop's middle, if this is its stop.
@@ -667,12 +667,15 @@ internal fun World.roadFreeAhead(v: RoadVehicle, on: HashMap<Int, ArrayList<Road
     for (o in on[n].orEmpty()) {
         if (o === v) continue
         // Someone ahead in the same lane, close in.
-        if (roadStepEntry(o.at) == entry && o.along < o.size() + GAP) return free
+        if (roadStepEntry(o.at) == entry && o.along < o.size() + gapBehind(v, o, n)) return free
         // On a junction, anyone come in another way holds it, unless they're leaving towards us in the other lane.
         if (roadEdges(n).countOneBits() >= 3 && roadStepEntry(o.at) != entry && roadStepExit(o.at) != entry) return free
     }
     return free + roadStepLength(roadStep(n, entry, Track.opposite(entry)))
 }
+
+/** How far [v] keeps behind [o] on [tile]: closer in a convoy. */
+private fun World.gapBehind(v: RoadVehicle, o: RoadVehicle, tile: Int) = if (convoy(v, o, tile)) CONVOY_GAP else GAP
 
 /** Whether a train is on crossing [tile] or close along its track. */
 internal fun World.trainNear(tile: Int): Boolean {

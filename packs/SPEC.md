@@ -73,9 +73,10 @@ Each vehicle:
 | reliability | no | How reliable it is new, in percent. 85 if left out. |
 | plow | no | Wagons: `wedge` or `rotary` makes it a snow plow, run at the head of its train. A wedge clears up to a metre of snow and pushes through drifts four times as fast; a rotary clears anything. Road vehicles: `wedge` or `oneway`, a plow truck that clears the road it drives. |
 | tram | no | Road vehicles: `true` for a streetcar, which runs only on tram rails. |
+| autonomous | no | Road vehicles: `true` for one with no crew, on sale only in a game with future transport on. Give it a running cost without the crew's share. On highways it follows other autonomous vehicles closer, in convoys. |
 | icebreaker | no | Ships: the ice it breaks through, in cm, clearing a channel as it goes. Other ships stop at 15 cm. |
 | hovercraft | no | Ships: `true` rides over ice of any thickness. |
-| runway | aircraft | The least it lands at: `strip` (a gravel strip), `regional`, `city` or `international` airport, or `heli` for a helicopter, which lands at any airport or a heliport. |
+| runway | aircraft | The least it lands at: `strip` (a gravel strip), `regional`, `city` or `international` airport, `heli` for a helicopter, which lands at any airport or a heliport but not a drone pad, or `drone` for a drone, which lands only at a drone pad, carries only mail, goods and food, at most 6, and is on sale only in a game with future transport on. |
 | range | no | Aircraft: how far it flies without stopping, in km. Stops beyond it are skipped. Battery and hydrogen engines, road vehicles and ships: tiles on a full charge or tank, 100 for battery and 400 for hydrogen if not given. |
 | floats | no | Aircraft: `true` for a bush plane, which goes on floats in summer and skis in winter, and lands at seaplane bases. |
 | weight | yes | Tonnes. |

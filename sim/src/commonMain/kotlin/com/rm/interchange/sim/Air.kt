@@ -23,14 +23,15 @@ package com.rm.interchange.sim
  * freezing or breaking up, and a gravel strip deep in snow takes only skis.
  */
 
-/** The least airport an aircraft needs: a strip, a regional, city or international airport; or a helicopter's pad. */
+/** The least airport an aircraft needs: a strip, a regional, city or international airport; a helicopter's pad; or a drone's pad, by [Drones]. */
 object Runways {
     const val STRIP = 0
     const val REGIONAL = 1
     const val CITY = 2
     const val INTERNATIONAL = 3
     const val HELI = 4
-    val NAMES = listOf("strip", "regional", "city", "international", "heli")
+    const val DRONE = 5
+    val NAMES = listOf("strip", "regional", "city", "international", "heli", "drone")
 }
 
 object Airports {
@@ -40,18 +41,20 @@ object Airports {
     const val REGIONAL = 3
     const val CITY = 4
     const val INTERNATIONAL = 5
-    const val COUNT = 6
+    /** A drone pad, with future transport on, by [Drones]. */
+    const val PAD = 6
+    const val COUNT = 7
 
     /** The first year each can be built, its price before inflation, its size along the runway and across, its gates, and the runway class it has. */
-    val FROM = intArrayOf(1920, 1920, 1950, 1930, 1950, 1960)
-    val COST = longArrayOf(8_000, 5_000, 6_000, 30_000, 80_000, 200_000)
-    val LENGTH = intArrayOf(4, 1, 1, 5, 6, 8)
-    val WIDTH = intArrayOf(1, 1, 1, 2, 3, 4)
-    val GATES = intArrayOf(2, 2, 1, 3, 5, 8)
-    val CLASS = intArrayOf(Runways.STRIP, -1, -1, Runways.REGIONAL, Runways.CITY, Runways.INTERNATIONAL)
+    val FROM = intArrayOf(1920, 1920, 1950, 1930, 1950, 1960, DRONE_FROM)
+    val COST = longArrayOf(8_000, 5_000, 6_000, 30_000, 80_000, 200_000, 1_500)
+    val LENGTH = intArrayOf(4, 1, 1, 5, 6, 8, 1)
+    val WIDTH = intArrayOf(1, 1, 1, 2, 3, 4, 1)
+    val GATES = intArrayOf(2, 2, 1, 3, 5, 8, 1)
+    val CLASS = intArrayOf(Runways.STRIP, -1, -1, Runways.REGIONAL, Runways.CITY, Runways.INTERNATIONAL, -1)
 
-    /** The kinds a company can build in [year]. */
-    fun entries(year: Int) = (0 until COUNT).filter { year >= FROM[it] }
+    /** The kinds a company can build in [year], pads only with [future] transport on. */
+    fun entries(year: Int, future: Boolean = false) = (0 until COUNT).filter { year >= FROM[it] && (future || it != PAD) }
 }
 
 class Airport(
@@ -160,7 +163,8 @@ class Aircraft(
     override val topSpeed get() = info.speed
     val maxSpeed get() = info.speed * 4096 * 16 / 2700
     val price get() = info.cost
-    val heli get() = info.runway == Runways.HELI
+    /** A helicopter or a drone, going straight up and down. */
+    val heli get() = info.runway == Runways.HELI || info.runway == Runways.DRONE
     val flying get() = state == Flight.TAKEOFF && altitude > 0 || state == Flight.CRUISE || state == Flight.HOLD || state == Flight.LANDING && altitude > 0
     val taxiing get() = state == Flight.TAXI_OUT || state == Flight.TAXI_IN
 
@@ -185,6 +189,8 @@ object Flight {
 
 /** Whether aircraft [v] can use airport [a] at all. */
 fun Airport.serves(v: Engine): Boolean = when {
+    v.runway == Runways.DRONE -> kind == Airports.PAD
+    kind == Airports.PAD -> false
     v.runway == Runways.HELI -> kind != Airports.SEAPLANE
     kind == Airports.SEAPLANE -> v.floats
     kind == Airports.HELIPORT -> false
@@ -204,6 +210,7 @@ private class AirportSite(val refusal: Int, val axis: Int = Track.X, val tiles: 
 private fun World.airportSite(company: Company, c: Command.Airport): AirportSite {
     val kind = c.kind
     if (kind !in 0 until Airports.COUNT || Calendar.year(startYear, day) < Airports.FROM[kind]) return AirportSite(Refusal.NOT_YET)
+    if (kind == Airports.PAD && !padsOpen()) return AirportSite(Refusal.NOT_YET)
     val axis: Int
     val tiles: List<Int>
     if (kind == Airports.SEAPLANE) {
@@ -499,17 +506,18 @@ object Taxiways {
         intArrayOf(24, 8, 24, 25, 56, 8, 56, 25, 40, 8, 40, 19),
         IntArray(20) { i -> if (i % 4 == 0 || i % 4 == 2) 24 + i / 4 * 16 else if (i % 4 == 1) 24 else 34 },
         IntArray(32) { i -> if (i % 4 == 0 || i % 4 == 2) 8 + i / 4 * 16 else if (i % 4 == 1) 24 else 40 },
+        intArrayOf(8, 8, 8, 8),
     )
     /** The hangar door, the same way, and the hangar's tile along and across. */
     val DOORS = arrayOf(
         intArrayOf(56, 8, 56, 14), intArrayOf(4, 8, -10, 8), intArrayOf(8, 8, 8, 8),
-        intArrayOf(8, 8, 8, 21), intArrayOf(8, 24, 8, 35), intArrayOf(16, 24, 16, 50),
+        intArrayOf(8, 8, 8, 21), intArrayOf(8, 24, 8, 35), intArrayOf(16, 24, 16, 50), intArrayOf(8, 8, 8, 8),
     )
-    val HANGAR_TILE = arrayOf(intArrayOf(3, 0), intArrayOf(0, 0), intArrayOf(0, 0), intArrayOf(0, 1), intArrayOf(0, 2), intArrayOf(1, 3))
+    val HANGAR_TILE = arrayOf(intArrayOf(3, 0), intArrayOf(0, 0), intArrayOf(0, 0), intArrayOf(0, 1), intArrayOf(0, 2), intArrayOf(1, 3), intArrayOf(0, 0))
     /** Runway end 0's spur, from where it joins to where it lines up; a seaplane base's end 1 as well. */
     val ENDS = arrayOf(
         intArrayOf(4, 8, 12, 8), intArrayOf(10, 8), IntArray(0),
-        intArrayOf(4, 8, 12, 8), intArrayOf(4, 24, 2, 8, 14, 8), intArrayOf(4, 24, 2, 8, 16, 8),
+        intArrayOf(4, 8, 12, 8), intArrayOf(4, 24, 2, 8, 14, 8), intArrayOf(4, 24, 2, 8, 16, 8), IntArray(0),
     )
     val SEAPLANE_END1 = intArrayOf(44, 8, 36, 8)
     /** Each kind's exits, from where each joins to where it leaves the runway, [EXIT0] up. */
@@ -520,6 +528,7 @@ object Taxiways {
         arrayOf(intArrayOf(24, 8), intArrayOf(40, 8), intArrayOf(56, 8)),
         arrayOf(intArrayOf(48, 24, 32, 8), intArrayOf(72, 24, 56, 8), intArrayOf(48, 24, 64, 8), intArrayOf(24, 24, 40, 8)),
         arrayOf(intArrayOf(56, 24, 40, 8), intArrayOf(88, 24, 72, 8), intArrayOf(72, 24, 88, 8), intArrayOf(40, 24, 56, 8)),
+        arrayOf(),
     )
 
     /** Whether [place] is a stand. */
@@ -560,7 +569,7 @@ object Taxiways {
 
 /** The tile of [kind]'s hangar at corner ([x], [y]) with its runway along [axis]. */
 private fun World.hangarTile(kind: Int, x: Int, y: Int, axis: Int): Int {
-    if (kind == Airports.SEAPLANE || kind == Airports.HELIPORT) return index(x, y)
+    if (kind == Airports.SEAPLANE || kind == Airports.HELIPORT || kind == Airports.PAD) return index(x, y)
     val t = Taxiways.HANGAR_TILE[kind]
     return if (axis == Track.X) index(x + t[0], y + t[1]) else index(x + t[1], y + t[0])
 }
@@ -902,6 +911,8 @@ fun World.cantLand(v: Aircraft, a: Airport): String? =
 private fun World.cantLandFor(v: Aircraft, a: Airport): String? {
     if (!a.serves(v.info)) return "runway"
     if (wreckAt(a)) return "wreck"
+    // A drone in the air lands at its pad whatever the weather, and waits there.
+    if (v.info.drone) return if (!homeBound(v, a) && freeStand(a, v) < 0) "gates" else null
     if (weather.wind >= v.info.stormLimit()) return "storm"
     if (airSky(a) and FOGGY != 0 && !a.ils) return "fog"
     if (!homeBound(v, a) && freeStand(a, v) < 0) return "gates"
@@ -926,6 +937,7 @@ private fun World.cantLandFor(v: Aircraft, a: Airport): String? {
 
 /** Whether aircraft [v] can leave airport [a] now: not in a storm it can't fly in, and not iced up without de-icing. */
 internal fun World.mayLeave(v: Aircraft, a: Airport): Boolean {
+    if (v.info.drone) return droneGrounded(a) == Drones.FLYING && !wreckAt(a)
     if (weather.wind >= v.info.stormLimit()) return false
     if (airSky(a) and ICING != 0 && !a.deice) return false
     return !wreckAt(a)

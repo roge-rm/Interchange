@@ -56,6 +56,8 @@ class Engine(
     val range: Int = 0,
     val runway: Int = Runways.REGIONAL,
     val floats: Boolean = false,
+    /** A road vehicle with no crew, that runs in convoys on highways, by [CONVOY_GAP]. */
+    val autonomous: Boolean = false,
     /** Its drawing off the wires, a place in [Roster.sprites]: a dual-mode engine's with its pantograph down. */
     val offWireSprite: Int = sprite,
     /** What it can carry as [Cargo] numbers in its roster; empty for nothing. */
@@ -350,6 +352,9 @@ class Roster(
                 if (d.plow != null && d.kind != VehicleKind.WAGON && d.kind != VehicleKind.ROAD) problems += "${s.key}: only wagons and road vehicles are plows"
                 if ((d.dieselPower != null || d.dieselSpeed != null) && d.traction != "dual") problems += "${s.key}: only dual-mode engines have a diesel power and speed"
                 if (d.traction == "dual" && d.kind != VehicleKind.ENGINE) problems += "${s.key}: only engines are dual-mode"
+                if (d.autonomous == true && d.kind != VehicleKind.ROAD) problems += "${s.key}: only road vehicles are autonomous"
+                if (d.runway == "drone" && d.carries.orEmpty().any { it !in Drones.CARGOES }) problems += "${s.key}: drones carry only ${Drones.CARGOES.joinToString(", ")}"
+                if (d.runway == "drone" && (d.capacity ?: 0) > Drones.MOST_LOAD) problems += "${s.key}: drones carry at most ${Drones.MOST_LOAD}"
                 if (d.traction == "hyperloop" && d.carries.orEmpty().any { cargo.of(it) != Cargo.PASSENGERS && cargo.of(it) != Cargo.MAIL }) problems += "${s.key}: hyperloop pods carry only passengers and mail"
                 Engine(
                     id = i, key = s.key, kind = d.kind!!, names = d.names!!, plurals = d.plurals ?: emptyMap(), types = d.types ?: emptyMap(),
@@ -364,6 +369,7 @@ class Roster(
                     tram = d.tram ?: false,
                     icebreaker = d.icebreaker ?: 0, hovercraft = d.hovercraft ?: false,
                     range = d.range ?: 0, runway = d.runway?.let { Runways.NAMES.indexOf(it) } ?: Runways.REGIONAL, floats = d.floats ?: false,
+                    autonomous = d.autonomous ?: false,
                     cargoes = d.carries.orEmpty().map { cargoOf(s.key, it) }.filter { it >= 0 }.toIntArray(),
                 )
             }
@@ -443,6 +449,7 @@ class Roster(
             tram = v.tram ?: old.tram,
             icebreaker = v.icebreaker ?: old.icebreaker, hovercraft = v.hovercraft ?: old.hovercraft,
             range = v.range ?: old.range, runway = v.runway ?: old.runway, floats = v.floats ?: old.floats,
+            autonomous = v.autonomous ?: old.autonomous,
         )
     }
 }

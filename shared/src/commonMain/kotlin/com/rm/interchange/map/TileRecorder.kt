@@ -581,7 +581,7 @@ internal class TileRecorder(
         val len = Airports.LENGTH[a.kind]
         val role = when (a.kind) {
             Airports.SEAPLANE -> return 0
-            Airports.HELIPORT -> AERO_PAD
+            Airports.HELIPORT, Airports.PAD -> AERO_PAD
             Airports.STRIP -> AERO_STRIP
             Airports.REGIONAL -> if (ly == 0) AERO_RUNWAY else AERO_APRON
             Airports.CITY -> when (ly) { 0 -> AERO_RUNWAY; 1 -> AERO_TAXI; else -> AERO_APRON }

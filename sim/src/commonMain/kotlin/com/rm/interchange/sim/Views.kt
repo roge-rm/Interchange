@@ -316,6 +316,8 @@ class AircraftView(
     val upgradeTo: Int = -1,
     val upgradeWhy: Int = UpgradeWhy.NONE,
     val replaceWhy: Map<Int, Int> = emptyMap(),
+    /** A drone kept on its pad by the weather, a [Drones] reason; [Drones.FLYING] for any other. */
+    val grounded: Int = Drones.FLYING,
 )
 
 /** An airport as the screen shows it. */
@@ -688,6 +690,7 @@ fun World.view(company: Int = 0, withReserved: Boolean = false, withNetwork: Boo
                 value = if (v.wreckedFor > 0) 0 else craftValue(v.price, v.built, v.info.life), nextService = nextService(v.service, v.serviced), renewOff = v.renewOff,
                 serviceId = serviceOf(v)?.key ?: -1, late = v.late,
                 upgradeTo = upgradeTo(v), upgradeWhy = v.upgradeWhy, replaceWhy = replaceWhy(v, company),
+                grounded = if (v.info.drone && v.state == Flight.GATE) airports.getOrNull(v.at)?.let { droneGrounded(it) } ?: Drones.FLYING else Drones.FLYING,
             )
         },
         airports.filterNotNull().map { AirportView(it.id, it.station, it.kind, it.x, it.y, it.w, it.h, it.axis, it.depot, it.ils, it.deice) },

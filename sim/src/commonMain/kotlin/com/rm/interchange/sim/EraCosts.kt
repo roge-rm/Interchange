@@ -83,14 +83,14 @@ object EraCosts {
 
     /**
      * The fuel model [e] burns, or -1 for none (wagons, horses): steam engines and their tenders coal, motor road
-     * vehicles diesel. With [energy] battery ones take the electric price and hydrogen ones hydrogen; without it both
+     * vehicles diesel, drones the electric price. With [energy] battery ones take the electric price and hydrogen ones hydrogen; without it both
      * burn what a diesel of their kind would.
      */
     fun fuelOf(e: Engine, energy: Boolean = false): Int {
         if (energy && e.traction == Traction.BATTERY) return ELECTRIC
         if (energy && e.traction == Traction.HYDROGEN) return HYDROGEN
         return when (e.kind) {
-            VehicleKind.AIRCRAFT -> AVIATION
+            VehicleKind.AIRCRAFT -> if (e.runway == Runways.DRONE) ELECTRIC else AVIATION
             VehicleKind.SHIP -> BUNKER
             VehicleKind.TENDER -> COAL
             VehicleKind.ENGINE -> when (e.traction) { Traction.STEAM -> COAL; Traction.ELECTRIC, Traction.DUAL, Traction.MAGLEV, Traction.HYPERLOOP -> ELECTRIC; Traction.HORSE -> -1; else -> DIESEL }

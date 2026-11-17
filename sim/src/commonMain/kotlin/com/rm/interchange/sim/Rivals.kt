@@ -816,12 +816,12 @@ internal fun World.inHand(c: Company, cost: Long): Boolean = c.money >= cost + p
 
 /**
  * The road vehicle for [cargo] on sale now that carries the most the fastest, trams and plows left out, and battery
- * ones unless [tiles] between the ends fits their range.
+ * ones unless [tiles] between the ends fits their range; an autonomous one over a crewed one that carries as much as fast.
  */
 internal fun World.bestModel(cargo: Int, tiles: Int = -1): Engine? {
     val year = Calendar.year(startYear, day)
-    return roster.availableRoad(year).filter { !it.tram && it.plow == Plows.NONE && cargo in it.cargoes && it.capacity > 0 && rivalFits(it, tiles) }
-        .maxWithOrNull(compareBy<Engine> { it.capacity.toLong() * it.speed }.thenBy { -it.id })
+    return roster.availableRoad(year).filter { !it.tram && it.plow == Plows.NONE && cargo in it.cargoes && it.capacity > 0 && rivalFits(it, tiles) && (settings.future || !it.future) }
+        .maxWithOrNull(compareBy<Engine> { it.capacity.toLong() * it.speed }.thenBy { if (it.autonomous) 1 else 0 }.thenBy { -it.id })
 }
 
 internal fun World.buyAndStart(c: Company, route: RivalRoute, model: Engine) {

@@ -65,7 +65,7 @@ data class NewGame(
     val eraCosts: Boolean = true,
     /** Battery and hydrogen vehicles run on a charge or a tank for their range, and stations can have chargers, by [Energy]. */
     val energy: Boolean = true,
-    /** Future transport: maglev guideway and trains from [MAGLEV_FROM], by [Maglev], and hyperloop tube and pods from [HYPERLOOP_FROM], by [Hyperloop]. */
+    /** Future transport: maglev guideway and trains from [MAGLEV_FROM], by [Maglev], hyperloop tube and pods from [HYPERLOOP_FROM], by [Hyperloop], and autonomous trucks and drones, by [Drones]. */
     val future: Boolean = true,
 ) {
     companion object {
