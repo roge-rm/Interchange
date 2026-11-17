@@ -2670,9 +2670,12 @@ fun subsidyStart(world: World, i: Int): Pair<Float, Float> {
     else world.industries.getOrNull(s.from)?.let { it.x + 1f to it.y + 1f } ?: (0f to 0f)
 }
 
-fun industryName(world: World, ind: Industry, lang: String): String {
+fun industryName(world: World, ind: Industry, lang: String): String =
     // A second of a kind by the same town is numbered.
-    val n = world.industries.count { it.id < ind.id && it.kind == ind.kind && it.town == ind.town } + 1
+    industryName(world, ind, lang, world.industries.count { it.id < ind.id && it.kind == ind.kind && it.town == ind.town } + 1)
+
+/** [ind]'s name, the [n]th of its kind by its town. */
+fun industryName(world: World, ind: Industry, lang: String, n: Int): String {
     val number = if (n > 1) " $n" else ""
     val kind = world.roster.industries[ind.kind].name(lang)
     val town = world.towns.getOrNull(ind.town)?.name ?: return kind + number
