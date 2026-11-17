@@ -27,6 +27,7 @@ import com.rm.interchange.sim.Command
 import com.rm.interchange.sim.DEICE_COST
 import com.rm.interchange.sim.DEICE_FROM
 import com.rm.interchange.sim.Engine
+import com.rm.interchange.sim.EnergyView
 import com.rm.interchange.sim.ILS_COST
 import com.rm.interchange.sim.ILS_FROM
 import com.rm.interchange.sim.Order
@@ -157,10 +158,11 @@ private fun Facility(glyph: Glyph, label: String, has: Boolean, year: Int, from:
 
 /** A ship's or aircraft's stops under their Head, each marked with [glyph] and tapped open to change, and a button to add more. */
 @Composable
-private fun CraftOrders(view: WorldView, roster: Roster, id: Int, orders: IntArray, order: Int, glyph: Glyph, group: Int, gap: Int, others: List<SharedOrderChoice>, adding: Boolean, onAdd: () -> Unit, send: (Int, IntArray) -> Unit, service: TileButton, serviceLine: @Composable () -> Unit) {
+private fun CraftOrders(view: WorldView, roster: Roster, id: Int, orders: IntArray, order: Int, glyph: Glyph, group: Int, gap: Int, others: List<SharedOrderChoice>, adding: Boolean, onAdd: () -> Unit, send: (Int, IntArray) -> Unit, service: TileButton, serviceLine: @Composable () -> Unit, energy: EnergyView? = null) {
     Head(stringResource(Res.string.orders))
     SharedOrdersControls(view, roster, id, group, gap, others, adding, orders.size >= Order.ORDERS_MOST, onAdd, send, service, serviceLine) {
         OrdersList(view, id, orders, order, OrderFlags.CRAFT, glyph) { send(Command.TrainOrder.ORDERS, it) }
+        RangeWarning(energy)
     }
     Box(Modifier.height(KitSpace.Tight))
 }
@@ -203,6 +205,7 @@ fun ShipCard(view: WorldView, roster: Roster, v: ShipView, year: Int, funds: Lon
             v.kmh, e.speed, v.age, false, v.reliability, v.profitThisYear, v.profitLastYear,
             if (v.capacity > 0) listOf(VehicleLoad(v.carries, v.load, v.capacity)) else emptyList(),
             worthRows(v.value, v.nextService, mine) + linkRows(OverviewVehicle.SHIP, v.id, v.orders, v.order),
+            energy = v.energy,
         )
         // Someone else's: what it is, but none of the controls.
         if (!mine) return@Card
@@ -214,7 +217,7 @@ fun ShipCard(view: WorldView, roster: Roster, v: ShipView, year: Int, funds: Lon
         val group = if (v.shared >= 0) view.ships.count { it.id != v.id && it.shared == v.shared } else 0
         val others = view.ships.filter { it.id != v.id && it.owner == me }
             .map { SharedOrderChoice(it.id, shipName(it), it.model, it.orders) }
-        CraftOrders(view, roster, v.id, v.orders, v.order, Glyph.Dock, group, v.gap, others, addingStops, onAddStops, ::order, serviceTile(Command.CopyVehicle.SHIP, v.id, v.serviceId, send), { ServiceLine(view, v.serviceId, v.late) })
+        CraftOrders(view, roster, v.id, v.orders, v.order, Glyph.Dock, group, v.gap, others, addingStops, onAddStops, ::order, serviceTile(Command.CopyVehicle.SHIP, v.id, v.serviceId, send), { ServiceLine(view, v.serviceId, v.late) }, v.energy)
         var replacing by remember(v.id) { mutableStateOf(false) }
         CraftActions(
             v.running, v.inDepot, v.toDepot, v.renewCost, Res.string.to_shipyard,

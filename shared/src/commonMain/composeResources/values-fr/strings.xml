@@ -1059,4 +1059,18 @@
     <string name="first_route_unfold">Ouvrir la liste</string>
     <string name="first_route_hide">Masquer la liste</string>
     <string name="first_route_setting">Liste de la première ligne</string>
+    <string name="charge">Charge</string>
+    <string name="tank">Réservoir</string>
+    <string name="energy_flat">À plat</string>
+    <string name="energy_charging">En recharge</string>
+    <string name="energy_refuelling">Ravitaillement</string>
+    <string name="energy_tiles">%1$d sur %2$d cases</string>
+    <string name="range_warning">Un trajet de %1$d cases dépasse son rayon de %2$d cases. Ajoutez une borne de recharge ou un dépôt.</string>
+    <string name="charger">Borne de recharge</string>
+    <string name="traction_battery">Batterie</string>
+    <string name="traction_hydrogen">Hydrogène</string>
+    <string name="range_tiles">rayon de %1$s cases</string>
+    <string name="price_hydrogen">Hydrogène</string>
+    <string name="news_ran_flat">%1$s est à court de charge et avance au ralenti</string>
+    <string name="energy">Énergie</string>
 </resources>

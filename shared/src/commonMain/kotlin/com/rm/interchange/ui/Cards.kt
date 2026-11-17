@@ -105,7 +105,7 @@ fun TrainCard(
             listOfNotNull(
                 stringResource(Res.string.breakdowns) to t.breakdowns.toString(),
             ) + worthRows(t.value, t.nextService, mine) + linkRows(OverviewVehicle.TRAIN, t.id, t.orders, t.order),
-            t.dieselSpeed, t.curveKmh,
+            t.dieselSpeed, t.curveKmh, t.energy,
         )
         // Someone else's shows what it is but none of the controls, and a wreck is cleared away by itself.
         if (!mine || t.wrecked) return@Card
@@ -122,6 +122,7 @@ fun TrainCard(
         if (shared) Text(pluralStringResource(Res.plurals.shared_with, group, group), color = LocalColors.current.textDim, style = KitType.Dim)
         ServiceLine(view, t.serviceId, t.late)
         OrdersList(view, t.id, t.orders, t.order, OrderFlags.TRAIN, Glyph.Station) { order(Command.TrainOrder.ORDERS, it) }
+        RangeWarning(t.energy)
         // Sharing orders with another train: pick which from a list, or stop sharing.
         var sharing by remember(t.id) { mutableStateOf(false) }
         val others = view.trains.filter { it.id != t.id && it.owner == me }
@@ -323,6 +324,17 @@ fun StationCard(view: WorldView, roster: Roster, s: StationView, handling: Handl
             Grid(names) { PlaceCell(it.name, it.amounts, it.via, it.why) }
         }
         if (handling != null) HandlingSection(view, s, handling, flows, funds, me, send)
+        s.charger?.let { ch ->
+            if (ch.built || s.owner == me) {
+                if (handling == null) Head(stringResource(Res.string.head_equipment), Glyph.Shed)
+                ActionRow(Glyph.Shed, stringResource(Res.string.equipment_line, stringResource(Res.string.charger), money(ch.upkeep)), dim = !ch.built, end = {
+                    if (s.owner == me) {
+                        if (ch.built) ActionButton(stringResource(Res.string.remove)) { send(Command.Equip(me, s.id, Equipment.CHARGER, remove = true)) }
+                        else ActionButton(stringResource(Res.string.build_for, money(ch.cost)), enabled = funds >= ch.cost, strong = true) { send(Command.Equip(me, s.id, Equipment.CHARGER)) }
+                    } else GlyphIcon(Glyph.Tick, c.good, Modifier.size(22.dp))
+                })
+            }
+        }
         // Everything with a stop here, each tapped to open it.
         Head(stringResource(Res.string.head_calling))
         fun calls(orders: IntArray) = orders.any { Order.station(it) == s.id }

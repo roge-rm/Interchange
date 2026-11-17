@@ -191,8 +191,9 @@ fun NewGameScreen(packs: List<Pack>, onStart: (NewGame, List<Pack>) -> Unit, onB
     var contracts by remember { mutableStateOf(true) }
     var eraCosts by remember { mutableStateOf(true) }
     var handling by remember { mutableStateOf(true) }
+    var energy by remember { mutableStateOf(true) }
     var off by remember { mutableStateOf(emptySet<String>()) }
-    val settings = NewGame(width, height, seed, year, region, sea, hills, trees, towns, industries, inflation, weather, dayLength, rivals, sharing, rivalLevel, townGrowth, goals, collisions, breakdowns = breakdowns, stockpiles = stockpiles, contracts = contracts && stockpiles, handling = handling, eraCosts = eraCosts)
+    val settings = NewGame(width, height, seed, year, region, sea, hills, trees, towns, industries, inflation, weather, dayLength, rivals, sharing, rivalLevel, townGrowth, goals, collisions, breakdowns = breakdowns, stockpiles = stockpiles, contracts = contracts && stockpiles, handling = handling, eraCosts = eraCosts, energy = energy)
     // The map's the same whatever the goals and growth, so changing them doesn't make it again.
     val land = settings.copy(townGrowth = com.rm.interchange.sim.TownGrowth.NORMAL, goals = com.rm.interchange.sim.GoalSet.NONE, breakdowns = com.rm.interchange.sim.Breakdowns.NORMAL)
     val chosen = packs.filter { it.id !in off }
@@ -305,7 +306,7 @@ fun NewGameScreen(packs: List<Pack>, onStart: (NewGame, List<Pack>) -> Unit, onB
             Text(stringResource(Res.string.breakdowns_setting), color = c.text, style = KitType.Label)
             FillChips((0..2).toList(), breakdowns, { breakdownNames.getOrElse(it) { "$it" } }) { breakdowns = it }
         }
-        // The eight switches, four to a row where wide, else two and two.
+        // The nine switches, four to a row where wide, else two and two.
         val toggles = listOf<@Composable (Modifier) -> Unit>(
             { m -> TogglePill(stringResource(Res.string.inflation), inflation, m) { inflation = it } },
             { m -> TogglePill(stringResource(Res.string.weather), weather, m) { weather = it } },
@@ -315,6 +316,7 @@ fun NewGameScreen(packs: List<Pack>, onStart: (NewGame, List<Pack>) -> Unit, onB
             { m -> TogglePill(stringResource(Res.string.contracts), contracts && stockpiles, m) { contracts = it } },
             { m -> TogglePill(stringResource(Res.string.era_costs), eraCosts, m) { eraCosts = it } },
             { m -> TogglePill(stringResource(Res.string.handling), handling, m) { handling = it } },
+            { m -> TogglePill(stringResource(Res.string.energy), energy, m) { energy = it } },
         )
         for (row in toggles.chunked(if (wide) 4 else 2)) {
             Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -730,11 +732,12 @@ fun FinanceWindow(runner: com.rm.interchange.server.GameThread, onClose: () -> U
     }
 }
 
-/** The line colours of the price chart: labour, steel, concrete, land, then coal, diesel, electricity, aviation fuel and bunker fuel. */
+/** The line colours of the price chart: labour, steel, concrete, land, then coal, diesel, electricity, aviation fuel, bunker fuel and hydrogen. */
 private val PRICE_COLOURS = listOf(
     androidx.compose.ui.graphics.Color(0xFFE0A030), androidx.compose.ui.graphics.Color(0xFF7A8CA0), androidx.compose.ui.graphics.Color(0xFFB0A090),
     androidx.compose.ui.graphics.Color(0xFF6AAA5A), androidx.compose.ui.graphics.Color(0xFF555555), androidx.compose.ui.graphics.Color(0xFFD05A3A),
     androidx.compose.ui.graphics.Color(0xFF4A90D9), androidx.compose.ui.graphics.Color(0xFF9A70C8), androidx.compose.ui.graphics.Color(0xFF30A8A8),
+    androidx.compose.ui.graphics.Color(0xFFE05AA0),
 )
 
 /** Each price as a percent of what it was in the first year, with a chart of them over the years so far. */
@@ -745,10 +748,10 @@ private fun PricesSection(p: com.rm.interchange.sim.PricesView) {
     val names = listOf(
         Res.string.price_labour, Res.string.price_steel, Res.string.price_concrete, Res.string.price_land,
         Res.string.price_coal, Res.string.price_diesel, Res.string.price_electric, Res.string.price_aviation, Res.string.price_bunker,
-    )
+    ) + if (p.hydrogenHistory != null) listOf(Res.string.price_hydrogen) else emptyList()
     // Percent of the first year for each of the nine, by year point.
-    val lines = p.indexHistory.toList() + p.fuelHistory.toList()
-    val now = p.indices.toList() + p.fuels.toList()
+    val lines = p.indexHistory.toList() + p.fuelHistory.toList() + listOfNotNull(p.hydrogenHistory)
+    val now = p.indices.toList() + p.fuels.toList() + (if (p.hydrogenHistory != null) listOf(p.hydrogen) else emptyList())
     for ((k, name) in names.withIndex()) {
         val first = lines[k].firstOrNull()?.takeIf { it > 0 } ?: 1
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {

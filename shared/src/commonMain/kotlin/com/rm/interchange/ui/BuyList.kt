@@ -28,6 +28,8 @@ import com.rm.interchange.res.*
 import com.rm.interchange.sim.Engine
 import com.rm.interchange.sim.MAX_AT_ONCE
 import com.rm.interchange.sim.Traction
+import com.rm.interchange.sim.VehicleKind
+import com.rm.interchange.sim.rangeOf
 import com.rm.interchange.sim.WorldView
 import org.jetbrains.compose.resources.pluralStringResource
 import org.jetbrains.compose.resources.stringArrayResource
@@ -37,6 +39,8 @@ import org.jetbrains.compose.resources.stringResource
 val LocalBuyListHeight = staticCompositionLocalOf { 320.dp }
 
 /** Today's prices from the game's view, or null with era costs off; buying lists split running costs by it. */
+/** Whether battery and hydrogen are on in this game, for the buy list to show a road electric as battery. */
+val LocalEnergy = staticCompositionLocalOf { false }
 val LocalPrices = staticCompositionLocalOf<com.rm.interchange.sim.PricesView?> { null }
 
 
@@ -63,7 +67,15 @@ private fun statsText(e: Engine, cargo: Int, choosing: Boolean): String {
         } else stringResource(Res.string.horsepower, Numbers.grouped(e.power.toLong()))
         parts += stringResource(Res.string.kilonewtons, e.tractive)
     }
-    if (e.range > 0) parts += stringResource(Res.string.range_stat, Numbers.grouped(e.range.toLong()))
+    val store = if (e.traction == Traction.BATTERY || e.traction == Traction.HYDROGEN) e.traction
+        else if (LocalEnergy.current && e.kind == VehicleKind.ROAD && e.traction == Traction.ELECTRIC && !e.tram) Traction.BATTERY else -1
+    if (store >= 0 && e.kind != VehicleKind.AIRCRAFT) {
+        parts += stringResource(if (store == Traction.HYDROGEN) Res.string.traction_hydrogen else Res.string.traction_battery)
+        parts += stringResource(Res.string.range_tiles, Numbers.grouped(rangeOf(e).toLong()))
+    } else if (e.range > 0) {
+        if (e.traction == Traction.BATTERY || e.traction == Traction.HYDROGEN) parts += stringResource(if (e.traction == Traction.HYDROGEN) Res.string.traction_hydrogen else Res.string.traction_battery)
+        parts += stringResource(Res.string.range_stat, Numbers.grouped(e.range.toLong()))
+    }
     if (e.icebreaker > 0) parts += stringResource(Res.string.breaks_ice, e.icebreaker)
     // Each stat kept on one line, so a long row wraps only between them.
     return parts.joinToString(SEP) { it.replace(' ', '\u00A0') }

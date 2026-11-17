@@ -41,6 +41,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.rm.interchange.sim.AircraftView
 import com.rm.interchange.sim.Engine
+import com.rm.interchange.sim.EnergyView
+import com.rm.interchange.sim.Traction
 import com.rm.interchange.sim.Flight
 import com.rm.interchange.sim.Order
 import com.rm.interchange.sim.RoadVehicleView
@@ -77,7 +79,7 @@ class VehicleLoad(val cargo: Int, val load: Int, val capacity: Int)
 @Composable
 fun VehicleStats(
     kmh: Int, top: Int, age: Int, old: Boolean, reliability: Int, profitThisYear: Long, profitLastYear: Long, loads: List<VehicleLoad>,
-    extra: List<Pair<String, String>> = emptyList(), dieselTop: Int = top, curveKmh: Int = 0,
+    extra: List<Pair<String, String>> = emptyList(), dieselTop: Int = top, curveKmh: Int = 0, energy: EnergyView? = null,
 ) {
     val c = LocalColors.current
     Head(stringResource(Res.string.head_running))
@@ -90,6 +92,21 @@ fun VehicleStats(
         valueColours = listOf(if (curveKmh > 0) c.warn else null, null, if (old) c.warn else null),
     )
     FillBarRow(stringResource(Res.string.reliability), reliability / 100f)
+    if (energy != null) {
+        val hydrogen = energy.store == Traction.HYDROGEN
+        val state = when {
+            energy.flat -> stringResource(Res.string.energy_flat)
+            energy.charging -> stringResource(if (hydrogen) Res.string.energy_refuelling else Res.string.energy_charging)
+            else -> null
+        }
+        val level = if (energy.range > 0) energy.charge.toFloat() / energy.range else 0f
+        val tiles = stringResource(Res.string.energy_tiles, energy.charge, energy.range)
+        FillBarRow(
+            stringResource(if (hydrogen) Res.string.tank else Res.string.charge), level,
+            if (state != null) "$state, $tiles" else tiles,
+            colour = if (energy.flat) c.bad else if (level < 0.25f) c.warn else null,
+        )
+    }
     for ((label, value) in extra) InfoRow(label, value)
     Head(stringResource(Res.string.head_profit))
     StatColumns(
@@ -102,6 +119,15 @@ fun VehicleStats(
             CargoRow(l.cargo, stringResource(Res.string.load_of, l.load, l.capacity), share = if (l.capacity > 0) l.load.toFloat() / l.capacity else 0f)
         }
     }
+}
+
+/** A warning when a leg between charge points is longer than [energy]'s range. */
+@Composable
+fun RangeWarning(energy: EnergyView?) {
+    val check = energy?.check ?: return
+    if (!check.short) return
+    val c = LocalColors.current
+    Text(stringResource(Res.string.range_warning, check.longest, check.range), color = c.warn, style = KitType.Dim)
 }
 
 /** The value and next service rows for a vehicle's stats; the service line only for its owner. */

@@ -457,6 +457,8 @@ class WorldView(
     val prices: PricesView? = null,
     /** Whether handling is on in this game, for the books to leave out its rows when it's off. */
     val handling: Boolean = true,
+    /** Whether energy (battery and hydrogen) is on in this game. */
+    val energy: Boolean = false,
 )
 
 /**
@@ -698,7 +700,7 @@ fun World.view(company: Int = 0, withReserved: Boolean = false, withNetwork: Boo
         if (withNetwork) demand else emptyList(),
         contractViews(company),
         pricesView(),
-        settings.handling,
+        settings.handling, settings.energy,
     )
 }
 

@@ -1076,4 +1076,18 @@
     <string name="first_route_unfold">Open the checklist</string>
     <string name="first_route_hide">Hide the checklist</string>
     <string name="first_route_setting">First-route checklist</string>
+    <string name="charge">Charge</string>
+    <string name="tank">Tank</string>
+    <string name="energy_flat">Flat</string>
+    <string name="energy_charging">Charging</string>
+    <string name="energy_refuelling">Refuelling</string>
+    <string name="energy_tiles">%1$d of %2$d tiles</string>
+    <string name="range_warning">A leg of %1$d tiles is longer than its %2$d tile range. Add a charge point or a depot.</string>
+    <string name="charger">Charger</string>
+    <string name="traction_battery">Battery</string>
+    <string name="traction_hydrogen">Hydrogen</string>
+    <string name="range_tiles">%1$s tiles range</string>
+    <string name="price_hydrogen">Hydrogen</string>
+    <string name="news_ran_flat">%1$s ran out of charge and is crawling</string>
+    <string name="energy">Energy</string>
 </resources>

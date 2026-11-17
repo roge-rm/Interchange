@@ -96,6 +96,7 @@ fun RoadVehicleCard(view: WorldView, roster: Roster, v: RoadVehicleView, year: I
             if (v.capacity > 0) listOf(VehicleLoad(v.carries, v.load, v.capacity)) else emptyList(),
             (if (horses) emptyList() else listOf(stringResource(Res.string.tires) to tires.getOrElse(v.tires) { "" })) + worthRows(v.value, v.nextService, mine) +
                 linkRows(OverviewVehicle.ROAD, v.id, v.orders, v.order),
+            energy = v.energy,
         )
         // Someone else's shows what it is but none of the controls, and a wreck is cleared away by itself.
         if (!mine || v.wrecked) return@Card
@@ -110,6 +111,7 @@ fun RoadVehicleCard(view: WorldView, roster: Roster, v: RoadVehicleView, year: I
             .map { SharedOrderChoice(it.id, roadVehicleName(it), it.model, it.orders) }
         SharedOrdersControls(view, roster, v.id, group, v.gap, others, addingStops, v.orders.size >= Order.ORDERS_MOST, onAddStops, ::order, serviceTile(Command.CopyVehicle.ROAD, v.id, v.serviceId, send), { ServiceLine(view, v.serviceId, v.late) }) {
             OrdersList(view, v.id, v.orders, v.order, OrderFlags.ROAD, Glyph.RoadStop) { order(Command.TrainOrder.ORDERS, it) }
+            RangeWarning(v.energy)
         }
         Box(Modifier.height(KitSpace.Tight))
         var replacing by remember(v.id) { mutableStateOf(false) }

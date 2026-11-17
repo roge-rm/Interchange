@@ -1596,7 +1596,7 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
                     if (n.kind == News.SNOWBOUND || n.kind == News.TRAIN_OLD || n.kind == News.TRAIN_STUCK) selected = Selection.Train(n.about)
                     if (n.kind == News.SLID) selected = Selection.RoadVehicle(n.about)
                     if (n.kind == News.DIVERTED) selected = Selection.Aircraft(n.about)
-                    if (n.kind == News.RENEW_FAILED || n.kind == News.UPGRADE_FAILED) {
+                    if (n.kind == News.RENEW_FAILED || n.kind == News.UPGRADE_FAILED || n.kind == News.RAN_FLAT) {
                         val id = n.about and ((1 shl Autorenew.KIND_SHIFT) - 1)
                         selected = when (n.about shr Autorenew.KIND_SHIFT) {
                             Autorenew.TRAIN -> Selection.Train(id)
@@ -1736,7 +1736,7 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
             // Measured after the tools below it, a card gets the height they leave.
             val cardSize = trayWidth.weight(1f, fill = false)
             val wv = worldView.value
-            CompositionLocalProvider(LocalSheets provides sheets, LocalBuyListHeight provides listHeight, LocalPrices provides wv?.prices, LocalNetwork provides networkView.value) {
+            CompositionLocalProvider(LocalSheets provides sheets, LocalBuyListHeight provides listHeight, LocalPrices provides wv?.prices, LocalEnergy provides (wv?.energy == true), LocalNetwork provides networkView.value) {
             when (val sel = selected) {
                 is Selection.Tile -> InspectCard(world, sel.x, sel.y, onTown, { selected = null }, cardSize)
                 Selection.Weather -> wv?.weather?.let { w ->
@@ -2264,7 +2264,7 @@ internal fun newsText(world: World, n: News): String {
         val name = craft?.name?.takeIf { it.isNotEmpty() } ?: stringResource(Res.string.aircraft_n, craft?.number?.takeIf { it > 0 } ?: n.about + 1)
         return stringResource(Res.string.news_diverted, name)
     }
-    if (n.kind == News.RENEW_FAILED || n.kind == News.UPGRADE_FAILED) {
+    if (n.kind == News.RENEW_FAILED || n.kind == News.UPGRADE_FAILED || n.kind == News.RAN_FLAT) {
         val id = n.about and ((1 shl Autorenew.KIND_SHIFT) - 1)
         val v: Carrier = when (n.about shr Autorenew.KIND_SHIFT) {
             Autorenew.TRAIN -> world.trains.getOrNull(id)
@@ -2282,6 +2282,7 @@ internal fun newsText(world: World, n: News): String {
         // The reason kept is the one the news was about till it changes.
         return when {
             n.kind == News.RENEW_FAILED -> stringResource(Res.string.news_renew_failed, name)
+            n.kind == News.RAN_FLAT -> stringResource(Res.string.news_ran_flat, name)
             v.upgradeWhy > UpgradeWhy.OK -> stringResource(Res.string.news_upgrade_failed, name, upgradeWhyText(v.upgradeWhy))
             else -> stringResource(Res.string.news_upgrade_failed_was, name)
         }
