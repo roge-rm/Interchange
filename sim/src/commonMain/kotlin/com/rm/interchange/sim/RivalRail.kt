@@ -417,9 +417,10 @@ private const val JANUARY = 15
 /**
  * The trains that could run for [cargo], about [load] of it at a time and no longer than [platforms]: the wagon of the
  * day holding most for its length behind each engine strong enough to pull them. Steam, diesel or dual-mode on its diesel, as the line has no wires.
- * [loose] takes as many wagons as each engine can pull at a third the power, for the scripted test player.
+ * [loose] takes as many wagons as each engine can pull at a third the power, for the scripted test player. Battery
+ * engines only when [tiles] between the ends fits their range, by [rivalFits].
  */
-private fun World.railTrains(cargo: Int, load: Int, platforms: Int, loose: Boolean = false): List<RailTrain> {
+private fun World.railTrains(cargo: Int, load: Int, platforms: Int, loose: Boolean = false, tiles: Int = -1): List<RailTrain> {
     val year = Calendar.year(startYear, day)
     val wagon = roster.available(year, false).filter { cargo in it.cargoes && it.capacity > 0 && it.plow == Plows.NONE }
         .maxWithOrNull(compareBy<Engine> { it.capacity * 16 / it.length }.thenBy { -it.id }) ?: return emptyList()
@@ -427,7 +428,7 @@ private fun World.railTrains(cargo: Int, load: Int, platforms: Int, loose: Boole
     fun fits(e: Engine) = platforms * 16 - e.length - (roster.getOrNull(e.tender)?.length ?: 0) - (plow?.length ?: 0)
     val out = ArrayList<RailTrain>()
     for (e in roster.available(year, true)) {
-        if (e.traction == Traction.ELECTRIC || fits(e) < wagon.length) continue
+        if (e.traction == Traction.ELECTRIC || fits(e) < wagon.length || !rivalFits(e, tiles)) continue
         var n = ((load + wagon.capacity - 1) / wagon.capacity).coerceIn(1, fits(e) / wagon.length)
         if (loose) {
             // Loaded weight in tonnes against power, a horsepower a tonne.
@@ -723,7 +724,7 @@ private fun World.pairPlan(c: Company, p: RailPick, a: Terminus, b: Terminus, cl
     // Loose, a pair of termini where one has nobody in reach isn't built only to come up again.
     if (loose && (passengers || p.cargo == Cargo.MAIL) && minOf(catchPeople(a), catchPeople(b)) == 0) return null
     // Every length the platforms hold, the best picked below.
-    val trains = railTrains(p.cargo, LOOSE_LOAD, minOf(a.n, b.n), loose)
+    val trains = railTrains(p.cargo, LOOSE_LOAD, minOf(a.n, b.n), loose, apart)
     if (trains.isEmpty()) return null
     return PairPlan(pa, pb, trains)
 }
@@ -1091,7 +1092,7 @@ internal fun World.addTrain(c: Company, route: RivalRoute): Boolean {
     val w = roster[cargoWagon(first)]
     val n = first.formation.count { it.model == w.id }
     val train = if (year >= e.from && year < e.until && year >= w.from && year < w.until) withPlow(e, w, n, route.cargo, minOf(a.tiles.size, b.tiles.size))
-    else railTrains(route.cargo, n * w.capacity, minOf(a.tiles.size, b.tiles.size)).maxByOrNull { it.wagon.capacity * it.wagons * it.engine.speed(false) } ?: return false
+    else railTrains(route.cargo, n * w.capacity, minOf(a.tiles.size, b.tiles.size), tiles = stationsApart(a, b)).maxByOrNull { it.wagon.capacity * it.wagons * it.engine.speed(false) } ?: return false
     val before = trains.size
     buyTrain(c, route, train)
     return trains.size > before

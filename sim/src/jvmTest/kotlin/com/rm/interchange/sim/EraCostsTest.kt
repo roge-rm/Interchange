@@ -26,7 +26,7 @@ class EraCostsTest {
         val g = NewGame(128, 128, 6, 1930, Region.MIXED, towns = 8, industries = 6, rivals = 2, rivalLevel = RivalLevel.HARD)
         val old = Save.read(Save.write(World(g), version = 70))
         assertFalse(old.settings.eraCosts)
-        val off = Save.read(Save.write(World(g.copy(eraCosts = false))))
+        val off = Save.read(Save.write(World(g.copy(eraCosts = false, energy = false))))
         assertEquals(off.checksum(), old.checksum())
         for (mix in listOf(Mix.TRACK, Mix.PLATFORM, Mix.SPANS[Spans.TUNNEL], Mix.LABOUR)) assertEquals(old.price(9_000), old.build(9_000, mix, old.index(5, 5), true))
         val diesel = engine(old, VehicleKind.ENGINE, Traction.DIESEL)

@@ -63,6 +63,8 @@ data class NewGame(
     val handling: Boolean = true,
     /** Building, upkeep and running costs follow era price tables, fuel prices, the climate and the season, by [EraCosts]. */
     val eraCosts: Boolean = true,
+    /** Battery and hydrogen vehicles run on a charge or a tank for their range, and stations can have chargers, by [Energy]. */
+    val energy: Boolean = true,
 ) {
     companion object {
         val DAY_LENGTHS = intArrayOf(1, 2, 4, 6, 10, 16)

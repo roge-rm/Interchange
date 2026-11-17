@@ -110,6 +110,8 @@ class Aircraft(
     override var renewOff = false
     override var upgradeWhy = UpgradeWhy.NONE
     override var upgradeTold = false
+    override var charge = Int.MAX_VALUE
+    override var chargeTile = -1
     val info get() = roster[model]
     var inDepot = true
     var running = false

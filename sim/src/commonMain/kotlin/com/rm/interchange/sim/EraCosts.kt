@@ -30,23 +30,27 @@ object EraCosts {
     const val ELECTRIC = 2
     const val AVIATION = 3
     const val BUNKER = 4
-    const val FUELS = 5
-    val FUEL_KEYS = listOf("coal", "diesel", "electric", "aviation", "bunker")
+    /** Only with [NewGame.energy]. */
+    const val HYDROGEN = 5
+    const val FUELS = 6
+    val FUEL_KEYS = listOf("coal", "diesel", "electric", "aviation", "bunker", "hydrogen")
 
     /** Fuel prices by year, per mille, between the years here; the shock years jump from the year before. */
-    val FUEL_YEARS = intArrayOf(1836, 1870, 1900, 1915, 1920, 1930, 1950, 1960, 1972, 1973, 1974, 1978, 1979, 1980, 1985, 1986, 1999, 2000, 2007, 2008, 2009, 2014, 2016, 2050)
+    val FUEL_YEARS = intArrayOf(1836, 1870, 1900, 1915, 1920, 1930, 1950, 1960, 1972, 1973, 1974, 1978, 1979, 1980, 1985, 1986, 1999, 2000, 2007, 2008, 2009, 2014, 2016, 2050, 2070)
     val FUEL_TABLE = arrayOf(
-        intArrayOf(1_100, 1_000, 900, 1_000, 1_300, 1_000, 1_000, 1_050, 1_050, 1_100, 1_200, 1_200, 1_250, 1_300, 1_200, 1_100, 1_000, 1_000, 1_100, 1_300, 1_100, 1_100, 1_000, 1_100),
-        intArrayOf(1_000, 1_000, 1_000, 1_000, 1_000, 800, 700, 650, 650, 1_300, 1_450, 1_350, 1_700, 1_950, 1_500, 1_000, 900, 1_050, 1_450, 1_800, 1_300, 1_400, 1_000, 1_300),
-        intArrayOf(1_400, 1_400, 1_300, 1_200, 1_150, 1_050, 800, 600, 550, 560, 580, 600, 620, 640, 600, 580, 550, 550, 580, 600, 600, 620, 620, 650),
-        intArrayOf(1_050, 1_050, 1_050, 1_050, 1_050, 850, 750, 700, 700, 1_350, 1_500, 1_400, 1_750, 2_000, 1_550, 1_050, 950, 1_100, 1_500, 1_850, 1_350, 1_450, 1_050, 1_350),
-        intArrayOf(1_100, 1_000, 900, 1_000, 1_300, 1_000, 850, 750, 700, 1_250, 1_400, 1_300, 1_650, 1_900, 1_450, 1_000, 900, 1_050, 1_450, 1_750, 1_250, 1_350, 1_000, 1_250),
+        intArrayOf(1_100, 1_000, 900, 1_000, 1_300, 1_000, 1_000, 1_050, 1_050, 1_100, 1_200, 1_200, 1_250, 1_300, 1_200, 1_100, 1_000, 1_000, 1_100, 1_300, 1_100, 1_100, 1_000, 1_100, 1_100),
+        intArrayOf(1_000, 1_000, 1_000, 1_000, 1_000, 800, 700, 650, 650, 1_300, 1_450, 1_350, 1_700, 1_950, 1_500, 1_000, 900, 1_050, 1_450, 1_800, 1_300, 1_400, 1_000, 1_300, 1_300),
+        intArrayOf(1_400, 1_400, 1_300, 1_200, 1_150, 1_050, 800, 600, 550, 560, 580, 600, 620, 640, 600, 580, 550, 550, 580, 600, 600, 620, 620, 650, 650),
+        intArrayOf(1_050, 1_050, 1_050, 1_050, 1_050, 850, 750, 700, 700, 1_350, 1_500, 1_400, 1_750, 2_000, 1_550, 1_050, 950, 1_100, 1_500, 1_850, 1_350, 1_450, 1_050, 1_350, 1_350),
+        intArrayOf(1_100, 1_000, 900, 1_000, 1_300, 1_000, 850, 750, 700, 1_250, 1_400, 1_300, 1_650, 1_900, 1_450, 1_000, 900, 1_050, 1_450, 1_750, 1_250, 1_350, 1_000, 1_250, 1_250),
+        // Hydrogen: about three times diesel for the same work in 2025, as dear by 2050, 0.8 times by 2070.
+        intArrayOf(4_000, 4_000, 4_000, 4_000, 4_000, 4_000, 4_000, 4_000, 4_000, 4_000, 4_000, 4_000, 4_000, 4_000, 4_000, 4_000, 4_000, 4_000, 4_000, 4_000, 4_000, 4_000, 3_950, 1_300, 1_040),
     )
     /** The years a fuel shock makes the news, as [News.FUEL_SHOCK] with its place here. */
     val SHOCKS = intArrayOf(1973, 1979, 2008)
 
     /** The share of each fuel's model's running cost that's fuel, per mille; the rest is fixed. */
-    val FUEL_SHARE = intArrayOf(500, 400, 500, 500, 450)
+    val FUEL_SHARE = intArrayOf(500, 400, 500, 500, 450, 450)
 
     /** Labour on frozen ground, at least [WINTER_FROST] cm of frost, costs this much more, per mille of its share. */
     const val WINTER_EXTRA = 500
@@ -77,19 +81,27 @@ object EraCosts {
     /** Fuel [fuel]'s price in [year], per mille. */
     fun fuel(fuel: Int, year: Int): Int = between(FUEL_YEARS, FUEL_TABLE[fuel], year)
 
-    /** The fuel model [e] burns, or -1 for none (wagons, horses): steam engines and their tenders coal, motor road vehicles diesel. */
-    fun fuelOf(e: Engine): Int = when (e.kind) {
-        VehicleKind.AIRCRAFT -> AVIATION
-        VehicleKind.SHIP -> BUNKER
-        VehicleKind.TENDER -> COAL
-        VehicleKind.ENGINE -> when (e.traction) { Traction.STEAM -> COAL; Traction.ELECTRIC, Traction.DUAL -> ELECTRIC; Traction.HORSE -> -1; else -> DIESEL }
-        VehicleKind.ROAD -> when (e.traction) { Traction.HORSE -> -1; Traction.ELECTRIC -> ELECTRIC; else -> DIESEL }
-        else -> -1
+    /**
+     * The fuel model [e] burns, or -1 for none (wagons, horses): steam engines and their tenders coal, motor road
+     * vehicles diesel. With [energy] battery ones take the electric price and hydrogen ones hydrogen; without it both
+     * burn what a diesel of their kind would.
+     */
+    fun fuelOf(e: Engine, energy: Boolean = false): Int {
+        if (energy && e.traction == Traction.BATTERY) return ELECTRIC
+        if (energy && e.traction == Traction.HYDROGEN) return HYDROGEN
+        return when (e.kind) {
+            VehicleKind.AIRCRAFT -> AVIATION
+            VehicleKind.SHIP -> BUNKER
+            VehicleKind.TENDER -> COAL
+            VehicleKind.ENGINE -> when (e.traction) { Traction.STEAM -> COAL; Traction.ELECTRIC, Traction.DUAL -> ELECTRIC; Traction.HORSE -> -1; else -> DIESEL }
+            VehicleKind.ROAD -> when (e.traction) { Traction.HORSE -> -1; Traction.ELECTRIC -> ELECTRIC; else -> DIESEL }
+            else -> -1
+        }
     }
 
     /** Model [e]'s yearly running cost before inflation in [year], split into the fixed part and fuel, from [fuels] as [fuel] gives them. */
-    fun running(e: Engine, fuels: IntArray): LongArray {
-        val f = fuelOf(e)
+    fun running(e: Engine, fuels: IntArray, energy: Boolean = false): LongArray {
+        val f = fuelOf(e, energy)
         if (f < 0) return longArrayOf(e.running, 0)
         val share = e.running * FUEL_SHARE[f] / 1_000
         return longArrayOf(e.running - share, share * fuels[f] / 1_000)
@@ -218,7 +230,7 @@ fun World.costMark(i: Int): Int {
 fun World.running(e: Engine): Long {
     if (!settings.eraCosts) return price(e.running)
     val year = yearNow
-    val f = EraCosts.fuelOf(e)
+    val f = EraCosts.fuelOf(e, settings.energy)
     if (f < 0) return price(e.running)
     val p = price(e.running)
     val share = EraCosts.FUEL_SHARE[f].toLong()
@@ -237,7 +249,8 @@ internal fun World.fuelShockNews() {
 }
 
 /**
- * Prices for the screen: this year's [indices] and [fuels] per mille, their history a point a year from the start
+ * Prices for the screen: this year's [indices] and [fuels] per mille, the five before hydrogen, with hydrogen's
+ * price and history in [hydrogen] and [hydrogenHistory] with energy on (null off), their history a point a year from the start
  * ([years] in order, fewer on long games but always each shock year and the year before it; [indexHistory] by index, [fuelHistory] by fuel), the climate's track and road upkeep per mille, and
  * [scale] for working out running costs with [running].
  */
@@ -251,9 +264,13 @@ class PricesView(
     val trackUpkeep: Int,
     val roadUpkeep: Int,
     val scale: Long,
+    val hydrogen: Int = 0,
+    val hydrogenHistory: IntArray? = null,
 ) {
+    private val all = fuels + hydrogen
+
     /** Model [e]'s running cost a year now after inflation, the fixed part and the fuel. */
-    fun running(e: Engine): LongArray = EraCosts.running(e, fuels).let { (a, b) -> longArrayOf(a * scale shr 16, b * scale shr 16) }
+    fun running(e: Engine): LongArray = EraCosts.running(e, all, hydrogenHistory != null).let { (a, b) -> longArrayOf(a * scale shr 16, b * scale shr 16) }
 }
 
 /** The most points a year [PricesView] keeps; longer games skip years evenly. */
@@ -271,10 +288,12 @@ internal fun World.pricesView(): PricesView? {
     val shocks = EraCosts.SHOCKS.flatMap { listOf(it - 1, it) }.filter { it in first..year }
     val years = (IntArray(span / step + 1) { first + it * step }.toList() + year + shocks).distinct().sorted().toIntArray()
     val view = PricesView(
-        year, IntArray(EraCosts.INDICES) { EraCosts.index(it, year) }, IntArray(EraCosts.FUELS) { EraCosts.fuel(it, year) }, years,
+        year, IntArray(EraCosts.INDICES) { EraCosts.index(it, year) }, IntArray(EraCosts.HYDROGEN) { EraCosts.fuel(it, year) }, years,
         Array(EraCosts.INDICES) { k -> IntArray(years.size) { EraCosts.index(k, years[it]) } },
-        Array(EraCosts.FUELS) { f -> IntArray(years.size) { EraCosts.fuel(f, years[it]) } },
+        Array(EraCosts.HYDROGEN) { f -> IntArray(years.size) { EraCosts.fuel(f, years[it]) } },
         trackUpkeepFactor(), roadUpkeepFactor(), costScale,
+        EraCosts.fuel(EraCosts.HYDROGEN, year),
+        if (settings.energy) IntArray(years.size) { EraCosts.fuel(EraCosts.HYDROGEN, years[it]) } else null,
     )
     pricesViewCache = day to view
     return view

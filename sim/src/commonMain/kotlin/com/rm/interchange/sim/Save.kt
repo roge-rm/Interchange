@@ -16,7 +16,7 @@ package com.rm.interchange.sim
  */
 object Save {
     private val MAGIC = "ICHG".encodeToByteArray()
-    const val VERSION = 71
+    const val VERSION = 72
 
     /** A vehicle's [built] day as saved by [version]: work days from 36, calendar days before. */
     private fun World.builtOut(built: Int, version: Int) = if (version >= 36) built else built / settings.dayLength
@@ -37,6 +37,7 @@ object Save {
             if (version >= 69) { w.bool(g.stockpiles); w.bool(g.contracts) }
             if (version >= 70) w.bool(g.handling)
             if (version >= 71) w.bool(g.eraCosts)
+            if (version >= 72) w.bool(g.energy)
             w.uvar(roster.packs.size.toLong())
             for (p in roster.packs) { w.string(p.id); w.int(p.version); w.long(p.hash) }
             w.uvar(roster.engines.size.toLong())
@@ -366,6 +367,9 @@ object Save {
                     w.uvar(keys.size.toLong())
                     for (k in keys) { w.long(k); for (x in flows.getValue(k)) w.uvar(x.coerceAtLeast(0)) }
                 }
+            }
+            if (version >= 72) for (list in listOf<List<Carrier?>>(trains, roadVehicles, ships, aircraft)) for (v in list) if (v != null) {
+                w.int(v.charge); w.int(v.chargeTile)
             }
         }
         val body = Squeeze.pack(w.toByteArray())
@@ -915,7 +919,7 @@ object Save {
             // Before 70 no equipment or flows.
             if (version >= 70) {
                 // Equipment only with handling, and never at a waypoint.
-                for (st in stations) if (st != null) st.equipment = r.int().let { if (settings.handling && !st.waypoint) it and ((1 shl Equipment.COUNT) - 1) else 0 }
+                for (st in stations) if (st != null) st.equipment = r.int().let { if (st.waypoint) 0 else it and equipmentMask(settings) }
                 for (c in companies) c.handlingOwed = r.uvar().let { if (settings.handling) it.coerceIn(0, 99) else 0 }
                 for (flows in listOf(flowsMonth, flowsLast)) {
                     // Each takes five bytes at the least.
@@ -923,6 +927,10 @@ object Save {
                     if (n !in 0..r.left / 5L) throw BadData("too many flows")
                     repeat(n.toInt()) { flows[r.long()] = LongArray(FLOW_FIELDS) { r.uvar() } }
                 }
+            }
+            // Before 72 no charge kept; with energy off it's kept but plays no part.
+            if (version >= 72) for (list in listOf<List<Carrier?>>(trains, roadVehicles, ships, aircraft)) for (v in list) if (v != null) {
+                v.charge = r.int().coerceAtLeast(0); v.chargeTile = r.int().coerceIn(-1, width * height - 1)
             }
             // A conditional order with a test there isn't or a jump past the end is left out, as are orders past
             // the most a vehicle takes, as a command would.
@@ -993,6 +1001,8 @@ object Save {
             handling = version >= 70 && r.bool(),
             // And with costs as they were.
             eraCosts = version >= 71 && r.bool(),
+            // And without energy.
+            energy = version >= 72 && r.bool(),
         )
         if (settings.width !in 16..4096 || settings.height !in 16..4096) throw BadData("map size out of range")
         return settings

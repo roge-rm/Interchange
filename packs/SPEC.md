@@ -67,7 +67,7 @@ Each vehicle:
 | speed | engines, road, ships, aircraft | Top speed in km/h. |
 | power | engines, road, ships, aircraft | Horsepower. |
 | tractive | no | Engines' starting tractive effort in kN, what the wheels pull before they slip. A quarter of the engine's weight if left out (its weight in tonnes times 2.45). |
-| traction | no | Engines and road vehicles: `steam` (the default), `diesel`, `electric`, `dual` or `horse`. Electric engines only run under wires. Dual-mode engines run anywhere, on their speed and power under wires and on their diesel speed and power off them. Horse-drawn road vehicles need no winter tires and go on sleigh runners in deep snow, so it doesn't hold them up. |
+| traction | no | Engines and road vehicles: `steam` (the default), `diesel`, `electric`, `dual` or `horse`. Electric engines only run under wires. Dual-mode engines run anywhere, on their speed and power under wires and on their diesel speed and power off them. Horse-drawn road vehicles need no winter tires and go on sleigh runners in deep snow, so it doesn't hold them up. `battery` and `hydrogen` (ships and aircraft too) run on a charge or a tank for their `range` in a game with energy on, and as diesel with it off; road vehicles with `electric` that aren't streetcars run as battery. |
 | diesel_speed, diesel_power | no | Dual-mode engines: top speed in km/h and horsepower off the wires. Their speed and power if left out. |
 | life | no | Years it runs well before it wears out and breaks down more. 35 if left out. |
 | reliability | no | How reliable it is new, in percent. 85 if left out. |
@@ -76,7 +76,7 @@ Each vehicle:
 | icebreaker | no | Ships: the ice it breaks through, in cm, clearing a channel as it goes. Other ships stop at 15 cm. |
 | hovercraft | no | Ships: `true` rides over ice of any thickness. |
 | runway | aircraft | The least it lands at: `strip` (a gravel strip), `regional`, `city` or `international` airport, or `heli` for a helicopter, which lands at any airport or a heliport. |
-| range | no | Aircraft: how far it flies without stopping, in km. Stops beyond it are skipped. |
+| range | no | Aircraft: how far it flies without stopping, in km. Stops beyond it are skipped. Battery and hydrogen engines, road vehicles and ships: tiles on a full charge or tank, 100 for battery and 400 for hydrogen if not given. |
 | floats | no | Aircraft: `true` for a bush plane, which goes on floats in summer and skis in winter, and lands at seaplane bases. |
 | weight | yes | Tonnes. |
 | cost | yes | Dollars to buy. |

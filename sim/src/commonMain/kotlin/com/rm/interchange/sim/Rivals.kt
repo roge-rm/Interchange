@@ -782,7 +782,7 @@ internal fun World.growRoute(c: Company, route: RivalRoute) {
     val lastYear = on.sumOf { it.profitLastYear }
     val thisYear = on.sumOf { it.profitThisYear }
     if (lastYear <= 0 && (workedThisYear() < FEW_MONTHS || thisYear <= 0)) return
-    val model = bestModel(route.cargo) ?: return
+    val model = bestModel(route.cargo, stationsApart(a, b)) ?: return
     val waiting = maxOf(a.waiting(route.cargo), b.waiting(route.cargo))
     if (waiting < (model.capacity * 3 / 2).coerceAtLeast(10)) return
     if (!afford(c, price(model.cost) * 2)) return
@@ -814,10 +814,13 @@ internal fun World.afford(c: Company, cost: Long): Boolean {
 /** Whether [c] has [cost] in hand without borrowing, and a loan step over, for growing what it has. */
 internal fun World.inHand(c: Company, cost: Long): Boolean = c.money >= cost + price(Prices.LOAN_STEP)
 
-/** The road vehicle for [cargo] on sale now that carries the most the fastest, trams and plows left out. */
-internal fun World.bestModel(cargo: Int): Engine? {
+/**
+ * The road vehicle for [cargo] on sale now that carries the most the fastest, trams and plows left out, and battery
+ * ones unless [tiles] between the ends fits their range.
+ */
+internal fun World.bestModel(cargo: Int, tiles: Int = -1): Engine? {
     val year = Calendar.year(startYear, day)
-    return roster.availableRoad(year).filter { !it.tram && it.plow == Plows.NONE && cargo in it.cargoes && it.capacity > 0 }
+    return roster.availableRoad(year).filter { !it.tram && it.plow == Plows.NONE && cargo in it.cargoes && it.capacity > 0 && rivalFits(it, tiles) }
         .maxWithOrNull(compareBy<Engine> { it.capacity.toLong() * it.speed }.thenBy { -it.id })
 }
 

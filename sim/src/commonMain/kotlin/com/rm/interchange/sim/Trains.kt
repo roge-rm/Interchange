@@ -224,6 +224,8 @@ class Train(
     override var renewOff = false
     override var upgradeWhy = UpgradeWhy.NONE
     override var upgradeTold = false
+    override var charge = Int.MAX_VALUE
+    override var chargeTile = -1
 
     // The tiles and blocks it's on, as last counted.
     internal var onTiles = IntArray(0)
@@ -726,7 +728,7 @@ private fun World.drive(t: Train) {
             val o = t.orders.getOrNull(t.order % t.orders.size.coerceAtLeast(1)) ?: 0
             val s = stations.getOrNull(Order.station(o))
             // One held off the depot, by no way there or a jam called off, isn't sent again till its noDepotUntil.
-            val due = !t.toDepot && tick >= t.noDepotUntil && hasDepot(t.owner, Depots.RAIL) && (due(t.service, t.serviced) || renewNow(t))
+            val due = !t.toDepot && tick >= t.noDepotUntil && hasDepot(t.owner, Depots.RAIL) && (due(t.service, t.serviced) || renewNow(t) || lowCharge(t))
             fun loaded() = when {
                 Order.has(o, Order.FULL_LOAD) -> t.full()
                 Order.has(o, Order.FULL_LOAD_ANY) -> t.anyFull()
@@ -825,7 +827,7 @@ private fun World.drive(t: Train) {
     // A dual-mode engine runs on its electric power and speed with wires over its nose, on its diesel without, braking
     // down to the diesel's top speed when it leaves them.
     val wire = wired(t.steps.last())
-    val top = t.maxSpeed(wire).let { if (t.speed > it) maxOf(it, t.speed - brake) else it }
+    val top = flatCap(t, t.maxSpeed(wire)).let { if (t.speed > it) maxOf(it, t.speed - brake) else it }
     // Pulling: faster or slower by what the engine has over what holds the train back, never below a crawl.
     val pulled = maxOf(t.speed + acceleration(t, grip, wire), minOf(CRAWL, maxOf(t.speed, 1) + 4))
     val worn = if (stepLevel(t.steps.last()) == 0) trackLimit(nose) else -1

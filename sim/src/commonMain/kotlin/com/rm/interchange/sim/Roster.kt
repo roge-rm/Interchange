@@ -50,7 +50,9 @@ class Engine(
     /** The ice a ship breaks through, in cm, 0 for none; a hovercraft rides over it. */
     val icebreaker: Int = 0,
     val hovercraft: Boolean = false,
-    /** How far an aircraft flies, in km; the least airport it lands at, a [Runways] kind; a bush plane that takes floats and skis. */
+    /**
+     * How far an aircraft flies, in km, or a battery or hydrogen engine, road vehicle or ship runs on a full charge or
+     * tank, in tiles, 0 for the default; the least airport an aircraft lands at, a [Runways] kind; a bush plane that takes floats and skis. */
     val range: Int = 0,
     val runway: Int = Runways.REGIONAL,
     val floats: Boolean = false,
@@ -95,7 +97,10 @@ object Traction {
     const val ELECTRIC = 2
     const val HORSE = 3
     const val DUAL = 4
-    val NAMES = listOf("steam", "diesel", "electric", "horse", "dual")
+    /** With [NewGame.energy], run on a battery or a hydrogen tank for their [Engine.range]; without it, as diesel. */
+    const val BATTERY = 5
+    const val HYDROGEN = 6
+    val NAMES = listOf("steam", "diesel", "electric", "horse", "dual", "battery", "hydrogen")
 }
 
 /**

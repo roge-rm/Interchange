@@ -85,9 +85,9 @@ private fun World.dockSites(c: Company, ind: Industry): List<Int> {
 private fun World.dockSites(c: Company, t: Town): List<Int> =
     dockSites(c, t.x - SHIP_TOWN_REACH, t.y - SHIP_TOWN_REACH, t.x + SHIP_TOWN_REACH, t.y + SHIP_TOWN_REACH, t.x, t.y)
 
-/** The ships on sale for [cargo]. */
-private fun World.shipsFor(cargo: Int): List<Engine> =
-    roster.availableOf(VehicleKind.SHIP, Calendar.year(startYear, day)).filter { cargo in it.cargoes && it.capacity > 0 }
+/** The ships on sale for [cargo], battery ones only when [tiles] between the ends fits their range. */
+private fun World.shipsFor(cargo: Int, tiles: Int = -1): List<Engine> =
+    roster.availableOf(VehicleKind.SHIP, Calendar.year(startYear, day)).filter { cargo in it.cargoes && it.capacity > 0 && rivalFits(it, tiles) }
 
 /**
  * Whether a freight ship [e] fills from [load] a month within [SHIP_FILL_MONTHS]; one that takes longer earns in some
@@ -100,8 +100,8 @@ private fun cycle(e: Engine, town: Boolean, load: Int, tiles: Int): Int =
     2 * (tiles * KMH_PER_TILE_A_DAY / e.speed.coerceAtLeast(1) + SHIP_ENDS) + if (town) 0 else e.capacity * 30 / load.coerceAtLeast(1)
 
 /** The ship on sale for [cargo] that carries the most the fastest, or null. */
-internal fun World.bestShip(cargo: Int): Engine? =
-    shipsFor(cargo).maxWithOrNull(compareBy<Engine> { it.capacity.toLong() * it.speed }.thenBy { -it.id })
+internal fun World.bestShip(cargo: Int, tiles: Int = -1): Engine? =
+    shipsFor(cargo, tiles).maxWithOrNull(compareBy<Engine> { it.capacity.toLong() * it.speed }.thenBy { -it.id })
 
 /**
  * The shipping lines [r] would try, best first, as a job; null if there are none. Freight goes from an industry to the
@@ -282,7 +282,7 @@ private fun World.buildShipLine(r: Rival, c: Company, p: ShipPick, k: Int, job: 
     // The ship that pays best, if any does.
     var model: Engine? = null
     var margin = 0L
-    for (e in shipsFor(p.cargo)) {
+    for (e in shipsFor(p.cargo, dist)) {
         if (!p.town && !fills(e, load) || cycle(e, p.town, load, job.depth) > SHIP_CYCLE) continue
         val m = craftMargin(e, p.cargo, load, job.depth, dist, built, 2L * Upkeep.DOCK, job.payback, MAX_SHIPS, SHIP_ENDS)
         if (m >= margin) { model = e; margin = m }
@@ -368,7 +368,7 @@ internal fun World.growShips(c: Company, route: RivalRoute) {
     val on = ships.filter { it != null && it.owner == c.id && onRoute(it, route) }.map { it!! }
     if (on.size >= MAX_SHIPS || on.any { it.toDepot && !it.servicing || ranLastYear(it.built) && it.profitLastYear < 0 }) return
     if (on.sumOf { it.profitLastYear } <= 0 && (workedThisYear() < FEW_MONTHS || on.sumOf { it.profitThisYear } <= 0)) return
-    val model = on.firstOrNull()?.info?.takeIf { it.id in shipsFor(route.cargo).map { e -> e.id } } ?: bestShip(route.cargo) ?: return
+    val model = on.firstOrNull()?.info?.takeIf { it.id in shipsFor(route.cargo, stationsApart(a, b)).map { e -> e.id } } ?: bestShip(route.cargo, stationsApart(a, b)) ?: return
     val waiting = if (route.freight) a.waiting(route.cargo) else maxOf(a.waiting(route.cargo), b.waiting(route.cargo))
     if (waiting < model.capacity) return
     if (!afford(c, price(model.cost) * 2)) return

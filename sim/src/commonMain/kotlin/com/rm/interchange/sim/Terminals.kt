@@ -45,18 +45,23 @@ object Equipment {
     const val TANK_FARM = 3
     /** Stores freight that spoils. */
     const val COLD_STORE = 4
+    /** The parts above, with handling on. */
     const val COUNT = 5
+    /** Charges battery vehicles stopped there, with energy on. */
+    const val CHARGER = 5
+    /** Every part, handling's and the charger. */
+    const val PARTS = 6
 
     /** What each costs to build, and its upkeep a month of work, in dollars before inflation. */
-    val COST = longArrayOf(8_000, 6_000, 10_000, 10_000, 12_000)
-    val UPKEEP = longArrayOf(80, 60, 100, 100, 120)
+    val COST = longArrayOf(8_000, 6_000, 10_000, 10_000, 12_000, 15_000)
+    val UPKEEP = longArrayOf(80, 60, 100, 100, 120, 150)
 
     fun has(bits: Int, part: Int) = bits and (1 shl part) != 0
 }
 
-/** Adds or takes away a piece of terminal equipment at one of the company's stations; taking it away pays half back. */
+/** Adds or takes away a piece of terminal equipment or a charger at one of the company's stations; taking it away pays half back. */
 internal fun World.equipStation(company: Company, c: Command.Equip) {
-    if (!settings.handling || c.part !in 0 until Equipment.COUNT) return
+    if (c.part !in 0 until Equipment.PARTS || equipmentMask(settings) and (1 shl c.part) == 0) return
     val s = stations.getOrNull(c.station) ?: return
     if (s.owner != company.id || s.waypoint) return
     val bit = 1 shl c.part
@@ -74,9 +79,9 @@ internal fun World.equipStation(company: Company, c: Command.Equip) {
 
 /** Pays [s]'s owner half back for each piece of its equipment, as taking it away would, and drops it. */
 internal fun World.refundEquipment(s: Station) {
-    if (!settings.handling || s.equipment == 0) return
+    if (s.equipment == 0) return
     val owner = companies.getOrNull(s.owner)?.takeIf { !it.gone }
-    if (owner != null) for (p in 0 until Equipment.COUNT) if (Equipment.has(s.equipment, p)) scrap(owner, Equipment.COST[p])
+    if (owner != null) for (p in 0 until Equipment.PARTS) if (Equipment.has(s.equipment, p)) scrap(owner, Equipment.COST[p])
     s.equipment = 0
 }
 
@@ -85,10 +90,13 @@ internal fun World.dropEquipmentOf(company: Int) {
     for (s in stations) if (s != null && s.owner == company) s.equipment = 0
 }
 
+/** The [Equipment] bits a game with [g] allows: handling's parts with handling on, the charger with energy on. */
+internal fun equipmentMask(g: NewGame) = (if (g.handling) (1 shl Equipment.COUNT) - 1 else 0) or (if (g.energy) 1 shl Equipment.CHARGER else 0)
+
 /** Equipment upkeep a work day for station [s], in tenths of a cent, as [upkeepDay] counts. */
 internal fun stationEquipmentUpkeep(s: Station): Long {
     var n = 0L
-    for (p in 0 until Equipment.COUNT) if (Equipment.has(s.equipment, p)) n += Equipment.UPKEEP[p] * 1_000 / WORK_MONTH
+    for (p in 0 until Equipment.PARTS) if (Equipment.has(s.equipment, p)) n += Equipment.UPKEEP[p] * 1_000 / WORK_MONTH
     return n
 }
 

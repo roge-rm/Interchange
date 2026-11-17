@@ -65,6 +65,8 @@ internal fun World.rebuildTrain(old: Train, cars: List<TrainCar>): Train {
     made.orderLeftAt = old.orderLeftAt
     made.orderReachedAt = old.orderReachedAt
     made.late = old.late
+    made.charge = old.charge
+    made.chargeTile = old.chargeTile
     made.order = old.order
     made.toDepot = old.toDepot
     made.route = old.route
@@ -138,6 +140,8 @@ internal fun World.rebuildRoadVehicle(old: RoadVehicle, e: Engine): RoadVehicle 
     made.orderLeftAt = old.orderLeftAt
     made.orderReachedAt = old.orderReachedAt
     made.late = old.late
+    made.charge = old.charge
+    made.chargeTile = old.chargeTile
     made.inDepot = old.inDepot
     made.running = old.running
     made.waiting = old.waiting
@@ -208,6 +212,8 @@ internal fun World.rebuildShip(old: Ship, e: Engine): Ship {
     made.orderLeftAt = old.orderLeftAt
     made.orderReachedAt = old.orderReachedAt
     made.late = old.late
+    made.charge = old.charge
+    made.chargeTile = old.chargeTile
     made.renewAsked = old.renewAsked
     made.renewFailed = old.renewFailed
     made.renewOff = old.renewOff
@@ -278,6 +284,8 @@ internal fun World.rebuildAircraft(old: Aircraft, e: Engine): Aircraft {
     made.orderLeftAt = old.orderLeftAt
     made.orderReachedAt = old.orderReachedAt
     made.late = old.late
+    made.charge = old.charge
+    made.chargeTile = old.chargeTile
     made.renewAsked = old.renewAsked
     made.renewFailed = old.renewFailed
     made.renewOff = old.renewOff

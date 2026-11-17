@@ -441,6 +441,7 @@ class World(settings: NewGame, val roster: Roster = Roster.BASE, generate: Boole
         moveRoadVehicles()
         moveShips()
         moveAircraft()
+        energyTick()
         upgradeDue()
         // Each work day: vehicles, running costs, passengers and cargo.
         if (tick % Calendar.TICKS_PER_DAY == 0L) {
@@ -618,6 +619,7 @@ class World(settings: NewGame, val roster: Roster = Roster.BASE, generate: Boole
             for (s in stations) if (s != null && s.equipment != 0) { mix(s.id.toLong()); mix(s.equipment.toLong()) }
             for (c in companies) mix(c.handlingOwed)
         }
+        energyChecksum(::mix)
         for (k in roadStops.keys.sorted()) mix(k.toLong() * 31 + roadStops.getValue(k))
         for (k in saltDepots.sorted()) mix(k.toLong() * 7)
         for (v in roadVehicles) if (v != null) { mix(v.depot.toLong()); mix(v.noDepotUntil); mix(v.wreckedFor.toLong()); mix(v.leave.toLong()) }

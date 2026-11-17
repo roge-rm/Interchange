@@ -129,6 +129,8 @@ class TrainView(
     val upgradeTo: Int = -1,
     val upgradeWhy: Int = UpgradeWhy.NONE,
     val replaceWhy: Map<Int, Int> = emptyMap(),
+    /** Its battery or hydrogen tank with energy on, null for none. */
+    val energy: EnergyView? = null,
 )
 
 /** A bus, truck or streetcar as the screen shows it. */
@@ -187,6 +189,8 @@ class RoadVehicleView(
     val upgradeTo: Int = -1,
     val upgradeWhy: Int = UpgradeWhy.NONE,
     val replaceWhy: Map<Int, Int> = emptyMap(),
+    /** Its battery or hydrogen tank with energy on, null for none. */
+    val energy: EnergyView? = null,
 )
 
 /** A ship as the screen shows it. */
@@ -243,6 +247,8 @@ class ShipView(
     val upgradeTo: Int = -1,
     val upgradeWhy: Int = UpgradeWhy.NONE,
     val replaceWhy: Map<Int, Int> = emptyMap(),
+    /** Its battery or hydrogen tank with energy on, null for none. */
+    val energy: EnergyView? = null,
 )
 
 /** An aircraft as the screen shows it. */
@@ -333,6 +339,8 @@ class StationView(
     /** Its handling and last month's flows from it, with handling on only. */
     val handling: HandlingView? = null,
     val flows: List<FlowView> = emptyList(),
+    /** Its charger with energy on, null off or at a waypoint. */
+    val charger: ChargerView? = null,
 )
 
 /**
@@ -561,13 +569,14 @@ fun World.view(company: Int = 0, withReserved: Boolean = false, withNetwork: Boo
             x = tx, y = ty, gap = t.gap, wagonCargo = t.wagonCargo, group = t.group, formation = t.formation.toList(), topSpeed = t.topSpeed, dieselSpeed = t.dieselSpeed,
             curveKmh = t.curveKmh, value = value(t), days = (workDay - t.built).coerceAtLeast(0), nextService = nextService(t.service, t.serviced), renewOff = t.renewOff,
             shed = t.shedIn, serviceId = serviceOf(t)?.key ?: -1, late = t.late,
-            upgradeTo = upgradeTo(t), upgradeWhy = t.upgradeWhy, replaceWhy = replaceWhy(t, company),
+            upgradeTo = upgradeTo(t), upgradeWhy = t.upgradeWhy, replaceWhy = replaceWhy(t, company), energy = energyView(t),
         )
     }
     // Made once, and only if one of the player's stations has a destination to give a reason for.
     val whyGraph by lazy { whyGraph() }
     val flows = if (settings.handling) flowsBy() else emptyMap()
     val equipmentPrices = if (settings.handling) equipmentPrices() else null
+    val chargerPrices = if (settings.energy) chargerPrices() else null
     val stationViews = stations.filterNotNull().map { s ->
         val going = HashMap<Int, IntArray>()
         for (c in 0 until cargoCount) for (p in s.cargo[c]) going.getOrPut(p.dest) { IntArray(Cargo.MAX) }[c] += p.count
@@ -588,6 +597,7 @@ fun World.view(company: Int = 0, withReserved: Boolean = false, withNetwork: Boo
             IntArray(Cargo.MAX) { c -> if (s.boardedLastMonth[c] == 0) -1 else (s.waitedLastMonth[c] / s.boardedLastMonth[c]).toInt() },
             s.boardedLastMonth.copyOf(), s.gaveUpLastMonth.copyOf(), s.service,
             equipmentPrices?.let { handlingView(s, it) }, flows[s.id] ?: emptyList(),
+            chargerPrices?.takeIf { !s.waypoint }?.let { (cost, upkeep) -> ChargerView(Equipment.has(s.equipment, Equipment.CHARGER), cost, upkeep) },
         )
     }
     val signalViews = signals.entries.sortedBy { it.key }.map { (k, s) ->
@@ -624,7 +634,7 @@ fun World.view(company: Int = 0, withReserved: Boolean = false, withNetwork: Boo
                 x = rx, y = ry, shared = v.shared, gap = v.gap, group = v.group,
                 value = roadValue(v), nextService = nextService(v.service, v.serviced), renewOff = v.renewOff,
                 serviceId = serviceOf(v)?.key ?: -1, late = v.late,
-                upgradeTo = upgradeTo(v), upgradeWhy = v.upgradeWhy, replaceWhy = replaceWhy(v, company),
+                upgradeTo = upgradeTo(v), upgradeWhy = v.upgradeWhy, replaceWhy = replaceWhy(v, company), energy = energyView(v),
             )
         },
         ships.filterNotNull().map { v ->
@@ -643,7 +653,7 @@ fun World.view(company: Int = 0, withReserved: Boolean = false, withNetwork: Boo
                 x = sx, y = sy, shared = v.shared, gap = v.gap, group = v.group,
                 value = craftValue(v.price, v.built, v.info.life), nextService = nextService(v.service, v.serviced), renewOff = v.renewOff,
                 serviceId = serviceOf(v)?.key ?: -1, late = v.late,
-                upgradeTo = upgradeTo(v), upgradeWhy = v.upgradeWhy, replaceWhy = replaceWhy(v, company),
+                upgradeTo = upgradeTo(v), upgradeWhy = v.upgradeWhy, replaceWhy = replaceWhy(v, company), energy = energyView(v),
             )
         },
         aircraft.filterNotNull().map { v ->

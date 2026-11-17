@@ -1202,7 +1202,9 @@
       "running": 860,
       "length": 6,
       "carries": "mail",
-      "capacity": 25
+      "capacity": 25,
+      "traction": "battery",
+      "range": 120
     },
     {
       "id": "flatbed_truck",
@@ -1904,7 +1906,9 @@
         "mail"
       ],
       "capacity": 300,
-      "life": 40
+      "life": 40,
+      "traction": "battery",
+      "range": 40
     },
     {
       "id": "fairchild_71",

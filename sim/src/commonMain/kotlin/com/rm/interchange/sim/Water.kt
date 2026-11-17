@@ -50,6 +50,8 @@ class Ship(
     override var renewOff = false
     override var upgradeWhy = UpgradeWhy.NONE
     override var upgradeTold = false
+    override var charge = Int.MAX_VALUE
+    override var chargeTile = -1
     val info get() = roster[model]
     var inDepot = true
     var running = false
@@ -528,7 +530,7 @@ private fun World.sail(v: Ship) {
         // Ships stay in port while a storm blows.
         if (v.waiting == 1 && weather.wind >= STORM_WIND && !v.info.hovercraft) return
         if (--v.waiting == 0) {
-            val due = !v.toDepot && hasDepot(v.owner, Depots.SHIPYARD) && (due(v.service, v.serviced) || renewNow(v))
+            val due = !v.toDepot && hasDepot(v.owner, Depots.SHIPYARD) && (due(v.service, v.serviced) || renewNow(v) || lowCharge(v))
             val o = v.orders.getOrNull(v.order % v.orders.size.coerceAtLeast(1))
             // Orders can change while it sits here. Load and count the call only if this dock is that stop.
             if (o != null && shipTile(v) in berths(Order.station(o))) {
@@ -550,7 +552,7 @@ private fun World.sail(v: Ship) {
     if (v.lockWait > 0) { v.lockWait--; return }
     if (!v.running || v.target == -2) { v.speed = (v.speed - BRAKE).coerceAtLeast(0); return }
     val r = v.route ?: run { v.speed = (v.speed - BRAKE).coerceAtLeast(0); return }
-    val limit = if (v.fogged) v.maxSpeed / 2 else v.maxSpeed
+    val limit = flatCap(v, if (v.fogged) v.maxSpeed / 2 else v.maxSpeed)
     val accel = (v.info.power.toLong() * 40 / (v.info.weight.coerceAtLeast(1) * 10)).toInt().coerceIn(2, 30)
     v.speed = minOf(v.speed + accel, limit)
     var move = v.speed / 16

@@ -80,6 +80,12 @@ interface Carrier {
     /** Why its company's upgrade rules can't upgrade it, an [UpgradeWhy], and told so in the news since that changed. */
     var upgradeWhy: Int
     var upgradeTold: Boolean
+    /**
+     * With energy, a battery or hydrogen vehicle's charge or tank in [Energy.UNIT]s of a tile, more than its range
+     * till first used (so full), and the tile it was last on, -1 for none, to count tiles run.
+     */
+    var charge: Int
+    var chargeTile: Int
 }
 
 /** A step of road: [tile], the edge come in at and the edge leaving by. */
@@ -164,6 +170,8 @@ class RoadVehicle(
     override var renewOff = false
     override var upgradeWhy = UpgradeWhy.NONE
     override var upgradeTold = false
+    override var charge = Int.MAX_VALUE
+    override var chargeTile = -1
     /** Its tires, a [Tires] kind, and whether it changes them at the garage as the seasons turn. */
     var tires = Tires.SUMMER
     var seasonalTires = true
@@ -481,7 +489,7 @@ private fun World.driveRoadVehicle(v: RoadVehicle, on: HashMap<Int, ArrayList<Ro
             val o = v.orders.getOrNull(v.order % v.orders.size.coerceAtLeast(1)) ?: 0
             val s = stations.getOrNull(Order.station(o))
             // One held off its garage, by no way there or a jam called off, isn't sent again till its noDepotUntil.
-            val due = !v.toDepot && tick >= v.noDepotUntil && hasDepot(v.owner, Depots.ROAD) && (due(v.service, v.serviced) || needsTires(v) || renewNow(v))
+            val due = !v.toDepot && tick >= v.noDepotUntil && hasDepot(v.owner, Depots.ROAD) && (due(v.service, v.serviced) || needsTires(v) || renewNow(v) || lowCharge(v))
             fun loaded() = when {
                 Order.has(o, Order.FULL_LOAD) -> roadFull(v)
                 Order.has(o, Order.FULL_LOAD_ANY) -> roadAnyFull(v)
@@ -682,9 +690,9 @@ internal fun World.trainNear(tile: Int): Boolean {
     return false
 }
 
-/** The fastest [v] may go on [tile]: its own top speed, the road's surface, snow and ice for its tires, potholes. */
+/** The fastest [v] may go on [tile]: its own top speed (a quarter run flat), the road's surface, snow and ice for its tires, potholes. */
 internal fun World.roadLimit(v: RoadVehicle, tile: Int): Int {
-    var kmh = minOf(v.info.speed, Surface.SPEED[surfaceAt(tile)])
+    var kmh = minOf(flatCap(v, v.info.speed), Surface.SPEED[surfaceAt(tile)])
     if (mud(tile) > 60 && surfaceAt(tile) <= Surface.GRAVEL) kmh = minOf(kmh, MUD_KMH)
     val snow = weather.snow[tile].toInt() and 255
     // Sand gives grip: a sanded road has no tire cap for ice or packed snow, but keeps it in deep snow.

@@ -112,6 +112,8 @@ class News(val kind: Int, val about: Int, val tick: Long) {
         const val CONTRACT_DONE = 37
         /** A fuel shock with era costs on; [News.about] is its place in [EraCosts.SHOCKS]. */
         const val FUEL_SHOCK = 38
+        /** A battery or hydrogen vehicle run flat, with energy on; [News.about] as for [RENEW_FAILED]. */
+        const val RAN_FLAT = 39
     }
 }
 

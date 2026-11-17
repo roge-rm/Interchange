@@ -40,7 +40,7 @@ class StockpileTest {
         val old = Save.read(Save.write(World(g), version = 68))
         assertFalse(old.settings.stockpiles)
         assertFalse(old.settings.contracts)
-        val off = Save.read(Save.write(World(g.copy(stockpiles = false, contracts = false, handling = false, eraCosts = false))))
+        val off = Save.read(Save.write(World(g.copy(stockpiles = false, contracts = false, handling = false, eraCosts = false, energy = false))))
         assertEquals(off.checksum(), old.checksum())
         while (old.day < 365) { old.step(); off.step() }
         assertEquals(off.checksum(), old.checksum())
