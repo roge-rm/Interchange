@@ -62,7 +62,7 @@ private fun World.passengerSubsidy(): Subsidy? {
 
 /** An industry's cargo to one that takes it a fair way off, that nobody carries yet; null if none come up. */
 private fun World.freightSubsidy(): Subsidy? {
-    val makers = industries.filter { ind -> !ind.closed && roster.industries[ind.kind].produces.any { it > 0 } }
+    val makers = industries.filter { ind -> !ind.closed && ind.closing == 0 && roster.industries[ind.kind].produces.any { it > 0 } }
     if (makers.isEmpty()) return null
     repeat(10) {
         val a = makers[rng.below(makers.size)]
@@ -73,7 +73,7 @@ private fun World.freightSubsidy(): Subsidy? {
         if (industryStations[a.id].orEmpty().any { stations.getOrNull(it)?.let { s -> s.lastCall[c] >= 0 } == true }) return@repeat
         val (ax, ay) = middle(a)
         val takers = industries.filter { b ->
-            !b.closed && b.id != a.id && roster.industries[b.kind].takes(c) && middle(b).let { (bx, by) -> chebyshev(ax, ay, bx, by) in SUBSIDY_MIN..SUBSIDY_MAX }
+            !b.closed && b.closing == 0 && b.id != a.id && roster.industries[b.kind].takes(c) && middle(b).let { (bx, by) -> chebyshev(ax, ay, bx, by) in SUBSIDY_MIN..SUBSIDY_MAX }
         }
         if (takers.isEmpty()) return@repeat
         val b = takers[rng.below(takers.size)]

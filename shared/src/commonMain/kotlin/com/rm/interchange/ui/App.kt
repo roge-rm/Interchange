@@ -699,7 +699,7 @@ private fun Root(settings: Settings) {
         }
     }
 
-    CompositionLocalProvider(LocalCompany provides (runner?.company ?: 0), LocalOpenService provides { openService.value = it }, LocalCargo provides (runner?.game?.world?.let { cargoInPlay(it) } ?: CargoTable.BASE)) { Box(Modifier.fillMaxSize()) {
+    CompositionLocalProvider(LocalCompany provides (runner?.company ?: 0), LocalOpenService provides { openService.value = it }, LocalCargo provides (runner?.game?.world?.let { w -> remember(w.roster, w.cargoCount) { cargoInPlay(w) } } ?: CargoTable.BASE)) { Box(Modifier.fillMaxSize()) {
         when (screen) {
             Screen.Title -> TitleScreen(
                 continueLine = saves.firstOrNull()?.let { date(it.day, it.startYear) + " · " + saveLine(it) },
@@ -1597,7 +1597,7 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
         }
         AnimatedVisibility(shown != null, enter = fadeIn(), exit = fadeOut(), modifier = Modifier.align(Alignment.TopCenter)) {
             val n = shown ?: seen ?: return@AnimatedVisibility
-            val ind = if (n.kind >= News.PROSPECTING_FAILED) null else world.industries.getOrNull(n.about)
+            val ind = if (n.kind >= News.PROSPECTING_FAILED && n.kind != News.INDUSTRY_CLOSING) null else world.industries.getOrNull(n.about)
             val text = newsText(world, n)
             Box(
                 Modifier

@@ -253,7 +253,7 @@ private fun World.buildShipLine(r: Rival, c: Company, p: ShipPick, k: Int, job: 
     val siteB = p.sites[k]
     if (berthOf(c, p.site) < 0 || berthOf(c, siteB) < 0) return Tried.CANT
     // An industry at either end may have closed while the look went on.
-    if (!p.town && (industries.getOrNull(p.from)?.closed != false || industries.getOrNull(p.to)?.closed != false)) return Tried.CANT
+    if (!p.town && (industries.getOrNull(p.from)?.let { it.closed || it.closing > 0 } != false || industries.getOrNull(p.to)?.let { it.closed || it.closing > 0 } != false)) return Tried.CANT
     // A shipyard by the first dock, onto water the look reached.
     val seen = job.seen ?: return Tried.CANT
     var yard = -1

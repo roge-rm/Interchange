@@ -345,6 +345,8 @@ class Roster(
             }
             // The future cargo after every pack's, so a pack's cargo keeps its place; left out where there's no room.
             var futureCargo = 0
+            /** Future cargo no pack gives, so in play only with [NewGame.future]; a pack's own lithium etc. is pack cargo. */
+            val futureOnly = Cargo.FUTURE_IDS.filter { it !in cargoIds }.toSet()
             for (c in Cargo.FUTURE_IDS.indices) {
                 if (Cargo.FUTURE_IDS[c] in cargoIds || kinds.size >= Cargo.MAX) continue
                 cargoIds[Cargo.FUTURE_IDS[c]] = kinds.size
@@ -393,7 +395,7 @@ class Roster(
                     range = d.range ?: 0, runway = d.runway?.let { Runways.NAMES.indexOf(it) } ?: Runways.REGIONAL, floats = d.floats ?: false,
                     autonomous = d.autonomous ?: false,
                     cargoes = d.carries.orEmpty().map { cargoOf(s.key, it) }.filter { it >= 0 }.toIntArray(),
-                    futureCargo = d.carries.orEmpty().let { cs -> cs.isNotEmpty() && cs.all { it in Cargo.FUTURE_IDS } },
+                    futureCargo = d.carries.orEmpty().let { cs -> cs.isNotEmpty() && cs.all { it in futureOnly } },
                 )
             }
             fun spriteId(ref: SpriteRef) = spriteIds.getOrPut(ref) { sprites += ref; sprites.size - 1 }
@@ -433,7 +435,8 @@ class Roster(
                     open = d.open, closes = d.closes,
                     recipeIn = IntArray(Cargo.MAX) { c -> cargo.getOrNull(c)?.let { d.recipe?.inputs?.get(it.key) } ?: 0 },
                     recipeOut = IntArray(Cargo.MAX) { c -> cargo.getOrNull(c)?.let { d.recipe?.makes?.get(it.key) } ?: 0 },
-                    future = d.future ?: false, fades = d.fades ?: 0,
+                    // An industry naming future-only cargo opens only with future transport too.
+                    future = (d.future ?: false) || named.any { it in futureOnly }, fades = d.fades ?: 0,
                 )
             }
             if (houses.size > MOST_HOUSES) problems += "These packs have ${houses.size} town buildings, more than the $MOST_HOUSES a game can hold"

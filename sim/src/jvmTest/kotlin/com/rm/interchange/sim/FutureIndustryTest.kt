@@ -196,4 +196,25 @@ class FutureIndustryTest {
         repeat(3_000) { w.step(); again.step() }
         assertEquals(w.checksum(), again.checksum())
     }
+
+    @Test
+    fun unservedFutureCargoLeavesApprovalAsBefore() {
+        // Ratings of 130 over the non-future cargo are 50%, a rise of 10; a served future cargo at 0 makes it 48%, all 3 44%.
+        fun approval(served: Boolean): Int {
+            val w = flat(1990)
+            assertEquals(Cargo.COUNT + 3, w.cargoCount)
+            w.apply(Command.Rail(0, 10, 10, 20, 10, Track.X, remove = false))
+            w.apply(Command.Station(0, 12, 10, 15, 10, Track.X))
+            val s = w.stations[0]!!
+            val t = Town(0, "Town", s.signX, s.signY + 2, 3)
+            w.towns += t
+            val before = t.approval[0]
+            for (c in 0 until w.cargoCount) s.rating[c] = if (c < Cargo.COUNT) 130 else 0
+            if (served) s.lastCall[Cargo.COUNT] = 0
+            w.passengersMonth()
+            return t.approval[0] - before
+        }
+        assertEquals(10, approval(served = false))
+        assertEquals(0, approval(served = true))
+    }
 }

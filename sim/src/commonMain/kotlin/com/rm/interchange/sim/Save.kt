@@ -455,6 +455,8 @@ object Save {
             if (saved != now && !(settings.future && saved == before)) throw BadData("this game's packs give different cargo now: saved with ${saved.joinToString()}, the packs give ${roster.cargo.keys.joinToString()}")
         }
         val world = World(settings, roster, generate = false)
+        // Each saved industry kind's place in this roster, from version 7.
+        var kindRemap = IntArray(0)
         with(world) {
             tick = r.long()
             rng.state = r.long()
@@ -591,7 +593,7 @@ object Save {
             if (version >= 7) {
                 val kindIds = roster.industries.associate { it.key to it.id }
                 val kinds = List(r.uvar().toInt().also { if (it > 4095) throw BadData("too many kinds of industry") }) { r.string() }
-                val kindRemap = IntArray(kinds.size) { kindIds[kinds[it]] ?: throw BadData("${kinds[it]} is no longer in its pack") }
+                kindRemap = IntArray(kinds.size) { kindIds[kinds[it]] ?: throw BadData("${kinds[it]} is no longer in its pack") }
                 repeat(r.uvar().toInt()) { id ->
                     val kind = kindRemap.getOrNull(r.int()) ?: throw BadData("an industry of an unknown kind")
                     val ind = Industry(id, kind, r.int(), r.int(), r.int(), r.int())
@@ -698,7 +700,14 @@ object Save {
                 subsidies += Subsidy(r.int(), r.int(), r.int(), r.bool()).also { it.company = r.int(); it.months = r.int() }
             }
             if (version >= 24) chronicle = List(r.uvar().toInt().also { if (it > CHRONICLE_MOST) throw BadData("too long a chronicle") }) {
-                Story(r.int(), r.int(), r.int(), r.int())
+                val year = r.int(); val month = r.int(); val kind = r.int(); val about = r.int()
+                // Stories about an industry kind or a vehicle follow the packs' ids; out of range keeps the saved id.
+                val mapped = when (kind) {
+                    News.PROSPECTING_FAILED -> kindRemap.getOrNull(about) ?: about
+                    News.NEW_VEHICLE -> remap.getOrNull(about) ?: about
+                    else -> about
+                }
+                Story(year, month, kind, mapped)
             }
             // Before version 27 there were no insignia: each company is given one, in order.
             if (version >= 27) for (c in companies) c.insignia = r.bytes().also { if (!Insignia.valid(it)) throw BadData("a bad insignia") }

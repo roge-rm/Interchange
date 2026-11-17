@@ -886,7 +886,7 @@ internal fun World.newFreightRoute(r: Rival, c: Company, payback: Int = ROAD_PAY
     class Pick(val from: Industry, val to: Industry, val cargo: Int, val model: Engine, val score: Long)
     val picks = ArrayList<Pick>()
     for (ind in industries) {
-        if (ind.closed) continue
+        if (ind.closed || ind.closing > 0) continue
         val kind = roster.industries[ind.kind]
         val (cx, cy) = middle(ind)
         if (reach(r, home, cx, cy) > far) continue
@@ -898,7 +898,7 @@ internal fun World.newFreightRoute(r: Rival, c: Company, payback: Int = ROAD_PAY
             var to: Industry? = null
             var best = Int.MAX_VALUE
             for (o in industries) {
-                if (o.closed || o.id == ind.id || !roster.industries[o.kind].takes(cg)) continue
+                if (o.closed || o.closing > 0 || o.id == ind.id || !roster.industries[o.kind].takes(cg)) continue
                 val (ox, oy) = middle(o)
                 val d = chebyshev(cx, cy, ox, oy)
                 if (d < MIN_APART || d > MAX_APART || d >= best || triedLately(r, freightKey(ind.id, o.id, cg))) continue

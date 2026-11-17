@@ -240,8 +240,8 @@ private fun World.townGoals(dice: Rng, n: Int): List<Goal> {
  */
 private fun World.deliveryGoals(dice: Rng, n: Int): List<Goal> {
     var made = 0
-    for (ind in industries) if (!ind.closed) made = made or roster.industries[ind.kind].outputs
-    val takers = industries.filter { !it.closed && (0 until cargoCount).any { c -> made and (1 shl c) != 0 && roster.industries[it.kind].takes(c) } }
+    for (ind in industries) if (!ind.closed && ind.closing == 0) made = made or roster.industries[ind.kind].outputs
+    val takers = industries.filter { !it.closed && it.closing == 0 && (0 until cargoCount).any { c -> made and (1 shl c) != 0 && roster.industries[it.kind].takes(c) } }
     val out = ArrayList<Goal>()
     val big = towns.maxByOrNull { it.population }
     if (big != null && (n > 1 || takers.isEmpty())) {

@@ -766,7 +766,12 @@ internal fun World.passengersMonth() {
             val near = stations.filter { s -> s != null && s.owner == c.id && maxOf(kotlin.math.abs(s.signX - t.x), kotlin.math.abs(s.signY - t.y)) <= TOWN_AREA }
             val a = t.approval[c.id]
             t.approval[c.id] = if (near.isEmpty()) a - (a - START_APPROVAL).coerceIn(-5, 5) else {
-                val percent = near.sumOf { s -> (0 until cargoCount).sumOf { s!!.rating[it] } * 100 / (255 * cargoCount) } / near.size
+                // Future cargo counts only once the station has handled it, so unserved future cargo leaves approval as it was.
+                val plain = roster.cargoCount(false)
+                val percent = near.sumOf { s ->
+                    val counted = (0 until cargoCount).filter { it < plain || s!!.lastCall[it] >= 0 }
+                    counted.sumOf { s!!.rating[it] } * 100 / (255 * counted.size)
+                } / near.size
                 a + when {
                     percent >= 70 -> 20
                     percent >= 50 -> 10

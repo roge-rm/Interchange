@@ -5,6 +5,7 @@ import kotlin.test.Test
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class PackCargoTest {
@@ -251,5 +252,42 @@ class PackCargoTest {
         val shack = r.industries.first { it.key == "template:sugar_shack" }
         assertTrue(shack.produces[c] > 0 && shack.production[c] != null)
         assertTrue(r.engines.any { it.enabled && c in it.cargoes })
+    }
+
+    @Test
+    fun anOldSavesStoriesFollowAPackThatMovesIds() {
+        val p = pack(vehicles = listOf(wagon()), industries = listOf(shack()))
+        val w = line(roster(p))
+        val shack = w.roster.industries.first { it.key == "maple:shack" }.id
+        val car = w.roster.engines.first { it.key == "maple:cask_car" }.id
+        w.chronicle = listOf(
+            Story(1900, 0, News.PROSPECTING_FAILED, shack), Story(1900, 1, News.NEW_VEHICLE, car),
+            Story(1900, 2, News.PROSPECTING_FAILED, 4000), Story(1900, 3, News.INDUSTRY_CLOSES, 0),
+        )
+        // Version 2 puts a hut and a tank car first, so the shack and cask car move along.
+        val newer = pack(
+            version = 2,
+            vehicles = listOf(wagon().replace("cask_car\"", "tank_car\", \"sprite\": \"cask_car\""), wagon()),
+            industries = listOf(shack().replace("\"shack\"", "\"hut\""), shack()),
+        )
+        val copy = Save.read(Save.write(w, version = 75)) { ref -> listOf(Packs.BASE, newer).firstOrNull { it.id == ref.id } }
+        val stories = copy.chronicle
+        assertEquals("maple:shack", copy.roster.industries[stories[0].about].key)
+        assertEquals("maple:cask_car", copy.roster[stories[1].about].key)
+        assertEquals(shack + 1, stories[0].about)
+        assertEquals(4000, stories[2].about)
+        assertEquals(0, stories[3].about)
+    }
+
+    @Test
+    fun aPacksOwnFutureCargoIsPackCargo() {
+        val p = pack(cargo = listOf(syrup(id = "lithium")), vehicles = listOf(wagon("lithium")), industries = listOf(shack("lithium", "lithium")))
+        val r = roster(p)
+        assertEquals(2, r.futureCargo)
+        assertFalse(r.engines.first { it.key == "maple:cask_car" }.futureCargo)
+        assertFalse(r.industries.first { it.key == "maple:shack" }.future)
+        // A pack industry naming future cargo no pack gives opens only with future transport.
+        val q = pack(cargo = emptyList(), industries = listOf(shack("hydrogen", "hydrogen")))
+        assertTrue(roster(q).industries.first { it.key == "maple:shack" }.future)
     }
 }
