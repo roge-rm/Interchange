@@ -96,8 +96,30 @@ internal fun World.fellTrees(company: Company, i: Int): Long {
 }
 
 /** Whether a town near tile ([x], [y]) thinks too little of [company] to let it build a station there. */
-internal fun World.townRefuses(company: Company, x: Int, y: Int): Boolean =
-    towns.any { t -> maxOf(kotlin.math.abs(t.x - x), kotlin.math.abs(t.y - y)) <= TOWN_AREA && t.approval[company.id] <= APPROVAL_REFUSES }
+internal fun World.townRefuses(company: Company, x: Int, y: Int): Boolean {
+    val cells = townCells()
+    for (cy in maxOf(0, y - TOWN_AREA) / TOWN_CELL..(y + TOWN_AREA) / TOWN_CELL) for (cx in maxOf(0, x - TOWN_AREA) / TOWN_CELL..(x + TOWN_AREA) / TOWN_CELL) {
+        val near = cells.byCell[cy * cells.across + cx] ?: continue
+        if (near.any { t -> maxOf(kotlin.math.abs(t.x - x), kotlin.math.abs(t.y - y)) <= TOWN_AREA && t.approval[company.id] <= APPROVAL_REFUSES }) return true
+    }
+    return false
+}
+
+/** The side of a [TownCells] square, in tiles. */
+private const val TOWN_CELL = 32
+
+/** Towns by [TOWN_CELL] square of their middle, for the towns near a tile, as of [count] towns. Not saved. */
+internal class TownCells(val count: Int, val across: Int, val byCell: HashMap<Int, ArrayList<Town>>)
+
+/** [towns] by square, made again when a town's added; towns don't move or go. */
+internal fun World.townCells(): TownCells {
+    val have = townCellsCache
+    if (have != null && have.count == towns.size) return have
+    val across = width / TOWN_CELL + 1
+    val byCell = HashMap<Int, ArrayList<Town>>()
+    for (t in towns) byCell.getOrPut(t.y / TOWN_CELL * across + t.x / TOWN_CELL) { ArrayList() } += t
+    return TownCells(towns.size, across, byCell).also { townCellsCache = it }
+}
 
 /** The bit for a road reaching [edge], a [Track] edge. */
 fun roadBit(edge: Int) = 1 shl edge
