@@ -281,9 +281,13 @@ internal class TileRecorder(
             return
         }
         if (pieces == 0) return
+        val guide = world.guideway[tile]
         world.depotTiles[tile]?.let {
-            sprite(Atlas.TRACK[viewPieceIndex(Track.index(pieces)) * 16], vx, vy, base)
-            sprite(Atlas.RAILS[viewPieceIndex(Track.index(pieces)) * 16], vx, vy, base)
+            if (guide) sprite(Atlas.GUIDE[viewPieceIndex(Track.index(pieces)) * 16], vx, vy, base)
+            else {
+                sprite(Atlas.TRACK[viewPieceIndex(Track.index(pieces)) * 16], vx, vy, base)
+                sprite(Atlas.RAILS[viewPieceIndex(Track.index(pieces)) * 16], vx, vy, base)
+            }
             return
         }
         // A bridge's ramp head brings its own track, drawn with the bridge.
@@ -308,6 +312,10 @@ internal class TileRecorder(
             return
         }
         // The curve lookup that said no counts as curve time.
+        if (guide) {
+            guideway(vx, vy, wx, wy, tile, pieces, sShape, sBase)
+            return
+        }
         // Every piece's bed, then the rails over them all: a single piece's own, or for two or more, which always lie
         // level, the rails of them together, gapped where they cross.
         var view = 0
@@ -318,6 +326,38 @@ internal class TileRecorder(
         }
         if (view.countOneBits() >= 2) sprite(Atlas.RAIL_SETS[view], vx, vy, sBase)
         else sprite(Atlas.RAILS[view.countTrailingZeroBits() * 16 + sShape], vx, vy, sBase)
+    }
+
+    /**
+     * Maglev guideway on world tile ([wx], [wy]): one piece's beam on the shape it lies on, or two or more on a level
+     * tile together, and a buffer on level ground wherever a beam stops with no guideway going on.
+     */
+    private fun guideway(vx: Int, vy: Int, wx: Int, wy: Int, tile: Int, pieces: Int, sShape: Int, sBase: Int) {
+        var view = 0
+        for ((i, p) in Track.PIECES.withIndex()) if (pieces and p != 0) view = view or (1 shl viewPieceIndex(i))
+        if (view.countOneBits() >= 2) sprite(Atlas.GUIDE_SETS[view], vx, vy, sBase)
+        else sprite(Atlas.GUIDE[view.countTrailingZeroBits() * 16 + sShape], vx, vy, sBase)
+        if (sShape != 0 || world.spanHeads.containsKey(tile)) return
+        var ends = 0
+        for (p in Track.PIECES) {
+            if (pieces and p == 0) continue
+            val e = Track.edges(p)
+            for (edge in intArrayOf(e and 3, e shr 2)) if (!guidewayOn(wx, wy, edge)) ends = ends or (1 shl edge)
+        }
+        for (edge in 0 until 4) if (ends and (1 shl edge) != 0) sprite(Atlas.GUIDE_END[viewEdge(edge)], vx, vy, sBase)
+    }
+
+    /** Whether guideway goes on from world tile ([wx], [wy]) through [edge]: the tile there has a guideway piece meeting it. */
+    private fun guidewayOn(wx: Int, wy: Int, edge: Int): Boolean {
+        val nx = wx + Track.dx(edge)
+        val ny = wy + Track.dy(edge)
+        if (!world.inside(nx, ny)) return false
+        val n = world.index(nx, ny)
+        if (!world.guideway[n]) return false
+        val theirs = world.trackAt(nx, ny)
+        val back = Track.opposite(edge)
+        for (p in Track.PIECES) if (theirs and p != 0 && Track.has(p, back)) return true
+        return false
     }
 
     /** The second pass: the shadows of what stands on a tile, laid over the ground of every tile before anything stands up. */
@@ -424,16 +464,24 @@ internal class TileRecorder(
     /** What stands on a tile with track: a depot, or a platform and its canopy. */
     private fun standingOnTrack(vx: Int, vy: Int, wx: Int, wy: Int, tile: Int, pieces: Int, shadow: Boolean) {
         val base = minOf(minOf(cornerHeight(vx, vy), cornerHeight(vx + 1, vy)), minOf(cornerHeight(vx + 1, vy + 1), cornerHeight(vx, vy + 1)))
+        val guide = world.guideway[tile]
         world.depotTiles[tile]?.let { id ->
             val d = world.depots.getOrNull(id) ?: return@let
             val e = viewEdge(d.edge)
-            sprite((if (shadow) Atlas.DEPOT_SHADOW else Atlas.DEPOT)[depotEra(d.built.takeIf { it > 0 } ?: year) * 4 + e], vx, vy, base, shadow)
+            if (guide) sprite((if (shadow) Atlas.GUIDE_DEPOT_SHADOW else Atlas.GUIDE_DEPOT)[e], vx, vy, base, shadow)
+            else sprite((if (shadow) Atlas.DEPOT_SHADOW else Atlas.DEPOT)[depotEra(d.built.takeIf { it > 0 } ?: year) * 4 + e], vx, vy, base, shadow)
             return
         }
         if (world.isPlatform(tile)) {
             val st = world.surfaceHeight(wx, wy, pieces, worldCorner(wx, wy, vx, vy))
             val a = viewPieceIndex(Track.index(pieces))
             val bare = buildingBehind(vx, vy, a)
+            if (guide) {
+                val cell = if (bare) (if (shadow) Atlas.GUIDE_STATION_BARE_SHADOW else Atlas.GUIDE_STATION_BARE)[a]
+                else (if (shadow) Atlas.GUIDE_STATION_SHADOW else Atlas.GUIDE_STATION)[a]
+                sprite(cell, vx, vy, st, shadow)
+                return
+            }
             // The canopy goes by the year its station's building went up, or the game's year for a station without one.
             val built = world.stationAt(tile)?.takeIf { it.building >= 0 && it.buildingYear > 0 }?.buildingYear ?: year
             val cell = if (bare) (if (shadow) Atlas.STATION_BARE_SHADOW else Atlas.STATION_BARE)[a]

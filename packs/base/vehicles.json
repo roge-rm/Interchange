@@ -3325,8 +3325,7 @@
       "length": 14,
       "traction": "maglev",
       "life": 30,
-      "reliability": 97,
-      "sprite": "alto"
+      "reliability": 97
     },
     {
       "id": "aurora_coach",
@@ -3342,8 +3341,7 @@
       "length": 13,
       "carries": "passengers",
       "capacity": 80,
-      "traction": "maglev",
-      "sprite": "alto_coach"
+      "traction": "maglev"
     },
     {
       "id": "meteor",
@@ -3361,8 +3359,7 @@
       "length": 14,
       "traction": "maglev",
       "life": 30,
-      "reliability": 98,
-      "sprite": "alto"
+      "reliability": 98
     },
     {
       "id": "meteor_coach",
@@ -3378,8 +3375,7 @@
       "length": 13,
       "carries": "passengers",
       "capacity": 84,
-      "traction": "maglev",
-      "sprite": "alto_coach"
+      "traction": "maglev"
     }
   ]
 }

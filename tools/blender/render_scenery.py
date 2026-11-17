@@ -28,6 +28,11 @@ Maples, birches and aspens come again for the seasons, as
 tree_<kind>_<look>_autumn.png and tree_<kind>_<look>_bare.png.
 
 curve_<layer>_<key>.png are curved track on level tiles, by tools/blender/curve_keys.txt (curve_art.py).
+
+Maglev guideway (maglev.py): guide_<piece>_<shape>.png a piece, guide_set_<mask>.png two or more on a level tile,
+guide_curve_<key>.png a curved piece by the bed layer's keys, guide_end_<edge>.png a buffer where a beam stops,
+guide_station_<a>.png and guide_station_bare_<a>.png raised platforms, guide_depot_<edge>.png the maintenance hall,
+guide_deck_<a>.png, guide_ramp_<edge>.png and guide_portal_<edge>.png its bridges and tunnel mouths.
 """
 import sys
 from pathlib import Path
@@ -39,6 +44,7 @@ import curve_art  # noqa: E402
 import curves  # noqa: E402
 import houses  # noqa: E402
 import industries  # noqa: E402
+import maglev  # noqa: E402
 import parts  # noqa: E402
 import rig  # noqa: E402
 import scenery  # noqa: E402
@@ -247,6 +253,30 @@ def main():
         for key, where in sorted(found.items()):
             shot(out, f"curve_{layer}_{key}.png", lambda m, layer=layer, key=key, where=where: curve(m, layer, key, where),
                  shadow=False, placed=False)
+    guideway(out)
+
+
+def guideway(out):
+    """The maglev guideway's pieces, platforms, hall, bridges and tunnel mouths."""
+    for piece in PIECES:
+        for shape in TRACK_SHAPES.get(piece, [0]):
+            shot(out, f"guide_{piece}_{shape}.png", lambda m, piece=piece, shape=shape: maglev.guide(m, piece, shape), shadow=False, placed=False)
+    for mask in range(1, 64):
+        if bin(mask).count("1") >= 2:
+            shot(out, f"guide_set_{mask}.png", lambda m, mask=mask: maglev.guide_set(m, mask), shadow=False, placed=False)
+    for key, where in sorted(curve_art.read_keys()["bed"].items()):
+        shot(out, f"guide_curve_{key}.png", lambda m, key=key, where=where: maglev.curve_guide(m, curve_art.what("bed", key, where)),
+             shadow=False, placed=False)
+    for edge in EDGES:
+        shot(out, f"guide_end_{edge}.png", lambda m, edge=edge: maglev.guide_end(m, edge), shadow=False, placed=False)
+    for a in (0, 1):
+        shot(out, f"guide_station_{a}.png", lambda m, a=a: maglev.station(m, a == 0), rise=BUILDING_RISE)
+        shot(out, f"guide_station_bare_{a}.png", lambda m, a=a: maglev.station(m, a == 0, canopy=False), rise=BUILDING_RISE)
+        shot(out, f"guide_deck_{a}.png", lambda m, a=a: maglev.deck(m, a == 0), shadow=False)
+    for edge in EDGES:
+        shot(out, f"guide_depot_{edge}.png", maglev.depot, heading=houses.FACING[edge], rise=BUILDING_RISE)
+        shot(out, f"guide_ramp_{edge}.png", lambda m, edge=edge: maglev.ramp(m, edge), shadow=False)
+        shot(out, f"guide_portal_{edge}.png", lambda m, edge=edge: maglev.portal(m, edge), shadow=False, rise=PORTAL_RISE)
 
 
 def curve(m, layer, key, where):

@@ -55,15 +55,27 @@ internal class CurveArt(private val world: World) {
         if (!curved.getOrPut(i) { tiles.curved(x, y) }) return null
         val keys = tiles.keys(x, y, turn)
         if (keys.isEmpty()) return null
+        // Guideway draws each curve's beam in place of its bed and nothing for the other layers.
+        if (world.guideway[i]) {
+            val beds = keys.filter { it.startsWith(BED) }
+            if (beds.isEmpty()) return null
+            return IntArray(beds.size) { GUIDE_CELLS[beds[it]] ?: return null }
+        }
         return IntArray(keys.size) { CELLS[keys[it]] ?: return null }
     }
 
     companion object {
         private val STRAIGHT = IntArray(0)
+        private const val BED = "bed "
 
         /** Each "layer key" in [Atlas.CURVE_KEYS] to its cell. */
         private val CELLS: Map<String, Int> by lazy {
             HashMap<String, Int>().also { m -> Atlas.CURVE_KEYS.forEachIndexed { i, k -> if (Atlas.CURVE[i] >= 0) m[k] = Atlas.CURVE[i] } }
+        }
+
+        /** Each "bed key" in [Atlas.CURVE_KEYS] to its guideway cell, from [Atlas.GUIDE_CURVE]. */
+        private val GUIDE_CELLS: Map<String, Int> by lazy {
+            HashMap<String, Int>().also { m -> Atlas.CURVE_KEYS.forEachIndexed { i, k -> if (Atlas.GUIDE_CURVE[i] >= 0) m[k] = Atlas.GUIDE_CURVE[i] } }
         }
 
         /** Tells [CurveKeys] which sprites the sheet has, for [CurveTiles] in the sim's cars as well as here. */

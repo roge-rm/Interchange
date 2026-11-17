@@ -28,6 +28,7 @@ import horses  # noqa: E402
 import ships  # noqa: E402
 import aircraft  # noqa: E402
 import energy  # noqa: E402
+import maglev  # noqa: E402
 
 
 def L(n):
@@ -155,6 +156,10 @@ MODELS = {
     "hydrogen_tractor": (12, lambda m: roadcars.tractor(m, L(12), "van", "aero", "#2a58a8", era=2030, power="hydrogen")),
     "hydrogen_bus": (8, lambda m: roadcars.bus(m, L(8), "hydrogen")),
     "battery_coach": (9, lambda m: roadcars.highway_coach(m, L(9), 2035)),
+    "aurora": (14, lambda m: maglev.power_car(m, L(14), "aurora")),
+    "aurora_coach": (13, lambda m: maglev.coach(m, L(13), "aurora")),
+    "meteor": (14, lambda m: maglev.power_car(m, L(14), "meteor")),
+    "meteor_coach": (13, lambda m: maglev.coach(m, L(13), "meteor")),
 }
 SHIPS = ships.ship_builders()
 AIRCRAFT = aircraft.aircraft_builders()
@@ -173,6 +178,8 @@ ROAD = {"horse_omnibus", "stagecoach", "mail_coach", "freight_wagon", "red_river
 # helicopters and float planes from the ground. Fixed-wing aircraft are already in proportion.
 FLOAT_PLANES = {"fairchild_71", "norseman", "beaver", "otter", "twin_otter", "electric_floatplane"}
 HELICOPTERS = {"bell_47", "s55", "jetranger", "s92"}
+# Maglev trains are built at their full height over the beam, with no couplers between cars.
+MAGLEV = {"aurora", "aurora_coach", "meteor", "meteor_coach"}
 
 
 def height(key):
@@ -182,7 +189,7 @@ def height(key):
         return 0.35, 0.0
     if key in FLOAT_PLANES:
         return 0.65, 0.0
-    if key in AIRCRAFT:
+    if key in AIRCRAFT or key in MAGLEV:
         return 1.0, 0.0
     return (0.75, 0.3) if key in ROAD else (0.75, 0.36)
 
@@ -191,7 +198,7 @@ def height(key):
 END_GAP = 0.03
 
 
-def couple(model, length):
+def couple(model, length, couplers=True):
     """Draws the model a little shorter than its length, so cars have a gap between them, and puts a coupler at each end
     reaching out to the next car's."""
     s = (length - 2 * END_GAP) / length
@@ -200,6 +207,8 @@ def couple(model, length):
             o.scale.y *= s
         else:
             o.location.y *= s
+    if not couplers:
+        return
     iron = parts.material("coupler", "#2a2a2c", metal=0.5, rough=0.5)
     for end in (-1, 1):
         inner = end * (length / 2 - END_GAP - 0.03)
@@ -249,7 +258,7 @@ def main():
         model = parts.Model(key, *height(key))
         build(model)
         if key not in ROAD and key not in SHIPS and key not in AIRCRAFT:
-            couple(model, L(length))
+            couple(model, L(length), couplers=key not in MAGLEV)
         pivot = model.place(0)
         home = pivot.location.copy()
         # A step up over a tile, the steepest track climbs.

@@ -495,6 +495,11 @@ ROSTER = [
     ("hydrogen_feeder", 14, lambda f: coach(f, L(14), True)),
     ("electric_floatplane", 3, lambda f: coach(f, L(3), True)),
     ("hydrogen_airliner", 8, lambda f: coach(f, L(8), True)),
+    # Maglev trains.
+    ("aurora", 14, lambda f: coach(f, L(14), True)),
+    ("aurora_coach", 13, lambda f: coach(f, L(13), True)),
+    ("meteor", 14, lambda f: coach(f, L(14), True)),
+    ("meteor_coach", 13, lambda f: coach(f, L(13), True)),
 ]
 
 

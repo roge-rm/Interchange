@@ -291,6 +291,41 @@ for era in range(DEPOT_ERAS):
     for e, edge in enumerate(EDGES):
         JOBS.append(("signals", ("depot_over", era, e), lambda era=era, edge=edge: scenery(f"depot_{era}_{edge}.png", lambda: track.depot(edge)), None))
 
+# Maglev guideway (tools/blender/maglev.py): a beam on piers in place of each piece's bed and rails, two or more pieces
+# on a level tile together, curves by the bed layer's keys, buffers where a beam stops, raised platforms over the
+# straight beam, the maintenance hall, and the guideway's bridge decks, ramps and tunnel mouths.
+for p, piece in enumerate(track.PIECES):
+    for s in TRACK_SURFACES.get(piece, [0]):
+        JOBS.append(("static", ("guide", p, s), lambda piece=piece, s=s: scenery(f"guide_{piece}_{s}.png", base.cell), None))
+        UP[("guide", p, s)] = f"guide_{piece}_{s}.png"
+for mask in range(1, 64):
+    if bin(mask).count("1") >= 2:
+        JOBS.append(("static", ("guideset", mask), lambda mask=mask: scenery(f"guide_set_{mask}.png", base.cell), None))
+        UP[("guideset", mask)] = f"guide_set_{mask}.png"
+GUIDE_CURVE_KEYS = [ck for layer, ck in CURVE_KEYS if layer == "bed"]
+for ck in GUIDE_CURVE_KEYS:
+    JOBS.append(("static", ("guide_curve", ck), lambda ck=ck: scenery(f"guide_curve_{ck}.png", base.cell), None))
+    UP[("guide_curve", ck)] = f"guide_curve_{ck}.png"
+for e, edge in enumerate(EDGES):
+    JOBS.append(("static", ("guide_end", e), lambda edge=edge: scenery(f"guide_end_{edge}.png", base.cell), None))
+    UP[("guide_end", e)] = f"guide_end_{edge}.png"
+for a in (0, 1):
+    beam = f"guide_{'X' if a == 0 else 'Y'}_0.png"
+    for kind in ("guide_station", "guide_station_bare"):
+        name = f"{kind}_{a}.png"
+        JOBS.append(("static", (kind, a), lambda beam=beam, name=name: over(scenery(beam, base.cell), scenery(name, base.cell)), None))
+        JOBS.append(("shadows", (kind + "_shadow", a), lambda name=name: scenery(name.replace(".png", "_shadow.png"), base.cell), None))
+        UP[(kind, a)] = name
+for e, edge in enumerate(EDGES):
+    JOBS.append(("static", ("guide_depot", e), lambda edge=edge: scenery(f"guide_depot_{edge}.png", base.cell), None))
+    JOBS.append(("shadows", ("guide_depot_shadow", e), lambda edge=edge: scenery(f"guide_depot_{edge}_shadow.png", base.cell), None))
+    UP[("guide_depot", e)] = f"guide_depot_{edge}.png"
+    JOBS.append(("signals", ("guide_depot_over", e), lambda edge=edge: scenery(f"guide_depot_{edge}.png", base.cell), None))
+    JOBS.append(("signals", ("guide_ramp", e), lambda edge=edge: scenery(f"guide_ramp_{edge}.png", base.cell), None))
+    JOBS.append(("signals", ("guide_portal", e), lambda edge=edge: scenery(f"guide_portal_{edge}.png", base.cell), None))
+for a in (0, 1):
+    JOBS.append(("signals", ("guide_deck", a), lambda a=a: scenery(f"guide_deck_{a}.png", base.cell), None))
+
 
 def rendered_slope(key, h, way, build):
     """A vehicle tilted up or down a slope, from Blender, or flat if there's no render."""
@@ -796,6 +831,9 @@ def main():
     rails = [index.get(("rails", p, s), -1) for p in range(6) for s in range(16)]
     railsets = [index.get(("railset", mask), -1) for mask in range(64)]
     curve_cells = [index.get(("curve", layer, ck), -1) for layer, ck in CURVE_KEYS]
+    guides = [index.get(("guide", p, s), -1) for p in range(6) for s in range(16)]
+    guidesets = [index.get(("guideset", mask), -1) for mask in range(64)]
+    guide_curves = [index.get(("guide_curve", ck), -1) if layer == "bed" else -1 for layer, ck in CURVE_KEYS]
     trees = [index[("tree", t, lk)] for t in range(len(ground.TREES)) for lk in range(ground.TREE_LOOKS)]
     autumn = [index.get(("tree_autumn", t, lk), index[("tree", t, lk)]) for t in range(len(ground.TREES)) for lk in range(ground.TREE_LOOKS)]
     bare = [index.get(("tree_bare", t, lk), index[("tree", t, lk)]) for t in range(len(ground.TREES)) for lk in range(ground.TREE_LOOKS)]
@@ -995,6 +1033,32 @@ object Atlas {{
 
     /** The engine house, at its era * 4 + the view edge its doors face, drawn over trains on its tile. On the signals sheet. */
     val DEPOT_OVER = intArrayOf({", ".join(str(index[("depot_over", k, e)]) for k in range(DEPOT_ERAS) for e in range(4))})
+
+    /** A piece of maglev guideway, its beam on a pier, as [TRACK]. On the static sheet. */
+    val GUIDE = intArrayOf(
+        {arr(guides)},
+    )
+    /** Two or more guideway pieces on a level tile, by view piece bits, as [RAIL_SETS]. On the static sheet. */
+    val GUIDE_SETS = intArrayOf(
+        {arr(guidesets)},
+    )
+    /** A curved guideway piece for each of [CURVE_KEYS] in the bed layer, -1 for the others. On the static sheet. */
+    val GUIDE_CURVE = ints("{",".join(str(c) for c in guide_curves)}")
+    /** A buffer where a guideway beam stops at view edge XM, XP, YM or YP. On the static sheet. */
+    val GUIDE_END = intArrayOf({", ".join(str(index[("guide_end", e)]) for e in range(4))})
+    /** A raised guideway platform over its beam, along view u (0) or v (1), with no canopy in [GUIDE_STATION_BARE], and their shadows. On the static sheet. */
+    val GUIDE_STATION = intArrayOf({index[("guide_station", 0)]}, {index[("guide_station", 1)]})
+    val GUIDE_STATION_SHADOW = intArrayOf({index[("guide_station_shadow", 0)]}, {index[("guide_station_shadow", 1)]})
+    val GUIDE_STATION_BARE = intArrayOf({index[("guide_station_bare", 0)]}, {index[("guide_station_bare", 1)]})
+    val GUIDE_STATION_BARE_SHADOW = intArrayOf({index[("guide_station_bare_shadow", 0)]}, {index[("guide_station_bare_shadow", 1)]})
+    /** The guideway's maintenance hall by the view edge its doors face, its shadow, and again on the signals sheet to draw over trains. */
+    val GUIDE_DEPOT = intArrayOf({", ".join(str(index[("guide_depot", e)]) for e in range(4))})
+    val GUIDE_DEPOT_SHADOW = intArrayOf({", ".join(str(index[("guide_depot_shadow", e)]) for e in range(4))})
+    val GUIDE_DEPOT_OVER = intArrayOf({", ".join(str(index[("guide_depot_over", e)]) for e in range(4))})
+    /** A guideway bridge's deck along view u (0) or v (1), its head on flat ground by the view edge the deck is at, and a tunnel mouth by the edge it opens to. On the signals sheet. */
+    val GUIDE_DECK = intArrayOf({index[("guide_deck", 0)]}, {index[("guide_deck", 1)]})
+    val GUIDE_RAMP = intArrayOf({", ".join(str(index[("guide_ramp", e)]) for e in range(4))})
+    val GUIDE_PORTAL = intArrayOf({", ".join(str(index[("guide_portal", e)]) for e in range(4))})
 }}
 """)
     if not OUT_KT.exists() or OUT_KT.read_text() != atlas:
