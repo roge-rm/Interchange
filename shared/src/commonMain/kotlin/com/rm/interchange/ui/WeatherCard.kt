@@ -12,6 +12,9 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Text
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.unit.dp
+import com.rm.interchange.sim.Airports
+import com.rm.interchange.sim.Drones
+import com.rm.interchange.sim.droneOutlook
 import com.rm.interchange.sim.Calendar
 import com.rm.interchange.sim.Climate
 import com.rm.interchange.sim.Confidence
@@ -102,6 +105,19 @@ fun WeatherCard(world: World, wv: WeatherView, x: Int, y: Int, forecast: List<Fo
         if (forecast.isNotEmpty()) {
             Head(stringResource(Res.string.weather_forecast), Glyph.Calendar)
             for (d in forecast) ForecastRow(world.startYear, d)
+            // Drones at a pad stay grounded on the days wind or snow is expected there.
+            val pad = world.airports.firstOrNull { it?.kind == Airports.PAD }
+            if (pad != null) {
+                val outlook = world.droneOutlook(pad.x, pad.y, forecast.size)
+                val weekdays = stringArrayResource(Res.array.weekdays)
+                for ((i, d) in forecast.withIndex()) {
+                    val why = outlook.getOrElse(i) { Drones.FLYING }
+                    if (why != Drones.FLYING) InfoRow(
+                        weekdays.getOrElse(Calendar.weekday(world.startYear, d.day)) { "" },
+                        stringResource(if (why == Drones.GROUNDED_SNOW) Res.string.grounded_snow else Res.string.grounded_wind), Glyph.Wind,
+                    )
+                }
+            }
         }
     }
 }

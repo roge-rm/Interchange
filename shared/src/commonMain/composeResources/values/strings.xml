@@ -550,6 +550,7 @@
         <item>Regional airport</item>
         <item>City airport</item>
         <item>International airport</item>
+        <item>Pad</item>
     </string-array>
     <string name="ship_n">Ship %1$d</string>
     <string name="aircraft_n">Aircraft %1$d</string>
@@ -1092,6 +1093,9 @@
     <string name="guideway">Guideway</string>
     <string name="depot_maglev">Maglev depot</string>
     <string name="future">Future</string>
+    <string name="traction_autonomous">Autonomous</string>
+    <string name="grounded_wind">Grounded, wind</string>
+    <string name="grounded_snow">Grounded, snow</string>
     <string name="traction_maglev">Maglev</string>
     <string name="tube">Tube</string>
     <string name="bore">Bore</string>

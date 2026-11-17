@@ -81,6 +81,7 @@ private fun statsText(e: Engine, cargo: Int, choosing: Boolean): String {
         parts += stringResource(Res.string.range_stat, Numbers.grouped(e.range.toLong()))
     }
     if (e.maglev) parts += stringResource(Res.string.traction_maglev)
+    if (e.autonomous) parts += stringResource(Res.string.traction_autonomous)
     if (e.hyperloop) parts += stringResource(Res.string.traction_hyperloop)
     if (e.icebreaker > 0) parts += stringResource(Res.string.breaks_ice, e.icebreaker)
     // Each stat kept on one line, so a long row wraps only between them.

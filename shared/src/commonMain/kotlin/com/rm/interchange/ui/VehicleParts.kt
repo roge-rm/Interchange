@@ -43,6 +43,7 @@ import com.rm.interchange.sim.AircraftView
 import com.rm.interchange.sim.Engine
 import com.rm.interchange.sim.EnergyView
 import com.rm.interchange.sim.Traction
+import com.rm.interchange.sim.Drones
 import com.rm.interchange.sim.Flight
 import com.rm.interchange.sim.Order
 import com.rm.interchange.sim.RoadVehicleView
@@ -246,6 +247,7 @@ fun aircraftStatus(view: WorldView, v: AircraftView): String {
         v.broken -> stringResource(Res.string.broken_down)
         v.inDepot && v.running -> stringResource(Res.string.waiting_to_leave)
         v.inDepot -> stringResource(Res.string.in_hangar)
+        v.grounded != Drones.FLYING && v.state == Flight.GATE -> stringResource(if (v.grounded == Drones.GROUNDED_SNOW) Res.string.grounded_snow else Res.string.grounded_wind)
         !v.running && v.state == Flight.GATE -> stringResource(Res.string.stopped)
         v.state == Flight.HOLD && target != null -> stringResource(Res.string.holding_over, stationName(view, target), reasons.getOrElse(reason) { "" })
         v.state == Flight.TAKEOFF -> stringResource(Res.string.taking_off)

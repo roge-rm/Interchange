@@ -533,6 +533,7 @@
         <item>Aéroport régional</item>
         <item>Aéroport urbain</item>
         <item>Aéroport international</item>
+        <item>Plateforme de drones</item>
     </string-array>
     <string name="ship_n">Navire %1$d</string>
     <string name="aircraft_n">Aéronef %1$d</string>
@@ -1075,6 +1076,9 @@
     <string name="guideway">Voie maglev</string>
     <string name="depot_maglev">Dépôt maglev</string>
     <string name="future">Futur</string>
+    <string name="traction_autonomous">Autonome</string>
+    <string name="grounded_wind">Cloué au sol, vent</string>
+    <string name="grounded_snow">Cloué au sol, neige</string>
     <string name="traction_maglev">Maglev</string>
     <string name="tube">Tube</string>
     <string name="bore">Tunnel foré</string>

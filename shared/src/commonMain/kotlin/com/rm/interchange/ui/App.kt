@@ -1669,7 +1669,7 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
         // Tabs and choices sit above the line, so folding the tray hides them. Remove's line is the whole tray.
         fun trayFolds(g: ToolGroup): Boolean {
             if (Tool.of(g, editor).size > 1) return true
-            return tool == Tool.Airport && Airports.entries(Calendar.year(world.startYear, day)).isNotEmpty()
+            return tool == Tool.Airport && Airports.entries(Calendar.year(world.startYear, day), world.settings.future).isNotEmpty()
         }
 
         // The lit button again puts the tools away. While the tray is only its line, the same press opens it back up.
@@ -1888,8 +1888,8 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
                     Tool.Road -> trackOptions += {
                         for (s in Surface.entries(year)) OptionButton(SURFACE_GLYPHS[s], surfaces.getOrElse(s) { "" }, roadSurface == s) { roadSurface = s }
                     }
-                    Tool.Airport -> if (Airports.entries(year).isNotEmpty()) trackOptions += {
-                        for (k in Airports.entries(year)) OptionButton(AIRPORT_GLYPHS[k], airportKinds.getOrElse(k) { "" }, airportKind == k) { airportKind = k }
+                    Tool.Airport -> if (Airports.entries(year, world.settings.future).isNotEmpty()) trackOptions += {
+                        for (k in Airports.entries(year, world.settings.future)) OptionButton(AIRPORT_GLYPHS[k], airportKinds.getOrElse(k) { "" }, airportKind == k) { airportKind = k }
                     }
                     Tool.Bridge -> trackOptions += {
                         if (tube) {
@@ -1929,7 +1929,7 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
                     }
                     if (tool == Tool.Track || tool == Tool.Wires || tool == Tool.Signals || tool == Tool.Road || tool == Tool.TramRails || tool == Tool.Canal) TrayToggle(Glyph.Lift, stringResource(Res.string.remove_track), removing) { removing = !removing }
                     if (tool == Tool.PriorityTrack || tool == Tool.PriorityRoad) TrayToggle(Glyph.Lift, stringResource(Res.string.priority_clear), removing) { removing = !removing }
-                    if (tool == Tool.Airport && airportKind != Airports.SEAPLANE && airportKind != Airports.HELIPORT) TrayToggle(Glyph.TurnRight, stringResource(Res.string.runway_other_way), !runwayAlongX) { runwayAlongX = !runwayAlongX }
+                    if (tool == Tool.Airport && airportKind != Airports.SEAPLANE && airportKind != Airports.HELIPORT && airportKind != Airports.PAD) TrayToggle(Glyph.TurnRight, stringResource(Res.string.runway_other_way), !runwayAlongX) { runwayAlongX = !runwayAlongX }
                     if (tool == Tool.Station) {
                         // PieceX runs down-right, world X while the map is unturned, and the two swap on a quarter turn.
                         val glyph = if ((view.turn % 2 == 0) == stationAlongX) Glyph.PieceX else Glyph.PieceY
@@ -2420,7 +2420,7 @@ private const val TRAY_WIDTH = 480
 
 /** The glyph on the tray's button for each road surface, airport kind, bridge style and signal kind, by its number. */
 private val SURFACE_GLYPHS = listOf(Glyph.RoadDirt, Glyph.RoadGravel, Glyph.Road, Glyph.RoadHighway)
-private val AIRPORT_GLYPHS = listOf(Glyph.AirStrip, Glyph.Seaplane, Glyph.Heliport, Glyph.AirRegional, Glyph.AirCity, Glyph.AirInternational)
+private val AIRPORT_GLYPHS = listOf(Glyph.AirStrip, Glyph.Seaplane, Glyph.Heliport, Glyph.AirRegional, Glyph.AirCity, Glyph.AirInternational, Glyph.Heliport)
 private val BRIDGE_GLYPHS = listOf(Glyph.BridgeTrestle, Glyph.BridgeTruss, Glyph.BridgeConcrete)
 private val SIGNAL_GLYPHS = listOf(Glyph.Signal, Glyph.SignalPath, Glyph.SignalEntry, Glyph.SignalExit, Glyph.SignalCombo)
 
