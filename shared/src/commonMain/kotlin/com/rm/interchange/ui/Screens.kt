@@ -503,6 +503,7 @@ fun SettingsWindow(settings: Settings, onClose: () -> Unit) {
         VolumeSlider(stringResource(Res.string.sound_everything), settings.sound, set = { settings.sound = it }, settled = { settings.save() })
         VolumeSlider(stringResource(Res.string.sound_world), settings.world, set = { settings.world = it }, settled = { settings.save() })
         VolumeSlider(stringResource(Res.string.sound_tools), settings.tools, set = { settings.tools = it }, settled = { settings.save() })
+        VolumeSlider(stringResource(Res.string.sound_music), settings.music, set = { settings.music = it }, settled = { settings.save() })
     }
 }
 

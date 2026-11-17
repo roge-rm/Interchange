@@ -198,8 +198,8 @@ fun App() {
     // Opening the stream waits on the device, so it stays off the UI thread. Bus gains follow the volume sliders.
     LaunchedEffect(Unit) {
         withContext(Dispatchers.Default) { AudioEngine.start(32) }
-        snapshotFlow { Triple(settings.sound, settings.world, settings.tools) }.collect { (sound, world, tools) ->
-            val gains = soundBusGains(sound, world, tools, MUSIC_LEVEL)
+        snapshotFlow { listOf(settings.sound, settings.world, settings.tools, settings.music) }.collect { (sound, world, tools, music) ->
+            val gains = soundBusGains(sound, world, tools, music)
             withContext(Dispatchers.Default) { AudioEngine.busGains(gains) }
         }
     }
@@ -207,9 +207,6 @@ fun App() {
         CompositionLocalProvider(LocalColors provides DarkColors) { Root(settings) }
     }
 }
-
-/** The music's volume, 0 to 100, until Settings has its own. */
-private const val MUSIC_LEVEL = 60
 
 /** The four bus levels, each 0 to 100 and scaled by the master. Music at 0 is off and costs nothing. */
 private fun soundBusGains(sound: Int, world: Int, tools: Int, music: Int): FloatArray {

@@ -166,6 +166,7 @@
     <string name="sound_everything">Tout</string>
     <string name="sound_world">Le monde</string>
     <string name="sound_tools">Outils et nouvelles</string>
+    <string name="sound_music">Musique</string>
 
     <!-- Packs de contenu -->
     <string name="packs">Packs</string>

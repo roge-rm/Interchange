@@ -183,6 +183,7 @@
     <string name="sound_everything">Everything</string>
     <string name="sound_world">The world</string>
     <string name="sound_tools">Tools and news</string>
+    <string name="sound_music">Music</string>
 
     <!-- Content packs -->
     <string name="packs">Packs</string>

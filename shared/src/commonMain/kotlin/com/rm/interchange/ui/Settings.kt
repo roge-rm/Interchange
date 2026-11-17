@@ -28,6 +28,8 @@ class Settings {
     var sound by mutableIntStateOf(100)
     var world by mutableIntStateOf(100)
     var tools by mutableIntStateOf(100)
+    /** The music, 0 to 100; a missing line is 60. */
+    var music by mutableIntStateOf(60)
     /** The name other players see, and the address last joined. */
     var playerName by mutableStateOf("")
     var lastAddress by mutableStateOf("")
@@ -50,7 +52,7 @@ class Settings {
 
     fun save() {
         files.write(FILE, ("language=$language\nautosave=$autosave\ngrid=$grid\nheights=$heights\nsnow=$snow\ncondition=$condition\nreserved=$reserved\npriority=$priority\nrisk=$risk\n" +
-            "sound=$sound\nworld=$world\ntools=$tools\n" +
+            "sound=$sound\nworld=$world\ntools=$tools\nmusic=$music\n" +
             "player=${playerName.replace('\n', ' ')}\naddress=${lastAddress.replace('\n', ' ')}\nclient=$client\n" +
             "checklist=$checklist\nchecklistGame=$checklistGame\nchecklistTicks=$checklistTicks\n" +
             "chapters=${chaptersWon.sorted().joinToString(",")}\n" +
@@ -82,6 +84,7 @@ class Settings {
                     "sound" -> v.toIntOrNull()?.let { s.sound = it.coerceIn(0, 100) }
                     "world" -> v.toIntOrNull()?.let { s.world = it.coerceIn(0, 100) }
                     "tools" -> v.toIntOrNull()?.let { s.tools = it.coerceIn(0, 100) }
+                    "music" -> v.toIntOrNull()?.let { s.music = it.coerceIn(0, 100) }
                     "player" -> s.playerName = v
                     "address" -> s.lastAddress = v
                     "client" -> s.client = v
