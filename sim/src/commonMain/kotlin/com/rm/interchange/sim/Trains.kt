@@ -728,7 +728,7 @@ private fun World.drive(t: Train) {
             val o = t.orders.getOrNull(t.order % t.orders.size.coerceAtLeast(1)) ?: 0
             val s = stations.getOrNull(Order.station(o))
             // One held off the depot, by no way there or a jam called off, isn't sent again till its noDepotUntil.
-            val due = !t.toDepot && tick >= t.noDepotUntil && hasDepot(t.owner, Depots.RAIL) && (due(t.service, t.serviced) || renewNow(t) || lowCharge(t))
+            val due = !t.toDepot && tick >= t.noDepotUntil && hasDepot(t.owner, Depots.RAIL) && (serviceDue(t, t.service, t.serviced) || renewNow(t))
             fun loaded() = when {
                 Order.has(o, Order.FULL_LOAD) -> t.full()
                 Order.has(o, Order.FULL_LOAD_ANY) -> t.anyFull()
@@ -1581,16 +1581,16 @@ private fun World.turnInDepot(t: Train) {
     t.lostUntil = 0
     reserved.entries.removeAll { it.value == t.id }
     countOn(t)
-    if (t.servicing || due(t.service, t.serviced)) {
+    if (t.servicing || serviceDue(t, t.service, t.serviced)) {
         autorenew(t)
         serviced(t)
     }
 }
 
 /** Skips [t]'s order if it's to be serviced at a depot and isn't due; true if it did. */
-private fun World.skipService(t: Train): Boolean {
+internal fun World.skipService(t: Train): Boolean {
     val o = t.current ?: return false
-    if (!Order.isDepot(o) || Order.depotKind(o) != Order.DEPOT_SERVICE || due(t.service, t.serviced)) return false
+    if (!Order.isDepot(o) || Order.depotKind(o) != Order.DEPOT_SERVICE || serviceDue(t, t.service, t.serviced)) return false
     val was = t.order
     nextOrder(t)
     return t.order != was
@@ -1609,7 +1609,7 @@ internal fun World.dropRoute(t: Train) {
 
 /** Whether every one of [t]'s orders is a depot service it isn't due, so it has nowhere to go till one is. */
 private fun World.nothingDue(t: Train) =
-    !t.toDepot && t.orders.isNotEmpty() && !due(t.service, t.serviced) && t.orders.all { Order.isCond(it) || Order.isDepot(it) && Order.depotKind(it) == Order.DEPOT_SERVICE }
+    !t.toDepot && t.orders.isNotEmpty() && !serviceDue(t, t.service, t.serviced) && t.orders.all { Order.isCond(it) || Order.isDepot(it) && Order.depotKind(it) == Order.DEPOT_SERVICE }
 
 /** Whether electric train [t]'s order now is to a depot with no wires over it, so it can't get there. */
 private fun World.unwiredOrder(t: Train): Boolean {
@@ -1673,7 +1673,7 @@ internal fun World.nextOrder(t: Train) {
         stepOrder(t)
         val o = t.orders[t.order]
         if (Order.isDepot(o)) {
-            if (Order.depotKind(o) != Order.DEPOT_SERVICE || due(t.service, t.serviced)) return
+            if (Order.depotKind(o) != Order.DEPOT_SERVICE || serviceDue(t, t.service, t.serviced)) return
         } else if (!Order.has(o, Order.SKIP_IF_NOTHING) || somethingAt(t, Order.station(o))) return
     }
 }

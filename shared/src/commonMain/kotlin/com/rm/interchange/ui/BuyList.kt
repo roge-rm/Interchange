@@ -67,13 +67,15 @@ private fun statsText(e: Engine, cargo: Int, choosing: Boolean): String {
         } else stringResource(Res.string.horsepower, Numbers.grouped(e.power.toLong()))
         parts += stringResource(Res.string.kilonewtons, e.tractive)
     }
-    val store = if (e.traction == Traction.BATTERY || e.traction == Traction.HYDROGEN) e.traction
-        else if (LocalEnergy.current && e.kind == VehicleKind.ROAD && e.traction == Traction.ELECTRIC && !e.tram) Traction.BATTERY else -1
+    // Battery and hydrogen only with energy on; off, they run and pay as diesel, and aircraft as aviation fuel.
+    val energy = LocalEnergy.current
+    val store = if (!energy) -1 else if (e.traction == Traction.BATTERY || e.traction == Traction.HYDROGEN) e.traction
+        else if (e.kind == VehicleKind.ROAD && e.traction == Traction.ELECTRIC && !e.tram) Traction.BATTERY else -1
     if (store >= 0 && e.kind != VehicleKind.AIRCRAFT) {
         parts += stringResource(if (store == Traction.HYDROGEN) Res.string.traction_hydrogen else Res.string.traction_battery)
         parts += stringResource(Res.string.range_tiles, Numbers.grouped(rangeOf(e).toLong()))
     } else if (e.range > 0) {
-        if (e.traction == Traction.BATTERY || e.traction == Traction.HYDROGEN) parts += stringResource(if (e.traction == Traction.HYDROGEN) Res.string.traction_hydrogen else Res.string.traction_battery)
+        if (store >= 0) parts += stringResource(if (store == Traction.HYDROGEN) Res.string.traction_hydrogen else Res.string.traction_battery)
         parts += stringResource(Res.string.range_stat, Numbers.grouped(e.range.toLong()))
     }
     if (e.icebreaker > 0) parts += stringResource(Res.string.breaks_ice, e.icebreaker)

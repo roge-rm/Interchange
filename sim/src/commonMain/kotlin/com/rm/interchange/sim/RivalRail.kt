@@ -428,7 +428,7 @@ private fun World.railTrains(cargo: Int, load: Int, platforms: Int, loose: Boole
     fun fits(e: Engine) = platforms * 16 - e.length - (roster.getOrNull(e.tender)?.length ?: 0) - (plow?.length ?: 0)
     val out = ArrayList<RailTrain>()
     for (e in roster.available(year, true)) {
-        if (e.traction == Traction.ELECTRIC || e.capacity > 0 || fits(e) < wagon.length || !rivalFits(e, tiles)) continue
+        if (e.traction == Traction.ELECTRIC || settings.energy && e.capacity > 0 || fits(e) < wagon.length || !rivalFits(e, tiles)) continue
         var n = ((load + wagon.capacity - 1) / wagon.capacity).coerceIn(1, fits(e) / wagon.length)
         if (loose) {
             // Loaded weight in tonnes against power, a horsepower a tonne.
@@ -1155,13 +1155,13 @@ private fun World.saleTurn(c: Company, on: List<Train>, lead: Int) {
  * due a service, with no other train on its way to the depot, in it, or on the signal tile [lead] by it (-1 for a line
  * without one, where one at a time is still kept to). So it goes in
  * from the station when it leaves, finds the way into the depot clear, and comes out to wait at the signal as a new
- * train does. The one longest since its service goes first, the lowest id on a tie; one whose trip [unjam] called
- * off waits till its noDepotUntil. Servicing is off for the rest.
+ * train does. One low on charge goes first, the lowest first, then the one longest since its service, the lowest id on
+ * a tie; one whose trip [unjam] called off waits till its noDepotUntil. Servicing is off for the rest.
  */
-private fun World.serviceTurn(c: Company, on: List<Train>, lead: Int) {
+internal fun World.serviceTurn(c: Company, on: List<Train>, lead: Int) {
     val busy = on.any { it.toDepot || it.inDepot && it.running || lead in it.onTiles }
-    val next = if (busy) null else on.filter { it.running && it.waiting > 0 && !it.inDepot && tick >= it.noDepotUntil && due(true, it.serviced) }
-        .minWithOrNull(compareBy<Train> { it.serviced }.thenBy { it.id })
+    val next = if (busy) null else on.filter { it.running && it.waiting > 0 && !it.inDepot && tick >= it.noDepotUntil && serviceDue(it, true, it.serviced) }
+        .minWithOrNull(compareBy<Train> { if (lowCharge(it)) chargeOf(it) else Int.MAX_VALUE }.thenBy { it.serviced }.thenBy { it.id })
     for (t in on) {
         // One already on its way for a service keeps it.
         val keep = t === next || t.toDepot && t.servicing

@@ -489,7 +489,7 @@ private fun World.driveRoadVehicle(v: RoadVehicle, on: HashMap<Int, ArrayList<Ro
             val o = v.orders.getOrNull(v.order % v.orders.size.coerceAtLeast(1)) ?: 0
             val s = stations.getOrNull(Order.station(o))
             // One held off its garage, by no way there or a jam called off, isn't sent again till its noDepotUntil.
-            val due = !v.toDepot && tick >= v.noDepotUntil && hasDepot(v.owner, Depots.ROAD) && (due(v.service, v.serviced) || needsTires(v) || renewNow(v) || lowCharge(v))
+            val due = !v.toDepot && tick >= v.noDepotUntil && hasDepot(v.owner, Depots.ROAD) && (serviceDue(v, v.service, v.serviced) || needsTires(v) || renewNow(v))
             fun loaded() = when {
                 Order.has(o, Order.FULL_LOAD) -> roadFull(v)
                 Order.has(o, Order.FULL_LOAD_ANY) -> roadAnyFull(v)
@@ -613,10 +613,10 @@ private fun World.arrive(v: RoadVehicle) {
 }
 
 /** Whether [v] is due a garage, for a service or a change of tires. Renewing isn't asked, as that sends news. */
-private fun World.wantsGarage(v: RoadVehicle) = due(v.service, v.serviced) || needsTires(v)
+private fun World.wantsGarage(v: RoadVehicle) = serviceDue(v, v.service, v.serviced) || needsTires(v)
 
 /** Skips [v]'s order if it's to be serviced at a garage and isn't due; true if it did. */
-private fun World.skipService(v: RoadVehicle): Boolean {
+internal fun World.skipService(v: RoadVehicle): Boolean {
     val o = v.current ?: return false
     if (!Order.isDepot(o) || Order.depotKind(o) != Order.DEPOT_SERVICE || wantsGarage(v)) return false
     val was = v.order

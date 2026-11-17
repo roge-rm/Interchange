@@ -231,15 +231,16 @@ class EnergyTest {
     fun rivalsSkipBatteryVehiclesForLongRoutes() {
         val w = World(NewGame(64, 64, 1, 2025, towns = 0, industries = 0, weather = false))
         val bus = w.roster.engines.first { it.key == "base:electric_bus" }
-        assertTrue(w.rivalFits(bus, 40))
+        assertTrue(w.rivalFits(bus, 30))
         assertFalse(w.rivalFits(bus, 60))
         assertFalse(w.rivalFits(bus, -1))
-        assertEquals(bus.id, w.bestModel(Cargo.PASSENGERS, 40)?.id)
+        assertEquals(bus.id, w.bestModel(Cargo.PASSENGERS, 30)?.id)
         assertTrue(w.bestModel(Cargo.PASSENGERS, 60)?.let { w.storeOf(it) } != Traction.BATTERY)
         assertTrue(w.bestModel(Cargo.PASSENGERS)?.let { w.storeOf(it) } != Traction.BATTERY)
-        // Hydrogen as diesel, and anything with energy off.
+        // Hydrogen by its range too, and anything with energy off.
         val h = roster("base:low_floor", Traction.HYDROGEN, 10)
-        assertTrue(w.rivalFits(h.engines.first { it.key == "base:low_floor" }, 500))
+        assertTrue(w.rivalFits(h.engines.first { it.key == "base:low_floor" }, 3))
+        assertFalse(w.rivalFits(h.engines.first { it.key == "base:low_floor" }, 4))
         val off = World(NewGame(64, 64, 1, 2025, towns = 0, industries = 0, weather = false, energy = false))
         assertTrue(off.rivalFits(bus, 500))
     }
@@ -280,5 +281,81 @@ class EnergyTest {
         assertEquals(w.checksum(), copy.checksum())
         while (w.day < 300) { w.step(); copy.step() }
         assertEquals(w.checksum(), copy.checksum())
+    }
+
+    @Test
+    fun aVehicleSetNotToBeServicedIsNeverSentForCharge() {
+        val w = busLine(400)
+        val v = w.roadVehicles[0]!!
+        var k = 0
+        while (k++ < 20_000 && !(v.order == 1 && !v.inDepot && v.waiting == 0 && v.speed > 0)) w.step()
+        v.service = false
+        v.charge = 400 * Energy.UNIT / 10
+        assertTrue(w.lowCharge(v))
+        assertFalse(w.serviceDue(v, v.service, v.serviced))
+        var went = false
+        repeat(Calendar.TICKS_PER_DAY * 60) { w.step(); if (v.servicing || v.inDepot) went = true }
+        assertFalse(went, "sent for a service with servicing off")
+        assertTrue(w.flat(v), "never ran flat")
+    }
+
+    @Test
+    fun aRivalTrainLowOnChargeGetsTheServiceTurn() {
+        val w = line()
+        val roster = w.roster
+        w.apply(Command.BuyTrain(0, 0, roster.engines.first { it.key == "base:gp9" }.id, roster.engines.first { it.key == "base:coach_steel" }.id, 3))
+        val due = standingAtA(w, 1_000 * Energy.UNIT)
+        due.serviced = w.workDay - SERVICE_DAYS * 2
+        val low = w.trains[1]!!
+        low.inDepot = false
+        low.running = true
+        low.steps += step(w.index(42, 10), 0, 0)
+        low.waiting = 10
+        low.charge = Energy.UNIT * 10
+        low.serviced = w.workDay
+        assertTrue(w.lowCharge(low))
+        w.serviceTurn(w.companies[0], listOf(due, low), -1)
+        assertTrue(low.service)
+        assertFalse(due.service)
+        // With none low, the one longest since its service.
+        low.charge = 1_000 * Energy.UNIT
+        w.serviceTurn(w.companies[0], listOf(due, low), -1)
+        assertTrue(due.service)
+        assertFalse(low.service)
+    }
+
+    @Test
+    fun aServiceIfDueOrderIsTakenWhenLowAndCountsOnlyWithServicingOn() {
+        val w = line(range = 50)
+        val t = w.trains[0]!!
+        w.apply(Command.TrainOrder(0, 0, Command.TrainOrder.ORDERS, intArrayOf(0, Order.toDepot(0, Order.DEPOT_SERVICE), 1)))
+        t.order = 1
+        // Full and not due: skipped.
+        assertTrue(w.skipService(t))
+        t.order = 1
+        t.charge = Energy.UNIT * 5
+        assertFalse(w.skipService(t))
+        assertTrue(w.rangeCheck(t)!!.charges)
+        // Servicing off: low doesn't make it due, so it's skipped and isn't a charge point.
+        t.service = false
+        assertTrue(w.skipService(t))
+        assertFalse(w.rangeCheck(t)!!.charges)
+    }
+
+    @Test
+    fun aHydrogenRoundTripWarnsOnlyWithServicingOffOrALongLeg() {
+        val w = busLine(50)
+        val v = w.roadVehicles[0]!!
+        // 30 tiles each way, no depot order: refills at its services.
+        var check = w.rangeCheck(v)!!
+        assertEquals(30, check.longest)
+        assertFalse(check.short)
+        v.service = false
+        check = w.rangeCheck(v)!!
+        assertEquals(60, check.longest)
+        assertTrue(check.short)
+        // A single leg past the range warns even with servicing on.
+        v.service = true
+        assertTrue(w.rangeCheck(v.orders.toIntArray(), Traction.HYDROGEN, 20, false, true).short)
     }
 }

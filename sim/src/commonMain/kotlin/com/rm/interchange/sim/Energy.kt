@@ -65,6 +65,21 @@ internal fun World.lowCharge(v: Carrier): Boolean {
     return chargeOf(v).toLong() * 1_000 < rangeOf(v).toLong() * Energy.UNIT * Energy.LOW
 }
 
+/**
+ * Due a service, as [due] with [service] and [serviced], or low on charge with servicing on. A vehicle set not to be
+ * serviced never goes for charge either: it runs flat and crawls.
+ */
+internal fun World.serviceDue(v: Carrier, service: Boolean, serviced: Int) = due(service, serviced) || service && lowCharge(v)
+
+/** Whether [v] is set to be serviced. */
+private fun serviceOn(v: Carrier) = when (v) {
+    is Train -> v.service
+    is RoadVehicle -> v.service
+    is Ship -> v.service
+    is Aircraft -> v.service
+    else -> false
+}
+
 /** Top speed [top], in whatever units, as [v] runs it now: a quarter when flat. */
 internal fun World.flatCap(v: Carrier, top: Int) = if (flat(v)) maxOf(1, top / Energy.CRAWL) else top
 
@@ -152,8 +167,10 @@ class EnergyView(val store: Int, val charge: Int, val range: Int, val flat: Bool
 
 /**
  * Orders against a range: the longest run in tiles from one place it charges to the next, round the orders, and
- * whether the orders have any; with none, [longest] is the whole round. Places it charges: a depot order, and for a
- * battery a station with a charger, or for rail one with wires over a platform. Straight-line tiles across and down.
+ * whether the orders have any; with none, [longest] is the whole round. Places it charges: a depot order (one to be
+ * serviced if due only with servicing on, as low charge makes it due), and for a battery a station with a charger, or
+ * for rail one with wires over a platform. A hydrogen one with servicing on fills at its services whenever it runs
+ * low, so only its longest single leg counts. Straight-line tiles across and down.
  */
 class RangeCheck(val longest: Int, val range: Int, val charges: Boolean) {
     /** Longer than the range: worth a warning. */
@@ -166,17 +183,17 @@ fun World.energyView(v: Carrier): EnergyView? {
     if (store < 0) return null
     val range = rangeOf(v)
     val rate = chargeRate(v, store)
-    return EnergyView(store, chargeOf(v) / Energy.UNIT, range, v.charge <= 0, rate > 0 && chargeOf(v) < range * Energy.UNIT, rangeCheck(v.orders.toIntArray(), store, range, v is Train))
+    return EnergyView(store, chargeOf(v) / Energy.UNIT, range, v.charge <= 0, rate > 0 && chargeOf(v) < range * Energy.UNIT, rangeCheck(v.orders.toIntArray(), store, range, v is Train, serviceOn(v)))
 }
 
 /** [v]'s orders against its range, or null for none or with energy off. */
 fun World.rangeCheck(v: Carrier): RangeCheck? {
     val store = storeOf(v)
-    return if (store < 0) null else rangeCheck(v.orders.toIntArray(), store, rangeOf(v), v is Train)
+    return if (store < 0) null else rangeCheck(v.orders.toIntArray(), store, rangeOf(v), v is Train, serviceOn(v))
 }
 
-/** [orders] for a vehicle of [store] with [range], on [rail], against its range. */
-fun World.rangeCheck(orders: IntArray, store: Int, range: Int, rail: Boolean): RangeCheck {
+/** [orders] for a vehicle of [store] with [range], on [rail], set to be serviced or not by [service], against its range. */
+fun World.rangeCheck(orders: IntArray, store: Int, range: Int, rail: Boolean, service: Boolean = true): RangeCheck {
     val xs = ArrayList<Int>()
     val ys = ArrayList<Int>()
     val charges = ArrayList<Boolean>()
@@ -184,7 +201,7 @@ fun World.rangeCheck(orders: IntArray, store: Int, range: Int, rail: Boolean): R
         val d = depots.getOrNull(Order.depot(o))
         val s = stations.getOrNull(Order.station(o))
         when {
-            d != null -> { xs += d.tile % width; ys += d.tile / width; charges += true }
+            d != null -> { xs += d.tile % width; ys += d.tile / width; charges += service || Order.depotKind(o) != Order.DEPOT_SERVICE }
             s != null -> {
                 xs += s.signX; ys += s.signY
                 charges += store == Traction.BATTERY && (Equipment.has(s.equipment, Equipment.CHARGER) || rail && s.tiles.any { wires[it].toInt() != 0 })
@@ -194,6 +211,7 @@ fun World.rangeCheck(orders: IntArray, store: Int, range: Int, rail: Boolean): R
     val n = xs.size
     if (n < 2) return RangeCheck(0, range, charges.any { it })
     fun leg(i: Int): Int { val j = (i + 1) % n; return kotlin.math.abs(xs[j] - xs[i]) + kotlin.math.abs(ys[j] - ys[i]) }
+    if (store == Traction.HYDROGEN && service) return RangeCheck((0 until n).maxOf { leg(it) }, range, true)
     val start = charges.indexOf(true)
     if (start < 0) return RangeCheck((0 until n).sumOf { leg(it) }, range, false)
     var longest = 0
@@ -207,10 +225,14 @@ fun World.rangeCheck(orders: IntArray, store: Int, range: Int, rail: Boolean): R
 }
 
 /**
- * Whether a computer company buys [e] for a route of [tiles] between its ends, -1 if not known: a battery one only when
- * there and back fits its range, as it builds no chargers. Hydrogen as diesel.
+ * Whether a computer company buys [e] for a route of [tiles] between its ends in a straight line, -1 if not known: a
+ * battery or hydrogen one only when there and back fits its range, the way taken as half as long again, as it builds
+ * no chargers and fills only at services.
  */
-internal fun World.rivalFits(e: Engine, tiles: Int) = storeOf(e) != Traction.BATTERY || tiles >= 0 && 2 * tiles <= rangeOf(e)
+internal fun World.rivalFits(e: Engine, tiles: Int) = storeOf(e) < 0 || tiles >= 0 && 2 * tiles * RIVAL_DETOUR / 2 <= rangeOf(e)
+
+/** How much longer than a straight line a rival takes a route to be, in halves. */
+private const val RIVAL_DETOUR = 3
 
 /** Straight-line tiles across and down between stations [a] and [b]. */
 internal fun stationsApart(a: Station, b: Station) = kotlin.math.abs(a.signX - b.signX) + kotlin.math.abs(a.signY - b.signY)

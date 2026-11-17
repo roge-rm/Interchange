@@ -530,7 +530,7 @@ private fun World.sail(v: Ship) {
         // Ships stay in port while a storm blows.
         if (v.waiting == 1 && weather.wind >= STORM_WIND && !v.info.hovercraft) return
         if (--v.waiting == 0) {
-            val due = !v.toDepot && hasDepot(v.owner, Depots.SHIPYARD) && (due(v.service, v.serviced) || renewNow(v) || lowCharge(v))
+            val due = !v.toDepot && hasDepot(v.owner, Depots.SHIPYARD) && (serviceDue(v, v.service, v.serviced) || renewNow(v))
             val o = v.orders.getOrNull(v.order % v.orders.size.coerceAtLeast(1))
             // Orders can change while it sits here. Load and count the call only if this dock is that stop.
             if (o != null && shipTile(v) in berths(Order.station(o))) {
