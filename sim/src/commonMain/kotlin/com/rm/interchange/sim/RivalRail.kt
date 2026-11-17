@@ -418,7 +418,7 @@ private const val JANUARY = 15
  * The trains that could run for [cargo], about [load] of it at a time and no longer than [platforms]: the wagon of the
  * day holding most for its length behind each engine strong enough to pull them. Steam, diesel or dual-mode on its diesel, as the line has no wires.
  * [loose] takes as many wagons as each engine can pull at a third the power, for the scripted test player. Battery
- * engines only when [tiles] between the ends fits their range, by [rivalFits].
+ * engines only when [tiles] between the ends fits their range, by [rivalFits]. Railcars, engines with seats of their own, pull nothing.
  */
 private fun World.railTrains(cargo: Int, load: Int, platforms: Int, loose: Boolean = false, tiles: Int = -1): List<RailTrain> {
     val year = Calendar.year(startYear, day)
@@ -428,7 +428,7 @@ private fun World.railTrains(cargo: Int, load: Int, platforms: Int, loose: Boole
     fun fits(e: Engine) = platforms * 16 - e.length - (roster.getOrNull(e.tender)?.length ?: 0) - (plow?.length ?: 0)
     val out = ArrayList<RailTrain>()
     for (e in roster.available(year, true)) {
-        if (e.traction == Traction.ELECTRIC || fits(e) < wagon.length || !rivalFits(e, tiles)) continue
+        if (e.traction == Traction.ELECTRIC || e.capacity > 0 || fits(e) < wagon.length || !rivalFits(e, tiles)) continue
         var n = ((load + wagon.capacity - 1) / wagon.capacity).coerceIn(1, fits(e) / wagon.length)
         if (loose) {
             // Loaded weight in tonnes against power, a horsepower a tonne.

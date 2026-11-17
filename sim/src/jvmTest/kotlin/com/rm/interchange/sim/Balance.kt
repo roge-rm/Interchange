@@ -140,7 +140,8 @@ class Balance {
         }
         for (year in years) {
             // Electrics are picked on their own, so the other engines' best and cheapest stay the same; their lines are wired.
-            val all = onSale(r, year, VehicleKind.ENGINE)
+            // Railcars carry their own seats and pull nothing, so they aren't among the engines pulling these.
+            val all = onSale(r, year, VehicleKind.ENGINE).filter { it.capacity == 0 }
             val trains = extremes(all.filter { it.traction != Traction.ELECTRIC }) { it.power.toLong() } +
                 extremes(all.filter { it.traction == Traction.ELECTRIC }) { it.power.toLong() }
             val wagonsOn = onSale(r, year, VehicleKind.WAGON)

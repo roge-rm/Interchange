@@ -33,6 +33,8 @@ LIVERIES = {
     "bush": ("#e8b020", "#b8322a", "#e8b020"),
     "freight": ("#c8ccd0", "#3a3d40", "#c87a2a"),
     "heli": ("#c8302a", "#ecebe6", "#c8302a"),
+    "ebush": ("#ecebe6", "#1f8a72", "#1f8a72"),
+    "hydrogen": ("#f0f0ec", "#2a58a8", "#1f8a72"),
 }
 
 
@@ -324,6 +326,8 @@ AIRLINERS = {
     "b747f": dict(nose="jet", eng=("fan", 0.36, [0.4, 0.71], 0.095, 0.7, 0), drop=1.4),
     "dc9": dict(nose="jet", eng=("cigar", 0.42, None, 0.2, 0, 0)),
     "crj": dict(nose="pointed", eng=("fan", 0.5, None, 0.15, 0, 0)),
+    # A hydrogen regional airliner of the 2040s: four slim electric props on fuel cells along a high wing.
+    "h2_regional": dict(nose="pointed", eng=("turboprop", 0.34, [0.22, 0.46], 2.0, 0.42, 1.05), tall=1.3),
 }
 
 
@@ -736,6 +740,9 @@ BUSH = {
     "otter": dict(length=12.75, span=17.69, chord=2.03, nose=1.5, cowl=0.72, engine="cowl", cabin=(1.9, 7.0, 0.78, 1.8, 3.5),
                   tailcone=(0.1, 3.0, 3.35), fin=(1.7, 1.8, 1.3), tailplane=(3.0, 1.2), struts="one", windows=6,
                   floats=(9.8, 0.95, 1.6), sq=3.5, prop=1.6),
+    "e_beaver": dict(length=9.24, span=14.63, chord=1.59, nose=1.3, cowl=0.6, engine="electric", cabin=(1.6, 4.3, 0.62, 1.75, 3.2),
+                     tailcone=(0.1, 2.8, 3.1), fin=(1.5, 1.4, 1.1), tailplane=(2.5, 1.0), struts="one", windows=2,
+                     floats=(7.4, 0.8, 1.35), sq=3.5, prop=1.3, livery="ebush"),
     "twin_otter": dict(length=15.77, span=19.81, chord=1.98, nose=2.8, cowl=0.0, engine="twin", cabin=(3.4, 10.5, 0.82, 1.9, 3.7),
                        tailcone=(0.12, 3.1, 3.6), fin=(2.3, 2.6, 1.6), tailplane=(3.2, 1.3), struts="one", windows=8,
                        floats=(11.0, 1.1, 1.9), sq=3.5, prop=1.3),
@@ -751,9 +758,9 @@ def bush(m, L, kind):
 
 def _bush(m, L, t):
     c = common()
-    body_c, line_c, tail_c = LIVERIES["bush"]
-    body = material("bush body", body_c, rough=0.35, clearcoat=0.3)
-    line = material("bush line", line_c, rough=0.4)
+    body_c, line_c, tail_c = LIVERIES[t.get("livery", "bush")]
+    body = material(f"{t.get('livery', 'bush')} body", body_c, rough=0.35, clearcoat=0.3)
+    line = material(f"{t.get('livery', 'bush')} line", line_c, rough=0.4)
     R = Real(L, t["length"])
     sq = t["sq"]
     y0, y1, hw, zb, zt = t["cabin"]
@@ -775,6 +782,12 @@ def _bush(m, L, t):
                 m.rod((0, R.y(0.35), R.h(zc)), (R.w(cr * math.cos(a)), R.y(0.35), R.h(zc + cr * math.sin(a))), max(R.w(0.08), 0.0028), c["metal"], segments=6)
             pod(m, R, [(0.55, 0.35, zc - 0.35, zc + 0.35), (nose, hw * 0.9, zb + 0.1, zt - 0.5, sq)], {"b": c["dark"]}, n=12)
             front = (nose, hw * 0.9, zb + 0.1, zt - 0.5, sq)
+        elif t["engine"] == "electric":
+            # An electric motor in a slim nose tapering to the spinner, no cylinders and no intake.
+            cowl = material("electric cowl", line_c, rough=0.35, clearcoat=0.3)
+            pod(m, R, [(0.0, cr * 0.3, zc - cr * 0.3, zc + cr * 0.3), (0.35, cr * 0.7, zc - cr * 0.7, zc + cr * 0.65),
+                       (0.9, cr * 0.95, zc - cr * 0.9, zc + cr * 0.9), (nose, max(cr * 0.95, hw * 0.95), zb + 0.05, zc + cr, 2.6)], {"b": cowl})
+            front = (nose, max(cr * 0.95, hw * 0.95), zb + 0.05, zc + cr, 2.6)
         else:
             cowl = material("bush cowl", line_c, rough=0.35, clearcoat=0.3)
             pod(m, R, [(0.0, cr * 0.8, zc - cr * 0.8, zc + cr * 0.8), (0.12, cr, zc - cr, zc + cr), (0.7, cr, zc - cr, zc + cr),
@@ -867,6 +880,8 @@ def aircraft_builders():
         "bristol_freighter": (6, lambda m, L: A(m, L, "bristol_freighter", "high", span=1.4, livery="freight", windows=False, cargo_door=True, gear="tail")),
         "hercules": (9, lambda m, L: A(m, L, "hercules", "high", span=1.3, livery="freight", windows=False, cargo_door=True, r=L * 0.075)),
         "b747f": (15, lambda m, L: A(m, L, "b747f", "low", span=0.85, sweep=0.15, livery="freight", windows=False, cargo_door=True, hump=0.42, r=L * 0.065)),
+        "electric_floatplane": (3, lambda m, L: bush(m, L, "e_beaver")),
+        "hydrogen_airliner": (8, lambda m, L: A(m, L, "h2_regional", "high", tail="t", span=1.15, livery="hydrogen")),
         "bell_47": (3, lambda m, L: helicopter(m, L, "bell47")),
         "s55": (4, lambda m, L: helicopter(m, L, "s55")),
         "jetranger": (3, lambda m, L: helicopter(m, L, "jetranger")),

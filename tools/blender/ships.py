@@ -379,13 +379,15 @@ def passenger_steamer(m, L):
     m.text(LETTERS, half + 0.002, a1 - L * 0.2, z * 0.5, 0.024, c["white"], 1)
 
 
-def tug_barge(m, L):
+def tug_barge(m, L, power="diesel"):
     """A northern push tug and its two barges lashed end to end: deck cargo and containers on the lead barge with its
-    raked bow, fuel tanks on the one behind, square at both ends, and the tug's tall wheelhouse behind them."""
+    raked bow, fuel tanks on the one behind, square at both ends, and the tug's tall wheelhouse behind them. power
+    "battery" draws the green battery tug of the 2020s: no funnels, the cells in a low casing aft with its charging
+    mast."""
     c = common()
     a0, a1 = -L / 2, L / 2
     tug_len = L * 0.27
-    tug = material("tug hull", "#c8302a", rough=0.5)
+    tug = material("tug hull", "#c8302a", rough=0.5) if power == "diesel" else material("battery tug hull", "#1f8a72", rough=0.5)
     barge = material("barge", "#5a5e62", metal=0.4, rough=0.6)
     fb = 0.14
     gap = 0.004
@@ -420,16 +422,23 @@ def tug_barge(m, L):
     house(m, t0 + 0.03, t0 + tug_len - 0.03, 0.042, z, z + 0.3, c["white"], c, round_front=0.006)
     house(m, t0 + 0.045, t0 + tug_len - 0.035, 0.034, z + 0.3, z + 0.56, c["white"], c, round_front=0.006)
     house(m, t0 + 0.06, t0 + tug_len - 0.038, 0.03, z + 0.56, z + 0.84, c["white"], c, round_front=0.006)
-    for side in (-1, 1):
-        funnel(m, t0 + 0.04, z + 0.3, z + 0.75, 0.007, c["dark"], material("tug band", "#e0b020", rough=0.4), x=side * 0.03, oval=1.0)
+    if power == "diesel":
+        for side in (-1, 1):
+            funnel(m, t0 + 0.04, z + 0.3, z + 0.75, 0.007, c["dark"], material("tug band", "#e0b020", rough=0.4), x=side * 0.03, oval=1.0)
+        return
+    # The cells' casing on the after deck, and the charging mast with its plug arm over it.
+    m.box(-0.036, 0.036, t0 + 0.008, t0 + 0.03, z, z + 0.2, tug, bevel=0.003)
+    m.rod((0.0, t0 + 0.018, z + 0.2), (0.0, t0 + 0.018, z + 1.0), 0.003, c["steel"])
+    m.rod((0.0, t0 + 0.018, z + 0.95), (0.03, t0 + 0.018, z + 0.85), 0.0025, c["steel"])
 
 
 def freighter(m, L, kind):
     """A lake package freighter or lake tanker, laid out as a laker with the pilothouse forward and the engine aft (the
     package boat with booms over its hatches and doors in its sides, the tanker with a catwalk over its tanks), or a
-    product tanker or container feeder with the whole house aft."""
+    product tanker or container feeder with the whole house aft. hydrogen is a container feeder of the 2040s with no
+    funnel: its tanks in a rounded casing behind the house, under a vent mast."""
     c = common()
-    colours = {"package": "#2a3a2a", "tanker": "#2a2a2c", "product": "#9a2a22", "container": "#2a4a7a"}
+    colours = {"package": "#2a3a2a", "tanker": "#2a2a2c", "product": "#9a2a22", "container": "#2a4a7a", "hydrogen": "#1f6a7a"}
     paint = material(f"{kind} hull", colours[kind], rough=0.5, clearcoat=0.2)
     half = 0.062 if kind in ("package", "tanker") else 0.072
     a0, a1 = -L / 2, L / 2
@@ -475,15 +484,23 @@ def freighter(m, L, kind):
             m.box(-0.026, 0.026, y - 0.004, y + 0.004, z, z + 0.04, pipe)
         return
     top = hull(m, L, half, 0.32, paint, c, bow=0.15, stern=0.08, sheer=0.18, transom=0.8, rake=0.04, counter=0.03,
-               flare=0.12 if kind == "container" else 0.08)
+               flare=0.12 if kind in ("container", "hydrogen") else 0.08)
     z = top(0.5)
     aft = a0 + L * 0.05
-    levels = {"product": 3, "container": 4}[kind]
+    levels = {"product": 3, "container": 4, "hydrogen": 4}[kind]
     house(m, aft, aft + 0.1, half * 0.92, z, z + 0.32, c["white"], c)
     for k in range(1, levels):
         house(m, aft + 0.04, aft + 0.1, half * (0.88 if k < levels - 1 else 0.98), z + k * 0.32, z + (k + 1) * 0.32, c["white"], c)
-    funnel(m, aft + 0.018, z + 0.32, z + 0.32 * (levels - 1) + 0.75, 0.017, paint,
-           material(f"{kind} band", "#e0b020", rough=0.4), rake=0.005)
+    if kind == "hydrogen":
+        casing = material("hydrogen casing", "#e8ebea", rough=0.4)
+        m.shell([(aft + 0.102, z, 0.01, "paint"), (aft + 0.17, z, 0.01, "paint"), (aft + 0.165, z + 0.62, 0.04, "paint"),
+                 (aft + 0.104, z + 0.62, 0.03, "paint")], half * 0.8, {"paint": casing}, crown=0.15)
+        for side in (-1, 1):
+            m.box(side * half * 0.8 - 0.0015, side * half * 0.8 + 0.0015, aft + 0.106, aft + 0.164, z + 0.36, z + 0.44, paint)
+        m.rod((0.0, aft + 0.06, z + 0.32 * levels), (0.0, aft + 0.06, z + 0.32 * levels + 0.6), 0.003, c["steel"])
+    else:
+        funnel(m, aft + 0.018, z + 0.32, z + 0.32 * (levels - 1) + 0.75, 0.017, paint,
+               material(f"{kind} band", "#e0b020", rough=0.4), rake=0.005)
     if kind == "product":
         m.box(-0.006, 0.006, aft + 0.1, a1 - L * 0.12, z + 0.1, z + 0.13, c["steel"])
         pipe = material("deck pipes", "#3a6a3a", rough=0.5)
@@ -497,7 +514,7 @@ def freighter(m, L, kind):
     else:
         box = [material("can red", "#9a3a2a", rough=0.6), material("can blue", "#2a4a7a", rough=0.6), material("can grey", "#8a8e92", rough=0.6),
                material("can green", "#3a6a3a", rough=0.6), material("can orange", "#c87a2a", rough=0.6)]
-        y = aft + 0.12
+        y = aft + (0.19 if kind == "hydrogen" else 0.12)
         k = 0
         while y + 0.05 < a1 - L * 0.12:
             for row, x in enumerate((-0.04, 0.0, 0.04)):
@@ -511,11 +528,13 @@ def car_ferry(m, L, era):
     """A car ferry. old: one bow, a bow door, the car deck open at the stern, a passenger deck over it and one funnel.
     super: double-ended, two car decks open at both ends, two passenger decks the same width over them, a bridge at
     each end and funnels side by side amidships. battery: double-ended, an open car deck the whole length, the
-    passenger house along one side over the cars and its bridge on top, no funnel."""
+    passenger house along one side over the cars and its bridge on top, no funnel. hydrogen: double-ended, one car
+    deck open at both ends, a passenger deck over it with a bridge at each end, and the tanks in a long rounded casing
+    on top in place of funnels, with a vent mast."""
     c = common()
-    paint = material(f"{era} ferry hull", {"old": "#2a3a5a", "super": "#ecebe6", "battery": "#ecebe6"}[era], rough=0.45, clearcoat=0.2)
-    band = material(f"{era} ferry band", {"old": "#c8302a", "super": "#2a5a8a", "battery": "#2a8a6a"}[era], rough=0.4)
-    half = {"old": 0.062, "super": 0.08, "battery": 0.075}[era]
+    paint = material(f"{era} ferry hull", {"old": "#2a3a5a", "super": "#ecebe6", "battery": "#ecebe6", "hydrogen": "#ecebe6"}[era], rough=0.45, clearcoat=0.2)
+    band = material(f"{era} ferry band", {"old": "#c8302a", "super": "#2a5a8a", "battery": "#2a8a6a", "hydrogen": "#2a58a8"}[era], rough=0.4)
+    half = {"old": 0.062, "super": 0.08, "battery": 0.075, "hydrogen": 0.076}[era]
     double = era != "old"
     a0, a1 = -L / 2, L / 2
     if era == "old":
@@ -561,6 +580,27 @@ def car_ferry(m, L, era):
             house(m, yb - 0.022, yb + 0.022, half * 0.9, zg + 0.66, zg + 0.9, c["white"], c, round_front=0.006, back=True)
         for side in (-1, 1):
             funnel(m, 0.0, zg + 0.66, zg + 1.08, 0.016, c["white"], band, x=side * 0.032, oval=1.6)
+        m.text(LETTERS, half + 0.002, 0, z * 0.55, 0.026, band, 1)
+        return
+    if era == "hydrogen":
+        top = hull(m, L, half, 0.22, paint, c, bow=0.14, sheer=0.06, double=True, rake=0.05, flare=0.05)
+        z = top(0.5)
+        car_deck(m, top, 0.035, 0.965, 0.0, 0.4, paint, c)
+        cars(m, a0 + L * 0.04, a1 - L * 0.04, (-0.045, -0.022, 0.001, 0.024, 0.047), z, seed=6)
+        zg = z + 0.4
+        for side in (-1, 1):
+            m.box(side * half * 0.985 - 0.0015, side * half * 0.985 + 0.0015, a0 + L * 0.05, a1 - L * 0.05, zg - 0.14, zg - 0.04, band)
+        y0, y1 = a0 + L * 0.14, a1 - L * 0.14
+        house(m, y0, y1, half * 0.95, zg, zg + 0.34, c["white"], c, round_front=0.02, rake=0.014, back=True)
+        for side in (-1, 1):
+            m.box(side * half * 0.95 - 0.0015, side * half * 0.95 + 0.0015, y0 + 0.02, y1 - 0.02, zg + 0.31, zg + 0.36, band)
+        for end in (-1, 1):
+            yb = end * (L / 2 - L * 0.2)
+            house(m, yb - 0.02, yb + 0.02, half * 0.85, zg + 0.34, zg + 0.58, c["white"], c, round_front=0.006, back=True)
+        # The tank casing amidships, blue, rounded, with its vent mast.
+        m.shell([(-L * 0.18, zg + 0.34, 0.01, "paint"), (L * 0.18, zg + 0.34, 0.01, "paint"), (L * 0.16, zg + 0.62, 0.04, "paint"),
+                 (-L * 0.16, zg + 0.62, 0.04, "paint")], half * 0.55, {"paint": band}, crown=0.12)
+        m.rod((0.0, 0.0, zg + 0.6), (0.0, 0.0, zg + 1.1), 0.003, c["steel"])
         m.text(LETTERS, half + 0.002, 0, z * 0.55, 0.026, band, 1)
         return
     top = hull(m, L, half, 0.22, paint, c, bow=0.12, sheer=0.05, double=True, rake=0.05, flare=0.05)
@@ -759,4 +799,7 @@ def ship_builders():
         "container_feeder": (14, lambda m, L: freighter(m, L, "container")),
         "product_tanker": (14, lambda m, L: freighter(m, L, "product")),
         "battery_ferry": (9, lambda m, L: car_ferry(m, L, "battery")),
+        "battery_tug": (9, lambda m, L: tug_barge(m, L, "battery")),
+        "hydrogen_ferry": (11, lambda m, L: car_ferry(m, L, "hydrogen")),
+        "hydrogen_feeder": (14, lambda m, L: freighter(m, L, "hydrogen")),
     }

@@ -27,6 +27,7 @@ import roadcars  # noqa: E402
 import horses  # noqa: E402
 import ships  # noqa: E402
 import aircraft  # noqa: E402
+import energy  # noqa: E402
 
 
 def L(n):
@@ -142,6 +143,18 @@ MODELS = {
     "tank_domeless": (12, lambda m: cars.tank_domeless(m, L(12))),
     "boxcar_50": (12, lambda m: cars.boxcar_50(m, L(12))),
     "reefer_mech": (12, lambda m: cars.reefer_mech(m, L(12))),
+    "battery_railcar": (16, lambda m: energy.railcar(m, L(16), "battery", 1)),
+    "hydrogen_railcar": (16, lambda m: energy.railcar(m, L(16), "hydrogen", 1)),
+    "battery_railcar_2": (16, lambda m: energy.railcar(m, L(16), "battery", 2)),
+    "hydrogen_railcar_2": (16, lambda m: energy.railcar(m, L(16), "hydrogen", 2)),
+    "bl44": (16, lambda m: energy.freight(m, L(16), "battery", 1)),
+    "hl44": (16, lambda m: energy.freight(m, L(16), "hydrogen", 1)),
+    "bl60": (16, lambda m: energy.freight(m, L(16), "battery", 2)),
+    "hl60": (16, lambda m: energy.freight(m, L(16), "hydrogen", 2)),
+    "battery_tractor": (12, lambda m: roadcars.tractor(m, L(12), "van", "aero", "#1f8a72", era=2026, power="battery")),
+    "hydrogen_tractor": (12, lambda m: roadcars.tractor(m, L(12), "van", "aero", "#2a58a8", era=2030, power="hydrogen")),
+    "hydrogen_bus": (8, lambda m: roadcars.bus(m, L(8), "hydrogen")),
+    "battery_coach": (9, lambda m: roadcars.highway_coach(m, L(9), 2035)),
 }
 SHIPS = ships.ship_builders()
 AIRCRAFT = aircraft.aircraft_builders()
@@ -153,11 +166,12 @@ for _key, (_n, _build) in list(SHIPS.items()) + list(AIRCRAFT.items()):
 ROAD = {"horse_omnibus", "stagecoach", "mail_coach", "freight_wagon", "red_river_cart", "horsecar", "motor_bus", "brill_bus", "new_look", "low_floor", "electric_bus", "highway_coach", "courier_coach", "mc5_coach", "d4500_coach", "mail_truck", "stake_truck", "dump_truck",
         "tank_truck", "log_truck", "cattle_truck", "semi_van", "plow_truck", "streetcar", "pcc", "clrv", "flexity",
         "step_van", "electric_van", "flatbed_truck", "tandem_dump", "quad_dump", "fuel_truck", "tandem_plow", "highway_tractor",
-        "aero_tractor", "tanker_train", "grain_train", "cattle_liner", "logger", "sander_plow", "tandem_semi", "boom_truck", "tanker_long", "wing_sander"}
+        "aero_tractor", "tanker_train", "grain_train", "cattle_liner", "logger", "sander_plow", "tandem_semi", "boom_truck", "tanker_long", "wing_sander",
+        "battery_tractor", "hydrogen_tractor", "hydrogen_bus", "battery_coach"}
 # How each kind is lowered, as (h, base): heights over base steps are scaled by h, wheels, horses and people keep
 # their size. Rail bodies come down onto their trucks' wheel tops, road ones onto their wheels; ships from the waterline,
 # helicopters and float planes from the ground. Fixed-wing aircraft are already in proportion.
-FLOAT_PLANES = {"fairchild_71", "norseman", "beaver", "otter", "twin_otter"}
+FLOAT_PLANES = {"fairchild_71", "norseman", "beaver", "otter", "twin_otter", "electric_floatplane"}
 HELICOPTERS = {"bell_47", "s55", "jetranger", "s92"}
 
 

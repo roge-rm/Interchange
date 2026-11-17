@@ -67,14 +67,15 @@ def bus(m, L, era):
     standee windows and fluted sides, a low-floor bus with its windows set low, or a battery bus with a roof fairing."""
     c = common()
     paint = {"motor": ("#6a2a26", "#e6dcc0"), "brill": ("#8a2a22", "#e6dcc0"), "newlook": ("#e6dcc0", "#2a5a8a"),
-             "lowfloor": ("#e8e8e4", "#2a7a4a"), "electric": ("#e8e8e4", "#2a8ab0")}[era]
+             "lowfloor": ("#e8e8e4", "#2a7a4a"), "electric": ("#e8e8e4", "#2a8ab0"),
+             "hydrogen": ("#e8e8e4", "#2a58a8")}[era]
     body = material(f"{era} bus", paint[0], rough=0.4, clearcoat=0.3)
     band = material(f"{era} band", paint[1], rough=0.4)
     grille = material("grille", "#3a3836", metal=0.4, rough=0.5)
     mats = {"paint": body, "glass": c["glass"], "grille": grille}
     R, F = -L / 2 + 0.01, L / 2 - 0.01
     half = 0.078
-    low = era in ("lowfloor", "electric")
+    low = era in ("lowfloor", "electric", "hydrogen")
     fl = 0.3 if low else 0.42
     t = 1.06 if era == "motor" else 1.15
     # The window row follows the floor: a high-floor bus's sills sit about half way up its side, a low-floor bus's
@@ -164,6 +165,15 @@ def bus(m, L, era):
         # The batteries under a fairing along most of the roof, sloping up from over the windshield.
         m.shell([(R + 0.02, t + 0.0, 0.01, "paint"), (F - 0.06, t + 0.0, 0.0, "paint"), (F - 0.11, t + 0.17, 0.05, "paint"),
                  (R + 0.04, t + 0.17, 0.03, "paint"), (R + 0.02, t + 0.06, 0.02, "paint")], 0.07, {"paint": body}, crown=0.05)
+    elif era == "hydrogen":
+        # The tanks in a rounded casing over the front half of the roof, the fuel cell and its cooler in a lower pod at the back.
+        m.shell([(-0.02, t, 0.01, "paint"), (F - 0.05, t, 0.0, "paint"), (F - 0.09, t + 0.2, 0.06, "paint"),
+                 (0.0, t + 0.2, 0.06, "paint")], 0.068, {"paint": band}, crown=0.1)
+        m.shell([(R + 0.02, t, 0.01, "paint"), (-0.06, t, 0.01, "paint"), (-0.07, t + 0.12, 0.03, "paint"),
+                 (R + 0.03, t + 0.12, 0.03, "paint")], 0.066, {"paint": material("roof pod", "#d4d6d8", rough=0.5)}, crown=0.04)
+        for k in range(3):
+            y = R + 0.05 + k * 0.03
+            m.box(-0.045, 0.045, y, y + 0.02, t + 0.11, t + 0.135, grille)
     m.text(LETTERS, half + 0.002, (R + nose) / 2, sill - (0.1 if low else 0.05), 0.025, body, 1)
 
 
@@ -172,8 +182,12 @@ def highway_coach(m, L, era=1980):
     MC-5 on two axles with fluted sides, a 1980 MC-9 on three with big tinted windows, or a 2000 D4500 with a raked,
     curved front and one dark band of glass."""
     c = common()
-    body = material("coach silver", "#c4c8cc", metal=0.6, rough=0.3)
-    band = material("coach blue", "#2a4a7a", rough=0.4)
+    if era >= 2030:
+        body = material("battery coach white", "#e6e9e8", rough=0.35, clearcoat=0.3)
+        band = material("battery coach green", "#1f8a72", rough=0.4)
+    else:
+        body = material("coach silver", "#c4c8cc", metal=0.6, rough=0.3)
+        band = material("coach blue", "#2a4a7a", rough=0.4)
     bays = material("bay doors", "#9a9ea2", metal=0.5, rough=0.35)
     flutes = material("flutes", "#d4d8dc", metal=0.7, rough=0.25)
     R, F = -L / 2 + 0.01, L / 2 - 0.01
@@ -199,6 +213,13 @@ def highway_coach(m, L, era=1980):
                  (F, 0.74, 0.012, "glass", 0.92, 0.006), (F - 0.018, t - 0.1, 0.04, "paint", 0.93, 0.004), (F - 0.055, t + 0.02, 0.04, "paint"),
                  (R + 0.02, t + 0.02, 0.03, "paint"), (R, t - 0.12, 0.02, "paint")]
         crown = 0.07
+    elif era >= 2030:
+        # A battery coach: a deeply raked, rounded front, one sweep of glass from the bumper's top into the roof.
+        t, sill = 1.38, 0.82
+        shape = [(R, fl, 0.015, "paint"), (F - 0.004, fl, 0.025, "paint", 0.9, 0.008), (F + 0.004, 0.46, 0.03, "paint", 0.9, 0.012),
+                 (F, 0.54, 0.02, "glass", 0.9, 0.014), (F - 0.065, t - 0.04, 0.06, "paint", 0.94, 0.008), (F - 0.11, t + 0.02, 0.04, "paint"),
+                 (R + 0.02, t + 0.02, 0.03, "paint"), (R, t - 0.12, 0.02, "paint")]
+        crown = 0.08
     else:
         t, sill = 1.38, 0.82
         shape = [(R, fl, 0.015, "paint"), (F - 0.002, fl, 0.02, "paint", 0.92, 0.006), (F + 0.004, 0.5, 0.02, "paint", 0.92, 0.01),
@@ -216,6 +237,9 @@ def highway_coach(m, L, era=1980):
             m.box(side * half - 0.0015, side * half + 0.0015, R + 0.01, F - 0.03, sill - 0.12, sill - 0.04, band)
         else:
             m.box(side * half - 0.0015, side * half + 0.0015, R + 0.01, F - 0.03, 0.5, 0.62 if era < 1995 else 0.58, band)
+            if era >= 2030:
+                # The cells in the bays: a charging flap behind the front wheels instead of a fuel filler.
+                m.box(side * half - 0.0018, side * half + 0.0018, F - 0.14, F - 0.115, 0.38, 0.46, c["dark"])
             for k in range(3):
                 y = R + 0.05 + k * 0.1
                 m.box(side * half - 0.0012, side * half + 0.0012, y, y + 0.07, fl + 0.06, fl + 0.15, bays)
@@ -227,13 +251,18 @@ def highway_coach(m, L, era=1980):
     elif era < 1995:
         windows(m, w0, w1, sill, t - 0.12, 5, half + 0.0005, c, gap=0.06)
     else:
-        m.box(-half - 0.001, half + 0.001, w0, F - 0.06, sill - 0.04, t - 0.1, c["glass"])
-    lamps(m, outline, 0.45, 0.055, c)
+        m.box(-half - 0.001, half + 0.001, w0, F - 0.09 if era >= 2030 else F - 0.06, sill - 0.04, t - 0.1, c["glass"])
+    if era >= 2030:
+        # A slim light bar across the nose instead of round lamps.
+        y = parts.outline_front(outline, 0.42)
+        m.box(-0.06, 0.06, y - 0.004, y + 0.002, 0.4, 0.44, c["light"])
+    else:
+        lamps(m, outline, 0.45, 0.055, c)
     m.box(-0.07, 0.07, F - 0.01, F + 0.006, 0.28, 0.36, c["dark"], bevel=0.004)
     # The destination sign over the windshield.
     yt = parts.outline_front(outline, t - 0.07)
     m.box(-0.05, 0.05, yt - 0.01, yt - 0.002, t - 0.12, t - 0.06, c["dark"])
-    m.text(LETTERS, half + 0.002, 0.0, 0.56, 0.025, c["chrome"] if era >= 1975 else body, 1)
+    m.text(LETTERS, half + 0.002, 0.0, 0.56, 0.025, c["chrome"] if 1975 <= era < 2030 else body, 1)
 
 
 # How long each cab is, from its back to its bumper, in tiles.
@@ -488,7 +517,7 @@ def _sloped_cab(m, y0, y1, c, paint):
     return hood
 
 
-def _cab(m, y0, y1, c, paint, style, era=1970, stacks="back"):
+def _cab(m, y0, y1, c, paint, style, era=1970, stacks="back", power="diesel"):
     """A truck's cab from y0 to its front at y1, by era: an open 1910s C-cab, a 1930s rounded hood with fenders, a squarer
     1960s hood with a wide grille, a 1950s highway tractor, a long highway hood (with a sleeper behind as "sleeper"), a
     sloped aero hood with a tall roof, or a cab-over. Returns where the hood meets the cab."""
@@ -503,7 +532,8 @@ def _cab(m, y0, y1, c, paint, style, era=1970, stacks="back"):
     if style == "sloped":
         return _sloped_cab(m, y0, y1, c, paint)
     half = 0.075
-    grille = material("grille", "#3a3836", metal=0.4, rough=0.5)
+    # Battery and hydrogen trucks need little cooling air: the grille is closed in the body colour.
+    grille = material("grille", "#3a3836", metal=0.4, rough=0.5) if power == "diesel" else paint
     mats = {"paint": paint, "glass": c["glass"], "grille": grille}
     top = CAB_TOP[style]
     # Side glass from its sill to its head, in steps.
@@ -538,6 +568,12 @@ def _cab(m, y0, y1, c, paint, style, era=1970, stacks="back"):
                  (y0 + 0.04, top, 0.04, "paint"), (y0, top, 0.015, "paint")]
         outline = m.shell(shape, half, mats, crown=0.06)
         lamps(m, outline, 0.52, 0.058, c)
+        if power != "diesel":
+            # A light bar across the closed grille and a narrow vent low down.
+            y = parts.outline_front(outline, 0.5)
+            m.box(-0.05, 0.05, y - 0.006, y + 0.002, 0.48, 0.51, c["light"])
+            y = parts.outline_front(outline, 0.38)
+            m.box(-0.045, 0.045, y - 0.006, y + 0.002, 0.36, 0.4, c["dark"])
         for side in (-1, 1):
             # Fairings over the tanks between the steer wheels and the cab's back, and extenders closing the gap to the trailer.
             m.box(side * half - 0.003, side * half + 0.001, y0 + 0.01, hood - 0.07, 0.26, 0.62, paint, bevel=0.004)
@@ -874,22 +910,40 @@ TRAILER_AXLES = {"van": (3,), "logs": (3,), "cattle": (2,), "tank": (3, 2), "hop
 AXLE_GAP = 0.047
 
 
-def tractor(m, L, trailer, cab, paint_hex, bumper=False, era=1970, drive=2, axles=None, stacks="back", posts=False):
+def tractor(m, L, trailer, cab, paint_hex, bumper=False, era=1970, drive=2, axles=None, stacks="back", posts=False, power="diesel"):
     """A highway tractor of its era pulling a trailer: a van, a B-train of tanks or grain hoppers, a cattle liner, or long
     logs on a pole trailer. bumper adds a moose bumper. drive is the tractor's driving axles; axles the trailer's, one
     count per trailer, by default TRAILER_AXLES. A B-train's lead trailer runs back on its axles to a fifth wheel the
-    pup's front sits on. posts gives a van the bare aluminium and outside posts of 1970s and 80s trailers."""
+    pup's front sits on. posts gives a van the bare aluminium and outside posts of 1970s and 80s trailers. power "battery"
+    closes the grille and hangs cell packs between the axles; "hydrogen" closes it and stands a tank casing behind the cab."""
     c = common()
     paint = material(f"{trailer} {cab} tractor", paint_hex, rough=0.4, clearcoat=0.3)
     a0, a1 = -L / 2 + 0.01, L / 2 - 0.01
     cab0 = a1 - CAB_LEN[cab]
     axles = axles or TRAILER_AXLES[trailer]
-    drives = [cab0 - 0.04] if drive == 1 else [cab0 - 0.03 - AXLE_GAP * k for k in range(drive)]
+    # A hydrogen tractor's tank casing stands between its cab and the fifth wheel.
+    back = cab0 - (0.075 if power == "hydrogen" else 0.0)
+    drives = [back - 0.04] if drive == 1 else [back - 0.03 - AXLE_GAP * k for k in range(drive)]
     rear = [a0 + REAR_AXLE + AXLE_GAP * k for k in range(axles[-1])]
     lead = [rear[-1] + 0.07 + AXLE_GAP * k for k in range(axles[0])] if len(axles) > 1 else []
     wheels(m, [a1 - FRONT_AXLE[cab]] + drives + rear + lead, c)
     m.box(-0.06, 0.06, drives[-1] - 0.035, a1, 0.25, 0.35, c["dark"])
-    _cab(m, cab0, a1, c, paint, cab, era, stacks)
+    _cab(m, cab0, a1, c, paint, cab, era, stacks, power)
+    if power == "battery":
+        # Cell packs along the frame between the steer axle and the drives, a charging port on the left fairing.
+        pack = material("cell packs", "#3a3e42", metal=0.3, rough=0.5)
+        m.box(-0.062, 0.062, drives[0] + 0.04, a1 - FRONT_AXLE[cab] - 0.03, 0.2, 0.32, pack, bevel=0.004)
+        m.box(-0.0785, -0.0755, a1 - 0.18, a1 - 0.16, 0.4, 0.5, c["dark"])
+    elif power == "hydrogen":
+        # The tanks stand upright in a casing the cab's height behind it, a vent mast on top.
+        y0, y1 = cab0 - 0.075, cab0 - 0.004
+        m.shell([(y0, 0.36, 0.006, "paint"), (y1, 0.36, 0.006, "paint"), (y1, CAB_TOP[cab] - 0.02, 0.02, "paint"),
+                 (y0, CAB_TOP[cab] - 0.02, 0.03, "paint")], 0.07, {"paint": paint}, crown=0.05)
+        band = material("hydrogen band", "#e8e8e4", rough=0.4)
+        for side in (-1, 1):
+            m.box(side * 0.0705 - 0.001, side * 0.0705 + 0.001, y0 + 0.01, y1 - 0.01, 1.1, 1.18, band)
+        m.upright(0.0, y0 + 0.02, CAB_TOP[cab] - 0.04, CAB_TOP[cab] + 0.14, 0.004, 0.004, c["chrome"], segments=8)
+        cab0 = y0
     if bumper:
         guard(m, a1, c, 0.95 if cab != "aero" else 0.75)
     # The fifth wheel over the drive.

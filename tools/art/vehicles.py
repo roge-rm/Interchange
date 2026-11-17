@@ -477,6 +477,24 @@ ROSTER = [
     ("wing_sander", 7, lambda f: caboose(f, L(7))),
     ("self_unloader_fwd", 14, lambda f: coach(f, L(14), True)),
     ("srn5", 4, lambda f: coach(f, L(4), True)),
+    # Battery and hydrogen vehicles.
+    ("battery_railcar", 16, lambda f: coach(f, L(16), True)),
+    ("hydrogen_railcar", 16, lambda f: coach(f, L(16), True)),
+    ("bl44", 16, lambda f: boxcar(f, L(16), True)),
+    ("hl44", 16, lambda f: boxcar(f, L(16), True)),
+    ("battery_railcar_2", 16, lambda f: coach(f, L(16), True)),
+    ("hydrogen_railcar_2", 16, lambda f: coach(f, L(16), True)),
+    ("bl60", 16, lambda f: boxcar(f, L(16), True)),
+    ("hl60", 16, lambda f: boxcar(f, L(16), True)),
+    ("battery_tractor", 12, lambda f: boxcar(f, L(12), True)),
+    ("hydrogen_bus", 8, lambda f: coach(f, L(8), True)),
+    ("hydrogen_tractor", 12, lambda f: boxcar(f, L(12), True)),
+    ("battery_coach", 9, lambda f: coach(f, L(9), True)),
+    ("battery_tug", 9, lambda f: coach(f, L(9), True)),
+    ("hydrogen_ferry", 11, lambda f: coach(f, L(11), True)),
+    ("hydrogen_feeder", 14, lambda f: coach(f, L(14), True)),
+    ("electric_floatplane", 3, lambda f: coach(f, L(3), True)),
+    ("hydrogen_airliner", 8, lambda f: coach(f, L(8), True)),
 ]
 
 
