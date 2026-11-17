@@ -43,3 +43,14 @@ compose.resources {
 tasks.matching { it.name == "copyAndroidMainComposeResourcesToAndroidAssets" }.configureEach {
     doFirst { outputs.files.forEach { it.deleteRecursively() } }
 }
+
+// -Pinterchange.* is passed on to the host tests, for slow measures such as OverviewRun.
+tasks.withType<Test>().configureEach {
+    val asked = providers.gradlePropertiesPrefixedBy("interchange.").get()
+    for ((k, v) in asked) systemProperty(k, v.toString())
+    if (asked.isNotEmpty()) {
+        maxHeapSize = "6g"
+        outputs.cacheIf { false }
+        outputs.upToDateWhen { false }
+    }
+}
