@@ -94,39 +94,43 @@ internal fun World.trackWorkDay() {
     val priority = priorityTrack.isNotEmpty()
     val thaw = if (settings.weather) trendSteps(year) * THAW_ODDS else 0
     parallelBands(height) { from, until ->
-        for (y in from until until) for (x in 0 until width) {
-            val i = index(x, y)
-            if (track[i].toInt() == 0) continue
-            var c = u(condition[i])
-            // Guideway and tube stand clear of the ground, so frost and wet don't move them.
-            if (settings.weather && !guideway[i] && !tube[i]) {
-                val frost = u(weather.frost[i])
-                val soaked = u(weather.wet[i]) > SOAKED
-                if (frost > 0 || soaked) {
-                    val heave = frost > 0 && cellDice(x, y, salt + 1) < HEAVE_ODDS
-                    val settle = soaked && cellDice(x, y, salt + 2) < SETTLE_ODDS
-                    if (heave || settle) {
-                        val sky = skyAt(settings.region, year, doy, weather.anomaly, fronts, height, x, y, tileHeight(x, y))
-                        if (sky.temperature > 0) {
-                            if (heave) c -= HEAVE
-                            if (settle) c -= SETTLE
+        for (y in from until until) {
+            // Only the fronts that reach this row; the rest add nothing to [skyAt].
+            val near = fronts.filter { f -> kotlin.math.abs(y * 256L + 128 - f.y) < f.radius * 256L }
+            for (x in 0 until width) {
+                val i = index(x, y)
+                if (track[i].toInt() == 0) continue
+                var c = u(condition[i])
+                // Guideway and tube stand clear of the ground, so frost and wet don't move them.
+                if (settings.weather && !guideway[i] && !tube[i]) {
+                    val frost = u(weather.frost[i])
+                    val soaked = u(weather.wet[i]) > SOAKED
+                    if (frost > 0 || soaked) {
+                        val heave = frost > 0 && cellDice(x, y, salt + 1) < HEAVE_ODDS
+                        val settle = soaked && cellDice(x, y, salt + 2) < SETTLE_ODDS
+                        if (heave || settle) {
+                            val sky = skyAt(settings.region, year, doy, weather.anomaly, near, height, x, y, tileHeight(x, y))
+                            if (sky.temperature > 0) {
+                                if (heave) c -= HEAVE
+                                if (settle) c -= SETTLE
+                            }
                         }
                     }
+                    // With the climate trend, thawing permafrost under the line slumps now and then through the summer.
+                    if (thaw > 0 && u(weather.frost[i]) == 0 && cellDice(x, y, salt + 7) < thaw && thawGround(x, y)) {
+                        if (skyAt(settings.region, year, doy, weather.anomaly, near, height, x, y, tileHeight(x, y)).temperature > 0) c -= THAW_SLUMP
+                    }
                 }
-                // With the climate trend, thawing permafrost under the line slumps now and then through the summer.
-                if (thaw > 0 && u(weather.frost[i]) == 0 && cellDice(x, y, salt + 7) < thaw && thawGround(x, y)) {
-                    if (skyAt(settings.region, year, doy, weather.anomaly, fronts, height, x, y, tileHeight(x, y)).temperature > 0) c -= THAW_SLUMP
+                // Priority track is mended first, a bigger share, and kept off a slow order.
+                val first = priority && priorityTrackAt(i)
+                if (c < 255) {
+                    val level = companies.getOrNull(owner[i].toInt())?.upkeep ?: Upkeep.NORMAL
+                    val mend = (255 - c) * (if (first) maxOf(PRIORITY_MEND, Upkeep.TRACK_MEND[level]) else Upkeep.TRACK_MEND[level])
+                    c += mend / 1024 + if (cellDice(x, y, salt + 5) * 4 < mend % 1024) 1 else 0
                 }
+                if (first && c < PRIORITY_FLOOR) c = PRIORITY_FLOOR
+                condition[i] = c.coerceIn(0, 255).toByte()
             }
-            // Priority track is mended first, a bigger share, and kept off a slow order.
-            val first = priority && priorityTrackAt(i)
-            if (c < 255) {
-                val level = companies.getOrNull(owner[i].toInt())?.upkeep ?: Upkeep.NORMAL
-                val mend = (255 - c) * (if (first) maxOf(PRIORITY_MEND, Upkeep.TRACK_MEND[level]) else Upkeep.TRACK_MEND[level])
-                c += mend / 1024 + if (cellDice(x, y, salt + 5) * 4 < mend % 1024) 1 else 0
-            }
-            if (first && c < PRIORITY_FLOOR) c = PRIORITY_FLOOR
-            condition[i] = c.coerceIn(0, 255).toByte()
         }
     }
 }
@@ -150,47 +154,50 @@ internal fun World.trackDay() {
     val steps = trendSteps(year)
     val regrow = steps > 0
     parallelBandsIndexed(height, bands) { b, from, until ->
-        for (y in from until until) for (x in 0 until width) {
-            val i = index(x, y)
-            val t = track[i].toInt()
-            if (t != 0) {
-                val o = owner[i].toInt()
-                // With era costs a wired tile counts twice, its wires kept up like its track; guideway and tube by [upkeepTiles].
-                if (o in 0 until MAX_COMPANIES) tracks[b][o] += upkeepTiles(kindAt(i), eraWires && wires[i].toInt() != 0)
-            }
-            if (road[i].toInt() != 0) {
-                val o = roadOwner[i].toInt()
-                if (o in 0 until MAX_COMPANIES && roadEdges(i) != 0) roads[b][o] += Upkeep.ROAD[surfaceAt(i)].toLong()
-            }
-            // Fire burns down, spreads, and leaves black ground that fades.
-            val f = u(was[i])
-            if (f in 1..FIRE_DAYS) {
-                fire[i] = (if (f == 1) BURNT else f - 1).toByte()
-                if (f == 1 && Trees.count(trees[i].toInt()) > 0) found[b] += intArrayOf(EVENT_BURNT, i)
-            } else if (f > BURNT_FROM) fire[i] = (f - 1).toByte()
-            else if (regrow && f == BURNT_FROM && Trees.count(trees[i].toInt()) == 0 && cellDice(x, y, salt + 13) * 256 + cellDice(x, y, salt + 14) < REGROW_ODDS && canPlantTree(x, y)) found[b] += intArrayOf(EVENT_REGROW, i)
-            if (t == 0 && Trees.count(trees[i].toInt()) == 0) continue
-            val sky = if (settings.weather) skyAt(settings.region, year, doy, weather.anomaly, fronts, height, x, y, tileHeight(x, y)) else null
-            if (sky != null && f == 0 && Trees.count(trees[i].toInt()) > 0 && sky.precipitation == 0 && sky.temperature > FIRE_HEAT && u(weather.wet[i]) < 12) {
-                // Lightning now and then, or sparks from a neighbour on fire, more of them downwind (a diagonal wind counts for both sides); in 65536ths.
-                var odds = 1
-                for ((nx, ny, from2) in arrayOf(Triple(x - 1, y, 0), Triple(x + 1, y, 4), Triple(x, y - 1, 2), Triple(x, y + 1, 6))) {
-                    if (inside(nx, ny) && u(was[index(nx, ny)]) in 1..FIRE_DAYS) odds += if ((wind - from2 + 1) and 7 <= 2) 36_000 else 16_000
+        for (y in from until until) {
+            val near = fronts.filter { f -> kotlin.math.abs(y * 256L + 128 - f.y) < f.radius * 256L }
+            for (x in 0 until width) {
+                val i = index(x, y)
+                val t = track[i].toInt()
+                if (t != 0) {
+                    val o = owner[i].toInt()
+                    // With era costs a wired tile counts twice, its wires kept up like its track; guideway and tube by [upkeepTiles].
+                    if (o in 0 until MAX_COMPANIES) tracks[b][o] += upkeepTiles(kindAt(i), eraWires && wires[i].toInt() != 0)
                 }
-                if (trendHit(cellDice(x, y, salt + 11) * 256 + cellDice(x, y, salt + 12), cellDice(x, y, salt + 15), odds, steps)) found[b] += intArrayOf(EVENT_FIRE, i)
-            }
-            if (t == 0) continue
-            if (sky != null) {
-                val c = u(condition[i])
-                if (sky.temperature > KINK_HEAT && c < KINK_BELOW && !kinks.containsKey(i) && cellDice(x, y, salt + 3) * 256 + cellDice(x, y, salt + 6) < (KINK_BELOW - c) * KINK_ODDS) found[b] += intArrayOf(EVENT_KINK, i)
-                val dug = !guideway[i] && !tube[i]
-                if (sky.precipitation >= WASHOUT_RAIN && u(weather.wet[i]) > 200 && dug && lowGround(x, y) &&
-                    trendHit(cellDice(x, y, salt + 4), cellDice(x, y, salt + 16), WASHOUT_ODDS, steps)
-                ) found[b] += intArrayOf(EVENT_WASHOUT, i)
-                // Settled track on thawing permafrost now and then gives way in summer.
-                else if (steps > 0 && dug && c < THAW_WASHOUT_BELOW && sky.temperature > 0 && u(weather.frost[i]) == 0 &&
-                    cellDice(x, y, salt + 17) * 256 + cellDice(x, y, salt + 18) < THAW_WASHOUT * steps && thawGround(x, y)
-                ) found[b] += intArrayOf(EVENT_THAW_WASHOUT, i)
+                if (road[i].toInt() != 0) {
+                    val o = roadOwner[i].toInt()
+                    if (o in 0 until MAX_COMPANIES && roadEdges(i) != 0) roads[b][o] += Upkeep.ROAD[surfaceAt(i)].toLong()
+                }
+                // Fire burns down, spreads, and leaves black ground that fades.
+                val f = u(was[i])
+                if (f in 1..FIRE_DAYS) {
+                    fire[i] = (if (f == 1) BURNT else f - 1).toByte()
+                    if (f == 1 && Trees.count(trees[i].toInt()) > 0) found[b] += intArrayOf(EVENT_BURNT, i)
+                } else if (f > BURNT_FROM) fire[i] = (f - 1).toByte()
+                else if (regrow && f == BURNT_FROM && Trees.count(trees[i].toInt()) == 0 && cellDice(x, y, salt + 13) * 256 + cellDice(x, y, salt + 14) < REGROW_ODDS && canPlantTree(x, y)) found[b] += intArrayOf(EVENT_REGROW, i)
+                if (t == 0 && Trees.count(trees[i].toInt()) == 0) continue
+                val sky = if (settings.weather) skyAt(settings.region, year, doy, weather.anomaly, near, height, x, y, tileHeight(x, y)) else null
+                if (sky != null && f == 0 && Trees.count(trees[i].toInt()) > 0 && sky.precipitation == 0 && sky.temperature > FIRE_HEAT && u(weather.wet[i]) < 12) {
+                    // Lightning now and then, or sparks from a neighbour on fire, more of them downwind (a diagonal wind counts for both sides); in 65536ths.
+                    var odds = 1
+                    for ((nx, ny, from2) in arrayOf(Triple(x - 1, y, 0), Triple(x + 1, y, 4), Triple(x, y - 1, 2), Triple(x, y + 1, 6))) {
+                        if (inside(nx, ny) && u(was[index(nx, ny)]) in 1..FIRE_DAYS) odds += if ((wind - from2 + 1) and 7 <= 2) 36_000 else 16_000
+                    }
+                    if (trendHit(cellDice(x, y, salt + 11) * 256 + cellDice(x, y, salt + 12), cellDice(x, y, salt + 15), odds, steps)) found[b] += intArrayOf(EVENT_FIRE, i)
+                }
+                if (t == 0) continue
+                if (sky != null) {
+                    val c = u(condition[i])
+                    if (sky.temperature > KINK_HEAT && c < KINK_BELOW && !kinks.containsKey(i) && cellDice(x, y, salt + 3) * 256 + cellDice(x, y, salt + 6) < (KINK_BELOW - c) * KINK_ODDS) found[b] += intArrayOf(EVENT_KINK, i)
+                    val dug = !guideway[i] && !tube[i]
+                    if (sky.precipitation >= WASHOUT_RAIN && u(weather.wet[i]) > 200 && dug && lowGround(x, y) &&
+                        trendHit(cellDice(x, y, salt + 4), cellDice(x, y, salt + 16), WASHOUT_ODDS, steps)
+                    ) found[b] += intArrayOf(EVENT_WASHOUT, i)
+                    // Settled track on thawing permafrost now and then gives way in summer.
+                    else if (steps > 0 && dug && c < THAW_WASHOUT_BELOW && sky.temperature > 0 && u(weather.frost[i]) == 0 &&
+                        cellDice(x, y, salt + 17) * 256 + cellDice(x, y, salt + 18) < THAW_WASHOUT * steps && thawGround(x, y)
+                    ) found[b] += intArrayOf(EVENT_THAW_WASHOUT, i)
+                }
             }
         }
     }
