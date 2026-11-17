@@ -1089,5 +1089,9 @@
     <string name="range_tiles">%1$s tiles range</string>
     <string name="price_hydrogen">Hydrogen</string>
     <string name="news_ran_flat">%1$s ran out of charge and is crawling</string>
+    <string name="guideway">Guideway</string>
+    <string name="depot_maglev">Maglev depot</string>
+    <string name="future">Future</string>
+    <string name="traction_maglev">Maglev</string>
     <string name="energy">Energy</string>
 </resources>

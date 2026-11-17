@@ -28,6 +28,7 @@ import com.rm.interchange.res.*
 import com.rm.interchange.sim.Engine
 import com.rm.interchange.sim.MAX_AT_ONCE
 import com.rm.interchange.sim.Traction
+import com.rm.interchange.sim.maglev
 import com.rm.interchange.sim.VehicleKind
 import com.rm.interchange.sim.rangeOf
 import com.rm.interchange.sim.WorldView
@@ -78,6 +79,7 @@ private fun statsText(e: Engine, cargo: Int, choosing: Boolean): String {
         if (store >= 0) parts += stringResource(if (store == Traction.HYDROGEN) Res.string.traction_hydrogen else Res.string.traction_battery)
         parts += stringResource(Res.string.range_stat, Numbers.grouped(e.range.toLong()))
     }
+    if (e.maglev) parts += stringResource(Res.string.traction_maglev)
     if (e.icebreaker > 0) parts += stringResource(Res.string.breaks_ice, e.icebreaker)
     // Each stat kept on one line, so a long row wraps only between them.
     return parts.joinToString(SEP) { it.replace(' ', '\u00A0') }

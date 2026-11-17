@@ -1072,5 +1072,9 @@
     <string name="range_tiles">rayon de %1$s cases</string>
     <string name="price_hydrogen">Hydrogène</string>
     <string name="news_ran_flat">%1$s est à court de charge et avance au ralenti</string>
+    <string name="guideway">Voie à sustentation</string>
+    <string name="depot_maglev">Dépôt maglev</string>
+    <string name="future">Futur</string>
+    <string name="traction_maglev">Maglev</string>
     <string name="energy">Énergie</string>
 </resources>

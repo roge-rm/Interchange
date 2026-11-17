@@ -12,6 +12,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.unit.dp
 import com.rm.interchange.res.*
+import com.rm.interchange.sim.maglev
 import com.rm.interchange.sim.Cargo
 import com.rm.interchange.sim.MAX_LOCOMOTIVES
 import com.rm.interchange.sim.MAX_WAGONS
@@ -92,7 +93,7 @@ internal fun TrainFormationEditor(
     ActionButton(stringResource(Res.string.formation_add), enabled = draft.size < MAX_WAGONS + MAX_LOCOMOTIVES) { picking = !picking }
     if (picking) {
         FillChips(listOf(false, true), wagons, { stringResource(if (it) Res.string.wagons else Res.string.engines) }) { wagons = it; model = -1; cargo = -1 }
-        val models = roster.available(year, pulls = !wagons).filter { wired || !it.pulls || it.traction != Traction.ELECTRIC }
+        val models = roster.available(year, pulls = !wagons).filter { it.maglev == t.maglev && (wired || !it.pulls || it.traction != Traction.ELECTRIC) }
         val chosen = models.firstOrNull { it.id == model } ?: models.firstOrNull()
         if (chosen == null) NoneOnSale(roster, if (wagons) VehicleKind.WAGON else VehicleKind.ENGINE, year)
         else {
