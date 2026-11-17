@@ -1,5 +1,6 @@
 package com.rm.interchange.ui
 
+import androidx.compose.ui.draw.clipToBounds
 import com.rm.interchange.sim.WorldView
 import com.rm.interchange.sim.townActionCost
 import com.rm.interchange.sim.townActionOpen
@@ -784,10 +785,12 @@ private fun PriceGraph(years: IntArray, lines: List<IntArray>, modifier: Modifie
 @Composable
 private fun MoneyGraph(history: List<LongArray>, modifier: Modifier) {
     val c = LocalColors.current
-    androidx.compose.foundation.Canvas(modifier) {
+    androidx.compose.foundation.Canvas(modifier.clipToBounds()) {
         val n = history.size
         val most = history.maxOf { it[0] }.coerceAtLeast(1)
-        val least = minOf(0L, history.minOf { it[0] })
+        // A loss bar hangs below zero, so leave at least 30% of the height there when there is one.
+        val loss = history.any { it[1] < it[2] }
+        val least = minOf(0L, history.minOf { it[0] }, if (loss) -(most * 3 / 7) else 0L)
         val span = (most - least).toFloat()
         val step = size.width / (n - 1).coerceAtLeast(1)
         fun y(v: Long) = size.height * (1f - (v - least) / span)
