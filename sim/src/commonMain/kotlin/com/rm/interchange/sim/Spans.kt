@@ -174,7 +174,11 @@ private fun World.boreSurvey(company: Company, c: Command.Bridge): Long {
     val dy = (c.y1 - c.y0).coerceIn(-1, 1)
     var cost = 0L
     for (k in 1..len) {
-        val i = index(c.x0 + dx * k, c.y0 + dy * k)
+        val x = c.x0 + dx * k
+        val y = c.y0 + dy * k
+        val i = index(x, y)
+        // A dip would leave the bore in mid-air.
+        if (minOf(minOf(heightAt(x, y), heightAt(x + 1, y)), minOf(heightAt(x + 1, y + 1), heightAt(x, y + 1))) < heightAt(c.x0, c.y0)) return -Refusal.NOT_LEVEL.toLong()
         if (deck.containsKey(i) || spanHeads.containsKey(i)) return -Refusal.IN_THE_WAY.toLong()
         cost += build(Hyperloop.BORE, Mix.SPANS[Spans.TUNNEL], i)
     }

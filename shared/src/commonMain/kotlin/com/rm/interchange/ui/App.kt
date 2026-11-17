@@ -1921,7 +1921,7 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
                     }
                     else -> {}
                 }
-                ToolTray(tool, { tool = it; refusal = Refusal.NONE; plan = null; stationPlan = null; stationHeld = null; signalPlan = null; priorityPlan = null; levelPlan = null; treePlan = null; removing = false }, trayDetail, folded, { folded = it }, layout.compact, trayWidth, options = trackOptions, editor = editor, warning = editor && refused || !editor && refusedHere) {
+                ToolTray(tool, { tool = it; if ((it == Tool.Tunnel || it == Tool.Wires) && kindPicked == TrackKind.TUBE) kindPicked = TrackKind.RAIL; refusal = Refusal.NONE; plan = null; stationPlan = null; stationHeld = null; signalPlan = null; priorityPlan = null; levelPlan = null; treePlan = null; removing = false }, trayDetail, folded, { folded = it }, layout.compact, trayWidth, options = trackOptions, editor = editor, warning = editor && refused || !editor && refusedHere) {
                     if (tool == Tool.PlaceIndustry) TrayToggle(Glyph.TurnRight, stringResource(Res.string.turn_industry), industryTurn != 0) { industryTurn = (industryTurn + 1) % 4 }
                     if (tool == Tool.Track || tool == Tool.Station || tool == Tool.Depot || tool == Tool.Bridge || tool == Tool.Tunnel || tool == Tool.Wires) {
                         if (world.maglevOpen()) TrayToggle(Glyph.Train, stringResource(Res.string.guideway), guideway) { kindPicked = if (guideway) TrackKind.RAIL else TrackKind.GUIDEWAY }

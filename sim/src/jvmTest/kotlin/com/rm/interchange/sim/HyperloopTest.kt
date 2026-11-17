@@ -197,6 +197,20 @@ class HyperloopTest {
     }
 
     @Test
+    fun aBoreNeverCrossesADip() {
+        val w = flat()
+        val c = w.companies[0]
+        val bore = Command.Bridge(0, 30, 40, 40, 40, Spans.TUNNEL, tube = true)
+        assertEquals(Refusal.NONE, w.bridgeRefusal(c, bore))
+        // Higher ground between the heads is fine.
+        for (y in 40..41) w.corners[y * (w.width + 1) + 35] = 5
+        assertEquals(Refusal.NONE, w.bridgeRefusal(c, bore))
+        // A dip is refused.
+        w.corners[40 * (w.width + 1) + 36] = 2
+        assertEquals(Refusal.NOT_LEVEL, w.bridgeRefusal(c, bore))
+    }
+
+    @Test
     fun podBendsAndBraking() {
         val steps = intArrayOf(step(0, Track.index(Track.X), Track.XM), step(1, Track.index(Track.X), Track.XM), step(2, Track.index(Track.W), Track.XM))
         assertEquals(Hyperloop.GENTLE_KMH, bendCaps(steps, hyperloop = true).max())
