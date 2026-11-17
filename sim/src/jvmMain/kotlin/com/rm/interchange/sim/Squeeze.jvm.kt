@@ -29,4 +29,38 @@ actual object Squeeze {
         i.end()
         return out.toByteArray()
     }
+
+    actual fun packer(): Packer = object : Packer {
+        private val d = Deflater(Deflater.BEST_SPEED)
+        private val out = ByteArrayOutputStream(1 shl 16)
+        private val chunk = ByteArray(64 * 1024)
+
+        override fun add(b: ByteArray, n: Int) {
+            d.setInput(b, 0, n)
+            while (!d.needsInput()) out.write(chunk, 0, d.deflate(chunk))
+        }
+
+        override fun finish(): ByteArray {
+            d.finish()
+            while (!d.finished()) out.write(chunk, 0, d.deflate(chunk))
+            d.end()
+            return out.toByteArray()
+        }
+    }
+
+    actual fun unpacker(data: ByteArray): (ByteArray, Int, Int) -> Int {
+        val i = Inflater()
+        i.setInput(data)
+        return fun(buf: ByteArray, off: Int, len: Int): Int {
+            while (true) {
+                if (i.finished()) {
+                    i.end()
+                    return -1
+                }
+                val n = i.inflate(buf, off, len)
+                if (n > 0) return n
+                if (i.needsInput() || i.needsDictionary()) throw BadData("save is cut short")
+            }
+        }
+    }
 }

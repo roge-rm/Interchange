@@ -26,7 +26,9 @@ object Save {
      * editor world as a scenario to play: the editor off, and each player's company given the scenario's money and loan.
      */
     fun write(world: World, version: Int = VERSION, asScenario: Boolean = false): ByteArray {
-        val w = ByteWriter(world.width * world.height * 6 + 4096)
+        // Packed as it's written, so a big map's save isn't held whole first.
+        val packer = Squeeze.packer()
+        val w = ByteWriter(1 shl 16) { b, n -> packer.add(b, n) }
         with(world) {
             val g = settings
             w.int(g.width); w.int(g.height); w.long(g.seed); w.int(g.startYear); w.int(g.region.ordinal)
@@ -385,7 +387,8 @@ object Save {
             }
             if (version >= 76) for (ind in industries) w.uvar(ind.closing.toLong())
         }
-        val body = Squeeze.pack(w.toByteArray())
+        w.flush()
+        val body = packer.finish()
         val out = ByteWriter(body.size + 16)
         for (b in MAGIC) out.byte(b.toInt())
         out.int(version)
@@ -1020,7 +1023,7 @@ object Save {
         val version = head.int()
         if (version < 1 || version > VERSION) throw BadData("saved by a newer version of the game ($version)")
         if (version >= 30 && head.bool()) { head.string(); head.string(); head.int() }
-        return version to ByteReader(Squeeze.unpack(head.bytes()))
+        return version to ByteReader(Squeeze.unpacker(head.bytes()))
     }
 
     private fun readSettings(version: Int, r: ByteReader): NewGame {

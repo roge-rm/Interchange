@@ -5,13 +5,25 @@ package com.rm.interchange.sim
  * integers, strings as UTF-8 with their length first. Everything the game
  * writes goes through these two, so a save reads back the same on any device.
  */
-class ByteWriter(initial: Int = 1024) {
+class ByteWriter(initial: Int = 1024, private val drain: ((ByteArray, Int) -> Unit)? = null) {
     private var buf = ByteArray(initial)
+    /** Bytes held; with [drain], only those not drained yet. */
     var size = 0
         private set
 
     private fun room(n: Int) {
-        if (size + n > buf.size) buf = buf.copyOf(maxOf(buf.size * 2, size + n))
+        if (size + n <= buf.size) return
+        if (drain != null) {
+            flush()
+            if (n <= buf.size) return
+        }
+        buf = buf.copyOf(maxOf(buf.size * 2, size + n))
+    }
+
+    /** Hands what's held to [drain], for a writer that passes its bytes on as it goes instead of holding them all. */
+    fun flush() {
+        if (drain != null && size > 0) drain(buf, size)
+        size = 0
     }
 
     fun byte(v: Int) {
@@ -38,6 +50,11 @@ class ByteWriter(initial: Int = 1024) {
 
     fun bytes(b: ByteArray) {
         uvar(b.size.toLong())
+        if (drain != null && b.size > buf.size) {
+            flush()
+            drain(b, b.size)
+            return
+        }
         room(b.size)
         b.copyInto(buf, size)
         size += b.size
@@ -56,13 +73,29 @@ class ByteWriter(initial: Int = 1024) {
     fun toByteArray(): ByteArray = buf.copyOf(size)
 }
 
-class ByteReader(private val buf: ByteArray, private var at: Int = 0) {
-    val done get() = at >= buf.size
-    /** Bytes not read yet. */
-    val left get() = buf.size - at
+/**
+ * Reads what [ByteWriter] wrote, from a whole buffer, or from a [source] that fills a buffer bit by bit and returns
+ * how many bytes it put in, or -1 at the end, for a save too big to hold whole before reading.
+ */
+class ByteReader private constructor(private var buf: ByteArray, private var at: Int, private var end: Int, private val source: ((ByteArray, Int, Int) -> Int)?) {
+    constructor(buf: ByteArray, at: Int = 0) : this(buf, at, buf.size, null)
+    constructor(source: (ByteArray, Int, Int) -> Int) : this(ByteArray(1 shl 16), 0, 0, source)
+
+    val done get() = at >= end && !refill()
+    /** Bytes not read yet, for bounding counts read from the data; a [source]'s aren't known ahead, so the most a block may be. */
+    val left get() = if (source == null) end - at else MOST_BLOCK
+
+    private fun refill(): Boolean {
+        if (source == null) return false
+        val n = source(buf, 0, buf.size)
+        if (n <= 0) return false
+        at = 0
+        end = n
+        return true
+    }
 
     fun byte(): Int {
-        if (at >= buf.size) throw BadData("ran out of data")
+        if (at >= end && !refill()) throw BadData("ran out of data")
         return buf[at++].toInt() and 0xff
     }
 
@@ -89,9 +122,22 @@ class ByteReader(private val buf: ByteArray, private var at: Int = 0) {
 
     fun bytes(): ByteArray {
         val n = uvar().toInt()
-        if (n < 0 || at + n > buf.size) throw BadData("a block runs past the end")
-        val out = buf.copyOfRange(at, at + n)
-        at += n
+        if (source == null) {
+            if (n < 0 || at + n > end) throw BadData("a block runs past the end")
+            val out = buf.copyOfRange(at, at + n)
+            at += n
+            return out
+        }
+        if (n < 0 || n > MOST_BLOCK) throw BadData("a block too big")
+        val out = ByteArray(n)
+        var k = 0
+        while (k < n) {
+            if (at >= end && !refill()) throw BadData("a block runs past the end")
+            val take = minOf(end - at, n - k)
+            buf.copyInto(out, k, at, at + take)
+            at += take
+            k += take
+        }
         return out
     }
 
@@ -104,10 +150,13 @@ class ByteReader(private val buf: ByteArray, private var at: Int = 0) {
 
     fun ints(): IntArray {
         val n = uvar().toInt()
-        if (n < 0 || n > buf.size) throw BadData("too many numbers")
+        if (n < 0 || n > (if (source == null) end else MOST_BLOCK)) throw BadData("too many numbers")
         return IntArray(n) { int() }
     }
 }
+
+/** The biggest block a streamed [ByteReader] reads: twice a 4096 map's two-byte layer. */
+private const val MOST_BLOCK = 1 shl 26
 
 /** Data that isn't what it should be: a damaged save, or a message from a broken client. */
 open class BadData(message: String) : Exception(message)
@@ -119,4 +168,14 @@ class MissingPacks(val packs: List<PackRef>) : BadData("needs " + packs.joinToSt
 expect object Squeeze {
     fun pack(data: ByteArray): ByteArray
     fun unpack(data: ByteArray): ByteArray
+    /** A packer that takes the bytes bit by bit, so a big save needn't be held whole before packing. */
+    fun packer(): Packer
+    /** [data] unpacked bit by bit, as a [ByteReader] source. */
+    fun unpacker(data: ByteArray): (ByteArray, Int, Int) -> Int
+}
+
+/** Packs what it's [add]ed, the first [add] n bytes of each array, all of each taken before [add] returns. */
+interface Packer {
+    fun add(b: ByteArray, n: Int)
+    fun finish(): ByteArray
 }
