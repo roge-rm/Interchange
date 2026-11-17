@@ -12,8 +12,8 @@ A pack says in its manifest the format it's made for. Each table below gives the
 |---|---|---|
 | 1 | Vehicles | Interchange 0.2 on, some fields later |
 | 2 | Town buildings and industries, with rules | Interchange 0.14 on |
-| 3 | Cargo, stores and recipes, handling | Interchange 0.14 on |
-| 4 | Interchange packs 1.0: battery, hydrogen, maglev and hyperloop traction, autonomous road vehicles, drones, future cargo, future and fading industries | Interchange 0.15 on |
+| 3 | Cargo, with handling | Interchange 0.14 on |
+| 4 | Interchange packs 1.0: battery, hydrogen, maglev and hyperloop traction, autonomous road vehicles, drones, future cargo, future and fading industries. A pack that replaces a base vehicle or industry from these, or uses their layout parts, needs it too | Interchange 0.15 on |
 
 A game won't load a pack made for a newer format than it reads, and says so: "made for a newer version of the game (pack format 5, this game reads up to 4, Interchange packs 1.0)". A field the game doesn't know is left out as the pack loads, so a typo doesn't stop it; `packtool check` lists them as warnings. Older games refuse a pack with a field they don't know.
 

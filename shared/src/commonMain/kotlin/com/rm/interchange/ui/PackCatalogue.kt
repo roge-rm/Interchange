@@ -24,6 +24,8 @@ import com.rm.interchange.res.pack_changes
 import com.rm.interchange.res.pack_filter_all
 import com.rm.interchange.res.pack_line
 import com.rm.interchange.res.pack_problems
+import com.rm.interchange.res.pack_warning
+import com.rm.interchange.res.pack_warnings
 import com.rm.interchange.res.pack_turns_off
 import com.rm.interchange.res.pack_unit
 import com.rm.interchange.res.add_pack
@@ -157,6 +159,10 @@ private fun PackPage(p: Pack, all: List<Pack>, filter: PackKind, lang: String) {
     if (problems.isNotEmpty()) {
         Head(stringResource(Res.string.pack_problems), Glyph.Alert)
         for (line in problems) Text(line, color = c.bad, style = KitType.Body)
+    }
+    if (p.warnings.isNotEmpty()) {
+        Head(stringResource(Res.string.pack_warnings), Glyph.Alert)
+        for (w in p.warnings) Text(stringResource(Res.string.pack_warning, w), color = c.textDim, style = KitType.Body)
     }
     fun show(k: PackKind) = filter == PackKind.All || filter == k
     // Each thing the pack names of another pack as pack:id, by the name it gives it.

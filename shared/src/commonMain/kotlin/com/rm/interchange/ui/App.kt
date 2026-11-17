@@ -319,6 +319,7 @@ private fun Root(settings: Settings) {
     val needsPacks = stringResource(Res.string.needs_packs, "%s")
     val cantAdd = stringResource(Res.string.cant_add_pack, "%s")
     val added = stringResource(Res.string.pack_added, "%s")
+    val warning = stringResource(Res.string.pack_warning, "%s")
     val lang = languageCode()
     // The packs added, read off the main thread since each is unzipped; null until they're read.
     var packs by remember { mutableStateOf<List<Pack>?>(null) }
@@ -699,7 +700,8 @@ private fun Root(settings: Settings) {
             scope.launch {
                 packMessage = withContext(Dispatchers.Default) {
                     try {
-                        added.replace("%s", InstalledPacks.add(bytes).name(lang)) to false
+                        val pack = InstalledPacks.add(bytes)
+                        (listOf(added.replace("%s", pack.name(lang))) + pack.warnings.map { warning.replace("%s", it) }).joinToString("\n") to false
                     } catch (e: BadPack) {
                         cantAdd.replace("%s", e.problems.joinToString("\n")) to true
                     }

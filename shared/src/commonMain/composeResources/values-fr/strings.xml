@@ -218,6 +218,8 @@
     <string name="pack_changes">Modifie</string>
     <string name="pack_turns_off">Désactive</string>
     <string name="pack_problems">Problèmes</string>
+    <string name="pack_warnings">Avertissements</string>
+    <string name="pack_warning">%1$s, que le jeu ignore</string>
     <string name="pack_unit">Compté en %1$s</string>
     <string name="pack_added">Pack ajouté : %1$s.</string>
     <string name="cant_add_pack">Impossible d'ajouter ce pack : %1$s</string>

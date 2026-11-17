@@ -36,16 +36,22 @@ fun main(args: Array<String>) {
     exitProcess(if (ok) 0 else 1)
 }
 
+private val DATA_FILES = setOf("manifest.json", "vehicles.json", "houses.json", "industries.json", "cargo.json")
+
+/** Whether a file is part of a pack: a data file or a sprite sheet. Art sources, READMEs, etc. are left out. */
+private fun kept(name: String) = name in DATA_FILES || (name.startsWith("sprites/") && name.endsWith(".png"))
+
 /**
  * A pack's files by path, from a zip or a folder, held to the game's limits. The base pack may be up to
  * [Packs.MAX_TOTAL_BASE] unpacked, as the game never adds it from a file; [check] holds other packs to [Packs.MAX_TOTAL].
  */
 private fun files(f: File): Map<String, ByteArray> {
-    if (!f.isDirectory) return com.rm.interchange.sim.Zip.read(f.readBytes(), Packs.MAX_FILE, Packs.MAX_TOTAL_BASE)
+    if (!f.isDirectory) return com.rm.interchange.sim.Zip.read(f.readBytes(), Packs.MAX_FILE, Packs.MAX_TOTAL_BASE).filterKeys(::kept)
     val out = LinkedHashMap<String, ByteArray>()
     var total = 0L
     for (file in f.walkTopDown().filter { it.isFile }) {
         val name = file.relativeTo(f).invariantSeparatorsPath
+        if (!kept(name)) continue
         if (file.length() > Packs.MAX_FILE) throw BadPack(listOf("$name is bigger than ${Packs.MAX_FILE shr 20} MB"))
         total += file.length()
         if (total > Packs.MAX_TOTAL_BASE) throw BadPack(listOf("the pack is bigger than ${Packs.MAX_TOTAL_BASE shr 20} MB unpacked"))
@@ -117,7 +123,7 @@ internal fun check(f: File, with: List<File>, say: (String) -> Unit = ::println,
     say("${pack.id} ${pack.version}: ${pack.vehicles.size} vehicles, ${pack.houses.size} buildings, ${pack.industries.size} industries, ${pack.cargo.size} cargo, $rules rules, $sheets, ${String.format(java.util.Locale.ROOT, "%.1f", unpacked / 1048576.0)} MB unpacked, all good")
     val note = when {
         pack.id == Packs.BASE_ID -> if (pack.needsFormat > pack.format) ", fine for the base pack, which comes with the game" else ""
-        pack.needsFormat < pack.format -> ", so \"format\": ${pack.needsFormat} would let older games load it too"
+        pack.needsFormat < pack.format && pack.warnings.isEmpty() -> ", so \"format\": ${pack.needsFormat} would let older games load it too"
         else -> ""
     }
     say("  needs format ${pack.needsFormat} (Interchange packs ${Packs.SPEC} is format ${Packs.FORMAT}), says ${pack.format}$note")
@@ -131,8 +137,7 @@ private fun report(f: File, problems: List<String>, say: (String) -> Unit) {
 
 /** Only what a pack is made of goes in: the data files and the sprite sheets. */
 private fun zip(dir: File, out: File): Boolean {
-    val data = setOf("manifest.json", "vehicles.json", "houses.json", "industries.json", "cargo.json")
-    val files = files(dir).filterKeys { it in data || (it.startsWith("sprites/") && it.endsWith(".png")) }
+    val files = files(dir)
     ZipOutputStream(out.outputStream()).use { z ->
         for ((name, bytes) in files.toSortedMap()) {
             z.putNextEntry(ZipEntry(name))

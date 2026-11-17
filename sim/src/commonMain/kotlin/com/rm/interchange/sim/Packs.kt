@@ -214,6 +214,22 @@ object Packs {
     /** The most of a cargo a recipe takes or makes in a batch. */
     const val RECIPE_MOST = 100
 
+    // What the base pack gained after 0.14.0 (format 3), which a pack needs format 4 to replace or draw.
+    val BASE_NEW_VEHICLES = setOf(
+        "aurora", "aurora_coach", "auto_dump", "auto_tanker", "auto_tractor", "battery_boxcar", "battery_coach", "battery_hauler",
+        "battery_railcar", "battery_railcar_2", "battery_tractor", "battery_tug", "bl44", "bl60", "convoy_tractor", "electric_floatplane",
+        "freight_drone", "hl44", "hl60", "hydrogen_airliner", "hydrogen_bus", "hydrogen_feeder", "hydrogen_ferry", "hydrogen_railcar",
+        "hydrogen_railcar_2", "hydrogen_tank_car", "hydrogen_tractor", "hydrogen_tube_trailer", "lithium_dump", "lithium_hopper",
+        "mail_drone", "meteor", "meteor_coach", "photon", "tiltrotor_drone", "vela",
+    )
+    val BASE_NEW_INDUSTRIES = setOf(
+        "battery_plant", "hydrogen_plant", "lithium_mine",
+    )
+    val BASE_NEW_PARTS = setOf(
+        "battery_dock", "battery_hall", "battery_hall_head", "battery_hall_tail", "battery_office", "battery_yard", "hydrogen_hall",
+        "hydrogen_jetty", "hydrogen_spheres", "hydrogen_tanks", "lithium_mill", "lithium_pit", "lithium_pit_far", "spodumene_pile",
+    )
+
     /** The most tiles an industry's layout has each way. */
     const val MAX_LAYOUT = 5
 
@@ -379,6 +395,7 @@ object Packs {
                     autonomous = f.bool("autonomous"),
                 )
                 f.done()
+                if (replaces in BASE_NEW_VEHICLES.map { "base:$it" }) need(4, "\"replaces\" of the base vehicle \"$replaces\"")
                 if (def.traction in Traction.FORMAT_4) need(4, "\"traction\": \"${def.traction}\"")
                 if (def.autonomous != null) need(4, "\"autonomous\"")
                 if (def.runway == "drone") need(4, "\"runway\": \"drone\"")
@@ -511,6 +528,8 @@ object Packs {
                     replaces, parts, production, open, closes, recipe, f.bool("future"), f.int("fades", 1700, 2300),
                 )
                 f.done()
+                if (replaces in BASE_NEW_INDUSTRIES.map { "base:$it" }) need(4, "\"replaces\" of the base industry \"$replaces\"")
+                layout?.flatten()?.firstOrNull { it in BASE_NEW_PARTS && it !in parts.orEmpty() }?.let { need(4, "the base layout part \"$it\"") }
                 if (def.future != null) need(4, "\"future\"")
                 if (def.fades != null) need(4, "\"fades\"")
                 if (def.from != null && def.until != null && def.from >= def.until) problems += "$at: from should be before until"

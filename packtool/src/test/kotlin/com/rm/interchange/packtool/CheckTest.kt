@@ -176,5 +176,11 @@ class CheckTest {
         // Packs added in the game are held to the limit; the base pack, which never is, isn't.
         assertTrue(check(template, maxTotal = 1 shl 20).second.any { "the pack is bigger than 1 MB unpacked" in it })
         assertTrue(check(File("packs/base"), maxTotal = 1 shl 10).first)
+        // Files a zip leaves out don't count towards the limits.
+        val extra = template()
+        File(extra, "art").mkdirs()
+        File(extra, "art/source.psd").writeBytes(ByteArray(3 shl 20))
+        File(extra, "README.md").writeBytes(ByteArray(3 shl 20))
+        assertTrue(check(extra, maxTotal = 3 shl 20).first)
     }
 }

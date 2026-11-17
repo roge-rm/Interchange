@@ -149,6 +149,19 @@ class PackTest {
             assertEquals(1, problems(files(3, industries = field)).size, field)
         }
         assertEquals(listOf("manifest.json: a pack with houses.json or industries.json needs \"format\": 2"), problems(files(1, industries = "\"water\": true")))
+        // Replacing a base thing, or drawing a layout part, from after 0.14 needs format 4.
+        fun replacing(format: Int, vehicle: String? = null, industry: String? = null, layout: String? = null) = buildMap<String, Any> {
+            put("manifest.json", """{ "format": $format, "id": "x", "version": 1, "name": { "en": "X" } }""")
+            if (vehicle != null) put("vehicles.json", """{ "vehicles": [ { "id": "c", "replaces": "base:$vehicle", "life": 40 } ] }""")
+            if (industry != null) put("industries.json", """{ "industries": [ { "id": "f", "replaces": "base:$industry", "water": true } ] }""")
+            if (layout != null) put("industries.json", """{ "industries": [ { "id": "g", "name": { "en": "G" }, "from": 1900, "until": 2100, "layout": ["$layout"] } ] }""")
+        }
+        assertEquals(1, Packs.unzip(zip(replacing(1, vehicle = "caboose"))).needsFormat)
+        assertEquals(4, Packs.unzip(zip(replacing(4, vehicle = "hydrogen_bus"))).needsFormat)
+        assertEquals(1, problems(replacing(3, vehicle = "hydrogen_bus")).size)
+        assertEquals(4, Packs.unzip(zip(replacing(4, industry = "hydrogen_plant"))).needsFormat)
+        assertEquals(1, problems(replacing(3, industry = "hydrogen_plant")).size)
+        assertEquals(1, problems(replacing(3, layout = "hydrogen_hall")).size)
         // A pack may say a newer format than it needs.
         assertEquals(listOf(4, 1), Packs.unzip(zip(files(4, vehicles = "\"life\": 40"))).let { listOf(it.format, it.needsFormat) })
         assertEquals(Packs.FORMAT, Packs.BASE.needsFormat)

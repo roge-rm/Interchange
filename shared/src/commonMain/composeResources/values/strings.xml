@@ -235,6 +235,8 @@
     <string name="pack_changes">Changes</string>
     <string name="pack_turns_off">Turns off</string>
     <string name="pack_problems">Problems</string>
+    <string name="pack_warnings">Warnings</string>
+    <string name="pack_warning">%1$s, which the game leaves out</string>
     <string name="pack_unit">Counted in %1$s</string>
     <string name="pack_added">Added %1$s.</string>
     <string name="cant_add_pack">Can't add this pack: %1$s</string>
