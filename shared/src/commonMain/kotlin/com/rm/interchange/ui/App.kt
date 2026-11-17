@@ -859,6 +859,10 @@ private fun Root(settings: Settings) {
                 }
             }
             Win.Intro -> runner?.let { r ->
+                DisposableEffect(Unit) {
+                    KeyInput.intro = true
+                    onDispose { KeyInput.intro = false }
+                }
                 // The world may still be being made.
                 val w by androidx.compose.runtime.produceState(r.game?.world, r) { while (value == null) { delay(50); value = r.game?.world } }
                 w?.let {
@@ -1730,6 +1734,16 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
             Gamepad.cursor.value = androidx.compose.ui.geometry.Offset(r[0], r[1])
             Gamepad.map?.moved()
         }
+        // The cursor stays on the map when it changes size, as on turning the screen.
+        LaunchedEffect(mapSize) {
+            val c = Gamepad.cursor.value
+            if (!c.isSpecified || mapSize.width <= 0f) return@LaunchedEffect
+            val to = clampCursor(c, mapSize.width, mapSize.height, CURSOR_MARGIN * minOf(mapSize.width, mapSize.height))
+            if (to != c) {
+                Gamepad.cursor.value = to
+                Gamepad.map?.moved()
+            }
+        }
         val toolFocus = remember { androidx.compose.ui.focus.FocusRequester() }
 
         // Keys, as the buttons they stand for. Esc lets go of a pick, a card or the tool, in that order, then opens the menu.
@@ -2238,20 +2252,26 @@ private fun Modifier.letsGoOfText(): Modifier {
 
 /** What's on tile ([x], [y]), as the inspect card's title has it, past an industry's. */
 @Composable
-private fun tileTitle(world: World, x: Int, y: Int): String {
+private fun tileTitle(world: World, x: Int, y: Int): String = tileKind(world, x, y, languageCode()).let { if (it is StringResource) stringResource(it) else it as String }
+
+/** What's on tile ([x], [y]): a house's name in [lang], or the string for the rest. */
+private fun tileKind(world: World, x: Int, y: Int, lang: String): Any {
     val i = world.index(x, y)
     val road = world.road[i].toInt()
     val house = world.roster.houses.getOrNull(houseOf(world.house[i].toInt()))
     return when {
-        house != null -> house.name(languageCode())
-        world.canals.contains(i) -> stringResource(Res.string.kind_canal)
-        world.locks.containsKey(i) -> stringResource(Res.string.kind_lock)
-        road != 0 -> stringResource(if (road and PAVED != 0) Res.string.paved_street else Res.string.dirt_road)
-        world.trackAt(x, y) != 0 -> stringResource(Res.string.kind_track)
-        world.isWater(x, y) -> stringResource(Res.string.kind_water)
-        else -> stringResource(Res.string.kind_land)
+        house != null -> house.name(lang)
+        world.canals.contains(i) -> Res.string.kind_canal
+        world.locks.containsKey(i) -> Res.string.kind_lock
+        road != 0 -> if (road and PAVED != 0) Res.string.paved_street else Res.string.dirt_road
+        world.trackAt(x, y) != 0 -> Res.string.kind_track
+        world.isWater(x, y) -> Res.string.kind_water
+        else -> Res.string.kind_land
     }
 }
+
+/** The hover tip's line: an industry's name, or what's on the tile ([kind], as [tileKind] gives it) and its town. */
+private class TipText(val industry: String?, val kind: Any?, val town: String?)
 
 /**
  * What's under the mouse, a line by the pointer once it's rested there a moment: the industry, or what's on the tile
@@ -2260,20 +2280,30 @@ private fun tileTitle(world: World, x: Int, y: Int): String {
 @Composable
 private fun HoverTip(world: World, view: View, hover: State<androidx.compose.ui.geometry.Offset?>, size: androidx.compose.ui.geometry.Size, modifier: Modifier) {
     val at = hover.value
-    var tile by remember { mutableStateOf<Pick?>(null) }
+    val lang = languageCode()
+    var tip by remember { mutableStateOf<TipText?>(null) }
     LaunchedEffect(at) {
-        tile = null
+        tip = null
         if (at == null) return@LaunchedEffect
         delay(HOVER_MILLIS)
-        tile = view.pick(world, at.x, at.y, size.width, size.height)
+        // The world's lists change on the sim's thread as this reads them, so a read that trips over that shows no tip.
+        tip = try {
+            view.pick(world, at.x, at.y, size.width, size.height)?.let { p ->
+                val i = world.index(p.tileX, p.tileY)
+                val industry = world.industryAt(i)
+                if (industry != null) TipText(industryName(world, industry, lang), null, null)
+                else TipText(null, tileKind(world, p.tileX, p.tileY, lang), world.towns.getOrNull(world.townOf[i].toInt())?.name)
+            }
+        } catch (_: ConcurrentModificationException) {
+            null
+        } catch (_: IndexOutOfBoundsException) {
+            null
+        }
     }
-    val p = tile ?: return
+    val t = tip ?: return
     val a = at ?: return
-    val i = world.index(p.tileX, p.tileY)
-    val industry = world.industryAt(i)
-    val town = world.towns.getOrNull(world.townOf[i].toInt())
-    val text = if (industry != null) industryName(world, industry, languageCode())
-    else listOfNotNull(tileTitle(world, p.tileX, p.tileY), town?.name).joinToString(" · ")
+    val kind = t.kind?.let { if (it is StringResource) stringResource(it) else it as String }
+    val text = t.industry ?: listOfNotNull(kind, t.town).joinToString(" · ")
     val c = LocalColors.current
     val gap = with(LocalDensity.current) { 16.dp.toPx() }
     // By the pointer, below and to the right, or the other side where it would go off the screen.

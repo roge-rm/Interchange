@@ -53,6 +53,8 @@ object KeyInput {
     internal var rootFocused = false
     /** Gives focus back to the outermost box. */
     internal var focusRoot: (() -> Unit)? = null
+    /** Whether the scenario intro shows. It holds time still itself, so pause doesn't work over it. */
+    internal var intro = false
     /** Whether the gamepad's A went to the map when pressed. */
     private var tapOnMap = false
 
@@ -67,7 +69,16 @@ object KeyInput {
         if (pad) Gamepad.used()
         // The d-pad moves focus, as Compose does with it, unless the map cursor's out.
         val step = action == KeyAction.CursorUp || action == KeyAction.CursorDown || action == KeyAction.CursorLeft || action == KeyAction.CursorRight
-        if (step && !cursorMode) return false
+        if (step && !cursorMode) {
+            // Its key up still counts, as the cursor may have gone while it was down.
+            if (event.type == KeyEventType.KeyUp) {
+                down.remove(name)
+                taken.remove(name)
+            }
+            return false
+        }
+        // The arrows move focus while it's off the map, as in the tool bar.
+        if (action.held && !rootFocused && event.type == KeyEventType.KeyDown) return false
         if (action == KeyAction.Tap) return tap(event)
         if (event.type == KeyEventType.KeyUp) {
             down.remove(name)
@@ -103,7 +114,9 @@ object KeyInput {
         }
         if (event.type != KeyEventType.KeyUp) return false
         if (!down.remove(name)) return true
-        if (tapOnMap) Gamepad.map?.release() else Gamepad.pressFocused?.invoke(false)
+        // A window opened while A was down covers the map, so the press is dropped.
+        if (tapOnMap) { if (cursorMode) Gamepad.map?.release() else Gamepad.map?.cancel() }
+        else Gamepad.pressFocused?.invoke(false)
         tapOnMap = false
         return true
     }
@@ -117,7 +130,7 @@ object KeyInput {
             windows.last().value()
             return true
         }
-        if (windows.isNotEmpty() && !action.overWindows) return false
+        if (windows.isNotEmpty() && (!action.overWindows || action == KeyAction.Pause && intro)) return false
         val g = game ?: return false
         if (action.held) {
             held.add(action)

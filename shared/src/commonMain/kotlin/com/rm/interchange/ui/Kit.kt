@@ -2,6 +2,7 @@ package com.rm.interchange.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
@@ -31,6 +32,7 @@ import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
@@ -147,6 +149,10 @@ fun Window(title: String, onClose: () -> Unit, glyph: Glyph? = null, maxWidth: D
                 .padding(12.dp)
                 .widthIn(max = maxWidth)
                 .focusRequester(focus)
+                // The d-pad and Tab keep focus in the window, off the buttons behind it. Focus asked for elsewhere, as by
+                // a window opening over this one, still goes.
+                .focusProperties { onExit = { if (requestedFocusDirection in STEPS) cancelFocusChange() } }
+                .focusGroup()
                 // Taps on the window stay in it.
                 .pointerInput(Unit) { detectTapGestures { } }
                 .semantics { paneTitle = title },
@@ -169,6 +175,9 @@ fun Window(title: String, onClose: () -> Unit, glyph: Glyph? = null, maxWidth: D
         }
     }
 }
+
+/** Focus moves the d-pad, arrows and Tab make. */
+private val STEPS = setOf(FocusDirection.Up, FocusDirection.Down, FocusDirection.Left, FocusDirection.Right, FocusDirection.Next, FocusDirection.Previous)
 
 /** A small heading in capitals over a group of rows, settings or choices, with a glyph. See KitInfo.kt for the rest of the kit. */
 @Composable

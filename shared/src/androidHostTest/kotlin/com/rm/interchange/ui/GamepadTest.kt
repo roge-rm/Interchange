@@ -4,6 +4,7 @@ import androidx.compose.ui.geometry.Offset
 import kotlin.math.abs
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class GamepadTest {
@@ -88,5 +89,44 @@ class GamepadTest {
         assertEquals(KeyAction.Tap, KeyMap.action("pad_a"))
         assertEquals(KeyAction.Close, KeyMap.action("pad_b"))
         assertEquals(KeyAction.Pause, KeyMap.action("pad_start"))
+    }
+
+    @Test
+    fun cursorKeptOnAMapThatShrinks() {
+        // Turning a wide screen upright leaves the cursor past the new right edge.
+        assertEquals(Offset(470f, 300f), clampCursor(Offset(900f, 300f), 500f, 1000f, 30f))
+        assertEquals(Offset(30f, 30f), clampCursor(Offset(-5f, 10f), 500f, 1000f, 30f))
+        val inside = Offset(200f, 400f)
+        assertEquals(inside, clampCursor(inside, 500f, 1000f, 30f))
+    }
+
+    @Test
+    fun heldKeyRepeatsAfterTheDelayAtTheRate() {
+        val r = KeyRepeat(400, 50)
+        assertFalse(r.due(0))
+        r.start(1000)
+        assertFalse(r.due(1200))
+        assertFalse(r.due(1399))
+        assertTrue(r.due(1400))
+        assertFalse(r.due(1420))
+        assertTrue(r.due(1450))
+        assertTrue(r.due(1500))
+        // A late frame gives one repeat, then the rate again from then.
+        assertTrue(r.due(1700))
+        assertFalse(r.due(1720))
+        assertTrue(r.due(1750))
+        r.stop()
+        assertFalse(r.due(5000))
+    }
+
+    @Test
+    fun rightStickOnZUnlessZIsATrigger() {
+        // Z only, or Z and RX with Z resting in the middle: the stick's on Z.
+        assertTrue(stickOnZ(hasZ = true, hasRx = false, zMin = -1f, zFirst = -1f))
+        assertTrue(stickOnZ(hasZ = true, hasRx = true, zMin = -1f, zFirst = 0.02f))
+        // A trigger on Z, resting at -1 or going from 0 up: the stick's on RX.
+        assertFalse(stickOnZ(hasZ = true, hasRx = true, zMin = -1f, zFirst = -1f))
+        assertFalse(stickOnZ(hasZ = true, hasRx = true, zMin = 0f, zFirst = 0f))
+        assertFalse(stickOnZ(hasZ = false, hasRx = true, zMin = 0f, zFirst = 0f))
     }
 }

@@ -130,6 +130,12 @@ fun cursorMove(x: Float, y: Float, dx: Float, dy: Float, w: Float, h: Float, mar
     return floatArrayOf(cx, cy, cx - nx, cy - ny)
 }
 
+/** A cursor at [c] brought inside a map [w] by [h], [margin] in from the edges. */
+fun clampCursor(c: Offset, w: Float, h: Float, margin: Float): Offset {
+    val r = cursorMove(c.x, c.y, 0f, 0f, w, h, margin)
+    return Offset(r[0], r[1])
+}
+
 /**
  * Where the d-pad takes the cursor at [at]: the middle of the tile ([dx], [dy]) tiles across and down the screen from
  * the one under it. Tiles in a screen column are a tile's height apart, in a row its width.
@@ -162,6 +168,39 @@ class TurnLatch {
         armed = false
         return if (v > 0f) 1 else -1
     }
+}
+
+/**
+ * A held key's repeats: the first [delay] ms after it goes down, then every [rate] ms. Times are in ms on any one
+ * clock. A late check gives one repeat, not a burst.
+ */
+class KeyRepeat(private val delay: Long, private val rate: Long) {
+    private var next = -1L
+
+    /** The key went down at [now]. */
+    fun start(now: Long) { next = now + delay }
+
+    /** The key went up. */
+    fun stop() { next = -1L }
+
+    /** Whether a repeat is due at [now]. */
+    fun due(now: Long): Boolean {
+        if (next < 0 || now < next) return false
+        next += rate
+        if (next <= now) next = now + rate
+        return true
+    }
+}
+
+/**
+ * Whether the right stick's across is on AXIS_Z rather than AXIS_RX, from which axes the pad has, the least Z goes
+ * to and where Z sat at the pad's first motion. Most pads put the stick on Z; a pad with its left trigger on Z has
+ * it resting at -1, or from 0 up, and the stick on RX.
+ */
+fun stickOnZ(hasZ: Boolean, hasRx: Boolean, zMin: Float, zFirst: Float): Boolean {
+    if (!hasZ) return false
+    if (!hasRx) return true
+    return zMin < -0.5f && zFirst > -0.9f
 }
 
 /** How far from the middle a stick sits still. */
