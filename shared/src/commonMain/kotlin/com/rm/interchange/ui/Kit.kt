@@ -309,7 +309,7 @@ fun <T> StepSliderRow(glyph: Glyph, label: String, options: List<T>, value: T, n
     val c = LocalColors.current
     val at = options.indexOf(value).coerceAtLeast(0)
     val shown = name(value)
-    Row(modifier.fillMaxWidth().height(34.dp).padding(start = 6.dp, end = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+    Row(modifier.fillMaxWidth().heightIn(min = 34.dp).padding(start = 6.dp, end = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         GlyphIcon(glyph, c.textDim, Modifier.size(20.dp).clearAndSetSemantics { })
         Slider(
             value = at.toFloat(),

@@ -115,6 +115,8 @@ import com.rm.interchange.map.VehicleSource
 import com.rm.interchange.platform.cameraCutouts
 import com.rm.interchange.platform.picker
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import com.rm.interchange.sim.BadData
 import com.rm.interchange.sim.BadPack
 import com.rm.interchange.sim.Calendar
@@ -1503,7 +1505,7 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
         else stringResource(Res.string.drag_label, tiles, money(cost))
     }
     val shortOf = dragged != null && dragged.second > money
-    val measurer = rememberTextMeasurer()
+    val measurer = rememberCappedMeasurer()
     // Money as the language writes it, for drawing over the map outside composition.
     val moneyPattern = stringResource(Res.string.money, "%s")
     BoxWithConstraints(Modifier.fillMaxSize().background(c.page)) {
@@ -1515,8 +1517,9 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
         val safe = WindowInsets.safeDrawing
         mapSize = androidx.compose.ui.geometry.Size(constraints.maxWidth.toFloat(), constraints.maxHeight.toFloat())
 
+        val mapDescription = stringResource(Res.string.map_description)
         MapView(
-            world, sheets, view, { frame.value }, input, { moving(runner) }, Modifier.fillMaxSize().letsGoOfText(),
+            world, sheets, view, { frame.value }, input, { moving(runner) }, Modifier.fillMaxSize().letsGoOfText().semantics { contentDescription = mapDescription },
             overlay = drawLit(world, view, worldView.value, riskView.value, settings.priority || tool == Tool.PriorityTrack || tool == Tool.PriorityRoad, settings.risk, plan?.let { p -> { painter -> drawTrackPlan(world, painter, p) } }
                 ?: (stationPlan ?: stationHeld?.first)?.let { p -> { painter -> drawStationPlan(world, painter, p) } }
                 ?: bridgePlan?.let { p -> { painter -> drawBridgePlan(world, painter, p) } }

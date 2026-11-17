@@ -152,7 +152,7 @@ fun StatusStrip(
             SquareButton(Glyph.TurnRight, stringResource(Res.string.turn_right), side, onClick = onTurnRight)
         }
     }
-    ChromeBox(modifier) {
+    CapFontScale { ChromeBox(modifier) {
         if (twoLines) {
             // Across the whole width: the buttons on the left and turning on the right, clear of the cameras, then
             // the date and money spread out under them.
@@ -170,7 +170,7 @@ fun StatusStrip(
                 turns()
             }
         }
-    }
+    } }
 }
 
 /**
@@ -238,6 +238,7 @@ fun ToolBar(
 ) {
     val groups = ToolGroup.entries.filter { editor || !it.editorOnly }
     val removeLabel = stringResource(Res.string.tool_remove)
+    CapFontScale {
     if (vertical) {
         ChromeBox(modifier) {
             // Scrolls only on a screen too short for the whole rail.
@@ -254,6 +255,7 @@ fun ToolBar(
                 GroupButton(Glyph.Remove, removeLabel, remove, compact, Modifier.weight(1f), onRemove)
             }
         }
+    }
     }
 }
 
@@ -304,7 +306,7 @@ fun ToolTray(
     val c = LocalColors.current
     // Remove keeps this cost line and skips the land tabs.
     val tools = if (tool == Tool.Remove) emptyList() else Tool.of(tool.group, editor)
-    ChromeBox(modifier) {
+    CapFontScale { ChromeBox(modifier) {
         Column(Modifier.padding(4.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             if (tools.size > 1 && !folded) {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -352,7 +354,7 @@ fun ToolTray(
                 extras()
             }
         }
-    }
+    } }
 }
 
 /** One of a row of choices across the tray, sharing the width with the others. */

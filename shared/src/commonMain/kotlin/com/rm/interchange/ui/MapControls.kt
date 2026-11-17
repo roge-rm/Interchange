@@ -39,7 +39,7 @@ internal fun MapChoice(label: String, description: String, glyph: Glyph, modifie
     val c = LocalColors.current
     var open by remember { mutableStateOf(false) }
     Box(modifier) {
-        Row(Modifier.fillMaxWidth().height(42.dp).clip(RoundedCornerShape(10.dp)).background(c.button)
+        Row(Modifier.fillMaxWidth().heightIn(min = 42.dp).clip(RoundedCornerShape(10.dp)).background(c.button)
             .semantics { contentDescription = description }.clickable { open = true }.padding(horizontal = 8.dp),
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             GlyphIcon(glyph, colour?.invoke(selected) ?: c.accent, Modifier.size(17.dp))

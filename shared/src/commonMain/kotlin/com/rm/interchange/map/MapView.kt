@@ -110,7 +110,7 @@ fun MapView(
     DisposableEffect(gl) { onDispose { gl.close() } }
     gl.onSharp = onSharp
     gl.overlays = overlays
-    val measurer = rememberTextMeasurer()
+    val measurer = com.rm.interchange.ui.rememberCappedMeasurer()
     val steps = arrayOf(
         stringResource(Res.string.loading_unpacking), stringResource(Res.string.loading_drawing),
         stringResource(Res.string.loading_sending), stringResource(Res.string.loading_trains),

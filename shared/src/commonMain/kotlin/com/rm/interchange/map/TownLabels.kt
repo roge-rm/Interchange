@@ -132,6 +132,6 @@ fun companyColour(company: Int): Color = COMPANY_COLOURS[company.mod(COMPANY_COL
 
 @Composable
 fun rememberTownLabels(back: Color, text: Color, dim: Color): TownLabels {
-    val measurer = rememberTextMeasurer()
+    val measurer = com.rm.interchange.ui.rememberCappedMeasurer()
     return remember(measurer, back, text, dim) { TownLabels(measurer, back, text, dim) }
 }

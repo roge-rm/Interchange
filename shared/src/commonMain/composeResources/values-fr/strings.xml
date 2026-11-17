@@ -14,6 +14,7 @@
     <string name="date">%1$d %2$s %3$d</string>
 
     <string name="overview_map">Carte</string>
+    <string name="map_description">Carte du jeu. Glissez pour déplacer, pincez pour zoomer.</string>
     <string name="map_rail">Voies ferrées</string>
     <string name="map_roads">Routes</string>
     <string name="map_stations">Gares et arrêts</string>
