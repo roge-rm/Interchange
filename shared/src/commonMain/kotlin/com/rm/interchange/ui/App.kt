@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
@@ -211,7 +212,7 @@ fun App() {
         }
     }
     InLanguage(settings.language) {
-        Palette.safe = settings.safeColours
+        SideEffect { Palette.safe = settings.safeColours }
         CompositionLocalProvider(LocalColors provides if (settings.safeColours) SafeColors else DarkColors) { Root(settings) }
     }
 }

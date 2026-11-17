@@ -82,7 +82,7 @@ class TownLabels(private val measurer: TextMeasurer, private val back: Color, pr
             val colour = companyColour(st.owner)
             val ink = if (colour.luminance() > 0.5f) Color(0xFF1E1E20) else Color.White
             val label = name(st)
-            val text = signs.getOrPut("$label\u0000${st.owner}") { measurer.measure(label, TextStyle(color = ink, fontSize = 11.sp, fontWeight = FontWeight.Medium)) }
+            val text = signs.getOrPut("$label\u0000${colour.value}") { measurer.measure(label, TextStyle(color = ink, fontSize = 11.sp, fontWeight = FontWeight.Medium)) }
             val w = text.size.width + padX * 2
             val h = text.size.height + padY * 2
             val r = Rect(sx - w / 2, sy - h, sx + w / 2, sy)

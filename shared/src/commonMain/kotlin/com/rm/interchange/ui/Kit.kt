@@ -58,7 +58,6 @@ import androidx.compose.ui.semantics.paneTitle
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.layout.Layout
-import androidx.compose.ui.layout.layout
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.Constraints
@@ -78,17 +77,6 @@ import kotlin.math.roundToInt
 
 /** The smallest a tap target is, across and down. */
 val TOUCH_TARGET = 48.dp
-
-/**
- * Grows what it holds to at least [across] by [down], the content kept in the middle, so the whole of the larger area
- * takes the taps of the click modifiers before it. A zero leaves that way alone.
- */
-fun Modifier.touchTarget(across: Dp = TOUCH_TARGET, down: Dp = TOUCH_TARGET): Modifier = layout { measurable, constraints ->
-    val p = measurable.measure(constraints.copy(minWidth = 0, minHeight = 0))
-    val w = maxOf(p.width, across.roundToPx()).coerceIn(constraints.minWidth, constraints.maxWidth.coerceAtLeast(constraints.minWidth))
-    val h = maxOf(p.height, down.roundToPx()).coerceIn(constraints.minHeight, constraints.maxHeight.coerceAtLeast(constraints.minHeight))
-    layout(w, h) { p.place((w - p.width) / 2, (h - p.height) / 2) }
-}
 
 /** A wide button for the screens and windows, with a glyph before its words. [primary] is the one most likely wanted. */
 @Composable

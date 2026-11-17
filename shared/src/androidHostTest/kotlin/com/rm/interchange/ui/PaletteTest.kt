@@ -69,7 +69,7 @@ class PaletteTest {
     }
 
     @Test
-    fun theStandardGoodAndBadMergeForRedGreenBlindness() {
+    fun theSafeGoodAndBadStayFurtherApartForRedGreenBlindnessThanTheStandard() {
         val c = DarkColors
         assertTrue(abs(difference(c.good, c.bad, deutan)) < abs(difference(SafeColors.good, SafeColors.bad, deutan)))
     }

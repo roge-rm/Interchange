@@ -1,14 +1,17 @@
 package com.rm.interchange.ui
 
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.Color
 
 /**
  * The colours that change with the Colours setting: Standard, or a set from Okabe and Ito that stays apart for
- * red-green and blue-yellow colour blindness. [safe] is read from the map's threads too, so it's volatile.
+ * red-green and blue-yellow colour blindness. [safe] is snapshot state, so what reads it
+ * in composition or drawing runs again when the App changes it, and the map's threads can read it too.
  */
 object Palette {
-    @Volatile
-    var safe = false
+    var safe by mutableStateOf(false)
 
     /** Red, as the plan and overlay marks use it, at [alpha] 0 to 255. */
     fun bad(alpha: Int): Color = (if (safe) SAFE_BAD else STANDARD_BAD).withAlpha(alpha)
