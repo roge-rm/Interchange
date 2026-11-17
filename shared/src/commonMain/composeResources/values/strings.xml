@@ -1093,5 +1093,9 @@
     <string name="depot_maglev">Maglev depot</string>
     <string name="future">Future</string>
     <string name="traction_maglev">Maglev</string>
+    <string name="tube">Tube</string>
+    <string name="bore">Bore</string>
+    <string name="depot_tube">Hyperloop depot</string>
+    <string name="traction_hyperloop">Hyperloop</string>
     <string name="energy">Energy</string>
 </resources>

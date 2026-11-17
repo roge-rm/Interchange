@@ -31,7 +31,8 @@ import com.rm.interchange.sim.FlowView
 import com.rm.interchange.sim.Equipment
 import androidx.compose.foundation.layout.size
 import com.rm.interchange.sim.Engine
-import com.rm.interchange.sim.maglev
+import com.rm.interchange.sim.TrackKind
+import com.rm.interchange.sim.trackKind
 import com.rm.interchange.sim.VehicleKind
 import com.rm.interchange.sim.Traction
 import com.rm.interchange.sim.Cargo
@@ -178,7 +179,7 @@ fun TrainCard(
             val stockCost = t.formation.sumOf { car -> roster[car.model].let { it.cost + (roster.getOrNull(it.tender)?.cost ?: 0) } }
             fun base(engine: Engine) = stockCost - e.cost - (roster.getOrNull(e.tender)?.cost ?: 0) + engine.cost + (roster.getOrNull(engine.tender)?.cost ?: 0)
             ReplaceList(
-                roster.available(year, pulls = true).filter { it.id != t.engine && it.maglev == t.maglev }, funds,
+                roster.available(year, pulls = true).filter { it.id != t.engine && it.trackKind == t.kind }, funds,
                 costOf = { price(base(it)) - (price(base(e)) - t.renewCost) },
                 blocked = { it.traction == Traction.ELECTRIC && view.depots.firstOrNull { d -> d.id == t.shed }?.wired != true },
                 why = t.replaceWhy,
@@ -199,10 +200,11 @@ fun DepotCard(view: WorldView, roster: Roster, depot: Int, year: Int, funds: Lon
     val me = LocalCompany.current
     val c = LocalColors.current
     val lang = languageCode()
-    // Guideway depots sell only maglev cars and rail depots none.
-    val maglevDepot = view.depots.firstOrNull { it.id == depot }?.maglev == true
-    val engines = roster.available(year, pulls = true).filter { it.maglev == maglevDepot }
-    val wagons = roster.available(year, pulls = false).filter { it.maglev == maglevDepot }
+    // A depot sells only cars of the kind of track it stands on.
+    val depotView = view.depots.firstOrNull { it.id == depot }
+    val depotKind = if (depotView?.tube == true) TrackKind.TUBE else if (depotView?.maglev == true) TrackKind.GUIDEWAY else TrackKind.RAIL
+    val engines = roster.available(year, pulls = true).filter { it.trackKind == depotKind }
+    val wagons = roster.available(year, pulls = false).filter { it.trackKind == depotKind }
     var engineId by remember { mutableIntStateOf(-1) }
     var wagonId by remember { mutableIntStateOf(-1) }
     var count by remember { mutableIntStateOf(3) }
@@ -210,7 +212,7 @@ fun DepotCard(view: WorldView, roster: Roster, depot: Int, year: Int, funds: Lon
     var cargo by remember { mutableIntStateOf(-1) }
     var showWagons by remember { mutableStateOf(false) }
     var inherit by remember { mutableStateOf(false) }
-    Card(stringResource(if (maglevDepot) Res.string.depot_maglev else Res.string.depot), onClose, modifier, scrolls = false) {
+    Card(stringResource(when (depotKind) { TrackKind.TUBE -> Res.string.depot_tube; TrackKind.GUIDEWAY -> Res.string.depot_maglev; else -> Res.string.depot }), onClose, modifier, scrolls = false) {
         // What's picked, or the first on sale once the one picked goes off sale.
         val e = engines.firstOrNull { it.id == engineId } ?: engines.firstOrNull()
         val w = wagons.firstOrNull { it.id == wagonId } ?: wagons.firstOrNull()

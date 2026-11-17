@@ -76,6 +76,10 @@ import com.rm.interchange.sim.crashFor
 import com.rm.interchange.sim.railCost
 import com.rm.interchange.sim.Maglev
 import com.rm.interchange.sim.maglevOpen
+import com.rm.interchange.sim.hyperloopOpen
+import com.rm.interchange.sim.kindOpen
+import com.rm.interchange.sim.TrackKind
+import com.rm.interchange.sim.Hyperloop
 import com.rm.interchange.sim.canalCost
 import com.rm.interchange.sim.bridgeCost
 import com.rm.interchange.sim.bridgeRefusal
@@ -1020,8 +1024,10 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
         while (true) withFrameNanos { if (runner.riskView !== riskView.value) riskView.value = runner.riskView }
     }
     var bridgeStyle by remember { mutableIntStateOf(0) }
-    // Guideway rather than rail, for the track, station, depot, bridge and tunnel tools while maglev is open.
-    var guidewayPicked by remember { mutableStateOf(false) }
+    // The kind of track the track, station, depot, bridge and tunnel tools build: rail, guideway or tube.
+    var kindPicked by remember { mutableIntStateOf(TrackKind.RAIL) }
+    // A bore rather than a concrete span, for the bridge tool on tube.
+    var boring by remember { mutableStateOf(false) }
     var bridgePlan by remember { mutableStateOf<Command.Bridge?>(null) }
     // The tray folds to its line once something's built, to show more of the map.
     var folded by remember { mutableStateOf(false) }
@@ -1212,10 +1218,14 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
         }
     }
 
-    val guideway = guidewayPicked && world.maglevOpen()
+    val kind = if (world.kindOpen(kindPicked)) kindPicked else TrackKind.RAIL
+    val guideway = kind == TrackKind.GUIDEWAY
+    val tube = kind == TrackKind.TUBE
+    val onRail = kind == TrackKind.RAIL
+    val tubeStyle = if (boring) Spans.TUNNEL else Spans.CONCRETE
     fun railFor(start: Pick, end: Pick): Command.Rail =
         (if (trackPiece == 0 || tool != Tool.Track) trackLine(me, start, end, removing)
-        else pieceLine(world, me, start, end, worldPiece(LandPainter(world, view, view.halfWidth), trackPiece), removing)).copy(maglev = guideway)
+        else pieceLine(world, me, start, end, worldPiece(LandPainter(world, view, view.halfWidth), trackPiece), removing)).copy(maglev = guideway, tube = tube)
 
     val stationNumber = stringResource(Res.string.station_n, "%d")
     // Sends platforms at once, or holds them for a choice when picking is on and stations of ours are in reach.
@@ -1225,12 +1235,12 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
         stationHeld = p to near.map { it.id to it.name.ifEmpty { stationNumber.replace("%d", (it.id + 1).toString()) } }
     }
 
-    val input = remember(tool, removing, stationAlongX, stationPicking, addingStops, addingRoadStops, addingCraftStops, signalKind, signalSpacing, bridgeStyle, guideway, roadSurface, airportKind, runwayAlongX, trackPiece, townSize, industryKind, industryTurn, pick, copyPick.value) {
+    val input = remember(tool, removing, stationAlongX, stationPicking, addingStops, addingRoadStops, addingCraftStops, signalKind, signalSpacing, bridgeStyle, kind, boring, roadSurface, airportKind, runwayAlongX, trackPiece, townSize, industryKind, industryTurn, pick, copyPick.value) {
         object : MapInput {
             override val builds: Int get() = buildCount[0]
             override fun buildArea(from: Pick, to: Pick): IntArray? {
                 if (tool == Tool.PlaceIndustry) return industryArea(to.tileX, to.tileY)
-                if (tool == Tool.Tunnel) return world.companies.getOrNull(me)?.let { world.tunnelFrom(it, from.tileX, from.tileY, guideway) }?.let { intArrayOf(it.x0, it.y0, it.x1, it.y1) }
+                if (tool == Tool.Tunnel) return if (tube) null else world.companies.getOrNull(me)?.let { world.tunnelFrom(it, from.tileX, from.tileY, guideway) }?.let { intArrayOf(it.x0, it.y0, it.x1, it.y1) }
                 // A drag's line, which for a diagonal piece ends off the finger.
                 return plan?.let { intArrayOf(it.sx, it.sy, it.ex, it.ey) }
             }
@@ -1346,16 +1356,16 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
                         runner.request(a)
                         if (why != Refusal.NONE) refuse(why) else built()
                     }
-                    Tool.Wires -> if (!guideway) { runner.request(trackLine(me, at, at, removing).let { Command.Wire(me, it.sx, it.sy, it.ex, it.ey, it.first, it.remove) }); built() }
+                    Tool.Wires -> if (onRail) { runner.request(trackLine(me, at, at, removing).let { Command.Wire(me, it.sx, it.sy, it.ex, it.ey, it.first, it.remove) }); built() }
                     Tool.Signals -> if (removing) signalAt(world, me, at, signalled = true)?.let { runner.request(Command.SignalRun(me, at.tileX, at.tileY, at.tileX, at.tileY, it.piece, Signals.PLACED[signalKind], signalSpacing, true)); built() }
                         else signalAt(world, me, at)?.let { runner.request(it.copy(kind = Signals.PLACED[signalKind])); built() }
                     Tool.Waypoint -> { runner.request(Command.Waypoint(me, at.tileX, at.tileY)); built() }
                     Tool.PriorityTrack, Tool.PriorityRoad -> priorityRun(me, at, at, tool == Tool.PriorityRoad, !removing).let { runner.request(it); built() }
-                    Tool.Tunnel -> { runner.request(Command.Tunnel(me, at.tileX, at.tileY, guideway)); built() }
+                    Tool.Tunnel -> if (!tube) { runner.request(Command.Tunnel(me, at.tileX, at.tileY, guideway)); built() }
                     Tool.SnowShed, Tool.SnowFence -> { runner.request(Command.SnowWorks(me, at.tileX, at.tileY, shed = tool == Tool.SnowShed)); built() }
-                    Tool.Station -> buildStation(stationPlan(me, at, at, stationAlongX).copy(maglev = guideway))
+                    Tool.Station -> buildStation(stationPlan(me, at, at, stationAlongX).copy(maglev = guideway, tube = tube))
                     Tool.Depot -> {
-                        runner.request(depotAt(world, me, at).copy(maglev = guideway))
+                        runner.request(depotAt(world, me, at).copy(maglev = guideway, tube = tube))
                         built()
                     }
                     Tool.Clear -> { runner.request(Command.Clear(me, at.tileX, at.tileY)); built() }
@@ -1390,8 +1400,8 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
                 when (tool) {
                     Tool.Road -> roadPlan = roadLine(me, s, at, roadSurface, removing)
                     Tool.TramRails -> roadPlan = roadLine(me, s, at, roadSurface, removing, tram = true)
-                    Tool.Station -> { stationHeld = null; stationPlan = stationPlan(me, s, at, stationAlongX).copy(maglev = guideway) }
-                    Tool.Bridge -> bridgePlan = bridgePlan(me, s, at, if (guideway) Spans.CONCRETE else bridgeStyle).copy(maglev = guideway)
+                    Tool.Station -> { stationHeld = null; stationPlan = stationPlan(me, s, at, stationAlongX).copy(maglev = guideway, tube = tube) }
+                    Tool.Bridge -> bridgePlan = bridgePlan(me, s, at, if (tube) tubeStyle else if (guideway) Spans.CONCRETE else bridgeStyle).copy(maglev = guideway, tube = tube)
                     Tool.Canal -> canalPlan = roadLine(me, s, at, 0, removing).let { Command.Canal(me, it.sx, it.sy, it.ex, it.ey, removing) }
                     Tool.Clear -> clearPlan = Command.ClearArea(me, s.tileX, s.tileY, at.tileX, at.tileY)
                     Tool.Remove -> removePlan = Command.RemoveArea(me, s.tileX, s.tileY, at.tileX, at.tileY)
@@ -1408,7 +1418,7 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
                         else editAreaCommand(tool, me, a[0], a[1], a[2], a[3], level)
                     c?.let { edit(it); built() }
                 }
-                plan?.let { if (tool == Tool.Wires && guideway) return@let; runner.request(if (tool == Tool.Wires) Command.Wire(me, it.sx, it.sy, it.ex, it.ey, it.first, it.remove) else it); built() }
+                plan?.let { if (tool == Tool.Wires && !onRail) return@let; runner.request(if (tool == Tool.Wires) Command.Wire(me, it.sx, it.sy, it.ex, it.ey, it.first, it.remove) else it); built() }
                 stationPlan?.let { buildStation(it) }
                 bridgePlan?.let { b ->
                     val why = world.companies.getOrNull(me)?.let { world.bridgeRefusal(it, b) } ?: Refusal.NONE
@@ -1451,7 +1461,7 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
     // A player who just joined may be drawn a frame or two before their company is made; costs go by the first till then.
     val company = world.companies.getOrNull(me) ?: world.companies[0]
     val dragged: Pair<Int, Long>? = plan?.let { p ->
-        if (tool == Tool.Wires && guideway) null
+        if (tool == Tool.Wires && !onRail) null
         else if (tool == Tool.Wires) Track.line(world, p.sx, p.sy, p.ex, p.ey, p.first)?.let { it.size to it.sumOf { e -> world.build(Prices.WIRE, Mix.WIRE, e / 64) } }
         else world.railCost(p).let { (cost, n) -> if (cost < 0) null else n to cost }
     } ?: roadPlan?.let { p -> world.roadCost(company, p).takeIf { it >= 0 }?.let { (maxOf(kotlin.math.abs(p.ex - p.sx), kotlin.math.abs(p.ey - p.sy)) + 1) to it } }
@@ -1464,7 +1474,7 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
         ?: stationPlan?.let { p ->
             // A tile at a time, as the sim charges it, for the land and frost on each.
             var cost = 0L
-            for (y in minOf(p.y0, p.y1)..maxOf(p.y0, p.y1)) for (x in minOf(p.x0, p.x1)..maxOf(p.x0, p.x1)) if (world.inside(x, y)) cost += world.build(if (p.maglev) Maglev.PLATFORM else Prices.PLATFORM, Mix.PLATFORM, world.index(x, y))
+            for (y in minOf(p.y0, p.y1)..maxOf(p.y0, p.y1)) for (x in minOf(p.x0, p.x1)..maxOf(p.x0, p.x1)) if (world.inside(x, y)) cost += world.build(if (p.tube) Hyperloop.PLATFORM else if (p.maglev) Maglev.PLATFORM else Prices.PLATFORM, Mix.PLATFORM, world.index(x, y))
             ((kotlin.math.abs(p.x1 - p.x0) + 1) * (kotlin.math.abs(p.y1 - p.y0) + 1)) to cost
         }
         ?: bridgePlan?.let { p -> world.bridgeCost(company, p).takeIf { it >= 0 }?.let { (maxOf(kotlin.math.abs(p.x1 - p.x0), kotlin.math.abs(p.y1 - p.y0)) + 1) to it } }
@@ -1823,12 +1833,12 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
                     stringResource(Res.string.cost_winter).takeIf { mark and CostMark.WINTER != 0 },
                 ).joinToString(" ").ifEmpty { null }
                 val detail = if (editor) (if (refused) stringResource(Res.string.cant_edit_here) else null) else if (refusedHere) stringResource(refusalText(refusal)) else when (tool) {
-                    Tool.Track -> if (removing) stringResource(Res.string.cost_lift, money(world.build(if (guideway) Maglev.TRACK_REMOVE else Prices.TRACK_REMOVE, Mix.LABOUR, here))) else stringResource(Res.string.cost_track, money(if (guideway) world.build(Maglev.TRACK, Mix.GUIDEWAY, here) else world.build(Prices.TRACK, Mix.TRACK, here)), money(world.build(Prices.FOUNDATION, Mix.FOUNDATION, here, true)))
+                    Tool.Track -> if (removing) stringResource(Res.string.cost_lift, money(world.build(if (tube) Hyperloop.TRACK_REMOVE else if (guideway) Maglev.TRACK_REMOVE else Prices.TRACK_REMOVE, Mix.LABOUR, here))) else stringResource(Res.string.cost_track, money(if (tube) world.build(Hyperloop.TRACK, Mix.TUBE, here) else if (guideway) world.build(Maglev.TRACK, Mix.GUIDEWAY, here) else world.build(Prices.TRACK, Mix.TRACK, here)), money(world.build(Prices.FOUNDATION, Mix.FOUNDATION, here, true)))
                     Tool.Signals -> stringResource(Res.string.cost_signal, money(world.build(Prices.SIGNAL, Mix.STEELWORK)))
                     Tool.Waypoint -> stringResource(Res.string.cost_waypoint, money(world.build(Prices.SIGNAL, Mix.STEELWORK)))
                     Tool.PriorityTrack, Tool.PriorityRoad -> worldView.value?.company?.let { stringResource(Res.string.priority_count, it.priorityTiles, money(it.priorityMonth)) }
-                    Tool.Bridge -> if (guideway) stringResource(Res.string.cost_tile, money(world.build(Spans.COST[Spans.CONCRETE], Mix.SPANS[Spans.CONCRETE], here) * Maglev.SPAN_TIMES)) else stringResource(Res.string.cost_tile, money(world.build(Spans.COST[bridgeStyle], Mix.SPANS[bridgeStyle], here)))
-                    Tool.Wires, Tool.TramRails -> if (guideway && tool == Tool.Wires) null else stringResource(Res.string.cost_tile, money(world.build(Prices.WIRE, Mix.WIRE, here)))
+                    Tool.Bridge -> if (tube && boring) stringResource(Res.string.cost_tile, money(world.build(Hyperloop.BORE, Mix.SPANS[Spans.TUNNEL], here))) else if (tube) stringResource(Res.string.cost_tile, money(world.build(Spans.COST[Spans.CONCRETE], Mix.SPANS[Spans.CONCRETE], here) * Hyperloop.SPAN_TIMES)) else if (guideway) stringResource(Res.string.cost_tile, money(world.build(Spans.COST[Spans.CONCRETE], Mix.SPANS[Spans.CONCRETE], here) * Maglev.SPAN_TIMES)) else stringResource(Res.string.cost_tile, money(world.build(Spans.COST[bridgeStyle], Mix.SPANS[bridgeStyle], here)))
+                    Tool.Wires, Tool.TramRails -> if (!onRail && tool == Tool.Wires) null else stringResource(Res.string.cost_tile, money(world.build(Prices.WIRE, Mix.WIRE, here)))
                     Tool.Road -> stringResource(Res.string.cost_tile, money(world.build(Surface.COST[roadSurface], Mix.SURFACES[roadSurface], here)))
                     Tool.RoadStop -> money(world.build(Prices.ROAD_STOP, Mix.ROAD_STOP, here))
                     Tool.Garage -> money(world.build(Prices.DEPOT, Mix.DEPOT, here))
@@ -1841,9 +1851,9 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
                     Tool.Airport -> money(world.build(Airports.COST[airportKind], Mix.AIRPORT, here))
                     Tool.SnowShed -> stringResource(Res.string.cost_tile, money(world.woodBuild(SHED_COST, Mix.SHED, here)))
                     Tool.SnowFence -> stringResource(Res.string.cost_tile, money(world.woodBuild(FENCE_COST, Mix.FENCE, here)))
-                    Tool.Tunnel -> stringResource(Res.string.cost_tile, money(world.build(Spans.COST[Spans.TUNNEL], Mix.SPANS[Spans.TUNNEL]) * if (guideway) Maglev.SPAN_TIMES else 1))
-                    Tool.Station -> stringResource(Res.string.cost_tile, money(world.build(if (guideway) Maglev.PLATFORM else Prices.PLATFORM, Mix.PLATFORM, here)))
-                    Tool.Depot -> money(world.build(if (guideway) Maglev.DEPOT else Prices.DEPOT, Mix.DEPOT, here))
+                    Tool.Tunnel -> if (tube) null else stringResource(Res.string.cost_tile, money(world.build(Spans.COST[Spans.TUNNEL], Mix.SPANS[Spans.TUNNEL]) * if (guideway) Maglev.SPAN_TIMES else 1))
+                    Tool.Station -> stringResource(Res.string.cost_tile, money(world.build(if (tube) Hyperloop.PLATFORM else if (guideway) Maglev.PLATFORM else Prices.PLATFORM, Mix.PLATFORM, here)))
+                    Tool.Depot -> money(world.build(if (tube) Hyperloop.DEPOT else if (guideway) Maglev.DEPOT else Prices.DEPOT, Mix.DEPOT, here))
                     Tool.Raise, Tool.Lower, Tool.Level -> stringResource(Res.string.cost_corner, money(world.build(Prices.TERRAFORM, Mix.LABOUR, here)))
                     Tool.Remove -> world.removeQuote(here).let { (t, pl) -> stringResource(Res.string.cost_back, money(t), money(pl)) }
                     Tool.Clear, Tool.Trees -> stringResource(Res.string.cost_clear, money(world.build(Prices.TREE, Mix.LABOUR)))
@@ -1859,7 +1869,7 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
                 val picked = when (tool) {
                     Tool.Road -> surfaces.getOrNull(roadSurface)
                     Tool.Airport -> airportKinds.getOrNull(airportKind)
-                    Tool.Bridge -> bridgeStyles.getOrNull(if (guideway) Spans.CONCRETE else bridgeStyle)
+                    Tool.Bridge -> if (tube && boring) stringResource(Res.string.bore) else bridgeStyles.getOrNull(if (tube || guideway) Spans.CONCRETE else bridgeStyle)
                     Tool.Signals -> if (removing) null else signalKinds.getOrNull(signalKind)
                     else -> null
                 }
@@ -1882,7 +1892,10 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
                         for (k in Airports.entries(year)) OptionButton(AIRPORT_GLYPHS[k], airportKinds.getOrElse(k) { "" }, airportKind == k) { airportKind = k }
                     }
                     Tool.Bridge -> trackOptions += {
-                        for (s in 0 until 3) if (guideway) { if (s == Spans.CONCRETE) OptionButton(BRIDGE_GLYPHS[s], bridgeStyles.getOrElse(s) { "" }, true) {} } else if (year >= Spans.FROM[s] || s == bridgeStyle) OptionButton(BRIDGE_GLYPHS[s], bridgeStyles.getOrElse(s) { "" }, bridgeStyle == s) { bridgeStyle = s }
+                        if (tube) {
+                            OptionButton(BRIDGE_GLYPHS[Spans.CONCRETE], bridgeStyles.getOrElse(Spans.CONCRETE) { "" }, !boring) { boring = false }
+                            OptionButton(Glyph.Tunnel, stringResource(Res.string.bore), boring) { boring = true }
+                        } else for (s in 0 until 3) if (guideway) { if (s == Spans.CONCRETE) OptionButton(BRIDGE_GLYPHS[s], bridgeStyles.getOrElse(s) { "" }, true) {} } else if (year >= Spans.FROM[s] || s == bridgeStyle) OptionButton(BRIDGE_GLYPHS[s], bridgeStyles.getOrElse(s) { "" }, bridgeStyle == s) { bridgeStyle = s }
                     }
                     Tool.Station -> stationHeld?.let { (p, near) ->
                         trackOptions += {
@@ -1910,8 +1923,10 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
                 }
                 ToolTray(tool, { tool = it; refusal = Refusal.NONE; plan = null; stationPlan = null; stationHeld = null; signalPlan = null; priorityPlan = null; levelPlan = null; treePlan = null; removing = false }, trayDetail, folded, { folded = it }, layout.compact, trayWidth, options = trackOptions, editor = editor, warning = editor && refused || !editor && refusedHere) {
                     if (tool == Tool.PlaceIndustry) TrayToggle(Glyph.TurnRight, stringResource(Res.string.turn_industry), industryTurn != 0) { industryTurn = (industryTurn + 1) % 4 }
-                    if (world.maglevOpen() && (tool == Tool.Track || tool == Tool.Station || tool == Tool.Depot || tool == Tool.Bridge || tool == Tool.Tunnel || tool == Tool.Wires))
-                        TrayToggle(Glyph.Train, stringResource(Res.string.guideway), guideway) { guidewayPicked = !guidewayPicked }
+                    if (tool == Tool.Track || tool == Tool.Station || tool == Tool.Depot || tool == Tool.Bridge || tool == Tool.Tunnel || tool == Tool.Wires) {
+                        if (world.maglevOpen()) TrayToggle(Glyph.Train, stringResource(Res.string.guideway), guideway) { kindPicked = if (guideway) TrackKind.RAIL else TrackKind.GUIDEWAY }
+                        if (world.hyperloopOpen() && tool != Tool.Tunnel && tool != Tool.Wires) TrayToggle(Glyph.Tunnel, stringResource(Res.string.tube), tube) { kindPicked = if (tube) TrackKind.RAIL else TrackKind.TUBE }
+                    }
                     if (tool == Tool.Track || tool == Tool.Wires || tool == Tool.Signals || tool == Tool.Road || tool == Tool.TramRails || tool == Tool.Canal) TrayToggle(Glyph.Lift, stringResource(Res.string.remove_track), removing) { removing = !removing }
                     if (tool == Tool.PriorityTrack || tool == Tool.PriorityRoad) TrayToggle(Glyph.Lift, stringResource(Res.string.priority_clear), removing) { removing = !removing }
                     if (tool == Tool.Airport && airportKind != Airports.SEAPLANE && airportKind != Airports.HELIPORT) TrayToggle(Glyph.TurnRight, stringResource(Res.string.runway_other_way), !runwayAlongX) { runwayAlongX = !runwayAlongX }

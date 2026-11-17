@@ -1076,5 +1076,9 @@
     <string name="depot_maglev">Dépôt maglev</string>
     <string name="future">Futur</string>
     <string name="traction_maglev">Maglev</string>
+    <string name="tube">Tube</string>
+    <string name="bore">Tunnel foré</string>
+    <string name="depot_tube">Dépôt hyperloop</string>
+    <string name="traction_hyperloop">Hyperloop</string>
     <string name="energy">Énergie</string>
 </resources>

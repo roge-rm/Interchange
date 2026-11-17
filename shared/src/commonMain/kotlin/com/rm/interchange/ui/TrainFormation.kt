@@ -12,7 +12,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.unit.dp
 import com.rm.interchange.res.*
-import com.rm.interchange.sim.maglev
+import com.rm.interchange.sim.TrackKind
+import com.rm.interchange.sim.trackKind
 import com.rm.interchange.sim.Cargo
 import com.rm.interchange.sim.MAX_LOCOMOTIVES
 import com.rm.interchange.sim.MAX_WAGONS
@@ -26,6 +27,9 @@ import com.rm.interchange.sim.trainFormationCost
 import com.rm.interchange.sim.validTrainFormation
 import org.jetbrains.compose.resources.stringArrayResource
 import org.jetbrains.compose.resources.stringResource
+
+/** The kind of track a train runs on. */
+internal val TrainView.kind get() = if (hyperloop) TrackKind.TUBE else if (maglev) TrackKind.GUIDEWAY else TrackKind.RAIL
 
 /** All the models in a train, in their running order, with adjacent identical cars counted together. */
 @Composable
@@ -93,7 +97,7 @@ internal fun TrainFormationEditor(
     ActionButton(stringResource(Res.string.formation_add), enabled = draft.size < MAX_WAGONS + MAX_LOCOMOTIVES) { picking = !picking }
     if (picking) {
         FillChips(listOf(false, true), wagons, { stringResource(if (it) Res.string.wagons else Res.string.engines) }) { wagons = it; model = -1; cargo = -1 }
-        val models = roster.available(year, pulls = !wagons).filter { it.maglev == t.maglev && (wired || !it.pulls || it.traction != Traction.ELECTRIC) }
+        val models = roster.available(year, pulls = !wagons).filter { it.trackKind == t.kind && (wired || !it.pulls || it.traction != Traction.ELECTRIC) }
         val chosen = models.firstOrNull { it.id == model } ?: models.firstOrNull()
         if (chosen == null) NoneOnSale(roster, if (wagons) VehicleKind.WAGON else VehicleKind.ENGINE, year)
         else {
