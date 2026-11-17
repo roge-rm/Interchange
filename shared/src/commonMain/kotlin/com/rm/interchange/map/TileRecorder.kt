@@ -282,8 +282,10 @@ internal class TileRecorder(
         }
         if (pieces == 0) return
         val guide = world.guideway[tile]
+        val tube = world.tube[tile]
         world.depotTiles[tile]?.let {
             if (guide) sprite(Atlas.GUIDE[viewPieceIndex(Track.index(pieces)) * 16], vx, vy, base)
+            else if (tube) sprite(Atlas.TUBE[viewPieceIndex(Track.index(pieces)) * 16], vx, vy, base)
             else {
                 sprite(Atlas.TRACK[viewPieceIndex(Track.index(pieces)) * 16], vx, vy, base)
                 sprite(Atlas.RAILS[viewPieceIndex(Track.index(pieces)) * 16], vx, vy, base)
@@ -312,8 +314,8 @@ internal class TileRecorder(
             return
         }
         // The curve lookup that said no counts as curve time.
-        if (guide) {
-            guideway(vx, vy, wx, wy, tile, pieces, sShape, sBase)
+        if (guide || tube) {
+            guideway(vx, vy, wx, wy, tile, pieces, sShape, sBase, tube)
             return
         }
         // Every piece's bed, then the rails over them all: a single piece's own, or for two or more, which always lie
@@ -329,31 +331,32 @@ internal class TileRecorder(
     }
 
     /**
-     * Maglev guideway on world tile ([wx], [wy]): one piece's beam on the shape it lies on, or two or more on a level
-     * tile together, and a buffer on level ground wherever a beam stops with no guideway going on.
+     * Maglev guideway, or hyperloop tube where [tube], on world tile ([wx], [wy]): one piece on the shape it lies on,
+     * or two or more on a level tile together, and a buffer or cap on level ground wherever it stops with no more of
+     * its kind going on.
      */
-    private fun guideway(vx: Int, vy: Int, wx: Int, wy: Int, tile: Int, pieces: Int, sShape: Int, sBase: Int) {
+    private fun guideway(vx: Int, vy: Int, wx: Int, wy: Int, tile: Int, pieces: Int, sShape: Int, sBase: Int, tube: Boolean = false) {
         var view = 0
         for ((i, p) in Track.PIECES.withIndex()) if (pieces and p != 0) view = view or (1 shl viewPieceIndex(i))
-        if (view.countOneBits() >= 2) sprite(Atlas.GUIDE_SETS[view], vx, vy, sBase)
-        else sprite(Atlas.GUIDE[view.countTrailingZeroBits() * 16 + sShape], vx, vy, sBase)
+        if (view.countOneBits() >= 2) sprite((if (tube) Atlas.TUBE_SETS else Atlas.GUIDE_SETS)[view], vx, vy, sBase)
+        else sprite((if (tube) Atlas.TUBE else Atlas.GUIDE)[view.countTrailingZeroBits() * 16 + sShape], vx, vy, sBase)
         if (sShape != 0 || world.spanHeads.containsKey(tile)) return
         var ends = 0
         for (p in Track.PIECES) {
             if (pieces and p == 0) continue
             val e = Track.edges(p)
-            for (edge in intArrayOf(e and 3, e shr 2)) if (!guidewayOn(wx, wy, edge)) ends = ends or (1 shl edge)
+            for (edge in intArrayOf(e and 3, e shr 2)) if (!guidewayOn(wx, wy, edge, tube)) ends = ends or (1 shl edge)
         }
-        for (edge in 0 until 4) if (ends and (1 shl edge) != 0) sprite(Atlas.GUIDE_END[viewEdge(edge)], vx, vy, sBase)
+        for (edge in 0 until 4) if (ends and (1 shl edge) != 0) sprite((if (tube) Atlas.TUBE_END else Atlas.GUIDE_END)[viewEdge(edge)], vx, vy, sBase)
     }
 
-    /** Whether guideway goes on from world tile ([wx], [wy]) through [edge]: the tile there has a guideway piece meeting it. */
-    private fun guidewayOn(wx: Int, wy: Int, edge: Int): Boolean {
+    /** Whether guideway, or tube where [tube], goes on from world tile ([wx], [wy]) through [edge]: the tile there has a piece of it meeting it. */
+    private fun guidewayOn(wx: Int, wy: Int, edge: Int, tube: Boolean = false): Boolean {
         val nx = wx + Track.dx(edge)
         val ny = wy + Track.dy(edge)
         if (!world.inside(nx, ny)) return false
         val n = world.index(nx, ny)
-        if (!world.guideway[n]) return false
+        if (!(if (tube) world.tube[n] else world.guideway[n])) return false
         val theirs = world.trackAt(nx, ny)
         val back = Track.opposite(edge)
         for (p in Track.PIECES) if (theirs and p != 0 && Track.has(p, back)) return true
@@ -465,10 +468,12 @@ internal class TileRecorder(
     private fun standingOnTrack(vx: Int, vy: Int, wx: Int, wy: Int, tile: Int, pieces: Int, shadow: Boolean) {
         val base = minOf(minOf(cornerHeight(vx, vy), cornerHeight(vx + 1, vy)), minOf(cornerHeight(vx + 1, vy + 1), cornerHeight(vx, vy + 1)))
         val guide = world.guideway[tile]
+        val tube = world.tube[tile]
         world.depotTiles[tile]?.let { id ->
             val d = world.depots.getOrNull(id) ?: return@let
             val e = viewEdge(d.edge)
             if (guide) sprite((if (shadow) Atlas.GUIDE_DEPOT_SHADOW else Atlas.GUIDE_DEPOT)[e], vx, vy, base, shadow)
+            else if (tube) sprite((if (shadow) Atlas.TUBE_DEPOT_SHADOW else Atlas.TUBE_DEPOT)[e], vx, vy, base, shadow)
             else sprite((if (shadow) Atlas.DEPOT_SHADOW else Atlas.DEPOT)[depotEra(d.built.takeIf { it > 0 } ?: year) * 4 + e], vx, vy, base, shadow)
             return
         }
@@ -479,6 +484,12 @@ internal class TileRecorder(
             if (guide) {
                 val cell = if (bare) (if (shadow) Atlas.GUIDE_STATION_BARE_SHADOW else Atlas.GUIDE_STATION_BARE)[a]
                 else (if (shadow) Atlas.GUIDE_STATION_SHADOW else Atlas.GUIDE_STATION)[a]
+                sprite(cell, vx, vy, st, shadow)
+                return
+            }
+            if (tube) {
+                val cell = if (bare) (if (shadow) Atlas.TUBE_STATION_BARE_SHADOW else Atlas.TUBE_STATION_BARE)[a]
+                else (if (shadow) Atlas.TUBE_STATION_SHADOW else Atlas.TUBE_STATION)[a]
                 sprite(cell, vx, vy, st, shadow)
                 return
             }

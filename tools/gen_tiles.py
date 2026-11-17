@@ -326,6 +326,38 @@ for e, edge in enumerate(EDGES):
 for a in (0, 1):
     JOBS.append(("signals", ("guide_deck", a), lambda a=a: scenery(f"guide_deck_{a}.png", base.cell), None))
 
+# Hyperloop tube (tools/blender/hyperloop.py): pieces, sets, curves and caps as for guideway, portal platforms with
+# their own glass tube, the pod hall, the tube's bridge decks and ramps, and a bore's entry hall at each head.
+for p, piece in enumerate(track.PIECES):
+    for s in TRACK_SURFACES.get(piece, [0]):
+        JOBS.append(("static", ("tube", p, s), lambda piece=piece, s=s: scenery(f"tube_{piece}_{s}.png", base.cell), None))
+        UP[("tube", p, s)] = f"tube_{piece}_{s}.png"
+for mask in range(1, 64):
+    if bin(mask).count("1") >= 2:
+        JOBS.append(("static", ("tubeset", mask), lambda mask=mask: scenery(f"tube_set_{mask}.png", base.cell), None))
+        UP[("tubeset", mask)] = f"tube_set_{mask}.png"
+for ck in GUIDE_CURVE_KEYS:
+    JOBS.append(("static", ("tube_curve", ck), lambda ck=ck: scenery(f"tube_curve_{ck}.png", base.cell), None))
+    UP[("tube_curve", ck)] = f"tube_curve_{ck}.png"
+for e, edge in enumerate(EDGES):
+    JOBS.append(("static", ("tube_end", e), lambda edge=edge: scenery(f"tube_end_{edge}.png", base.cell), None))
+    UP[("tube_end", e)] = f"tube_end_{edge}.png"
+for a in (0, 1):
+    for kind in ("tube_station", "tube_station_bare"):
+        name = f"{kind}_{a}.png"
+        JOBS.append(("static", (kind, a), lambda name=name: scenery(name, base.cell), None))
+        JOBS.append(("shadows", (kind + "_shadow", a), lambda name=name: scenery(name.replace(".png", "_shadow.png"), base.cell), None))
+        UP[(kind, a)] = name
+for e, edge in enumerate(EDGES):
+    JOBS.append(("static", ("tube_depot", e), lambda edge=edge: scenery(f"tube_depot_{edge}.png", base.cell), None))
+    JOBS.append(("shadows", ("tube_depot_shadow", e), lambda edge=edge: scenery(f"tube_depot_{edge}_shadow.png", base.cell), None))
+    UP[("tube_depot", e)] = f"tube_depot_{edge}.png"
+    JOBS.append(("signals", ("tube_depot_over", e), lambda edge=edge: scenery(f"tube_depot_{edge}.png", base.cell), None))
+    JOBS.append(("signals", ("tube_ramp", e), lambda edge=edge: scenery(f"tube_ramp_{edge}.png", base.cell), None))
+    JOBS.append(("signals", ("tube_portal", e), lambda edge=edge: scenery(f"tube_portal_{edge}.png", base.cell), None))
+for a in (0, 1):
+    JOBS.append(("signals", ("tube_deck", a), lambda a=a: scenery(f"tube_deck_{a}.png", base.cell), None))
+
 
 def rendered_slope(key, h, way, build):
     """A vehicle tilted up or down a slope, from Blender, or flat if there's no render."""
@@ -834,6 +866,9 @@ def main():
     guides = [index.get(("guide", p, s), -1) for p in range(6) for s in range(16)]
     guidesets = [index.get(("guideset", mask), -1) for mask in range(64)]
     guide_curves = [index.get(("guide_curve", ck), -1) if layer == "bed" else -1 for layer, ck in CURVE_KEYS]
+    tubes = [index.get(("tube", p, s), -1) for p in range(6) for s in range(16)]
+    tubesets = [index.get(("tubeset", mask), -1) for mask in range(64)]
+    tube_curves = [index.get(("tube_curve", ck), -1) if layer == "bed" else -1 for layer, ck in CURVE_KEYS]
     trees = [index[("tree", t, lk)] for t in range(len(ground.TREES)) for lk in range(ground.TREE_LOOKS)]
     autumn = [index.get(("tree_autumn", t, lk), index[("tree", t, lk)]) for t in range(len(ground.TREES)) for lk in range(ground.TREE_LOOKS)]
     bare = [index.get(("tree_bare", t, lk), index[("tree", t, lk)]) for t in range(len(ground.TREES)) for lk in range(ground.TREE_LOOKS)]
@@ -1059,6 +1094,32 @@ object Atlas {{
     val GUIDE_DECK = intArrayOf({index[("guide_deck", 0)]}, {index[("guide_deck", 1)]})
     val GUIDE_RAMP = intArrayOf({", ".join(str(index[("guide_ramp", e)]) for e in range(4))})
     val GUIDE_PORTAL = intArrayOf({", ".join(str(index[("guide_portal", e)]) for e in range(4))})
+
+    /** A piece of hyperloop tube on its pylon, as [TRACK]. On the static sheet. */
+    val TUBE = intArrayOf(
+        {arr(tubes)},
+    )
+    /** Two or more tube pieces on a level tile, by view piece bits, as [RAIL_SETS]. On the static sheet. */
+    val TUBE_SETS = intArrayOf(
+        {arr(tubesets)},
+    )
+    /** A curved tube piece for each of [CURVE_KEYS] in the bed layer, -1 for the others. On the static sheet. */
+    val TUBE_CURVE = ints("{",".join(str(c) for c in tube_curves)}")
+    /** A sealed cap where a tube stops at view edge XM, XP, YM or YP. On the static sheet. */
+    val TUBE_END = intArrayOf({", ".join(str(index[("tube_end", e)]) for e in range(4))})
+    /** A portal platform with its glass tube, along view u (0) or v (1), with no canopy in [TUBE_STATION_BARE], and their shadows. On the static sheet. */
+    val TUBE_STATION = intArrayOf({index[("tube_station", 0)]}, {index[("tube_station", 1)]})
+    val TUBE_STATION_SHADOW = intArrayOf({index[("tube_station_shadow", 0)]}, {index[("tube_station_shadow", 1)]})
+    val TUBE_STATION_BARE = intArrayOf({index[("tube_station_bare", 0)]}, {index[("tube_station_bare", 1)]})
+    val TUBE_STATION_BARE_SHADOW = intArrayOf({index[("tube_station_bare_shadow", 0)]}, {index[("tube_station_bare_shadow", 1)]})
+    /** The pod hall by the view edge its doors face, its shadow, and again on the signals sheet to draw over pods. */
+    val TUBE_DEPOT = intArrayOf({", ".join(str(index[("tube_depot", e)]) for e in range(4))})
+    val TUBE_DEPOT_SHADOW = intArrayOf({", ".join(str(index[("tube_depot_shadow", e)]) for e in range(4))})
+    val TUBE_DEPOT_OVER = intArrayOf({", ".join(str(index[("tube_depot_over", e)]) for e in range(4))})
+    /** A tube bridge's deck along view u (0) or v (1), its head on flat ground by the view edge the deck is at, and a bore's entry hall by the edge it opens to. On the signals sheet. */
+    val TUBE_DECK = intArrayOf({index[("tube_deck", 0)]}, {index[("tube_deck", 1)]})
+    val TUBE_RAMP = intArrayOf({", ".join(str(index[("tube_ramp", e)]) for e in range(4))})
+    val TUBE_PORTAL = intArrayOf({", ".join(str(index[("tube_portal", e)]) for e in range(4))})
 }}
 """)
     if not OUT_KT.exists() or OUT_KT.read_text() != atlas:

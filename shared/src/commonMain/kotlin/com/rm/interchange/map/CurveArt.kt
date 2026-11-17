@@ -56,10 +56,11 @@ internal class CurveArt(private val world: World) {
         val keys = tiles.keys(x, y, turn)
         if (keys.isEmpty()) return null
         // Guideway draws each curve's beam in place of its bed and nothing for the other layers.
-        if (world.guideway[i]) {
+        if (world.guideway[i] || world.tube[i]) {
             val beds = keys.filter { it.startsWith(BED) }
             if (beds.isEmpty()) return null
-            return IntArray(beds.size) { GUIDE_CELLS[beds[it]] ?: return null }
+            val cells = if (world.tube[i]) TUBE_CELLS else GUIDE_CELLS
+            return IntArray(beds.size) { cells[beds[it]] ?: return null }
         }
         return IntArray(keys.size) { CELLS[keys[it]] ?: return null }
     }
@@ -76,6 +77,11 @@ internal class CurveArt(private val world: World) {
         /** Each "bed key" in [Atlas.CURVE_KEYS] to its guideway cell, from [Atlas.GUIDE_CURVE]. */
         private val GUIDE_CELLS: Map<String, Int> by lazy {
             HashMap<String, Int>().also { m -> Atlas.CURVE_KEYS.forEachIndexed { i, k -> if (Atlas.GUIDE_CURVE[i] >= 0) m[k] = Atlas.GUIDE_CURVE[i] } }
+        }
+
+        /** Each "bed key" in [Atlas.CURVE_KEYS] to its tube cell, from [Atlas.TUBE_CURVE]. */
+        private val TUBE_CELLS: Map<String, Int> by lazy {
+            HashMap<String, Int>().also { m -> Atlas.CURVE_KEYS.forEachIndexed { i, k -> if (Atlas.TUBE_CURVE[i] >= 0) m[k] = Atlas.TUBE_CURVE[i] } }
         }
 
         /** Tells [CurveKeys] which sprites the sheet has, for [CurveTiles] in the sim's cars as well as here. */

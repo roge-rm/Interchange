@@ -123,16 +123,20 @@ internal fun DrawScope.drawMoving(world: World, view: View, sheets: Sheets, movi
         val dx = (s.x1 - s.x0).coerceIn(-1, 1)
         val dy = (s.y1 - s.y0).coerceIn(-1, 1)
         val guide = s.maglev
+        val tube = s.tube
         if (s.tunnel) {
+            // A bore for tube shows only as an entry hall at each head.
+            val portals = if (tube) Atlas.TUBE_PORTAL else if (guide) Atlas.GUIDE_PORTAL else Atlas.PORTAL
             for ((hx, hy, out) in listOf(Triple(s.x0, s.y0, edgeOf(-dx, -dy)), Triple(s.x1, s.y1, edgeOf(dx, dy)))) {
-                tileItem(items, view, hx, hy, s.height.toFloat(), DEPOT_DEPTH, (if (guide) Atlas.GUIDE_PORTAL else Atlas.PORTAL)[painter.viewEdge(out)])
+                tileItem(items, view, hx, hy, s.height.toFloat(), DEPOT_DEPTH, portals[painter.viewEdge(out)])
             }
             continue
         }
         // A head on flat ground is a ramp up a step to the deck, on an abutment of the bridge's kind.
         for ((hx, hy, inward) in listOf(Triple(s.x0, s.y0, edgeOf(dx, dy)), Triple(s.x1, s.y1, edgeOf(-dx, -dy)))) {
             if (world.rampEdge(hx, hy) < 0) continue
-            val ramp = if (guide) Atlas.GUIDE_RAMP[painter.viewEdge(inward)] else Atlas.SPAN_RAMP[s.style * 4 + painter.viewEdge(inward)]
+            val ramp = if (tube) Atlas.TUBE_RAMP[painter.viewEdge(inward)]
+            else if (guide) Atlas.GUIDE_RAMP[painter.viewEdge(inward)] else Atlas.SPAN_RAMP[s.style * 4 + painter.viewEdge(inward)]
             tileItem(items, view, hx, hy, (s.height - 1).toFloat(), DECK_DEPTH, ramp)
         }
         val along = if (painter.viewEdge(if (dx != 0) Track.XP else Track.YP) <= Track.XP) 0 else 1
@@ -156,7 +160,7 @@ internal fun DrawScope.drawMoving(world: World, view: View, sheets: Sheets, movi
                 } else (if (z == ground) Atlas.SPAN_PIER_FOOT else Atlas.SPAN_PIER)[s.style * 2 + along]
                 tileItem(items, view, x, y, z.toFloat(), DECK_DEPTH - 0.01f, sprite)
             }
-            val sprite = if (guide) Atlas.GUIDE_DECK[along] else if (!truss) Atlas.SPAN_DECK[s.style * 2 + along] else {
+            val sprite = if (tube) Atlas.TUBE_DECK[along] else if (guide) Atlas.GUIDE_DECK[along] else if (!truss) Atlas.SPAN_DECK[s.style * 2 + along] else {
                 // Truss spans run between piers, with a plate girder from the end piers out to the abutments.
                 val kind = when {
                     !pier -> 0
@@ -311,7 +315,8 @@ internal fun DrawScope.drawMoving(world: World, view: View, sheets: Sheets, movi
         val sy = view.screenY(vx - 0.5f, vy - 0.5f, base, size.height) + view.halfHeight
         val margin = view.halfWidth * 3
         if (sx < -margin || sx > size.width + margin || sy < -margin || sy > size.height + margin * 2) continue
-        val over = if (d.maglev) Atlas.GUIDE_DEPOT_OVER[painter.viewEdge(d.edge)]
+        val over = if (d.tube) Atlas.TUBE_DEPOT_OVER[painter.viewEdge(d.edge)]
+        else if (d.maglev) Atlas.GUIDE_DEPOT_OVER[painter.viewEdge(d.edge)]
         else Atlas.DEPOT_OVER[TileRecorder.depotEra(d.built.takeIf { it > 0 } ?: year) * 4 + painter.viewEdge(d.edge)]
         items += floatArrayOf(vx + vy + DEPOT_DEPTH, sx, sy, over.toFloat(), -1f)
     }

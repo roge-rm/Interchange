@@ -29,6 +29,7 @@ import ships  # noqa: E402
 import aircraft  # noqa: E402
 import energy  # noqa: E402
 import maglev  # noqa: E402
+import hyperloop  # noqa: E402
 
 
 def L(n):
@@ -160,6 +161,8 @@ MODELS = {
     "aurora_coach": (13, lambda m: maglev.coach(m, L(13), "aurora")),
     "meteor": (14, lambda m: maglev.power_car(m, L(14), "meteor")),
     "meteor_coach": (13, lambda m: maglev.coach(m, L(13), "meteor")),
+    "vela": (10, lambda m: hyperloop.pod(m, L(10), "vela")),
+    "photon": (10, lambda m: hyperloop.pod(m, L(10), "photon")),
 }
 SHIPS = ships.ship_builders()
 AIRCRAFT = aircraft.aircraft_builders()
@@ -178,8 +181,8 @@ ROAD = {"horse_omnibus", "stagecoach", "mail_coach", "freight_wagon", "red_river
 # helicopters and float planes from the ground. Fixed-wing aircraft are already in proportion.
 FLOAT_PLANES = {"fairchild_71", "norseman", "beaver", "otter", "twin_otter", "electric_floatplane"}
 HELICOPTERS = {"bell_47", "s55", "jetranger", "s92"}
-# Maglev trains are built at their full height over the beam, with no couplers between cars.
-MAGLEV = {"aurora", "aurora_coach", "meteor", "meteor_coach"}
+# Maglev trains and hyperloop pods are built at their full height over the beam or in the tube, with no couplers between cars.
+MAGLEV = {"aurora", "aurora_coach", "meteor", "meteor_coach", "vela", "photon"}
 
 
 def height(key):

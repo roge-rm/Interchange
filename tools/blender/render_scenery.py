@@ -33,6 +33,10 @@ Maglev guideway (maglev.py): guide_<piece>_<shape>.png a piece, guide_set_<mask>
 guide_curve_<key>.png a curved piece by the bed layer's keys, guide_end_<edge>.png a buffer where a beam stops,
 guide_station_<a>.png and guide_station_bare_<a>.png raised platforms, guide_depot_<edge>.png the maintenance hall,
 guide_deck_<a>.png, guide_ramp_<edge>.png and guide_portal_<edge>.png its bridges and tunnel mouths.
+
+Hyperloop tube (hyperloop.py): tube_<piece>_<shape>.png, tube_set_<mask>.png, tube_curve_<key>.png and tube_end_<edge>.png
+as for guideway, tube_station_<a>.png and tube_station_bare_<a>.png portal platforms, tube_depot_<edge>.png the pod hall,
+tube_deck_<a>.png and tube_ramp_<edge>.png its bridges and tube_portal_<edge>.png a bore's entry hall.
 """
 import sys
 from pathlib import Path
@@ -43,6 +47,7 @@ import bpy  # noqa: E402
 import curve_art  # noqa: E402
 import curves  # noqa: E402
 import houses  # noqa: E402
+import hyperloop  # noqa: E402
 import industries  # noqa: E402
 import maglev  # noqa: E402
 import parts  # noqa: E402
@@ -254,6 +259,30 @@ def main():
             shot(out, f"curve_{layer}_{key}.png", lambda m, layer=layer, key=key, where=where: curve(m, layer, key, where),
                  shadow=False, placed=False)
     guideway(out)
+    tube(out)
+
+
+def tube(out):
+    """The hyperloop tube's pieces, portal platforms, pod hall, bridges and bore heads."""
+    for piece in PIECES:
+        for shape in TRACK_SHAPES.get(piece, [0]):
+            shot(out, f"tube_{piece}_{shape}.png", lambda m, piece=piece, shape=shape: hyperloop.tube(m, piece, shape), shadow=False, placed=False)
+    for mask in range(1, 64):
+        if bin(mask).count("1") >= 2:
+            shot(out, f"tube_set_{mask}.png", lambda m, mask=mask: hyperloop.tube_set(m, mask), shadow=False, placed=False)
+    for key, where in sorted(curve_art.read_keys()["bed"].items()):
+        shot(out, f"tube_curve_{key}.png", lambda m, key=key, where=where: hyperloop.curve_tube(m, curve_art.what("bed", key, where)),
+             shadow=False, placed=False)
+    for edge in EDGES:
+        shot(out, f"tube_end_{edge}.png", lambda m, edge=edge: hyperloop.tube_end(m, edge), shadow=False, placed=False)
+    for a in (0, 1):
+        shot(out, f"tube_station_{a}.png", lambda m, a=a: hyperloop.station(m, a == 0), rise=BUILDING_RISE)
+        shot(out, f"tube_station_bare_{a}.png", lambda m, a=a: hyperloop.station(m, a == 0, canopy=False), rise=BUILDING_RISE)
+        shot(out, f"tube_deck_{a}.png", lambda m, a=a: hyperloop.deck(m, a == 0), shadow=False)
+    for edge in EDGES:
+        shot(out, f"tube_depot_{edge}.png", hyperloop.depot, heading=houses.FACING[edge], rise=BUILDING_RISE)
+        shot(out, f"tube_ramp_{edge}.png", lambda m, edge=edge: hyperloop.ramp(m, edge), shadow=False)
+        shot(out, f"tube_portal_{edge}.png", lambda m, edge=edge: hyperloop.portal(m, edge), shadow=False)
 
 
 def guideway(out):

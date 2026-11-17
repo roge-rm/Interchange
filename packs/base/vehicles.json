@@ -3396,8 +3396,7 @@
       "capacity": 40,
       "traction": "hyperloop",
       "life": 30,
-      "reliability": 98,
-      "sprite": "aurora"
+      "reliability": 98
     },
     {
       "id": "photon",
@@ -3418,8 +3417,7 @@
       "capacity": 44,
       "traction": "hyperloop",
       "life": 30,
-      "reliability": 98,
-      "sprite": "meteor"
+      "reliability": 98
     }
   ]
 }

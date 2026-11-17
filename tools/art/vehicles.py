@@ -500,6 +500,9 @@ ROSTER = [
     ("aurora_coach", 13, lambda f: coach(f, L(13), True)),
     ("meteor", 14, lambda f: coach(f, L(14), True)),
     ("meteor_coach", 13, lambda f: coach(f, L(13), True)),
+    # Hyperloop pods.
+    ("vela", 10, lambda f: coach(f, L(10), True)),
+    ("photon", 10, lambda f: coach(f, L(10), True)),
 ]
 
 
