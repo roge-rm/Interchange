@@ -6,7 +6,7 @@ Move goods and people by rail, road, water and air. Build your company, upgrade 
 
 There's a campaign of seven chapters from 1836 on, goals to play for in your own games, and a scenario editor to make your own.
 
-It's at 0.14, playable but still being worked on. Build things, run trains into each other, tell me what works and what doesn't.
+It's at 0.15, playable but still being worked on. Build things, run trains into each other, tell me what works and what doesn't.
 
 Join me in #interchange [on my discord](https://discord.gg/9Wun47jGC6) to talk about the game or report bugs, or open an issue here.
 

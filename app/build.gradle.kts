@@ -21,8 +21,8 @@ android {
         applicationId = "com.rm.interchange"
         minSdk = 27
         targetSdk = 37
-        versionCode = 47
-        versionName = "0.14.0"
+        versionCode = 48
+        versionName = "0.15.0"
         // The synth (app/src/main/cpp).
         ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64") }
         externalNativeBuild {
