@@ -37,6 +37,8 @@ import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.ui.semantics.contentDescription
@@ -423,15 +425,50 @@ fun PictureRow(
                     Text(title, color = c.text, style = KitType.RowTitle, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
                     if (titleEnd != null) Text(titleEnd, color = c.text, style = KitType.Value, maxLines = 1, modifier = Modifier.padding(start = 8.dp))
                 }
-                if (line != null || lineEnd != null) Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(line ?: "", color = c.textDim, style = KitType.Dim, maxLines = 3, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-                    if (lineEnd != null) Text(lineEnd, color = c.textDim, style = KitType.Dim, maxLines = 1, modifier = Modifier.padding(start = 8.dp))
-                }
+                if (line != null || lineEnd != null) LineWithEnd(
+                    { Text(line ?: "", color = c.textDim, style = KitType.Dim, maxLines = 3, overflow = TextOverflow.Ellipsis) },
+                    lineEnd?.let { { Text(it, color = c.textDim, style = KitType.Dim, maxLines = 2) } },
+                )
                 if (!stats.isNullOrEmpty()) Text(stats, color = c.text, style = KitType.Dim, maxLines = 2)
             }
             end?.let { CompositionLocalProvider(LocalOnRow provides true, it) }
         }
         below?.let { CompositionLocalProvider(LocalOnRow provides true, it) }
+    }
+}
+
+/**
+ * [line] with [end] at its right when both fit whole on one line, else [end] under it, so neither is squeezed into
+ * broken words.
+ */
+@Composable
+private fun LineWithEnd(line: @Composable () -> Unit, end: (@Composable () -> Unit)?) {
+    val gap = 8.dp
+    Layout(contents = listOf(line, end ?: {})) { (lines, ends), cs ->
+        val width = cs.maxWidth
+        val g = gap.roundToPx()
+        val endWidth = ends.maxOfOrNull { it.maxIntrinsicWidth(Constraints.Infinity) } ?: 0
+        val lineWidth = lines.maxOfOrNull { it.maxIntrinsicWidth(Constraints.Infinity) } ?: 0
+        val loose = Constraints(maxWidth = width)
+        val beside = endWidth == 0 || lineWidth + g + endWidth <= width
+        if (beside) {
+            val e = ends.map { it.measure(loose) }
+            val eW = e.maxOfOrNull { it.width } ?: 0
+            val l = lines.map { it.measure(Constraints(maxWidth = (width - eW - (if (eW > 0) g else 0)).coerceAtLeast(0))) }
+            val h = maxOf(l.maxOfOrNull { it.height } ?: 0, e.maxOfOrNull { it.height } ?: 0)
+            layout(width, h) {
+                l.forEach { it.place(0, (h - it.height) / 2) }
+                e.forEach { it.place(width - it.width, (h - it.height) / 2) }
+            }
+        } else {
+            val l = lines.map { it.measure(loose) }
+            val e = ends.map { it.measure(loose) }
+            val lh = l.maxOfOrNull { it.height } ?: 0
+            layout(width, lh + (e.maxOfOrNull { it.height } ?: 0)) {
+                l.forEach { it.place(0, 0) }
+                e.forEach { it.place(0, lh) }
+            }
+        }
     }
 }
 
