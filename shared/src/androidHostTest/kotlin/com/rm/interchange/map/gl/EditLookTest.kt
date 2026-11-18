@@ -39,15 +39,18 @@ class EditLookTest {
     @Test
     fun aSquareStandsOnlyWhileItsRegionsChangedForTheLook() {
         val old = Array<RegionSprites?>(3) { region(it, 0) }
-        val square = arrayOf(old[1], old[2])
-        assertTrue(squareRegionsStand(0, square, 1, old))
+        val square = arrayOf<Any?>(old[1]!!.content, old[2]!!.content)
+        val looks = intArrayOf(0, 0)
+        assertTrue(squareRegionsStand(0, square, looks, 1, old))
+        assertTrue(squareRegionsSame(square, 1, old))
         val drawn = old.copyOf()
         drawn[2] = region(2, 1)
-        assertTrue(squareRegionsStand(0, square, 1, drawn), "recorded again for the new look")
+        assertTrue(squareRegionsStand(0, square, looks, 1, drawn), "recorded again for the new look")
+        assertFalse(squareRegionsSame(square, 1, drawn))
         drawn[1] = region(1, 0)
-        assertFalse(squareRegionsStand(0, square, 1, drawn), "recorded again with the same look, an edit")
+        assertFalse(squareRegionsStand(0, square, looks, 1, drawn), "recorded again with the same look, an edit")
         drawn[1] = null
-        assertFalse(squareRegionsStand(0, square, 1, drawn))
+        assertFalse(squareRegionsStand(0, square, looks, 1, drawn))
     }
 
     /** A [regionVersion] with [changes] world changes, the [look] and no eras. */

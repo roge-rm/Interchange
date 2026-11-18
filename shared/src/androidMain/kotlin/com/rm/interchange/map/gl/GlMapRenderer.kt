@@ -11,7 +11,6 @@ import com.rm.interchange.map.Atlas
 import com.rm.interchange.map.TileRecorder
 import com.rm.interchange.map.LevelSheets
 import com.rm.interchange.map.Zoom
-import java.lang.ref.WeakReference
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import javax.microedition.khronos.egl.EGLConfig
@@ -306,8 +305,9 @@ internal class GlMapRenderer(private val scene: GlScene, private val page: Int) 
         var rows = IntArray(2)
         var look = -1
         var first = 0
-        /** Weakly, so a square left over from somewhere far doesn't keep regions let go of on the heap. */
-        var regions = arrayOfNulls<WeakReference<RegionSprites>>(0)
+        /** The [RegionSprites.content] and look of each region it reaches, so it doesn't hold them on the heap. */
+        var contents = arrayOfNulls<Any>(0)
+        var looks = IntArray(0)
         var used = 0L
     }
     private val squares = HashMap<Long, Square>()
@@ -335,10 +335,7 @@ internal class GlMapRenderer(private val scene: GlScene, private val page: Int) 
     private fun fresh(s: Square, tex: LevelTextures): Boolean {
         if (s.from !== tex || s.look != look || s.overlays != overlays) return false
         if (overlays and MapOverlays.CONDITION != 0 && s.wear !== wearUp) return false
-        for (i in s.regions.indices) {
-            val was = s.regions[i]?.get() ?: return false
-            if (drawable.getOrNull(s.first + i) !== was) return false
-        }
+        if (!squareRegionsSame(s.contents, s.first, drawable)) return false
         val w = weatherUp ?: return false
         if (s.weatherWidth != w.width || s.weatherHeight != w.height || s.weatherVersion != w.version) {
             if (s.weatherWidth != w.width || s.weatherHeight != w.height || w.version < s.weatherVersion || !weatherSame(w, s.weatherVersion, s.rows)) return false
@@ -355,7 +352,7 @@ internal class GlMapRenderer(private val scene: GlScene, private val page: Int) 
     private fun stands(s: Square, tex: LevelTextures): Boolean {
         if (s.from !== tex || s.look == look || s.overlays != overlays) return false
         if (overlays and MapOverlays.CONDITION != 0 && s.wear !== wearUp) return false
-        return squareRegionsStand(s.look, Array(s.regions.size) { s.regions[it]?.get() }, s.first, drawable)
+        return squareRegionsStand(s.look, s.contents, s.looks, s.first, drawable)
     }
 
     /**
@@ -441,7 +438,8 @@ internal class GlMapRenderer(private val scene: GlScene, private val page: Int) 
         s.overlays = overlays
         s.wear = wearUp
         s.first = r0
-        s.regions = Array(maxOf(0, r1 - r0 + 1)) { WeakReference(drawable[r0 + it]) }
+        s.contents = Array(maxOf(0, r1 - r0 + 1)) { drawable[r0 + it]!!.content }
+        s.looks = IntArray(s.contents.size) { drawable[r0 + it]!!.look }
         return true
     }
 

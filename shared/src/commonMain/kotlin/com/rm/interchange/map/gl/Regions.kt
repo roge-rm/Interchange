@@ -119,6 +119,11 @@ internal class RegionSprites(
      * empty, as they take about half as much; null when [data] and [ground] are kept.
      */
     val packed: IntArray? = null,
+    /**
+     * Stands for what's recorded per tile: shared by a region and those made from it by [extendRegion], which add
+     * tiles but leave the rest as they are, so what was drawn from one holds for the others.
+     */
+    val content: Any = Any(),
 ) {
     /** Ints this region holds on the heap. */
     val heapInts get() = data.size + ground.size + (packed?.size ?: 0) + starts.size
@@ -156,10 +161,11 @@ internal class RegionSprites(
  * the season [look], [year] and [weather]. Reads the world off the main thread.
  * With [cols] (each row's first and last column, two ints a row) only those tiles are recorded; the rest are empty.
  * Only what the GPU takes is kept ([RegionSprites.packed]), unless [keepRecord], which keeps every field recorded.
+ * Tiles [skip] holds are left empty too, for [extendRegion].
  */
 internal fun recordRegion(
     world: World, turn: Int, index: Int, look: Int, year: Int, weather: WeatherCopy, curves: CurveArt? = null, version: Long = 0,
-    level: Int = SOURCE_LEVEL, cols: IntArray? = null, keepRecord: Boolean = false,
+    level: Int = SOURCE_LEVEL, cols: IntArray? = null, keepRecord: Boolean = false, skip: RegionSprites? = null,
 ): RegionSprites {
     val view = View(world.width, world.height).apply { turnBy(turn) }
     val vw = view.viewWidth
@@ -177,7 +183,16 @@ internal fun recordRegion(
     val rows = row1 - row0
     val rowAt = cols?.let { partRows(it, rows) }
     val starts = IntArray(if (rowAt != null) rowAt[PASSES * rows] + 1 else PASSES * rows * vw + 1)
-    if (rows > 0) tiles.prepare(0, row0, vw, row1)
+    // Only the columns recorded need their corners worked out.
+    var vx0 = vw
+    var vx1 = -1
+    for (vy in row0 until row1) {
+        val c0 = if (cols != null) cols[2 * (vy - row0)] else 0
+        val c1 = if (cols != null) cols[2 * (vy - row0) + 1] else vw - 1
+        for (vx in c0..c1) if (skip == null || !skip.holds(vy, vx, vx)) { vx0 = minOf(vx0, vx); break }
+        for (vx in c1 downTo c0) if (skip == null || !skip.holds(vy, vx, vx)) { vx1 = maxOf(vx1, vx); break }
+    }
+    if (rows > 0 && vx0 <= vx1) tiles.prepare(vx0, row0, vx1 + 1, row1)
     var k = 0
     for (pass in 0 until PASSES) for (vy in row0 until row1) {
         // Whole, every column; in part, the recorded ones and the one after, or just one for an empty row.
@@ -189,6 +204,7 @@ internal fun recordRegion(
         }
         for (vx in c0..c1) {
             starts[k++] = recorder.count
+            if (skip != null && skip.holds(vy, vx, vx)) continue
             when (pass) {
                 0 -> tiles.ground(vx, vy)
                 1 -> tiles.shadows(vx, vy)
@@ -207,6 +223,102 @@ internal fun recordRegion(
     val ground = recorder.ground.copyOf(recorder.groundCount * GroundRecord.STRIDE)
     return RegionSprites(turn, index, row0, row1, vw, data, recorder.count, starts, ground, version, cols, look, year)
 }
+
+/**
+ * Region [base] holding [cols] (each row's first and last column, two ints a row; null for every column): the tiles
+ * it holds are taken as they are and only the rest recorded, and those outside [cols] are let go of. The world must
+ * be at [base]'s version, look and year, as the result shares its [RegionSprites.content].
+ */
+internal fun extendRegion(world: World, base: RegionSprites, cols: IntArray?, weather: WeatherCopy, curves: CurveArt? = null): RegionSprites {
+    val piece = recordRegion(world, base.turn, base.index, base.look, base.year, weather, curves, base.version, cols = cols, skip = base)
+    return mergeRegion(base, piece)
+}
+
+/** [piece]'s rows and columns, each tile from [base] where it holds it, else from [piece]; packed, with [base]'s content. */
+internal fun mergeRegion(base: RegionSprites, piece: RegionSprites): RegionSprites {
+    val bp = packRegion(base)
+    val pp = packRegion(piece)
+    val rows = piece.rows
+    val cols = piece.cols
+    val starts = IntArray(piece.starts.size)
+    // Each row is up to three runs: from piece left of what base holds, from base, from piece right of it.
+    val runs = IntArray(6)
+    fun rowRuns(k: Int): Int {
+        val vy = piece.row0 + k
+        val c0 = cols?.get(2 * k) ?: 0
+        val c1 = cols?.get(2 * k + 1) ?: (piece.columns - 1)
+        if (c0 > c1) return 0
+        val bc = base.cols
+        val h0 = maxOf(c0, if (bc == null) 0 else bc[2 * (vy - base.row0)])
+        val h1 = minOf(c1, if (bc == null) base.columns - 1 else bc[2 * (vy - base.row0) + 1])
+        if (h0 > h1) {
+            runs[0] = c0; runs[1] = c1
+            return 1
+        }
+        runs[0] = c0; runs[1] = h0 - 1; runs[2] = h0; runs[3] = h1; runs[4] = h1 + 1; runs[5] = c1
+        return 3
+    }
+    // From base for the middle of three runs.
+    fun src(n: Int, j: Int) = if (n == 3 && j == 1) base else piece
+    var first = 0
+    var count = 0
+    for (pass in 0 until PASSES) for (k in 0 until rows) {
+        val vy = piece.row0 + k
+        val n = rowRuns(k)
+        for (j in 0 until n) {
+            if (runs[2 * j] > runs[2 * j + 1]) continue
+            val r = src(n, j)
+            count += r.start(pass, vy, runs[2 * j + 1] + 1) - r.start(pass, vy, runs[2 * j])
+        }
+        if (pass == 0) first = count
+    }
+    // The first pass takes GroundRecord.STRIDE ints a sprite, the rest SPRITE_INTS.
+    val out = IntArray(first * GroundRecord.STRIDE + (count - first) * SPRITE_INTS)
+    var sprites = 0
+    var o = 0
+    var at = 0
+    for (pass in 0 until PASSES) for (k in 0 until rows) {
+        val vy = piece.row0 + k
+        val stride = if (pass == 0) GroundRecord.STRIDE else SPRITE_INTS
+        val n = rowRuns(k)
+        if (n == 0) {
+            if (cols != null) starts[at++] = sprites
+            continue
+        }
+        for (j in 0 until n) {
+            val a0 = runs[2 * j]
+            val a1 = runs[2 * j + 1]
+            if (a0 > a1) continue
+            val r = src(n, j)
+            val packed = if (r === base) bp else pp
+            val a = r.start(pass, vy, a0)
+            val b = r.start(pass, vy, a1 + 1)
+            for (vx in a0..a1) starts[at++] = sprites + r.start(pass, vy, vx) - a
+            val f = r.firstPass
+            val from = if (pass == 0) a * GroundRecord.STRIDE else f * GroundRecord.STRIDE + (a - f) * SPRITE_INTS
+            packed.copyInto(out, o, from, from + (b - a) * stride)
+            o += (b - a) * stride
+            sprites += b - a
+        }
+        if (cols != null) starts[at++] = sprites
+    }
+    starts[at] = sprites
+    return RegionSprites(
+        base.turn, base.index, piece.row0, piece.row1, piece.columns, IntArray(0), sprites, starts, IntArray(0), base.version, cols,
+        base.look, base.year, out, base.content,
+    )
+}
+
+/**
+ * Region [index] of [world] seen from [turn] holding [cols], as [recordRegion] takes them: added to [base] by
+ * [extendRegion] if given, else recorded afresh.
+ */
+internal fun recordKept(
+    world: World, turn: Int, index: Int, look: Int, year: Int, weather: WeatherCopy, curves: CurveArt?, version: Long,
+    cols: IntArray?, base: RegionSprites?,
+): RegionSprites =
+    if (base != null) extendRegion(world, base, cols, weather, curves)
+    else recordRegion(world, turn, index, look, year, weather, curves, version, cols = cols)
 
 /**
  * Where each pass and row of a region recorded in part starts in its starts, for [cols] (each row's first and last

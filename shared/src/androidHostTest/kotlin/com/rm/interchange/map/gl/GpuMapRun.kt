@@ -55,8 +55,69 @@ class GpuMapRun {
                 for (vy in 0 until f.viewHeight) if (keep[2 * vy] <= keep[2 * vy + 1]) keptTiles += keep[2 * vy + 1] - keep[2 * vy] + 1
                 println("gpumap $size $name: kept ${mb(held)} MB, $kept regions, $keptTiles tiles")
             }
+            rekeep(w, look, year, weather)
         }
     }
 
     private fun mb(bytes: Long) = "%.1f".format(bytes / 1e6)
+
+    /**
+     * The cost of a re-keep at the widest zoom: a pan across the screen till what's kept moves, then the regions
+     * short of it recorded again whole, as before, against only their new tiles added ([extendRegion]), one thread.
+     */
+    private fun rekeep(w: World, look: Int, year: Int, weather: WeatherCopy) {
+        val t = KeptTurn(0, w.width, w.height)
+        val view = View(w.width, w.height).also { it.halfWidth = View.MIN_HALF_WIDTH; it.focusX = w.width / 2f; it.focusY = w.height / 2f }
+        t.keepRound(GlFrame.of(view, 1280, 800))
+        for (i in t.regions.indices) if (t.short(i)) {
+            val v = regionVersion(w, 0, i, look, year)
+            t.begin(i, v)
+            t.put(i, v, recordRegion(w, 0, i, look, year, weather, version = v, cols = t.slice(i)), null)
+        }
+        do {
+            // Across the screen, a world tile right and one up.
+            view.focusX += 1f
+            view.focusY -= 1f
+        } while (!t.keepRound(GlFrame.of(view, 1280, 800)))
+        val short = t.regions.indices.filter { t.short(it) }
+        var newTiles = 0L
+        var keptTiles = 0L
+        for (i in short) {
+            val r = t.regions[i]
+            val c = t.slice(i) ?: continue
+            for (k in 0 until c.size / 2) for (vx in c[2 * k]..c[2 * k + 1]) {
+                keptTiles++
+                if (r == null || !r.holds(i * REGION_ROWS + k, vx, vx)) newTiles++
+            }
+        }
+        // Twice each, the second timed, so both run warm.
+        var whole = 0.0
+        var extended = 0.0
+        var merging = 0.0
+        var added = 0
+        for (round in 0 until 2) {
+            val t0 = System.nanoTime()
+            for (i in short) recordRegion(w, 0, i, look, year, weather, version = t.regions[i]?.version ?: 0, cols = t.slice(i))
+            whole = (System.nanoTime() - t0) / 1e6
+            val t1 = System.nanoTime()
+            added = 0
+            merging = 0.0
+            for (i in short) {
+                val v = regionVersion(w, 0, i, look, year)
+                val base = t.base(i, v, look, year)
+                if (base == null) {
+                    recordRegion(w, 0, i, look, year, weather, version = v, cols = t.slice(i))
+                    continue
+                }
+                added++
+                val piece = recordRegion(w, 0, i, look, year, weather, version = v, cols = t.slice(i), skip = base)
+                val m0 = System.nanoTime()
+                mergeRegion(base, piece)
+                merging += (System.nanoTime() - m0) / 1e6
+            }
+            extended = (System.nanoTime() - t1) / 1e6
+        }
+        println("gpumap ${w.width} re-keep at the widest: $newTiles new of $keptTiles tiles in the regions short")
+        println("gpumap ${w.width} re-keep at the widest: ${short.size} regions, recorded whole ${"%.0f".format(whole)} ms, new tiles added ($added) ${"%.0f".format(extended)} ms, of which merging ${"%.0f".format(merging)} ms")
+    }
 }

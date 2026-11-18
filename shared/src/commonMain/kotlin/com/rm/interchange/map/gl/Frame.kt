@@ -324,16 +324,27 @@ internal fun publishRegions(regions: Array<RegionSprites?>, published: Array<Reg
 }
 
 /**
- * Whether a square drawn with look [squareLook] from [regions] (the drawn regions from [first] on) can still stand
- * on screen while it's drawn again for a new look: each of its regions is the one drawn now, or one recorded again
- * since with another look.
+ * Whether a square drawn from regions with [contents] ([RegionSprites.content]) from region [first] on is drawn from
+ * what [drawable] holds now: the same regions, or ones that only had tiles added or let go of since.
  */
-internal fun squareRegionsStand(squareLook: Int, regions: Array<RegionSprites?>, first: Int, drawable: Array<RegionSprites?>): Boolean {
-    for (i in regions.indices) {
-        val was = regions[i] ?: return false
+internal fun squareRegionsSame(contents: Array<Any?>, first: Int, drawable: Array<RegionSprites?>): Boolean {
+    for (i in contents.indices) {
         val now = drawable.getOrNull(first + i) ?: return false
-        if (now === was) continue
-        if (was.look != squareLook || now.look == squareLook) return false
+        if (now.content !== contents[i]) return false
+    }
+    return true
+}
+
+/**
+ * Whether a square drawn with look [squareLook] from regions with [contents] and [looks] (from region [first] on)
+ * can still stand on screen while it's drawn again for a new look: each of its regions is the one drawn now, or one
+ * recorded again since with another look.
+ */
+internal fun squareRegionsStand(squareLook: Int, contents: Array<Any?>, looks: IntArray, first: Int, drawable: Array<RegionSprites?>): Boolean {
+    for (i in contents.indices) {
+        val now = drawable.getOrNull(first + i) ?: return false
+        if (now.content === contents[i]) continue
+        if (looks[i] != squareLook || now.look == squareLook) return false
     }
     return true
 }

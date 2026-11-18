@@ -1,5 +1,6 @@
 package com.rm.interchange.map.gl
 
+import com.rm.interchange.map.TileRecorder
 import com.rm.interchange.map.View
 import com.rm.interchange.map.WeatherCopy
 import com.rm.interchange.sim.Calendar
@@ -7,11 +8,14 @@ import com.rm.interchange.sim.Climate
 import com.rm.interchange.sim.NewGame
 import com.rm.interchange.sim.Region
 import com.rm.interchange.sim.World
+import kotlinx.coroutines.Job
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNotNull
 import kotlin.test.assertNull
+import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
 /** The GPU map keeps regions only round the screen on big maps; see [keepFrame]. */
@@ -23,6 +27,13 @@ class KeepTest {
         val weather by lazy { WeatherCopy.of(world, 0) }
         val year by lazy { Calendar.year(world.startYear, world.day) }
         val look by lazy { Climate.look(world.settings.region, year, Calendar.dayOfYear(world.startYear, world.day)) }
+
+        /** A map big enough for a small screen to keep only part of it ([keepsWholeMap]). */
+        const val SIZE = 128
+        const val SW = 160
+        const val SH = 100
+        val big by lazy { World(NewGame(SIZE, SIZE, 7, 1930, Region.MIXED, towns = 2, industries = 2, rivals = 0)) }
+        val bigWeather by lazy { WeatherCopy.of(big, 0) }
     }
 
     private fun frame(size: Int, turn: Int, hw: Float, fx: Float, fy: Float) = GlFrame.of(View(size, size).also {
@@ -145,5 +156,175 @@ class KeepTest {
             }
             assertTrue(any, "turn $turn kept no region in part")
         }
+    }
+
+    private fun small(turn: Int, hw: Float, fx: Float, fy: Float) = GlFrame.of(View(SIZE, SIZE).also {
+        it.turnBy(turn)
+        it.halfWidth = hw
+        it.focusX = fx
+        it.focusY = fy
+    }, SW, SH)
+
+    private fun keptTurn(turn: Int) = KeptTurn(turn, if (turn % 2 == 0) big.width else big.height, if (turn % 2 == 0) big.height else big.width)
+
+    /** Records the regions of [t] that are short, as [GlScene] does but at once. Returns which. */
+    private fun recordShort(t: KeptTurn): List<Int> {
+        val n = ArrayList<Int>()
+        for (i in t.regions.indices) {
+            if (!t.short(i)) continue
+            val v = regionVersion(big, t.turn, i, look, year)
+            val base = t.base(i, v, look, year)
+            t.begin(i, v)
+            assertTrue(t.put(i, v, recordKept(big, t.turn, i, look, year, bigWeather, null, v, t.slice(i), base), base))
+            n += i
+        }
+        return n
+    }
+
+    /** Whether the regions of [t] hold every tile of [f]'s screen. */
+    private fun regionsHoldScreen(t: KeptTurn, f: GlFrame): Boolean {
+        val screen = visibleColumns(f)
+        for (vy in 0 until f.viewHeight) {
+            if (screen[2 * vy] > screen[2 * vy + 1]) continue
+            val r = t.regions[vy / REGION_ROWS] ?: return false
+            if (!r.holds(vy, screen[2 * vy], screen[2 * vy + 1])) return false
+        }
+        return true
+    }
+
+    /** Tiles of [b] not in [a], both columns by view row. */
+    private fun newTiles(a: IntArray, b: IntArray): Long {
+        var n = 0L
+        for (vy in 0 until b.size / 2) for (vx in b[2 * vy]..b[2 * vy + 1]) if (vx < a[2 * vy] || vx > a[2 * vy + 1]) n++
+        return n
+    }
+
+    @Test
+    fun aPanAddsOnlyTheNewTilesToTheRegionsKept() {
+        for (turn in 0 until 4) {
+            val t = keptTurn(turn)
+            var x = 40f
+            var y = 40f
+            var f = small(turn, 32f, x, y)
+            assertFalse(keepsWholeMap(f))
+            assertTrue(t.keepRound(f))
+            recordShort(t)
+            assertTrue(t.whole())
+            val before = t.regions.copyOf()
+            val keep0 = t.keep!!.copyOf()
+            var moved = false
+            for (k in 0 until 200) {
+                x += 0.5f
+                y += 0.25f
+                f = small(turn, 32f, x, y)
+                if (t.keepRound(f)) {
+                    moved = true
+                    break
+                }
+                assertTrue(regionsHoldScreen(t, f))
+            }
+            assertTrue(moved, "turn $turn never kept again")
+            // Till the new tiles are in, the old regions still hold the screen, and those let go of are gone.
+            assertTrue(regionsHoldScreen(t, f), "turn $turn blank on the re-keep")
+            for (i in t.regions.indices) if (!t.kept(i)) assertNull(t.regions[i])
+            val keep1 = t.keep!!
+            assertTrue(newTiles(keep0, keep1) * 3 < tiles(keep1), "turn $turn: ${newTiles(keep0, keep1)} of ${tiles(keep1)} tiles new")
+            val recorded = recordShort(t)
+            assertTrue(recorded.isNotEmpty())
+            assertTrue(t.whole())
+            assertTrue(regionsHoldScreen(t, f))
+            val contents = Array<Any?>(t.regions.size) { before[it]?.content }
+            for (i in t.regions.indices) {
+                val r = t.regions[i] ?: continue
+                assertTrue(holdsKept(r, keep1))
+                val was = before[i]
+                // Added to, not recorded again: a square drawn from it before is still drawn from it.
+                if (was != null) {
+                    assertSame(was.content, r.content, "turn $turn region $i recorded again")
+                    assertTrue(squareRegionsSame(arrayOf(contents[i]), i, t.regions))
+                }
+                // And it's what recording it afresh gives.
+                if (i !in recorded) continue
+                val fresh = recordRegion(big, turn, i, look, year, bigWeather, version = r.version, cols = t.slice(i))
+                assertTrue(fresh.packed!!.contentEquals(r.packed), "turn $turn region $i")
+                assertTrue(fresh.starts.contentEquals(r.starts), "turn $turn region $i starts")
+                assertEquals(fresh.firstPass, r.firstPass)
+            }
+        }
+    }
+
+    @Test
+    fun aRegionLetGoOfWhileRecordingIsntPutBack() {
+        val t = keptTurn(0)
+        val here = small(0, 32f, 30f, 30f)
+        t.keepRound(here)
+        recordShort(t)
+        val i = t.regions.indices.first { t.regions[it] != null }
+        val v = regionVersion(big, 0, i, look, year)
+        val base = t.base(i, v, look, year)
+        t.begin(i, v)
+        val job = Job()
+        t.regionJobs[i] = job
+        t.jobs += job
+        val r = recordKept(big, 0, i, look, year, bigWeather, null, v, t.slice(i), base)
+        // A jump to the far corner lets it go while it records.
+        assertTrue(t.keepRound(small(0, 32f, 110f, 110f)))
+        assertFalse(t.kept(i))
+        assertTrue(job.isCancelled)
+        assertFalse(t.put(i, v, r, base))
+        assertNull(t.regions[i])
+        assertFalse(t.short(i))
+    }
+
+    @Test
+    fun aRegionRecordingWhenTheKeptAreaMovesFinishesThenHasTheRestAdded() {
+        val t = keptTurn(0)
+        var x = 40f
+        var f = small(0, 32f, x, x)
+        t.keepRound(f)
+        // Every region kept starts recording the slice kept now.
+        val recording = t.regions.indices.filter { t.kept(it) }
+        val versions = LongArray(t.regions.size) { regionVersion(big, 0, it, look, year) }
+        val slices = Array(t.regions.size) { t.slice(it) }
+        for (i in recording) t.begin(i, versions[i])
+        while (!t.keepRound(f)) {
+            x += 0.5f
+            f = small(0, 32f, x, x)
+        }
+        val done = HashMap<Int, RegionSprites>()
+        for (i in recording) {
+            val r = recordKept(big, 0, i, look, year, bigWeather, null, versions[i], slices[i], null)
+            assertEquals(t.kept(i), t.put(i, versions[i], r, null))
+            if (t.kept(i)) done[i] = r
+        }
+        val short = done.keys.filter { t.short(it) }
+        assertTrue(short.isNotEmpty())
+        for (i in short) assertSame(done[i], t.base(i, versions[i], look, year))
+        recordShort(t)
+        for (i in short) {
+            assertSame(done[i]!!.content, t.regions[i]!!.content)
+            assertTrue(holdsKept(t.regions[i]!!, t.keep!!))
+        }
+        assertTrue(regionsHoldScreen(t, f))
+    }
+
+    @Test
+    fun anEditToARegionLetGoOfDoesntWaitOnIt() {
+        val t = keptTurn(0)
+        t.keepRound(small(0, 32f, 20f, 20f))
+        recordShort(t)
+        publishRegions(t.regions, t.published, look)
+        val gone = t.regions.indices.last { !t.kept(it) }
+        val kept = t.regions.indices.first { t.regions[it] != null }
+        val before = LongArray(t.regions.size) { regionVersion(big, 0, it, look, year) }
+        val now = before.copyOf()
+        // A change under each, one world change more.
+        now[gone] += 8L * TileRecorder.PART_ERA_COUNT
+        now[kept] += 8L * TileRecorder.PART_ERA_COUNT
+        val off = EditHold().apply { start(0L, 0, gone..gone, before) }
+        assertTrue(off.changed(now))
+        assertTrue(off.current(now, t.drawnVersions()), "waits on a region let go of")
+        val on = EditHold().apply { start(0L, 0, kept..kept, before) }
+        assertFalse(on.current(now, t.drawnVersions()), "the kept one isn't drawn with the edit yet")
     }
 }
