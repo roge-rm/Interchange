@@ -340,6 +340,12 @@ internal class GlMapRenderer(private val scene: GlScene, private val page: Int) 
     /** The frame being drawn, for the squares' tiles ([tilesOf]). */
     private var shownFrame: GlFrame? = null
     private var heldCols = IntArray(0)
+    /** The last square frame [tilesOf] made, with what it was made for, so one square's checks share it. */
+    private var tilesFrame: GlFrame? = null
+    private var tilesFor: GlFrame? = null
+    private var tilesLv = 0
+    private var tilesCx = 0
+    private var tilesCy = 0
     /** The squares on screen neither fresh nor standing, first and last column then row, for the direct passes. */
     private val leftBox = IntArray(4)
     private var directCols = IntArray(0)
@@ -358,7 +364,9 @@ internal class GlMapRenderer(private val scene: GlScene, private val page: Int) 
     private fun tilesOf(s: Square): IntArray {
         val f = shownFrame!!
         if (heldCols.size < f.viewHeight * 2) heldCols = IntArray(f.viewHeight * 2)
-        return visibleColumns(squareFrame(f, s.lv, s.cx, s.cy), heldCols)
+        val sf = tilesFrame?.takeIf { tilesFor === f && tilesLv == s.lv && tilesCx == s.cx && tilesCy == s.cy }
+            ?: squareFrame(f, s.lv, s.cx, s.cy).also { tilesFrame = it; tilesFor = f; tilesLv = s.lv; tilesCx = s.cx; tilesCy = s.cy }
+        return visibleColumns(sf, heldCols)
     }
 
     /**
@@ -368,7 +376,6 @@ internal class GlMapRenderer(private val scene: GlScene, private val page: Int) 
     private fun fresh(s: Square, tex: LevelTextures): Boolean {
         if (s.from !== tex || s.look != look || s.overlays != overlays) return false
         if (overlays and MapOverlays.CONDITION != 0 && s.wear !== wearUp) return false
-        if (!squareRegionsSame(s.contents, s.first, drawable)) return false
         if (!squareRegionsSame(s.contents, s.first, drawable, tilesOf(s))) {
             if (GL_CHECKS) holes.lacking++
             return false
