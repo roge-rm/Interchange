@@ -173,7 +173,7 @@ class KeepTest {
         for (i in t.regions.indices) {
             if (!t.short(i)) continue
             val v = regionVersion(big, t.turn, i, look, year)
-            val base = t.base(i, v, look, year)
+            val base = t.base(i, v, look, year, bigWeather.baked)
             t.begin(i, v)
             assertTrue(t.put(i, v, recordKept(big, t.turn, i, look, year, bigWeather, null, v, t.slice(i), base), base))
             n += i
@@ -261,7 +261,7 @@ class KeepTest {
         recordShort(t)
         val i = t.regions.indices.first { t.regions[it] != null }
         val v = regionVersion(big, 0, i, look, year)
-        val base = t.base(i, v, look, year)
+        val base = t.base(i, v, look, year, bigWeather.baked)
         t.begin(i, v)
         val job = Job()
         t.regionJobs[i] = job
@@ -299,7 +299,7 @@ class KeepTest {
         }
         val short = done.keys.filter { t.short(it) }
         assertTrue(short.isNotEmpty())
-        for (i in short) assertSame(done[i], t.base(i, versions[i], look, year))
+        for (i in short) assertSame(done[i], t.base(i, versions[i], look, year, bigWeather.baked))
         recordShort(t)
         for (i in short) {
             assertSame(done[i]!!.content, t.regions[i]!!.content)
@@ -336,7 +336,7 @@ class KeepTest {
             }
             val started = t.regions.indices.filter { t.short(it) }
             val versions = LongArray(t.regions.size) { regionVersion(big, turn, it, look, year) }
-            val bases = Array(t.regions.size) { t.base(it, versions[it], look, year) }
+            val bases = Array(t.regions.size) { t.base(it, versions[it], look, year, bigWeather.baked) }
             val done = arrayOfNulls<RegionSprites>(t.regions.size)
             for (i in started) {
                 t.begin(i, versions[i])
@@ -367,6 +367,87 @@ class KeepTest {
             assertTrue(regionsHoldScreen(t, f))
             for (r in t.regions) if (r != null) assertTrue(holdsKept(r, t.keep!!))
         }
+    }
+
+    /** Has the tiles each region of [t] but [except] is short of added at [lk], as [GlScene] does but at once. */
+    private fun extendShort(t: KeptTurn, lk: Int, except: Int) {
+        for (i in t.regions.indices) {
+            if (i == except || !t.short(i)) continue
+            val v = regionVersion(big, t.turn, i, lk, year)
+            val base = t.base(i, v, lk, year, bigWeather.baked)
+            t.begin(i, v)
+            assertTrue(t.put(i, v, recordKept(big, t.turn, i, lk, year, bigWeather, null, v, t.slice(i), base), base))
+        }
+    }
+
+    @Test
+    fun aChangeOfSeasonWhilePanningDoesntBlankTheScreen() {
+        val next = if (look == Climate.WINTER) Climate.SUMMER else Climate.WINTER
+        for (turn in 0 until 4) {
+            var reached = false
+            val start = small(turn, 32f, 40f, 40f)
+            val first = visibleColumns(start)
+            val onScreen = (0 until regionCount(big, turn)).filter { i ->
+                (i * REGION_ROWS until minOf(start.viewHeight, (i + 1) * REGION_ROWS)).any { first[2 * it] <= first[2 * it + 1] }
+            }
+            // Each region on screen in turn is the one still recording the new look, so the look shown stays the old one;
+            // a pan each way.
+            for (j in onScreen) for ((dx, dy) in listOf(0.5f to 0.25f, -0.5f to -0.25f, 0.5f to -0.25f, -0.5f to 0.25f)) {
+                val t = keptTurn(turn)
+                var x = 40f
+                var y = 40f
+                var f = small(turn, 32f, x, y)
+                t.keepRound(f)
+                recordShort(t)
+                val plain = arrayOfNulls<RegionSprites>(t.regions.size)
+                publishRegions(t.regions, t.published, look, visibleColumns(f))
+                publishRegions(t.regions, plain, look)
+                // The season changes: every region but j is recorded with the new look, j is still recording.
+                for (i in t.regions.indices) {
+                    if (!t.kept(i) || i == j) continue
+                    val v = regionVersion(big, turn, i, next, year)
+                    t.begin(i, v)
+                    assertTrue(t.put(i, v, recordKept(big, turn, i, next, year, bigWeather, null, v, t.slice(i), null), null))
+                }
+                t.begin(j, regionVersion(big, turn, j, next, year))
+                for (k in 0 until 200) {
+                    x += dx
+                    y += dy
+                    f = small(turn, 32f, x, y)
+                    t.keepRound(f)
+                    extendShort(t, next, j)
+                    // Where the regions don't hold the screen the pan is held, and once j is off it the look moves on.
+                    if (!regionsHoldScreen(t, f)) break
+                    val screen = visibleColumns(f)
+                    if ((j * REGION_ROWS until minOf(f.viewHeight, (j + 1) * REGION_ROWS)).none { screen[2 * it] <= screen[2 * it + 1] }) break
+                    publishRegions(t.regions, t.published, look, screen)
+                    publishRegions(t.regions, plain, look)
+                    assertTrue(holdScreen(t.published, f), "turn $turn region $j pan $dx, $dy blank at step $k")
+                    if (!holdScreen(plain, f)) reached = true
+                }
+            }
+            assertTrue(reached, "turn $turn never left what the old look's regions hold")
+        }
+    }
+
+    @Test
+    fun aRegionIsAddedToOnlyWithTheSnowAndIceItWasRecordedWith() {
+        val t = keptTurn(0)
+        t.keepRound(small(0, 32f, 40f, 40f))
+        recordShort(t)
+        val i = t.regions.indices.first { t.regions[it] != null }
+        val v = regionVersion(big, 0, i, look, year)
+        // A new copy with the same snow and ice adds to it.
+        val same = WeatherCopy.of(big, bigWeather.id + 1, bigWeather)
+        assertEquals(bigWeather.baked, same.baked)
+        assertNotNull(t.base(i, v, look, year, same.baked))
+        // One with snow fallen records it whole, and so does the copy after it once the snow's gone.
+        val snow = bigWeather.snow.copyOf().also { it[0] = (it[0] + 20).toByte() }
+        val snowy = WeatherCopy.of(big, same.id + 1, same).let { WeatherCopy(it.id, snow, it.ice, it.mud) }
+        assertNull(t.base(i, v, look, year, snowy.baked))
+        val thawed = WeatherCopy.of(big, snowy.id + 1, snowy)
+        assertEquals(thawed.id, thawed.baked)
+        assertNull(t.base(i, v, look, year, thawed.baked))
     }
 
     @Test

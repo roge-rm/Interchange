@@ -124,6 +124,8 @@ internal class RegionSprites(
      * tiles but leave the rest as they are, so what was drawn from one holds for the others.
      */
     val content: Any = Any(),
+    /** The [com.rm.interchange.map.WeatherCopy.baked] of the copy it was recorded with, -1 if not known. */
+    val weather: Int = -1,
 ) {
     /** Ints this region holds on the heap. */
     val heapInts get() = data.size + ground.size + (packed?.size ?: 0) + starts.size
@@ -216,18 +218,19 @@ internal fun recordRegion(
     starts[k] = recorder.count
     if (!keepRecord) {
         val r = RegionSprites(turn, index, row0, row1, vw, recorder.data, recorder.count, starts, recorder.ground, version, cols, look, year)
-        return RegionSprites(turn, index, row0, row1, vw, IntArray(0), recorder.count, starts, IntArray(0), version, cols, look, year, packRegion(r))
+        return RegionSprites(turn, index, row0, row1, vw, IntArray(0), recorder.count, starts, IntArray(0), version, cols, look, year, packRegion(r), weather = weather.baked)
     }
     // Cut to what's used, as a few turns of regions are kept.
     val data = recorder.data.copyOf(recorder.count * SpriteRecorder.STRIDE)
     val ground = recorder.ground.copyOf(recorder.groundCount * GroundRecord.STRIDE)
-    return RegionSprites(turn, index, row0, row1, vw, data, recorder.count, starts, ground, version, cols, look, year)
+    return RegionSprites(turn, index, row0, row1, vw, data, recorder.count, starts, ground, version, cols, look, year, weather = weather.baked)
 }
 
 /**
  * Region [base] holding [cols] (each row's first and last column, two ints a row; null for every column): the tiles
  * it holds are taken as they are and only the rest recorded, and those outside [cols] are let go of. The world must
- * be at [base]'s version, look and year, as the result shares its [RegionSprites.content].
+ * be at [base]'s version, look and year and [weather] have its snow and ice ([RegionSprites.weather]), as the result
+ * shares its [RegionSprites.content].
  */
 internal fun extendRegion(world: World, base: RegionSprites, cols: IntArray?, weather: WeatherCopy, curves: CurveArt? = null): RegionSprites {
     val piece = recordRegion(world, base.turn, base.index, base.look, base.year, weather, curves, base.version, cols = cols, skip = base)
@@ -305,7 +308,7 @@ internal fun mergeRegion(base: RegionSprites, piece: RegionSprites): RegionSprit
     starts[at] = sprites
     return RegionSprites(
         base.turn, base.index, piece.row0, piece.row1, piece.columns, IntArray(0), sprites, starts, IntArray(0), base.version, cols,
-        base.look, base.year, out, base.content,
+        base.look, base.year, out, base.content, base.weather,
     )
 }
 

@@ -104,7 +104,7 @@ class GpuMapRun {
             merging = 0.0
             for (i in short) {
                 val v = regionVersion(w, 0, i, look, year)
-                val base = t.base(i, v, look, year)
+                val base = t.base(i, v, look, year, weather.baked)
                 if (base == null) {
                     recordRegion(w, 0, i, look, year, weather, version = v, cols = t.slice(i))
                     continue

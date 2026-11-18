@@ -71,9 +71,12 @@ internal class KeptTurn(val turn: Int, val viewWidth: Int, val viewHeight: Int) 
     /** Whether every region holds what's kept of it and none is recording. */
     fun whole() = pending.all { it < 0L } && regions.indices.none { short(it) }
 
-    /** Region [i] as it is, to add the tiles it's short of to ([extendRegion]), if it's at [version], [look] and [year]. */
-    fun base(i: Int, version: Long, look: Int, year: Int): RegionSprites? =
-        regions[i]?.takeIf { it.version == version && it.look == look && it.year == year }
+    /**
+     * Region [i] as it is, to add the tiles it's short of to ([extendRegion]), if it's at [version], [look], [year]
+     * and recorded with snow and ice as [weather] ([WeatherCopy.baked]) has them.
+     */
+    fun base(i: Int, version: Long, look: Int, year: Int, weather: Int): RegionSprites? =
+        regions[i]?.takeIf { it.version == version && it.look == look && it.year == year && it.weather == weather }
 
     /** Region [i] starts recording at [version]; one recording already is let go of. */
     fun begin(i: Int, version: Long) {

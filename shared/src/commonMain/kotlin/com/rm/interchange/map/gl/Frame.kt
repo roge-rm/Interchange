@@ -326,13 +326,16 @@ internal fun weatherSame(w: GroundWeather, since: Int, rows: IntArray): Boolean 
 /**
  * The regions to draw for a turn while its look is [shownLook]: each of [regions], but where one has been recorded
  * again with another look, the one before it in [published] while that has [shownLook], so a change of season shows
- * all at once. Fills [published] and returns it.
+ * all at once. With [screen] (the screen's columns by view row, [visibleColumns]), the new one is drawn where the
+ * old one lacks tiles on screen that it holds, as the old one isn't added to on a re-keep: two looks for a moment
+ * rather than a blank. Fills [published] and returns it.
  */
-internal fun publishRegions(regions: Array<RegionSprites?>, published: Array<RegionSprites?>, shownLook: Int): Array<RegionSprites?> {
+internal fun publishRegions(regions: Array<RegionSprites?>, published: Array<RegionSprites?>, shownLook: Int, screen: IntArray? = null): Array<RegionSprites?> {
     for (i in regions.indices) {
         val r = regions[i]
         val p = published[i]
-        published[i] = if (r == null || r.look == shownLook || p == null || p.look != shownLook) r else p
+        val old = r != null && r.look != shownLook && p != null && p.look == shownLook
+        published[i] = if (old && (screen == null || holdsKept(p!!, screen) || !holdsKept(r!!, screen))) p else r
     }
     return published
 }

@@ -677,7 +677,7 @@ internal class GlScene(private val world: World, parent: CoroutineScope) {
         val yr = year
         val version = regionVersion(world, t.turn, i, lk, yr)
         val weather = copy!!
-        val base = t.base(i, version, lk, yr)
+        val base = t.base(i, version, lk, yr, weather.baked)
         // Only an urgent recheck records a region already recording; the old recording's result would be dropped.
         t.begin(i, version)
         t.jobs += scope.launch {
@@ -733,14 +733,15 @@ internal class GlScene(private val world: World, parent: CoroutineScope) {
      * is recorded with it, and till then the regions recorded again with the new look wait. Returns [KeptTurn.published].
      */
     private fun publish(t: KeptTurn, frame: GlFrame): Array<RegionSprites?> {
+        if (columns.size < frame.viewHeight * 2) columns = IntArray(frame.viewHeight * 2)
+        visibleColumns(frame, columns)
         if (t.shownLook != look) {
-            if (columns.size < frame.viewHeight * 2) columns = IntArray(frame.viewHeight * 2)
-            visibleColumns(frame, columns)
             var all = true
             for (i in t.regions.indices) if (t.regions[i]?.look != look && onScreen(i, frame)) all = false
             if (all) t.shownLook = look
         }
-        return publishRegions(t.regions, t.published, t.shownLook)
+        // What covers looked at ([KeptTurn.regions]) is drawn where the old look's region doesn't hold the screen.
+        return publishRegions(t.regions, t.published, t.shownLook, columns)
     }
 
     /** While the player's edit is held, looks at the turn showing for changes every frame and records them at once. */
@@ -845,7 +846,7 @@ internal class GlScene(private val world: World, parent: CoroutineScope) {
         scope.launch {
             // Cleared however the job ends, so a failed or cancelled copy doesn't stop later ones.
             try {
-                val c = withContext(Dispatchers.Default) { WeatherCopy.of(world, (last?.id ?: 0) + 1) }
+                val c = withContext(Dispatchers.Default) { WeatherCopy.of(world, (last?.id ?: 0) + 1, last) }
                 // Regions can record with the copy while the ground shader's weather is made from it.
                 copy = c
                 revision.intValue++
