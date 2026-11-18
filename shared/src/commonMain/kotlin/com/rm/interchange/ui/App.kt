@@ -1566,6 +1566,7 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, setting
             loading = remember(c) { LoadingLook(rail = c.textDim, train = c.accent, trim = c.text, text = c.textDim, style = KitType.Dim) },
             onSharp = { mapSharp.value = true },
             onHover = { hover.value = it },
+            clockFrames = !overview,
             overlays = (if (settings.grid) MapOverlays.GRID else 0) or (if (settings.heights) MapOverlays.HEIGHTS else 0) or
                 (if (settings.snow) MapOverlays.SNOW else 0) or (if (settings.condition) MapOverlays.CONDITION else 0) or (if (settings.safeColours) MapOverlays.SAFE else 0),
             labels = {

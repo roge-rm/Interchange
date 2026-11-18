@@ -122,6 +122,8 @@ class World(settings: NewGame, val roster: Roster = Roster.BASE, generate: Boole
     /** Set when a town grows, so its summary for the screen is made again. Not part of the game. */
     var townsChanged = true
     internal var townViews: List<TownView> = emptyList()
+    /** For the screen, the tick and step each train was first seen stood with nowhere to go, as at a dead end. Not part of the game. */
+    internal val stoodSince = HashMap<Int, Pair<Long, Int>>()
 
     /** Building tiles in reach of a station and the station each sends to, worked out again when [catchmentDirty]. Not saved. */
     internal var catchment = IntArray(0)

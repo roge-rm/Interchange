@@ -368,6 +368,9 @@ class GoingView(val dest: Int, val via: Int, val counts: IntArray, val why: Int 
 /** How many of a station's destinations, the most waiting first, get a [GoingView.why]. */
 const val GOING_WHY = 5
 
+/** Ticks a train stands with no route before it's shown lost: a quarter of a day. */
+private const val STOOD_LOST = Calendar.TICKS_PER_DAY / 4L
+
 /** A depot as the screen shows it, to draw over the trains going in and out of it. */
 /** A depot as the screen shows it; [maglev] on guideway, for maglev trains, [tube] on tube, for pods. */
 class DepotView(val tile: Int, val edge: Int, val id: Int = -1, val wired: Boolean = false, val built: Int = 0, val maglev: Boolean = false, val tube: Boolean = false)
@@ -579,11 +582,25 @@ fun World.view(company: Int = 0, withReserved: Boolean = false, withNetwork: Boo
     // The middle of a tile, or nothing if it isn't on the map.
     fun atTile(tile: Int) = if (tile < 0) 0f to 0f else (tile % width + 0.5f) to (tile / width + 0.5f)
     fun atDepot(id: Int) = atTile(depots.getOrNull(id)?.tile ?: -1)
+    // Lost: no way found lately, or stood still with no route for a while, as at a dead end, where it plans again every
+    // tick. A train turning round or just off from a station or depot has no route for a tick, so isn't counted.
+    fun stood(t: Train) = t.running && !t.inDepot && t.speed == 0 && t.route == null && t.target != -2 && t.waiting == 0 &&
+        t.aside < 0 && !t.held && t.brokenFor == 0 && t.wreckedFor == 0 && !t.snowbound
+    // Views can be many ticks apart, so a train seen stood twice also has to be on the same step both times.
+    stoodSince.keys.retainAll(trains.filter { it != null && stood(it) }.map { it!!.id }.toSet())
+    fun lost(t: Train): Boolean {
+        if (t.running && !t.inDepot && t.lostUntil > tick) return true
+        if (!stood(t)) return false
+        val at = t.steps.lastOrNull() ?: -1
+        val seen = stoodSince[t.id]
+        if (seen == null || seen.second != at) { stoodSince[t.id] = tick to at; return false }
+        return tick - seen.first >= STOOD_LOST
+    }
     val trainViews = trains.filterNotNull().map { t ->
         val (tx, ty) = if (t.inDepot) atDepot(t.shedIn) else atTile(t.steps.lastOrNull()?.let { stepTile(it) } ?: -1)
         TrainView(
             t.id, t.name, t.engine, t.wagon, t.wagons, t.depot, t.inDepot, t.running, t.toDepot,
-            t.orders.toIntArray(), t.order, t.speed / 16 * 2700 / 4096, t.waiting > 0, t.running && !t.inDepot && t.lostUntil > tick,
+            t.orders.toIntArray(), t.order, t.speed / 16 * 2700 / 4096, t.waiting > 0, lost(t),
             IntArray(Cargo.MAX) { t.load(it) }, IntArray(Cargo.MAX) { t.capacity(it) }, t.profitThisYear, t.profitLastYear, t.shared,
             age(t), t.reliability / 100, t.brokenFor > 0, t.breakdowns, t.service, t.servicing, price(t.price) - value(t), age(t) >= t.life,
             t.inDepot && t.electric && depots.getOrNull(t.shedIn)?.let { !depotWired(it) } == true,

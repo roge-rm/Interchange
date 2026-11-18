@@ -25,6 +25,7 @@ import androidx.compose.ui.geometry.isSpecified
 import com.rm.interchange.ui.CursorTarget
 import com.rm.interchange.ui.Gamepad
 import androidx.compose.ui.graphics.drawscope.translate
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.layer.drawLayer
 import androidx.compose.ui.graphics.rememberGraphicsLayer
 import androidx.compose.ui.input.pointer.PointerEventType
@@ -109,6 +110,8 @@ fun MapView(
     onSharp: () -> Unit = {},
     /** Where a mouse rests over the map with no button down, in pixels; null once it goes, presses or zooms. */
     onHover: (Offset?) -> Unit = {},
+    /** Whether rain, snow, fire and lit crossings draw by the clock; off while a window like the overview covers the map. */
+    clockFrames: Boolean = true,
 ) {
     val scope = rememberCoroutineScope()
     // The lines drawn over the map keep their world, so let go of it when the map shows another.
@@ -116,6 +119,7 @@ fun MapView(
     val currentInput by rememberUpdatedState(input)
     val currentHover by rememberUpdatedState(onHover)
     val currentLatest by rememberUpdatedState(latest)
+    val currentClock by rememberUpdatedState(clockFrames)
     val gl = remember(world) { GlScene(world, scope) }
     DisposableEffect(gl) { onDispose { gl.close() } }
     gl.onSharp = onSharp
@@ -182,7 +186,7 @@ fun MapView(
                 zoom = view.halfWidth
                 busyUntil = now + SETTLE_MILLIS
             }
-            if (now < busyUntil || (clocked[0] && now - lastClock >= CLOCK_FRAME_MILLIS)) {
+            if (now < busyUntil || (clocked[0] && currentClock && now - lastClock >= CLOCK_FRAME_MILLIS)) {
                 lastClock = now
                 redraw.longValue++
             }
@@ -408,7 +412,8 @@ fun MapView(
     }
     Box(modifier) {
         GlMapSurface(gl, page.toArgb(), Modifier.matchParentSize())
-        Canvas(Modifier.matchParentSize().then(mouse).then(touch), onDraw = paint)
+        // Its own layer, so its frames draw only the map, not the GL surface's view or what's over it, as the overview.
+        Canvas(Modifier.matchParentSize().graphicsLayer {}.then(mouse).then(touch), onDraw = paint)
     }
 }
 
