@@ -219,6 +219,7 @@ internal class GlMapRenderer(private val scene: GlScene, private val page: Int) 
         val on = squaresOn(f, lv)
         val left = prepareSquares(f, lv, tex, on)
         checkHoles(f, left)
+        checkEmpty(f)
         clearScreen()
         // Clip space from source level pixels: screen = origin + p * scale, then to -1..1 with y up.
         val xf = floatArrayOf(2f * f.scale / width, -2f * f.scale / height, 2f * f.originX / width - 1f, 1f - 2f * f.originY / height)
@@ -238,6 +239,7 @@ internal class GlMapRenderer(private val scene: GlScene, private val page: Int) 
             for (pass in 0 until PASSES) drawPass(pass, runs, xf, f, lv, tex)
             glDepthMask(true)
         }
+        checkBlack(f, lv, left)
         glDisable(GL_DEPTH_TEST)
         // Back to clear for what moves, which cuts by depth.
         glClear(GL_DEPTH_BUFFER_BIT)
@@ -323,6 +325,8 @@ internal class GlMapRenderer(private val scene: GlScene, private val page: Int) 
         var contents = arrayOfNulls<Any>(0)
         var looks = IntArray(0)
         var used = 0L
+        /** The frame it was last put on screen in. */
+        var shownOn = -1L
     }
     private val squares = HashMap<Long, Square>()
     private var squareFbo = 0
@@ -529,6 +533,76 @@ internal class GlMapRenderer(private val scene: GlScene, private val page: Int) 
         }
     }
     private val holes = Holes()
+    private var emptyChecked = 0L
+    private var blackChecked = 0L
+    private val pixel = ByteBuffer.allocateDirect(4).order(ByteOrder.nativeOrder())
+
+    /**
+     * Once a second, counts the tiles on screen that the regions drawn say they hold but have no piece of ground for,
+     * as every tile has one; logged as `glempty`.
+     */
+    private fun checkEmpty(f: GlFrame) {
+        val now = System.nanoTime()
+        if (now - emptyChecked < 1_000_000_000L) return
+        emptyChecked = now
+        var tiles = 0
+        var rows = 0
+        for (vy in 0 until f.viewHeight) {
+            val c0 = columns[2 * vy]
+            val c1 = columns[2 * vy + 1]
+            if (c0 > c1) continue
+            val r = drawable.getOrNull(vy / REGION_ROWS) ?: continue
+            if (!r.holds(vy, c0, c1)) continue
+            var n = 0
+            for (vx in c0..c1) if (r.start(0, vy, vx + 1) == r.start(0, vy, vx)) n++
+            if (n > 0) rows++
+            tiles += n
+        }
+        if (tiles > 0) Log.w(TAG, "glempty tiles=$tiles rows=$rows")
+    }
+
+    /**
+     * Once a second, reads back a grid of points on screen that are surely on the map, whatever its heights, once the
+     * static map is drawn, and logs `glblack` with how many came out the page colour, and how many of those are under
+     * a square drawn ahead. With nothing else logged, black here means the GPU lost work; a blank seen with no
+     * `glblack` means what was shown wasn't the frame drawn. Stalls for the GPU once a second.
+     */
+    private fun checkBlack(f: GlFrame, lv: Int, left: Int) {
+        val now = System.nanoTime()
+        if (now - blackChecked < 1_000_000_000L) return
+        blackChecked = now
+        val hw = SOURCE_HALF_WIDTH
+        val hh = hw / 2
+        val above = Zoom.above(hw)
+        // View x - y and x + y, from source pixels x / hw and y / hh, inside the map by a few tiles.
+        fun inside(a: Float, b: Float): Boolean {
+            val vx = (a + b) / 2
+            val vy = (b - a) / 2
+            return vx >= EDGE_TILES && vy >= EDGE_TILES && vx <= f.viewWidth - EDGE_TILES && vy <= f.viewHeight - EDGE_TILES
+        }
+        val side = SQUARE_SIDE * toSource(lv) * f.scale
+        var points = 0
+        var black = 0
+        var under = 0
+        for (j in 0 until 6) for (i in 0 until 8) {
+            val sx = (i + 0.5f) * width / 8
+            val sy = (j + 0.5f) * height / 6
+            val a = (sx - f.originX) / f.scale / hw
+            val y = (sy - f.originY) / f.scale
+            // A pixel shows the ground of tiles from the one under it at height 0 to the one under it at the highest.
+            if (!inside(a, y / hh) || !inside(a, (y + above) / hh)) continue
+            points++
+            pixel.clear()
+            glReadPixels(sx.toInt(), height - 1 - sy.toInt(), 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, pixel)
+            fun near(k: Int, c: Int) = kotlin.math.abs((pixel.get(k).toInt() and 255) - c) < 4
+            if (!near(0, (page shr 16) and 255) || !near(1, (page shr 8) and 255) || !near(2, page and 255)) continue
+            black++
+            val cx = kotlin.math.floor((sx - f.originX) / side).toInt()
+            val cy = kotlin.math.floor((sy - f.originY) / side).toInt()
+            if (squares[squareKey(f.turn, lv, cx, cy)]?.shownOn == frameNo) under++
+        }
+        if (black > 0) Log.w(TAG, "glblack $black of $points squares=$under left=$left")
+    }
 
     /**
      * Counts what could leave the screen blank, for a device run to show: rows on screen the regions drawn ([drawable])
@@ -577,6 +651,7 @@ internal class GlMapRenderer(private val scene: GlScene, private val page: Int) 
         for (cy in on[2]..on[3]) for (cx in on[0]..on[1]) {
             val s = squares[squareKey(f.turn, lv, cx, cy)] ?: continue
             if (!fresh(s, tex) && !stands(s, tex)) continue
+            s.shownOn = frameNo
             val x0 = squareEdge(f, lv, cx, false)
             val x1 = squareEdge(f, lv, cx + 1, false)
             val y0 = squareEdge(f, lv, cy, true)
@@ -1326,6 +1401,8 @@ internal class GlMapRenderer(private val scene: GlScene, private val page: Int) 
         const val LIVE_UNITS = 8
         /** Squares drawn ahead a frame while some on screen are missing, each a quarter of a screen's pixels at its level. */
         const val SQUARES_A_FRAME = 2
+        /** How far inside the map's edge [checkBlack] reads points, in tiles. */
+        const val EDGE_TILES = 4f
 
         /** Region buffers off screen uploaded a frame, at most. */
         const val REGIONS_A_FRAME = 2
