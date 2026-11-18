@@ -23,7 +23,7 @@ class GlMapTest {
         val scenes = HashMap<Int, Array<RegionSprites?>>()
 
         fun regions(turn: Int): Array<RegionSprites?> = scenes.getOrPut(turn) {
-            Array(regionCount(world, turn)) { recordRegion(world, turn, it, look, year, weather) }
+            Array(regionCount(world, turn)) { recordRegion(world, turn, it, look, year, weather, keepRecord = true) }
         }
 
         fun view(turn: Int, halfWidth: Float, fx: Float, fy: Float) = View(world.width, world.height).also {
@@ -43,7 +43,7 @@ class GlMapTest {
             r!!
             // A band of columns that moves along the rows, empty on some.
             val cols = IntArray(2 * r.rows) { k -> val row = k / 2; if (row % 5 == 4) (if (k % 2 == 0) 1 else 0) else if (k % 2 == 0) r.columns / 4 + row % 3 else r.columns * 3 / 4 - row % 2 }
-            val part = recordRegion(world, turn, r.index, look, year, weather, cols = cols)
+            val part = recordRegion(world, turn, r.index, look, year, weather, cols = cols, keepRecord = true)
             assertEquals(r.columns, part.columns)
             for (pass in 0 until PASSES) for (vy in r.row0 until r.row1) for (vx in 0 until r.columns) {
                 val k = 2 * (vy - r.row0)

@@ -11,6 +11,7 @@ import com.rm.interchange.map.Atlas
 import com.rm.interchange.map.TileRecorder
 import com.rm.interchange.map.LevelSheets
 import com.rm.interchange.map.Zoom
+import java.lang.ref.WeakReference
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import javax.microedition.khronos.egl.EGLConfig
@@ -37,7 +38,7 @@ private class LevelTextures(val from: LevelSheets, val static: Paged, val up: In
  * pass a few instanced draws of the runs on screen. The first pass draws the ground ([GROUND_FS]) among the track
  * and foundations, as [com.rm.interchange.map.TileRecorder] lays them down. Sprites come from the sheets of the
  * level [com.rm.interchange.map.Zoom.levelFor] the zoom, placed by cell tables (a row a level), so region buffers are the same at every level; they're
- * uploaded once each and kept while their turn shows. The weather texture takes only the rows that changed.
+ * uploaded once each and kept while their turn shows and the scene keeps them round the screen. The weather texture takes only the rows that changed.
  *
  * GL thread only, but for [scene]'s shared fields, which it only reads.
  */
@@ -298,11 +299,15 @@ internal class GlMapRenderer(private val scene: GlScene, private val page: Int) 
         var from: LevelTextures? = null
         var overlays = 0
         var wear: TrackWear? = null
-        var weather: GroundWeather? = null
+        /** The weather it was drawn with, by size and [GroundWeather.version], so it doesn't hold the texels on the heap. */
+        var weatherWidth = -1
+        var weatherHeight = -1
+        var weatherVersion = -1
         var rows = IntArray(2)
         var look = -1
         var first = 0
-        var regions = arrayOfNulls<RegionSprites>(0)
+        /** Weakly, so a square left over from somewhere far doesn't keep regions let go of on the heap. */
+        var regions = arrayOfNulls<WeakReference<RegionSprites>>(0)
         var used = 0L
     }
     private val squares = HashMap<Long, Square>()
@@ -330,12 +335,14 @@ internal class GlMapRenderer(private val scene: GlScene, private val page: Int) 
     private fun fresh(s: Square, tex: LevelTextures): Boolean {
         if (s.from !== tex || s.look != look || s.overlays != overlays) return false
         if (overlays and MapOverlays.CONDITION != 0 && s.wear !== wearUp) return false
-        for (i in s.regions.indices) if (drawable.getOrNull(s.first + i) !== s.regions[i]) return false
+        for (i in s.regions.indices) {
+            val was = s.regions[i]?.get() ?: return false
+            if (drawable.getOrNull(s.first + i) !== was) return false
+        }
         val w = weatherUp ?: return false
-        if (s.weather !== w) {
-            val was = s.weather ?: return false
-            if (was.width != w.width || was.height != w.height || w.version < was.version || !weatherSame(w, was.version, s.rows)) return false
-            s.weather = w
+        if (s.weatherWidth != w.width || s.weatherHeight != w.height || s.weatherVersion != w.version) {
+            if (s.weatherWidth != w.width || s.weatherHeight != w.height || w.version < s.weatherVersion || !weatherSame(w, s.weatherVersion, s.rows)) return false
+            s.weatherVersion = w.version
         }
         return true
     }
@@ -348,7 +355,7 @@ internal class GlMapRenderer(private val scene: GlScene, private val page: Int) 
     private fun stands(s: Square, tex: LevelTextures): Boolean {
         if (s.from !== tex || s.look == look || s.overlays != overlays) return false
         if (overlays and MapOverlays.CONDITION != 0 && s.wear !== wearUp) return false
-        return squareRegionsStand(s.look, s.regions, s.first, drawable)
+        return squareRegionsStand(s.look, Array(s.regions.size) { s.regions[it]?.get() }, s.first, drawable)
     }
 
     /**
@@ -406,6 +413,11 @@ internal class GlMapRenderer(private val scene: GlScene, private val page: Int) 
         }
         if (r1 < 0) { r0 = 0; r1 = -1 }
         for (i in r0..r1) if (drawable.getOrNull(i) == null) return false
+        // Regions are kept only round the screen, so one may not have the square's tiles yet.
+        for (vy in 0 until f.viewHeight) {
+            if (cols[2 * vy] > cols[2 * vy + 1]) continue
+            if (!drawable[vy / REGION_ROWS]!!.holds(vy, cols[2 * vy], cols[2 * vy + 1])) return false
+        }
         val key = squareKey(f.turn, lv, cx, cy)
         val s = squares[key] ?: Square(squareTexture()).also { evictSquares(); squares[key] = it }
         s.used = frameNo
@@ -421,13 +433,15 @@ internal class GlMapRenderer(private val scene: GlScene, private val page: Int) 
         for (pass in 0 until PASSES) drawPass(pass, squareRuns, xf, f, lv, tex)
         glDisable(GL_BLEND)
         s.from = tex
-        s.weather = weatherUp
+        s.weatherWidth = weatherUp!!.width
+        s.weatherHeight = weatherUp!!.height
+        s.weatherVersion = weatherUp!!.version
         s.rows = weatherRows(cols, f.viewHeight, f.turn, weatherUp!!.height)
         s.look = look
         s.overlays = overlays
         s.wear = wearUp
         s.first = r0
-        s.regions = Array(maxOf(0, r1 - r0 + 1)) { drawable[r0 + it] }
+        s.regions = Array(maxOf(0, r1 - r0 + 1)) { WeakReference(drawable[r0 + it]) }
         return true
     }
 
@@ -806,6 +820,11 @@ internal class GlMapRenderer(private val scene: GlScene, private val page: Int) 
         for (i in shown.regions.indices) {
             val r = shown.regions[i]
             val b = buffers[i]
+            // A region let go of, off round the screen, goes from the GPU too.
+            if (r == null && b != null) {
+                glDeleteBuffers(1, intArrayOf(b.id), 0)
+                buffers[i] = null
+            }
             if (r != null && b?.region !== r) {
                 // Those on screen at once, the rest a few a frame, so a turn's first frame isn't held up by them all.
                 if (onScreen(i, shown.frame.viewHeight, columns) || off++ < REGIONS_A_FRAME) {

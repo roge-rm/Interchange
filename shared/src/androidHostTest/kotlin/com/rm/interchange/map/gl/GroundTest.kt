@@ -19,7 +19,7 @@ class GroundTest {
         val year by lazy { Calendar.year(world.startYear, world.day) }
         val look by lazy { Climate.look(world.settings.region, year, Calendar.dayOfYear(world.startYear, world.day)) }
 
-        fun regions(turn: Int) = Array(regionCount(world, turn)) { recordRegion(world, turn, it, look, year, weather) }
+        fun regions(turn: Int) = Array(regionCount(world, turn)) { recordRegion(world, turn, it, look, year, weather, keepRecord = true) }
 
         // GROUND_VS's worldCorner and worldTile, written out again.
         fun shaderCorner(turn: Int, x: Int, y: Int) = when (turn) {

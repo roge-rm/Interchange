@@ -100,10 +100,12 @@ internal fun groundSize(ground: IntArray): Int {
  * sprites in [SPRITE_INTS] ints each: anchor x, anchor y, cell, snow tile, as [SpriteRecorder] has them. The shaders
  * place each sprite at the level drawn from its cell's [cellRects], so the buffer is the same at every level.
  * Written into [into] if it's big enough, so it can be used again; [packedInts] says how much of it is used.
+ * A region that keeps only [RegionSprites.packed] gives that, copied into [into] if given.
  */
 internal fun packRegion(r: RegionSprites, into: IntArray? = null): IntArray {
     val p0 = r.firstPass
     val size = packedInts(r)
+    r.packed?.let { return if (into != null && into.size >= size) it.copyInto(into, 0, 0, size) else it }
     val out = if (into != null && into.size >= size) into else IntArray(size)
     val d = r.data
     var k = 0

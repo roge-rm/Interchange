@@ -36,9 +36,9 @@ class SpriteLevelsTest {
         var checked = 0
         var off = 0
         for (turn in 0 until 4) for (index in 0 until regionCount(world, turn)) {
-            val source = recordRegion(world, turn, index, look, year, weather)
+            val source = recordRegion(world, turn, index, look, year, weather, keepRecord = true)
             for (level in 0 until Atlas.LEVELS) {
-                val baked = if (level == SOURCE_LEVEL) source else recordRegion(world, turn, index, look, year, weather, level = level)
+                val baked = if (level == SOURCE_LEVEL) source else recordRegion(world, turn, index, look, year, weather, level = level, keepRecord = true)
                 assertEquals(source.count, baked.count, "turn $turn region $index level $level")
                 val tables = arrayOf(cellRects(SpriteRecorder.STATIC, level, whole), cellRects(SpriteRecorder.SHADOW, level, whole))
                 for (i in 0 until source.count) {
@@ -82,7 +82,7 @@ class SpriteLevelsTest {
         }
         val gw = GroundWeather.of(world, weather, null)
         var snowy = 0
-        for (turn in 0 until 4) for (r in Array(regionCount(world, turn)) { recordRegion(world, turn, it, look, year, weather) }) {
+        for (turn in 0 until 4) for (r in Array(regionCount(world, turn)) { recordRegion(world, turn, it, look, year, weather, keepRecord = true) }) {
             for (i in 0 until r.count) {
                 val o = i * SpriteRecorder.STRIDE
                 val sheet = r.data[o]

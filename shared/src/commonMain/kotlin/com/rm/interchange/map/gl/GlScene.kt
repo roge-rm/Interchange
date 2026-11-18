@@ -89,6 +89,11 @@ internal class GlScene(private val world: World, parent: CoroutineScope) {
         val regionJobs = arrayOfNulls<Job>(regions.size)
         val published = arrayOfNulls<RegionSprites>(regions.size)
         var shownLook = -1
+        /**
+         * The view tiles kept recorded, columns by view row as [visibleColumns] gives them, round the screen
+         * ([keepFrame]); regions outside are let go of, those inside recorded only there. Null till first set.
+         */
+        var keep: IntArray? = null
     }
 
     private val turns = arrayOfNulls<Turn>(4)
@@ -274,6 +279,8 @@ internal class GlScene(private val world: World, parent: CoroutineScope) {
         lastX = view.focusX
         lastY = view.focusY
         lastHalfWidth = view.halfWidth
+        lastWidth = width
+        lastHeight = height
         takeLevels(sheets, Zoom.levelFor(view.halfWidth))
         season()
         copyWeather()
@@ -286,15 +293,11 @@ internal class GlScene(private val world: World, parent: CoroutineScope) {
             checkHidden(view)
         }
         want(view.turn, view, GlFrame.of(view, width, height))
+        turns[view.turn]?.let { keepRound(it, GlFrame.of(view, width, height)) }
         if (view.turnsAsked != 0) {
             val asked = view.askedTurn
-            val turned = View(view.mapWidth, view.mapHeight).also {
-                it.turnBy(asked)
-                it.focusX = view.focusX
-                it.focusY = view.focusY
-                it.halfWidth = view.halfWidth
-            }
-            val turnedFrame = GlFrame.of(turned, width, height)
+            val turnedFrame = turnedFrame(asked, view, width, height)
+            turns[asked]?.let { keepRound(it, turnedFrame) }
             // A turn recorded ahead swaps at once; what changed in it since shows a moment later, but for a new
             // look of the year on screen, which it waits for.
             turns[asked]?.let {
@@ -619,6 +622,7 @@ internal class GlScene(private val world: World, parent: CoroutineScope) {
         val n = regionCount(world, turn)
         val t = Turn(turn, arrayOfNulls(n))
         turns[turn] = t
+        keepRound(t, frame)
         if (!sharp) {
             // A quarter of the screen round it, so a small move just after the cover lifts needn't wait.
             val mx = frame.width / 4f
@@ -633,7 +637,7 @@ internal class GlScene(private val world: World, parent: CoroutineScope) {
             }
             return
         }
-        for (i in regionOrder(t, view)) record(t, i)
+        for (i in regionOrder(t, view)) if (kept(t, i)) record(t, i)
     }
 
     /** [t]'s regions, the nearest [view]'s focus first. */
@@ -643,20 +647,78 @@ internal class GlScene(private val world: World, parent: CoroutineScope) {
         return (0 until t.regions.size).sortedBy { abs(it - focusRow) }
     }
 
-    /** Records whole the regions of [t] recorded only in part or not at all, and not recording now. */
+    /** Records the regions of [t] that don't hold what's kept of them ([Turn.keep]) and aren't recording now. */
     private fun fill(t: Turn, view: View) {
         if (copy == null) return
         var any = false
-        for (i in t.regions.indices) if ((t.regions[i] == null || t.regions[i]!!.cols != null) && t.pending[i] < 0L) any = true
+        for (i in t.regions.indices) if (short(t, i)) any = true
         if (!any) return
-        for (i in regionOrder(t, view)) if ((t.regions[i] == null || t.regions[i]!!.cols != null) && t.pending[i] < 0L) record(t, i)
+        for (i in regionOrder(t, view)) if (short(t, i)) record(t, i)
     }
+
+    /** Whether region [i] of [t] is kept but isn't recorded there, nor recording. */
+    private fun short(t: Turn, i: Int): Boolean {
+        if (t.pending[i] >= 0L || !kept(t, i)) return false
+        val r = t.regions[i] ?: return true
+        val k = t.keep ?: return r.cols != null
+        return !holdsKept(r, k)
+    }
+
+    /** Whether region [i] of [t] has tiles kept. */
+    private fun kept(t: Turn, i: Int): Boolean = t.keep?.let { regionKept(it, i, viewHeight(t.turn)) } ?: true
+
+    /** What's kept of region [i] of [t], for [recordRegion]: null for the whole of it. */
+    private fun slice(t: Turn, i: Int): IntArray? = t.keep?.let { keepSlice(it, i, viewWidth(t.turn), viewHeight(t.turn)) }
+
+    private fun viewWidth(turn: Int) = if (turn % 2 == 0) world.width else world.height
+    private fun viewHeight(turn: Int) = if (turn % 2 == 0) world.height else world.width
+
+    /** Scratch for [keepHolds]. */
+    private var keepScratch = IntArray(0)
+
+    /**
+     * Keeps [t]'s regions round [frame] ([keepFrame]), or the whole map if it's small ([keepsWholeMap]), once what's
+     * kept no longer holds the screen with some to spare: those outside are let go of, on the GPU too, and the rest
+     * are recorded there by [fill] and [ahead], the old ones showing till then.
+     */
+    private fun keepRound(t: Turn, frame: GlFrame) {
+        val k = t.keep
+        if (keepScratch.size < 2 * frame.viewHeight) keepScratch = IntArray(2 * frame.viewHeight)
+        if (k != null && keepHolds(k, frame, keepScratch)) return
+        val next = if (keepsWholeMap(frame)) wholeColumns(frame) else visibleColumns(keepFrame(frame))
+        t.keep = next
+        for (i in t.regions.indices) {
+            if (regionKept(next, i, frame.viewHeight)) continue
+            if (t.pending[i] >= 0L) t.regionJobs[i]?.cancel()
+            t.pending[i] = -1L
+            t.due[i] = false
+            t.regions[i] = null
+            t.published[i] = null
+        }
+        t.jobs.removeAll { it.isCompleted || it.isCancelled }
+    }
+
+    /** The frame [view] would show turned to [turn], on a screen [width] by [height]. */
+    private fun turnedFrame(turn: Int, view: View, width: Int, height: Int): GlFrame {
+        val turned = View(view.mapWidth, view.mapHeight).also {
+            it.turnBy(turn)
+            it.focusX = view.focusX
+            it.focusY = view.focusY
+            it.halfWidth = view.halfWidth
+        }
+        return GlFrame.of(turned, width, height)
+    }
+
+    /** The screen size [show] was last given. */
+    private var lastWidth = 0
+    private var lastHeight = 0
 
     /**
      * Records region [i] of [t] at the world's version now, in the background, and puts it in when it's done; only
-     * [cols] of it if given. An [urgent] one, for the player's edit, doesn't wait behind the others.
+     * [cols] of it if given, by default what's kept of it. An [urgent] one, for the player's edit, doesn't wait behind
+     * the others.
      */
-    private fun record(t: Turn, i: Int, cols: IntArray? = null, urgent: Boolean = false) {
+    private fun record(t: Turn, i: Int, cols: IntArray? = slice(t, i), urgent: Boolean = false) {
         val lk = look
         val yr = year
         val version = regionVersion(world, t.turn, i, lk, yr)
@@ -747,7 +809,8 @@ internal class GlScene(private val world: World, parent: CoroutineScope) {
         if (!edit.holding || t.turn != edit.turn) return
         val v = versions(t)
         editChanged = edit.changed(v)
-        editCurrent = edit.current(v, LongArray(t.published.size) { t.published[it]?.version ?: Long.MIN_VALUE })
+        // A region let go of, off round the screen, has nothing to show the edit in.
+        editCurrent = edit.current(v, LongArray(t.published.size) { t.published[it]?.version ?: if (kept(t, it)) Long.MIN_VALUE else Long.MAX_VALUE })
     }
 
     /** From the GL thread: it has drawn the [GlShown] with [seq]. Draws again if the held edit was waiting on it. */
@@ -847,8 +910,8 @@ internal class GlScene(private val world: World, parent: CoroutineScope) {
         }
     }
 
-    /** Whether every region of [t] is recorded whole and none is recording. */
-    private fun whole(t: Turn) = t.pending.all { it < 0L } && t.regions.all { it != null && it.cols == null }
+    /** Whether every region of [t] holds what's kept of it and none is recording. */
+    private fun whole(t: Turn) = t.pending.all { it < 0L } && t.regions.indices.none { short(t, it) }
 
     /** The turn asked for that was last looked at for changes, or -1. */
     private var askedSeen = -1
@@ -856,10 +919,10 @@ internal class GlScene(private val world: World, parent: CoroutineScope) {
     /** How many other turns are recorded ahead and kept, from [AHEAD_ORDER]; set once the turn showing is whole. */
     private var aheadCount = 0
 
-    /** How many other turns as big as [t] fit in a fifth of the heap with it: all three on a 128 map, about 8 MB each. */
+    /** How many other turns as big as what's kept of [t] fit in a fifth of the heap with it: all three on a 128 map, about 8 MB each. */
     private fun turnsAhead(t: Turn): Int {
         var bytes = 0L
-        for (r in t.regions) if (r != null) bytes += (r.data.size + r.ground.size + r.starts.size) * 4L
+        for (r in t.regions) if (r != null) bytes += r.heapInts * 4L
         if (bytes == 0L) return 3
         return (heapBytes() / 5 / bytes - 1).toInt().coerceIn(0, 3)
     }
@@ -893,12 +956,12 @@ internal class GlScene(private val world: World, parent: CoroutineScope) {
             val turn = (view.turn + AHEAD_ORDER[k]) % 4
             if (turn == asked) continue
             val t = turns[turn] ?: Turn(turn, arrayOfNulls(regionCount(world, turn))).also { turns[turn] = it }
+            if (lastWidth > 0) keepRound(t, turnedFrame(turn, view, lastWidth, lastHeight))
             if (done(t)) continue
             for (i in regionOrder(t, view)) {
                 if (free <= 0) return
-                if (t.pending[i] >= 0L) continue
-                val r = t.regions[i]
-                if (r != null && r.cols == null && !t.due[i]) continue
+                if (t.pending[i] >= 0L || !kept(t, i)) continue
+                if (!short(t, i) && !t.due[i]) continue
                 record(t, i)
                 free--
             }

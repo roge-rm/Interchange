@@ -127,6 +127,87 @@ internal class DrawRuns {
     }
 }
 
+/**
+ * How far round the screen the regions kept hold, each side, as a share of the screen's width and height. They're
+ * kept again round the screen with a quarter screen still to go ([keepHolds]), which leaves that much pan for the
+ * new ones to be recorded. At the widest zoom on a 1280 by 800 screen that's about 470,000 tiles, 42 MB on a 1024 map.
+ */
+internal const val KEEP_PAN = 0.5f
+
+/** How far out the regions kept reach, as a zoom: one level out, so a pinch out finds them there. */
+internal const val KEEP_ZOOM_OUT = 2f
+
+/** [GlFrame.scale] at the widest zoom. */
+internal val WIDEST_SCALE = View.MIN_HALF_WIDTH / SOURCE_HALF_WIDTH
+
+/**
+ * The frame round [f] whose tiles the regions kept for it hold: the same middle, [zoomOut] times further out but no
+ * further than the widest zoom, and [pan] of the screen more each side.
+ */
+internal fun keepFrame(f: GlFrame, pan: Float = KEEP_PAN, zoomOut: Float = KEEP_ZOOM_OUT): GlFrame {
+    val scale = minOf(f.scale, maxOf(f.scale / zoomOut, WIDEST_SCALE))
+    val w = (f.width * (1 + 2 * pan)).toInt()
+    val h = (f.height * (1 + 2 * pan)).toInt()
+    // The screen's middle in source pixels stays in the middle.
+    val cx = (f.width / 2f - f.originX) / f.scale
+    val cy = (f.height / 2f - f.originY) / f.scale
+    return GlFrame(f.turn, w / 2f - cx * scale, h / 2f - cy * scale, scale, w, h, f.viewWidth, f.viewHeight)
+}
+
+/**
+ * Whether the regions kept for [keep] (columns from [visibleColumns]) still hold [f] with a quarter of [KEEP_PAN]
+ * spare each side; when they don't, they're kept again round the screen. [scratch] takes the screen's columns.
+ */
+internal fun keepHolds(keep: IntArray, f: GlFrame, scratch: IntArray): Boolean {
+    if (keep.size < 2 * f.viewHeight) return false
+    visibleColumns(keepFrame(f, KEEP_PAN / 2, 1f), scratch)
+    for (vy in 0 until f.viewHeight) {
+        val c0 = scratch[2 * vy]
+        val c1 = scratch[2 * vy + 1]
+        if (c0 <= c1 && (keep[2 * vy] > c0 || keep[2 * vy + 1] < c1)) return false
+    }
+    return true
+}
+
+/**
+ * Whether the whole map is kept for a screen the size of [f]'s: when it has no more tiles than are kept round the
+ * screen at the widest zoom, which is what's held at most anyway.
+ */
+internal fun keepsWholeMap(f: GlFrame): Boolean {
+    val w = f.width * (1 + 2 * KEEP_PAN) / WIDEST_SCALE
+    val h = f.height * (1 + 2 * KEEP_PAN) / WIDEST_SCALE
+    // A tile's diamond takes 2 half widths by 2 half heights, halved, in source pixels.
+    val tiles = w * h / (SOURCE_HALF_WIDTH * SOURCE_HALF_WIDTH)
+    return f.viewWidth.toFloat() * f.viewHeight <= tiles
+}
+
+/** Every tile of [f]'s view, as [visibleColumns] gives them. */
+internal fun wholeColumns(f: GlFrame) = IntArray(2 * f.viewHeight) { if (it % 2 == 0) 0 else f.viewWidth - 1 }
+
+/** Whether region [i] has tiles in [keep] ([viewHeight] rows), so it's kept. */
+internal fun regionKept(keep: IntArray, i: Int, viewHeight: Int): Boolean {
+    for (vy in i * REGION_ROWS until minOf(viewHeight, (i + 1) * REGION_ROWS)) if (keep[2 * vy] <= keep[2 * vy + 1]) return true
+    return false
+}
+
+/**
+ * Region [i]'s columns in [keep], two ints a row as [recordRegion] takes them, or null if they're every column of a
+ * view [viewWidth] by [viewHeight], so it's recorded whole.
+ */
+internal fun keepSlice(keep: IntArray, i: Int, viewWidth: Int, viewHeight: Int): IntArray? {
+    val row0 = i * REGION_ROWS
+    val row1 = minOf(viewHeight, row0 + REGION_ROWS)
+    var whole = true
+    for (vy in row0 until row1) if (keep[2 * vy] != 0 || keep[2 * vy + 1] != viewWidth - 1) whole = false
+    return if (whole) null else keep.copyOfRange(2 * row0, 2 * row1)
+}
+
+/** Whether [r] holds every tile of [keep] (columns by view row) in its rows. */
+internal fun holdsKept(r: RegionSprites, keep: IntArray): Boolean {
+    for (vy in r.row0 until r.row1) if (!r.holds(vy, keep[2 * vy], keep[2 * vy + 1])) return false
+    return true
+}
+
 /** The side of a square of the static map drawn ahead, in the pixels of the level it's drawn at. */
 internal const val SQUARE_SIDE = 512
 

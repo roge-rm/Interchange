@@ -93,7 +93,8 @@ internal const val REGION_ROWS = 16
  * One region's static sprites for view direction [turn]: view rows [row0] until [row1], every column, in drawing
  * order (pass, row, column), as [TileRecorder] lays them down. [starts] holds the first sprite of each tile, indexed
  * (pass * rows + row - row0) * columns + column, with [count] at the end, so a run of tiles along a row is a run of
- * sprites and the end of one tile is the start of the next index.
+ * sprites and the end of one tile is the start of the next index. For a region recorded in part it holds only each
+ * row's recorded columns and the one after, as [start] reads them, so it grows with what's recorded, not the map.
  */
 internal class RegionSprites(
     val turn: Int,
@@ -113,13 +114,34 @@ internal class RegionSprites(
     /** The [com.rm.interchange.sim.Climate] look and the year it was recorded with, -1 if not known. */
     val look: Int = -1,
     val year: Int = -1,
+    /**
+     * The sprites as the GPU buffer takes them ([packRegion]), kept in place of [data] and [ground], which are then
+     * empty, as they take about half as much; null when [data] and [ground] are kept.
+     */
+    val packed: IntArray? = null,
 ) {
+    /** Ints this region holds on the heap. */
+    val heapInts get() = data.size + ground.size + (packed?.size ?: 0) + starts.size
+
     /** Sprites in the first pass, which come first. */
-    val firstPass get() = starts[rows * columns]
+    val firstPass get() = start(1, row0, 0)
 
     val rows get() = row1 - row0
 
-    fun start(pass: Int, row: Int, column: Int) = starts[(pass * rows + row - row0) * columns + column]
+    /** For a region recorded in part, where each pass and row's entries start in [starts]; see [partRows]. */
+    private val rowAt: IntArray? = cols?.let { partRows(it, rows) }
+
+    fun start(pass: Int, row: Int, column: Int): Int {
+        val at = rowAt ?: return starts[(pass * rows + row - row0) * columns + column]
+        val k = row - row0
+        // Pass PASSES, row0 is the end; the tiles past a row's recorded ones are empty, so they start where it ends.
+        if (pass == PASSES) return starts[at[PASSES * rows]]
+        val c = cols!!
+        val c0 = c[2 * k]
+        val c1 = c[2 * k + 1]
+        val base = at[pass * rows + k]
+        return if (c0 > c1) starts[base] else starts[base + column.coerceIn(c0, c1 + 1) - c0]
+    }
 
     /** Whether row [row]'s columns [c0] to [c1] are recorded. */
     fun holds(row: Int, c0: Int, c1: Int): Boolean {
@@ -133,10 +155,11 @@ internal class RegionSprites(
  * Records region [index] of [world] seen from [turn]: what [TileRecorder] lays down there at [level], with
  * the season [look], [year] and [weather]. Reads the world off the main thread.
  * With [cols] (each row's first and last column, two ints a row) only those tiles are recorded; the rest are empty.
+ * Only what the GPU takes is kept ([RegionSprites.packed]), unless [keepRecord], which keeps every field recorded.
  */
 internal fun recordRegion(
     world: World, turn: Int, index: Int, look: Int, year: Int, weather: WeatherCopy, curves: CurveArt? = null, version: Long = 0,
-    level: Int = SOURCE_LEVEL, cols: IntArray? = null,
+    level: Int = SOURCE_LEVEL, cols: IntArray? = null, keepRecord: Boolean = false,
 ): RegionSprites {
     val view = View(world.width, world.height).apply { turnBy(turn) }
     val vw = view.viewWidth
@@ -152,23 +175,53 @@ internal fun recordRegion(
     val recorder = SpriteRecorder(shiftX, shiftY)
     tiles.recorder = recorder
     val rows = row1 - row0
-    val starts = IntArray(PASSES * rows * vw + 1)
+    val rowAt = cols?.let { partRows(it, rows) }
+    val starts = IntArray(if (rowAt != null) rowAt[PASSES * rows] + 1 else PASSES * rows * vw + 1)
     if (rows > 0) tiles.prepare(0, row0, vw, row1)
     var k = 0
-    for (pass in 0 until PASSES) for (vy in row0 until row1) for (vx in 0 until vw) {
-        starts[k++] = recorder.count
-        if (cols != null && (vx < cols[2 * (vy - row0)] || vx > cols[2 * (vy - row0) + 1])) continue
-        when (pass) {
-            0 -> tiles.ground(vx, vy)
-            1 -> tiles.shadows(vx, vy)
-            else -> tiles.objects(vx, vy)
+    for (pass in 0 until PASSES) for (vy in row0 until row1) {
+        // Whole, every column; in part, the recorded ones and the one after, or just one for an empty row.
+        val c0 = if (cols != null) cols[2 * (vy - row0)] else 0
+        val c1 = if (cols != null) cols[2 * (vy - row0) + 1] else vw - 1
+        if (cols != null && c0 > c1) {
+            starts[k++] = recorder.count
+            continue
         }
+        for (vx in c0..c1) {
+            starts[k++] = recorder.count
+            when (pass) {
+                0 -> tiles.ground(vx, vy)
+                1 -> tiles.shadows(vx, vy)
+                else -> tiles.objects(vx, vy)
+            }
+        }
+        if (cols != null) starts[k++] = recorder.count
     }
     starts[k] = recorder.count
+    if (!keepRecord) {
+        val r = RegionSprites(turn, index, row0, row1, vw, recorder.data, recorder.count, starts, recorder.ground, version, cols, look, year)
+        return RegionSprites(turn, index, row0, row1, vw, IntArray(0), recorder.count, starts, IntArray(0), version, cols, look, year, packRegion(r))
+    }
     // Cut to what's used, as a few turns of regions are kept.
     val data = recorder.data.copyOf(recorder.count * SpriteRecorder.STRIDE)
     val ground = recorder.ground.copyOf(recorder.groundCount * GroundRecord.STRIDE)
     return RegionSprites(turn, index, row0, row1, vw, data, recorder.count, starts, ground, version, cols, look, year)
+}
+
+/**
+ * Where each pass and row of a region recorded in part starts in its starts, for [cols] (each row's first and last
+ * column, two ints a row) over [rows] rows, with the end at [PASSES] * [rows]: a row's recorded columns and the one
+ * after, or one entry for an empty row.
+ */
+internal fun partRows(cols: IntArray, rows: Int): IntArray {
+    val at = IntArray(PASSES * rows + 1)
+    var n = 0
+    for (pass in 0 until PASSES) for (k in 0 until rows) {
+        at[pass * rows + k] = n
+        n += if (cols[2 * k] > cols[2 * k + 1]) 1 else cols[2 * k + 1] - cols[2 * k] + 2
+    }
+    at[PASSES * rows] = n
+    return at
 }
 
 /** How many regions a map seen from [turn] has. */
