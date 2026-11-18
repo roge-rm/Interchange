@@ -262,6 +262,22 @@ fun groundHeight(world: World, x: Float, y: Float): Float {
     return (n * (1 - fx) + e * fx) * (1 - fy) + (w * (1 - fx) + s * fx) * fy
 }
 
+/**
+ * Puts the ground at world point ([x], [y]) in the middle of a screen [w] by [h] pixels, moved the least that keeps the
+ * screen on the map; the map's middle on a map narrower than the screen.
+ */
+fun View.startAt(world: World, x: Float, y: Float, w: Float, h: Float) {
+    // How far a screen corner reaches from the middle along view x and y.
+    val reach = (w / 2 / halfWidth + h / 2 / halfHeight) / 2
+    fun keep(v: Float, size: Int) = if (size < 2 * reach) size / 2f else v.coerceIn(reach, size - reach)
+    // Land h steps up is drawn h * step higher: a quarter of a view tile on each of view x and y per step.
+    val lift = groundHeight(world, x, y) * step / halfHeight / 2
+    val vx = keep(toViewX(x, y), viewWidth) - lift
+    val vy = keep(toViewY(x, y), viewHeight) - lift
+    focusX = toWorldX(vx, vy)
+    focusY = toWorldY(vx, vy)
+}
+
 /** Zooms by [by] keeping the point under ([px], [py]) where it is, on a screen [w] by [h]. */
 fun View.zoomAt(by: Float, px: Float, py: Float, w: Float, h: Float) {
     fingerStart()

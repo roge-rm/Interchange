@@ -103,6 +103,7 @@ import com.rm.interchange.sim.levelCost
 import com.rm.interchange.sim.plantCost
 import com.rm.interchange.map.Zoom
 import com.rm.interchange.map.View
+import com.rm.interchange.map.startAt
 import com.rm.interchange.map.buildingAt
 import com.rm.interchange.platform.logLine
 import com.rm.interchange.server.Game
@@ -976,14 +977,14 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
             else BuildingArt(world.roster.buildingSprites, own.map { "${it.pack}/${it.name}" }, own.map { InstalledPacks.rects(it.pack, it.name) }) { i, level -> InstalledPacks.sheet(own[i].pack, own[i].name, level) },
         )
     }
+    val screen = androidx.compose.ui.platform.LocalWindowInfo.current.containerSize
     val view = remember {
         // The camera carried over from the same game, or over the biggest town, or the dry land nearest the middle if
-        // there are no towns.
+        // there are no towns, kept far enough in that the screen stays on the map.
         kept.carry?.takeIf { it.mapWidth == world.width && it.mapHeight == world.height }?.also { kept.carry = null } ?: View(world.width, world.height).apply {
             val town = world.towns.maxByOrNull { it.population }
             val i = if (town != null) world.index(town.x, town.y) else world.landNearMiddle()
-            focusX = i % world.width + 0.5f
-            focusY = i / world.width + 0.5f
+            startAt(world, i % world.width + 0.5f, i / world.width + 0.5f, screen.width.toFloat(), screen.height.toFloat())
         }
     }
     kept.shown = view
