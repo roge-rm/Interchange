@@ -8,7 +8,7 @@ import kotlin.test.assertTrue
 class SharedOrdersTest {
     /** With [old], made without the settings older saves load without. */
     private fun road(old: Boolean = false): World {
-        val w = if (old) World(NewGame(64, 64, 1, 1965, towns = 0, industries = 0, weather = false, stockpiles = false, contracts = false, handling = false, eraCosts = false)) else World(64, 64, 1, startYear = 1965)
+        val w = if (old) World(NewGame(64, 64, 1, 1965, towns = 0, industries = 0, weather = false, stockpiles = false, contracts = false, handling = false, eraCosts = false, energy = false, future = false)) else World(64, 64, 1, startYear = 1965)
         for (i in w.corners.indices) w.corners[i] = 3
         w.companies[0].money = 10_000_000
         w.apply(Command.Road(0, 5, 20, 40, 20, Surface.PAVED, remove = false))
@@ -28,7 +28,7 @@ class SharedOrdersTest {
     }
 
     private fun lake(old: Boolean = false): World {
-        val w = if (old) World(NewGame(64, 64, 1, 1965, towns = 0, industries = 0, weather = false, stockpiles = false, contracts = false, handling = false, eraCosts = false)) else World(64, 64, 1, startYear = 1965)
+        val w = if (old) World(NewGame(64, 64, 1, 1965, towns = 0, industries = 0, weather = false, stockpiles = false, contracts = false, handling = false, eraCosts = false, energy = false, future = false)) else World(64, 64, 1, startYear = 1965)
         for (y in 0..64) for (x in 0..64) w.corners[w.corner(x, y)] = if (x in 10..50 && y in 10..30) 0 else 1
         w.shoreChanged()
         w.companies[0].money = 100_000_000
@@ -43,7 +43,7 @@ class SharedOrdersTest {
     }
 
     private fun airports(old: Boolean = false): World {
-        val w = if (old) World(NewGame(64, 64, 1, 1965, towns = 0, industries = 0, weather = false, stockpiles = false, contracts = false, handling = false, eraCosts = false)) else World(64, 64, 1, startYear = 1965)
+        val w = if (old) World(NewGame(64, 64, 1, 1965, towns = 0, industries = 0, weather = false, stockpiles = false, contracts = false, handling = false, eraCosts = false, energy = false, future = false)) else World(64, 64, 1, startYear = 1965)
         for (y in 0..64) for (x in 0..64) w.corners[w.corner(x, y)] = if (x in 20..30 && y in 50..60) 0 else 1
         w.shoreChanged()
         w.companies[0].money = 100_000_000
