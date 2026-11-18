@@ -71,13 +71,17 @@ internal class Cover(private val world: World, private val view: View, private v
         val tx = floor(vx).toInt()
         val ty = floor(vy).toInt()
         val scale = view.halfWidth / hw
-        for ((dx, dy) in FRONT) {
+        for ((dx, dy) in AROUND) {
             val bx = tx + dx
             val by = ty + dy
             if (bx < 0 || by < 0 || bx >= view.viewWidth || by >= view.viewHeight) continue
             val b = buildingAt(bx, by)
             if (b < 0) continue
             val cell = (b shr 32).toInt()
+            // A garage also covers what's on its own tile, so a road vehicle in it stays inside; that cover is a tile
+            // deeper and kept apart from the garage's cover for the tiles behind.
+            val own = dx == 0 && dy == 0
+            if (own && cell !in Atlas.GARAGE) continue
             val base = b.toInt()
             val r = cell * 6
             val w = StaticCells.rects[r + 2] / shrink
@@ -87,8 +91,8 @@ internal class Cover(private val world: World, private val view: View, private v
             val left = view.screenX(bx.toFloat(), by.toFloat(), width) + StaticCells.rects[r + 4] / shrink * scale
             val top = view.screenY(bx.toFloat(), by.toFloat(), base.toFloat(), height) + StaticCells.rects[r + 5] / shrink * scale
             if (left > nr || left + w * scale < nl || top > nb || top + h * scale < nt) continue
-            if (!take(by * view.viewWidth + bx)) continue
-            columnRects(cell, w, h, left, top, scale, bx + by, add)
+            if (!take(by * view.viewWidth + bx + if (own) view.viewWidth * view.viewHeight else 0)) continue
+            columnRects(cell, w, h, left, top, scale, bx + by + if (own) 1 else 0, add)
         }
     }
 
@@ -171,6 +175,8 @@ internal class Cover(private val world: World, private val view: View, private v
 
         /** The view tiles in front of a point's that can stand over it: nearer the camera, below it on screen. */
         private val FRONT = listOf(1 to 0, 0 to 1, 1 to 1, 2 to 1, 1 to 2, 2 to 2, 2 to 0, 0 to 2, 3 to 2, 2 to 3, 3 to 3)
+        /** [FRONT] and the point's own tile, for a garage over the vehicles in it. */
+        private val AROUND = listOf(0 to 0) + FRONT
         /** How opaque a pixel has to be to hide what's behind it. */
         private const val SOLID = 160
         /** The most columns put in one rectangle. */

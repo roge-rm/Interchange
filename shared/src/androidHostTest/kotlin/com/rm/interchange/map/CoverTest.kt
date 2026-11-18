@@ -4,6 +4,9 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.ImageBitmapConfig
 import androidx.compose.ui.graphics.colorspace.ColorSpaces
 import com.rm.interchange.sim.Calendar
+import com.rm.interchange.sim.Command
+import com.rm.interchange.sim.Surface
+import com.rm.interchange.sim.Track
 import com.rm.interchange.sim.NewGame
 import com.rm.interchange.sim.Region
 import com.rm.interchange.sim.Trees
@@ -91,6 +94,27 @@ class CoverTest {
         assertTrue(vehicle.isNotEmpty())
         // Trees on the other tiles in front may come too.
         assertTrue(standing(c, bx - 0.5f, by - 0.5f).containsAll(vehicle))
+    }
+
+    @Test
+    fun aGarageCoversARoadVehicleOnItsOwnTile() {
+        val w = World(64, 64, 1, startYear = 1965)
+        for (i in w.corners.indices) w.corners[i] = 3
+        w.companies[0].money = 100_000_000
+        w.apply(Command.Road(0, 5, 20, 5, 22, Surface.PAVED, remove = false))
+        w.apply(Command.Garage(0, 5, 23, Track.YM))
+        val v = View(w.width, w.height).also { it.halfWidth = Zoom.LEVELS[LEVEL] }
+        cover()
+        val c = Cover(w, v, LEVEL, LevelSheets(IntArray(4), IntArray(4), 2, ByteArray(4), 2, Blank))
+        val gx = v.toViewX(5.5f, 23.5f)
+        val gy = v.toViewY(5.5f, 23.5f)
+        val tx = kotlin.math.floor(gx).toInt()
+        val ty = kotlin.math.floor(gy).toInt()
+        // The vehicle's cut depth is its tile's and a half, so a cover a tile deeper hides it.
+        fun depths(x: Float, y: Float) = ArrayList<Int>().also { out -> c.rects(x, y, -1e6f, -1e6f, 1e6f, 1e6f, 800f, 600f, { true }) { _, _, _, _, d -> out += d } }
+        assertTrue(tx + ty + 1 in depths(gx, gy), "in the garage")
+        // An empty tile far from it has none.
+        assertTrue(depths(v.toViewX(40.5f, 40.5f), v.toViewY(40.5f, 40.5f)).isEmpty())
     }
 
     private companion object {
