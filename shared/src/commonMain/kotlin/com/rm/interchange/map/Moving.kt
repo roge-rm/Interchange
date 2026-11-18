@@ -443,6 +443,7 @@ internal fun DrawScope.drawMoving(world: World, view: View, sheets: Sheets, movi
     items.sortBy { it[0] }
     val cover = sheets.get(level)?.let { Cover(world, view, level, it, look) }
     live.begin(level, hw, scale, depthSpan(view.viewWidth, view.viewHeight))
+    if (cover != null) live.inGarage = cover::inGarage
     val w = size.width
     val h = size.height
     val hidden = live::hide

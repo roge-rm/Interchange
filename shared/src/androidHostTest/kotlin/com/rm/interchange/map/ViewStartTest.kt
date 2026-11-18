@@ -47,6 +47,16 @@ class ViewStartTest {
     }
 
     @Test
+    fun highGroundAtTheEdgeStillFillsTheScreen() {
+        val world = flat(256, 512, 12)
+        for ((x, y) in listOf(2f to 500f, 250f to 3f, 0.5f to 0.5f, 255.5f to 511.5f, 0.5f to 511.5f, 255.5f to 0.5f)) {
+            val v = View(world.width, world.height)
+            v.startAt(world, x, y, 1080f, 2340f)
+            assertTrue(onMap(v, 1080f, 2340f, 12f), "at $x, $y")
+        }
+    }
+
+    @Test
     fun aMapSmallerThanTheScreenIsCentred() {
         val world = flat(16, 16, 0)
         val v = View(world.width, world.height)

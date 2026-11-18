@@ -61,6 +61,8 @@ internal fun liveDepth(d: Float, span: Float) = ((d + 16f) / span).coerceIn(0f, 
 /** The depth a cut item at view point ([vx], [vy]) tests against: its tile's, half a step on, so buildings on nearer tiles hide it. */
 internal fun cutDepth(vx: Float, vy: Float, span: Float) = liveDepth(floor(vx) + floor(vy) + 0.5f, span)
 
+private val NOWHERE: (Float, Float) -> Boolean = { _, _ -> false }
+
 /** The depth span for a view [viewWidth] by [viewHeight] tiles. */
 internal fun depthSpan(viewWidth: Int, viewHeight: Int) = (viewWidth + viewHeight + 32).toFloat()
 
@@ -290,6 +292,7 @@ internal class LiveBuilder(private val atlas: LiveAtlas, private val source: Liv
         n = 0
         covers = 0
         z = 1f
+        inGarage = NOWHERE
         missing = false
         coverTiles.clear()
         hiddenCount = 0
@@ -518,8 +521,12 @@ internal class LiveBuilder(private val atlas: LiveAtlas, private val source: Liv
         return hidden[o] < r && hidden[o + 2] > l && hidden[o + 1] < b && hidden[o + 3] > t
     }
 
-    /** The depth a cut item at view point ([vx], [vy]) goes at this frame. */
-    fun cut(vx: Float, vy: Float) = cutDepth(vx, vy, span)
+    /** Whether a view point is on a garage's tile, for [cut]; set each frame after [begin]. */
+    var inGarage: (Float, Float) -> Boolean = NOWHERE
+
+    /** The depth a cut item at view point ([vx], [vy]) goes at this frame: in a garage, half a tile behind its tile. */
+    fun cut(vx: Float, vy: Float) =
+        if (inGarage(vx, vy)) liveDepth(floor(vx) + floor(vy) - 0.5f, span) else cutDepth(vx, vy, span)
 
     /** Makes sure [src]'s sheets are placed at every level the map draws at, once a frame; notes any not on the GPU yet. */
     private fun need(src: Int) {

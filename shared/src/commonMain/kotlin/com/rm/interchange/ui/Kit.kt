@@ -114,8 +114,9 @@ fun WordFitText(text: String, style: TextStyle, color: Color, modifier: Modifier
     val measurer = rememberTextMeasurer()
     var scale by remember(text, style) { mutableFloatStateOf(1f) }
     var settled by remember(text, style) { mutableStateOf(false) }
-    // A little more off when rounding still breaks a word at the widest word's scale.
+    // A little more off when rounding still breaks a word at the widest word's scale, for the width it was taken off at.
     var extra by remember(text, style) { mutableFloatStateOf(1f) }
+    var extraRoom by remember(text, style) { mutableStateOf(-1) }
     Text(
         text, color = color, style = if (scale < 1f) style.copy(fontSize = style.fontSize * scale) else style,
         textAlign = textAlign, maxLines = maxLines, overflow = TextOverflow.Ellipsis,
@@ -123,8 +124,10 @@ fun WordFitText(text: String, style: TextStyle, color: Color, modifier: Modifier
         onTextLayout = { r ->
             val room = r.layoutInput.constraints.maxWidth
             if (room == Constraints.Infinity || room <= 0) { settled = true; return@Text }
-            // The scale the widest word needs at full size, a touch under so rounding can't break it.
-            val widest = text.split(' ', '\n', '\u00A0').filter { it.isNotEmpty() }
+            if (room != extraRoom) { extra = 1f; extraRoom = room }
+            // The scale the widest word needs at full size, a touch under so rounding can't break it. A hyphen stays
+            // with the part before it, as a line can break after one.
+            val widest = text.split(' ', '\n', '\u00A0').flatMap(::hyphenParts).filter { it.isNotEmpty() }
                 .maxOfOrNull { measurer.measure(it, style, softWrap = false).size.width } ?: 0
             val fit = if (widest > room) room * 0.97f / widest else 1f
             val broken = r.hasVisualOverflow || (0 until r.lineCount - 1).any { breaksWord(text, r.getLineEnd(it)) }
@@ -133,6 +136,15 @@ fun WordFitText(text: String, style: TextStyle, color: Color, modifier: Modifier
             if (kotlin.math.abs(target - scale) > 0.001f) { scale = target; settled = false } else settled = true
         },
     )
+}
+
+/** [word] split after each hyphen, the hyphen kept with the part before it. */
+internal fun hyphenParts(word: String): List<String> {
+    val out = ArrayList<String>()
+    var from = 0
+    for (i in word.indices) if (word[i] == '-') { out += word.substring(from, i + 1); from = i + 1 }
+    if (from < word.length) out += word.substring(from)
+    return out
 }
 
 /** Whether a line ending at [end] in [text] breaks inside a word. */

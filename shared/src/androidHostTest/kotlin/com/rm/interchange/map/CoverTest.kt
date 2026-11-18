@@ -12,6 +12,7 @@ import com.rm.interchange.sim.Region
 import com.rm.interchange.sim.Trees
 import com.rm.interchange.sim.World
 import kotlin.test.Test
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class CoverTest {
@@ -110,11 +111,39 @@ class CoverTest {
         val gy = v.toViewY(5.5f, 23.5f)
         val tx = kotlin.math.floor(gx).toInt()
         val ty = kotlin.math.floor(gy).toInt()
-        // The vehicle's cut depth is its tile's and a half, so a cover a tile deeper hides it.
+        // The garage's columns go in at its tile's depth, and a vehicle in it is cut half a tile behind that.
         fun depths(x: Float, y: Float) = ArrayList<Int>().also { out -> c.rects(x, y, -1e6f, -1e6f, 1e6f, 1e6f, 800f, 600f, { true }) { _, _, _, _, d -> out += d } }
-        assertTrue(tx + ty + 1 in depths(gx, gy), "in the garage")
+        assertTrue(tx + ty in depths(gx, gy), "in the garage")
+        assertTrue(c.inGarage(gx, gy))
         // An empty tile far from it has none.
         assertTrue(depths(v.toViewX(40.5f, 40.5f), v.toViewY(40.5f, 40.5f)).isEmpty())
+        assertFalse(c.inGarage(v.toViewX(40.5f, 40.5f), v.toViewY(40.5f, 40.5f)))
+    }
+
+    @Test
+    fun aGarageLeavesAVehicleOnATileBesideItUncut() {
+        val w = World(64, 64, 1, startYear = 1965)
+        for (i in w.corners.indices) w.corners[i] = 3
+        w.companies[0].money = 100_000_000
+        w.apply(Command.Road(0, 5, 20, 5, 22, Surface.PAVED, remove = false))
+        w.apply(Command.Garage(0, 5, 23, Track.YM))
+        val v = View(w.width, w.height).also { it.halfWidth = Zoom.LEVELS[LEVEL] }
+        cover()
+        val c = Cover(w, v, LEVEL, LevelSheets(IntArray(4), IntArray(4), 2, ByteArray(4), 2, Blank))
+        val tx = kotlin.math.floor(v.toViewX(5.5f, 23.5f)).toInt()
+        val ty = kotlin.math.floor(v.toViewY(5.5f, 23.5f)).toInt()
+        val garage = ty * v.viewWidth + tx
+        // A vehicle in the garage puts its columns in, at the garage tile's depth.
+        val columns = ArrayList<Int>()
+        var tile = -1
+        c.rects(tx + 0.5f, ty + 0.5f, -1e6f, -1e6f, 1e6f, 1e6f, 800f, 600f, { tile = it; true }) { _, _, _, _, d -> if (tile == garage) columns += d }
+        assertTrue(columns.isNotEmpty())
+        for ((sx, sy) in listOf(tx + 1 to ty - 1, tx - 1 to ty + 1)) {
+            // On a tile beside it, on the same diagonal: not in the garage, so cut at its tile's and a half, in front of
+            // the garage's columns.
+            assertFalse(c.inGarage(sx + 0.5f, sy + 0.5f))
+            assertTrue(columns.all { it < sx + sy + 0.5f }, "beside the garage at $sx, $sy")
+        }
     }
 
     private companion object {

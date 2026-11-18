@@ -78,10 +78,8 @@ internal class Cover(private val world: World, private val view: View, private v
             val b = buildingAt(bx, by)
             if (b < 0) continue
             val cell = (b shr 32).toInt()
-            // A garage also covers what's on its own tile, so a road vehicle in it stays inside; that cover is a tile
-            // deeper and kept apart from the garage's cover for the tiles behind.
-            val own = dx == 0 && dy == 0
-            if (own && cell !in Atlas.GARAGE) continue
+            // A garage also covers what's on its own tile, which [inGarage] sinks half a tile behind it.
+            if (dx == 0 && dy == 0 && cell !in Atlas.GARAGE) continue
             val base = b.toInt()
             val r = cell * 6
             val w = StaticCells.rects[r + 2] / shrink
@@ -91,9 +89,21 @@ internal class Cover(private val world: World, private val view: View, private v
             val left = view.screenX(bx.toFloat(), by.toFloat(), width) + StaticCells.rects[r + 4] / shrink * scale
             val top = view.screenY(bx.toFloat(), by.toFloat(), base.toFloat(), height) + StaticCells.rects[r + 5] / shrink * scale
             if (left > nr || left + w * scale < nl || top > nb || top + h * scale < nt) continue
-            if (!take(by * view.viewWidth + bx + if (own) view.viewWidth * view.viewHeight else 0)) continue
-            columnRects(cell, w, h, left, top, scale, bx + by + if (own) 1 else 0, add)
+            if (!take(by * view.viewWidth + bx)) continue
+            columnRects(cell, w, h, left, top, scale, bx + by, add)
         }
+    }
+
+    /**
+     * Whether view point ([vx], [vy]) is on a garage's tile, so what stands there is cut half a tile behind the tile
+     * and the garage hides it, leaving the tiles beside it alone.
+     */
+    fun inGarage(vx: Float, vy: Float): Boolean {
+        val tx = floor(vx).toInt()
+        val ty = floor(vy).toInt()
+        if (tx < 0 || ty < 0 || tx >= view.viewWidth || ty >= view.viewHeight) return false
+        val b = buildingAt(tx, ty)
+        return b >= 0 && (b shr 32).toInt() in Atlas.GARAGE
     }
 
     /** Sprite [cell]'s columns, [w] by [h] at this level, with its box's top left at [left], [top] on screen, into [add] at [depth]. */
