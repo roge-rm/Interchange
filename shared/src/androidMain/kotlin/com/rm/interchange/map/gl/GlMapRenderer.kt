@@ -218,8 +218,10 @@ internal class GlMapRenderer(private val scene: GlScene, private val page: Int) 
         shownFrame = f
         val on = squaresOn(f, lv)
         val left = prepareSquares(f, lv, tex, on)
-        checkHoles(f, left)
-        checkEmpty(f)
+        if (GL_CHECKS) {
+            checkHoles(f, left)
+            checkEmpty(f)
+        }
         clearScreen()
         // Clip space from source level pixels: screen = origin + p * scale, then to -1..1 with y up.
         val xf = floatArrayOf(2f * f.scale / width, -2f * f.scale / height, 2f * f.originX / width - 1f, 1f - 2f * f.originY / height)
@@ -239,7 +241,6 @@ internal class GlMapRenderer(private val scene: GlScene, private val page: Int) 
             for (pass in 0 until PASSES) drawPass(pass, runs, xf, f, lv, tex)
             glDepthMask(true)
         }
-        checkBlack(f, lv, left)
         glDisable(GL_DEPTH_TEST)
         // Back to clear for what moves, which cuts by depth.
         glClear(GL_DEPTH_BUFFER_BIT)
@@ -247,7 +248,7 @@ internal class GlMapRenderer(private val scene: GlScene, private val page: Int) 
         glBindVertexArray(0)
         glBindBuffer(GL_ARRAY_BUFFER, 0)
         glDisable(GL_BLEND)
-        scene.drew(shown.seq)
+        scene.drew(shown)
     }
 
     private fun clearScreen() {
@@ -325,8 +326,6 @@ internal class GlMapRenderer(private val scene: GlScene, private val page: Int) 
         var contents = arrayOfNulls<Any>(0)
         var looks = IntArray(0)
         var used = 0L
-        /** The frame it was last put on screen in. */
-        var shownOn = -1L
     }
     private val squares = HashMap<Long, Square>()
     private var squareFbo = 0
@@ -371,7 +370,7 @@ internal class GlMapRenderer(private val scene: GlScene, private val page: Int) 
         if (overlays and MapOverlays.CONDITION != 0 && s.wear !== wearUp) return false
         if (!squareRegionsSame(s.contents, s.first, drawable)) return false
         if (!squareRegionsSame(s.contents, s.first, drawable, tilesOf(s))) {
-            holes.lacking++
+            if (GL_CHECKS) holes.lacking++
             return false
         }
         val w = weatherUp ?: return false
@@ -466,7 +465,7 @@ internal class GlMapRenderer(private val scene: GlScene, private val page: Int) 
         if (squareFbo == 0) squareFbo = IntArray(1).also { glGenFramebuffers(1, it, 0) }[0]
         glBindFramebuffer(GL_FRAMEBUFFER, squareFbo)
         glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, s.tex, 0)
-        if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) holes.incomplete++
+        if (GL_CHECKS && glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) holes.incomplete++
         glViewport(0, 0, SQUARE_SIDE, SQUARE_SIDE)
         glClearColor(0f, 0f, 0f, 0f)
         glClear(GL_COLOR_BUFFER_BIT)
@@ -494,7 +493,7 @@ internal class GlMapRenderer(private val scene: GlScene, private val page: Int) 
         glGenTextures(1, ids, 0)
         glBindTexture(GL_TEXTURE_2D, ids[0])
         glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, SQUARE_SIDE, SQUARE_SIDE)
-        glGetError().let { if (it != GL_NO_ERROR) holes.failed(it) }
+        if (GL_CHECKS) glGetError().let { if (it != GL_NO_ERROR) holes.failed(it) }
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR)
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR)
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE)
@@ -534,8 +533,6 @@ internal class GlMapRenderer(private val scene: GlScene, private val page: Int) 
     }
     private val holes = Holes()
     private var emptyChecked = 0L
-    private var blackChecked = 0L
-    private val pixel = ByteBuffer.allocateDirect(4).order(ByteOrder.nativeOrder())
 
     /**
      * Once a second, counts the tiles on screen that the regions drawn say they hold but have no piece of ground for,
@@ -559,49 +556,6 @@ internal class GlMapRenderer(private val scene: GlScene, private val page: Int) 
             tiles += n
         }
         if (tiles > 0) Log.w(TAG, "glempty tiles=$tiles rows=$rows")
-    }
-
-    /**
-     * Once a second, reads back a grid of points on screen that are surely on the map, whatever its heights, once the
-     * static map is drawn, and logs `glblack` with how many came out the page colour, and how many of those are under
-     * a square drawn ahead. With nothing else logged, black here means the GPU lost work; a blank seen with no
-     * `glblack` means what was shown wasn't the frame drawn. Stalls for the GPU once a second.
-     */
-    private fun checkBlack(f: GlFrame, lv: Int, left: Int) {
-        val now = System.nanoTime()
-        if (now - blackChecked < 1_000_000_000L) return
-        blackChecked = now
-        val hw = SOURCE_HALF_WIDTH
-        val hh = hw / 2
-        val above = Zoom.above(hw)
-        // View x - y and x + y, from source pixels x / hw and y / hh, inside the map by a few tiles.
-        fun inside(a: Float, b: Float): Boolean {
-            val vx = (a + b) / 2
-            val vy = (b - a) / 2
-            return vx >= EDGE_TILES && vy >= EDGE_TILES && vx <= f.viewWidth - EDGE_TILES && vy <= f.viewHeight - EDGE_TILES
-        }
-        val side = SQUARE_SIDE * toSource(lv) * f.scale
-        var points = 0
-        var black = 0
-        var under = 0
-        for (j in 0 until 6) for (i in 0 until 8) {
-            val sx = (i + 0.5f) * width / 8
-            val sy = (j + 0.5f) * height / 6
-            val a = (sx - f.originX) / f.scale / hw
-            val y = (sy - f.originY) / f.scale
-            // A pixel shows the ground of tiles from the one under it at height 0 to the one under it at the highest.
-            if (!inside(a, y / hh) || !inside(a, (y + above) / hh)) continue
-            points++
-            pixel.clear()
-            glReadPixels(sx.toInt(), height - 1 - sy.toInt(), 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, pixel)
-            fun near(k: Int, c: Int) = kotlin.math.abs((pixel.get(k).toInt() and 255) - c) < 4
-            if (!near(0, (page shr 16) and 255) || !near(1, (page shr 8) and 255) || !near(2, page and 255)) continue
-            black++
-            val cx = kotlin.math.floor((sx - f.originX) / side).toInt()
-            val cy = kotlin.math.floor((sy - f.originY) / side).toInt()
-            if (squares[squareKey(f.turn, lv, cx, cy)]?.shownOn == frameNo) under++
-        }
-        if (black > 0) Log.w(TAG, "glblack $black of $points squares=$under left=$left")
     }
 
     /**
@@ -651,7 +605,6 @@ internal class GlMapRenderer(private val scene: GlScene, private val page: Int) 
         for (cy in on[2]..on[3]) for (cx in on[0]..on[1]) {
             val s = squares[squareKey(f.turn, lv, cx, cy)] ?: continue
             if (!fresh(s, tex) && !stands(s, tex)) continue
-            s.shownOn = frameNo
             val x0 = squareEdge(f, lv, cx, false)
             val x1 = squareEdge(f, lv, cx + 1, false)
             val y0 = squareEdge(f, lv, cy, true)
@@ -1041,7 +994,7 @@ internal class GlMapRenderer(private val scene: GlScene, private val page: Int) 
         glGenBuffers(1, ids, 0)
         glBindBuffer(GL_ARRAY_BUFFER, ids[0])
         glBufferData(GL_ARRAY_BUFFER, bytes, packBytes, GL_STATIC_DRAW)
-        glGetError().let { if (it != GL_NO_ERROR) holes.failed(it) }
+        if (GL_CHECKS) glGetError().let { if (it != GL_NO_ERROR) holes.failed(it) }
         glBindBuffer(GL_ARRAY_BUFFER, 0)
         return ids[0]
     }
@@ -1401,8 +1354,6 @@ internal class GlMapRenderer(private val scene: GlScene, private val page: Int) 
         const val LIVE_UNITS = 8
         /** Squares drawn ahead a frame while some on screen are missing, each a quarter of a screen's pixels at its level. */
         const val SQUARES_A_FRAME = 2
-        /** How far inside the map's edge [checkBlack] reads points, in tiles. */
-        const val EDGE_TILES = 4f
 
         /** Region buffers off screen uploaded a frame, at most. */
         const val REGIONS_A_FRAME = 2

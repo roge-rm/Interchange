@@ -315,40 +315,43 @@ fun MapView(
         sheets.revision.intValue
         frame()
         gl.revision.intValue
+        gl.drawnRevision.intValue
         gl.show(view, sheets, size.width.toInt(), size.height.toInt())
-        if (gl.wantsMoving()) moving()?.let {
-            drawMoving(world, view, sheets, it, gl.live, gl.editWaiting, gl.showingLook)
-            drawSky(world, view, it)
-        }
+        val movingNow = if (gl.wantsMoving()) moving() else null
+        movingNow?.let { drawMoving(world, view, sheets, it, gl.live, gl.editWaiting, gl.showingLook) }
         val now = clock.elapsedNow().inWholeMilliseconds
         // The GPU map takes the frame with what moves in it, so they show together, then the cover fades.
         if (!gl.finish()) glReadyAt[0] = -1L
         else if (glReadyAt[0] < 0L) glReadyAt[0] = now
         val cover = if (glReadyAt[0] < 0L) 1f else (1f - (now - glReadyAt[0]) / FADE_MILLIS.toFloat()).coerceIn(0f, 1f)
-        val ox = view.screenX(0f, 0f, size.width)
-        val oy = view.screenY(0f, 0f, 0f, size.height)
-        val draw = overlay
-        if (draw != null) {
-            val painter = LandPainter(world, view, view.halfWidth)
-            painter.originX = ox
-            painter.originY = oy
-            plan.record { draw(painter) }
-            drawLayer(plan)
-            planAt[0] = ox
-            planAt[1] = oy
-            planAt[2] = view.halfWidth
-            planAt[3] = view.turn.toFloat()
-            planHeld[0] = false
-            planHeld[1] = true
-        } else {
-            planHeld[1] = false
-            // Held as it was, moved with a pan; a zoom or turn lets it go.
-            if (planHeld[0] && gl.holdingEdit && planAt[2] == view.halfWidth && planAt[3] == view.turn.toFloat()) {
-                translate(ox - planAt[0], oy - planAt[1]) { drawLayer(plan) }
-            } else planHeld[0] = false
+        // What's drawn over the map is at the view of the GL frame on screen, which can be behind the view or held.
+        view.drawAt(gl.layersAt()) {
+            movingNow?.let { drawSky(world, view, it) }
+            val ox = view.screenX(0f, 0f, size.width)
+            val oy = view.screenY(0f, 0f, 0f, size.height)
+            val draw = overlay
+            if (draw != null) {
+                val painter = LandPainter(world, view, view.halfWidth)
+                painter.originX = ox
+                painter.originY = oy
+                plan.record { draw(painter) }
+                drawLayer(plan)
+                planAt[0] = ox
+                planAt[1] = oy
+                planAt[2] = view.halfWidth
+                planAt[3] = view.turn.toFloat()
+                planHeld[0] = false
+                planHeld[1] = true
+            } else {
+                planHeld[1] = false
+                // Held as it was, moved with a pan; a zoom or turn lets it go.
+                if (planHeld[0] && gl.holdingEdit && planAt[2] == view.halfWidth && planAt[3] == view.turn.toFloat()) {
+                    translate(ox - planAt[0], oy - planAt[1]) { drawLayer(plan) }
+                } else planHeld[0] = false
+            }
+            labels?.invoke(this)
+            label?.invoke(this)
         }
-        labels?.invoke(this)
-        label?.invoke(this)
         drawn[0] = size.width
         drawn[1] = size.height
         if (Gamepad.shown.value) Gamepad.cursor.value.let { if (it.isSpecified) drawCursor(it) }

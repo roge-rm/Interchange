@@ -14,6 +14,7 @@ import com.rm.interchange.map.Zoom
 import com.rm.interchange.map.Sheets
 import com.rm.interchange.map.StaticCells
 import com.rm.interchange.map.View
+import com.rm.interchange.map.ViewAt
 import com.rm.interchange.map.TileRecorder
 import com.rm.interchange.map.WeatherCopy
 import com.rm.interchange.map.heapBytes
@@ -42,11 +43,14 @@ import kotlin.time.TimeSource
 @Composable
 internal expect fun GlMapSurface(scene: GlScene, page: Int, modifier: Modifier)
 
+/** Logs `scenehole`, `glhole` and `glempty` for a device run to show blanks by; off in what's shipped. */
+internal const val GL_CHECKS = false
+
 /**
  * What the GPU draws next: the frame, the regions recorded so far for its turn, null where still recording, what moves,
- * the [Climate] look the regions are drawn with, and a count that goes up with each one made.
+ * the [Climate] look the regions are drawn with, a count that goes up with each one made, and the view it's at.
  */
-internal class GlShown(val frame: GlFrame, val regions: Array<RegionSprites?>, val live: LiveBatch?, val look: Int, val seq: Long)
+internal class GlShown(val frame: GlFrame, val regions: Array<RegionSprites?>, val live: LiveBatch?, val look: Int, val seq: Long, val at: ViewAt)
 
 /**
  * Far zooms on big maps (256 tiles and up), where every sprite on screen is more than the GPU can take a frame: a
@@ -227,6 +231,7 @@ internal class GlScene(private val world: World, parent: CoroutineScope) {
 
     /** What [show] worked out, published by [finish] with what moves. */
     private var nextFrame: GlFrame? = null
+    private var nextAt: ViewAt? = null
     private var nextRegions: Array<RegionSprites?>? = null
     private var nextLook = Climate.SUMMER
 
@@ -304,10 +309,11 @@ internal class GlScene(private val world: World, parent: CoroutineScope) {
         // Nothing recording till the first weather copy's in.
         val shownTurn = turns[view.turn]
         val regions = shownTurn?.let { publish(it, frame) }
-        if (sharp && regions != null) checkShown(regions, frame, gesture)
+        if (GL_CHECKS && sharp && regions != null) checkShown(regions, frame, gesture)
         shownTurn?.let { measureEdit(it) }
         nextLook = shownTurn?.shownLook?.takeIf { it >= 0 } ?: look
         nextFrame = frame
+        nextAt = view.at()
         nextRegions = regions
         val lv = levels
         val g = onGpu
@@ -324,11 +330,12 @@ internal class GlScene(private val world: World, parent: CoroutineScope) {
     fun finish(): Boolean {
         val frame = nextFrame ?: return false
         val regions = nextRegions ?: return false
+        val at = nextAt ?: return false
         val last = shown
         // A frame that skipped the moving drawing keeps the last batch, so it doesn't flip to none and back.
         val batch = if (movingWanted) live.batch(last?.live, liveTaken) else last?.live
         if (last == null || last.frame != frame || !last.regions.contentEquals(regions) || last.live !== batch || last.look != nextLook) {
-            shown = GlShown(frame, regions.copyOf(), batch, nextLook, ++seq)
+            shown = GlShown(frame, regions.copyOf(), batch, nextLook, ++seq, at)
             requestRender()
         }
         if (edit.holding) {
@@ -786,14 +793,28 @@ internal class GlScene(private val world: World, parent: CoroutineScope) {
         editCurrent = edit.current(v, t.drawnVersions())
     }
 
-    /** From the GL thread: it has drawn the [GlShown] with [seq]. Draws again if the held edit was waiting on it. */
-    fun drew(seq: Long) {
+    /** The view of the last frame the GL thread drew, for what's drawn over it. */
+    private val layerView = LayerView()
+
+    /** Goes up when the GL thread draws a frame at a view the layers over it aren't at, so they draw again. */
+    val drawnRevision = mutableIntStateOf(0)
+
+    /** For the Compose draw, after [finish]: the view to draw what's over the map at, null for the view as it is. */
+    fun layersAt(): ViewAt? = layerView.take()
+
+    /**
+     * From the GL thread: it has drawn [shown]. Draws the Compose map again if the held edit was waiting on it or the
+     * layers over the map are at another view.
+     */
+    fun drew(shown: GlShown) {
+        val seq = shown.seq
         drawnSeq = seq
+        val moved = layerView.drew(shown.at)
         val wanted = drawWanted
         if (wanted in 1L..seq) {
             drawWanted = 0L
             scope.launch { revision.intValue++ }
-        }
+        } else if (moved) scope.launch { drawnRevision.intValue++ }
     }
 
     /**

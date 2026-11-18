@@ -184,6 +184,21 @@ class View(val mapWidth: Int, val mapHeight: Int) {
         return null
     }
 
+    /** Where the view is now: turn, focus and zoom. */
+    internal fun at() = ViewAt(turn, focusX, focusY, halfWidth)
+
+    /** Draws [block] with the view at [at], or as it is if null, then puts it back. Main thread. */
+    internal fun drawAt(at: ViewAt?, block: () -> Unit) {
+        if (at == null) return block()
+        val was = at()
+        turn = at.turn; focusX = at.focusX; focusY = at.focusY; halfWidth = at.halfWidth
+        try {
+            block()
+        } finally {
+            turn = was.turn; focusX = was.focusX; focusY = was.focusY; halfWidth = was.halfWidth
+        }
+    }
+
     companion object {
         /** The zoom a game opens at. */
         const val START_HALF_WIDTH = 64f
@@ -191,6 +206,9 @@ class View(val mapWidth: Int, val mapHeight: Int) {
         const val MAX_HALF_WIDTH = 192f
     }
 }
+
+/** A [View]'s turn, focus and zoom ([View.halfWidth]). */
+internal data class ViewAt(val turn: Int, val focusX: Float, val focusY: Float, val halfWidth: Float)
 
 /**
  * The tile whose building is under [picked]'s screen point: the picked tile, or one in front of it whose building
