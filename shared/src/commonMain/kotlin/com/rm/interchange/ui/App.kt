@@ -803,18 +803,21 @@ private fun Root(settings: Settings) {
                 onClose = { loadError = null; window = null },
             )
             Win.Settings -> SettingsWindow(settings) { window = null }
-            Win.Packs -> PacksWindow(
-                packs.orEmpty(), adding, packMessage?.first, packMessage?.second == true,
-                onAdd = ::addPack,
-                onRemove = { p ->
-                    scope.launch {
-                        withContext(Dispatchers.Default) { InstalledPacks.remove(p.id) }
-                        packMessage = null
-                        readPacks()
-                    }
-                },
-                onClose = { window = null },
-            )
+            // The map's sheets, for industries a pack builds from base parts.
+            Win.Packs -> CompositionLocalProvider(LocalSheets provides sheets) {
+                PacksWindow(
+                    packs.orEmpty(), adding, packMessage?.first, packMessage?.second == true,
+                    onAdd = ::addPack,
+                    onRemove = { p ->
+                        scope.launch {
+                            withContext(Dispatchers.Default) { InstalledPacks.remove(p.id) }
+                            packMessage = null
+                            readPacks()
+                        }
+                    },
+                    onClose = { window = null },
+                )
+            }
             Win.Map -> Unit
             Win.Overlays -> OverlaysWindow(settings) { window = null }
             Win.Finances -> runner?.let { r -> FinanceWindow(r) { window = null } }

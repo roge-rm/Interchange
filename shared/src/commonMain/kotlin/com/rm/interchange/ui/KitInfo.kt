@@ -817,9 +817,15 @@ fun IndustryPicture(kind: IndustryKind, modifier: Modifier) {
         SheetPicture(own, PICTURE_FACING, modifier)
         return
     }
-    val sprite = remember(kind) {
-        kind.layout.flatten().distinct()
-            .map { Atlas.PART_KEYS.indexOf(it) }
+    BasePartsPicture(kind.layout.flatten(), modifier)
+}
+
+/** The biggest of the base pack's layout [parts] that it has a drawing of; blank if none. */
+@Composable
+fun BasePartsPicture(parts: List<String>, modifier: Modifier) {
+    val sprite = remember(parts) {
+        parts.distinct()
+            .map { Atlas.PART_KEYS.indexOf(it.removePrefix("base:")) }
             .filter { it >= 0 }
             .map { Atlas.PART[it * 4 + PICTURE_FACING] }
             .maxByOrNull { StaticCells.rects[it * 6 + 2] * StaticCells.rects[it * 6 + 3] } ?: -1

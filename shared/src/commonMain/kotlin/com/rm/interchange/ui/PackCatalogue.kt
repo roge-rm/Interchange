@@ -197,7 +197,11 @@ private fun PackPage(p: Pack, all: List<Pack>, filter: PackKind, lang: String) {
         )
         for (i in ins) PictureRow(
             i.names.word(lang, i.replaces ?: i.id),
-            picture = { PackPicture(p.id, i.parts.orEmpty().values.toList(), BUILDING_CELL, it) },
+            // An industry built only from base parts is drawn with the base pack's art, as on the map.
+            picture = { m ->
+                val own = i.parts.orEmpty().values.toList()
+                if (own.isEmpty()) BasePartsPicture(i.layout.orEmpty().flatten(), m) else PackPicture(p.id, own, BUILDING_CELL, m)
+            },
             line = i.replaces?.let { named[it] ?: it },
         )
         for (k in cs) PictureRow(
