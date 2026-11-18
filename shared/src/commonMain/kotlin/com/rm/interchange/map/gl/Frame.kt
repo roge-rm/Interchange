@@ -202,6 +202,20 @@ internal fun keepSlice(keep: IntArray, i: Int, viewWidth: Int, viewHeight: Int):
     return if (whole) null else keep.copyOfRange(2 * row0, 2 * row1)
 }
 
+/**
+ * Whether [r] holds every tile of [keep] that [old], the same region, holds: so putting [r] in place of [old] leaves
+ * nothing blank that showed, wherever in [keep] the screen is.
+ */
+internal fun holdsKeptOf(r: RegionSprites, old: RegionSprites, keep: IntArray): Boolean {
+    val oc = old.cols
+    for (vy in old.row0 until old.row1) {
+        val a = maxOf(keep[2 * vy], oc?.get(2 * (vy - old.row0)) ?: 0)
+        val b = minOf(keep[2 * vy + 1], oc?.get(2 * (vy - old.row0) + 1) ?: (old.columns - 1))
+        if (a <= b && !r.holds(vy, a, b)) return false
+    }
+    return true
+}
+
 /** Whether [r] holds every tile of [keep] (columns by view row) in its rows. */
 internal fun holdsKept(r: RegionSprites, keep: IntArray): Boolean {
     for (vy in r.row0 until r.row1) if (!r.holds(vy, keep[2 * vy], keep[2 * vy + 1])) return false

@@ -86,11 +86,18 @@ internal class KeptTurn(val turn: Int, val viewWidth: Int, val viewHeight: Int) 
     /**
      * Puts in [r], recorded for region [i] at [version] from [base] if given, unless it's been let go of or started
      * again since, or [base] isn't what's there now. Returns whether it went in.
+     *
+     * One recorded for a kept area that's moved since may lack tiles of it the region there holds, which the screen
+     * may be on ([holdsKeptOf]); it's left out and the region there stays, short, to be recorded again for what's
+     * kept now.
      */
     fun put(i: Int, version: Long, r: RegionSprites, base: RegionSprites?): Boolean {
         if (pending[i] != version) return false
         pending[i] = -1L
         if (base != null && regions[i] !== base) return false
+        val old = regions[i]
+        val k = keep
+        if (old != null && k != null && !holdsKeptOf(r, old, k)) return false
         regions[i] = r
         return true
     }

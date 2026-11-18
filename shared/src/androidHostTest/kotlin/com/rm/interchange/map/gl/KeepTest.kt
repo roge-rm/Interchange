@@ -308,6 +308,67 @@ class KeepTest {
         assertTrue(regionsHoldScreen(t, f))
     }
 
+    /** Whether [regions] hold every tile of [f]'s screen. */
+    private fun holdScreen(regions: Array<RegionSprites?>, f: GlFrame): Boolean {
+        val screen = visibleColumns(f)
+        for (vy in 0 until f.viewHeight) {
+            if (screen[2 * vy] > screen[2 * vy + 1]) continue
+            val r = regions[vy / REGION_ROWS] ?: return false
+            if (!r.holds(vy, screen[2 * vy], screen[2 * vy + 1])) return false
+        }
+        return true
+    }
+
+    @Test
+    fun aRegionRecordedForAKeptAreaSinceMovedDoesntBlankTheScreen() {
+        for (turn in 0 until 4) {
+            val t = keptTurn(turn)
+            var x = 40f
+            var y = 40f
+            var f = small(turn, 32f, x, y)
+            t.keepRound(f)
+            recordShort(t)
+            // A pan till the kept area moves; the regions start having the new tiles added.
+            while (!t.keepRound(f)) {
+                x += 0.5f
+                y += 0.25f
+                f = small(turn, 32f, x, y)
+            }
+            val started = t.regions.indices.filter { t.short(it) }
+            val versions = LongArray(t.regions.size) { regionVersion(big, turn, it, look, year) }
+            val bases = Array(t.regions.size) { t.base(it, versions[it], look, year) }
+            val done = arrayOfNulls<RegionSprites>(t.regions.size)
+            for (i in started) {
+                t.begin(i, versions[i])
+                done[i] = recordKept(big, turn, i, look, year, bigWeather, null, versions[i], t.slice(i), bases[i])
+            }
+            // While they record, the view goes back past where they were started from, which the old regions still hold.
+            val would = t.regions.copyOf()
+            for (i in started) would[i] = done[i]
+            var past = false
+            for (k in 0 until 400) {
+                x -= 0.5f
+                y -= 0.25f
+                f = small(turn, 32f, x, y)
+                t.keepRound(f)
+                if (!regionsHoldScreen(t, f)) break
+                if (!holdScreen(would, f)) {
+                    past = true
+                    break
+                }
+            }
+            assertTrue(past, "turn $turn never left what the new regions hold")
+            // They finish: none goes in that would leave the screen blank.
+            for (i in started) t.put(i, versions[i], done[i]!!, bases[i])
+            assertTrue(regionsHoldScreen(t, f), "turn $turn blank when the regions came in")
+            // Then what's kept now is recorded, and holds it.
+            recordShort(t)
+            assertTrue(t.whole())
+            assertTrue(regionsHoldScreen(t, f))
+            for (r in t.regions) if (r != null) assertTrue(holdsKept(r, t.keep!!))
+        }
+    }
+
     @Test
     fun anEditToARegionLetGoOfDoesntWaitOnIt() {
         val t = keptTurn(0)
