@@ -59,6 +59,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.text.style.TextAlign
@@ -99,27 +100,38 @@ fun BigButton(text: String, primary: Boolean = false, enabled: Boolean = true, g
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         glyph?.let { GlyphIcon(it, tint, Modifier.size(20.dp)) }
-        // Smaller words when a line would break inside a word, so a narrow button in a Grid wraps between words only.
         val style = KitType.Lead.copy(fontWeight = if (primary) FontWeight.SemiBold else FontWeight.Normal)
-        var scale by remember(text) { mutableFloatStateOf(1f) }
-        var width by remember(text) { mutableIntStateOf(-1) }
-        // Words aren't drawn while they're still shrinking, so a broken word never shows.
-        var settled by remember(text) { mutableStateOf(false) }
-        Text(
-            text, color = tint, style = if (scale < 1f) style.copy(fontSize = style.fontSize * scale) else style,
-            modifier = Modifier.drawWithContent { if (settled) drawContent() },
-            onTextLayout = { r ->
-                // A new width starts again from full size.
-                val room = r.layoutInput.constraints.maxWidth
-                val fresh = room != width
-                width = room
-                val shrink = scale > 0.7f && (0 until r.lineCount - 1).any { breaksWord(text, r.getLineEnd(it)) }
-                if (fresh && scale < 1f) { scale = 1f; settled = false }
-                else if (shrink) { scale = (scale - 0.05f).coerceAtLeast(0.7f); settled = false }
-                else settled = true
-            },
-        )
+        WordFitText(text, style, tint)
     }
+}
+
+/**
+ * [text] in [style], made smaller when its longest word wouldn't fit the width, so lines break between words only.
+ * Not drawn until it has settled, so a broken word never shows.
+ */
+@Composable
+fun WordFitText(text: String, style: TextStyle, color: Color, modifier: Modifier = Modifier, textAlign: TextAlign? = null, maxLines: Int = Int.MAX_VALUE) {
+    val measurer = rememberTextMeasurer()
+    var scale by remember(text, style) { mutableFloatStateOf(1f) }
+    var settled by remember(text, style) { mutableStateOf(false) }
+    // A little more off when rounding still breaks a word at the widest word's scale.
+    var extra by remember(text, style) { mutableFloatStateOf(1f) }
+    Text(
+        text, color = color, style = if (scale < 1f) style.copy(fontSize = style.fontSize * scale) else style,
+        textAlign = textAlign, maxLines = maxLines, overflow = TextOverflow.Ellipsis,
+        modifier = modifier.drawWithContent { if (settled) drawContent() },
+        onTextLayout = { r ->
+            val room = r.layoutInput.constraints.maxWidth
+            if (room == Constraints.Infinity || room <= 0) { settled = true; return@Text }
+            // The scale the widest word needs at full size, a touch under so rounding can't break it.
+            val widest = text.split(' ', '\n', '\u00A0').filter { it.isNotEmpty() }
+                .maxOfOrNull { measurer.measure(it, style, softWrap = false).size.width } ?: 0
+            val fit = if (widest > room) room * 0.97f / widest else 1f
+            if ((fit * extra).coerceIn(0.3f, 1f) == scale && extra > 0.5f && (0 until r.lineCount - 1).any { breaksWord(text, r.getLineEnd(it)) }) extra -= 0.05f
+            val target = (fit * extra).coerceIn(0.3f, 1f)
+            if (kotlin.math.abs(target - scale) > 0.001f) { scale = target; settled = false } else settled = true
+        },
+    )
 }
 
 /** Whether a line ending at [end] in [text] breaks inside a word. */
