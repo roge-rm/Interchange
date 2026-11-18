@@ -198,6 +198,8 @@ FLOAT_PLANES = {"fairchild_71", "norseman", "beaver", "otter", "twin_otter", "el
 HELICOPTERS = {"bell_47", "s55", "jetranger", "s92"}
 # Maglev trains and hyperloop pods are built at their full height over the beam or in the tube, with no couplers between cars.
 MAGLEV = {"aurora", "aurora_coach", "meteor", "meteor_coach", "vela", "photon"}
+# Hyperloop pods run inside the tube, so they cast no shadow of their own on the ground.
+PODS = {"vela", "photon"}
 
 
 def height(key):
@@ -298,7 +300,7 @@ def main():
         for name, pitch, h, flying in shots:
             if (out / name).exists():
                 continue
-            catcher.hide_render = flying
+            catcher.hide_render = flying or key in PODS
             pivot.rotation_euler = (pitch, 0, -h * math.pi / 4)
             pivot.location = home
             stance = getattr(model, "stance", None)

@@ -6,8 +6,8 @@ ground of a shape, and curves as curves.track has them. A bridge of tube is the 
 concrete bridge's piers; a bore shows only at its heads, as an entry hall the tube runs into.
 
 Pods are built as maglev.py's trains are: facing +y, x across, y along, z in steps, drawn at full height from the
-ground. Each pod is a round capsule with a nose at both ends, a little narrower than the tube, so on the map a pod
-shows over the tube with the tube's walls round it.
+ground. Each pod is a round capsule with a nose at both ends, narrower than the tube, so on the map a pod shows over
+the tube with the tube's walls round it. Pods cast no shadow on the ground, as they run inside the tube.
 """
 import math
 
@@ -406,8 +406,9 @@ COLOURS = {
     "vela": {"body": "#f1f3f4", "band": "#18b4c8", "mask": "#16222c", "cap": "#9aa6ae", "belly": "#8c969c"},
     "photon": {"body": "#323a44", "band": "#f2a22c", "mask": "#0a0e12", "cap": "#c6ccd2", "belly": "#1e242a"},
 }
-# A pod's half width in tiles, and its middle in steps: on the tube's axis, a little narrower than the tube.
-POD_HALF = 0.078
+# A pod's half width in tiles, and its middle in steps: on the tube's axis, narrow enough that the tube's walls
+# show either side of it once outlined.
+POD_HALF = 0.062
 POD_AXIS = AXIS
 # The nose at each end, (length in tiles, roundness): Photon's longer and finer.
 NOSE = {"vela": (0.13, 2.2), "photon": (0.21, 1.55)}

@@ -112,7 +112,8 @@ fun TrainCard(
         // Someone else's shows what it is but none of the controls, and a wreck is cleared away by itself.
         if (!mine || t.wrecked) return@Card
         VehicleGroupControls(view, Command.CopyVehicle.TRAIN, t.id, t.group, send) { order(Command.TrainOrder.GROUP, intArrayOf(it)) }
-        if (t.inDepot && t.formation.all { it.model == t.engine || it.model == t.wagon } && t.formation.filter { it.model == t.wagon }.map { it.cargo }.distinct().size <= 1 && w.cargoes.size > 1) {
+        // What its wagons carry, for a train with wagons all of one kind on one cargo; a pod train has none.
+        if (t.inDepot && t.wagons > 0 && t.formation.all { it.model == t.engine || it.model == t.wagon } && t.formation.filter { it.model == t.wagon }.map { it.cargo }.distinct().size <= 1 && w.cargoes.size > 1) {
             val cargoes = cargoNames()
             val selected = if (t.wagonCargo in w.cargoes) t.wagonCargo else w.cargoes.first()
             SegmentedChoice(w.cargoes.toList(), selected, { cargoes[it] }) { order(Command.TrainOrder.REFIT, intArrayOf(it)) }
@@ -217,8 +218,8 @@ fun DepotCard(view: WorldView, roster: Roster, depot: Int, year: Int, funds: Lon
         val e = engines.firstOrNull { it.id == engineId } ?: engines.firstOrNull()
         val podsOnly = depotKind == TrackKind.TUBE
         val w = if (podsOnly) null else wagons.firstOrNull { it.id == wagonId } ?: wagons.firstOrNull()
-        // The sim wants a wagon id with a train even when it has none; pods take any wagon and 0 of them.
-        val anyWagon = roster.available(year, pulls = false).firstOrNull()?.id ?: 0
+        // The sim wants a wagon id with a train even when it has none; pods take 0 of a passenger wagon on sale, or any.
+        val anyWagon = roster.available(year, pulls = false).let { a -> a.firstOrNull { Cargo.PASSENGERS in it.cargoes } ?: a.firstOrNull() }?.id ?: 0
         // An engine's price and running cost with its tender's, as it's bought.
         fun tender(t: Engine) = roster.getOrNull(t.tender)
         BuyPanel(
