@@ -163,7 +163,7 @@ class HyperloopTest {
             assertEquals(Traction.HYPERLOOP, e.traction)
             assertContentEquals(intArrayOf(Cargo.PASSENGERS, Cargo.MAIL), e.cargoes)
         }
-        val manifest = """{ "format": 1, "id": "x", "version": 1, "name": { "en": "X" } }"""
+        val manifest = """{ "format": 4, "id": "x", "version": 1, "name": { "en": "X" } }"""
         val coal = Packs.unzip(zip(mapOf("manifest.json" to manifest, "vehicles.json" to """{ "vehicles": [ { "id": "c", "replaces": "base:vela", "carries": ["passengers", "coal"] } ] }""")))
         assertEquals(listOf("base:vela: hyperloop pods carry only passengers and mail"), assertFailsWith<BadPack> { Roster.build(listOf(Packs.BASE, coal)) }.problems)
     }
