@@ -156,6 +156,8 @@ private:
 
     std::atomic<float> busTarget_[bus::COUNT];
     Smooth bus_[bus::COUNT];
+    // Samples rendered since every bus went to 0 and faded; past kSilentSeconds the voices are skipped.
+    int silentSamples_ = 0;
     std::atomic<float> roomTarget_{0.15f};
     Smooth room_;
 

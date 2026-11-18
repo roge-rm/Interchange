@@ -113,6 +113,24 @@ internal fun DrawScope.drawSky(world: World, view: View, moving: Moving) {
         into += Offset(x0, rainY)
         into += Offset(x0 - 3f * unit, rainY + 14f * unit)
     }
+    // Any precipitation on screen keeps the map drawing while paused, whether or not this frame's drops landed in it.
+    if (flakes.isNotEmpty() || rains.isNotEmpty() || sleets.isNotEmpty()) ClockDrawn.any = true
+    else {
+        val stepX = maxOf(2 * view.halfWidth, w / 60f)
+        val stepY = maxOf(2 * view.halfHeight, h / 40f)
+        var py = 0f
+        search@ while (py <= h) {
+            var px = 0f
+            while (px <= w) {
+                if (skyOn(px, py) ushr 3 > 0) {
+                    ClockDrawn.any = true
+                    break@search
+                }
+                px += stepX
+            }
+            py += stepY
+        }
+    }
     if (flakes.isNotEmpty()) drawPoints(flakes, PointMode.Points, SNOWFLAKE, strokeWidth = 3.2f * unit, cap = StrokeCap.Round)
     if (rains.isNotEmpty()) drawPoints(rains, PointMode.Lines, RAIN, strokeWidth = 1.2f * unit)
     if (sleets.isNotEmpty()) drawPoints(sleets, PointMode.Lines, SLEET, strokeWidth = 1.2f * unit)

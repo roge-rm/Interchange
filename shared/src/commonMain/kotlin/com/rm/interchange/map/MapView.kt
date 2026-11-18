@@ -5,7 +5,10 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
@@ -73,15 +76,21 @@ interface MapInput {
  * cursor is drawn over it all, and its A taps or drags at the cursor
  * ([Gamepad.map]).
  *
- * [frame] is read while drawing, so the canvas draws again when it changes
- * without the screen around it composing again.
+ * The canvas draws again only when something needs it, so a still map, as
+ * when paused, draws nothing: when [latest] gives another object (the game
+ * published a new view, each tick while it runs), the view's turn, focus or
+ * zoom changed, a turn's asked for, or the cover's up; and for
+ * [SETTLE_MILLIS] after any of those, for what moves between ticks and the
+ * GPU map's checks. Rain, snow, fire and flashing crossings on screen draw at
+ * [CLOCK_FRAME_MILLIS]. Snapshot state read while drawing ([GlScene.revision],
+ * the sheets', the gamepad's cursor and what's passed in) draws again by itself.
  */
 @Composable
 fun MapView(
     world: World,
     sheets: Sheets,
     view: View,
-    frame: () -> Long,
+    latest: () -> Any?,
     input: MapInput,
     moving: () -> Moving?,
     modifier: Modifier = Modifier,
@@ -106,6 +115,7 @@ fun MapView(
     DisposableEffect(world) { onDispose { DrawLines.drop(world) } }
     val currentInput by rememberUpdatedState(input)
     val currentHover by rememberUpdatedState(onHover)
+    val currentLatest by rememberUpdatedState(latest)
     val gl = remember(world) { GlScene(world, scope) }
     DisposableEffect(gl) { onDispose { gl.close() } }
     gl.onSharp = onSharp
@@ -148,6 +158,36 @@ fun MapView(
     }
     // The map's size in pixels, as last drawn, for the gamepad's cursor.
     val drawn = remember(world) { FloatArray(2) }
+    // Goes up for each frame the canvas should draw; the loop below says when.
+    val redraw = remember(world) { mutableLongStateOf(0L) }
+    // Set by the last draw: whether the cover's up, and whether what's on screen moves by the clock.
+    val covered = remember(world) { booleanArrayOf(true) }
+    val clocked = remember(world) { booleanArrayOf(false) }
+    LaunchedEffect(world, view, gl) {
+        var seen: Any? = null
+        var turn = -1
+        var x = Float.NaN
+        var y = Float.NaN
+        var zoom = Float.NaN
+        var busyUntil = 0L
+        var lastClock = 0L
+        while (true) withFrameNanos { t ->
+            val now = t / 1_000_000
+            val l = currentLatest()
+            if (l !== seen || view.turn != turn || view.focusX != x || view.focusY != y || view.halfWidth != zoom || view.turnsAsked != 0 || covered[0]) {
+                seen = l
+                turn = view.turn
+                x = view.focusX
+                y = view.focusY
+                zoom = view.halfWidth
+                busyUntil = now + SETTLE_MILLIS
+            }
+            if (now < busyUntil || (clocked[0] && now - lastClock >= CLOCK_FRAME_MILLIS)) {
+                lastClock = now
+                redraw.longValue++
+            }
+        }
+    }
     // A at the cursor taps, or held while the cursor goes to another tile, drags as a finger would.
     DisposableEffect(world, view, gl) {
         val target = object : CursorTarget {
@@ -313,11 +353,12 @@ fun MapView(
     }
     val paint: DrawScope.() -> Unit = {
         sheets.revision.intValue
-        frame()
+        redraw.longValue
         gl.revision.intValue
         gl.drawnRevision.intValue
         gl.show(view, sheets, size.width.toInt(), size.height.toInt())
         val movingNow = if (gl.wantsMoving()) moving() else null
+        ClockDrawn.any = false
         movingNow?.let { drawMoving(world, view, sheets, it, gl.live, gl.editWaiting, gl.showingLook) }
         val now = clock.elapsedNow().inWholeMilliseconds
         // The GPU map takes the frame with what moves in it, so they show together, then the cover fades.
@@ -352,12 +393,14 @@ fun MapView(
             labels?.invoke(this)
             label?.invoke(this)
         }
+        clocked[0] = ClockDrawn.any
         drawn[0] = size.width
         drawn[1] = size.height
         if (Gamepad.shown.value) Gamepad.cursor.value.let { if (it.isSpecified) drawCursor(it) }
         // The train stands still if the map can't be drawn.
         val failed = gl.step == LoadStep.FAILED
         if (!failed) train.advance(gl.progress, cover, now)
+        covered[0] = cover > 0f
         if (cover > 0f) {
             if (loading != null) drawLoadingCover(cover, page, loading, train, measurer, steps[gl.step], if (failed) 0L else now)
             else drawRect(page.copy(alpha = cover))
@@ -402,6 +445,23 @@ object MapOverlays {
     /** The colour-blind safe colours for the bands above; only drawn along with one of them. */
     const val SAFE = 16
 }
+
+/**
+ * Set while the map draws when something on screen moves by the clock rather than by the game: rain, snow, fire and
+ * crossing lamps. Main thread only.
+ */
+internal object ClockDrawn {
+    var any = false
+}
+
+/**
+ * How long the map keeps drawing every display frame after the view or the game last changed, in milliseconds: past
+ * the GPU map's look for changes every quarter second ([GlScene]'s CHECK_MILLIS), so what a change moved is drawn.
+ */
+private const val SETTLE_MILLIS = 400L
+
+/** How often the map draws for what moves by the clock alone, as rain while paused: about 20 a second. */
+private const val CLOCK_FRAME_MILLIS = 50L
 
 /** How long the cover takes to fade once the map's ready, in milliseconds. */
 private const val FADE_MILLIS = 180

@@ -37,6 +37,7 @@ internal fun OverviewCanvas(image: MapImage?, traffic: State<List<OverviewVehicl
     val latestLink by rememberUpdatedState(onLink)
     val latestDemand by rememberUpdatedState(onDemand)
     val cameraRevision = remember(view) { mutableIntStateOf(0) }
+    val lines = remember { OverviewLines() }
     val shape = RoundedCornerShape(10.dp)
     Canvas(modifier.onSizeChanged { camera.resize(Size(it.width.toFloat(), it.height.toFloat()), view.mapWidth, view.mapHeight) }.clip(shape).background(c.page).border(1.dp, c.chromeEdge, shape)
         .semantics { contentDescription = title }
@@ -53,12 +54,18 @@ internal fun OverviewCanvas(image: MapImage?, traffic: State<List<OverviewVehicl
                     val zoom = event.calculateZoom()
                     if (travel.getDistance() > viewConfiguration.touchSlop || event.changes.count { it.pressed } > 1) moving = true
                     if (moving) {
+                        lines.moving = true
                         val anchor = event.calculateCentroid(useCurrent = false)
                         if (anchor != Offset.Unspecified) camera.move(Offset(pan.x / size.width, pan.y / size.height), zoom,
                             Offset(anchor.x / size.width, anchor.y / size.height))
                         event.changes.forEach { it.consume() }
                     }
                 } while (event.changes.any { it.pressed })
+                if (moving) {
+                    // Drawn again with the lines kept as a picture once the finger's off.
+                    lines.moving = false
+                    cameraRevision.intValue++
+                }
                 if (!moving) {
                     val at = camera.at(Offset(down.position.x / size.width, down.position.y / size.height))
                     val data = latestImage?.data
@@ -115,9 +122,17 @@ internal fun OverviewCanvas(image: MapImage?, traffic: State<List<OverviewVehicl
         clipRect {
             drawImage(current.terrain, dstOffset = IntOffset(origin.x.toInt(), origin.y.toInt()),
                 dstSize = IntSize((data.width * scale).toInt(), (data.height * scale).toInt()))
-            withTransform({ translate(origin.x, origin.y); scale(scale, scale, pivot = Offset.Zero) }) {
-                if (options.roads.value) for ((id, path) in current.roads) if (id < 0 || visible(id)) drawPath(path, tint(id, c.textDim), style = Stroke(1.dp.toPx() / scale))
-                if (options.rail.value) for ((id, path) in current.rail) if (visible(id)) drawPath(path, tint(id, c.accent), style = Stroke(1.5.dp.toPx() / scale))
+            val roads = options.roads.value
+            val rail = options.rail.value
+            val drawLines: DrawScope.() -> Unit = {
+                withTransform({ translate(origin.x, origin.y); scale(scale, scale, pivot = Offset.Zero) }) {
+                    if (roads) for ((id, path) in current.roads) if (id < 0 || visible(id)) drawPath(path, tint(id, c.textDim), style = Stroke(1.dp.toPx() / scale))
+                    if (rail) for ((id, path) in current.rail) if (visible(id)) drawPath(path, tint(id, c.accent), style = Stroke(1.5.dp.toPx() / scale))
+                }
+            }
+            if (roads || rail) {
+                val picture = if (lines.moving) null else lines.of(this, listOf(current, size, origin, scale, roads, rail, options.companies.value, owner, c.textDim, c.accent), drawLines)
+                if (picture != null) drawImage(picture) else drawLines()
             }
             if (options.flows.value) {
                 val flows = data.info.flows.filter { visible(it.owner) && (options.cargo.intValue < 0 || it.cargo == options.cargo.intValue) }
@@ -298,4 +313,39 @@ private fun demandNear(data: MapSnapshot, pairs: List<DemandView>, tap: Offset, 
         }
     }
     return best
+}
+
+/**
+ * The overview's rail and road lines drawn into a picture the canvas's size, made again when what they're drawn from
+ * changes, so a still window doesn't stroke every path each time the screen draws. While a finger moves the map
+ * ([moving]) they're drawn straight instead. Main thread only.
+ */
+internal class OverviewLines {
+    var moving = false
+    private var picture: ImageBitmap? = null
+    private var key: Any? = null
+    private var seen: Any? = null
+
+    /**
+     * The picture for [newKey], drawn by [draw] onto a clear canvas the size of [scope]'s if the key's another.
+     * Null while the key is still changing from one frame to the next, as with a mouse wheel zoom, so the
+     * caller draws straight.
+     */
+    fun of(scope: DrawScope, newKey: Any, draw: DrawScope.() -> Unit): ImageBitmap? {
+        val still = newKey == seen
+        seen = newKey
+        val w = scope.size.width.toInt().coerceAtLeast(1)
+        val h = scope.size.height.toInt().coerceAtLeast(1)
+        var p = picture
+        if (p != null && newKey == key && p.width == w && p.height == h) return p
+        if (!still) return null
+        if (p == null || p.width != w || p.height != h) p = ImageBitmap(w, h).also { picture = it }
+        val canvas = androidx.compose.ui.graphics.Canvas(p)
+        CanvasDrawScope().draw(scope, scope.layoutDirection, canvas, Size(w.toFloat(), h.toFloat())) {
+            drawRect(Color.Transparent, blendMode = BlendMode.Clear)
+            draw()
+        }
+        key = newKey
+        return p
+    }
 }

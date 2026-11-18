@@ -758,6 +758,7 @@ private fun Pen.drawCrossingGate(it: FloatArray, hw: Float) {
     val y = it[2]
     val u = hw / 32f
     val lit = it[3] == 1f
+    if (lit) ClockDrawn.any = true
     line(Color(0xff3a3a3a), x, y, x, y - 12f * u, 1.2f * u)
     line(Color(0xff2a2a2a), x - 3.5f * u, y - 12f * u, x + 3.5f * u, y - 12f * u, 1.6f * u)
     // The posts across the road flash opposite each other.
@@ -848,6 +849,7 @@ private fun Pen.drawFence(it: FloatArray) {
 
 /** Flames licking up from a burning tile, flickering, and smoke rising off it; [seed] keeps tiles from flickering together. */
 private fun Pen.drawFire(seed: Int, x: Float, y: Float, hw: Float) {
+    ClockDrawn.any = true
     val u = hw / 16f
     val t = (flicker.elapsedNow().inWholeMilliseconds % 100_000) / 1000f
     for (k in 0 until 5) {

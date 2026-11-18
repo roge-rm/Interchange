@@ -14,6 +14,8 @@ constexpr float kPortWater = 0.75f;
 constexpr float kMusicRoom = 0.35f;
 /** The music's level while a news chime or alert sounds. */
 constexpr float kDuck = 0.3f;
+/** How long every bus has to be silent before the voices are skipped: long enough for the room's tail to die away. */
+constexpr float kSilentSeconds = 2.0f;
 
 bool continuous(int r) { return r <= recipe::LAST_CONTINUOUS; }
 
@@ -1188,6 +1190,22 @@ void Synth::render(float* out, int frames) {
     float busTargets[bus::COUNT];
     for (int b = 0; b < bus::COUNT; ++b) busTargets[b] = busTarget_[b].load(std::memory_order_relaxed);
     const float roomTarget = roomTarget_.load(std::memory_order_relaxed);
+
+    // With every bus at 0 and faded, and the room's tail gone after kSilentSeconds, nothing can be heard: the voices
+    // aren't worked out. What would end by itself ends now; what the scene holds waits for the sound to come back.
+    bool silent = true;
+    for (int b = 0; b < bus::COUNT; ++b) if (busTargets[b] > 0.0f || bus_[b].value > 1e-5f) silent = false;
+    if (!silent) silentSamples_ = 0;
+    else if (silentSamples_ < static_cast<int>(kSilentSeconds * sampleRate_)) silentSamples_ += frames;
+    else {
+        for (int i = 0; i < voiceBudget_; ++i) {
+            Voice& v = voices_[i];
+            if (v.active && !(continuous(v.recipe) && v.held)) v.active = false;
+        }
+        music_.idle();
+        std::memset(out, 0, sizeof(float) * 2 * static_cast<size_t>(frames));
+        return;
+    }
 
     // Music is only worked out while its bus is up or still fading.
     const bool music = busTargets[bus::MUSIC] > 0.0f || bus_[bus::MUSIC].value > 1e-5f;

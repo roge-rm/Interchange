@@ -67,6 +67,8 @@ internal val overviewDispatcher = Dispatchers.Default.limitedParallelism(1)
 internal class OverviewOptions {
     /** The latest picture of the map, made in the background after a game loads so the window has one when it opens. */
     val image = mutableStateOf<MapImage?>(null)
+    /** The game's published view when [image] was made, so it's made again only once the game's moved on. */
+    var imageAt: Any? = null
     val camera = OverviewCamera()
     val rail = mutableStateOf(true)
     val roads = mutableStateOf(true)
@@ -88,7 +90,7 @@ internal class OverviewOptions {
 }
 
 internal suspend fun <T> mapRead(runner: GameThread, read: (World) -> T): T = suspendCancellableCoroutine { continuation ->
-    runner.onGameThread { game -> if (continuation.isActive) continuation.resume(read(game.world)) }
+    runner.readOnGameThread { game -> if (continuation.isActive) continuation.resume(read(game.world)) }
 }
 
 /** A square north-up map with compact controls in either orientation. */
@@ -130,10 +132,15 @@ internal fun OverviewWindow(runner: GameThread, view: View, viewport: Size, opti
         links.value = emptyList()
         demand.value = emptyList()
     }
+    // Made again every couple of seconds while the game's publishing new views; a paused game keeps the one it has.
     LaunchedEffect(runner) {
         while (true) {
-            val snapshot = mapRead(runner) { MapSnapshot(it) }
-            image = withContext(overviewDispatcher) { MapImage(snapshot) }
+            val at = runner.view
+            if (image == null || at !== options.imageAt) {
+                val snapshot = mapRead(runner) { MapSnapshot(it) }
+                image = withContext(overviewDispatcher) { MapImage(snapshot) }
+                options.imageAt = at
+            }
             delay(2_000)
         }
     }

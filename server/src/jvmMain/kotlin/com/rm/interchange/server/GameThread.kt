@@ -18,6 +18,9 @@ import java.util.concurrent.ConcurrentLinkedQueue
  *
  * Following a server, with [remote], frames run as the server sends them,
  * and [paused] and [speed] are the server's to set.
+ *
+ * A frame where nothing ran, as while paused, publishes only if something
+ * that goes into the view changed, so a still game leaves [view] as it is.
  */
 class GameThread(private val make: () -> World, val remote: Remote? = null) {
     @Volatile var game: Game? = null
@@ -66,7 +69,9 @@ class GameThread(private val make: () -> World, val remote: Remote? = null) {
     }
 
     private val incoming = ConcurrentLinkedQueue<Command>()
-    private val tasks = ConcurrentLinkedQueue<(Game) -> Unit>()
+    /** Tasks and reads in the order asked; a read doesn't count as a change. */
+    private class Task(val reads: Boolean, val run: (Game) -> Unit)
+    private val tasks = ConcurrentLinkedQueue<Task>()
 
     /** Days between autosaves, or 0 for none; and what's done with each, called on the game thread. */
     @Volatile var autosaveDays = 30
@@ -75,11 +80,16 @@ class GameThread(private val make: () -> World, val remote: Remote? = null) {
 
     /** Runs [task] on the game thread between ticks, where it can read the world whole. */
     fun onGameThread(task: (Game) -> Unit) {
-        tasks.add(task)
+        tasks.add(Task(false, task))
+    }
+
+    /** Runs [task] on the game thread between ticks, like [onGameThread], for a task that only reads the world. */
+    fun readOnGameThread(task: (Game) -> Unit) {
+        tasks.add(Task(true, task))
     }
 
     /** The world saved, handed to [done] on the game thread. */
-    fun save(done: (ByteArray) -> Unit) = onGameThread { g -> done(Save.write(g.world)) }
+    fun save(done: (ByteArray) -> Unit) = readOnGameThread { g -> done(Save.write(g.world)) }
     @Volatile private var running = true
 
     private val thread = Thread(::loop, "interchange-game").apply {
@@ -116,8 +126,16 @@ class GameThread(private val make: () -> World, val remote: Remote? = null) {
         var next = System.nanoTime()
         lastAutosaveDay = g.world.day
         while (running) {
-            while (true) g.request(incoming.poll() ?: break)
-            while (true) (tasks.poll() ?: break)(g)
+            var changed = false
+            while (true) {
+                g.request(incoming.poll() ?: break)
+                changed = true
+            }
+            while (true) {
+                val t = tasks.poll() ?: break
+                t.run(g)
+                if (!t.reads) changed = true
+            }
             if (remote != null) {
                 company = remote.company
                 while (true) g.receive(remote.inbox.poll() ?: break)
@@ -131,7 +149,7 @@ class GameThread(private val make: () -> World, val remote: Remote? = null) {
                 lastAutosaveDay = g.world.day
                 onAutosave?.invoke(Save.write(g.world))
             }
-            publish(g)
+            if (changed || shownChanges != g.changes || wantsPublish(g)) publish(g)
             next += tickNanos
             val wait = next - System.nanoTime()
             if (wait > 0) {
@@ -143,7 +161,34 @@ class GameThread(private val make: () -> World, val remote: Remote? = null) {
         }
     }
 
+    /** What the last [publish] was made from, to tell whether a frame where nothing ran needs another. */
+    private var shownChanges = -1L
+    private var shownWorld: World? = null
+    private var shownCompany = 0
+    private var shownReserved = false
+    private var shownNetwork = false
+    private var shownForecast = -1
+    private var shownRisk = false
+    /** Whether something was published since the network or risk part was last built, while it's shown. */
+    private var networkBehind = false
+    private var riskBehind = false
+
+    /** Whether the view needs publishing though no command or tick ran: what it's asked to hold changed, or is due. */
+    private fun wantsPublish(g: Game): Boolean {
+        if (g.world !== shownWorld || company != shownCompany || showReserved != shownReserved || showNetwork != shownNetwork ||
+            forecastAt != shownForecast || showRisk != shownRisk) return true
+        val now = System.nanoTime()
+        return (showNetwork && networkBehind && now - networkAt >= NETWORK_NANOS) || (showRisk && riskBehind && now - riskAt >= RISK_NANOS)
+    }
+
     private fun publish(g: Game) {
+        shownChanges = g.changes
+        shownWorld = g.world
+        shownCompany = company
+        shownReserved = showReserved
+        shownNetwork = showNetwork
+        shownForecast = forecastAt
+        shownRisk = showRisk
         lastView = view
         val now = System.nanoTime()
         // The links and whyNot cost more than the rest of a view, so they're built only every so often.
@@ -154,10 +199,12 @@ class GameThread(private val make: () -> World, val remote: Remote? = null) {
             riskView = view
             riskAt = now
         } else if (!showRisk) riskView = null
+        riskBehind = showRisk && !risk
         if (network) {
             networkView = view
             networkAt = now
         } else if (!showNetwork) networkView = null
+        networkBehind = showNetwork && !network
         viewAt = now
         tick = g.world.tick
         day = g.world.day

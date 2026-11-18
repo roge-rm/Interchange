@@ -31,6 +31,10 @@ class Game(world: World) {
 
     private val pending = ArrayDeque<Message.Scheduled>()
 
+    /** Goes up with each command and tick run, so a still game can tell when there's something new to show. Not sent or saved. */
+    var changes = 0L
+        private set
+
     /** Hosting: who to tell about each command and frame. */
     var broadcast: ((Message) -> Unit)? = null
 
@@ -133,12 +137,14 @@ class Game(world: World) {
     private fun runFrame(ticks: Int) {
         while (pending.isNotEmpty() && pending.first().frame <= frame) run(pending.removeFirst().command)
         repeat(ticks) { world.step() }
+        changes += ticks
         frame++
         afterFrame?.invoke(this)
     }
 
     /** Runs [command]; one that throws, from a broken or hostile player, is left half done the same everywhere. */
     private fun run(command: Command) {
+        changes++
         try {
             world.apply(command)
         } catch (_: RuntimeException) {

@@ -940,11 +940,9 @@ private fun Root(settings: Settings) {
 @Composable
 private fun Playing(runner: GameThread, sheets: Sheets, settings: Settings, kept: KeptView, pick: MapPick?, copyPick: MutableState<CopyPick?>, onMenu: () -> Unit, onOverlays: () -> Unit, onFinances: () -> Unit, onTown: (Int) -> Unit, goTo: MutableState<Pair<Float, Float>?>, showVehicle: MutableState<ShowVehicle?>, onChat: (() -> Unit)?, chatUnread: Boolean, onMap: () -> Unit, overview: Boolean, townOpen: Boolean, onCloseOverview: () -> Unit) {
     var world by remember(runner) { mutableStateOf<World?>(null) }
-    // Redraws every display frame, and picks up the world once it's made, or when a server sends it again.
-    val frame = remember(runner) { mutableLongStateOf(0L) }
+    // Picks up the world once it's made, or when a server sends it again.
     LaunchedEffect(runner) {
         while (true) withFrameNanos {
-            frame.longValue++
             runner.game?.world?.let {
                 if (it !== world) {
                     // A world sent again after going out of step keeps the camera where it was.
@@ -959,11 +957,11 @@ private fun Playing(runner: GameThread, sheets: Sheets, settings: Settings, kept
         Box(Modifier.fillMaxSize().background(LocalColors.current.page))
         return
     }
-    key(runner, w) { CompositionLocalProvider(LocalCargo provides remember(w.roster, w.cargoCount) { cargoInPlay(w) }) { GameScreen(runner, w, sheets, frame, settings, kept, pick, copyPick, onMenu, onOverlays, onFinances, onTown, goTo, showVehicle, onChat, chatUnread, onMap, overview, townOpen, onCloseOverview) } }
+    key(runner, w) { CompositionLocalProvider(LocalCargo provides remember(w.roster, w.cargoCount) { cargoInPlay(w) }) { GameScreen(runner, w, sheets, settings, kept, pick, copyPick, onMenu, onOverlays, onFinances, onTown, goTo, showVehicle, onChat, chatUnread, onMap, overview, townOpen, onCloseOverview) } }
 }
 
 @Composable
-private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: State<Long>, settings: Settings, kept: KeptView, pick: MapPick?, copyPick: MutableState<CopyPick?>, onMenu: () -> Unit, onOverlays: () -> Unit, onFinances: () -> Unit, onTown: (Int) -> Unit, goTo: MutableState<Pair<Float, Float>?>, showVehicle: MutableState<ShowVehicle?>, onChat: (() -> Unit)?, chatUnread: Boolean, onMap: () -> Unit, overview: Boolean, townOpen: Boolean, onCloseOverview: () -> Unit) {
+private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, settings: Settings, kept: KeptView, pick: MapPick?, copyPick: MutableState<CopyPick?>, onMenu: () -> Unit, onOverlays: () -> Unit, onFinances: () -> Unit, onTown: (Int) -> Unit, goTo: MutableState<Pair<Float, Float>?>, showVehicle: MutableState<ShowVehicle?>, onChat: (() -> Unit)?, chatUnread: Boolean, onMap: () -> Unit, overview: Boolean, townOpen: Boolean, onCloseOverview: () -> Unit) {
     val me = runner.company
     val c = LocalColors.current
     // The drawings of this game's vehicles: the base pack's come with the app, the others from their packs.
@@ -996,8 +994,14 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
     // the window has one the first time it opens.
     LaunchedEffect(runner) {
         snapshotFlow { mapSharp.value }.first { it }
+        val at = runner.view
         val snapshot = mapRead(runner) { MapSnapshot(it) }
-        overviewOptions.image.value = withContext(overviewDispatcher) { MapImage(snapshot) }
+        val made = withContext(overviewDispatcher) { MapImage(snapshot) }
+        // The window may have made a newer one if it opened first.
+        if (overviewOptions.image.value == null) {
+            overviewOptions.image.value = made
+            overviewOptions.imageAt = at
+        }
     }
     // Going where a window asked to.
     goTo.value?.let { (x, y) ->
@@ -1014,6 +1018,13 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
     // The temperature where the map's looking, worked out again when the day or the tile changes.
     var weather by remember { mutableStateOf("") }
     var weatherAt by remember { mutableStateOf(-1L) }
+    // The game's latest view of trains, stations and signals; only the cards read it, so only they compose each tick.
+    val worldView = remember { mutableStateOf(runner.view) }
+    // The links and why cargo can't get there, built by the game thread only while a card or the map's links need them.
+    val networkView = remember { mutableStateOf(runner.networkView) }
+    val riskView = remember { mutableStateOf(runner.riskView) }
+    // What the game thread published, copied over once a display frame when it changes. The game thread publishes
+    // only when something changed, so a paused game sets nothing here.
     LaunchedEffect(runner) {
         while (true) withFrameNanos {
             if (runner.day != day) day = runner.day
@@ -1026,18 +1037,10 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
                 weatherAt = at
                 weather = degrees(skyHere(world, wv, x, y).temperature)
             }
+            if (runner.view !== worldView.value) worldView.value = runner.view
+            if (runner.networkView !== networkView.value) networkView.value = runner.networkView
+            if (runner.riskView !== riskView.value) riskView.value = runner.riskView
         }
-    }
-
-    // The game's latest view of trains, stations and signals; only the cards read it, so only they compose each tick.
-    val worldView = remember { mutableStateOf(runner.view) }
-    LaunchedEffect(runner) {
-        while (true) withFrameNanos { if (runner.view !== worldView.value) worldView.value = runner.view }
-    }
-    // The links and why cargo can't get there, built by the game thread only while a card or the map's links need them.
-    val networkView = remember { mutableStateOf(runner.networkView) }
-    LaunchedEffect(runner) {
-        while (true) withFrameNanos { if (runner.networkView !== networkView.value) networkView.value = runner.networkView }
     }
 
     var tool by remember { mutableStateOf(Tool.Inspect) }
@@ -1049,10 +1052,6 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
     var signalSpacing by remember { mutableIntStateOf(4) }
     var signalPlan by remember { mutableStateOf<Command.SignalRun?>(null) }
     var priorityPlan by remember { mutableStateOf<Command.Priority?>(null) }
-    val riskView = remember { mutableStateOf(runner.riskView) }
-    LaunchedEffect(runner) {
-        while (true) withFrameNanos { if (runner.riskView !== riskView.value) riskView.value = runner.riskView }
-    }
     var bridgeStyle by remember { mutableIntStateOf(0) }
     // The kind of track the track, station, depot, bridge and tunnel tools build: rail, guideway or tube.
     var kindPicked by remember { mutableIntStateOf(TrackKind.RAIL) }
@@ -1131,6 +1130,9 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
         val clock = TimeSource.Monotonic
         var last = clock.markNow()
         var surveyed = clock.markNow()
+        // The world's tick and edits at the last survey: a still world, as when paused, isn't counted again.
+        var surveyedTick = -1L
+        var surveyedTouches = -1
         var first = true
         var newsPrimed = false
         var lastNewsTick = -1L
@@ -1142,7 +1144,13 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
                 val dt = last.elapsedNow().inWholeMilliseconds / 1000f
                 last = clock.markNow()
                 if (first || surveyed.elapsedNow().inWholeMilliseconds >= 2_000) {
-                    withContext(Dispatchers.Default) { sound.survey() }
+                    val tick = world.tick
+                    val touches = world.touches
+                    if (first || tick != surveyedTick || touches != surveyedTouches) {
+                        surveyedTick = tick
+                        surveyedTouches = touches
+                        withContext(Dispatchers.Default) { sound.survey() }
+                    }
                     surveyed = clock.markNow()
                     first = false
                 }
@@ -1535,7 +1543,7 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, frame: 
 
         val mapDescription = stringResource(Res.string.map_description)
         MapView(
-            world, sheets, view, { frame.value }, input, { moving(runner) }, Modifier.fillMaxSize().letsGoOfText().semantics { contentDescription = mapDescription },
+            world, sheets, view, { runner.view }, input, { moving(runner) }, Modifier.fillMaxSize().letsGoOfText().semantics { contentDescription = mapDescription },
             overlay = drawLit(world, view, worldView.value, riskView.value, settings.priority || tool == Tool.PriorityTrack || tool == Tool.PriorityRoad, settings.risk, plan?.let { p -> { painter -> drawTrackPlan(world, painter, p) } }
                 ?: (stationPlan ?: stationHeld?.first)?.let { p -> { painter -> drawStationPlan(world, painter, p) } }
                 ?: bridgePlan?.let { p -> { painter -> drawBridgePlan(world, painter, p) } }
