@@ -313,7 +313,8 @@ fun ToolTray(
                                 .clip(ButtonShape)
                                 .background(if (on) c.accent else c.button)
                                 .semantics(mergeDescendants = true) { selected = on }
-                                .semantics { contentDescription = toolTitle }
+                                // Named by its label, or by a description when compact shows only the drawing.
+                                .then(if (compact) Modifier.semantics { contentDescription = toolTitle } else Modifier)
                                 .clickable(enabled = t.ready(editor), role = Role.Tab) { onTool(t) }
                                 .padding(vertical = 4.dp),
                             horizontalAlignment = Alignment.CenterHorizontally,
