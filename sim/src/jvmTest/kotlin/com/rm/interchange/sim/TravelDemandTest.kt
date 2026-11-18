@@ -10,7 +10,7 @@ import kotlin.test.assertTrue
 class TravelDemandTest {
     /** Stations A, B and C along one line, ids 0 to 2, each with a row of houses as a town, and a depot at the west end. */
     private fun line(): World {
-        val w = World(NewGame(96, 64, 1, 1900, towns = 0, industries = 0, weather = false, collisions = false))
+        val w = World(NewGame(96, 64, 1, 1900, towns = 0, industries = 0, weather = false, collisions = false, energy = false, future = false))
         for (i in w.corners.indices) w.corners[i] = 3
         w.companies[0].money = 10_000_000
         w.apply(Command.Depot(0, 2, 10, Track.XP))
