@@ -248,6 +248,22 @@ internal fun squaresOn(f: GlFrame, level: Int): IntArray {
     )
 }
 
+/**
+ * The view tiles whose sprites reach onto [f]'s screen between [x0], [y0] and [x1], [y1] (screen pixels, cut to the
+ * screen), as [visibleColumns] gives them: what the direct passes draw where squares aren't drawn ahead.
+ */
+internal fun boxColumns(f: GlFrame, x0: Float, y0: Float, x1: Float, y1: Float, into: IntArray = IntArray(f.viewHeight * 2)): IntArray {
+    val a = floor(max(0f, x0))
+    val b = floor(max(0f, y0))
+    val w = max(0, ceil(min(f.width.toFloat(), x1) - a).toInt())
+    val h = max(0, ceil(min(f.height.toFloat(), y1) - b).toInt())
+    return visibleColumns(GlFrame(f.turn, f.originX - a, f.originY - b, f.scale, w, h, f.viewWidth, f.viewHeight), into)
+}
+
+/** The screen box of squares [cx0] to [cx1] by [cy0] to [cy1] of level [level]'s grid on [f]'s screen, as [boxColumns] takes it. */
+internal fun squaresBoxColumns(f: GlFrame, level: Int, cx0: Int, cx1: Int, cy0: Int, cy1: Int, into: IntArray = IntArray(f.viewHeight * 2)) =
+    boxColumns(f, squareEdge(f, level, cx0, false), squareEdge(f, level, cy0, true), squareEdge(f, level, cx1 + 1, false), squareEdge(f, level, cy1 + 1, true), into)
+
 /** Square [cx], [cy] packed into a long, for [squareX] and [squareY]. */
 internal fun packSquare(cx: Int, cy: Int) = (cx.toLong() shl 32) or (cy.toLong() and 0xffffffffL)
 internal fun squareX(k: Long) = (k shr 32).toInt()
@@ -342,25 +358,39 @@ internal fun publishRegions(regions: Array<RegionSprites?>, published: Array<Reg
 
 /**
  * Whether a square drawn from regions with [contents] ([RegionSprites.content]) from region [first] on is drawn from
- * what [drawable] holds now: the same regions, or ones that only had tiles added or let go of since.
+ * what [drawable] holds now: the same regions, or ones that only had tiles added or let go of since, and with [cols]
+ * (the square's tiles, [visibleColumns]) still holding every one of them.
  */
-internal fun squareRegionsSame(contents: Array<Any?>, first: Int, drawable: Array<RegionSprites?>): Boolean {
+internal fun squareRegionsSame(contents: Array<Any?>, first: Int, drawable: Array<RegionSprites?>, cols: IntArray? = null): Boolean {
     for (i in contents.indices) {
         val now = drawable.getOrNull(first + i) ?: return false
         if (now.content !== contents[i]) return false
+        if (cols != null && !holdsTiles(now, cols)) return false
     }
     return true
 }
 
 /**
- * Whether a square drawn with look [squareLook] from regions with [contents] and [looks] (from region [first] on)
- * can still stand on screen while it's drawn again for a new look: each of its regions is the one drawn now, or one
- * recorded again since with another look.
+ * Whether [r] holds every tile of [cols] (columns by view row, from [visibleColumns] for a square) in its rows. A
+ * square stands only while its regions do, as what was drawn from a region's content says nothing of tiles let go of.
  */
-internal fun squareRegionsStand(squareLook: Int, contents: Array<Any?>, looks: IntArray, first: Int, drawable: Array<RegionSprites?>): Boolean {
+internal fun holdsTiles(r: RegionSprites, cols: IntArray): Boolean {
+    for (vy in r.row0 until minOf(r.row1, cols.size / 2)) if (!r.holds(vy, cols[2 * vy], cols[2 * vy + 1])) return false
+    return true
+}
+
+/**
+ * Whether a square drawn with look [squareLook] from regions with [contents] and [looks] (from region [first] on)
+ * can still stand on screen while it's drawn again for a new look: each of its regions is the one drawn now (holding
+ * [cols], the square's tiles, if given), or one recorded again since with another look.
+ */
+internal fun squareRegionsStand(squareLook: Int, contents: Array<Any?>, looks: IntArray, first: Int, drawable: Array<RegionSprites?>, cols: IntArray? = null): Boolean {
     for (i in contents.indices) {
         val now = drawable.getOrNull(first + i) ?: return false
-        if (now.content === contents[i]) continue
+        if (now.content === contents[i]) {
+            if (cols != null && !holdsTiles(now, cols)) return false
+            continue
+        }
         if (looks[i] != squareLook || now.look == squareLook) return false
     }
     return true

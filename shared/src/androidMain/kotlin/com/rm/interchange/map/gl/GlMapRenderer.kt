@@ -11,6 +11,7 @@ import com.rm.interchange.map.Atlas
 import com.rm.interchange.map.TileRecorder
 import com.rm.interchange.map.LevelSheets
 import com.rm.interchange.map.Zoom
+import java.lang.ref.WeakReference
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import javax.microedition.khronos.egl.EGLConfig
@@ -69,7 +70,15 @@ internal class GlMapRenderer(private val scene: GlScene, private val page: Int) 
     private var width = 1
     private var height = 1
 
-    private class Buffer(val region: RegionSprites, val id: Int) {
+    private class Buffer(from: RegionSprites, val id: Int) {
+        /** What's drawn from it: the region but for its sprites, which are on the GPU, so the heap lets them go once the scene does. */
+        val region = RegionSprites(
+            from.turn, from.index, from.row0, from.row1, from.columns, IntArray(0), from.count, from.starts, IntArray(0), from.version,
+            from.cols, from.look, from.year, null, from.content, from.weather,
+        )
+        /** The region it was uploaded from, held weakly, to tell whether it's the one shown. */
+        private val source = WeakReference(from)
+        fun of(r: RegionSprites) = source.get() === r
         /** Where the second pass starts, in bytes. */
         val secondAt = region.firstPass * GROUND_BYTES
     }
@@ -204,11 +213,12 @@ internal class GlMapRenderer(private val scene: GlScene, private val page: Int) 
             val r = drawable[i]
             if (r != null && far != null && far.covers(r, f)) drawable[i] = null
         }
-        runs.build(drawable, columns)
         // Squares are drawn ahead before the screen, as a tiler pays to come back to a framebuffer it's left.
         frameNo++
+        shownFrame = f
         val on = squaresOn(f, lv)
         val left = prepareSquares(f, lv, tex, on)
+        checkHoles(f, left)
         clearScreen()
         // Clip space from source level pixels: screen = origin + p * scale, then to -1..1 with y up.
         val xf = floatArrayOf(2f * f.scale / width, -2f * f.scale / height, 2f * f.originX / width - 1f, 1f - 2f * f.originY / height)
@@ -219,6 +229,10 @@ internal class GlMapRenderer(private val scene: GlScene, private val page: Int) 
         glDepthFunc(GL_ALWAYS)
         drawSquares(f, lv, tex, on)
         if (left > 0) {
+            // Only the tiles reaching into the box round the squares not drawn ahead.
+            if (directCols.size < f.viewHeight * 2) directCols = IntArray(f.viewHeight * 2)
+            squaresBoxColumns(f, lv, leftBox[0], leftBox[1], leftBox[2], leftBox[3], directCols)
+            runs.build(drawable, directCols)
             glDepthFunc(GL_GREATER)
             glDepthMask(false)
             for (pass in 0 until PASSES) drawPass(pass, runs, xf, f, lv, tex)
@@ -294,7 +308,7 @@ internal class GlMapRenderer(private val scene: GlScene, private val page: Int) 
      * textures, the weather, the look and the regions it reaches, [first] on. It's drawn again once any of them change,
      * the weather only in the corner [rows] it reads.
      */
-    private class Square(val tex: Int) {
+    private class Square(val tex: Int, val lv: Int, val cx: Int, val cy: Int) {
         var from: LevelTextures? = null
         var overlays = 0
         var wear: TrackWear? = null
@@ -320,6 +334,12 @@ internal class GlMapRenderer(private val scene: GlScene, private val page: Int) 
     private var frameNo = 0L
     private var squareCols = IntArray(0)
     private val squareRuns = DrawRuns()
+    /** The frame being drawn, for the squares' tiles ([tilesOf]). */
+    private var shownFrame: GlFrame? = null
+    private var heldCols = IntArray(0)
+    /** The squares on screen neither fresh nor standing, first and last column then row, for the direct passes. */
+    private val leftBox = IntArray(4)
+    private var directCols = IntArray(0)
     /** Squares kept, from [squareBudget] for the screen. */
     private var maxSquares = squareBudget(1, 1)
 
@@ -331,11 +351,25 @@ internal class GlMapRenderer(private val scene: GlScene, private val page: Int) 
         return squareCols
     }
 
-    /** Whether square [s] was drawn from what's showing now; a new weather with no change in its rows is taken as its own. */
+    /** Square [s]'s tiles, [visibleColumns] of its frame, into a scratch array. */
+    private fun tilesOf(s: Square): IntArray {
+        val f = shownFrame!!
+        if (heldCols.size < f.viewHeight * 2) heldCols = IntArray(f.viewHeight * 2)
+        return visibleColumns(squareFrame(f, s.lv, s.cx, s.cy), heldCols)
+    }
+
+    /**
+     * Whether square [s] was drawn from what's showing now, its regions still holding its tiles; a new weather with
+     * no change in its rows is taken as its own.
+     */
     private fun fresh(s: Square, tex: LevelTextures): Boolean {
         if (s.from !== tex || s.look != look || s.overlays != overlays) return false
         if (overlays and MapOverlays.CONDITION != 0 && s.wear !== wearUp) return false
         if (!squareRegionsSame(s.contents, s.first, drawable)) return false
+        if (!squareRegionsSame(s.contents, s.first, drawable, tilesOf(s))) {
+            holes.lacking++
+            return false
+        }
         val w = weatherUp ?: return false
         if (s.weatherWidth != w.width || s.weatherHeight != w.height || s.weatherVersion != w.version) {
             if (s.weatherWidth != w.width || s.weatherHeight != w.height || w.version < s.weatherVersion || !weatherSame(w, s.weatherVersion, s.rows)) return false
@@ -352,14 +386,14 @@ internal class GlMapRenderer(private val scene: GlScene, private val page: Int) 
     private fun stands(s: Square, tex: LevelTextures): Boolean {
         if (s.from !== tex || s.look == look || s.overlays != overlays) return false
         if (overlays and MapOverlays.CONDITION != 0 && s.wear !== wearUp) return false
-        return squareRegionsStand(s.look, s.contents, s.looks, s.first, drawable)
+        return squareRegionsStand(s.look, s.contents, s.looks, s.first, drawable, tilesOf(s))
     }
 
     /**
      * Draws ahead the squares [on] (columns then rows, inclusive) of level [lv] that are missing or stale, a few a
      * frame, the nearest the middle of the screen first, then one round the screen if there's time. Returns how many
-     * on screen are still neither fresh nor standing ([stands]), which the direct passes draw; asks for another frame
-     * while it gets through them.
+     * on screen are still neither fresh nor standing ([stands]), which the direct passes draw, and puts their box in
+     * [leftBox]; asks for another frame while it gets through them.
      */
     private fun prepareSquares(f: GlFrame, lv: Int, tex: LevelTextures, on: IntArray): Int {
         val turn = f.turn
@@ -370,9 +404,16 @@ internal class GlMapRenderer(private val scene: GlScene, private val page: Int) 
         }
         var made = 0
         var left = 0
+        leftBox[0] = Int.MAX_VALUE; leftBox[1] = Int.MIN_VALUE; leftBox[2] = Int.MAX_VALUE; leftBox[3] = Int.MIN_VALUE
         for (k in todo) {
-            if (made < SQUARES_A_FRAME && drawSquare(f, lv, tex, squareX(k), squareY(k))) made++
-            else if (squares[squareKey(turn, lv, squareX(k), squareY(k))]?.let { stands(it, tex) } != true) left++
+            val cx = squareX(k)
+            val cy = squareY(k)
+            if (made < SQUARES_A_FRAME && drawSquare(f, lv, tex, cx, cy)) made++
+            else if (squares[squareKey(turn, lv, cx, cy)]?.let { stands(it, tex) } != true) {
+                left++
+                leftBox[0] = minOf(leftBox[0], cx); leftBox[1] = maxOf(leftBox[1], cx)
+                leftBox[2] = minOf(leftBox[2], cy); leftBox[3] = maxOf(leftBox[3], cy)
+            }
         }
         if (todo.isEmpty() && !ahead(f, lv, tex, on, true)) {
             // Then the next level out's, a quarter as many, so a zoom out finds them there.
@@ -416,11 +457,12 @@ internal class GlMapRenderer(private val scene: GlScene, private val page: Int) 
             if (!drawable[vy / REGION_ROWS]!!.holds(vy, cols[2 * vy], cols[2 * vy + 1])) return false
         }
         val key = squareKey(f.turn, lv, cx, cy)
-        val s = squares[key] ?: Square(squareTexture()).also { evictSquares(); squares[key] = it }
+        val s = squares[key] ?: Square(squareTexture(), lv, cx, cy).also { evictSquares(); squares[key] = it }
         s.used = frameNo
         if (squareFbo == 0) squareFbo = IntArray(1).also { glGenFramebuffers(1, it, 0) }[0]
         glBindFramebuffer(GL_FRAMEBUFFER, squareFbo)
         glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, s.tex, 0)
+        if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) holes.incomplete++
         glViewport(0, 0, SQUARE_SIDE, SQUARE_SIDE)
         glClearColor(0f, 0f, 0f, 0f)
         glClear(GL_COLOR_BUFFER_BIT)
@@ -448,6 +490,7 @@ internal class GlMapRenderer(private val scene: GlScene, private val page: Int) 
         glGenTextures(1, ids, 0)
         glBindTexture(GL_TEXTURE_2D, ids[0])
         glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, SQUARE_SIDE, SQUARE_SIDE)
+        glGetError().let { if (it != GL_NO_ERROR) holes.failed(it) }
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR)
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR)
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE)
@@ -464,6 +507,58 @@ internal class GlMapRenderer(private val scene: GlScene, private val page: Int) 
             glDeleteTextures(1, intArrayOf(e.value.tex), 0)
             squares.remove(e.key)
         }
+    }
+
+    /** What [checkHoles] has counted since it last logged. */
+    private class Holes {
+        /** Rows on screen the regions drawn don't hold, and frames with any. */
+        var rows = 0
+        var frames = 0
+        /** Squares their regions' content alone would have kept, the regions no longer holding their tiles; checks, not squares. */
+        var lacking = 0
+        /** Square framebuffers that weren't complete. */
+        var incomplete = 0
+        /** GL errors, after an upload or a square's texture or once a second, and the last. */
+        var errors = 0
+        var error = 0
+        var logged = 0L
+
+        fun failed(e: Int) {
+            errors++
+            error = e
+        }
+    }
+    private val holes = Holes()
+
+    /**
+     * Counts what could leave the screen blank, for a device run to show: rows on screen the regions drawn ([drawable])
+     * don't hold, squares their regions no longer hold, square framebuffers that won't draw and GL errors; logged as
+     * `glhole` at most twice a second, with [left], the squares the direct passes draw this frame.
+     */
+    private fun checkHoles(f: GlFrame, left: Int) {
+        var rows = 0
+        for (vy in 0 until f.viewHeight) {
+            val c0 = columns[2 * vy]
+            val c1 = columns[2 * vy + 1]
+            if (c0 > c1) continue
+            val r = drawable.getOrNull(vy / REGION_ROWS)
+            if (r == null || !r.holds(vy, c0, c1)) rows++
+        }
+        if (rows > 0) {
+            holes.rows += rows
+            holes.frames++
+        }
+        if (frameNo % 60 == 0L) glGetError().let { if (it != GL_NO_ERROR) holes.failed(it) }
+        if (holes.rows == 0 && holes.lacking == 0 && holes.incomplete == 0 && holes.errors == 0) return
+        val now = System.nanoTime()
+        if (now - holes.logged < 500_000_000L) return
+        Log.w(TAG, "glhole rows=${holes.rows} frames=${holes.frames} lacking=${holes.lacking} fbo=${holes.incomplete} errors=${holes.errors} last=0x${holes.error.toString(16)} left=$left")
+        holes.rows = 0
+        holes.frames = 0
+        holes.lacking = 0
+        holes.incomplete = 0
+        holes.errors = 0
+        holes.logged = now
     }
 
     private fun freeSquares() {
@@ -742,6 +837,8 @@ internal class GlMapRenderer(private val scene: GlScene, private val page: Int) 
         return ids[0]
     }
 
+    private var weatherBytes = ByteBuffer.allocateDirect(0)
+
     /** Takes [w] into the weather texture: all of it the first time or at a new size, else the rows changed since the last. */
     private fun upload(w: GroundWeather) {
         val last = weatherUp
@@ -761,12 +858,15 @@ internal class GlMapRenderer(private val scene: GlScene, private val page: Int) 
         val since = if (whole) Int.MIN_VALUE else last!!.version
         var y = 0
         var rows = 0
+        // A few rows at a time through one buffer, as a direct buffer the size of the map is 4 MB of heap at 1024.
+        val bytes = cw * GroundWeather.TEXEL
+        if (weatherBytes.capacity() < WEATHER_ROWS * bytes) weatherBytes = ByteBuffer.allocateDirect(WEATHER_ROWS * bytes)
         while (y < ch) {
             if (w.rowVersions[y] <= since) { y++; continue }
             var e = y
-            while (e < ch && w.rowVersions[e] > since) e++
-            val bytes = cw * GroundWeather.TEXEL
-            val buf = ByteBuffer.allocateDirect((e - y) * bytes)
+            while (e < ch && e - y < WEATHER_ROWS && w.rowVersions[e] > since) e++
+            val buf = weatherBytes
+            buf.clear()
             buf.put(w.texels, y * bytes, (e - y) * bytes).flip()
             glTexSubImage2D(GL_TEXTURE_2D, 0, 0, y, cw, e - y, GL_RGBA_INTEGER, GL_UNSIGNED_BYTE, buf)
             rows += e - y
@@ -823,7 +923,7 @@ internal class GlMapRenderer(private val scene: GlScene, private val page: Int) 
                 glDeleteBuffers(1, intArrayOf(b.id), 0)
                 buffers[i] = null
             }
-            if (r != null && b?.region !== r) {
+            if (r != null && b?.of(r) != true) {
                 // Those on screen at once, the rest a few a frame, so a turn's first frame isn't held up by them all.
                 if (onScreen(i, shown.frame.viewHeight, columns) || off++ < REGIONS_A_FRAME) {
                     if (b != null) glDeleteBuffers(1, intArrayOf(b.id), 0)
@@ -842,22 +942,31 @@ internal class GlMapRenderer(private val scene: GlScene, private val page: Int) 
         return false
     }
 
-    /** Where a region's ints are packed and sent from, kept and grown, so an upload allocates nothing. */
+    /**
+     * Where a region's ints are sent from, kept and grown, so an upload allocates nothing; [packInts] only for a region
+     * that keeps its record unpacked (tests). A direct buffer is on the Java heap on Android.
+     */
     private var packInts = IntArray(0)
     private var packBytes = ByteBuffer.allocateDirect(0)
 
     private fun upload(r: RegionSprites): Int {
         val n = packedInts(r)
-        if (packInts.size < n) packInts = IntArray(n + n / 4)
-        packRegion(r, packInts)
-        if (packBytes.capacity() < maxOf(1, n) * 4) packBytes = ByteBuffer.allocateDirect(packInts.size * 4 + 4).order(ByteOrder.nativeOrder())
+        val bytes = maxOf(1, n) * 4
+        if (packBytes.capacity() < bytes) packBytes = ByteBuffer.allocateDirect(bytes + bytes / 4).order(ByteOrder.nativeOrder())
         packBytes.clear()
-        packBytes.asIntBuffer().put(packInts, 0, n)
-        packBytes.limit(maxOf(1, n) * 4)
+        val packed = r.packed
+        if (packed != null) packBytes.asIntBuffer().put(packed, 0, n)
+        else {
+            if (packInts.size < n) packInts = IntArray(n + n / 4)
+            packRegion(r, packInts)
+            packBytes.asIntBuffer().put(packInts, 0, n)
+        }
+        packBytes.limit(bytes)
         val ids = IntArray(1)
         glGenBuffers(1, ids, 0)
         glBindBuffer(GL_ARRAY_BUFFER, ids[0])
-        glBufferData(GL_ARRAY_BUFFER, maxOf(1, n) * 4, packBytes, GL_STATIC_DRAW)
+        glBufferData(GL_ARRAY_BUFFER, bytes, packBytes, GL_STATIC_DRAW)
+        glGetError().let { if (it != GL_NO_ERROR) holes.failed(it) }
         glBindBuffer(GL_ARRAY_BUFFER, 0)
         return ids[0]
     }
@@ -1220,6 +1329,9 @@ internal class GlMapRenderer(private val scene: GlScene, private val page: Int) 
 
         /** Region buffers off screen uploaded a frame, at most. */
         const val REGIONS_A_FRAME = 2
+
+        /** Weather rows sent at a time, 260 KB at 1024 wide. */
+        const val WEATHER_ROWS = 64
     }
 }
 

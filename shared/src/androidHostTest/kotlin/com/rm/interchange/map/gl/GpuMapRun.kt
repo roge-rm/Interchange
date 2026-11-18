@@ -56,7 +56,34 @@ class GpuMapRun {
                 println("gpumap $size $name: kept ${mb(held)} MB, $kept regions, $keptTiles tiles")
             }
             rekeep(w, look, year, weather)
+            direct(w, look, year, weather)
         }
+    }
+
+    /**
+     * What the direct passes draw at the widest zoom on the Fire's screen (800 by 1280) while some squares aren't drawn
+     * ahead: every sprite on screen, as before, against the box round the squares left ([squaresBoxColumns]).
+     */
+    private fun direct(w: World, look: Int, year: Int, weather: WeatherCopy) {
+        val view = View(w.width, w.height).also { it.halfWidth = View.MIN_HALF_WIDTH; it.focusX = w.width / 2f; it.focusY = w.height / 2f }
+        val f = GlFrame.of(view, 800, 1280)
+        val keep = visibleColumns(keepFrame(f))
+        val regions = Array(regionCount(w, 0)) { i ->
+            if (regionKept(keep, i, f.viewHeight)) recordRegion(w, 0, i, look, year, weather, cols = keepSlice(keep, i, f.viewWidth, f.viewHeight)) else null
+        }
+        val lv = Zoom.levelFor(f.scale * SOURCE_HALF_WIDTH)
+        val on = squaresOn(f, lv)
+        val runs = DrawRuns()
+        fun sprites(cols: IntArray): String {
+            runs.build(regions, cols)
+            var n = 0L
+            for (k in 0 until runs.size) n += runs.count(k)
+            return "$n sprites in ${runs.size} draws"
+        }
+        println("gpumap ${w.width} direct passes at the widest, ${on[1] - on[0] + 1} by ${on[3] - on[2] + 1} squares: whole screen ${sprites(visibleColumns(f))}")
+        println("gpumap ${w.width} direct passes, a column of squares left: ${sprites(squaresBoxColumns(f, lv, on[1], on[1], on[2], on[3]))}")
+        println("gpumap ${w.width} direct passes, a row of squares left: ${sprites(squaresBoxColumns(f, lv, on[0], on[1], on[3], on[3]))}")
+        println("gpumap ${w.width} direct passes, one square left: ${sprites(squaresBoxColumns(f, lv, on[1], on[1], on[3], on[3]))}")
     }
 
     private fun mb(bytes: Long) = "%.1f".format(bytes / 1e6)

@@ -304,6 +304,7 @@ internal class GlScene(private val world: World, parent: CoroutineScope) {
         // Nothing recording till the first weather copy's in.
         val shownTurn = turns[view.turn]
         val regions = shownTurn?.let { publish(it, frame) }
+        if (sharp && regions != null) checkShown(regions, frame, gesture)
         shownTurn?.let { measureEdit(it) }
         nextLook = shownTurn?.shownLook?.takeIf { it >= 0 } ?: look
         nextFrame = frame
@@ -550,6 +551,28 @@ internal class GlScene(private val world: World, parent: CoroutineScope) {
         val next = takeLevels(levels, first, sharp, sheets::get, sheets::forget, dropped) ?: return
         levels = next
         requestRender()
+    }
+
+    private var holeLogged = 0L
+
+    /**
+     * Logs `scenehole` (at most twice a second) when [regions], handed to the GL thread for [frame], don't hold rows on
+     * its screen, for a device run to show; [columns] as [publish] left them. A jump shows the cover over these.
+     */
+    private fun checkShown(regions: Array<RegionSprites?>, frame: GlFrame, gesture: Boolean) {
+        var rows = 0
+        for (vy in 0 until frame.viewHeight) {
+            val c0 = columns[2 * vy]
+            val c1 = columns[2 * vy + 1]
+            if (c0 > c1) continue
+            val r = regions.getOrNull(vy / REGION_ROWS)
+            if (r == null || !r.holds(vy, c0, c1)) rows++
+        }
+        if (rows == 0) return
+        val now = nowMillis()
+        if (now - holeLogged < 500) return
+        holeLogged = now
+        println("scenehole rows=$rows gesture=$gesture held=${heldTurn == frame.turn}")
     }
 
     /** Whether every region with tiles reaching onto [frame]'s screen is recorded for [turn]. */

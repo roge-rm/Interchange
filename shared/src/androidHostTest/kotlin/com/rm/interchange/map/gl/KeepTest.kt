@@ -469,4 +469,54 @@ class KeepTest {
         val on = EditHold().apply { start(0L, 0, kept..kept, before) }
         assertFalse(on.current(now, t.drawnVersions()), "the kept one isn't drawn with the edit yet")
     }
+
+    /** Region [i]'s rows of a map [rows] tall at columns [c0] to [c1], the rest empty, as [visibleColumns] gives them. */
+    private fun band(rows: Int, i: Int, c0: Int, c1: Int) = IntArray(2 * rows) {
+        val vy = it / 2
+        if (vy / REGION_ROWS != i) (if (it % 2 == 0) 1 else 0) else if (it % 2 == 0) c0 else c1
+    }
+
+    @Test
+    fun aSquareStandsOnlyWhileItsRegionsHoldItsTiles() {
+        val i = 2
+        val rows = big.height
+        val base = recordRegion(big, 0, i, look, year, bigWeather, cols = keepSlice(band(rows, i, 10, 60), i, big.width, rows))
+        val square = band(rows, i, 20, 30)
+        val contents = arrayOf<Any?>(base.content)
+        val looks = intArrayOf(base.look)
+        val drawn = arrayOfNulls<RegionSprites>(i + 1).also { it[i] = base }
+        assertTrue(squareRegionsSame(contents, i, drawn, square))
+        // Kept again further along: the region keeps its content but lets go of the square's tiles.
+        val moved = extendRegion(big, base, keepSlice(band(rows, i, 40, 90), i, big.width, rows), bigWeather)
+        assertSame(base.content, moved.content)
+        drawn[i] = moved
+        assertTrue(squareRegionsSame(contents, i, drawn), "by content alone it stands")
+        assertFalse(squareRegionsSame(contents, i, drawn, square), "a square whose tiles are let go of stood")
+        assertFalse(squareRegionsStand(look + 1, contents, looks, i, drawn, square))
+        // One whose tiles it still holds stands.
+        assertTrue(squareRegionsSame(contents, i, drawn, band(rows, i, 45, 50)))
+        assertTrue(squareRegionsStand(look + 1, contents, looks, i, drawn, band(rows, i, 45, 50)))
+    }
+
+    @Test
+    fun theDirectPassesDrawOnlyRoundTheSquaresLeft() {
+        for (turn in 0 until 4) {
+            val f = frame(64, turn, 8f, 30f, 20f)
+            val lv = com.rm.interchange.map.Zoom.levelFor(f.scale * SOURCE_HALF_WIDTH)
+            val on = squaresOn(f, lv)
+            val screen = visibleColumns(f)
+            assertContentEquals(screen, squaresBoxColumns(f, lv, on[0], on[1], on[2], on[3]), "turn $turn: every square is the screen")
+            val one = squaresBoxColumns(f, lv, on[1], on[1], on[2], on[3])
+            var fewer = false
+            for (vy in 0 until f.viewHeight) {
+                if (one[2 * vy] > one[2 * vy + 1]) {
+                    if (screen[2 * vy] <= screen[2 * vy + 1]) fewer = true
+                    continue
+                }
+                assertTrue(one[2 * vy] >= screen[2 * vy] && one[2 * vy + 1] <= screen[2 * vy + 1], "turn $turn row $vy")
+                if (one[2 * vy] > screen[2 * vy]) fewer = true
+            }
+            assertTrue(fewer, "turn $turn: the last column of squares drew the whole screen")
+        }
+    }
 }
