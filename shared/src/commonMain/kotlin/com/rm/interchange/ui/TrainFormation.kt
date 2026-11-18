@@ -61,7 +61,7 @@ internal fun TrainFormationEditor(
     var draft by remember(t.id, t.formation) { mutableStateOf(t.formation) }
     var selected by remember(t.id) { mutableIntStateOf(0) }
     var picking by remember(t.id) { mutableStateOf(false) }
-    var wagons by remember(t.id) { mutableStateOf(true) }
+    var wagons by remember(t.id) { mutableStateOf(t.kind != TrackKind.TUBE) }
     var model by remember(t.id) { mutableIntStateOf(-1) }
     var cargo by remember(t.id) { mutableIntStateOf(-1) }
     fun move(from: Int, to: Int) {

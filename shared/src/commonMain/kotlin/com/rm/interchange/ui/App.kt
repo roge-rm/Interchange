@@ -124,6 +124,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import com.rm.interchange.sim.BadData
 import com.rm.interchange.sim.BadPack
+import com.rm.interchange.sim.NewerPack
 import com.rm.interchange.sim.Calendar
 import com.rm.interchange.sim.Cargo
 import com.rm.interchange.sim.CargoTable
@@ -324,6 +325,7 @@ private fun Root(settings: Settings) {
     val memory = deviceMemory()
     val needsPacks = stringResource(Res.string.needs_packs, "%s")
     val cantAdd = stringResource(Res.string.cant_add_pack, "%s")
+    val newerPack = stringResource(Res.string.pack_newer_format, "%1", "%2")
     val added = stringResource(Res.string.pack_added, "%s")
     val warning = stringResource(Res.string.pack_warning, "%s")
     val lang = languageCode()
@@ -710,7 +712,7 @@ private fun Root(settings: Settings) {
                         val pack = InstalledPacks.add(bytes)
                         (listOf(added.replace("%s", pack.name(lang))) + pack.warnings.map { warning.replace("%s", it) }).joinToString("\n") to false
                     } catch (e: BadPack) {
-                        cantAdd.replace("%s", e.problems.joinToString("\n")) to true
+                        cantAdd.replace("%s", if (e is NewerPack) newerPack.replace("%1", e.format.toString()).replace("%2", e.supported.toString()) else e.problems.joinToString("\n")) to true
                     }
                 }
                 adding = false

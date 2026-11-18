@@ -224,6 +224,7 @@
     <string name="pack_unit">Compté en %1$s</string>
     <string name="pack_added">Pack ajouté : %1$s.</string>
     <string name="cant_add_pack">Impossible d'ajouter ce pack : %1$s</string>
+    <string name="pack_newer_format">Fait pour une version plus récente du jeu (format de pack %1$d, ce jeu lit jusqu'au %2$d)</string>
     <string name="packs_clash">Ces packs ne vont pas ensemble : %1$s</string>
     <string name="needs_packs">Il manque des packs pour cette partie : %1$s</string>
 

@@ -215,17 +215,20 @@ fun DepotCard(view: WorldView, roster: Roster, depot: Int, year: Int, funds: Lon
     Card(stringResource(when (depotKind) { TrackKind.TUBE -> Res.string.depot_tube; TrackKind.GUIDEWAY -> Res.string.depot_maglev; else -> Res.string.depot }), onClose, modifier, scrolls = false) {
         // What's picked, or the first on sale once the one picked goes off sale.
         val e = engines.firstOrNull { it.id == engineId } ?: engines.firstOrNull()
-        val w = wagons.firstOrNull { it.id == wagonId } ?: wagons.firstOrNull()
+        val podsOnly = depotKind == TrackKind.TUBE
+        val w = if (podsOnly) null else wagons.firstOrNull { it.id == wagonId } ?: wagons.firstOrNull()
+        // The sim wants a wagon id with a train even when it has none; pods take any wagon and 0 of them.
+        val anyWagon = roster.available(year, pulls = false).firstOrNull()?.id ?: 0
         // An engine's price and running cost with its tender's, as it's bought.
         fun tender(t: Engine) = roster.getOrNull(t.tender)
         BuyPanel(
             top = {
-                FillChips(listOf(false, true), showWagons, { stringResource(if (it) Res.string.wagons else Res.string.engines) }) { showWagons = it }
+                if (!podsOnly) FillChips(listOf(false, true), showWagons, { stringResource(if (it) Res.string.wagons else Res.string.engines) }) { showWagons = it }
             },
             list = {
                 when {
-                    showWagons && w == null -> NoneOnSale(roster, VehicleKind.WAGON, year)
-                    showWagons && w != null -> BuyList(wagons, w.id, cargo, price, { wagonId = it; cargo = -1 }) { cargo = it }
+                    showWagons && !podsOnly && w == null -> NoneOnSale(roster, VehicleKind.WAGON, year)
+                    showWagons && !podsOnly && w != null -> BuyList(wagons, w.id, cargo, price, { wagonId = it; cargo = -1 }) { cargo = it }
                     e == null -> NoneOnSale(roster, VehicleKind.ENGINE, year)
                     else -> BuyList(
                         engines, e.id, -1, price, { engineId = it },
@@ -249,13 +252,13 @@ fun DepotCard(view: WorldView, roster: Roster, depot: Int, year: Int, funds: Lon
                             SquareButton(Glyph.Plus, stringResource(Res.string.more_wagons), 32.dp, enabled = count < MAX_WAGONS) { count++ }
                         }
                     }
-                    if (w == null) Text(stringResource(Res.string.no_wagons_on_sale), color = c.warn, style = KitType.ListLine)
+                    if (w == null && !podsOnly) Text(stringResource(Res.string.no_wagons_on_sale), color = c.warn, style = KitType.ListLine)
                     // Electric engines need wires over the depot to get out.
                     val unwired = e.traction == Traction.ELECTRIC && view.depots.firstOrNull { it.id == depot }?.wired != true
                     if (unwired) Text(stringResource(Res.string.depot_needs_wires), color = c.warn, style = KitType.ListLine)
                     InheritPill(view, Command.CopyVehicle.TRAIN, inherit) { inherit = it }
-                    BuyButton(cost, funds, blocked = unwired || w == null) {
-                        send(Command.BuyTrain(me, depot, e.id, w?.id ?: 0, n, if (cargo in choices) cargo else -1, vehicleCount, inherit))
+                    BuyButton(cost, funds, blocked = unwired || (w == null && !podsOnly)) {
+                        send(Command.BuyTrain(me, depot, e.id, w?.id ?: anyWagon, n, if (cargo in choices) cargo else -1, vehicleCount, inherit))
                     }
                 }
                 VehicleCount(vehicleCount) { vehicleCount = it }

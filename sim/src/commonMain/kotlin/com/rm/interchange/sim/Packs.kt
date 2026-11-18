@@ -13,7 +13,11 @@ package com.rm.interchange.sim
 data class PackRef(val id: String, val version: Int, val hash: Long)
 
 /** What's wrong with a pack, every problem found, one to a line. */
-class BadPack(val problems: List<String>) : Exception(problems.joinToString("\n"))
+open class BadPack(val problems: List<String>) : Exception(problems.joinToString("\n"))
+
+/** A pack made for a newer pack format than this game reads; the UI words it itself, [problems] has the English. */
+class NewerPack(val format: Int, val supported: Int, val spec: String) :
+    BadPack(listOf("made for a newer version of the game (pack format $format, this game reads up to $supported, Interchange packs $spec)"))
 
 enum class VehicleKind { ENGINE, WAGON, TENDER, ROAD, SHIP, AIRCRAFT }
 
@@ -279,7 +283,7 @@ object Packs {
             throw BadPack(problems)
         }, problems, warnings)
         val format = m.int("format", 1, 1000, need = true) ?: 0
-        if (format > FORMAT) throw BadPack(listOf("made for a newer version of the game (pack format $format, this game reads up to $FORMAT, Interchange packs $SPEC)"))
+        if (format > FORMAT) throw NewerPack(format, FORMAT, SPEC)
         val id = m.string("id", need = true) ?: ""
         if (id.isNotEmpty() && !ID.matches(id)) problems += "manifest.json: id \"$id\" should be lower case letters, digits, - and _, up to 32"
         if (id == BASE_ID && !base) problems += "manifest.json: the id \"base\" is the game's own"
