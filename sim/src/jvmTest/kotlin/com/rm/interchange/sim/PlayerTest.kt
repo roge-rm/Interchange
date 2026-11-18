@@ -11,8 +11,8 @@ class PlayerTest {
      * cheapest engine within a quarter of the fastest (steam or diesel) with its tender and three of the day's coaches.
      */
     private fun firstLine(r: Roster, year: Int): Long {
-        val coach = r.available(year, false).filter { Cargo.PASSENGERS in it.cargoes && it.capacity > 0 }.maxBy { it.capacity * 16 / it.length }
-        val engines = r.available(year, true).filter { it.traction != Traction.ELECTRIC && it.capacity == 0 }
+        val coach = r.available(year, false).filter { Cargo.PASSENGERS in it.cargoes && it.capacity > 0 && it.traction != Traction.MAGLEV && it.traction != Traction.HYPERLOOP }.maxBy { it.capacity * 16 / it.length }
+        val engines = r.available(year, true).filter { it.traction != Traction.ELECTRIC && it.traction != Traction.MAGLEV && it.traction != Traction.HYPERLOOP && it.capacity == 0 }
         val fastest = engines.maxOf { it.speed }
         val engine = engines.filter { it.speed * 4 >= fastest * 3 }.minBy { it.cost + (r.getOrNull(it.tender)?.cost ?: 0) }
         val train = engine.cost + (r.getOrNull(engine.tender)?.cost ?: 0) + coach.cost * 3
