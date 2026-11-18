@@ -9,6 +9,9 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -18,8 +21,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.BasicText
-import androidx.compose.foundation.text.TextAutoSize
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -244,9 +245,9 @@ fun ToolBar(
         }
     } else {
         ChromeBox(modifier.fillMaxWidth()) {
-            Row(Modifier.padding(4.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                for (g in groups) GroupButton(g.glyph, stringResource(g.title), g == selected && !remove, compact, Modifier.weight(1f)) { onSelect(g) }
-                GroupButton(Glyph.Remove, removeLabel, remove, compact, Modifier.weight(1f), onRemove)
+            Row(Modifier.padding(4.dp).height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                for (g in groups) GroupButton(g.glyph, stringResource(g.title), g == selected && !remove, compact, Modifier.weight(1f).fillMaxHeight()) { onSelect(g) }
+                GroupButton(Glyph.Remove, removeLabel, remove, compact, Modifier.weight(1f).fillMaxHeight(), onRemove)
             }
         }
     }
@@ -267,11 +268,7 @@ private fun GroupButton(glyph: Glyph, label: String, selected: Boolean, compact:
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         GlyphIcon(glyph, if (selected) c.onAccent else c.text, Modifier.size(if (compact) 24.dp else 28.dp))
-        BasicText(
-            label, maxLines = 1,
-            style = TextStyle(color = if (selected) c.onAccent else c.textDim, textAlign = TextAlign.Center),
-            autoSize = TextAutoSize.StepBased(minFontSize = 5.sp, maxFontSize = if (compact) 10.sp else 11.sp),
-        )
+        WordFitText(label, TextStyle(fontSize = if (compact) 10.sp else 11.sp, lineHeight = if (compact) 11.sp else 12.sp), if (selected) c.onAccent else c.textDim, textAlign = TextAlign.Center, maxLines = 2)
     }
 }
 
@@ -304,13 +301,14 @@ fun ToolTray(
     CapFontScale { ChromeBox(modifier) {
         Column(Modifier.padding(4.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             if (tools.size > 1 && !folded) {
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                     for (t in tools) {
                         val on = t == tool
                         val toolTitle = stringResource(t.title)
                         Column(
                             Modifier
                                 .weight(1f)
+                                .fillMaxHeight()
                                 .alpha(if (t.ready(editor)) 1f else 0.4f)
                                 .clip(ButtonShape)
                                 .background(if (on) c.accent else c.button)
@@ -321,11 +319,7 @@ fun ToolTray(
                             horizontalAlignment = Alignment.CenterHorizontally,
                         ) {
                             GlyphIcon(t.glyph, if (on) c.onAccent else c.text, Modifier.size(22.dp))
-                            if (!compact) BasicText(
-                                toolTitle, maxLines = 1,
-                                style = TextStyle(color = if (on) c.onAccent else c.textDim, textAlign = TextAlign.Center),
-                                autoSize = TextAutoSize.StepBased(minFontSize = 4.sp, maxFontSize = 10.sp),
-                            )
+                            if (!compact) WordFitText(toolTitle, TextStyle(fontSize = 10.sp, lineHeight = 11.sp), if (on) c.onAccent else c.textDim, textAlign = TextAlign.Center, maxLines = 2)
                         }
                     }
                 }

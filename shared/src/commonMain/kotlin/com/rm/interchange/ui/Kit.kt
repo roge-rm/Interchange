@@ -106,8 +106,8 @@ fun BigButton(text: String, primary: Boolean = false, enabled: Boolean = true, g
 }
 
 /**
- * [text] in [style], made smaller when its longest word wouldn't fit the width, so lines break between words only.
- * Not drawn until it has settled, so a broken word never shows.
+ * [text] in [style], made smaller when its longest word wouldn't fit the width or it runs past [maxLines], so lines
+ * break between words only. Not drawn until it has settled, so a broken word never shows.
  */
 @Composable
 fun WordFitText(text: String, style: TextStyle, color: Color, modifier: Modifier = Modifier, textAlign: TextAlign? = null, maxLines: Int = Int.MAX_VALUE) {
@@ -127,7 +127,8 @@ fun WordFitText(text: String, style: TextStyle, color: Color, modifier: Modifier
             val widest = text.split(' ', '\n', '\u00A0').filter { it.isNotEmpty() }
                 .maxOfOrNull { measurer.measure(it, style, softWrap = false).size.width } ?: 0
             val fit = if (widest > room) room * 0.97f / widest else 1f
-            if ((fit * extra).coerceIn(0.3f, 1f) == scale && extra > 0.5f && (0 until r.lineCount - 1).any { breaksWord(text, r.getLineEnd(it)) }) extra -= 0.05f
+            val broken = r.hasVisualOverflow || (0 until r.lineCount - 1).any { breaksWord(text, r.getLineEnd(it)) }
+            if ((fit * extra).coerceIn(0.3f, 1f) == scale && extra > 0.5f && broken) extra -= 0.05f
             val target = (fit * extra).coerceIn(0.3f, 1f)
             if (kotlin.math.abs(target - scale) > 0.001f) { scale = target; settled = false } else settled = true
         },
