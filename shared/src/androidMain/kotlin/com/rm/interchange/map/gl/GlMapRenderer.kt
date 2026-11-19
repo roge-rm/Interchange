@@ -117,6 +117,15 @@ internal class GlMapRenderer(private val scene: GlScene, private val page: Int) 
     private var labelTaken = FloatArray(0)
     private var labelBytes = ByteBuffer.allocateDirect(0)
 
+    private var toolProgram = 0
+    private var toolVao = 0
+    private var toolTex = 0
+    private var toolTexW = 0
+    private var toolTexH = 0
+    /** The tool overlay image on [toolTex], with where it was drawn. */
+    private var toolUp: OverlayShot? = null
+    private val toolRect = FloatArray(4)
+
     override fun onSurfaceCreated(gl: GL10?, config: EGLConfig?) {
         // A new context: whatever was made in the last went with it.
         levels.fill(null)
@@ -143,6 +152,12 @@ internal class GlMapRenderer(private val scene: GlScene, private val page: Int) 
         liveProgram = program(LIVE_VS, LIVE_FS)
         labelProgram = program(LABEL_VS, LABEL_FS)
         labelTex = 0
+        toolProgram = program(TOOL_VS, TOOL_FS)
+        toolVao = IntArray(1).also { glGenVertexArrays(1, it, 0) }[0]
+        toolTex = 0
+        toolTexW = 0
+        toolTexH = 0
+        toolUp = null
         val ids = IntArray(3)
         glGenVertexArrays(3, ids, 0)
         vao = ids[0]
@@ -227,6 +242,7 @@ internal class GlMapRenderer(private val scene: GlScene, private val page: Int) 
         val shown = scene.shown ?: return clearScreen()
         // After taking the frame, so the label images it uses are among those taken.
         takeLabels()
+        takeTool()
         val f = shown.frame
         look = shown.look
         // The screen's level is uploaded before the cover lifts and the zoom's held to levels that are in, so there's
@@ -274,6 +290,7 @@ internal class GlMapRenderer(private val scene: GlScene, private val page: Int) 
         // Back to clear for what moves, which cuts by depth.
         glClear(GL_DEPTH_BUFFER_BIT)
         shown.live?.let { drawLive(it) }
+        if (shown.overlay != null) drawTool(shown)
         shown.labels?.let { drawLabels(it, shown) }
         glBindVertexArray(0)
         glBindBuffer(GL_ARRAY_BUFFER, 0)
@@ -736,6 +753,68 @@ internal class GlMapRenderer(private val scene: GlScene, private val page: Int) 
         glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA)
         glDrawArraysInstanced(GL_TRIANGLE_STRIP, 0, 4, n)
         glBindTexture(GL_TEXTURE_2D, 0)
+    }
+
+    /** Puts the tool overlay image over the map, moved and scaled from where it was drawn to [shown]'s view. */
+    private fun drawTool(shown: GlShown) {
+        val up = toolUp ?: return
+        if (toolTex == 0 || !up.place.mapTo(shown.at, width, height, toolRect)) return
+        val p = toolProgram
+        glUseProgram(p)
+        glBindVertexArray(toolVao)
+        glUniform2f(glGetUniformLocation(p, "uScreen"), width.toFloat(), height.toFloat())
+        glUniform4f(glGetUniformLocation(p, "uRect"), toolRect[0], toolRect[1], toolRect[2], toolRect[3])
+        glUniform1i(glGetUniformLocation(p, "uTex"), 0)
+        glActiveTexture(GL_TEXTURE0)
+        glBindTexture(GL_TEXTURE_2D, toolTex)
+        glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA)
+        glDrawArrays(GL_TRIANGLE_STRIP, 0, 4)
+        glBindTexture(GL_TEXTURE_2D, 0)
+    }
+
+    /** Puts the newest tool overlay image [scene] has drawn onto its texture, made or remade for its size. */
+    private fun takeTool() {
+        val shot = scene.toolOverlay.take() ?: return
+        try {
+            val bitmap = shot.image.asAndroidBitmap()
+            val w = bitmap.width
+            val h = bitmap.height
+            if (w > maxTexture || h > maxTexture) {
+                Log.e(TAG, "gl tool overlay ${w}x$h past $maxTexture")
+                toolUp = null
+                return
+            }
+            while (glGetError() != GL_NO_ERROR) Unit
+            if (toolTex == 0) {
+                toolTex = IntArray(1).also { glGenTextures(1, it, 0) }[0]
+                glBindTexture(GL_TEXTURE_2D, toolTex)
+                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR)
+                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR)
+                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE)
+                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE)
+            } else glBindTexture(GL_TEXTURE_2D, toolTex)
+            glPixelStorei(GL_UNPACK_ALIGNMENT, 4)
+            // Android bitmaps hold premultiplied pixels, which go up as they are.
+            if (w != toolTexW || h != toolTexH) {
+                GLUtils.texImage2D(GL_TEXTURE_2D, 0, bitmap, 0)
+                toolTexW = w
+                toolTexH = h
+            } else GLUtils.texSubImage2D(GL_TEXTURE_2D, 0, 0, 0, bitmap)
+            val error = glGetError()
+            glBindTexture(GL_TEXTURE_2D, 0)
+            if (error != GL_NO_ERROR) {
+                Log.e(TAG, "gl tool overlay ${w}x$h failed: $error")
+                glDeleteTextures(1, intArrayOf(toolTex), 0)
+                toolTex = 0
+                toolTexW = 0
+                toolTexH = 0
+                toolUp = null
+                return
+            }
+            toolUp = shot
+        } finally {
+            scene.toolOverlay.taken(shot)
+        }
     }
 
     /** Copies the label images [scene] has placed since the last frame onto the label page, made the first time. */
@@ -1417,6 +1496,11 @@ internal class GlMapRenderer(private val scene: GlScene, private val page: Int) 
         labelBuffer = 0
         if (labelTex != 0) glDeleteTextures(1, intArrayOf(labelTex), 0)
         labelTex = 0
+        if (toolTex != 0) glDeleteTextures(1, intArrayOf(toolTex), 0)
+        toolTex = 0
+        toolTexW = 0
+        toolTexH = 0
+        toolUp = null
         for (l in levels) if (l != null) glDeleteTextures(4, l.textures, 0)
         levels.fill(null)
         for (t in intArrayOf(weatherTex, legsTex, staticCells, shadowCells, wearTex)) if (t != 0) glDeleteTextures(1, intArrayOf(t), 0)
@@ -1427,10 +1511,14 @@ internal class GlMapRenderer(private val scene: GlScene, private val page: Int) 
         weatherTex = 0
         weatherUp = null
         legsTex = 0
-        for (a in intArrayOf(vao, groundVao, liveVao, labelVao)) if (a != 0) glDeleteVertexArrays(1, intArrayOf(a), 0)
-        for (p in intArrayOf(spriteProgram, shadowProgram, groundProgram, overlayProgram, liveProgram, labelProgram)) if (p != 0) glDeleteProgram(p)
+        for (a in intArrayOf(vao, groundVao, liveVao, labelVao, toolVao)) if (a != 0) glDeleteVertexArrays(1, intArrayOf(a), 0)
+        for (p in intArrayOf(spriteProgram, shadowProgram, groundProgram, overlayProgram, liveProgram, labelProgram, toolProgram)) {
+            if (p != 0) glDeleteProgram(p)
+        }
         labelVao = 0
         labelProgram = 0
+        toolVao = 0
+        toolProgram = 0
         vao = 0
         groundVao = 0
         liveVao = 0
@@ -1517,6 +1605,30 @@ flat in float vAlpha;
 out vec4 frag;
 void main() {
     frag = texture(uTex, vUv) * vAlpha;
+}
+"""
+
+/** The tool overlay image onto its screen rect (left, top, right, bottom in pixels), premultiplied. */
+private const val TOOL_VS = """#version 300 es
+precision highp float;
+uniform vec2 uScreen;
+uniform vec4 uRect;
+out vec2 vUv;
+void main() {
+    vec2 o = vec2(float(gl_VertexID & 1), float(gl_VertexID >> 1));
+    vec2 p = mix(uRect.xy, uRect.zw, o);
+    vUv = o;
+    gl_Position = vec4(p.x / uScreen.x * 2.0 - 1.0, 1.0 - p.y / uScreen.y * 2.0, 0.0, 1.0);
+}
+"""
+
+private const val TOOL_FS = """#version 300 es
+precision mediump float;
+uniform sampler2D uTex;
+in highp vec2 vUv;
+out vec4 frag;
+void main() {
+    frag = texture(uTex, vUv);
 }
 """
 

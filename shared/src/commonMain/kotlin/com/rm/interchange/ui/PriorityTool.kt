@@ -59,6 +59,27 @@ fun drawLit(
     }
 }
 
+/**
+ * What [drawLit]'s marks show, compared by content, so a new world view with the same marks keeps the overlay as drawn.
+ * Null when none show.
+ */
+fun litKey(wv: WorldView?, risk: WorldView?, showPriority: Boolean, showRisk: Boolean): Any? {
+    val p = showPriority && wv != null
+    val r = showRisk && risk != null
+    if (!p && !r) return null
+    return LitKey(
+        if (p) wv!!.priorityTrack else null, if (p) wv!!.priorityRoad else null,
+        if (r) risk!!.riskTiles else null, if (r) risk!!.riskLevels else null, Palette.safe,
+    )
+}
+
+private class LitKey(val track: IntArray?, val road: IntArray?, val risk: IntArray?, val levels: ByteArray?, val safe: Boolean) {
+    override fun equals(other: Any?) = other is LitKey && safe == other.safe && track.contentEquals(other.track) &&
+        road.contentEquals(other.road) && risk.contentEquals(other.risk) && levels.contentEquals(other.levels)
+
+    override fun hashCode() = track.contentHashCode() * 31 + risk.contentHashCode()
+}
+
 /** Whether tile [i] is within the screen drawn on, with a tile's margin. */
 private fun DrawScope.onScreen(world: World, view: View, i: Int): Boolean {
     val x = i % world.width + 0.5f

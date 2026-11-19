@@ -25,10 +25,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.geometry.isSpecified
 import com.rm.interchange.ui.CursorTarget
 import com.rm.interchange.ui.Gamepad
-import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.graphics.layer.drawLayer
-import androidx.compose.ui.graphics.rememberGraphicsLayer
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.isPrimaryPressed
 import androidx.compose.ui.input.pointer.isSecondaryPressed
@@ -97,6 +94,8 @@ fun MapView(
     moving: () -> Moving?,
     modifier: Modifier = Modifier,
     overlay: (DrawScope.(LandPainter) -> Unit)? = null,
+    /** Equal while [overlay] would draw the same; it's drawn again when this changes. Null to go by [overlay] itself. */
+    overlayKey: Any? = null,
     /** The overlays drawn into the ground, as [MapOverlays] bits. */
     overlays: Int = 0,
     /** Town names, signs and payments, put into the GPU map's frame to draw over everything else at its view. */
@@ -135,10 +134,8 @@ fun MapView(
     val clock = remember(world) { TimeSource.Monotonic.markNow() }
     // When the GPU map last had everything for the screen, to fade the cover from; -1 while it waits.
     val glReadyAt = remember(world) { longArrayOf(-1L) }
-    // The tool's drawing over the map is kept in a layer, so the last of a drag can stay on screen as it was till the
-    // GPU map draws what it built. Where it was drawn: the screen place of world point 0, 0, the zoom and the turn.
-    val plan = rememberGraphicsLayer()
-    val planAt = remember(world) { FloatArray(4) }
+    // The tool's drawing goes to the GPU map as an image, so the last of a drag can stay on screen as it was till the
+    // GPU map draws what it built.
     val planHeld = remember(world) { booleanArrayOf(false, false) }
     // A tap on the tile at [it], from a finger or the gamepad's cursor.
     fun tapAt(it: Pick) {
@@ -367,6 +364,29 @@ fun MapView(
         movingNow?.let { drawMoving(world, view, sheets, it, gl.live, gl.editWaiting, gl.showingLook) }
         labels?.invoke(this, gl.labels)
         val now = clock.elapsedNow().inWholeMilliseconds
+        val draw = overlay
+        val w = size.width.toInt()
+        val h = size.height.toInt()
+        if (draw != null) {
+            gl.overlayShot = gl.toolOverlay.shot(this, layoutDirection, overlayKey ?: draw, view, w, h, now) { ox, oy ->
+                val painter = LandPainter(world, view, view.halfWidth)
+                painter.originX = ox
+                painter.originY = oy
+                draw(painter)
+            }
+            planHeld[0] = false
+            planHeld[1] = true
+        } else {
+            planHeld[1] = false
+            // Held as it was while the edit waits, moved with a pan; a zoom or turn lets it go.
+            val held = gl.toolOverlay.held()
+            if (planHeld[0] && gl.holdingEdit && held != null && held.place.at.halfWidth == view.halfWidth && held.place.at.turn == view.turn) {
+                gl.overlayShot = held
+            } else {
+                planHeld[0] = false
+                gl.toolOverlay.idle()
+            }
+        }
         // The GPU map takes the frame with what moves in it, so they show together, then the cover fades.
         if (!gl.finish()) glReadyAt[0] = -1L
         else if (glReadyAt[0] < 0L) glReadyAt[0] = now
@@ -374,28 +394,6 @@ fun MapView(
         // What's drawn over the map is at the view of the GL frame on screen, which can be behind the view or held.
         view.drawAt(gl.layersAt()) {
             movingNow?.let { drawSky(world, view, it) }
-            val ox = view.screenX(0f, 0f, size.width)
-            val oy = view.screenY(0f, 0f, 0f, size.height)
-            val draw = overlay
-            if (draw != null) {
-                val painter = LandPainter(world, view, view.halfWidth)
-                painter.originX = ox
-                painter.originY = oy
-                plan.record { draw(painter) }
-                drawLayer(plan)
-                planAt[0] = ox
-                planAt[1] = oy
-                planAt[2] = view.halfWidth
-                planAt[3] = view.turn.toFloat()
-                planHeld[0] = false
-                planHeld[1] = true
-            } else {
-                planHeld[1] = false
-                // Held as it was, moved with a pan; a zoom or turn lets it go.
-                if (planHeld[0] && gl.holdingEdit && planAt[2] == view.halfWidth && planAt[3] == view.turn.toFloat()) {
-                    translate(ox - planAt[0], oy - planAt[1]) { drawLayer(plan) }
-                } else planHeld[0] = false
-            }
             label?.invoke(this)
         }
         clocked[0] = ClockDrawn.any

@@ -7,3 +7,6 @@ internal expect fun imageBitmapOf(pixels: IntArray, width: Int, height: Int): Im
 
 /** How much memory the app may hold on the heap, in bytes. */
 internal expect fun heapBytes(): Long
+
+/** Whether [a] and [b] are the same size with the same pixels. */
+internal expect fun sameImage(a: ImageBitmap, b: ImageBitmap): Boolean

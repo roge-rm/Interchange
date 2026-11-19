@@ -51,7 +51,8 @@ internal const val GL_CHECKS = false
 /**
  * What the GPU draws next: the frame, the regions recorded so far for its turn, null where still recording, what moves,
  * the [Climate] look the regions are drawn with, a count that goes up with each one made, and the view it's at.
- * [present] is when to show it, as [GlScene.onHanded] returns, -1 without it. [labels] are drawn over it all at [at].
+ * [present] is when to show it, as [GlScene.onHanded] returns, -1 without it. [overlay], the tool's, is drawn over the
+ * map moved to [at], and [labels] over it all at [at].
  */
 internal class GlShown(
     val frame: GlFrame,
@@ -62,6 +63,7 @@ internal class GlShown(
     val at: ViewAt,
     val present: Long = -1L,
     val labels: LabelBatch? = null,
+    val overlay: OverlayShot? = null,
 )
 
 /**
@@ -276,6 +278,12 @@ internal class GlScene(private val world: World, parent: CoroutineScope) {
     /** Takes the names, signs and payments each frame, between [show] and [finish]. */
     val labels = MapLabels(labelAtlas, world.width, world.height)
 
+    /** The tool's plans and lit selection as an image, for the GL thread through [ToolOverlay.take]. */
+    val toolOverlay = ToolOverlay()
+
+    /** The tool overlay for the frame, set between [show] and [finish]. Main thread. */
+    var overlayShot: OverlayShot? = null
+
     /** The [LiveBatch.seq] of the last batch the GL thread copied out, set by it. */
     @Volatile
     var liveTaken = 0L
@@ -358,6 +366,7 @@ internal class GlScene(private val world: World, parent: CoroutineScope) {
         }
         live.reset()
         labels.reset()
+        overlayShot = null
         // Nothing recording till the first weather copy's in.
         val shownTurn = turns[view.turn]
         val regions = shownTurn?.let { publish(it, frame) }
@@ -387,12 +396,15 @@ internal class GlScene(private val world: World, parent: CoroutineScope) {
         // A frame that skipped the moving drawing keeps the last batch, so it doesn't flip to none and back.
         val batch = if (movingWanted) live.batch(last?.live, liveTaken) else last?.live
         val marks = labels.batch(last?.labels)
-        if (last == null || last.frame != frame || !last.regions.contentEquals(regions) || last.live !== batch || last.look != nextLook || last.labels !== marks) {
+        val tool = overlayShot
+        if (last == null || last.frame != frame || !last.regions.contentEquals(regions) || last.live !== batch || last.look != nextLook ||
+            last.labels !== marks || last.overlay !== tool
+        ) {
             val present = onHanded?.invoke(++seq) ?: -1L
             // A frame with a display time or held for its commit shows with this Compose frame. One given a display time
             // isn't held, so it still shows on time with the GL thread a frame behind.
             layerView.handed(seq, at, held = present >= 0L, slack = if (present > 0L) 2 else 1)
-            shown = GlShown(frame, regions.copyOf(), batch, nextLook, seq, at, present, marks)
+            shown = GlShown(frame, regions.copyOf(), batch, nextLook, seq, at, present, marks, tool)
             requestRender()
         }
         if (edit.holding) {
@@ -511,6 +523,7 @@ internal class GlScene(private val world: World, parent: CoroutineScope) {
     fun lost(context: Int) {
         onGpu = null
         labelAtlas.lose()
+        toolOverlay.lose()
         scope.launch {
             dropped.fill(false)
             atlas.reset(context)

@@ -1542,9 +1542,14 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, setting
         mapSize = androidx.compose.ui.geometry.Size(constraints.maxWidth.toFloat(), constraints.maxHeight.toFloat())
 
         val mapDescription = stringResource(Res.string.map_description)
+        val showPriority = settings.priority || tool == Tool.PriorityTrack || tool == Tool.PriorityRoad
+        // An industry shows red where it won't fit.
+        val areaBad = areaPlan?.let { a ->
+            tool == Tool.Lower || tool == Tool.ClearTrees || (tool == Tool.PlaceIndustry && !world.industryFitsAt(industryKind, a[0], a[1], industryTurn))
+        } ?: false
         MapView(
             world, sheets, view, { runner.view }, input, { moving(runner) }, Modifier.fillMaxSize().letsGoOfText().semantics { contentDescription = mapDescription },
-            overlay = drawLit(world, view, worldView.value, riskView.value, settings.priority || tool == Tool.PriorityTrack || tool == Tool.PriorityRoad, settings.risk, plan?.let { p -> { painter -> drawTrackPlan(world, painter, p) } }
+            overlay = drawLit(world, view, worldView.value, riskView.value, showPriority, settings.risk, plan?.let { p -> { painter -> drawTrackPlan(world, painter, p) } }
                 ?: (stationPlan ?: stationHeld?.first)?.let { p -> { painter -> drawStationPlan(world, painter, p) } }
                 ?: bridgePlan?.let { p -> { painter -> drawBridgePlan(world, painter, p) } }
                 ?: roadPlan?.let { p -> { painter -> drawRoadPlan(world, painter, p) } }
@@ -1556,11 +1561,14 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, setting
                 ?: signalPlan?.let { p -> { painter -> drawSignalPlan(world, painter, p) } }
                 ?: priorityPlan?.let { p -> { painter -> drawPriorityPlan(world, painter, p) } }
                 ?: areaPlan?.let { a ->
-                    // An industry shows red where it won't fit.
-                    val bad = tool == Tool.Lower || tool == Tool.ClearTrees || (tool == Tool.PlaceIndustry && !world.industryFitsAt(industryKind, a[0], a[1], industryTurn))
-                    val draw: DrawScope.(LandPainter) -> Unit = { painter -> drawAreaPlan(world, painter, a, removing = bad) }
+                    val draw: DrawScope.(LandPainter) -> Unit = { painter -> drawAreaPlan(world, painter, a, removing = areaBad) }
                     draw
                 }),
+            overlayKey = listOf(
+                litKey(worldView.value, riskView.value, showPriority, settings.risk), plan, stationPlan ?: stationHeld?.first, bridgePlan,
+                roadPlan, canalPlan, clearPlan, removePlan, levelPlan, treePlan, signalPlan, priorityPlan, areaPlan?.toList(), areaBad,
+                Palette.safe,
+            ),
             label = dragAt?.takeIf { dragText != null }?.let { at -> { drawDragLabel(world, view, measurer, dragText!!, shortOf, at) } },
             page = c.page,
             loading = remember(c) { LoadingLook(rail = c.textDim, train = c.accent, trim = c.text, text = c.textDim, style = KitType.Dim) },
