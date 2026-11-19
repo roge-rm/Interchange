@@ -1,17 +1,15 @@
 package com.rm.interchange.map
 
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PointMode
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.DrawScope
-import androidx.compose.ui.graphics.drawscope.withTransform
+import com.rm.interchange.map.gl.MapShades
 import com.rm.interchange.sim.Front
 import com.rm.interchange.sim.World
 import com.rm.interchange.sim.skyAt
 import kotlin.math.sin
-import kotlin.math.sqrt
 import kotlin.time.TimeSource
 
 private val started = TimeSource.Monotonic.markNow()
@@ -25,36 +23,25 @@ private fun slid(fronts: List<Front>, dayPart: Float): List<Front> = fronts.map 
 }
 
 /**
- * The weather over the map: a shade of cloud under each low, fog banks, and
- * rain or snow falling wherever it's falling on the map below. The drops and
- * flakes are a fixed set moving down the screen, each shown only where the
- * weather under it would let it fall, so showers move across with their front.
+ * The weather over the map: a shade of cloud under each low and fog banks, handed to [shades] for the GPU map to draw
+ * at its frame's view, and rain or snow falling wherever it's falling on the map below. The drops and flakes are a
+ * fixed set moving down the screen, each shown only where the weather under it would let it fall, so showers move
+ * across with their front.
  */
-internal fun DrawScope.drawSky(world: World, view: View, moving: Moving) {
+internal fun DrawScope.drawSky(world: World, view: View, moving: Moving, shades: MapShades) {
+    shades.take()
     val weather = moving.now.weather ?: return
     val dayPart = ((moving.now.tick % world.dayTicks) + moving.between) / world.dayTicks
     val fronts = slid(weather.fronts, dayPart)
     val w = size.width
     val h = size.height
-    // A front's circle on the map is an ellipse on screen, twice as wide as tall.
     for (f in fronts) {
-        val wx = f.x / 256f
-        val wy = f.y / 256f
-        val vx = view.toViewX(wx, wy)
-        val vy = view.toViewY(wx, wy)
-        val cx = view.screenX(vx, vy, w)
-        val cy = view.screenY(vx, vy, 4f, h)
-        val rx = f.radius * view.halfWidth * SQRT2
-        val ry = f.radius * view.halfHeight * SQRT2
-        if (cx + rx < 0 || cx - rx > w || cy + ry < 0 || cy - ry > h) continue
-        val colour = when (f.kind) {
-            Front.FOG -> Color(0xffeef1f3).copy(alpha = 0.55f)
-            Front.STORM -> Color(0xff283038).copy(alpha = 0.22f)
-            else -> Color(0xff384450).copy(alpha = 0.12f)
+        val (rgb, alpha) = when (f.kind) {
+            Front.FOG -> 0xeef1f3 to 0.55f
+            Front.STORM -> 0x283038 to 0.22f
+            else -> 0x384450 to 0.12f
         }
-        val brush = Brush.radialGradient(listOf(colour, colour.copy(alpha = 0f)), Offset(cx, cy), rx)
-        // Drawn as a circle squashed to the view's ellipse.
-        withTransform({ scale(1f, ry / rx, Offset(cx, cy)) }) { drawCircle(brush, rx, Offset(cx, cy)) }
+        shades.add(f.x / 256f, f.y / 256f, SHADE_HEIGHT, f.radius.toFloat(), rgb, alpha)
     }
     if (fronts.none { it.kind != Front.FOG }) return
     val region = world.settings.region
@@ -155,7 +142,8 @@ private fun hash(i: Int): Float {
     return (h and 0xffff) / 65536f
 }
 
-private val SQRT2 = sqrt(2f)
+/** The height shades are drawn at, as they were over the ground. */
+private const val SHADE_HEIGHT = 4f
 private const val DROPS = 700
 private const val SNOW_SPEED = 60f
 private const val RAIN_SPEED = 900f

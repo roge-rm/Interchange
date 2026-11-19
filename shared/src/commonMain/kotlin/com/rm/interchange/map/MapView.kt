@@ -357,12 +357,13 @@ fun MapView(
         sheets.revision.intValue
         redraw.longValue
         gl.revision.intValue
-        gl.drawnRevision.intValue
         gl.show(view, sheets, size.width.toInt(), size.height.toInt())
         val movingNow = if (gl.wantsMoving()) moving() else null
         ClockDrawn.any = false
         movingNow?.let { drawMoving(world, view, sheets, it, gl.live, gl.editWaiting, gl.showingLook) }
         labels?.invoke(this, gl.labels)
+        // The rain and snow draw here at the view as it is; the shades go to the GPU map.
+        movingNow?.let { drawSky(world, view, it, gl.shades) }
         val now = clock.elapsedNow().inWholeMilliseconds
         val draw = overlay
         val w = size.width.toInt()
@@ -391,11 +392,7 @@ fun MapView(
         if (!gl.finish()) glReadyAt[0] = -1L
         else if (glReadyAt[0] < 0L) glReadyAt[0] = now
         val cover = if (glReadyAt[0] < 0L) 1f else (1f - (now - glReadyAt[0]) / FADE_MILLIS.toFloat()).coerceIn(0f, 1f)
-        // What's drawn over the map is at the view of the GL frame on screen, which can be behind the view or held.
-        view.drawAt(gl.layersAt()) {
-            movingNow?.let { drawSky(world, view, it) }
-            label?.invoke(this)
-        }
+        label?.invoke(this)
         clocked[0] = ClockDrawn.any
         drawn[0] = size.width
         drawn[1] = size.height

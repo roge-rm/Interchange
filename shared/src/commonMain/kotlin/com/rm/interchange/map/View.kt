@@ -187,18 +187,6 @@ class View(val mapWidth: Int, val mapHeight: Int) {
     /** Where the view is now: turn, focus and zoom. */
     internal fun at() = ViewAt(turn, focusX, focusY, halfWidth)
 
-    /** Draws [block] with the view at [at], or as it is if null, then puts it back. Main thread. */
-    internal fun drawAt(at: ViewAt?, block: () -> Unit) {
-        if (at == null) return block()
-        val was = at()
-        moveTo(at)
-        try {
-            block()
-        } finally {
-            moveTo(was)
-        }
-    }
-
     /** Puts the view at [at]'s turn, focus and zoom. */
     internal fun moveTo(at: ViewAt) {
         turn = at.turn; focusX = at.focusX; focusY = at.focusY; halfWidth = at.halfWidth

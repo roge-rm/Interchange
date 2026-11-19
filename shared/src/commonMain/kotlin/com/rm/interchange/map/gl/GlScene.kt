@@ -32,9 +32,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.Volatile
-import kotlin.concurrent.withLock
 import kotlin.math.abs
 import kotlin.time.TimeSource
 
@@ -51,8 +49,8 @@ internal const val GL_CHECKS = false
 /**
  * What the GPU draws next: the frame, the regions recorded so far for its turn, null where still recording, what moves,
  * the [Climate] look the regions are drawn with, a count that goes up with each one made, and the view it's at.
- * [present] is when to show it, as [GlScene.onHanded] returns, -1 without it. [overlay], the tool's, is drawn over the
- * map moved to [at], and [labels] over it all at [at].
+ * [overlay], the tool's, is drawn over the map moved to [at], then [sky]'s cloud shades and fog at [at], and [labels]
+ * over it all at [at].
  */
 internal class GlShown(
     val frame: GlFrame,
@@ -61,9 +59,9 @@ internal class GlShown(
     val look: Int,
     val seq: Long,
     val at: ViewAt,
-    val present: Long = -1L,
     val labels: LabelBatch? = null,
     val overlay: OverlayShot? = null,
+    val sky: ShadeBatch? = null,
 )
 
 /**
@@ -220,39 +218,6 @@ internal class GlScene(private val world: World, parent: CoroutineScope) {
     @Volatile
     var requestRender: () -> Unit = {}
 
-    /**
-     * Set by a surface that can put each GL frame on screen with the Compose frame that handed it over. Called from the
-     * Compose draw with the seq it hands the GL thread, and calls [committed] with it once that Compose frame's gone
-     * out. Returns the time to show it at, in nanoseconds on System.nanoTime's clock, where it can tell this Compose
-     * frame's display time, else 0. Main thread.
-     */
-    @Volatile
-    var onHanded: ((Long) -> Long)? = null
-    private val commitLock = ReentrantLock()
-    private val commitDone = commitLock.newCondition()
-    private var committedSeq = 0L
-
-    /** From the main thread: the Compose frame that handed over [seq] has gone to the screen. */
-    fun committed(seq: Long) = commitLock.withLock {
-        if (seq > committedSeq) committedSeq = seq
-        commitDone.signalAll()
-    }
-
-    /** From the main thread: lets the GL thread show every frame handed so far without waiting, as before a pause. */
-    fun wake() = committed(seq)
-
-    /**
-     * From the GL thread, before it shows frame [seq]: waits up to [millis] for the Compose frame that handed it over
-     * to go out, so the two reach the screen on the same display frame. No wait without [onHanded].
-     */
-    fun awaitCommitted(seq: Long, millis: Long) {
-        if (onHanded == null) return
-        commitLock.withLock {
-            var left = millis * 1_000_000L
-            while (committedSeq < seq && left > 0L) left = commitDone.awaitNanos(left)
-        }
-    }
-
     /** Goes up as each region's recorded, so the Compose map draws again and hands it on. */
     val revision = mutableIntStateOf(0)
 
@@ -280,6 +245,9 @@ internal class GlScene(private val world: World, parent: CoroutineScope) {
 
     /** The tool's plans and lit selection as an image, for the GL thread through [ToolOverlay.take]. */
     val toolOverlay = ToolOverlay()
+
+    /** Takes the cloud shades and fog each frame, between [show] and [finish]. */
+    val shades = MapShades(world.width, world.height)
 
     /** The tool overlay for the frame, set between [show] and [finish]. Main thread. */
     var overlayShot: OverlayShot? = null
@@ -366,6 +334,7 @@ internal class GlScene(private val world: World, parent: CoroutineScope) {
         }
         live.reset()
         labels.reset()
+        shades.reset()
         overlayShot = null
         // Nothing recording till the first weather copy's in.
         val shownTurn = turns[view.turn]
@@ -397,14 +366,11 @@ internal class GlScene(private val world: World, parent: CoroutineScope) {
         val batch = if (movingWanted) live.batch(last?.live, liveTaken) else last?.live
         val marks = labels.batch(last?.labels)
         val tool = overlayShot
+        val sky = shades.batch(last?.sky)
         if (last == null || last.frame != frame || !last.regions.contentEquals(regions) || last.live !== batch || last.look != nextLook ||
-            last.labels !== marks || last.overlay !== tool
+            last.labels !== marks || last.overlay !== tool || last.sky !== sky
         ) {
-            val present = onHanded?.invoke(++seq) ?: -1L
-            // A frame with a display time or held for its commit shows with this Compose frame. One given a display time
-            // isn't held, so it still shows on time with the GL thread a frame behind.
-            layerView.handed(seq, at, held = present >= 0L, slack = if (present > 0L) 2 else 1)
-            shown = GlShown(frame, regions.copyOf(), batch, nextLook, seq, at, present, marks, tool)
+            shown = GlShown(frame, regions.copyOf(), batch, nextLook, ++seq, at, marks, tool, sky)
             requestRender()
         }
         if (edit.holding) {
@@ -864,28 +830,15 @@ internal class GlScene(private val world: World, parent: CoroutineScope) {
         editCurrent = edit.current(v, t.drawnVersions())
     }
 
-    /** The view of the last frame the GL thread drew, for what's drawn over it. */
-    private val layerView = LayerView()
-
-    /** Goes up when the GL thread draws a frame at a view the layers over it aren't at, so they draw again. */
-    val drawnRevision = mutableIntStateOf(0)
-
-    /** For the Compose draw, after [finish]: the view to draw what's over the map at, null for the view as it is. */
-    fun layersAt(): ViewAt? = layerView.take()
-
-    /**
-     * From the GL thread: it has drawn [shown]. Draws the Compose map again if the held edit was waiting on it or the
-     * layers over the map are at another view.
-     */
+    /** From the GL thread: it has drawn [shown]. Draws the Compose map again if the held edit was waiting on it. */
     fun drew(shown: GlShown) {
         val seq = shown.seq
         drawnSeq = seq
-        val moved = layerView.drew(shown.at, seq)
         val wanted = drawWanted
         if (wanted in 1L..seq) {
             drawWanted = 0L
             scope.launch { revision.intValue++ }
-        } else if (moved) scope.launch { drawnRevision.intValue++ }
+        }
     }
 
     /**

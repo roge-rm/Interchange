@@ -2,8 +2,6 @@ package com.rm.interchange.map.gl
 
 import android.opengl.GLES30.*
 import android.graphics.Bitmap
-import android.opengl.EGL14
-import android.opengl.EGLExt
 import android.opengl.GLSurfaceView
 import android.opengl.GLUtils
 import androidx.compose.ui.graphics.asAndroidBitmap
@@ -26,9 +24,6 @@ private const val SPRITE_BYTES = SPRITE_INTS * 4
 
 /** Bytes an instance of the first pass takes, ground or sprite: a [GroundRecord] as it is. */
 private const val GROUND_BYTES = GroundRecord.STRIDE * 4
-
-/** The longest the GL thread holds a frame for the Compose frame it goes out with, in milliseconds: one at 60 Hz. */
-private const val COMMIT_WAIT_MILLIS = 17L
 
 /** A sheet uploaded as a texture array, cut as [pages] says. */
 private class Paged(val tex: Int, val pages: AtlasPages)
@@ -126,6 +121,9 @@ internal class GlMapRenderer(private val scene: GlScene, private val page: Int) 
     private var toolUp: OverlayShot? = null
     private val toolRect = FloatArray(4)
 
+    private var shadeProgram = 0
+    private var shadePlaced = FloatArray(0)
+
     override fun onSurfaceCreated(gl: GL10?, config: EGLConfig?) {
         // A new context: whatever was made in the last went with it.
         levels.fill(null)
@@ -154,6 +152,7 @@ internal class GlMapRenderer(private val scene: GlScene, private val page: Int) 
         labelTex = 0
         toolProgram = program(TOOL_VS, TOOL_FS)
         toolVao = IntArray(1).also { glGenVertexArrays(1, it, 0) }[0]
+        shadeProgram = program(SHADE_VS, SHADE_FS)
         toolTex = 0
         toolTexW = 0
         toolTexH = 0
@@ -291,26 +290,13 @@ internal class GlMapRenderer(private val scene: GlScene, private val page: Int) 
         glClear(GL_DEPTH_BUFFER_BIT)
         shown.live?.let { drawLive(it) }
         if (shown.overlay != null) drawTool(shown)
+        shown.sky?.let { drawShades(it, shown) }
         shown.labels?.let { drawLabels(it, shown) }
         glBindVertexArray(0)
         glBindBuffer(GL_ARRAY_BUFFER, 0)
         glDisable(GL_BLEND)
         scene.drew(shown)
-        // The frame goes out with the Compose frame drawing what's over it, not a display frame or two ahead of it: shown
-        // at its display time, or without one held till that Compose frame's gone out. Once only: a frame drawn again,
-        // as for an upload, has gone out already.
-        if (shown.seq != heldSeq) {
-            heldSeq = shown.seq
-            if (shown.present > 0L) {
-                EGLExt.eglPresentationTimeANDROID(EGL14.eglGetCurrentDisplay(), EGL14.eglGetCurrentSurface(EGL14.EGL_DRAW), shown.present)
-            } else if (shown.present == 0L) {
-                scene.awaitCommitted(shown.seq, COMMIT_WAIT_MILLIS)
-            }
-        }
     }
-
-    /** The last frame held for its Compose frame. */
-    private var heldSeq = 0L
 
     private fun clearScreen() {
         glBindFramebuffer(GL_FRAMEBUFFER, 0)
@@ -753,6 +739,29 @@ internal class GlMapRenderer(private val scene: GlScene, private val page: Int) 
         glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA)
         glDrawArraysInstanced(GL_TRIANGLE_STRIP, 0, 4, n)
         glBindTexture(GL_TEXTURE_2D, 0)
+    }
+
+    /**
+     * Puts [b]'s cloud shades and fog over the map at [shown]'s view, each an ellipse fading from its colour in the
+     * middle to clear at its edge.
+     */
+    private fun drawShades(b: ShadeBatch, shown: GlShown) {
+        if (shadePlaced.size < b.count * ShadeBatch.PLACED) shadePlaced = FloatArray(b.count * ShadeBatch.PLACED)
+        val n = b.place(shown.at, width, height, shadePlaced)
+        if (n == 0) return
+        val p = shadeProgram
+        glUseProgram(p)
+        glBindVertexArray(toolVao)
+        glUniform2f(glGetUniformLocation(p, "uScreen"), width.toFloat(), height.toFloat())
+        val shape = glGetUniformLocation(p, "uShape")
+        val colour = glGetUniformLocation(p, "uColour")
+        glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA)
+        for (i in 0 until n) {
+            val q = i * ShadeBatch.PLACED
+            glUniform4f(shape, shadePlaced[q], shadePlaced[q + 1], shadePlaced[q + 2], shadePlaced[q + 3])
+            glUniform4f(colour, shadePlaced[q + 4], shadePlaced[q + 5], shadePlaced[q + 6], shadePlaced[q + 7])
+            glDrawArrays(GL_TRIANGLE_STRIP, 0, 4)
+        }
     }
 
     /** Puts the tool overlay image over the map, moved and scaled from where it was drawn to [shown]'s view. */
@@ -1512,13 +1521,14 @@ internal class GlMapRenderer(private val scene: GlScene, private val page: Int) 
         weatherUp = null
         legsTex = 0
         for (a in intArrayOf(vao, groundVao, liveVao, labelVao, toolVao)) if (a != 0) glDeleteVertexArrays(1, intArrayOf(a), 0)
-        for (p in intArrayOf(spriteProgram, shadowProgram, groundProgram, overlayProgram, liveProgram, labelProgram, toolProgram)) {
+        for (p in intArrayOf(spriteProgram, shadowProgram, groundProgram, overlayProgram, liveProgram, labelProgram, toolProgram, shadeProgram)) {
             if (p != 0) glDeleteProgram(p)
         }
         labelVao = 0
         labelProgram = 0
         toolVao = 0
         toolProgram = 0
+        shadeProgram = 0
         vao = 0
         groundVao = 0
         liveVao = 0
@@ -1629,6 +1639,35 @@ in highp vec2 vUv;
 out vec4 frag;
 void main() {
     frag = texture(uTex, vUv);
+}
+"""
+
+/**
+ * A cloud shade or fog bank: the box round an ellipse with centre uShape.xy and radii uShape.zw in screen pixels, with
+ * vPos from -1 to 1 across it.
+ */
+private const val SHADE_VS = """#version 300 es
+precision highp float;
+uniform vec2 uScreen;
+uniform vec4 uShape;
+out vec2 vPos;
+void main() {
+    vec2 o = vec2(float(gl_VertexID & 1), float(gl_VertexID >> 1)) * 2.0 - 1.0;
+    vec2 p = uShape.xy + o * uShape.zw;
+    vPos = o;
+    gl_Position = vec4(p.x / uScreen.x * 2.0 - 1.0, 1.0 - p.y / uScreen.y * 2.0, 0.0, 1.0);
+}
+"""
+
+/** The shade's colour fading straight to clear from the middle to the edge of the ellipse, premultiplied. */
+private const val SHADE_FS = """#version 300 es
+precision mediump float;
+uniform vec4 uColour;
+in highp vec2 vPos;
+out vec4 frag;
+void main() {
+    float a = uColour.a * max(0.0, 1.0 - length(vPos));
+    frag = vec4(uColour.rgb * a, a);
 }
 """
 
