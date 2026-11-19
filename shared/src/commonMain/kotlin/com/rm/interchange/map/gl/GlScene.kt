@@ -49,7 +49,7 @@ internal const val GL_CHECKS = false
 /**
  * What the GPU draws next: the frame, the regions recorded so far for its turn, null where still recording, what moves,
  * the [Climate] look the regions are drawn with, a count that goes up with each one made, and the view it's at.
- * [overlay], the tool's, is drawn over the map moved to [at], then [sky]'s cloud shades and fog at [at], and [labels]
+ * [sky]'s cloud shades and fog are drawn over the map at [at], then [overlay], the tool's, moved to [at], and [labels]
  * over it all at [at].
  */
 internal class GlShown(

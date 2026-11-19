@@ -111,9 +111,9 @@ class LabelsTest {
         val b = atlas.get("Bigton", 50, 12) { drawn++; IntArray(600) }!!
         assertEquals(2, drawn)
         assertTrue(b[0] >= a[0] + a[2] || b[1] >= a[1] + a[3], "placed clear of the first")
-        val ups = atlas.take()
-        assertEquals(listOf(a[0] to a[1], b[0] to b[1]), ups.map { it.x to it.y })
-        assertTrue(atlas.take().isEmpty(), "taken once")
+        val ups = atlas.take(atlas.gen)!!
+        assertEquals(listOf(a[0] to a[1], b[0] to b[1]), ups.list.map { it.x to it.y })
+        assertNull(atlas.take(atlas.gen), "taken once")
         assertFalse(atlas.hasUploads)
     }
 
@@ -121,16 +121,25 @@ class LabelsTest {
     fun aFullPageStartsAgainThenTurnsAway() {
         val atlas = LabelAtlas(64)
         atlas.begin()
-        // Four 30 by 30 fit on 64 with their gaps; the fifth starts the page again.
+        atlas.begin()
+        // Four 30 by 30 fit on 64 with their gaps; the fifth can't start again, as all four were used this frame.
         for (i in 0 until 4) atlas.get("l$i", 30, 30) { IntArray(900) }
         assertFalse(atlas.overflowed)
         assertEquals(4, atlas.size)
+        assertNull(atlas.get("l4", 30, 30) { IntArray(900) })
+        assertFalse(atlas.overflowed)
+        // Two frames on, with only one of them used, it starts again.
+        atlas.begin()
+        atlas.begin()
+        atlas.get("l0", 30, 30) { IntArray(900) }
+        val before = atlas.gen
         val fifth = atlas.get("l4", 30, 30) { IntArray(900) }!!
         assertTrue(atlas.overflowed)
+        assertEquals(before + 1, atlas.gen)
         assertEquals(0, fifth[0])
         assertEquals(0, fifth[1])
         assertEquals(1, atlas.size)
-        assertEquals(1, atlas.take().size, "what was waiting before is dropped")
+        assertEquals(1, atlas.take(atlas.gen)!!.list.size, "what was waiting before is dropped")
         atlas.again()
         for (i in 5 until 8) atlas.get("l$i", 30, 30) { IntArray(900) }
         assertNull(atlas.get("l8", 30, 30) { IntArray(900) }, "placed again, a full page leaves the rest out")
@@ -138,16 +147,79 @@ class LabelsTest {
         assertNull(atlas.get("huge", 80, 10) { IntArray(800) })
     }
 
+    /** Places labels [name]0 on, [n] of them 30 by 30, as TownLabels does: once more if the page starts again. */
+    private fun frame(atlas: LabelAtlas, n: Int, name: String = "l"): Int {
+        atlas.begin()
+        var drawn = 0
+        val pass = { for (i in 0 until n) atlas.get("$name$i", 30, 30) { drawn++; IntArray(900) } }
+        pass()
+        if (atlas.overflowed) {
+            atlas.again()
+            pass()
+        }
+        return drawn
+    }
+
+    @Test
+    fun morePlacedThanFitDoesNotStartAgainEachFrame() {
+        val atlas = LabelAtlas(64)
+        frame(atlas, 2, "m")
+        frame(atlas, 0)
+        val gen = atlas.gen
+        // Two fit, then the page starts again part way and the first two are left out.
+        assertEquals(6, frame(atlas, 6))
+        assertEquals(gen + 1, atlas.gen, "starts again once")
+        for (f in 0 until 5) assertEquals(0, frame(atlas, 6), "then draws nothing new in frame $f")
+        assertEquals(gen + 1, atlas.gen)
+        assertEquals(4, atlas.size)
+    }
+
+    @Test
+    fun aFullPageGrowsUpToTheLimit() {
+        val atlas = LabelAtlas(64)
+        atlas.limit(100)
+        assertEquals(4, frame(atlas, 4))
+        val gen = atlas.gen
+        assertEquals(9, frame(atlas, 9), "grown to 100, nine fit")
+        assertEquals(100, atlas.side)
+        assertEquals(gen + 1, atlas.gen)
+        assertEquals(100, atlas.take(atlas.gen)!!.side)
+        assertEquals(0, frame(atlas, 9))
+        atlas.failed(100)
+        assertEquals(4, frame(atlas, 9), "made smaller after it couldn't be made")
+        assertEquals(64, atlas.side)
+        assertEquals(gen + 2, atlas.gen)
+    }
+
+    @Test
+    fun aRestartsImagesWaitForItsBatch() {
+        val atlas = LabelAtlas(64)
+        val l = MapLabels(atlas, 64, 48)
+        l.reset()
+        l.add(5f, 5f, 0f, 1f, atlas.get("a", 30, 30) { IntArray(900) }!!, 1f, LabelBatch.TOWN)
+        val old = l.batch(null)!!
+        assertEquals(1, atlas.take(old.gen)!!.list.size)
+        // The page starts again while the GL thread still draws the old batch: nothing goes up for it.
+        atlas.lose()
+        l.reset()
+        l.add(5f, 5f, 0f, 1f, atlas.get("b", 30, 30) { IntArray(900) }!!, 1f, LabelBatch.TOWN)
+        assertNull(atlas.take(old.gen))
+        assertTrue(atlas.hasUploads)
+        val next = l.batch(old)!!
+        assertNotEquals(old.gen, next.gen)
+        assertEquals(1, atlas.take(next.gen)!!.list.size)
+    }
+
     @Test
     fun aLostPageIsDrawnAgain() {
         val atlas = LabelAtlas(256)
         var drawn = 0
         atlas.get("Smallville", 40, 10) { drawn++; IntArray(400) }
-        atlas.take()
+        atlas.take(atlas.gen)
         atlas.lose()
         atlas.begin()
         atlas.get("Smallville", 40, 10) { drawn++; IntArray(400) }
         assertEquals(2, drawn)
-        assertEquals(1, atlas.take().size)
+        assertEquals(1, atlas.take(atlas.gen)!!.list.size)
     }
 }

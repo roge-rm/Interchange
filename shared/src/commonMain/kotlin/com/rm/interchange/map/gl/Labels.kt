@@ -10,20 +10,41 @@ import kotlin.math.roundToInt
 /** A label image waiting to go up onto the label atlas: its place there and its pixels, ARGB unpremultiplied. */
 internal class LabelUpload(val x: Int, val y: Int, val w: Int, val h: Int, val pixels: IntArray)
 
+/** Label images for page [gen], which is [side] pixels square, in the order they were placed. */
+internal class LabelUploads(val gen: Int, val side: Int, val list: List<LabelUpload>)
+
 /**
- * Where label images (town names, station signs, payments) sit on one [side] square texture, keyed by what they show.
- * Images are packed in shelves and kept till the page is full; then it starts again with only what's asked for after.
- * Main thread, but for [take] and [lose], which the GL thread calls.
+ * Where label images (town names, station signs, payments) sit on one square texture, keyed by what they show.
+ * Images are packed in shelves and kept till the page is full. A full page grows up to the GPU's [limit], then starts
+ * again with only what's asked for after, but only once a quarter of its images went unused for a frame, so a page
+ * too small for the screen's labels leaves some out rather than starting again every frame. Each start is a new
+ * [gen]: its images go to the GL thread only with a batch of the same page.
+ * Main thread, but for [take], [lose], [limit] and [failed], which the GL thread calls.
  */
-internal class LabelAtlas(val side: Int = SIDE) {
-    private val rects = HashMap<String, IntArray>()
+internal class LabelAtlas(private val first: Int = SIDE) {
+    private class Slot(val rect: IntArray, var used: Int)
+
+    /** The page's side in pixels. */
+    var side = first
+        private set
+    /** Goes up each time the page starts again, so images on it may have moved. */
+    var gen = 0
+        private set
+    private val slots = HashMap<String, Slot>()
     private var shelfX = 0
     private var shelfY = 0
     private var shelfH = 0
+    private var frame = 0
+    /** The frame the page was last found full with too little unused to start again. */
+    private var stuck = -1
     private val lock = ReentrantLock()
     private var waiting = ArrayList<LabelUpload>()
+    private var waitingGen = 0
+    private var waitingSide = first
     @Volatile
     private var lost = false
+    @Volatile
+    private var most = first
 
     /** Set when the page started again while placing; whatever was placed before then this frame is gone. */
     var overflowed = false
@@ -33,45 +54,68 @@ internal class LabelAtlas(val side: Int = SIDE) {
     private var keep = false
 
     /** How many images are on the page. */
-    val size get() = rects.size
+    val size get() = slots.size
 
     /** Whether there are images for the GL thread to take. */
     val hasUploads get() = lock.withLock { waiting.isNotEmpty() }
 
     /** Called at the start of each frame of labels. Clears the page if the GL thread lost it. */
     fun begin() {
+        frame++
         overflowed = false
         keep = false
         if (lost) {
             lost = false
+            side = minOf(side, most)
             clear()
         }
     }
 
     /**
      * The atlas rect (x, y, w, h) of the image for [key], [w] by [h], drawn by [draw] into ARGB pixels if it isn't
-     * there yet; null if it doesn't fit even on an empty page.
+     * there yet; null if it doesn't fit even on an empty page, or the page is full and can't start again.
      */
     fun get(key: String, w: Int, h: Int, draw: () -> IntArray): IntArray? {
-        rects[key]?.let { return it }
-        if (w <= 0 || h <= 0 || w + GAP > side || h + GAP > side) return null
+        slots[key]?.let {
+            it.used = frame
+            return it.rect
+        }
+        if (w <= 0 || h <= 0 || w + GAP > most || h + GAP > most) return null
+        if (w + GAP > side || h + GAP > side || !fits(w, h)) {
+            if (keep || !canRestart()) return null
+            if (side < most) side = minOf(side * 2, most)
+            while (w + GAP > side || h + GAP > side) side = minOf(side * 2, most)
+            clear()
+            overflowed = true
+        }
         if (shelfX + w + GAP > side) {
             shelfX = 0
             shelfY += shelfH
             shelfH = 0
         }
-        if (shelfY + h + GAP > side) {
-            if (keep) return null
-            clear()
-            overflowed = true
-        }
         val r = intArrayOf(shelfX, shelfY, w, h)
         shelfX += w + GAP
         shelfH = maxOf(shelfH, h + GAP)
-        rects[key] = r
+        slots[key] = Slot(r, frame)
         val pixels = draw()
         lock.withLock { waiting += LabelUpload(r[0], r[1], w, h, pixels) }
         return r
+    }
+
+    private fun fits(w: Int, h: Int): Boolean {
+        val y = if (shelfX + w + GAP > side) shelfY + shelfH else shelfY
+        return y + h + GAP <= side
+    }
+
+    /** Whether a full page may start again: it can grow, or a quarter of its images weren't used last frame or this. */
+    private fun canRestart(): Boolean {
+        if (side < most) return true
+        if (stuck == frame) return false
+        var unused = 0
+        for (s in slots.values) if (s.used < frame - 1) unused++
+        if (unused > 0 && unused * 4 >= slots.size) return true
+        stuck = frame
+        return false
     }
 
     /** Places the frame's labels again after [overflowed], keeping what's placed from here on. */
@@ -81,19 +125,27 @@ internal class LabelAtlas(val side: Int = SIDE) {
     }
 
     private fun clear() {
-        rects.clear()
+        slots.clear()
         shelfX = 0
         shelfY = 0
         shelfH = 0
-        lock.withLock { waiting = ArrayList() }
+        gen++
+        lock.withLock {
+            waiting = ArrayList()
+            waitingGen = gen
+            waitingSide = side
+        }
     }
 
-    /** From the GL thread: the images placed since it last asked, in order. */
-    fun take(): List<LabelUpload> = lock.withLock {
-        if (waiting.isEmpty()) return emptyList()
+    /**
+     * From the GL thread: the images placed since it last asked, if they're for page [gen], the one the batch it's
+     * drawing uses. Images for a newer page wait till a batch using it comes.
+     */
+    fun take(gen: Int): LabelUploads? = lock.withLock {
+        if (waiting.isEmpty() || waitingGen != gen) return null
         val t = waiting
         waiting = ArrayList()
-        t
+        LabelUploads(waitingGen, waitingSide, t)
     }
 
     /** From the GL thread: the page is gone with its context, so every image goes up again. */
@@ -101,9 +153,22 @@ internal class LabelAtlas(val side: Int = SIDE) {
         lost = true
     }
 
+    /** From the GL thread: the largest texture side it can make; the page grows up to this or [MOST], if larger. */
+    fun limit(maxTexture: Int) {
+        most = maxOf(first, minOf(maxTexture, MOST))
+    }
+
+    /** From the GL thread: a page [side] pixels square couldn't be made, so it's made smaller if it can be and redone. */
+    fun failed(side: Int) {
+        if (side > first) most = maxOf(first, side / 2)
+        lost = true
+    }
+
     companion object {
-        /** The page's side in pixels: 16 MB, room for a few hundred names at a phone's density. */
+        /** The page's side to start with: 16 MB, room for a few hundred names at a phone's density. */
         const val SIDE = 2048
+        /** The largest the page grows to: 64 MB. */
+        const val MOST = 4096
         /** Clear pixels between images, so filtering never reaches a neighbour. */
         const val GAP = 2
     }
@@ -111,11 +176,12 @@ internal class LabelAtlas(val side: Int = SIDE) {
 
 /**
  * The labels drawn over the map in one frame, [FLOATS] each in [data]: world anchor x and y, ground height there,
- * how far above it the label's bottom sits in half tile widths, its atlas rect (x, y, w, h), alpha and [kind].
+ * how far above it the label's bottom sits in half tile widths, its atlas rect (x, y, w, h), alpha and [kind]. The
+ * rects are on atlas page [gen].
  */
-internal class LabelBatch(val data: FloatArray, val count: Int, val mapWidth: Int, val mapHeight: Int) {
+internal class LabelBatch(val data: FloatArray, val count: Int, val mapWidth: Int, val mapHeight: Int, val gen: Int = 0) {
     fun sameAs(o: LabelBatch?): Boolean {
-        if (o == null || o.count != count || o.mapWidth != mapWidth || o.mapHeight != mapHeight) return false
+        if (o == null || o.count != count || o.gen != gen || o.mapWidth != mapWidth || o.mapHeight != mapHeight) return false
         for (i in 0 until count * FLOATS) if (data[i] != o.data[i]) return false
         return true
     }
@@ -233,7 +299,7 @@ class MapLabels internal constructor(internal val atlas: LabelAtlas, private val
     /** The frame's labels, or [last] if they're the same, so a still map hands nothing new. */
     internal fun batch(last: LabelBatch?): LabelBatch? {
         if (count == 0 && last == null) return null
-        val b = LabelBatch(data.copyOf(count * LabelBatch.FLOATS), count, mapWidth, mapHeight)
+        val b = LabelBatch(data.copyOf(count * LabelBatch.FLOATS), count, mapWidth, mapHeight, atlas.gen)
         return if (b.sameAs(last)) last else b
     }
 }

@@ -108,6 +108,9 @@ internal class GlMapRenderer(private val scene: GlScene, private val page: Int) 
     private var labelVao = 0
     private var labelBuffer = 0
     private var labelTex = 0
+    /** The atlas page on [labelTex] and its side; a batch for another page isn't drawn. */
+    private var labelGen = -1
+    private var labelSide = 0
     private var labelQuads = FloatArray(0)
     private var labelTaken = FloatArray(0)
     private var labelBytes = ByteBuffer.allocateDirect(0)
@@ -142,6 +145,7 @@ internal class GlMapRenderer(private val scene: GlScene, private val page: Int) 
         maxLayers = IntArray(1).also { glGetIntegerv(GL_MAX_ARRAY_TEXTURE_LAYERS, it, 0) }[0]
         // Nothing's on the GPU in a new context: the cover stays up till every level's in again.
         context++
+        scene.labelAtlas.limit(maxTexture)
         scene.lost(context)
         spriteProgram = program(SPRITE_VS, SPRITE_FS)
         shadowProgram = program(SPRITE_VS, SHADOW_FS)
@@ -150,6 +154,7 @@ internal class GlMapRenderer(private val scene: GlScene, private val page: Int) 
         liveProgram = program(LIVE_VS, LIVE_FS)
         labelProgram = program(LABEL_VS, LABEL_FS)
         labelTex = 0
+        labelGen = -1
         toolProgram = program(TOOL_VS, TOOL_FS)
         toolVao = IntArray(1).also { glGenVertexArrays(1, it, 0) }[0]
         shadeProgram = program(SHADE_VS, SHADE_FS)
@@ -240,7 +245,7 @@ internal class GlMapRenderer(private val scene: GlScene, private val page: Int) 
         }
         val shown = scene.shown ?: return clearScreen()
         // After taking the frame, so the label images it uses are among those taken.
-        takeLabels()
+        takeLabels(shown.labels)
         takeTool()
         val f = shown.frame
         look = shown.look
@@ -289,8 +294,8 @@ internal class GlMapRenderer(private val scene: GlScene, private val page: Int) 
         // Back to clear for what moves, which cuts by depth.
         glClear(GL_DEPTH_BUFFER_BIT)
         shown.live?.let { drawLive(it) }
-        if (shown.overlay != null) drawTool(shown)
         shown.sky?.let { drawShades(it, shown) }
+        if (shown.overlay != null) drawTool(shown)
         shown.labels?.let { drawLabels(it, shown) }
         glBindVertexArray(0)
         glBindBuffer(GL_ARRAY_BUFFER, 0)
@@ -715,7 +720,7 @@ internal class GlMapRenderer(private val scene: GlScene, private val page: Int) 
 
     /** Puts [b]'s names, signs and payments over everything at [shown]'s view, at a fixed size in screen pixels. */
     private fun drawLabels(b: LabelBatch, shown: GlShown) {
-        if (labelTex == 0 || b.count == 0) return
+        if (labelTex == 0 || b.gen != labelGen || b.count == 0) return
         if (labelQuads.size < b.count * LabelBatch.QUAD) labelQuads = FloatArray(b.count * LabelBatch.QUAD * 2)
         if (labelTaken.size < b.count * 4) labelTaken = FloatArray(b.count * 8)
         val n = b.place(shown.at, width, height, labelQuads, labelTaken)
@@ -732,7 +737,7 @@ internal class GlMapRenderer(private val scene: GlScene, private val page: Int) 
         glUseProgram(p)
         glBindVertexArray(labelVao)
         glUniform2f(glGetUniformLocation(p, "uScreen"), width.toFloat(), height.toFloat())
-        glUniform1f(glGetUniformLocation(p, "uSide"), scene.labelAtlas.side.toFloat())
+        glUniform1f(glGetUniformLocation(p, "uSide"), labelSide.toFloat())
         glUniform1i(glGetUniformLocation(p, "uTex"), 0)
         glActiveTexture(GL_TEXTURE0)
         glBindTexture(GL_TEXTURE_2D, labelTex)
@@ -826,13 +831,20 @@ internal class GlMapRenderer(private val scene: GlScene, private val page: Int) 
         }
     }
 
-    /** Copies the label images [scene] has placed since the last frame onto the label page, made the first time. */
-    private fun takeLabels() {
-        val ups = scene.labelAtlas.take()
-        if (ups.isEmpty()) return
-        if (labelTex == 0) {
+    /**
+     * Copies the label images [scene] has placed since the last frame onto the label page, made the first time or
+     * when it grows; only those for [b]'s page, so a page that started again is never drawn with an older batch.
+     */
+    private fun takeLabels(b: LabelBatch?) {
+        b ?: return
+        val taken = scene.labelAtlas.take(b.gen) ?: return
+        val ups = taken.list
+        if (labelTex == 0 || labelSide != taken.side) {
+            if (labelTex != 0) glDeleteTextures(1, intArrayOf(labelTex), 0)
+            labelGen = -1
             while (glGetError() != GL_NO_ERROR) Unit
-            val side = scene.labelAtlas.side
+            val side = taken.side
+            labelSide = side
             labelTex = livePage(side)
             // Placed on whole pixels at their own size, so each texel lands on one pixel.
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST)
@@ -843,6 +855,8 @@ internal class GlMapRenderer(private val scene: GlScene, private val page: Int) 
                 glDeleteTextures(1, intArrayOf(labelTex), 0)
                 labelTex = 0
                 glBindTexture(GL_TEXTURE_2D, 0)
+                // The images taken are dropped with it, so they're all placed and sent again.
+                scene.labelAtlas.failed(side)
                 return
             }
         }
@@ -866,6 +880,7 @@ internal class GlMapRenderer(private val scene: GlScene, private val page: Int) 
             glTexSubImage2D(GL_TEXTURE_2D, 0, u.x, u.y, u.w, u.h, GL_RGBA, GL_UNSIGNED_BYTE, spriteBytes)
         }
         glBindTexture(GL_TEXTURE_2D, 0)
+        labelGen = taken.gen
     }
 
     /** Points the live attributes at instance [first] on. */
@@ -1505,6 +1520,7 @@ internal class GlMapRenderer(private val scene: GlScene, private val page: Int) 
         labelBuffer = 0
         if (labelTex != 0) glDeleteTextures(1, intArrayOf(labelTex), 0)
         labelTex = 0
+        labelGen = -1
         if (toolTex != 0) glDeleteTextures(1, intArrayOf(toolTex), 0)
         toolTex = 0
         toolTexW = 0
