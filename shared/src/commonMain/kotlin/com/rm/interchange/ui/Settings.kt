@@ -30,8 +30,8 @@ class Settings {
     var sound by mutableIntStateOf(100)
     var world by mutableIntStateOf(100)
     var tools by mutableIntStateOf(100)
-    /** The music, 0 to 100; a missing line is 60. */
-    var music by mutableIntStateOf(60)
+    /** The music, 0 to 100; a missing line is 35. */
+    var music by mutableIntStateOf(35)
     /** The name other players see, and the address last joined. */
     var playerName by mutableStateOf("")
     var lastAddress by mutableStateOf("")
