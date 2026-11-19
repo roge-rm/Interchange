@@ -2,6 +2,8 @@ package com.rm.interchange.map.gl
 
 import android.opengl.GLES30.*
 import android.graphics.Bitmap
+import android.opengl.EGL14
+import android.opengl.EGLExt
 import android.opengl.GLSurfaceView
 import android.opengl.GLUtils
 import androidx.compose.ui.graphics.asAndroidBitmap
@@ -24,6 +26,9 @@ private const val SPRITE_BYTES = SPRITE_INTS * 4
 
 /** Bytes an instance of the first pass takes, ground or sprite: a [GroundRecord] as it is. */
 private const val GROUND_BYTES = GroundRecord.STRIDE * 4
+
+/** The longest the GL thread holds a frame for the Compose frame it goes out with, in milliseconds: one at 60 Hz. */
+private const val COMMIT_WAIT_MILLIS = 17L
 
 /** A sheet uploaded as a texture array, cut as [pages] says. */
 private class Paged(val tex: Int, val pages: AtlasPages)
@@ -249,7 +254,21 @@ internal class GlMapRenderer(private val scene: GlScene, private val page: Int) 
         glBindBuffer(GL_ARRAY_BUFFER, 0)
         glDisable(GL_BLEND)
         scene.drew(shown)
+        // The frame goes out with the Compose frame drawing what's over it, not a display frame or two ahead of it: shown
+        // at its display time, or without one held till that Compose frame's gone out. Once only: a frame drawn again,
+        // as for an upload, has gone out already.
+        if (shown.seq != heldSeq) {
+            heldSeq = shown.seq
+            if (shown.present > 0L) {
+                EGLExt.eglPresentationTimeANDROID(EGL14.eglGetCurrentDisplay(), EGL14.eglGetCurrentSurface(EGL14.EGL_DRAW), shown.present)
+            } else if (shown.present == 0L) {
+                scene.awaitCommitted(shown.seq, COMMIT_WAIT_MILLIS)
+            }
+        }
     }
+
+    /** The last frame held for its Compose frame. */
+    private var heldSeq = 0L
 
     private fun clearScreen() {
         glBindFramebuffer(GL_FRAMEBUFFER, 0)

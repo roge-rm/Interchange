@@ -32,7 +32,9 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.Volatile
+import kotlin.concurrent.withLock
 import kotlin.math.abs
 import kotlin.time.TimeSource
 
@@ -49,8 +51,17 @@ internal const val GL_CHECKS = false
 /**
  * What the GPU draws next: the frame, the regions recorded so far for its turn, null where still recording, what moves,
  * the [Climate] look the regions are drawn with, a count that goes up with each one made, and the view it's at.
+ * [present] is when to show it, as [GlScene.onHanded] returns, -1 without it.
  */
-internal class GlShown(val frame: GlFrame, val regions: Array<RegionSprites?>, val live: LiveBatch?, val look: Int, val seq: Long, val at: ViewAt)
+internal class GlShown(
+    val frame: GlFrame,
+    val regions: Array<RegionSprites?>,
+    val live: LiveBatch?,
+    val look: Int,
+    val seq: Long,
+    val at: ViewAt,
+    val present: Long = -1L,
+)
 
 /**
  * Far zooms on big maps (256 tiles and up), where every sprite on screen is more than the GPU can take a frame: a
@@ -206,6 +217,39 @@ internal class GlScene(private val world: World, parent: CoroutineScope) {
     @Volatile
     var requestRender: () -> Unit = {}
 
+    /**
+     * Set by a surface that can put each GL frame on screen with the Compose frame that handed it over. Called from the
+     * Compose draw with the seq it hands the GL thread, and calls [committed] with it once that Compose frame's gone
+     * out. Returns the time to show it at, in nanoseconds on System.nanoTime's clock, where it can tell this Compose
+     * frame's display time, else 0. Main thread.
+     */
+    @Volatile
+    var onHanded: ((Long) -> Long)? = null
+    private val commitLock = ReentrantLock()
+    private val commitDone = commitLock.newCondition()
+    private var committedSeq = 0L
+
+    /** From the main thread: the Compose frame that handed over [seq] has gone to the screen. */
+    fun committed(seq: Long) = commitLock.withLock {
+        if (seq > committedSeq) committedSeq = seq
+        commitDone.signalAll()
+    }
+
+    /** From the main thread: lets the GL thread show every frame handed so far without waiting, as before a pause. */
+    fun wake() = committed(seq)
+
+    /**
+     * From the GL thread, before it shows frame [seq]: waits up to [millis] for the Compose frame that handed it over
+     * to go out, so the two reach the screen on the same display frame. No wait without [onHanded].
+     */
+    fun awaitCommitted(seq: Long, millis: Long) {
+        if (onHanded == null) return
+        commitLock.withLock {
+            var left = millis * 1_000_000L
+            while (committedSeq < seq && left > 0L) left = commitDone.awaitNanos(left)
+        }
+    }
+
     /** Goes up as each region's recorded, so the Compose map draws again and hands it on. */
     val revision = mutableIntStateOf(0)
 
@@ -335,7 +379,11 @@ internal class GlScene(private val world: World, parent: CoroutineScope) {
         // A frame that skipped the moving drawing keeps the last batch, so it doesn't flip to none and back.
         val batch = if (movingWanted) live.batch(last?.live, liveTaken) else last?.live
         if (last == null || last.frame != frame || !last.regions.contentEquals(regions) || last.live !== batch || last.look != nextLook) {
-            shown = GlShown(frame, regions.copyOf(), batch, nextLook, ++seq, at)
+            val present = onHanded?.invoke(++seq) ?: -1L
+            // A frame with a display time or held for its commit shows with this Compose frame. One given a display time
+            // isn't held, so it still shows on time with the GL thread a frame behind.
+            layerView.handed(seq, at, held = present >= 0L, slack = if (present > 0L) 2 else 1)
+            shown = GlShown(frame, regions.copyOf(), batch, nextLook, seq, at, present)
             requestRender()
         }
         if (edit.holding) {
@@ -809,7 +857,7 @@ internal class GlScene(private val world: World, parent: CoroutineScope) {
     fun drew(shown: GlShown) {
         val seq = shown.seq
         drawnSeq = seq
-        val moved = layerView.drew(shown.at)
+        val moved = layerView.drew(shown.at, seq)
         val wanted = drawWanted
         if (wanted in 1L..seq) {
             drawWanted = 0L
