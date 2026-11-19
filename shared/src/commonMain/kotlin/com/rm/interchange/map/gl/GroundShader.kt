@@ -103,9 +103,11 @@ flat out float vSpriteSnow;
 flat out int vWear;
 out vec3 vUv;
 
-const vec2 OFF[4] = vec2[4](vec2(0.0, 0.0), vec2(1.0, 0.0), vec2(1.0, 1.0), vec2(0.0, 1.0));
-const int RL[4] = int[4](0, 1, 3, 2);
-const int TB[4] = int[4](1, 0, 2, 3);
+// No const arrays in these shaders: with one, SwiftShader (and it seems Adreno) reads every uniform as 0 and nothing draws.
+// Corner c of a tile, 0 top, 1 right, 2 bottom, 3 left.
+vec2 corner(int c) {
+    return vec2(c == 1 || c == 2 ? 1.0 : 0.0, c >= 2 ? 1.0 : 0.0);
+}
 
 ivec2 worldCorner(ivec2 c) {
     if (uMap.z == 0) return c;
@@ -150,11 +152,12 @@ void main() {
         vec4 h = vec4(float(aA.y & 255u), float((aA.y >> 8) & 255u), float((aA.y >> 16) & 255u), float(aA.y >> 24));
         if (type == 0u) {
             // A strip whose middle edge is the split.
-            int c = h.y == h.w ? RL[id] : TB[id];
-            p = place(vec2(tile) + OFF[c], h[c]);
-            vUv = vec3(OFF[c], 0.0);
+            // Corners in strip order, 0 1 3 2 split right to left, 1 0 2 3 top to bottom.
+            int c = h.y == h.w ? (id < 2 ? id : 5 - id) : (id < 2 ? 1 - id : id);
+            p = place(vec2(tile) + corner(c), h[c]);
+            vUv = vec3(corner(c), 0.0);
             for (int k = 0; k < 4; k++) {
-                uvec4 w = texelFetch(uWeather, worldCorner(tile + ivec2(OFF[k])), 0);
+                uvec4 w = texelFetch(uWeather, worldCorner(tile + ivec2(corner(k))), 0);
                 vSnow[k] = float(w.r) * 0.25;
                 vIce[k] = float(w.g) * 0.25;
             }
@@ -170,7 +173,7 @@ void main() {
         } else {
             // Right face from the right corner to the bottom, left from the left; tops, then down to -2.
             int c = (id & 1) == 0 ? (type == 1u ? 1 : 3) : 2;
-            p = place(vec2(tile) + OFF[c], (id >> 1) == 0 ? h[c] : -2.0);
+            p = place(vec2(tile) + corner(c), (id >> 1) == 0 ? h[c] : -2.0);
             vUv = vec3(0.0);
         }
     }
@@ -235,17 +238,29 @@ const vec3 DRONE_PAD = ${rgb(0x4e5856)};
 const vec3 DRONE_MARK = ${rgb(0x16c4b8)};
 const float PI = 3.14159265;
 const vec3 GRID_LIGHT = ${rgb(0xf2efe6)};
-const vec3 WEAR[3] = vec3[3](${rgb(0xd03a2a)}, ${rgb(0xe8b030)}, ${rgb(0x3aa048)});
+// Bands as functions, as a const array zeroes the uniforms on SwiftShader (see corner in GROUND_VS).
+// Track wear bands from worst.
+vec3 wear(int i) {
+    return i == 0 ? ${rgb(0xd03a2a)} : (i == 1 ? ${rgb(0xe8b030)} : ${rgb(0x3aa048)});
+}
 // The same bands in the colour-blind safe set: vermillion, yellow, sky blue.
-const vec3 WEAR_SAFE[3] = vec3[3](${rgb(0xd55e00)}, ${rgb(0xf0e442)}, ${rgb(0x56b4e9)});
+vec3 wearSafe(int i) {
+    return i == 0 ? ${rgb(0xd55e00)} : (i == 1 ? ${rgb(0xf0e442)} : ${rgb(0x56b4e9)});
+}
 // The snow overlay's bands: under 10 cm, under 30, under 60, deeper; then ice on the water.
-const vec3 SNOW_BAND[4] = vec3[4](${rgb(0x9fd0f0)}, ${rgb(0x5a9ae0)}, ${rgb(0x3a52c8)}, ${rgb(0x6a2ab0)});
+vec3 snowBand(float depth) {
+    return depth < 10.0 ? ${rgb(0x9fd0f0)} : (depth < 30.0 ? ${rgb(0x5a9ae0)} : (depth < 60.0 ? ${rgb(0x3a52c8)} : ${rgb(0x6a2ab0)}));
+}
 const vec3 ICE_BAND = ${rgb(0x40e0e0)};
 // The heights overlay's bands, each 2 steps, from sea level up.
-const vec3 HEIGHT[12] = vec3[12](
-    ${rgb(0x2f7a3a)}, ${rgb(0x4f9440)}, ${rgb(0x7fac4a)}, ${rgb(0xb0bc58)}, ${rgb(0xd4c062)}, ${rgb(0xd8a456)},
-    ${rgb(0xc8844a)}, ${rgb(0xa86a44)}, ${rgb(0x8a5a46)}, ${rgb(0x9a8478)}, ${rgb(0xc8c0bc)}, ${rgb(0xf2f2f6)}
-);
+vec3 heightBand(int i) {
+    if (i < 6) {
+        if (i < 3) return i <= 0 ? ${rgb(0x2f7a3a)} : (i == 1 ? ${rgb(0x4f9440)} : ${rgb(0x7fac4a)});
+        return i == 3 ? ${rgb(0xb0bc58)} : (i == 4 ? ${rgb(0xd4c062)} : ${rgb(0xd8a456)});
+    }
+    if (i < 9) return i == 6 ? ${rgb(0xc8844a)} : (i == 7 ? ${rgb(0xa86a44)} : ${rgb(0x8a5a46)});
+    return i == 9 ? ${rgb(0x9a8478)} : (i == 10 ? ${rgb(0xc8c0bc)} : ${rgb(0xf2f2f6)});
+}
 
 vec2 tc;
 vec2 gx;
@@ -539,17 +554,17 @@ void main() {
 #ifdef OVERLAYS
     // Overlays, as the tile recorder painted them at each level's own size, hw the half tile there.
     float hw = 128.0 / float(1 << uLevel);
-    if (vWear > 0) texel = mix(texel, (uOverlay & $SAFE) != 0 ? WEAR_SAFE[vWear - 1] : WEAR[vWear - 1], 0.6);
+    if (vWear > 0) texel = mix(texel, (uOverlay & $SAFE) != 0 ? wearSafe(vWear - 1) : wear(vWear - 1), 0.6);
     if ((uOverlay & $SNOW) != 0) {
         float depth = dot(vSnow, bw);
         if (icy) texel = mix(texel, ICE_BAND, 0.6);
-        else if (!water && depth >= 1.0) texel = mix(texel, SNOW_BAND[depth < 10.0 ? 0 : (depth < 30.0 ? 1 : (depth < 60.0 ? 2 : 3))], 0.6);
+        else if (!water && depth >= 1.0) texel = mix(texel, snowBand(depth), 0.6);
     }
     if ((uOverlay & $HEIGHTS) != 0 && !water) {
         vec2 g = second ? g2 : g1;
         float p0 = second && alongRL ? h.y + h.w - h.z : h.x;
         float at = p0 + g.x * u + g.y * v;
-        texel = mix(texel, HEIGHT[clamp(int(at / 2.0), 0, 11)], 0.55);
+        texel = mix(texel, heightBand(clamp(int(at / 2.0), 0, 11)), 0.55);
         // A contour where a slope crosses a band's edge, about a pixel wide.
         if (sloped && mod(at, 2.0) < 1.4 / hw) contour = 0.55;
     }
