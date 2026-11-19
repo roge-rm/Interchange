@@ -191,12 +191,17 @@ class View(val mapWidth: Int, val mapHeight: Int) {
     internal fun drawAt(at: ViewAt?, block: () -> Unit) {
         if (at == null) return block()
         val was = at()
-        turn = at.turn; focusX = at.focusX; focusY = at.focusY; halfWidth = at.halfWidth
+        moveTo(at)
         try {
             block()
         } finally {
-            turn = was.turn; focusX = was.focusX; focusY = was.focusY; halfWidth = was.halfWidth
+            moveTo(was)
         }
+    }
+
+    /** Puts the view at [at]'s turn, focus and zoom. */
+    internal fun moveTo(at: ViewAt) {
+        turn = at.turn; focusX = at.focusX; focusY = at.focusY; halfWidth = at.halfWidth
     }
 
     companion object {

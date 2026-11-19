@@ -1569,12 +1569,14 @@ private fun GameScreen(runner: GameThread, world: World, sheets: Sheets, setting
             clockFrames = !overview,
             overlays = (if (settings.grid) MapOverlays.GRID else 0) or (if (settings.heights) MapOverlays.HEIGHTS else 0) or
                 (if (settings.snow) MapOverlays.SNOW else 0) or (if (settings.condition) MapOverlays.CONDITION else 0) or (if (settings.safeColours) MapOverlays.SAFE else 0),
-            labels = {
+            labels = { into ->
                 val wv = worldView.value
                 with(townLabels) {
-                    draw(world, view, wv?.towns.orEmpty()) { Numbers.grouped(it.toLong()) }
-                    if (wv != null) drawStations(world, view, wv.stations) { it.name.ifEmpty { stationNumber.replace("%d", (it.id + 1).toString()) } }
-                    if (wv != null) drawPayments(world, view, wv.payments, runner.tick, c.good) { moneyPattern.replace("%s", Numbers.grouped(it)) }
+                    place(into) {
+                        draw(world, view, wv?.towns.orEmpty()) { Numbers.grouped(it.toLong()) }
+                        if (wv != null) drawStations(world, view, wv.stations) { it.name.ifEmpty { stationNumber.replace("%d", (it.id + 1).toString()) } }
+                        if (wv != null) drawPayments(world, view, wv.payments, runner.tick, c.good) { moneyPattern.replace("%s", Numbers.grouped(it)) }
+                    }
                 }
             },
         )

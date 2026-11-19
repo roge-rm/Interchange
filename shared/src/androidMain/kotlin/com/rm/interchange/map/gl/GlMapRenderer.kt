@@ -109,6 +109,14 @@ internal class GlMapRenderer(private val scene: GlScene, private val page: Int) 
     private var liveBytes = ByteBuffer.allocateDirect(0)
     private var liveFloats = FloatArray(0)
 
+    private var labelProgram = 0
+    private var labelVao = 0
+    private var labelBuffer = 0
+    private var labelTex = 0
+    private var labelQuads = FloatArray(0)
+    private var labelTaken = FloatArray(0)
+    private var labelBytes = ByteBuffer.allocateDirect(0)
+
     override fun onSurfaceCreated(gl: GL10?, config: EGLConfig?) {
         // A new context: whatever was made in the last went with it.
         levels.fill(null)
@@ -133,6 +141,8 @@ internal class GlMapRenderer(private val scene: GlScene, private val page: Int) 
         groundProgram = program(GROUND_VS, GROUND_FS)
         overlayProgram = 0
         liveProgram = program(LIVE_VS, LIVE_FS)
+        labelProgram = program(LABEL_VS, LABEL_FS)
+        labelTex = 0
         val ids = IntArray(3)
         glGenVertexArrays(3, ids, 0)
         vao = ids[0]
@@ -157,6 +167,18 @@ internal class GlMapRenderer(private val scene: GlScene, private val page: Int) 
             glVertexAttribDivisor(a, 1)
             glVertexAttribPointer(a, 4, GL_FLOAT, false, LIVE_FLOATS * 4, a * 16)
         }
+        glBindBuffer(GL_ARRAY_BUFFER, 0)
+        labelVao = IntArray(1).also { glGenVertexArrays(1, it, 0) }[0]
+        labelBuffer = IntArray(1).also { glGenBuffers(1, it, 0) }[0]
+        glBindVertexArray(labelVao)
+        glBindBuffer(GL_ARRAY_BUFFER, labelBuffer)
+        for (a in 0 until 3) {
+            glEnableVertexAttribArray(a)
+            glVertexAttribDivisor(a, 1)
+        }
+        glVertexAttribPointer(0, 4, GL_FLOAT, false, LabelBatch.QUAD * 4, 0)
+        glVertexAttribPointer(1, 4, GL_FLOAT, false, LabelBatch.QUAD * 4, 16)
+        glVertexAttribPointer(2, 1, GL_FLOAT, false, LabelBatch.QUAD * 4, 32)
         glBindBuffer(GL_ARRAY_BUFFER, 0)
         glBindVertexArray(vao)
         for (a in 0 until 1) {
@@ -203,6 +225,8 @@ internal class GlMapRenderer(private val scene: GlScene, private val page: Int) 
             scene.requestRender()
         }
         val shown = scene.shown ?: return clearScreen()
+        // After taking the frame, so the label images it uses are among those taken.
+        takeLabels()
         val f = shown.frame
         look = shown.look
         // The screen's level is uploaded before the cover lifts and the zoom's held to levels that are in, so there's
@@ -250,6 +274,7 @@ internal class GlMapRenderer(private val scene: GlScene, private val page: Int) 
         // Back to clear for what moves, which cuts by depth.
         glClear(GL_DEPTH_BUFFER_BIT)
         shown.live?.let { drawLive(it) }
+        shown.labels?.let { drawLabels(it, shown) }
         glBindVertexArray(0)
         glBindBuffer(GL_ARRAY_BUFFER, 0)
         glDisable(GL_BLEND)
@@ -683,6 +708,76 @@ internal class GlMapRenderer(private val scene: GlScene, private val page: Int) 
         glActiveTexture(GL_TEXTURE0)
         glDepthMask(true)
         glDisable(GL_DEPTH_TEST)
+    }
+
+    /** Puts [b]'s names, signs and payments over everything at [shown]'s view, at a fixed size in screen pixels. */
+    private fun drawLabels(b: LabelBatch, shown: GlShown) {
+        if (labelTex == 0 || b.count == 0) return
+        if (labelQuads.size < b.count * LabelBatch.QUAD) labelQuads = FloatArray(b.count * LabelBatch.QUAD * 2)
+        if (labelTaken.size < b.count * 4) labelTaken = FloatArray(b.count * 8)
+        val n = b.place(shown.at, width, height, labelQuads, labelTaken)
+        if (n == 0) return
+        val bytes = n * LabelBatch.QUAD * 4
+        if (labelBytes.capacity() < bytes) labelBytes = ByteBuffer.allocateDirect(bytes * 2).order(ByteOrder.nativeOrder())
+        labelBytes.clear()
+        labelBytes.asFloatBuffer().put(labelQuads, 0, n * LabelBatch.QUAD)
+        labelBytes.position(0)
+        glBindBuffer(GL_ARRAY_BUFFER, labelBuffer)
+        glBufferData(GL_ARRAY_BUFFER, bytes, labelBytes, GL_STREAM_DRAW)
+        glBindBuffer(GL_ARRAY_BUFFER, 0)
+        val p = labelProgram
+        glUseProgram(p)
+        glBindVertexArray(labelVao)
+        glUniform2f(glGetUniformLocation(p, "uScreen"), width.toFloat(), height.toFloat())
+        glUniform1f(glGetUniformLocation(p, "uSide"), scene.labelAtlas.side.toFloat())
+        glUniform1i(glGetUniformLocation(p, "uTex"), 0)
+        glActiveTexture(GL_TEXTURE0)
+        glBindTexture(GL_TEXTURE_2D, labelTex)
+        glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA)
+        glDrawArraysInstanced(GL_TRIANGLE_STRIP, 0, 4, n)
+        glBindTexture(GL_TEXTURE_2D, 0)
+    }
+
+    /** Copies the label images [scene] has placed since the last frame onto the label page, made the first time. */
+    private fun takeLabels() {
+        val ups = scene.labelAtlas.take()
+        if (ups.isEmpty()) return
+        if (labelTex == 0) {
+            while (glGetError() != GL_NO_ERROR) Unit
+            val side = scene.labelAtlas.side
+            labelTex = livePage(side)
+            // Placed on whole pixels at their own size, so each texel lands on one pixel.
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST)
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST)
+            val error = glGetError()
+            if (error != GL_NO_ERROR) {
+                Log.e(TAG, "gl label page $side failed: $error")
+                glDeleteTextures(1, intArrayOf(labelTex), 0)
+                labelTex = 0
+                glBindTexture(GL_TEXTURE_2D, 0)
+                return
+            }
+        }
+        glPixelStorei(GL_UNPACK_ALIGNMENT, 1)
+        glBindTexture(GL_TEXTURE_2D, labelTex)
+        for (u in ups) {
+            val n = u.w * u.h
+            if (strip.size < n * 4) strip = ByteArray(n * 4)
+            val out = strip
+            for (i in 0 until n) {
+                val q = u.pixels[i]
+                val a = q ushr 24
+                out[i * 4] = (((q shr 16) and 255) * a / 255).toByte()
+                out[i * 4 + 1] = (((q shr 8) and 255) * a / 255).toByte()
+                out[i * 4 + 2] = ((q and 255) * a / 255).toByte()
+                out[i * 4 + 3] = a.toByte()
+            }
+            if (spriteBytes.capacity() < n * 4) spriteBytes = ByteBuffer.allocateDirect(n * 8)
+            spriteBytes.clear()
+            spriteBytes.put(out, 0, n * 4).flip()
+            glTexSubImage2D(GL_TEXTURE_2D, 0, u.x, u.y, u.w, u.h, GL_RGBA, GL_UNSIGNED_BYTE, spriteBytes)
+        }
+        glBindTexture(GL_TEXTURE_2D, 0)
     }
 
     /** Points the live attributes at instance [first] on. */
@@ -1318,6 +1413,10 @@ internal class GlMapRenderer(private val scene: GlScene, private val page: Int) 
         liveUp = null
         if (liveBuffer != 0) glDeleteBuffers(1, intArrayOf(liveBuffer), 0)
         liveBuffer = 0
+        if (labelBuffer != 0) glDeleteBuffers(1, intArrayOf(labelBuffer), 0)
+        labelBuffer = 0
+        if (labelTex != 0) glDeleteTextures(1, intArrayOf(labelTex), 0)
+        labelTex = 0
         for (l in levels) if (l != null) glDeleteTextures(4, l.textures, 0)
         levels.fill(null)
         for (t in intArrayOf(weatherTex, legsTex, staticCells, shadowCells, wearTex)) if (t != 0) glDeleteTextures(1, intArrayOf(t), 0)
@@ -1328,8 +1427,10 @@ internal class GlMapRenderer(private val scene: GlScene, private val page: Int) 
         weatherTex = 0
         weatherUp = null
         legsTex = 0
-        for (a in intArrayOf(vao, groundVao, liveVao)) if (a != 0) glDeleteVertexArrays(1, intArrayOf(a), 0)
-        for (p in intArrayOf(spriteProgram, shadowProgram, groundProgram, overlayProgram, liveProgram)) if (p != 0) glDeleteProgram(p)
+        for (a in intArrayOf(vao, groundVao, liveVao, labelVao)) if (a != 0) glDeleteVertexArrays(1, intArrayOf(a), 0)
+        for (p in intArrayOf(spriteProgram, shadowProgram, groundProgram, overlayProgram, liveProgram, labelProgram)) if (p != 0) glDeleteProgram(p)
+        labelVao = 0
+        labelProgram = 0
         vao = 0
         groundVao = 0
         liveVao = 0
@@ -1388,6 +1489,36 @@ internal class GlMapRenderer(private val scene: GlScene, private val page: Int) 
         const val WEATHER_ROWS = 64
     }
 }
+
+/** A label from the label page onto its screen rect (left, top, width, height in pixels), premultiplied, at its alpha. */
+private const val LABEL_VS = """#version 300 es
+precision highp float;
+layout(location = 0) in vec4 aRect;
+layout(location = 1) in vec4 aUv;
+layout(location = 2) in float aAlpha;
+uniform vec2 uScreen;
+uniform float uSide;
+out vec2 vUv;
+flat out float vAlpha;
+void main() {
+    vec2 o = vec2(float(gl_VertexID & 1), float(gl_VertexID >> 1));
+    vec2 p = aRect.xy + o * aRect.zw;
+    vUv = (aUv.xy + o * aUv.zw) / uSide;
+    vAlpha = aAlpha;
+    gl_Position = vec4(p.x / uScreen.x * 2.0 - 1.0, 1.0 - p.y / uScreen.y * 2.0, 0.0, 1.0);
+}
+"""
+
+private const val LABEL_FS = """#version 300 es
+precision mediump float;
+uniform sampler2D uTex;
+in highp vec2 vUv;
+flat in float vAlpha;
+out vec4 frag;
+void main() {
+    frag = texture(uTex, vUv) * vAlpha;
+}
+"""
 
 /** A square of the static map drawn ahead, onto its place on screen (clip space left, top, right, bottom). */
 private const val SQUARE_VS = """#version 300 es

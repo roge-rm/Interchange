@@ -19,6 +19,7 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.toArgb
 import com.rm.interchange.map.gl.GlMapSurface
 import com.rm.interchange.map.gl.GlScene
+import com.rm.interchange.map.gl.MapLabels
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.geometry.isSpecified
@@ -98,8 +99,8 @@ fun MapView(
     overlay: (DrawScope.(LandPainter) -> Unit)? = null,
     /** The overlays drawn into the ground, as [MapOverlays] bits. */
     overlays: Int = 0,
-    /** Drawn over everything else: town names. */
-    labels: (DrawScope.() -> Unit)? = null,
+    /** Town names, signs and payments, put into the GPU map's frame to draw over everything else at its view. */
+    labels: (DrawScope.(MapLabels) -> Unit)? = null,
     /** Over even those: what the drag would cost, by the finger. */
     label: (DrawScope.() -> Unit)? = null,
     /** What shows while the map first loads. */
@@ -364,6 +365,7 @@ fun MapView(
         val movingNow = if (gl.wantsMoving()) moving() else null
         ClockDrawn.any = false
         movingNow?.let { drawMoving(world, view, sheets, it, gl.live, gl.editWaiting, gl.showingLook) }
+        labels?.invoke(this, gl.labels)
         val now = clock.elapsedNow().inWholeMilliseconds
         // The GPU map takes the frame with what moves in it, so they show together, then the cover fades.
         if (!gl.finish()) glReadyAt[0] = -1L
@@ -394,7 +396,6 @@ fun MapView(
                     translate(ox - planAt[0], oy - planAt[1]) { drawLayer(plan) }
                 } else planHeld[0] = false
             }
-            labels?.invoke(this)
             label?.invoke(this)
         }
         clocked[0] = ClockDrawn.any
